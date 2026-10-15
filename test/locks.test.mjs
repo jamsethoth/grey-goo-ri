@@ -44,6 +44,32 @@ test('a lock with a dead pid is taken over', async (t) => {
   await locks.release(handle);
 });
 
+test('concurrent takeovers of a dead lock grant exactly one owner', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const pid = deadPid();
+  const path = join(commonDir, 'gg', 'locks', 'repo.lock');
+  await mkdir(join(commonDir, 'gg', 'locks'), { recursive: true });
+  for (let round = 0; round < 20; round++) {
+    await writeFile(path, JSON.stringify({ pid, startedAt: `round ${round}` }));
+    const handles = (await Promise.all(Array.from({ length: 8 }, () => locks.tryAcquire(commonDir, 'repo')))).filter(Boolean);
+    assert.equal(handles.length, 1, `round ${round}: one owner`);
+    const held = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(held.startedAt, handles[0].startedAt, `round ${round}: the file names the owner`);
+    await locks.release(handles[0]);
+  }
+});
+
+test('a lock left half-written by an interrupted holder is taken over', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  await mkdir(join(commonDir, 'gg', 'locks'), { recursive: true });
+  for (const partial of ['', '{"pid":']) {
+    await writeFile(join(commonDir, 'gg', 'locks', 'repo.lock'), partial);
+    const handle = await locks.acquire(commonDir, 'repo', { timeoutMs: 500, pollMs: 20 });
+    assert.equal(handle.takenOverFrom, null);
+    await locks.release(handle);
+  }
+});
+
 test('acquire waits for release', async (t) => {
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
