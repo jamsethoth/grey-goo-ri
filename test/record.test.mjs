@@ -145,3 +145,16 @@ test('loadAll lists every ticket record', async (t) => {
   const all = await record.loadAll(commonDir, 'ticket');
   assert.deepEqual(all.map((r) => r.ticket).sort((a, b) => a - b), [8, 12]);
 });
+
+test('loadAll skips a corrupt sibling and reports it', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const good = newExecution(commonDir, 8);
+  await record.save(good);
+  await writeFile(join(commonDir, 'gg', 'records', 'ticket-9.json'), '{');
+  const corrupt = [];
+  const records = await record.loadAll(commonDir, 'ticket', { onCorrupt: (err) => corrupt.push(err) });
+  assert.deepEqual(records.map((r) => r.ticket), [8]);
+  assert.equal(corrupt.length, 1);
+  assert.ok(corrupt[0] instanceof record.RecordCorruptError);
+  assert.match(corrupt[0].message, /ticket-9\.json/);
+});

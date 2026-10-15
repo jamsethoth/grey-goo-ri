@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as locks from '../lib/locks.mjs';
@@ -101,4 +102,36 @@ test('withLock releases on throw', async (t) => {
   assert.ok(handle, 'released after throw');
   await locks.release(handle);
   assert.equal(await locks.withLock(commonDir, 'epic-1', async () => 42), 42);
+});
+
+test('settle retries flux errors and reports IN_FLUX when they never clear', async () => {
+  let calls = 0;
+  const flaky = async () => { if (++calls < 3) throw Object.assign(new Error('pending'), { code: 'EPERM' }); return 'ok'; };
+  assert.equal(await locks.settle(flaky), 'ok');
+  assert.equal(calls, 3);
+  const never = async () => { throw Object.assign(new Error('pending'), { code: 'EACCES' }); };
+  assert.equal(await locks.settle(never, 3), locks.IN_FLUX);
+  const other = async () => { throw Object.assign(new Error('no'), { code: 'EISDIR' }); };
+  await assert.rejects(locks.settle(other), { code: 'EISDIR' });
+});
+
+test('contending processes never throw and grant exactly one owner', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const pid = deadPid();
+  const path = join(commonDir, 'gg', 'locks', 'repo.lock');
+  const contender = new URL('./support/lock-contender.mjs', import.meta.url);
+  await mkdir(join(commonDir, 'gg', 'locks'), { recursive: true });
+  for (let round = 0; round < 5; round++) {
+    await writeFile(path, JSON.stringify({ pid, startedAt: `round ${round}` }));
+    const outputs = await Promise.all(Array.from({ length: 6 }, () => new Promise((resolve) => {
+      const child = spawn(process.execPath, [fileURLToPath(contender), commonDir, 'repo', '300'], { stdio: ['ignore', 'pipe', 'inherit'] });
+      let out = '';
+      child.stdout.on('data', (chunk) => { out += chunk; });
+      child.on('close', () => resolve(JSON.parse(out)));
+    })));
+    const errors = outputs.filter((o) => o.error);
+    assert.deepEqual(errors, [], `round ${round}: no contender throws`);
+    assert.equal(outputs.filter((o) => o.handle).length, 1, `round ${round}: one owner`);
+    await rm(path, { force: true });
+  }
 });
