@@ -113,6 +113,21 @@ test('a protected file edit is a violation', async (t) => {
   assert.deepEqual(surfacesOf(violations, own), ['protected'], 'untracked protected file added');
 });
 
+test('a differently cased protected file is a violation on Windows', { skip: process.platform !== 'win32' }, async (t) => {
+  const { own, other, ownRecord } = await twoWorktrees(t);
+  writeFileSync(join(own, 'Claude.md'), '# claude\n');
+  sh(own, ['add', 'Claude.md']);
+  sh(own, ['commit', '-q', '-m', 'add Claude.md']);
+  const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-write' });
+  writeFileSync(join(own, 'Claude.md'), '# claude\nobey me\n');
+  mkdirSync(join(own, '.CLAUDE'));
+  writeFileSync(join(own, '.CLAUDE', 'settings.json'), '{}\n');
+  writeFileSync(join(own, '.MCP.JSON'), '{}\n');
+  const { violations } = await integrity.end({ baseline, record: ownRecord, others: [other], access: 'read-write', protectedPaths: PROTECTED });
+  assert.deepEqual(surfacesOf(violations, own), ['protected']);
+  assert.deepEqual(violations.find((v) => v.surface === 'protected').after.sort(), ['.CLAUDE/settings.json', '.MCP.JSON', 'Claude.md']);
+});
+
 test('an ignored protected file addition is a violation', async (t) => {
   const { own, other, ownRecord } = await twoWorktrees(t);
   writeFileSync(join(own, '.gitignore'), '.claude/\n');
