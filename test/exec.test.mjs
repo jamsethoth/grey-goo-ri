@@ -64,6 +64,14 @@ test('runShell: a command outliving timeoutMs returns within budget, flagged as 
   assert.equal(res.timedOut, true);
 });
 
+test('runShell: a timed-out command returns code null and the output it printed before the timeout', async () => {
+  const p = script('sentinel.mjs', `console.log('SENTINEL-BEFORE-HANG'); setTimeout(() => {}, 60000);`);
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 4000 });
+  assert.equal(res.code, null);
+  assert.equal(res.timedOut, true);
+  assert.match(res.output, /SENTINEL-BEFORE-HANG/);
+});
+
 test('runShell timeout kills descendants by PID, including one whose parent already exited', async () => {
   const { pidFile, cmd } = orphanScripts('orphan');
   const res = await exec.runShell(cmd, { timeoutMs: 3500 });
