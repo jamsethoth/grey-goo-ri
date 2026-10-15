@@ -299,7 +299,8 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'still-green', ordinal: 2 });
   assert.equal(reason.outcome, 'red-failed');
   assert.equal(reason.rule, 'check-exhausted');
-  assert.match(reason.text, /^The red phase failed and the agent's changes were discarded: .*did not fail before implementation/);
+  assert.equal(reason.text, "The red phase failed the Red Check (rule check-exhausted) and the agent's changes were discarded.");
+  assert.match(g.gh.comments[0].body, /```\nThe new tests did not fail before implementation/, 'the diagnosis is posted fenced');
 });
 
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
@@ -374,6 +375,34 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.equal(reason.text, 'The agent made a blocked Claim at green; its notes in the blocked comment say why.');
   assert.ok(!reason.text.includes('contradicts'), 'unfenced agent text stays out of the Terminal Reason');
   assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
+});
+
+test('a retry stop keeps the deciding Action\'s own Outcome in the Terminal Reason', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'] = { ...responses['implementer/1/red/1'], result: { status: 'timed-out' } };
+  const g = await golden.setup(t, { responses });
+  assert.equal((await interpreter.runExecution(g.options)).outcome, 'needs-human');
+
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'red', ordinal: 1 });
+  assert.equal(reason.outcome, 'timeout-retry', 'the Action\'s Outcome, not the Terminal it routed to');
+  assert.equal(reason.rule, 'timeout-retry');
+});
+
+test('agent-reported test names stay out of a red-failed Terminal Reason and are fenced in its comment', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  const injected = 'missing\n\n## injected heading';
+  responses['implementer/1/red/1'] = { ...responses['implementer/1/red/1'], response: { ...golden.redResponse, tests: [injected] } };
+  responses['implementer/1/still-green/1'] = { files: {}, response: { ...golden.redResponse, tests: [injected] } };
+  const g = await golden.setup(t, { responses });
+  await interpreter.runExecution(g.options);
+
+  const reason = terminalReasonOf(g);
+  assert.equal(reason.outcome, 'red-failed');
+  assert.ok(!reason.text.includes('injected'), reason.text);
+  const [comment] = g.gh.comments;
+  assert.ok(!/^## injected heading$/m.test(comment.body), 'the diagnosis cannot render as markdown');
+  assert.ok(comment.body.includes('injected heading'), 'the diagnosis is still posted, fenced');
 });
 
 test('the Terminal Reason is saved before any Terminal side effect, so a crash marking the PR ready keeps it', async (t) => {
