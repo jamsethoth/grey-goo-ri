@@ -141,8 +141,10 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   project skill absent under the profile, so this content is treated as potentially discoverable rather than as
   declared: gg does not rely on it being loaded or unloaded, its digest joins the config hash so two runs that
   differ only in repository `.claude` content are distinguishable, the launcher acceptance test records whether the
-  installed version exposed it, and the protected-files gate in 3.6 stops an agent from changing it. This is the one
-  stated exception to "sessions start empty".
+  installed version exposed it, and the protected-files gate in 3.6 stops an agent from changing it. This content
+  is live, not pinned: a human may change it mid-visit, so every agent-step event records its current digest
+  separately from the pinned config hash, and a test edits it between two calls of one visit and asserts both
+  digests appear. This is the one stated exception to "sessions start empty".
 - Cost and usage on `--resume` are the session's cumulative totals; gg stores the previous totals per session and
   logs the delta. The session id from the first non-resume call of each session is the one persisted; a resumed
   call's init id is never stored.
@@ -239,7 +241,10 @@ orchestrator's deterministic checks (gates, integrity assertions, findings hash)
 after every terminated attempt, whatever the harness result, before the table is consulted; a violation takes the
 integrity row even when the attempt timed out or returned nothing, so a prohibited change never survives into a
 retry. Gates run only on a completed attempt with a valid claim. One transition table, obeyed by every harness and
-procedure, derives the outcome:
+procedure, derives the outcome. It lives in exactly one interpreter module that takes the harness result, the
+validated claim, the check results and the node's `resolution` policy and returns the outcome, its direction and the
+row that fired; harnesses and procedures never decide outcomes. The rows are data-shaped in code so they are tested
+row by row, and `gg doctor` prints a vertex's effective table next to its effective check list:
 
 | Harness result | Claim | Checks | Transition |
 |---|---|---|---|
@@ -353,8 +358,11 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
    both, re-request. Digest differs: stale, retire, re-request with the new digest. Record or pending instance
    missing: cannot verify, retire, re-request. Epic-level approvals reconcile under an epic lock file; once verified,
    the epic record stores the approved digest and event id, and every ticket run under that epic reads the epic
-   record rather than the timeline. The epic approval is invalidated when `gg publish` or a replan changes the plan
-   document or the ticket set, which retires it and re-requests. The golden trace covers record loss, a repeated
+   record rather than the timeline. The stored approval is a cache, not an authority: before admitting any ticket,
+   gg recomputes every approval input (plan document, ticket set, each ticket body revision, full config hash) under
+   the epic lock and compares it with the approved digest; a mismatch, whether from `gg publish`, a replan, a ticket
+   body edited directly on GitHub or a config change, retires the approval and re-requests. Tests cover a direct
+   body edit and a config change after approval. The golden trace covers record loss, a repeated
    visit to the same vertex, crashes around consumption, and two ticket processes entering under one epic approval.
 
 Human recovery, `gg work`: list across every repo in the user-dir registry, resume, abandon (keep the worktree, forget
@@ -381,13 +389,16 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
 - Git ownership, after every agent step: HEAD and index of the agent's worktree unchanged by the agent; no change to
   protected files; for read-only steps the tree unchanged as well, untracked files included. Other worktrees are
   checked only over intervals in which they are proven idle: every worktree carries in the record a busy flag and
-  an activity generation, the flag set for the duration of its own agent steps and orchestrator writes, the
-  generation bumped at every transition. At step start gg reads generation, snapshots the other worktree's HEAD,
-  tree hash and busy flag, and reads generation again, keeping the snapshot only if both reads match and the flag
-  was idle. At step end it repeats the read, and asserts unchanged only a worktree that was idle at both snapshots
+  an activity generation. The flag is set before any process gg launches in that worktree starts (agent steps,
+  gate and declared commands, git operations) and cleared only after that process and its descendants have
+  terminated, with the generation bumped at every transition. A snapshot is three fingerprints: HEAD, the index
+  (`git write-tree` of the index) and the working tree including untracked files. At step start gg reads
+  generation, takes the snapshot and the busy flag, and reads generation again, keeping the snapshot only if both
+  reads match and the flag was idle. At step end it repeats the read, and asserts unchanged only a worktree that was idle at both snapshots
   with the same generation at both. Activity that encloses the step (busy at start) and activity enclosed by it
-  (generation moved) are both skipped, not misattributed; tests cover both shapes. A violation discards the agent's
-  changes and stops the ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
+  (generation moved) are both skipped, not misattributed; tests cover both shapes, a concurrent format gate in the
+  other worktree, and an index-only mutation in an idle one. A violation discards the agent's changes and stops the
+  ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
   protected files. Writes elsewhere on the machine and network effects of commands are not observed, which is the
   stated weakness of the trusted-command mode in 3.2.
 - Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md` or `CLAUDE.md`
