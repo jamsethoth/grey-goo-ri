@@ -49,4 +49,5 @@ The orchestrator drives test-driven development in phases and makes every commit
   mark anything the request lists under "deliberate changes" as changed, not ported.
 - Tests use the fake harness and temp repositories only; never call the real `claude`, `codex` or
   `gh`. Every test fails inside a named case, never at import.
-- Plain Node ESM, no runtime dependencies, native Windows paths and no-shell spawning.
+- Plain Node ESM, node built-ins preferred (a dependency needs a stated reason), native Windows paths and
+  no-shell spawning.

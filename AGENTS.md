@@ -15,7 +15,9 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 
 ## Conventions
 
-- Plain Node ESM (`.mjs`), Node 22+ (22.13 or later, for `node:sqlite` without a flag), no runtime dependencies. Prefer node built-ins.
+- Plain Node ESM (`.mjs`), Node 22+ (22.13 or later, for `node:sqlite` without a flag), must run on stock Node on
+  native Windows. npm dependencies are allowed when they earn their place; prefer node built-ins. Never adopt an
+  agentic workflow framework (ADR 0001).
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub; use the fake harness and temp repos.
 - Codex output schemas are strict: every property required, `additionalProperties: false`.
