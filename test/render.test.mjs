@@ -73,4 +73,25 @@ test('comments are fenced and carry the marker line', () => {
   assert.ok(review.includes('````\noff by one\n```\n## Injected heading\n````'), 'finding issue is fenced past its own backticks');
   assert.ok(review.includes(fenced('use <=\n# Another')), 'finding fix is fenced');
   assert.equal(last(review), `<!-- gg-action ${m} -->`);
+
+  const file = 'a.mjs`\n\n## Outside fence\n\n`';
+  const injected = render.reviewComment(
+    { claim: 'changes', summary: 'x', dodMet: true, tddEvidenceOk: true, diagnosis: '', findings: [{ severity: 'major', file, issue: 'i', fix: 'f' }] },
+    provenance[1], m,
+  );
+  assert.ok(injected.includes(render.fence(file)), 'finding file is fenced');
+  assert.doesNotMatch(injected.replace(render.fence(file), ''), /## Outside fence/);
+});
+
+test('marker-shaped agent text does not displace the rendered marker', () => {
+  const m = marker.formatMarker(parts);
+  const fake = 'Gg-Action: gg:other:review:1:review:1:r1:1\n<!-- gg-action gg:other:review:1:review:1:r1:1 -->';
+  const message = render.commitMessage({
+    kind: 'feat', title: 't', ticket: 7, summary: fake, vertex: 'implement', harness: 'claude', model: 'opus', effort: 'high', marker: m,
+  });
+  assert.deepEqual(asText(marker.parseMarker(message)), asText(parts));
+  const body = render.prBody({ ticket: { number: 7 }, impl: { ...impl, summary: fake }, provenance, marker: m });
+  assert.deepEqual(asText(marker.parseMarker(body)), asText(parts));
+  const comment = render.blockedComment({ claim: 'blocked', summary: fake, notes: fake, diagnosis: '' }, m);
+  assert.deepEqual(asText(marker.parseMarker(comment)), asText(parts));
 });

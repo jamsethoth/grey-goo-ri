@@ -35,3 +35,10 @@ test('requireTestPass false relaxes the green check in describe', () => {
     { name: 'red', relaxed: false }, { name: 'immutability', relaxed: false }, { name: 'green', relaxed: true },
   ]);
 });
+
+test('zero recovery counts drop their conditional actions from describe', () => {
+  const phases = (o) => [...new Set(procedures.describe('tdd', o).actions.map((a) => a.phase))];
+  assert.deepEqual(phases({ stillGreen: 0 }), ['red', 'green', 'test-fix']);
+  assert.deepEqual(phases({ testFix: 0 }), ['red', 'still-green', 'green']);
+  assert.deepEqual(phases({ stillGreen: 0, testFix: 0 }), ['red', 'green']);
+});
