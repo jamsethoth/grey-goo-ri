@@ -78,6 +78,45 @@ test('actionEvent rejects an unknown key and accepts the optional keys', () => {
   for (const key of Object.keys(optional)) assert.ok(key in all, key);
 });
 
+test('actionEvent throws when a required field is undefined', () => {
+  for (const key of [...required, ...agentRequired]) {
+    assert.throws(() => events.actionEvent({ ...actionFields(), [key]: undefined }), new RegExp(`\\b${key}\\b`), key);
+  }
+  assert.throws(() => events.lifecycleEvent('label_failed', { ticket: 7, change: 'add gg:ready', error: undefined }), /\berror\b/);
+});
+
+test('actionEvent checks both Usage members of an agent action', () => {
+  const bad = [
+    null, {}, { cumulative: usage() }, { delta: usage() }, { cumulative: {}, delta: usage() },
+    { cumulative: usage(), delta: null }, { cumulative: usage(), delta: { ...usage(), turns: '3' } },
+    { cumulative: (({ peakContext, ...u }) => u)(usage()), delta: usage() },
+  ];
+  for (const value of bad) {
+    assert.throws(() => events.actionEvent({ ...actionFields(), usage: value }), /\busage\b/, JSON.stringify(value));
+  }
+  const nulls = { peakContext: null, turns: null, toolCalls: null, compactions: null, costUsd: null };
+  assert.equal(events.actionEvent({ ...actionFields(), usage: { cumulative: nulls, delta: nulls } }).type, 'action');
+});
+
+test('eventLog validates every event before appending it', () => {
+  const dir = tempDir();
+  const log = events.eventLog(dir);
+  assert.throws(() => log('action', {}), /\bflow\b/);
+  assert.throws(() => log('stage_call', { run: 'r1' }), /\bstage_call\b/);
+  assert.throws(() => log('run_start', { run: 'r1', schema: 1 }), /\bschema\b/);
+  assert.throws(() => log('run_start', { run: 'r1', ts: 'then' }), /\bts\b/);
+  assert.throws(() => log('run_start', { run: 'r1', type: 'run_end' }), /\btype\b/);
+  assert.throws(() => events.eventLog(dir, { ts: 'then' })('run_start', { run: 'r1' }), /\bts\b/);
+  assert.throws(() => log('label_failed', { ticket: 7, change: 'add gg:ready', error: undefined }), /\berror\b/);
+  assert.deepEqual(events.readEvents(dir), []);
+  events.eventLog(dir, { run: 'r1' })('run_start');
+  const [line] = readFileSync(events.eventsFile(dir), 'utf8').split('\n').filter(Boolean);
+  const back = JSON.parse(line);
+  assert.equal(back.schema, 2);
+  assert.equal(back.type, 'run_start');
+  assert.equal(back.run, 'r1');
+});
+
 test('lifecycle events validate their required fields per type', () => {
   assert.equal(events.lifecycleEvent('run_start', { run: 'r1' }).type, 'run_start');
   assert.throws(() => events.lifecycleEvent('run_end', {}), /\brun\b/);
