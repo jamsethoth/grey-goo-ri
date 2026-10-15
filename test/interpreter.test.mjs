@@ -371,7 +371,8 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 2 });
   assert.equal(reason.outcome, 'blocked');
   assert.equal(reason.rule, 'blocked');
-  assert.equal(reason.text, 'The green Claim was blocked: The ticket contradicts itself.');
+  assert.equal(reason.text, 'The agent made a blocked Claim at green; its notes in the blocked comment say why.');
+  assert.ok(!reason.text.includes('contradicts'), 'unfenced agent text stays out of the Terminal Reason');
   assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
 });
 
