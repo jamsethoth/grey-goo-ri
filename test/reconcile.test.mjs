@@ -16,7 +16,7 @@ async function crashedFailedRed(t, when) {
   const git = g.options.git;
   g.options.git = { ...git, resetTo: async (...args) => {
     if (when === 'after reset') await git.resetTo(...args);
-    throw new Error('crash');
+    throw new interpreter.CrashError('crash');
   } };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
@@ -88,7 +88,7 @@ test('a failed HEAD read after the reset of a failed red leaves the History item
   let reset = false;
   g.options.git = { ...git,
     resetTo: async (...args) => { await git.resetTo(...args); reset = true; },
-    headSha: async (cwd) => { if (reset) throw new Error('head read failed'); return git.headSha(cwd); } };
+    headSha: async (cwd) => { if (reset) throw new interpreter.CrashError('head read failed'); return git.headSha(cwd); } };
   await assert.rejects(interpreter.runExecution(g.options), /head read failed/);
 
   const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
