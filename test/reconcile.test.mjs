@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as reconcile from '../lib/reconcile.mjs';
 import * as record from '../lib/record.mjs';
@@ -63,6 +65,18 @@ test('a crash before the reset holds the Execution and discards nothing', async 
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
   assert.deepEqual(g.loaded.history, []);
   assert.equal(record.openIntents(g.loaded)[0].payload.history.kind, 'red phase failed', 'the reason waits in the open intent');
+});
+
+test('an assume-unchanged edit left at the baseline does not prove the reset done', async (t) => {
+  const g = await crashedFailedRed(t, 'after reset');
+  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  golden.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);
+  writeFileSync(join(g.worktree, tracked), 'a hidden agent edit\n');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'git status cannot see it');
+
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
+  assert.deepEqual(g.loaded.history, []);
+  assert.deepEqual(resetEntries(g.loaded), ['intent']);
 });
 
 test('a failed HEAD read after the reset of a failed red leaves the History item to Reconciliation, once', async (t) => {
