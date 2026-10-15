@@ -259,12 +259,24 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   assert.deepEqual(tddTrace(g).map((e) => `${e.phase}/${e.ordinal}`), ['red/1', 'red/2', 'still-green/1', 'still-green/2']);
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'still-green resumes the red session');
-  assert.equal(actionEvent(g, 'still-green', 2).outcome, 'red-failed');
+  const exhausted = actionEvent(g, 'still-green', 2);
+  assert.equal(exhausted.outcome, 'red-failed');
+  assert.equal(exhausted.rule, 'check-exhausted', 'the transition table derives red-failed');
+  assert.equal(exhausted.direction, 'stop');
+  assert.equal(actionEvent(g, 'red', 2).rule, 'check-failed', 'the first failing run retries through still-green');
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', `${g.base}..HEAD`), '0', 'no commit on the branch');
   assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the worktree is clean at the baseline head');
+  assert.equal(g.rec.history.length, 1);
   assert.equal(g.rec.history[0].kind, 'red phase failed');
   assert.match(g.rec.history[0].text, /did not fail before implementation/);
+
+  // The reset is a write-ahead side effect whose intent carries the baseline and the History item.
+  const [reset] = intents(g.rec, 'reset');
+  assert.equal(reset.marker, actionMarker(g, 'still-green', 2));
+  assert.deepEqual(reset.payload, { baseline: g.base, history: g.rec.history[0] });
+  assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(record.openIntents(g.rec), []);
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
 });
 
@@ -321,6 +333,7 @@ test('a red run whose runner cannot start is not committed; red-failed records t
   const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 127, output: 'ff-no-such-runner-xyz: command not found' } });
   assert.ok(!g.subjects().some((s) => s.startsWith('test:')), 'no test: commit');
   assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
+  assert.equal(actionEvent(g, 'red', 2).rule, 'check-exhausted');
   assert.equal(g.rec.history[0]?.kind, 'red phase failed');
   const reason = g.rec.history[0].text;
   assert.match(reason, /could not start/);
@@ -342,6 +355,21 @@ test('a red run whose output names none of the reported tests is not committed',
   assert.ok(!g.subjects().some((s) => s.startsWith('test:')));
   assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
   assert.match(g.rec.history[0]?.text ?? '', /does not mention any reported failing test/);
+});
+
+test('a red Phase that leaves nothing to commit fails red with "No tests were written."', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'] = { files: {}, response: { ...golden.redResponse, tests: ['rejects bad input'] } };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = { runShell: async () => ({ code: 1, output: FAIL_OUTPUT, timedOut: false }) };
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'needs-human');
+  const commit = actionEvent(g, 'red', 3);
+  assert.equal(commit.outcome, 'red-failed');
+  assert.equal(commit.rule, 'check-exhausted');
+  assert.deepEqual(intents(g.rec, 'commit'), [], 'no commit intent for an empty commit');
+  assert.deepEqual(g.rec.history, [{ kind: 'red phase failed', text: 'No tests were written.' }]);
+  assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 3));
 });
 
 test('a red run with a nonzero exit naming a reported test is committed as test:', async (t) => {
