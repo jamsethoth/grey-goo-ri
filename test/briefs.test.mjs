@@ -68,6 +68,18 @@ test('validateResponse rejects a missing, uppercase, array, unknown or null clai
   assert.match(briefs.validateResponse(briefs.RED_SCHEMA, noNotes).reason, /notes/);
 });
 
+test('validateResponse and assertStrict catch an empty-named property', () => {
+  const root = briefs.validateResponse(briefs.RED_SCHEMA, { ...validRed, '': 'x' });
+  assert.equal(root.valid, false);
+  assert.match(root.reason, /not in the schema/);
+  const step = { action: 'a', expected: 'b', '': 'x' };
+  const impl = { claim: 'ok', summary: 's', dod: [], qa: { setup: '', steps: [step], edgeCases: [], automated: [], manual: [] }, diagnosis: '', notes: '' };
+  const nested = briefs.validateResponse(briefs.IMPLEMENT_SCHEMA, impl);
+  assert.equal(nested.valid, false);
+  assert.match(nested.reason, /qa\.steps\[0\]\. is not in the schema/);
+  assert.throws(() => briefs.assertStrict({ type: 'object', properties: { '': { type: 'string' } }, required: [], additionalProperties: false }), /required lacks property/);
+});
+
 test('the green brief is a full brief for a fresh session', () => {
   const g = briefs.greenBrief({ ...base, testFiles, redOutput });
   assert.match(g, /#7/);
