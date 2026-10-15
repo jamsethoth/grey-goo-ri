@@ -94,9 +94,10 @@ node with `network: false` and an MCP server that reaches the network. On native
 sandbox. A Claude `workspace-write` node therefore runs in a declared trusted-command mode, which the matrix names
 as `confinement: trusted-commands` rather than a sandbox: only the repo's declared commands and gg's allow list may
 run, git write and gh commands are denied, network tools are denied unless the node allows network, and the
-post-step assertions in 3.6 detect, but cannot prevent, a script that writes outside the checked worktrees or
-reaches the network. The owner accepts this mode knowingly; it is recorded on every event and in the config hash,
-and it is never described as equivalent to a sandbox.
+post-step assertions in 3.6 detect changes to the checked surfaces only. A command that writes outside the checked
+worktrees or reaches the network through its own means is neither prevented nor observed in this mode. The owner
+accepts this knowingly; the mode is recorded on every event and in the config hash, and it is never described as
+equivalent to a sandbox.
 
 `run(call)` returns three separate things, never conflated: the agent's claim (its structured output, unvalidated),
 the harness result (`completed | failed | timed-out | killed`, session id, normalised usage cumulative and delta,
@@ -122,8 +123,10 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
 - Read-only steps add `--restricted`, which confines file tools to the working directory and removes Bash and
   WebFetch, plus `--disallowedTools "mcp__*"` unless the node lists MCP. The review brief carries the diff text, so
   the reviewer needs no shell. Verified: `--restricted -p` authenticates with the subscription.
-- Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call so a
-  resumed session sees the persona on disk and the persona hash recorded per step is the one the model ran.
+- Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call, with
+  the persona supplied from the visit's pinned snapshot (3.5), written to a file in the run directory, never from
+  the live layer directories. A resumed call therefore sees exactly the persona the visit entered with, the hash
+  recorded per step is the one the model ran, and a persona edit takes effect at the next vertex entry.
 - `--output-format stream-json --verbose`. The init event (first line) supplies `plugins`, `plugin_errors`,
   `mcp_servers`, `mcp_server_errors` and `capabilities`; a non-empty error array or a listed server not connected
   fails the step. The result event (last line) supplies usage, cost, turns, `structured_output`,
@@ -134,10 +137,12 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   resolved to its target first. Prompts go through stdin or a file, never argv. Paths with spaces are tested.
 - `--bare` is not used: it refuses subscription credentials ("Not logged in", verified), and reporters say the OAuth
   environment token is ignored under it as well. Bare mode also removes `.claude/skills`, `.claude/commands` and
-  `.claude/agents` discovery, which the profile above does not. This is the one stated exception to "sessions start
-  empty": content under those three paths in the repository is consumed and is treated as the owner's declared
-  content. Its hash joins the config hash so two runs that differ only in repository skills are distinguishable, and
-  the protected-files gate in 3.6 stops an agent from changing it.
+  `.claude/agents` discovery, which the profile above does not promise to remove. The probe in section 9 saw a
+  project skill absent under the profile, so this content is treated as potentially discoverable rather than as
+  declared: gg does not rely on it being loaded or unloaded, its digest joins the config hash so two runs that
+  differ only in repository `.claude` content are distinguishable, the launcher acceptance test records whether the
+  installed version exposed it, and the protected-files gate in 3.6 stops an agent from changing it. This is the one
+  stated exception to "sessions start empty".
 - Cost and usage on `--resume` are the session's cumulative totals; gg stores the previous totals per session and
   logs the delta. The session id from the first non-resume call of each session is the one persisted; a resumed
   call's init id is never stored.
@@ -230,19 +235,22 @@ enum. Validation prints the effective check list per vertex, so nothing a proced
 
 Three layers that never mix: the agent's claim (one dedicated structured-output field holding exactly one enum
 token, no free-text marker fallback), the harness result (completed, failed with class, timed out, killed), and the
-orchestrator's deterministic checks (gates, integrity assertions, findings hash). One transition table, obeyed by
-every harness and procedure, derives the outcome:
+orchestrator's deterministic checks (gates, integrity assertions, findings hash). Integrity assertions (3.6) run
+after every terminated attempt, whatever the harness result, before the table is consulted; a violation takes the
+integrity row even when the attempt timed out or returned nothing, so a prohibited change never survives into a
+retry. Gates run only on a completed attempt with a valid claim. One transition table, obeyed by every harness and
+procedure, derives the outcome:
 
 | Harness result | Claim | Checks | Transition |
 |---|---|---|---|
-| failed, class transient or rate-limited | none | not run | retry the attempt within the class budget, honouring `retryAfterMs`; exhausted: needs-human |
-| failed, class auth, quota or budget | none | not run | stop the whole run: every active ticket to needs-human, class on the run end event |
-| timed-out or killed | ignored, even if partial | not run | one retry as a fresh attempt, resuming the session where the harness allows; then needs-human |
-| failed, class unknown | none | not run | needs-human, no retry |
-| completed | invalid: field missing, malformed, or more than one token | not run | parse-failure retry resuming the session with a return-the-result nudge, default 1; exhausted: needs-human |
-| completed | valid, blocked or misscoped | run and recorded | stop: comment and needs-human, or replan; passing checks never override this |
-| completed | valid, ok | integrity violation | stop: discard the agent's changes, needs-human |
-| completed | valid, ok | a declared check fails | retry within the procedure's bounds; exhausted: the edge or vertex `exhausted` target; ticket cap: needs-human |
+| any | any | integrity violation | stop: discard the agent's changes, needs-human |
+| failed, class transient or rate-limited | none | integrity only | retry the attempt within the class budget, honouring `retryAfterMs`; exhausted: needs-human |
+| failed, class auth, quota or budget | none | integrity only | stop the whole run: every active ticket to needs-human, class on the run end event |
+| timed-out or killed | ignored, even if partial | integrity only | one retry as a fresh attempt, resuming the session where the harness allows; then needs-human |
+| failed, class unknown | none | integrity only | needs-human, no retry |
+| completed | invalid: field missing, malformed, or more than one token | integrity only | parse-failure retry resuming the session with a return-the-result nudge, default 1; exhausted: needs-human |
+| completed | valid, blocked or misscoped | all run and recorded | stop: comment and needs-human, or replan; passing checks never override this |
+| completed | valid, ok | a declared check fails | retry within the procedure's own bounds; when those are exhausted the procedure emits its failure outcome (`red-failed`, `gate-failed(<gate>)`) and that outcome's route applies, with the built-in default needs-human when no route exists; edge and vertex bounds apply to the traversal as usual |
 | completed | valid, ok | every declared check passes | advance |
 | gg throws: bug, I/O error, gh failure after its own retries | any | any | unexpected fault: ticket to needs-human with the error on its end event, record marked, exit code 1, never retried automatically |
 
@@ -272,21 +280,25 @@ later briefs need (red commit and evidence, implementation reports, review findi
 and branch identity, base revision, PR number, pending approval state, and the write-ahead log below.
 
 Action identity is `(ticket, run, vertex, visit, phase, attempt)`, serialised as an action marker. Every action with
-a side effect is recorded in three steps: intent before the effect, including the intended payload (commit message
-and expected parent, PR title and body hash, comment body hash, label name); the effect's own evidence; completion
-after. The marker travels with the effect: in the commit trailer next to the vertex and harness, in a hidden marker
-line in PR bodies and comments, and as the `await` label event for approvals. Resume reads the log: an intent
-without completion is reconciled by looking for the marker, never for mere existence. A commit whose trailer carries
-the marker and whose parent matches the intent is complete; a PR that exists but whose body lacks the marker or hash
-gets the intended update reapplied, which is idempotent; a comment without the marker is posted; a label present is
-accepted. The golden trace tests kill the process before the effect, between effect and completion, and after
-completion, for a commit, a PR upsert and a comment, and assert no duplicate and no stale payload.
+a side effect is recorded in three steps: intent before the effect, including the intended payload (commit message,
+expected parent and the intended tree hash from `git write-tree`; PR title and body hash; comment body hash; label
+name); the effect's own evidence; completion after. The marker travels with the effect: in the commit trailer next
+to the vertex and harness, in a hidden marker line in PR bodies and comments, and as the `await` label event for
+approvals. Resume reads the log: an intent without completion is reconciled by looking for the marker, never for
+mere existence. A commit is complete only when its trailer carries the marker and its parent and tree match the
+intent; a marker with a different tree, for instance a commit amended by a human between crash and resume, holds
+the ticket for a human. A PR that exists but whose body lacks the marker or hash gets the intended update reapplied,
+which is idempotent; a comment without the marker is posted; a label present is accepted. The golden trace tests
+kill the process before the effect, between effect and completion, and after completion, for a commit, a PR upsert
+and a comment, assert no duplicate and no stale payload, and include the amended-commit fixture.
 
 Reconciliation with GitHub at resume: labels decide whether a ticket runs, the record decides where it continues.
 State label says needs-human and record says mid-step: label wins, record marked abandoned. State label in-progress
 with no record: stuck, reset path. Configuration is pinned per vertex visit: the record stores the resolved
-configuration snapshot a vertex entered with, the current vertex finishes on that snapshot even if the config hash
-has changed, and the new configuration takes effect at the next vertex entry, logged as a change. If the current
+configuration snapshot a vertex entered with, persona contents included as bytes, not as a path; the current vertex
+finishes on that snapshot even if the config hash or a persona file has changed, every call in the visit is supplied
+from the snapshot, and the new configuration takes effect at the next vertex entry, logged as a change. A test edits
+a persona between green and test-fix and asserts test-fix ran the old bytes. If the current
 vertex no longer exists in the new flow, the ticket is held for a human. Transcript missing for a session the record
 wants to resume: that phase starts fresh with the full brief. Corrupt record: held for a human, never auto-discarded.
 
@@ -296,8 +308,9 @@ red phase in the same run). `gg work reset` is the only destructive path, explic
 exists, and never runs without the ticket named. Cleanup never deletes a worktree that is dirty or has unpushed
 commits.
 
-Locks and timeouts. A per-ticket lock file with pid and stale takeover under `<git common dir>/gg/locks/`, and a
-repo-level lock around every orchestrator git write, so two gg processes on one repo serialise correctly; the
+Locks and timeouts. A per-ticket lock file with pid and stale takeover under `<git common dir>/gg/locks/`, an
+epic lock for epic-record writes and approval reconciliation, and a repo-level lock around every orchestrator git
+write, so two gg processes on one repo serialise correctly; the
 in-process mutex alone is not enough and the document says so. Retry on index lock with backoff. Stall timeout when
 the output stream and transcript stop growing (default about 10 min) and a wall clock per agent step (default about
 60 min), per node overridable; expiry kills the process tree through the job object and records a typed timeout
@@ -332,10 +345,17 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
    labeled event matching the pending instance as the request time, looks for `decide` labeled events after it that
    no later unlabeled event undid, checks each actor's repository permission is write or higher (or the actor is in
    the optional `approvers` list), recomputes the digest and compares it with the record. Exactly one authorised
-   decision and a matching digest: consume it (remove the decide label, record actor, event id and time on the step
-   event and in the trace) and route its outcome. More than one surviving authorised decision: hold, retire both,
-   re-request. Digest differs: stale, retire, re-request with the new digest. Record or pending instance missing:
-   cannot verify, retire, re-request. The golden trace covers record loss and a repeated visit to the same vertex.
+   decision and a matching digest: consume it. Consumption is a write-ahead action like any other: gg first persists
+   the pending instance id, the decision event id, actor and time, the outcome and the next graph position to the
+   record, then removes the decide label, then marks completion. A crash after the record write but before or after
+   the removal resumes by completing the recorded consumption, never by re-reading the timeline, so the unlabeled
+   event gg itself created cannot invalidate the decision. More than one surviving authorised decision: hold, retire
+   both, re-request. Digest differs: stale, retire, re-request with the new digest. Record or pending instance
+   missing: cannot verify, retire, re-request. Epic-level approvals reconcile under an epic lock file; once verified,
+   the epic record stores the approved digest and event id, and every ticket run under that epic reads the epic
+   record rather than the timeline. The epic approval is invalidated when `gg publish` or a replan changes the plan
+   document or the ticket set, which retires it and re-requests. The golden trace covers record loss, a repeated
+   visit to the same vertex, crashes around consumption, and two ticket processes entering under one epic approval.
 
 Human recovery, `gg work`: list across every repo in the user-dir registry, resume, abandon (keep the worktree, forget
 the position), reset (as above), approve. Doctor validates records and reports disagreement with GitHub. Single
@@ -360,15 +380,20 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
   legitimately changed tests. A violation is an integrity stop, not a retry.
 - Git ownership, after every agent step: HEAD and index of the agent's worktree unchanged by the agent; no change to
   protected files; for read-only steps the tree unchanged as well, untracked files included. Other worktrees are
-  checked over intervals in which they were idle: every worktree carries an activity generation in the record,
-  bumped at each of its own agent-step starts and ends and by every orchestrator write to it; at step start gg
-  snapshots the other worktrees' HEAD, tree hash and generation, and at step end it asserts unchanged only those
-  whose generation did not move during the step. A worktree whose own step started and finished inside the interval
-  is skipped, not misattributed; a test covers exactly that case. A violation discards the agent's changes and stops
-  the ticket.
+  checked only over intervals in which they are proven idle: every worktree carries in the record a busy flag and
+  an activity generation, the flag set for the duration of its own agent steps and orchestrator writes, the
+  generation bumped at every transition. At step start gg reads generation, snapshots the other worktree's HEAD,
+  tree hash and busy flag, and reads generation again, keeping the snapshot only if both reads match and the flag
+  was idle. At step end it repeats the read, and asserts unchanged only a worktree that was idle at both snapshots
+  with the same generation at both. Activity that encloses the step (busy at start) and activity enclosed by it
+  (generation moved) are both skipped, not misattributed; tests cover both shapes. A violation discards the agent's
+  changes and stops the ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
+  protected files. Writes elsewhere on the machine and network effects of commands are not observed, which is the
+  stated weakness of the trusted-command mode in 3.2.
 - Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md` or `CLAUDE.md`
-  are rejected. Under the Claude launch profile none of these are consumed by the next step anyway; Codex trust
-  level is set explicitly so project config is not consumed either.
+  are rejected. Under the Claude launch profile, settings, hooks, `.mcp.json`, CLAUDE.md and memory are not
+  consumed; `.claude/skills`, `.claude/commands` and `.claude/agents` are potentially discoverable, as 3.2 states.
+  Codex trust level is set explicitly so project config is not consumed.
 - Agents get read-only git (diff, log, status, show) and no movement commands (checkout, switch, worktree, stash,
   reset, add, commit, push, remote, gh). Confinement: Codex sandbox; Claude file tools confined to the working
   directory with prompts off, `--restricted` on read-only steps; the idle-worktree assertion for shell writes.
@@ -396,7 +421,8 @@ harness and model as further dimensions, so two reviewers on the same procedure 
 a vertex does not hide escalations. `rounds`, `red_failed` and `blocked` remain derivable. The commit trailer text
 `Feature-Flow-Stage:` is kept, carrying vertex and harness.
 
-Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands. Written with the
+Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands + the digest
+of the repository's `.claude/skills`, `.claude/commands` and `.claude/agents` content (3.2). Written with the
 resolved flow to the run directory. Secrets never enter it (3.1).
 
 Export: Agent Trajectory Interchange Format (ATIF, Harbor), pinned to the schema version Harbor's validator accepts
