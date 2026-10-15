@@ -5,7 +5,7 @@ date: 2026-10-14
 
 # Build the workflow engine; do not adopt one
 
-Twenty-three open-source agent-workflow frameworks were scored against six requirements: zero runtime dependencies, native Windows, Claude Code and Codex CLI as harnesses, GitHub issues as the work source, bounded loops over persona nodes, and per-step usage tracing. None met all six; the closest, Archon, requires Bun, a database and WSL2. We build a small interpreter in plain Node and align node field names and the harness capability matrix with Archon's provider contract so results stay comparable.
+Twenty-three open-source agent-workflow frameworks were scored against six requirements: zero runtime dependencies, native Windows, Claude Code and Codex CLI as harnesses, GitHub issues as the work source, bounded loops over persona nodes, and usage tracing per attempt. None met all six; the closest, Archon, requires Bun, a database and WSL2. We build a small interpreter in plain Node and align node field names and the harness capability matrix with Archon's provider contract so results stay comparable.
 
 ## Considered options
 

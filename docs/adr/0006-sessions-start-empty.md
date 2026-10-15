@@ -13,4 +13,4 @@ feature-flow's defaults named a specific plugin in its stage tools and injected 
 
 ## Consequences
 
-The launch profile must be able to produce a truly empty session, which was verified on this machine. Harnesses declare each tool field as exact, hint or unsupported, and a node that lists a field its harness cannot enforce fails preflight rather than running degraded. The one stated exception is repository `.claude` content under the Claude launch profile, which is hashed and protected rather than excluded.
+The launch profile must be able to produce a truly empty session, which was verified on this machine. Harnesses declare each tool field as exact, hint or unsupported: a node that lists an unsupported field fails preflight, a hinted field runs with its declared semantics and is recorded as hinted, and a permission intent must be enforceable on every surface the node uses or preflight fails. Nothing is silently dropped. The one stated exception is repository `.claude` content under the Claude launch profile, which is hashed and protected rather than excluded.

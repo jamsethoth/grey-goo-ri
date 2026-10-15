@@ -14,7 +14,7 @@ and mcps and plugins passed to an agentic harness. If we have this core behavior
 and expand or reduce the scope as necessary for different workflows. The node should be an abstraction, with harness
 specific implementation for codex and claude to start."
 
-Also required: usage metrics for every harness, detailed per-node tracing, a unified end-to-end view of a run, and
+Also required: usage metrics for every harness, detailed per-vertex tracing, a unified end-to-end view of a run, and
 management of the work submitted to a workflow across all its instances on one machine. The existing feature-flow
 implementation is thrown away; this is a ground-up rewrite in this repository.
 
@@ -27,7 +27,9 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
 - A session starts empty. The shipped defaults add no skills, plugins, MCP servers, hooks or repository instructions
   to any session. Everything an agent gets is declared in config. Ponytail and every other plugin are user or repo
   config, never framework.
-- No degraded runs: a node field the harness cannot enforce fails preflight, it is never silently dropped.
+- No degraded runs: a node field its harness declares unsupported fails preflight; a field declared hint runs with
+  its declared semantics and is recorded as hinted; a permission intent must be enforceable on every surface the
+  node uses or preflight fails. Nothing is silently dropped.
 - Every agent action is traced with normalised usage. A field a harness cannot produce is declared absent, never zero.
 - Wrongly advancing is costlier than wrongly holding. Advance needs evidence. Which checks a procedure declares is
   configuration, visible in validation output; that advance never happens while a declared check is failing, and
@@ -99,7 +101,8 @@ worktrees or reaches the network through its own means is neither prevented nor 
 accepts this knowingly; the mode is recorded on every event and in the config hash, and it is never described as
 equivalent to a sandbox.
 
-`run(call)` returns three separate things, never conflated: the agent's claim (its structured output, unvalidated),
+`run(call)` returns three separate things, never conflated: the agent's structured response (unvalidated; its claim
+is one field of it),
 the harness result (`completed | failed | timed-out | killed`, session id, normalised usage cumulative and delta,
 transcript path, exit code, signal, final event subtype, init metadata, permission denials, commands-run count as
 diagnostics only), and for `failed` a typed `failure.class` of `auth | quota | budget | rate-limited | transient |
@@ -165,7 +168,7 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
 
 - Persona vertex: a node (3.1) plus a `procedure` with options (3.4) plus edges.
 - `gate` vertex: runs a named repo command, must declare both pass and fail targets.
-- `approval` vertex: pauses for a human decision through GitHub labels (3.5). It declares its request label and a
+- `approval` vertex: pauses for a human decision through GitHub labels (3.5). It declares its await label and a
   map of decide labels to outcomes; `approved` and `rejected` are the shipped default, a vertex may declare more.
 - Terminals: `done` (PR marked ready, state label), `needs-human`, `replan` (state label, diagnosis posted on the
   ticket and the epic). `done` requires an open PR for the ticket; a flow that routes to `done` without a vertex that
@@ -174,7 +177,7 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
   `exhausted`. Every vertex has `maxVisits` with its own `exhausted`; every ticket has a action cap. Loops exist only
   as bounded back edges.
 - Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
-  `maxVisits` counts entries per ticket; procedure-internal retries (still-green, test-fix, gate retries) count
+  `maxVisits` counts entries per ticket; procedure-internal retries (still-green, test-fix, quality gate retries) count
   toward the ticket action cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
   action the vertex `exhausted` wins; the ticket action cap exhausting goes to needs-human and wins over both; counts
   survive a restart because they live in the execution record and are checked before the action runs, so a restart at
@@ -226,7 +229,7 @@ Procedures are code: named action sequences the interpreter expands into actions
   a `fix` vertex, as the illustration shows. Splitting red and green onto different vertices is deferred and is a
   procedure split, not a grammar change.
 - `fix`: fix brief with history and the review findings, green check under the same option, quality gates, commit,
-  push. A fix round may change tests when a finding names a test; the immutability baseline then moves to the fix commit
+  push. A fix visit may change tests when a finding names a test; the immutability baseline then moves to the fix commit
   and the reviewer brief lists every test file changed since the red commit.
 - `review`: read-only call with the diff in the brief, worktree-unchanged assertion, PR comment, findings hash
   computed over normalised findings (file, severity, issue text with whitespace and line numbers stripped).
@@ -255,7 +258,7 @@ row by row, and `gg doctor` prints a vertex's effective table next to its effect
 | failed, class unknown | none | integrity only | needs-human, no retry |
 | completed | invalid: field missing, malformed, or more than one token | integrity only | parse-failure retry resuming the session with a return-the-result nudge, default 1; exhausted: needs-human |
 | completed | valid, blocked or misscoped | all run and recorded | stop: comment and needs-human, or replan; passing checks never override this |
-| completed | valid, ok | a declared check fails | retry within the procedure's own bounds; when those are exhausted the procedure emits its failure outcome (`red-failed`, `gate-failed(<gate>)`) and that outcome's route applies, with the built-in default needs-human when no route exists; edge and vertex bounds apply to the traversal as usual |
+| completed | valid, ok | a declared check fails | retry within the procedure's own bounds; when those are exhausted the procedure signals failure and the interpreter derives the failure outcome (`red-failed`, `gate-failed(<gate>)`), whose route applies, with the built-in default needs-human when no route exists; edge and vertex bounds apply to the traversal as usual |
 | completed | valid, ok | every declared check passes | advance |
 | gg throws: bug, I/O error, gh failure after its own retries | any | any | unexpected fault: ticket to needs-human with the error on its end event, record marked, exit code 1, never retried automatically |
 
@@ -284,8 +287,13 @@ counts per edge, session lineage per phase (session id, harness, persona hash, l
 later briefs need (red commit and evidence, implementation reports, review findings and hash, history), worktree
 and branch identity, base revision, PR number, pending approval state, and the write-ahead log below.
 
-Action identity is `(ticket, run, vertex, visit, phase, attempt)`, serialised as an action marker. Every action with
-a side effect is recorded in three steps: intent before the effect, including the intended payload (commit message,
+An execution belongs to a ticket; an epic has an epic record but no execution. A run is one `gg run` invocation:
+one run may admit several tickets' executions, and a later run resumes them. An action's identity is `(execution,
+vertex, visit, phase, ordinal)`, where deterministic actions carry the phase they serve; an attempt adds `(run,
+attempt)`. The action marker names an attempt, since the attempt is what produced the effect. One `tdd` visit, in
+order: red call (red, 1), red check (red, 2), commit tests (red, 3), green call (green, 1), green check (green, 2),
+quality gates (green, 3 onward), commit (green, next), push, PR upsert; a still-green retry is attempt 2 of (red, 1)
+and the red check that follows is attempt 2 of (red, 2). Every action with a side effect is recorded in three steps: intent before the effect, including the intended payload (commit message,
 expected parent and the intended tree hash from `git write-tree`; PR title and body hash; comment body hash; label
 name); the effect's own evidence; completion after. The marker travels with the effect: in the commit trailer next
 to the vertex and harness, in a hidden marker line in PR bodies and comments, and as the `await` label event for
@@ -384,7 +392,7 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
   event. Quality gate results go into the reviewer's brief.
 - Test test immutability check: test paths are the repo's declared test globs (default pattern shipped) and include additions,
   renames and shared fixtures. The diff of those paths between the baseline commit and the tree must be empty at the
-  green check and after test-fix; baseline is the red commit, moving to the fix commit after a fix round that
+  green check and after test-fix; baseline is the red commit, moving to the fix commit after a fix visit that
   legitimately changed tests. A violation is an integrity stop, not a retry.
 - Git ownership, after every agent action: HEAD and index of the agent's worktree unchanged by the agent; no change to
   protected files; for read-only actions the tree unchanged as well, untracked files included. Other worktrees are
@@ -413,7 +421,10 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
 
 ### 3.7 Tracing, metrics and export
 
-Events, schema 2, one per action attempt, in the repo's append-only events file: flow name, config hash,
+Events come in two kinds. Action events record one attempt and belong to their execution. Lifecycle events record a
+run or an execution starting or ending (run start and end, ticket start and end) and belong to the run or the
+execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
+events. Action events, schema 2, in the repo's append-only events file carry: flow name, config hash,
 launch profile, ticket, run, vertex, visit, procedure, phase, attempt, duration, outcome, direction, signals
 received and the resolution rule applied. Agent actions add: harness and CLI version, model and effective effort,
 persona hash, resolved tools with hint fields marked, init metadata (plugins, MCP servers), session id and lineage,
@@ -488,10 +499,11 @@ Ported as they are:
 - Codex: sandbox and `-C` before resume, sandbox re-check from the rollout, thread id fallback, usage delta, MXC
   fallback, node_repl lock warning, persona on first prompt only, strict schemas, allowlists as inline tables, listing
   failures throw, cost from `apiPrices` or null.
-- Claude: all plugins off then the node's back by directory, allow and deny lists with prefixed twins, `is_error` or
-  missing structured output throws, missing plugin fails before spawn.
+- Claude: all plugins off then the node's back by directory, allow and deny lists with prefixed twins, missing plugin
+  fails before spawn. (ff's throw on `is_error` or missing structured output is superseded; see the deliberate
+  changes below.)
 - Preflight resolves tools for every active vertex before any gh call or worktree, all failures in one error; plan
-  approval gate; pool with `maxParallel`; per-epic log and usage file; run start and end events.
+  approval admission check; pool with `maxParallel`; per-epic log and usage file; run start and end events.
 - Process containment: job object via winjob.ps1 for shell runs, timeout kills orphans, fallback chain and survivor
   reporting; green check timeout 30 minutes.
 - Planning: interactive launch with session id and stop-hook budget warning, background sessions, plan marker,
@@ -501,7 +513,7 @@ Deliberate changes, each with its own regression case:
 
 - Fresh green session with the full brief (ff resumes red).
 - Review PASS requires `dodMet`, `tddEvidenceOk` and no blocker or major findings (ff advances on the verdict alone).
-- Test immutability between the red commit and the green check, baseline moving only through a fix round.
+- Test immutability between the red commit and the green check, baseline moving only through a fix visit.
 - Blocked honoured after still-green and test-fix.
 - Red check requires per-test failure where the runner reports it.
 - Approvals bound to a digest and read from label events, not from a label's presence.
@@ -520,7 +532,7 @@ the behaviours listed in `design-vetting-code.md` section 6 plus the dependency-
 the four shape-specific ones.
 
 Golden trace test, staged with the slices in section 6. Slice 1 asserts the exact action sequence and events
-for: first-round pass, a CHANGES round into a fix vertex, a failed red, a blocked claim with passing tests, an
+for: a first-visit pass, a CHANGES verdict into a fix vertex, a failed red, a blocked claim with passing tests, an
 invalid structured output, an integrity violation, and the three crash points around a commit, a PR upsert and a
 comment with resume continuing correctly. Slice 4 adds: an escalation, a quality gate failure with retry, a repeated
 findings hash, a stale approval. Concurrency: two tickets in parallel with the idle-worktree assertion, and two gg
