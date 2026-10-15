@@ -196,7 +196,8 @@ The one field of a Structured Response in which the agent names what it reports:
 _Avoid_: status, result, response (for this field)
 
 **Verdict**:
-A reviewer's Claim about the change: PASS, CHANGES or REPEAT. A reviewer may also claim misscoped.
+A reviewer's Claim about the change: ok, changes or misscoped. The derived repeat, from a repeated Findings Hash,
+routes in place of changes and is never claimed. Every Claim and Outcome token is lowercase.
 _Avoid_: review result, judgement
 
 **Finding**:
