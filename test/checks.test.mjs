@@ -91,6 +91,17 @@ test('red check falls back to the substring rule and marks it heuristic', () => 
   assert.equal(r.heuristic, true);
 });
 
+test('red check reads jest default multi-file output, where failures are headings and passes are silent', () => {
+  // Default jest output for several files: no ✓ or ✕ lines, one `● suite › test` heading per failure.
+  const output = fixture('jest-multi.txt');
+  assert.deepEqual(checks.redCheck({ code: 1, output }, ['rejects bad input']), { ok: true });
+  assert.deepEqual(checks.redCheck({ code: 1, output }, ['parse › rejects bad input']), { ok: true });
+  // A passing test named inside an unrelated failure message or a console block is not red evidence.
+  const passing = checks.redCheck({ code: 1, output }, ['removes item']);
+  assert.equal(passing.ok, false);
+  assert.ok(!passing.heuristic, 'headings are per-test status, so the substring rule does not apply');
+});
+
 test('red check reads TAP, jest and pytest failure lines', () => {
   for (const [file, failing, passing] of [
     ['tap.txt', 'rejects bad input', 'accepts good input'],
