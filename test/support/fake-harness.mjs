@@ -31,12 +31,12 @@ export function fakeHarness({
       if (!sessions.has(resume)) throw new Error(`fake harness has no session ${resume} to resume`);
       return sessions.get(resume);
     }
+    // Register before the first await so concurrent calls never share an id.
     const id = `fake-session-${sessions.size + 1}`;
-    const transcriptPath = join(transcriptDir, `${id}.jsonl`);
-    await mkdir(transcriptDir, { recursive: true });
-    await writeFile(transcriptPath, '');
-    const s = { id, transcriptPath, cumulative: contract.emptyUsage(caps) };
+    const s = { id, transcriptPath: join(transcriptDir, `${id}.jsonl`), cumulative: contract.emptyUsage(caps) };
     sessions.set(id, s);
+    await mkdir(transcriptDir, { recursive: true });
+    await writeFile(s.transcriptPath, '');
     return s;
   }
 

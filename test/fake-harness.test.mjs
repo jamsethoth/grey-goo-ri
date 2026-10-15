@@ -86,6 +86,24 @@ test('a new session has a transcript file and resume keeps it', async () => {
   assert.equal(harness.calls[1].resume, first.result.sessionId);
 });
 
+test('concurrent new sessions get distinct ids, transcripts and usage', async () => {
+  const delta = (input) => ({ result: { usage: { delta: { input } } }, response: {} });
+  const { harness, cwd } = await setup({
+    responses: {
+      'a/1/red/1': delta(1), 'b/1/red/1': delta(100),
+      'a/1/green/1': delta(1),
+    },
+  });
+  const [a, b] = await Promise.all([
+    harness.run(call(cwd, { vertex: 'a' })),
+    harness.run(call(cwd, { vertex: 'b' })),
+  ]);
+  assert.notEqual(a.result.sessionId, b.result.sessionId);
+  assert.notEqual(a.result.transcriptPath, b.result.transcriptPath);
+  const resumed = await harness.run(call(cwd, { vertex: 'a', phase: 'green', resume: a.result.sessionId }));
+  assert.equal(resumed.result.usage.cumulative.input, 2);
+});
+
 test('a scripted failure is a failed result, not a rejection', async () => {
   const { harness, cwd } = await setup({
     responses: { 'implement/1/red/1': { failure: { class: 'transient', retryAfterMs: 5 } } },
