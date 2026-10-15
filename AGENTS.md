@@ -1,7 +1,7 @@
 # grey-goo-ri
 
 Node CLI (`gg`) that carries GitHub tickets through a configurable bounded workflow graph of persona nodes on
-agentic harnesses (Claude Code, Codex) to reviewed pull requests. The layout section here grows with the code.
+agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 
 ## Documents and their authority
 
@@ -20,6 +20,53 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests. The layout sec
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub; use the fake harness and temp repos.
 - Codex output schemas are strict: every property required, `additionalProperties: false`.
 - Comments only for the non-obvious why.
+
+## Layout
+
+| Module | Responsibility |
+| --- | --- |
+| `bin/gg.mjs` | `gg` entry point: usage and command dispatch |
+| `lib/opts.mjs` | option parsing |
+| `lib/config.mjs` | Layers, merge, migration table, Config Hash, Persona and Declared Command loading |
+| `lib/flow.mjs` | Flow loading, Node Library expansion, validation, Resolved Flow |
+| `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
+| `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
+| `lib/procedures.mjs` | tdd, fix, review, plan as data (Actions, declared Checks, options, Outcome enum) |
+| `lib/briefs.mjs` | Brief builders, Structured Response schemas and validation |
+| `lib/outcome.mjs` | the transition table and Resolution Policy |
+| `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, review-pass |
+| `lib/integrity.mjs` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) |
+| `lib/record.mjs` | Execution Record and Epic Record persistence and write-ahead log |
+| `lib/marker.mjs` | Action Marker format and parse |
+| `lib/reconcile.mjs` | Reconciliation of a record against git and GitHub at resume |
+| `lib/events.mjs` | event schema 2 append and read |
+| `lib/labels.mjs` | State, Await and Decide Label names and prefix |
+| `lib/approval.mjs` | Pending Instance, Approval Digest, timeline read, consumption |
+| `lib/locks.mjs` | ticket, epic and repo lock files with stale takeover |
+| `lib/harnesses/contract.mjs` | the Harness contract check and shared Usage shape |
+| `lib/harnesses/claude.mjs` | the Claude Code Harness |
+| `lib/harnesses/codex.mjs` | the Codex Harness |
+| `lib/exec.mjs` | process spawn and job-object runner (ported) |
+| `lib/git.mjs` | git verbs and worktrees (ported) |
+| `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
+| `lib/render.mjs` | commit messages, PR body, comments, provenance, ticket and epic bodies |
+| `lib/work.mjs` | `gg work` and the Registry |
+| `lib/trace.mjs` | Trajectory export and `gg trace` |
+| `lib/stats.mjs` | `gg stats` |
+| `lib/doctor.mjs` | `gg doctor` and `gg init` |
+| `lib/plan.mjs` | `gg plan` |
+| `lib/publish.mjs` | `gg publish` (ported) |
+
+## Tests
+
+- One `test/<module>.test.mjs` per module.
+- Tests import modules as namespaces (`import * as record from '../lib/record.mjs'`) and call `record.fn()`, so a
+  missing export fails inside the case.
+- A test for a module that does not exist yet uses `await import()` inside the case.
+- Ported test files keep their case names and assertions but rewrite static named imports to namespace imports.
+- Fixtures live under `test/fixtures/` as JSON or text.
+- Shared helpers live under `test/support/`; the runner lists them as passing empty files.
+- Spawn `process.execPath` directly, never a shell.
 
 ## Commands
 
