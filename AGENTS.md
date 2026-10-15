@@ -15,7 +15,7 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 
 ## Conventions
 
-- Plain Node ESM (`.mjs`), Node 20+, no runtime dependencies. Prefer node built-ins.
+- Plain Node ESM (`.mjs`), Node 22+ (22.13 or later, for `node:sqlite` without a flag), no runtime dependencies. Prefer node built-ins.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub; use the fake harness and temp repos.
 - Codex output schemas are strict: every property required, `additionalProperties: false`.
@@ -42,7 +42,7 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 | `lib/events.mjs` | event schema 2 append and read |
 | `lib/labels.mjs` | State, Await and Decide Label names and prefix |
 | `lib/approval.mjs` | Pending Instance, Approval Digest, timeline read, consumption |
-| `lib/locks.mjs` | ticket, epic and repo lock files with stale takeover |
+| `lib/locks.mjs` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.mjs` | the Harness contract check and shared Usage shape |
 | `lib/harnesses/claude.mjs` | the Claude Code Harness |
 | `lib/harnesses/codex.mjs` | the Codex Harness |

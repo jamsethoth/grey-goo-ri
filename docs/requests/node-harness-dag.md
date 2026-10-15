@@ -20,7 +20,7 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
 
 ## 2. Non-negotiables
 
-- Zero runtime dependencies, plain Node ESM, Node 20+, native Windows first. Spawn executables without a shell;
+- Zero runtime dependencies, plain Node ESM, Node 22+ (22.13 or later), native Windows first. Spawn executables without a shell;
   a command string that cannot be avoided goes through the job-object runner.
 - Agents never run git write commands or gh. The orchestrator owns commits, pushes, PRs, comments and labels.
 - Topology is data. Work is code. No per-node code; a node is only configuration.
@@ -330,9 +330,10 @@ red phase in the same run). `gg work reset` is the only destructive path, explic
 exists, and never runs without the ticket named. Cleanup never deletes a worktree that is dirty or has unpushed
 commits.
 
-Locks and timeouts. A per-ticket lock file with pid and stale takeover under `<git common dir>/gg/locks/`, an
-epic lock for epic-record writes and approval reconciliation, and a repo-level lock around every orchestrator git
-write, so two gg processes on one repo serialise correctly; the
+Locks and timeouts. A per-ticket lock, an epic lock for epic-record writes and approval reconciliation, and a
+repo-level lock around every orchestrator git write, so two gg processes on one repo serialise correctly. Each lock
+is a `node:sqlite` `BEGIN EXCLUSIVE` transaction held open on `<git common dir>/gg/locks/<name>.db`; the OS releases
+it when the holder dies, so there is no stale takeover (ADR 0008). The
 in-process mutex alone is not enough and the document says so. Retry on index lock with backoff. Stall timeout when
 the output stream and transcript stop growing (default about 10 min) and a wall clock per agent action (default about
 60 min), per node overridable; expiry kills the process tree through the job object and records a typed timeout
@@ -502,8 +503,8 @@ Ported as they are:
 - Labels never throw: logged, event, exit code 1; exit 2 on any needs-human. In-progress added only after the
   worktree exists.
 - Stuck detection: label age past `stuckAfterHours` is the trigger to inspect; a ticket is stuck when its in-progress
-  state label stands and no recoverable execution record is behind it; a dead lock holder with a recoverable record
-  is stale-lock takeover (3.5), not stuck. Reset
+  state label stands and no recoverable execution record is behind it; a dead holder's lock is already free (3.5), so a
+  recoverable record with no live holder is resumed, not stuck. Reset
   refuses when a published PR exists and closes every draft; cleanup keeps dirty or unpushed worktrees.
 - Worktree add serialised, ownership validated, branch reused on title change; push without `-u`.
 - Ticket dependency ordering at publish (unknown and cyclic dependencies rejected, blockers resolved to issue
