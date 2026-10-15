@@ -244,6 +244,22 @@ test('done removes in-progress and adds ready-for-qa', async (t) => {
   assert.equal(end.diffStats.testFiles, 1);
 });
 
+// The Terminal Reason must agree in the record and on ticket_end, and (unless the caller checks its own comment) be
+// posted once on the ticket, write-ahead, with the comment's Action Marker.
+function terminalReasonOf(g, { comment = true } = {}) {
+  const reason = g.rec.terminalReason;
+  assert.ok(reason, 'the record holds a Terminal Reason');
+  assert.deepEqual(g.readEvents().at(-1).reason, reason, 'ticket_end carries the same Terminal Reason');
+  assert.equal(typeof reason.text, 'string');
+  if (comment) {
+    const posted = g.gh.comments.filter((c) => c.body.includes(`**Terminal Reason:** ${reason.text}`));
+    assert.equal(posted.length, 1, 'the Terminal Reason is posted once');
+    assert.match(posted[0].body, /^<!-- gg-action gg:\S+ -->$/m);
+    assert.equal(intents(g.rec, 'comment').length, 1, 'through the write-ahead log');
+  }
+  return reason;
+}
+
 const tddTrace = (g) => golden.trace(g.readEvents()).filter((e) => TDD_PHASES.includes(e.phase));
 const actionEvent = (g, phase, ordinal) => g.readEvents().find((e) => e.type === 'action' && e.phase === phase && e.ordinal === ordinal);
 
@@ -278,6 +294,12 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
   assert.deepEqual(record.openIntents(g.rec), []);
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
+
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'still-green', ordinal: 2 });
+  assert.equal(reason.outcome, 'red-failed');
+  assert.equal(reason.rule, 'check-exhausted');
+  assert.match(reason.text, /^The red phase failed and the agent's changes were discarded: .*did not fail before implementation/);
 });
 
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
@@ -294,6 +316,11 @@ test('uncommitted changes before red are held at needs-human and nothing is dele
   assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
   assert.deepEqual(intents(g.rec, 'reset'), []);
   assert.equal(g.rec.history.at(-1)?.kind, 'held');
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
+  assert.equal(reason.outcome, null);
+  assert.equal(reason.rule, null);
+  assert.match(reason.text, /uncommitted changes before red/);
 });
 
 test('an assume-unchanged edit before red is held too, so a failed red cannot reset it away', async (t) => {
@@ -338,6 +365,24 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.equal(check.signals.checks.find((c) => c.name === 'test').passed, true);
   assert.equal(check.rule, 'blocked');
   assert.equal(check.outcome, 'blocked');
+
+  // The blocked comment carries the Terminal Reason, so there is still exactly one comment.
+  const reason = terminalReasonOf(g, { comment: false });
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 2 });
+  assert.equal(reason.outcome, 'blocked');
+  assert.equal(reason.rule, 'blocked');
+  assert.equal(reason.text, 'The green Claim was blocked: The ticket contradicts itself.');
+  assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
+});
+
+test('done carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
+  const g = await firstVisit(t);
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 5 });
+  assert.equal(reason.outcome, 'ok');
+  assert.equal(reason.rule, 'effect-completed');
+  assert.equal(reason.text,
+    `implementer visit 1 completed every tdd Action: the Red Check and the Green Check passed. PR #${g.rec.pr} is ready for review.`);
 });
 
 // ff's red-gate e2e cases on the fake harness: red writes test/fail.test.mjs, the runner answers with `run`,
