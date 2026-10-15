@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
@@ -584,6 +584,32 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
   assert.ok(neededHuman(g), 'the ticket is at needs-human');
 });
 
+test('an integrity violation removes an injected ignored Protected File and restores a pre-existing one', async (t) => {
+  const g = await golden.setup(t);
+  mkdirSync(join(g.worktree, '.claude', 'skills', 'injected'), { recursive: true });
+  writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
+  const local = join(g.worktree, '.claude', 'settings.local.json');
+  writeFileSync(local, '{"owner":true}\n');
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    if (call.phase === 'red') {
+      writeFileSync(join(g.worktree, '.claude', 'skills', 'injected', 'SKILL.md'), 'injected\n');
+      writeFileSync(local, '{"agent":true}\n');
+    }
+    return out;
+  };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  const red = actionEvent(g, 'red', 1);
+  assert.equal(red.outcome, 'integrity-violation');
+  assert.deepEqual(red.violations.find((v) => v.surface === 'protected').after.sort(),
+    ['.claude/settings.local.json', '.claude/skills/injected/SKILL.md']);
+  assert.ok(!existsSync(join(g.worktree, '.claude', 'skills', 'injected', 'SKILL.md')), 'the injected skill is removed');
+  assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', 'the pre-existing file keeps its baseline bytes');
+});
+
 test('a failing green check runs test-fix once then derives gate-failed(test)', async (t) => {
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
@@ -657,6 +683,16 @@ test('an auth failure stops the run with its class', async (t) => {
   assert.ok(neededHuman(g));
   const reason = stopReason(g, { phase: 'red', ordinal: 1, outcome: 'run-stop', rule: 'run-stop' });
   assert.match(reason.text, /auth/);
+});
+
+test('an auth failure keeps its run stop when the terminal comment fails', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  g.options.gh = { ...g.options.gh, commentIssue: async () => { throw new Error('gh comment down'); } };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, true);
+  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.ok(neededHuman(g));
 });
 
 test('an unknown failure goes to needs-human without retry', async (t) => {
