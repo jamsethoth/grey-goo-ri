@@ -45,3 +45,40 @@ test('every listed command exits 1 with a not-implemented message', () => {
   assert.equal(r.status, 1);
   assert.equal(r.stderr.trim(), 'gg work: not implemented');
 });
+
+test('gg run rejects an unknown option with a usage error', () => {
+  const r = gg('run', '--bogus', '1');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /unknown option --bogus/);
+  assertUsage(r.stderr);
+  assert.doesNotMatch(r.stderr, /not implemented/);
+});
+
+test('commands without boolean flags reject the legacy boolean flags', () => {
+  for (const [name, flag] of [['run', '--bg'], ['run', '--trust'], ['init', '--json']]) {
+    const r = gg(name, flag, '1');
+    assert.equal(r.status, 1, `${name} ${flag} exit code`);
+    assert.match(r.stderr, new RegExp(`unknown option ${flag}`), `${name} ${flag}`);
+    assertUsage(r.stderr);
+  }
+});
+
+test('gg stats requires a value for --label', () => {
+  const r = gg('stats', '--label');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--label needs a value/);
+  assertUsage(r.stderr);
+});
+
+test('gg stats with valid options reaches the not-implemented stub', () => {
+  const r = gg('stats', '--json', '--label', 'x');
+  assert.equal(r.status, 1);
+  assert.equal(r.stderr.trim(), 'gg stats: not implemented');
+});
+
+test('gg plan rejects a value on a boolean flag', () => {
+  const r = gg('plan', '--bg=yes');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--bg does not take a value/);
+  assertUsage(r.stderr);
+});
