@@ -120,7 +120,7 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   permissions and gg hooks (the context-budget hook). `--plugin-dir` per listed plugin. Environment
   `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Verified: the init event listed only
   built-in plugins, a project `.claude/skills` entry was absent, and a CLAUDE.md instruction was not followed.
-- Read-only steps add `--restricted`, which confines file tools to the working directory and removes Bash and
+- Read-only actions add `--restricted`, which confines file tools to the working directory and removes Bash and
   WebFetch, plus `--disallowedTools "mcp__*"` unless the node lists MCP. The review brief carries the diff text, so
   the reviewer needs no shell. Verified: `--restricted -p` authenticates with the subscription.
 - Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call, with
@@ -176,7 +176,7 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
 - Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
   `maxVisits` counts entries per ticket; procedure-internal retries (still-green, test-fix, gate retries) count
   toward the ticket action cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
-  step the vertex `exhausted` wins; the ticket action cap exhausting goes to needs-human and wins over both; counts
+  action the vertex `exhausted` wins; the ticket action cap exhausting goes to needs-human and wins over both; counts
   survive a restart because they live in the execution record and are checked before the action runs, so a restart at
   a boundary routes the same way. Repeat detection for `REPEAT` compares the findings hash with earlier reviews by
   the same reviewer vertex within the same execution only. One worked example with nested retries, a cap boundary
