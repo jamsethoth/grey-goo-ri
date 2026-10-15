@@ -178,6 +178,12 @@ test('remoteSha reports the pushed sha or null', async () => {
   assert.equal(await git.remoteSha(dir, 'ticket/9-unknown'), null);
 });
 
+test('remoteSha surfaces a fetch failure that is not a missing branch', async () => {
+  const { root, mainRoot: dir, sh } = cloneWithOrigin();
+  sh(dir, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
+  await assert.rejects(git.remoteSha(dir, 'main'), (e) => e.message.includes('gone.git'));
+});
+
 test('push is called without -u, so no upstream is written to .git/config', async () => {
   const { mainRoot: dir, sh } = cloneWithOrigin();
   sh(dir, 'checkout', '-q', '-b', 'ticket/9-thing');
@@ -197,6 +203,17 @@ test('a git write retries while index.lock is held and succeeds when it clears',
   assert.ok(!existsSync(lock));
   assert.equal(sh(dir, 'rev-parse', 'HEAD'), sha);
   assert.equal(sh(dir, 'log', '-1', '--format=%s'), 'test: add a');
+});
+
+test('a git command allowed to fail still retries while index.lock is held', async () => {
+  const { mainRoot: dir, sh } = cloneWithOrigin();
+  const lock = join(dir, '.git', 'index.lock');
+  writeFileSync(lock, '');
+  writeFileSync(join(dir, 'a.txt'), 'a');
+  setTimeout(() => rmSync(lock, { force: true }), 250);
+  const res = await git.runGit(['add', '-A'], { cwd: dir, allowFail: true });
+  assert.equal(res.code, 0);
+  assert.equal(sh(dir, 'diff', '--cached', '--name-only'), 'a.txt');
 });
 
 test('a git write surfaces the error when index.lock never clears', async () => {
