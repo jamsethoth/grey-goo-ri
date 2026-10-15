@@ -686,6 +686,30 @@ test('a rejecting harness is an unexpected fault', async (t) => {
   assert.ok(neededHuman(g), 'the ticket goes to needs-human');
 });
 
+test('a fault whose terminal comment also fails is still recorded as a fault', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
+  g.options.gh = { ...g.options.gh, commentIssue: async () => { throw new Error('gh comment down'); } };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, true);
+  assert.equal((await record.load(g.commonDir, 'ticket', golden.TICKET)).state, 'fault');
+  const end = g.readEvents().at(-1);
+  assert.equal(end.type, 'ticket_end');
+  assert.match(end.error, /harness exploded/);
+  assert.ok(neededHuman(g), 'the label is still attempted');
+});
+
+test('a harness rejecting with an empty error is still a fault', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error() } } });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, true);
+  assert.equal((await record.load(g.commonDir, 'ticket', golden.TICKET)).state, 'fault');
+  const end = g.readEvents().at(-1);
+  assert.equal(end.type, 'ticket_end');
+  assert.ok(end.error, 'ticket_end carries a non-empty error');
+});
+
 test('a CrashError propagates untouched', async (t) => {
   const crash = new interpreter.CrashError('injected crash');
   const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: crash } } });
