@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -111,6 +111,23 @@ test('a protected file edit is a violation', async (t) => {
   writeFileSync(join(own, '.claude', 'settings.json'), '{}\n');
   ({ violations } = await integrity.end({ baseline, record: ownRecord, others: [other], access: 'read-write', protectedPaths: PROTECTED }));
   assert.deepEqual(surfacesOf(violations, own), ['protected'], 'untracked protected file added');
+});
+
+test('a directory symlink at a protected path is a violation', async (t) => {
+  const { root, own, other, ownRecord } = await twoWorktrees(t);
+  const target = join(root, 'elsewhere');
+  mkdirSync(target);
+  writeFileSync(join(target, 'settings.json'), '{}\n');
+  const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-write' });
+  try {
+    symlinkSync(target, join(own, '.claude'), 'dir');
+  } catch (err) {
+    if (err.code === 'EPERM') return t.skip('symlink creation needs developer mode or elevation on this Windows account');
+    throw err;
+  }
+  const { violations } = await integrity.end({ baseline, record: ownRecord, others: [other], access: 'read-write', protectedPaths: PROTECTED });
+  assert.deepEqual(surfacesOf(violations, own), ['protected']);
+  assert.deepEqual(violations.find((v) => v.surface === 'protected').after, ['.claude']);
 });
 
 test('a differently cased protected file is a violation on Windows', { skip: process.platform !== 'win32' }, async (t) => {
