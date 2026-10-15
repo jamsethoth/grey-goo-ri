@@ -60,10 +60,17 @@ test('comments are fenced and carry the marker line', () => {
   assert.equal(last(diagnosis), `<!-- gg-action ${m} -->`);
 
   const review = render.reviewComment(
-    { verdict: 'CHANGES', summary: 'One bug.', dodMet: true, tddEvidenceOk: true, findings: [{ severity: 'major', file: 'lib/a.mjs', issue: 'off by one', fix: 'use <=' }] },
+    {
+      claim: 'changes', summary: 'One bug.', dodMet: true, tddEvidenceOk: true, diagnosis: '',
+      findings: [{ severity: 'major', file: 'lib/a.mjs', issue: 'off by one\n```\n## Injected heading', fix: 'use <=\n# Another' }],
+    },
     provenance[1], m,
   );
   assert.match(review, /reviewer@def456/);
-  assert.match(review, /VERDICT: CHANGES/);
+  assert.match(review, /\*\*changes\*\*/);
+  assert.match(review, /VERDICT: changes/);
+  assert.doesNotMatch(review, /undefined/);
+  assert.ok(review.includes('````\noff by one\n```\n## Injected heading\n````'), 'finding issue is fenced past its own backticks');
+  assert.ok(review.includes(fenced('use <=\n# Another')), 'finding fix is fenced');
   assert.equal(last(review), `<!-- gg-action ${m} -->`);
 });
