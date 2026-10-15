@@ -41,6 +41,21 @@ test('red check requires the named test to be failing where the runner reports p
   assert.match(r.reason, /pass/i);
 });
 
+test('red check reads coloured node:test spec output', () => {
+  // As printed by node --test with FORCE_COLOR=1.
+  const output = '\x1b[32m✔ rejects bad input \x1b[90m(0.93ms)\x1b[39m\x1b[39m\n\x1b[31m✖ old unrelated test \x1b[90m(1.55ms)\x1b[39m\x1b[39m\n';
+  const r = checks.redCheck({ code: 1, output }, ['rejects bad input']);
+  assert.equal(r.ok, false);
+  assert.ok(!r.heuristic);
+  assert.match(r.reason, /pass/i);
+  assert.deepEqual(checks.redCheck({ code: 1, output }, ['old unrelated test']), { ok: true });
+});
+
+test('red check matches a full pytest identifier', () => {
+  assert.deepEqual(checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_rejects_bad_input']), { ok: true });
+  assert.equal(checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_accepts_good_input']).ok, false);
+});
+
 test('red check falls back to the substring rule and marks it heuristic', () => {
   const r = checks.redCheck({ code: 1, output: fixture('no-status.txt') }, ['rejects bad input']);
   assert.equal(r.ok, true);
@@ -83,6 +98,24 @@ test('test immutability lists added, renamed and modified test paths and ignores
   assert.equal(r.ok, false);
   for (const p of ['test/a.test.mjs', 'test/renamed.test.mjs', 'test/new.test.mjs']) assert.ok(r.changed.includes(p), `${p} in ${r.changed}`);
   assert.ok(!r.changed.some((p) => p.startsWith('lib/')), `lib ignored: ${r.changed}`);
+});
+
+test('test immutability sees non-ASCII and git-ignored test paths', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
+  g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
+  mkdirSync(join(dir, 'test'));
+  writeFileSync(join(dir, 'test', 'café.mjs'), 'a');
+  writeFileSync(join(dir, '.gitignore'), 'test/ignored.mjs\n');
+  g('add', '-A'); g('commit', '-q', '-m', 'baseline');
+  const baseline = g('rev-parse', 'HEAD');
+
+  writeFileSync(join(dir, 'test', 'café.mjs'), 'a changed');
+  writeFileSync(join(dir, 'test', 'naïve.mjs'), 'new');
+  writeFileSync(join(dir, 'test', 'ignored.mjs'), 'new');
+
+  const r = await checks.testImmutability(dir, baseline);
+  assert.deepEqual(r, { ok: false, changed: ['test/café.mjs', 'test/ignored.mjs', 'test/naïve.mjs'] });
 });
 
 test('findings hash ignores whitespace, order and line numbers', () => {
