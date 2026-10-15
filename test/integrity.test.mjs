@@ -113,6 +113,31 @@ test('a protected file edit is a violation', async (t) => {
   assert.deepEqual(surfacesOf(violations, own), ['protected'], 'untracked protected file added');
 });
 
+test('an ignored protected file addition is a violation', async (t) => {
+  const { own, other, ownRecord } = await twoWorktrees(t);
+  writeFileSync(join(own, '.gitignore'), '.claude/\n');
+  sh(own, ['add', '.gitignore']);
+  sh(own, ['commit', '-q', '-m', 'ignore .claude']);
+  const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-write' });
+  mkdirSync(join(own, '.claude'));
+  writeFileSync(join(own, '.claude', 'settings.json'), '{}\n');
+  const { violations } = await integrity.end({ baseline, record: ownRecord, others: [other], access: 'read-write', protectedPaths: PROTECTED });
+  assert.deepEqual(surfacesOf(violations, own), ['protected']);
+});
+
+test('an edit to a tracked ignored file changes the tree on a read-only action', async (t) => {
+  const { own, other, ownRecord } = await twoWorktrees(t);
+  writeFileSync(join(own, '.gitignore'), 'a.txt\n');
+  sh(own, ['add', '.gitignore']);
+  sh(own, ['commit', '-q', '-m', 'ignore a.txt']);
+  const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-only' });
+  writeFileSync(join(own, 'a.txt'), 'edited\n');
+  const indexTree = sh(own, ['write-tree']);
+  const { violations } = await integrity.end({ baseline, record: ownRecord, others: [other], access: 'read-only', protectedPaths: PROTECTED });
+  assert.deepEqual(surfacesOf(violations, own), ['tree']);
+  assert.equal(sh(own, ['write-tree']), indexTree);
+});
+
 test('an index-only mutation in an idle worktree is an index violation', async (t) => {
   const { own, other, ownRecord } = await twoWorktrees(t);
   const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-write' });
@@ -168,4 +193,10 @@ test('readActivity reads another ticket\'s record from disk', async (t) => {
   await integrity.markBusy(await otherProcessRecord(commonDir));
   assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 1 });
   assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody')), { busy: false, generation: 0 });
+});
+
+test('readActivity matches a differently cased path on Windows', { skip: process.platform !== 'win32' }, async (t) => {
+  const { other, commonDir } = await twoWorktrees(t);
+  await integrity.markBusy(await otherProcessRecord(commonDir));
+  assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase()), { busy: true, generation: 1 });
 });
