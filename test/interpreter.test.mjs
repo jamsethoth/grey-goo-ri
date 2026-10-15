@@ -375,6 +375,17 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
 });
 
+test('the Terminal Reason is saved before any Terminal side effect, so a crash marking the PR ready keeps it', async (t) => {
+  const g = await golden.setup(t);
+  g.options.gh = { ...g.options.gh, markReady: async () => { throw new Error('crash'); } };
+  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+
+  const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.equal(saved.cursor.vertex, 'done');
+  assert.equal(saved.terminalReason?.outcome, 'ok');
+  assert.match(saved.terminalReason.text, new RegExp(`PR #${saved.pr} is ready for review\\.$`));
+});
+
 test('done carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
   const g = await firstVisit(t);
   const reason = terminalReasonOf(g);
