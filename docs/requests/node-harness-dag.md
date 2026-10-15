@@ -29,8 +29,9 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
   config, never framework.
 - No degraded runs: a node field the harness cannot enforce fails preflight, it is never silently dropped.
 - Every agent step is traced with normalised usage. A field a harness cannot produce is declared absent, never zero.
-- Wrongly advancing is costlier than wrongly holding. Advance needs evidence. Evidence and integrity checks are not
-  configurable; the ordering among legitimate outcomes is.
+- Wrongly advancing is costlier than wrongly holding. Advance needs evidence. Which checks a procedure declares is
+  configuration, visible in validation output; that advance never happens while a declared check is failing, and
+  that integrity violations stop, is not. The ordering among legitimate outcomes is per-node configuration.
 - GitHub issues are the source of truth for what work exists and what humans decided. The local execution record is
   the source of truth for where the machine was. Human decisions are read only from records GitHub cannot edit.
 
@@ -59,7 +60,11 @@ visit number.
 
 Secrets: any `mcp.env` value that is not a `${VAR}` reference fails validation. Expansion happens at launch into a
 gg-owned temp file that is deleted after the step. Expanded values never reach the execution record, events, the
-resolved-config snapshot or the trace export; a test injects a sentinel credential and asserts it appears nowhere.
+resolved-config snapshot, the trace export or any diagnostic gg retains (log tails, error excerpts); gg knows every
+value it expanded and redacts them from anything it derives from a transcript. The one raw artefact gg does not own
+is the CLI's own transcript on disk, which stays where the CLI wrote it under the owner's home directory; gg stores
+its path and never copies it. A test injects a sentinel credential through an MCP response and asserts it appears
+in no gg-written artefact.
 
 ### 3.2 Harness
 
@@ -86,16 +91,21 @@ Permission intents are enforced per surface, and the harness states which surfac
 commands, built-in file tools, MCP tools, plugins and hooks, network. A combination the harness cannot enforce on
 every surface the node uses fails preflight; for example a Claude read-only node that lists MCP servers, or a Codex
 node with `network: false` and an MCP server that reaches the network. On native Windows Claude has no command
-sandbox, so a Claude `workspace-write` node relies on the Codex-equivalent guarantees coming from the post-step
-assertions in 3.6, and the matrix says so.
+sandbox. A Claude `workspace-write` node therefore runs in a declared trusted-command mode, which the matrix names
+as `confinement: trusted-commands` rather than a sandbox: only the repo's declared commands and gg's allow list may
+run, git write and gh commands are denied, network tools are denied unless the node allows network, and the
+post-step assertions in 3.6 detect, but cannot prevent, a script that writes outside the checked worktrees or
+reaches the network. The owner accepts this mode knowingly; it is recorded on every event and in the config hash,
+and it is never described as equivalent to a sandbox.
 
-`run(call)` returns three separate things, never conflated: the agent's claim (its structured output), the harness
-result (session id, normalised usage cumulative and delta, transcript path, exit code, signal, final event subtype,
-init metadata, permission denials, commands-run count as diagnostics only), and on failure a typed `failure.class`
-of `auth | quota | budget | rate-limited | transient | unknown` with `retryAfterMs`. The orchestrator derives the
-outcome (3.4). Outcomes are classified from the final event, not the exit code. Every structured output is validated
-by gg against the schema regardless of harness; a reported case where Codex did not enforce the schema with MCP tools
-active is kept as a versioned regression fixture, not a rule.
+`run(call)` returns three separate things, never conflated: the agent's claim (its structured output, unvalidated),
+the harness result (`completed | failed | timed-out | killed`, session id, normalised usage cumulative and delta,
+transcript path, exit code, signal, final event subtype, init metadata, permission denials, commands-run count as
+diagnostics only), and for `failed` a typed `failure.class` of `auth | quota | budget | rate-limited | transient |
+unknown` with `retryAfterMs`. A harness never throws for an expected failure; a throw is an unexpected fault (3.4).
+The orchestrator validates the claim against the schema regardless of harness and derives the outcome from the
+transition table in 3.4. Outcomes are classified from the final event, not the exit code. A reported case where
+Codex did not enforce the schema with MCP tools active is kept as a versioned regression fixture, not a rule.
 
 `doctor` probes behaviour, not help text: CLI versions against pinned minimums, `codex exec resume` with
 `--output-schema`, login state, sandbox lock, labels the resolved flow references, the Claude launch profile below,
@@ -124,8 +134,10 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   resolved to its target first. Prompts go through stdin or a file, never argv. Paths with spaces are tested.
 - `--bare` is not used: it refuses subscription credentials ("Not logged in", verified), and reporters say the OAuth
   environment token is ignored under it as well. Bare mode also removes `.claude/skills`, `.claude/commands` and
-  `.claude/agents` discovery, which the profile above does not; the protected-files gate in 3.6 covers agent edits to
-  those paths, and content already in a repo is accepted as the owner's.
+  `.claude/agents` discovery, which the profile above does not. This is the one stated exception to "sessions start
+  empty": content under those three paths in the repository is consumed and is treated as the owner's declared
+  content. Its hash joins the config hash so two runs that differ only in repository skills are distinguishable, and
+  the protected-files gate in 3.6 stops an agent from changing it.
 - Cost and usage on `--resume` are the session's cumulative totals; gg stores the previous totals per session and
   logs the delta. The session id from the first non-resume call of each session is the one persisted; a resumed
   call's init id is never stored.
@@ -157,14 +169,20 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
 - Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
   `maxVisits` counts entries per ticket; procedure-internal retries (still-green, test-fix, gate retries) count
   toward the ticket step cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
-  step the vertex `exhausted` wins; counts survive a restart because they live in the execution record. One worked
-  example with nested retries and a restart ships with the validator tests.
+  step the vertex `exhausted` wins; the ticket step cap exhausting goes to needs-human and wins over both; counts
+  survive a restart because they live in the execution record and are checked before the step runs, so a restart at
+  a boundary routes the same way. Repeat detection for `REPEAT` compares the findings hash with earlier reviews by
+  the same reviewer vertex within the same ticket run only. One worked example with nested retries, a cap boundary
+  and a restart ships with the validator tests.
 - Per-ticket graphs are sequential. Parallelism is across tickets only.
 - Two sections: `plan` (epic level, used by `gg plan`) and `ticket` (used by `gg run`). The planner is never a ticket
   vertex. The small flow sets `plan` to null.
 - Entry cases: `gg run <epic>` runs every ready ticket of the epic under the epic's plan approval; `gg run <ticket>`
-  runs one ticket, with or without an epic, under the repo's default flow or `--flow`, and needs no plan approval when
-  the flow has no `plan` section. Readiness requires every blocking issue closed, as today.
+  runs one ticket under the repo's default flow or `--flow`. A ticket inside an epic inherits the epic's plan
+  approval. A standalone ticket under a flow whose `plan` section is non-null is rejected before any effect, with
+  the message naming a flow that sets `plan` to null. Readiness requires every blocking issue closed, as today.
+  Epic-level state, including a pending plan approval, lives in an epic record under the same records directory
+  (3.5), and ticket runs reference it by epic number.
 
 Illustration only (shape, not syntax):
 
@@ -193,22 +211,40 @@ repo; `done` reachable without a PR-creating vertex; a warning when reviewer and
 Procedures are code: named action sequences the interpreter expands into action steps.
 
 - `tdd`: red brief, red gate (expected fail, verified), commit tests, green brief in a fresh session with the full
-  context (ticket, branch, commands, rules, committed test list, failing output), persona gates, commit, push, draft
-  PR. Options: `stillGreen` and `testFix` retry counts (default 1), `resumeGreen` (default false). Still-green
-  resumes the red session; test-fix resumes the green session. A `tdd` vertex is entered once per ticket; later
-  rounds enter a `fix` vertex, as the illustration shows. Splitting red and green onto different vertices is
-  deferred and is a procedure split, not a grammar change.
-- `fix`: fix brief with history and the review findings, gates, commit, push. A fix round may change tests when a
-  finding names a test; the tamper baseline then moves to the fix commit and the reviewer brief lists every test
-  file changed since the red commit.
+  context (ticket, branch, commands, rules, committed test list, failing output), green gate (the declared test
+  command must pass), persona gates, commit, push, draft PR. Options: `stillGreen` and `testFix` retry counts
+  (default 1), `resumeGreen` (default false), `requireTestPass` (default true; turning it off is allowed, raises a
+  loud validation warning, and is recorded on every event so eval can see which variant ran). Still-green resumes
+  the red session; test-fix resumes the green session. A `tdd` vertex is entered once per ticket; later rounds enter
+  a `fix` vertex, as the illustration shows. Splitting red and green onto different vertices is deferred and is a
+  procedure split, not a grammar change.
+- `fix`: fix brief with history and the review findings, green gate under the same option, persona gates, commit,
+  push. A fix round may change tests when a finding names a test; the tamper baseline then moves to the fix commit
+  and the reviewer brief lists every test file changed since the red commit.
 - `review`: read-only call with the diff in the brief, worktree-unchanged assertion, PR comment, findings hash
   computed over normalised findings (file, severity, issue text with whitespace and line numbers stripped).
 - `plan`: interactive launch; exit is `gg publish`.
 
+Procedures declare their checks as data: the gates they require, the options that may relax them, and their outcome
+enum. Validation prints the effective check list per vertex, so nothing a procedure verifies is hidden in code.
+
 Three layers that never mix: the agent's claim (one dedicated structured-output field holding exactly one enum
-token, no free-text marker fallback; a missing or invalid field is a parse failure with its own retry counter), the
-harness result (completed, failed with class, timed out), and the orchestrator's deterministic checks (gates,
-integrity assertions, findings hash). The outcome is derived from all three.
+token, no free-text marker fallback), the harness result (completed, failed with class, timed out, killed), and the
+orchestrator's deterministic checks (gates, integrity assertions, findings hash). One transition table, obeyed by
+every harness and procedure, derives the outcome:
+
+| Harness result | Claim | Checks | Transition |
+|---|---|---|---|
+| failed, class transient or rate-limited | none | not run | retry the attempt within the class budget, honouring `retryAfterMs`; exhausted: needs-human |
+| failed, class auth, quota or budget | none | not run | stop the whole run: every active ticket to needs-human, class on the run end event |
+| timed-out or killed | ignored, even if partial | not run | one retry as a fresh attempt, resuming the session where the harness allows; then needs-human |
+| failed, class unknown | none | not run | needs-human, no retry |
+| completed | invalid: field missing, malformed, or more than one token | not run | parse-failure retry resuming the session with a return-the-result nudge, default 1; exhausted: needs-human |
+| completed | valid, blocked or misscoped | run and recorded | stop: comment and needs-human, or replan; passing checks never override this |
+| completed | valid, ok | integrity violation | stop: discard the agent's changes, needs-human |
+| completed | valid, ok | a declared check fails | retry within the procedure's bounds; exhausted: the edge or vertex `exhausted` target; ticket cap: needs-human |
+| completed | valid, ok | every declared check passes | advance |
+| gg throws: bug, I/O error, gh failure after its own retries | any | any | unexpected fault: ticket to needs-human with the error on its end event, record marked, exit code 1, never retried automatically |
 
 Illustrative enums: `tdd` ok | blocked | misscoped | red-failed | gate-failed(<gate>); `fix` ok | blocked |
 misscoped | gate-failed(<gate>); `review` PASS | CHANGES | REPEAT | misscoped. Built-in defaults: blocked posts a
@@ -218,34 +254,41 @@ two, so this is a correction, not a port.
 
 Resolution. Outcomes have a direction: advance (ok, PASS), retry (gate-failed, still-green, test-fix, parse failure,
 timeout, transient failure class), stop (blocked, misscoped, exhausted, integrity violation). Fixed, not
-configurable: advance requires every gate and integrity check of the step to pass and no stop signal from any layer;
-an integrity violation always stops; review PASS requires no blocker or major findings, definition of done met and
-gates green, and a repeated findings hash routes REPEAT instead of looping. Configurable per node through
-`resolution`, with a shipped default: the order among non-advance outcomes when several are signalled (default: stop
-beats retry; within retry, in place before discard and retry; within stop, replan on misscoped, escalate before
-needs-human), the weight of the agent's claim when no deterministic evidence exists, and per-class retry budgets.
-Every signal received and the rule that decided are recorded on the step event.
+configurable: advance requires a completed harness result, a valid claim, every declared check of the step passing
+and no stop signal from any layer; an integrity violation always stops; review PASS requires no blocker or major
+findings, definition of done met and declared checks green, and a repeated findings hash routes REPEAT instead of
+looping. Configurable per node through `resolution`, with a shipped default: the order among non-advance outcomes
+when several are signalled in one step (default: stop beats retry; within retry, in place before discard and retry;
+within stop, replan on misscoped, escalate before needs-human), the weight of the agent's claim when no deterministic
+evidence exists, and per-class retry budgets. Which checks a procedure declares is procedure configuration (above),
+not resolution policy. Every signal received and the rule that decided are recorded on the step event.
 
 ### 3.5 Execution record, approvals and work management
 
-One persisted record per work item (ticket) under `<git common dir>/gg/records/`, plain JSON a human can read,
-schema-versioned. Contents: flow name and config hash, run id, graph position, visit counts per vertex and traversal
+One persisted record per work item (ticket) under `<git common dir>/gg/records/`, plus one per epic for plan
+approval and epic-level pending state, plain JSON a human can read, schema-versioned. Contents: flow name and config hash, run id, graph position, visit counts per vertex and traversal
 counts per edge, session lineage per phase (session id, harness, persona hash, last cumulative usage), the outputs
 later briefs need (red commit and evidence, implementation reports, review findings and hash, history), worktree
 and branch identity, base revision, PR number, pending approval state, and the write-ahead log below.
 
-Action identity is `(ticket, run, vertex, visit, phase, attempt)`. Every action with a side effect is recorded in
-three steps: intent before the effect, the effect's own evidence (commit sha, PR number, comment id, label event),
-completion after. Resume reads the log: an intent without completion is reconciled by looking for the evidence (a
-commit with the trailer, a PR on the head branch, a comment with the marker, a label present) before deciding to
-redo or skip. The golden trace tests kill the process before the effect, between effect and completion, and after
-completion, for a commit, a PR upsert and a comment.
+Action identity is `(ticket, run, vertex, visit, phase, attempt)`, serialised as an action marker. Every action with
+a side effect is recorded in three steps: intent before the effect, including the intended payload (commit message
+and expected parent, PR title and body hash, comment body hash, label name); the effect's own evidence; completion
+after. The marker travels with the effect: in the commit trailer next to the vertex and harness, in a hidden marker
+line in PR bodies and comments, and as the `await` label event for approvals. Resume reads the log: an intent
+without completion is reconciled by looking for the marker, never for mere existence. A commit whose trailer carries
+the marker and whose parent matches the intent is complete; a PR that exists but whose body lacks the marker or hash
+gets the intended update reapplied, which is idempotent; a comment without the marker is posted; a label present is
+accepted. The golden trace tests kill the process before the effect, between effect and completion, and after
+completion, for a commit, a PR upsert and a comment, and assert no duplicate and no stale payload.
 
 Reconciliation with GitHub at resume: labels decide whether a ticket runs, the record decides where it continues.
 State label says needs-human and record says mid-step: label wins, record marked abandoned. State label in-progress
-with no record: stuck, reset path. Record present but configuration hash changed: the ticket restarts at its current
-vertex entry with the new configuration and the change is logged. Transcript missing for a session the record wants
-to resume: that phase starts fresh with the full brief. Corrupt record: held for a human, never auto-discarded.
+with no record: stuck, reset path. Configuration is pinned per vertex visit: the record stores the resolved
+configuration snapshot a vertex entered with, the current vertex finishes on that snapshot even if the config hash
+has changed, and the new configuration takes effect at the next vertex entry, logged as a change. If the current
+vertex no longer exists in the new flow, the ticket is held for a human. Transcript missing for a session the record
+wants to resume: that phase starts fresh with the full brief. Corrupt record: held for a human, never auto-discarded.
 
 Dirty state. Unknown uncommitted changes at ticket start are held: the ticket goes to needs-human with the diff stat
 posted, and nothing is deleted. Rollback by gg is limited to changes the record proves this run's agent made (a failed
@@ -270,23 +313,29 @@ Labels are namespaced; the prefix is config, default `gg`:
 | Human decision | `gg:decide:<vertex>:<outcome>` | humans only | `gg:decide:plan:approved`, `gg:decide:qa-approval:needs-changes` |
 
 `gg init` creates the labels a resolved flow references; doctor reports missing ones. A human touching a state or
-await label is an external intervention and reconciles as above. The prefix keeps gg's labels apart from ff's during
-cutover.
+await label is an external intervention and reconciles as above. gg never reads or writes ff's unprefixed labels;
+ff and gg are never run on the same repository at the same time, and ff goes unused once gg is accepted.
 
 Approval flow, the only one. When a run reaches an approval vertex, or `gg publish` finishes a plan:
 
-1. gg computes a digest of what is being approved: ticket branch HEAD plus resolved flow hash for a ticket; plan
-   document plus ticket set for a plan.
-2. gg writes the pending state and digest to the execution record, applies the vertex's `await` label, posts one
-   comment naming the digest and the decision labels, and ends the run for that item.
+1. gg creates a pending instance with a unique id (ticket or epic, vertex, visit, nonce) and a digest of what is
+   being approved: for a ticket, branch HEAD, the ticket body revision and the full config hash; for a plan, the plan
+   document, the ticket set with their bodies, and the full config hash.
+2. gg retires any earlier request on the item: it removes the vertex's `await` label and every `decide` label for
+   that vertex, so no stale decision can follow a new request. It writes the pending instance to the record, applies
+   the `await` label, which creates a fresh labeled event, posts one comment naming the instance id, the digest and
+   the decision labels, and ends the run for that item.
 3. A human applies a `decide` label in the GitHub UI, the mobile app, or with `gg work approve <ticket> [outcome]`,
-   which applies the same label through gh. gg never applies a `decide` label.
-4. On the next run gg reads the issue's event timeline, which has no edit or delete API: it takes its own latest
-   `await` labeled event as the request time, looks for a `decide` labeled event after it that no later unlabeled
-   event undid, checks the actor's repository permission is write or higher (or the actor is in the optional
-   `approvers` list), recomputes the digest and compares it with the record. Match: route the decision's outcome.
-   Digest differs: stale; gg removes the decide label, re-requests with the new digest. Record missing: cannot verify,
-   re-request. Actor, event id and time are recorded on the step event and in the trace.
+   which applies the same label through gh. gg never applies a `decide` label; it only removes them to retire or
+   consume.
+4. On the next run gg reads the issue's event timeline, which has no edit or delete API: it takes the `await`
+   labeled event matching the pending instance as the request time, looks for `decide` labeled events after it that
+   no later unlabeled event undid, checks each actor's repository permission is write or higher (or the actor is in
+   the optional `approvers` list), recomputes the digest and compares it with the record. Exactly one authorised
+   decision and a matching digest: consume it (remove the decide label, record actor, event id and time on the step
+   event and in the trace) and route its outcome. More than one surviving authorised decision: hold, retire both,
+   re-request. Digest differs: stale, retire, re-request with the new digest. Record or pending instance missing:
+   cannot verify, retire, re-request. The golden trace covers record loss and a repeated visit to the same vertex.
 
 Human recovery, `gg work`: list across every repo in the user-dir registry, resume, abandon (keep the worktree, forget
 the position), reset (as above), approve. Doctor validates records and reports disagreement with GitHub. Single
@@ -310,9 +359,13 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
   green gate and after test-fix; baseline is the red commit, moving to the fix commit after a fix round that
   legitimately changed tests. A violation is an integrity stop, not a retry.
 - Git ownership, after every agent step: HEAD and index of the agent's worktree unchanged by the agent; no change to
-  protected files; for read-only steps the tree unchanged as well, untracked files included. Every other worktree
-  that is idle at that moment (not inside its own agent step) is asserted unchanged; worktrees inside a step are
-  guarded by their own assertions and sandbox. A violation discards the agent's changes and stops the ticket.
+  protected files; for read-only steps the tree unchanged as well, untracked files included. Other worktrees are
+  checked over intervals in which they were idle: every worktree carries an activity generation in the record,
+  bumped at each of its own agent-step starts and ends and by every orchestrator write to it; at step start gg
+  snapshots the other worktrees' HEAD, tree hash and generation, and at step end it asserts unchanged only those
+  whose generation did not move during the step. A worktree whose own step started and finished inside the interval
+  is skipped, not misattributed; a test covers exactly that case. A violation discards the agent's changes and stops
+  the ticket.
 - Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md` or `CLAUDE.md`
   are rejected. Under the Claude launch profile none of these are consumed by the next step anyway; Codex trust
   level is set explicitly so project config is not consumed either.
@@ -418,6 +471,8 @@ Deliberate changes, each with its own regression case:
 - Unknown dirty state held, never discarded.
 - Input token accounting split into uncached, cached and cache-write.
 - Sessions start empty; ponytail and skills hints come from config.
+- Harness failures are typed results, not throws (ff's adapters throw on `is_error` and on missing structured
+  output); the transition table in 3.4 replaces per-adapter behaviour.
 
 ## 5. Tests to port and tests to add
 
@@ -463,8 +518,9 @@ hang, and a capability matrix the validator reads.
 - Planner guidance: small tickets per file area; one interpreter-touching ticket in flight at a time; the staged
   golden trace is the definition of done for anything the interpreter touches.
 - Cutover: a separately authorised acceptance run of `gg` on its own tickets with the real Claude and Codex
-  harnesses on this machine, since fake-harness success proves nothing about native Windows CLI behaviour. Then
-  archive feature-flow; its open branches and PRs are finished under ff first.
+  harnesses on this machine, since fake-harness success proves nothing about native Windows CLI behaviour. It runs
+  after ff's last epic on this repository has finished and with no ff run active. Then ff is uninstalled and
+  feature-flow archived; ff and gg never run on the same repository concurrently.
 
 ## 7. Deferred
 
