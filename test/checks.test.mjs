@@ -118,6 +118,23 @@ test('test immutability sees non-ASCII and git-ignored test paths', async () => 
   assert.deepEqual(r, { ok: false, changed: ['test/café.mjs', 'test/ignored.mjs', 'test/naïve.mjs'] });
 });
 
+test('test immutability sees a test added under an ignored directory but not installed dependencies', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
+  g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
+  writeFileSync(join(dir, '.gitignore'), 'generated/\nnode_modules/\n');
+  g('add', '-A'); g('commit', '-q', '-m', 'baseline');
+  const baseline = g('rev-parse', 'HEAD');
+
+  mkdirSync(join(dir, 'generated'));
+  writeFileSync(join(dir, 'generated', 'new.test.mjs'), 'new');
+  mkdirSync(join(dir, 'node_modules', 'dep', 'test'), { recursive: true });
+  writeFileSync(join(dir, 'node_modules', 'dep', 'test', 'index.js'), 'dep');
+
+  const r = await checks.testImmutability(dir, baseline);
+  assert.deepEqual(r, { ok: false, changed: ['generated/new.test.mjs'] });
+});
+
 test('findings hash ignores whitespace, order and line numbers', () => {
   const a = [
     { severity: 'major', file: 'lib/a.mjs', issue: 'Off by one at lib/a.mjs:12 in the loop', fix: 'x' },
