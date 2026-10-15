@@ -14,3 +14,7 @@ docs/requests/node-harness-dag.md for the design request; the layout section her
 ## Commands
 
 - test: `npm test`
+
+## Vocabulary
+
+GLOSSARY.md holds the canonical terms; use them in code, tickets and docs. Decisions that are hard to reverse are in docs/adr/.
