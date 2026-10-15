@@ -1,0 +1,4 @@
+running parse suite
+  rejects bad input ... expected an exception, none was thrown
+  accepts good input ... done
+2 tests, 1 failure

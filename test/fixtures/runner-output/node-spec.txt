@@ -1,0 +1,16 @@
+✔ accepts good input (0.8123ms)
+✖ rejects bad input (1.2047ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 52.1
+
+✖ failing tests:
+
+test at test\parse.test.mjs:9:1
+✖ rejects bad input (1.2047ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.

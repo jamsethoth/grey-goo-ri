@@ -1,0 +1,13 @@
+ FAIL  src/parse.test.js
+  parse
+    ✓ accepts good input (3 ms)
+    ✕ rejects bad input (5 ms)
+
+  ● parse › rejects bad input
+
+    expect(received).toThrow()
+
+    Received function did not throw
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
