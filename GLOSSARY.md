@@ -83,6 +83,11 @@ _Avoid_: step cap, ticket cap
 A built-in end of an Execution: done, needs-human or replan.
 _Avoid_: end state, sink
 
+**Terminal Reason**:
+Why an Execution reached its Terminal, recorded for every Terminal, successful or not: the Action that decided it (or
+the named hold that stopped the Execution before any Action), its Outcome and rule, and one sentence for a human.
+_Avoid_: rationale, cause, end reason
+
 **Escalation**:
 Routing to a Persona Vertex with a stronger Node after a Bound is exhausted. It is automatic; needs-human is not.
 _Avoid_: fallback, hand-off

@@ -93,6 +93,21 @@ test('row check-failed: completed, valid ok, declared check fails -> check-faile
   assert.equal(r.check, 'test');
 });
 
+test('row check-exhausted: a failing check with the procedure\'s recovery exhausted -> its failure outcome, stop', () => {
+  const r = outcome.resolve({ result: completed, claim: claim('ok'), checks: [integrityOk, check('red', false)], retries: none,
+    exhausted: true, failureOutcomes: { red: 'red-failed' } });
+  assertRow(r, 'check-exhausted', 'red-failed', 'stop');
+  assert.equal(r.check, 'red');
+  const unmapped = outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('lint', false)], retries: none, exhausted: true });
+  assertRow(unmapped, 'check-exhausted', 'needs-human', 'stop');
+});
+
+test('exhausted recovery never overrides a stop claim or a passing check', () => {
+  const blocked = outcome.resolve({ result: completed, claim: claim('blocked'), checks: [check('red', false)], retries: none, exhausted: true });
+  assertRow(blocked, 'blocked', 'blocked', 'stop');
+  assertRow(outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('red', true)], retries: none, exhausted: true }), 'ok', 'ok', 'advance');
+});
+
 test('row claim-route: completed, valid changes, every check passing -> changes', () => {
   assertRow(resolve({ claim: claim('changes'), checks: [integrityOk, check('review-pass', true)] }), 'claim-route', 'changes', 'advance');
 });
@@ -114,13 +129,14 @@ test('every row fires under a unique name', () => {
     resolve({ claim: { valid: false, reason: 'malformed' }, retries: { ...none, parse: 1 } }),
     resolve({ claim: claim('blocked') }),
     resolve({ claim: claim('misscoped') }),
+    outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('test', false)], retries: none, exhausted: true }),
     resolve({ claim: claim('ok'), checks: [check('test', false)] }),
     resolve({ claim: claim('changes') }),
     resolve({ claim: claim('ok') }),
   ].map(r => r.row);
   assert.deepEqual(rows, ['integrity-violation', 'transient-retry', 'transient-exhausted', 'run-stop', 'timeout-retry',
-    'timeout-exhausted', 'unknown-failure', 'parse-retry', 'parse-exhausted', 'blocked', 'misscoped', 'check-failed',
-    'claim-route', 'ok']);
+    'timeout-exhausted', 'unknown-failure', 'parse-retry', 'parse-exhausted', 'blocked', 'misscoped', 'check-exhausted',
+    'check-failed', 'claim-route', 'ok']);
 });
 
 test('integrity beats a timed-out result', () => {

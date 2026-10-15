@@ -173,6 +173,13 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
 - Terminals: `done` (PR marked ready, state label), `needs-human`, `replan` (state label, diagnosis posted on the
   ticket and the epic). `done` requires an open PR for the ticket; a flow that routes to `done` without a vertex that
   creates one fails validation.
+- Every Terminal carries a Terminal Reason, `done` included: `decidedBy` (the Vertex, Visit, Phase and ordinal of
+  the Action whose Outcome took the Edge, or `{ hold: <name> }` when the Execution stopped before any Action, such as
+  `dirty-worktree`), `outcome` and `rule` from that Action (null for a hold), and `text`, one sentence for a human
+  saying why it succeeded or stopped. It is stored in the Execution Record beside the state, is the `reason` of the
+  ticket end event, and its text and Action Marker are posted on the ticket with the Terminal's label change, through
+  the write-ahead log (the blocked comment carries it rather than a second comment). It points to the deciding
+  Action's event for the full Signals rather than copying them.
 - Edges: `then: <vertex>` or `route: { <outcome>: <vertex | {to, max, exhausted}> }`. Every back edge has `max` and
   `exhausted`. Every vertex has `maxVisits` with its own `exhausted`; every ticket has a action cap. Loops exist only
   as bounded back edges.

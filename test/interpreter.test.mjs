@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
@@ -241,4 +242,257 @@ test('done removes in-progress and adds ready-for-qa', async (t) => {
   assert.equal(end.run, g.rec.run);
   assert.ok(end.diffStats, 'ticket_end carries diff stats');
   assert.equal(end.diffStats.testFiles, 1);
+});
+
+// The Terminal Reason must agree in the record and on ticket_end, and (unless the caller checks its own comment) be
+// posted once on the ticket, write-ahead, with the comment's Action Marker.
+function terminalReasonOf(g, { comment = true } = {}) {
+  const reason = g.rec.terminalReason;
+  assert.ok(reason, 'the record holds a Terminal Reason');
+  assert.deepEqual(g.readEvents().at(-1).reason, reason, 'ticket_end carries the same Terminal Reason');
+  assert.equal(typeof reason.text, 'string');
+  if (comment) {
+    const posted = g.gh.comments.filter((c) => c.body.includes(`**Terminal Reason:** ${reason.text}`));
+    assert.equal(posted.length, 1, 'the Terminal Reason is posted once');
+    assert.match(posted[0].body, /^<!-- gg-action gg:\S+ -->$/m);
+    assert.equal(intents(g.rec, 'comment').length, 1, 'through the write-ahead log');
+  }
+  return reason;
+}
+
+const tddTrace = (g) => golden.trace(g.readEvents()).filter((e) => TDD_PHASES.includes(e.phase));
+const actionEvent = (g, phase, ordinal) => g.readEvents().find((e) => e.type === 'action' && e.phase === phase && e.ordinal === ordinal);
+
+test('golden: a failed red retries still-green once then stops at needs-human with history', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  // The new test passes before any implementation exists, both times.
+  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(tddTrace(g).map((e) => `${e.phase}/${e.ordinal}`), ['red/1', 'red/2', 'still-green/1', 'still-green/2']);
+  assert.equal(g.harness.calls.length, 2);
+  assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'still-green resumes the red session');
+  const exhausted = actionEvent(g, 'still-green', 2);
+  assert.equal(exhausted.outcome, 'red-failed');
+  assert.equal(exhausted.rule, 'check-exhausted', 'the transition table derives red-failed');
+  assert.equal(exhausted.direction, 'stop');
+  assert.equal(actionEvent(g, 'red', 2).rule, 'check-failed', 'the first failing run retries through still-green');
+  assert.equal(golden.sh(g.worktree, 'rev-list', '--count', `${g.base}..HEAD`), '0', 'no commit on the branch');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the worktree is clean at the baseline head');
+  assert.equal(g.rec.history.length, 1);
+  assert.equal(g.rec.history[0].kind, 'red phase failed');
+  assert.match(g.rec.history[0].text, /did not fail before implementation/);
+
+  // The reset is a write-ahead side effect whose intent carries the baseline and the History item.
+  const [reset] = intents(g.rec, 'reset');
+  assert.equal(reset.marker, actionMarker(g, 'still-green', 2));
+  assert.deepEqual(reset.payload, { baseline: g.base, history: g.rec.history[0] });
+  assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(record.openIntents(g.rec), []);
+  assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
+
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'still-green', ordinal: 2 });
+  assert.equal(reason.outcome, 'red-failed');
+  assert.equal(reason.rule, 'check-exhausted');
+  assert.equal(reason.text, "The red phase failed the Red Check (rule check-exhausted) and the agent's changes were discarded.");
+  assert.match(g.gh.comments[0].body, /```\nThe new tests did not fail before implementation/, 'the diagnosis is posted fenced');
+});
+
+test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
+  const g = await golden.setup(t);
+  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  writeFileSync(join(g.worktree, tracked), 'a human edit\n');
+  writeFileSync(join(g.worktree, 'notes.txt'), 'untracked human work\n');
+  const before = golden.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all'), before, 'every pre-existing change survives');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
+  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.equal(g.rec.history.at(-1)?.kind, 'held');
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
+  assert.equal(reason.outcome, null);
+  assert.equal(reason.rule, null);
+  assert.match(reason.text, /uncommitted changes before red/);
+});
+
+test('an assume-unchanged edit before red is held too, so a failed red cannot reset it away', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  golden.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);
+  writeFileSync(join(g.worktree, tracked), 'a hidden human edit\n');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
+  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.equal(readFileSync(join(g.worktree, tracked), 'utf8'), 'a hidden human edit\n');
+});
+
+test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
+  const g = await golden.setup(t, { responses });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.gh.comments.length, 1, 'exactly one blocked comment');
+  const [comment] = g.gh.comments;
+  assert.equal(comment.target, 'issue');
+  assert.equal(comment.number, golden.TICKET);
+  assert.match(comment.body, /^<!-- gg-action gg:\S+ -->$/m);
+  assert.equal(intents(g.rec, 'comment').length, 1, 'the comment goes through the write-ahead log');
+  const subjects = golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean);
+  assert.ok(!subjects.some((s) => s.startsWith('feat:')), `no feat commit: ${subjects}`);
+  const edit = g.gh.calls.map((c) => c.args.join(' '))
+    .find((a) => a.startsWith(`issue edit ${golden.TICKET}`) && a.includes('--add-label gg:state:needs-human'));
+  assert.ok(edit, 'issue edit adding needs-human');
+  assert.ok(edit.includes('--remove-label gg:state:in-progress'));
+
+  const check = actionEvent(g, 'green', 2);
+  assert.ok(check, 'the Green Check runs and is recorded');
+  assert.equal(check.signals.claim.claim, 'blocked');
+  assert.equal(check.signals.checks.find((c) => c.name === 'test').passed, true);
+  assert.equal(check.rule, 'blocked');
+  assert.equal(check.outcome, 'blocked');
+
+  // The blocked comment carries the Terminal Reason, so there is still exactly one comment.
+  const reason = terminalReasonOf(g, { comment: false });
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 2 });
+  assert.equal(reason.outcome, 'blocked');
+  assert.equal(reason.rule, 'blocked');
+  assert.equal(reason.text, 'The agent made a blocked Claim at green; its notes in the blocked comment say why.');
+  assert.ok(!reason.text.includes('contradicts'), 'unfenced agent text stays out of the Terminal Reason');
+  assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
+});
+
+test('a retry stop keeps the deciding Action\'s own Outcome in the Terminal Reason', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'] = { ...responses['implementer/1/red/1'], result: { status: 'timed-out' } };
+  const g = await golden.setup(t, { responses });
+  assert.equal((await interpreter.runExecution(g.options)).outcome, 'needs-human');
+
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'red', ordinal: 1 });
+  assert.equal(reason.outcome, 'timeout-retry', 'the Action\'s Outcome, not the Terminal it routed to');
+  assert.equal(reason.rule, 'timeout-retry');
+});
+
+test('agent-reported test names stay out of a red-failed Terminal Reason and are fenced in its comment', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  const injected = 'missing\n\n## injected heading';
+  responses['implementer/1/red/1'] = { ...responses['implementer/1/red/1'], response: { ...golden.redResponse, tests: [injected] } };
+  responses['implementer/1/still-green/1'] = { files: {}, response: { ...golden.redResponse, tests: [injected] } };
+  const g = await golden.setup(t, { responses });
+  await interpreter.runExecution(g.options);
+
+  const reason = terminalReasonOf(g);
+  assert.equal(reason.outcome, 'red-failed');
+  assert.ok(!reason.text.includes('injected'), reason.text);
+  const [comment] = g.gh.comments;
+  assert.ok(!/^## injected heading$/m.test(comment.body), 'the diagnosis cannot render as markdown');
+  assert.ok(comment.body.includes('injected heading'), 'the diagnosis is still posted, fenced');
+});
+
+test('the Terminal Reason is saved before any Terminal side effect, so a crash marking the PR ready keeps it', async (t) => {
+  const g = await golden.setup(t);
+  g.options.gh = { ...g.options.gh, markReady: async () => { throw new Error('crash'); } };
+  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+
+  const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.equal(saved.cursor.vertex, 'done');
+  assert.equal(saved.terminalReason?.outcome, 'ok');
+  assert.match(saved.terminalReason.text, new RegExp(`PR #${saved.pr} is ready for review\\.$`));
+});
+
+test('done carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
+  const g = await firstVisit(t);
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 5 });
+  assert.equal(reason.outcome, 'ok');
+  assert.equal(reason.rule, 'effect-completed');
+  assert.equal(reason.text,
+    `implementer visit 1 completed every tdd Action: the Red Check and the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+});
+
+// ff's red-gate e2e cases on the fake harness: red writes test/fail.test.mjs, the runner answers with `run`,
+// and green writes lib/add.mjs, after which the suite passes.
+async function redGate(t, { tests, run }) {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'] = {
+    files: { 'test/fail.test.mjs': "import assert from 'node:assert';\nassert.fail('rejects bad input');\n" },
+    response: { ...golden.redResponse, tests },
+  };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = {
+    runShell: async (command, opts) => existsSync(join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs'))
+      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
+      : { timedOut: false, ...run },
+  };
+  g.result = await interpreter.runExecution(g.options);
+  g.subjects = () => golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean);
+  return g;
+}
+
+const FAIL_OUTPUT = 'not ok 1 - rejects bad input\n# fail 1';
+
+test('a red run whose runner cannot start is not committed; red-failed records the reason and the next attempt sees it', async (t) => {
+  const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 127, output: 'ff-no-such-runner-xyz: command not found' } });
+  assert.ok(!g.subjects().some((s) => s.startsWith('test:')), 'no test: commit');
+  assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
+  assert.equal(actionEvent(g, 'red', 2).rule, 'check-exhausted');
+  assert.equal(g.rec.history[0]?.kind, 'red phase failed');
+  const reason = g.rec.history[0].text;
+  assert.match(reason, /could not start/);
+
+  // A second Execution of the same Ticket, its history carried over by the caller, shows the reason in its red Brief.
+  const next = record.createExecution({
+    commonDir: g.commonDir, ticket: golden.TICKET, epic: 1, flow: { name: g.flow.name, entry: g.flow.ticket.entry },
+    configHash: 'cfg-hash', run: '20261015T000100Z-def456', worktree: g.worktree, branch: golden.BRANCH, base: 'main',
+  });
+  next.history = structuredClone(g.rec.history);
+  await interpreter.runExecution({ ...g.options, record: next });
+  const red = g.harness.calls.at(-1);
+  assert.ok(red.brief.startsWith('RED PHASE'), 'the last call is the next red call');
+  assert.ok(red.brief.includes(reason), 'history carries the reason into the next red brief');
+});
+
+test('a red run whose output names none of the reported tests is not committed', async (t) => {
+  const g = await redGate(t, { tests: ['some other test'], run: { code: 1, output: FAIL_OUTPUT } });
+  assert.ok(!g.subjects().some((s) => s.startsWith('test:')));
+  assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
+  assert.match(g.rec.history[0]?.text ?? '', /does not mention any reported failing test/);
+});
+
+test('a red Phase that leaves nothing to commit fails red with "No tests were written."', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'] = { files: {}, response: { ...golden.redResponse, tests: ['rejects bad input'] } };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = { runShell: async () => ({ code: 1, output: FAIL_OUTPUT, timedOut: false }) };
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'needs-human');
+  const commit = actionEvent(g, 'red', 3);
+  assert.equal(commit.outcome, 'red-failed');
+  assert.equal(commit.rule, 'check-exhausted');
+  assert.deepEqual(intents(g.rec, 'commit'), [], 'no commit intent for an empty commit');
+  assert.deepEqual(g.rec.history, [{ kind: 'red phase failed', text: 'No tests were written.' }]);
+  assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 3));
+});
+
+test('a red run with a nonzero exit naming a reported test is committed as test:', async (t) => {
+  const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 1, output: FAIL_OUTPUT } });
+  assert.ok(g.subjects().some((s) => s.startsWith('test:')));
+  assert.ok(!g.readEvents().some((e) => e.type === 'action' && e.outcome === 'red-failed'));
+  assert.deepEqual(g.rec.history, []);
 });
