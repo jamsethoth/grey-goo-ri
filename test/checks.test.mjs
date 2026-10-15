@@ -74,6 +74,17 @@ test('red check ignores TAP TODO and SKIP results and decodes escaped names', ()
   assert.match(passing.reason, /pass/i);
 });
 
+test('red check keeps a genuine TAP failure whatever order a same-named TODO or SKIP appears in', () => {
+  const tap = (...lines) => lines.join('\n') + '\n';
+  const failThenTodo = tap('not ok 1 - dup', 'not ok 2 - dup # TODO', 'ok 3 - dup # SKIP');
+  const todoThenFail = tap('not ok 1 - dup # TODO', 'ok 2 - dup # SKIP', 'not ok 3 - dup');
+  assert.deepEqual(checks.redCheck({ code: 1, output: failThenTodo }, ['dup']), { ok: true });
+  assert.deepEqual(checks.redCheck({ code: 1, output: todoThenFail }, ['dup']), { ok: true });
+  const onlyExcused = checks.redCheck({ code: 1, output: tap('not ok 1 - dup # TODO', 'ok 2 - dup # SKIP') }, ['dup']);
+  assert.equal(onlyExcused.ok, false);
+  assert.match(onlyExcused.reason, /TODO or SKIP/);
+});
+
 test('red check falls back to the substring rule and marks it heuristic', () => {
   const r = checks.redCheck({ code: 1, output: fixture('no-status.txt') }, ['rejects bad input']);
   assert.equal(r.ok, true);
