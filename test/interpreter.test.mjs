@@ -280,6 +280,22 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
 });
 
+test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
+  const g = await golden.setup(t);
+  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  writeFileSync(join(g.worktree, tracked), 'a human edit\n');
+  writeFileSync(join(g.worktree, 'notes.txt'), 'untracked human work\n');
+  const before = golden.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all'), before, 'every pre-existing change survives');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
+  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.equal(g.rec.history.at(-1)?.kind, 'held');
+});
+
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };

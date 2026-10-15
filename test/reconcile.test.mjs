@@ -64,3 +64,21 @@ test('a crash before the reset holds the Execution and discards nothing', async 
   assert.deepEqual(g.loaded.history, []);
   assert.equal(record.openIntents(g.loaded)[0].payload.history.kind, 'red phase failed', 'the reason waits in the open intent');
 });
+
+test('a failed HEAD read after the reset of a failed red leaves the History item to Reconciliation, once', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const git = g.options.git;
+  let reset = false;
+  g.options.git = { ...git,
+    resetTo: async (...args) => { await git.resetTo(...args); reset = true; },
+    headSha: async (cwd) => { if (reset) throw new Error('head read failed'); return git.headSha(cwd); } };
+  await assert.rejects(interpreter.runExecution(g.options), /head read failed/);
+
+  const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.deepEqual(loaded.history, [], 'no History item is saved without the reset evidence');
+  assert.equal(await reconcile.resets(loaded, { git }), 'continue');
+  assert.equal(loaded.history.length, 1);
+});
