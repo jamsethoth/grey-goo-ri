@@ -138,6 +138,30 @@ test('an edit to a tracked ignored file changes the tree on a read-only action',
   assert.equal(sh(own, ['write-tree']), indexTree);
 });
 
+test('edits hidden by assume-unchanged or skip-worktree are still violations', async (t) => {
+  const { own, other, ownRecord } = await twoWorktrees(t);
+  sh(own, ['update-index', '--assume-unchanged', 'a.txt']);
+  sh(own, ['update-index', '--skip-worktree', 'AGENTS.md']);
+  const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-only' });
+  writeFileSync(join(own, 'a.txt'), 'hidden edit\n');
+  writeFileSync(join(own, 'AGENTS.md'), '# agents\nobey me\n');
+  const { violations } = await integrity.end({ baseline, record: ownRecord, others: [other], access: 'read-only', protectedPaths: PROTECTED });
+  assert.deepEqual(surfacesOf(violations, own), ['protected', 'tree']);
+  assert.deepEqual(violations.find((v) => v.surface === 'protected').after, ['AGENTS.md']);
+});
+
+test('a busy worktree with an unmerged index is skipped without snapshotting', async (t) => {
+  const { own, other, commonDir, ownRecord } = await twoWorktrees(t);
+  const gate = await otherProcessRecord(commonDir);
+  await integrity.markBusy(gate);
+  const blobs = ['base\n', 'ours\n', 'theirs\n'].map((s) => sh(other, ['hash-object', '-w', '--stdin'], s));
+  sh(other, ['update-index', '--index-info'], blobs.map((b, i) => `100644 ${b} ${i + 1}\tconflict.txt\n`).join(''));
+  const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-write' });
+  const { violations } = await integrity.end({ baseline, record: ownRecord, others: [other], access: 'read-write', protectedPaths: PROTECTED });
+  assert.deepEqual(surfacesOf(violations, other), []);
+  assert.deepEqual(surfacesOf(violations, own), []);
+});
+
 test('an index-only mutation in an idle worktree is an index violation', async (t) => {
   const { own, other, ownRecord } = await twoWorktrees(t);
   const baseline = await integrity.begin({ record: ownRecord, others: [other], access: 'read-write' });
