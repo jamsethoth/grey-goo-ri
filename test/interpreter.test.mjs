@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
@@ -294,6 +294,22 @@ test('uncommitted changes before red are held at needs-human and nothing is dele
   assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
   assert.deepEqual(intents(g.rec, 'reset'), []);
   assert.equal(g.rec.history.at(-1)?.kind, 'held');
+});
+
+test('an assume-unchanged edit before red is held too, so a failed red cannot reset it away', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  golden.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);
+  writeFileSync(join(g.worktree, tracked), 'a hidden human edit\n');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
+  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.equal(readFileSync(join(g.worktree, tracked), 'utf8'), 'a hidden human edit\n');
 });
 
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
