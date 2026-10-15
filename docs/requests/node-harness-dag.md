@@ -142,7 +142,7 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   environment token is ignored under it as well. Bare mode also removes `.claude/skills`, `.claude/commands` and
   `.claude/agents` discovery, which the profile above does not promise to remove. The probe in section 9 saw a
   project skill absent under the profile, so this content is treated as potentially discoverable rather than as
-  declared: gg does not rely on it being loaded or unloaded, its digest joins the config hash so two runs that
+  declared: gg does not rely on it being loaded or unloaded, its digest is recorded on every attempt so two runs that
   differ only in repository `.claude` content are distinguishable, the launcher acceptance test records whether the
   installed version exposed it, and the protected-files check in 3.6 stops an agent from changing it. This content
   is live, not pinned: a human may change it mid-visit, so every agent-action event records its current digest
@@ -292,8 +292,10 @@ one run may admit several tickets' executions, and a later run resumes them. An 
 vertex, visit, phase, ordinal)`, where deterministic actions carry the phase they serve; an attempt adds `(run,
 attempt)`. The action marker names an attempt, since the attempt is what produced the effect. One `tdd` visit, in
 order: red call (red, 1), red check (red, 2), commit tests (red, 3), green call (green, 1), green check (green, 2),
-quality gates (green, 3 onward), commit (green, next), push, PR upsert; a still-green retry is attempt 2 of (red, 1)
-and the red check that follows is attempt 2 of (red, 2). Every action with a side effect is recorded in three steps: intent before the effect, including the intended payload (commit message,
+quality gates (green, 3 onward), commit (green, next), push, PR upsert. Still-green and test-fix are phases of their
+own, with their own briefs: a still-green call is (still-green, 1) and the red check that follows it is (still-green,
+2). An attempt number rises only when the same action is tried again, for instance a parse-failure retry of the red
+call is attempt 2 of (red, 1). The action cap counts attempts. Every action with a side effect is recorded in three steps: intent before the effect, including the intended payload (commit message,
 expected parent and the intended tree hash from `git write-tree`; PR title and body hash; comment body hash; label
 name); the effect's own evidence; completion after. The marker travels with the effect: in the commit trailer next
 to the vertex and harness, in a hidden marker line in PR bodies and comments, and as the `await` label event for
@@ -344,8 +346,9 @@ ff and gg are never run on the same repository at the same time, and ff goes unu
 
 Approval flow, the only one. When a run reaches an approval vertex, or `gg publish` finishes a plan:
 
-1. gg creates a pending instance with a unique id (ticket or epic, vertex, visit, nonce) and a digest of what is
-   being approved: for a ticket, branch HEAD, the ticket body revision and the full config hash; for a plan, the plan
+1. gg creates a pending instance with a unique id: for a ticket (execution, vertex, visit, nonce); for an epic
+   (epic, plan, publish ordinal, nonce), since an epic has no execution. It computes a digest of what is being
+   approved: for a ticket, branch HEAD, the ticket body revision and the full config hash; for a plan, the plan
    document, the ticket set with their bodies, and the full config hash.
 2. gg retires any earlier request on the item: it removes the vertex's `await` label and every `decide` label for
    that vertex, so no stale decision can follow a new request. It writes the pending instance to the record, applies
@@ -425,7 +428,7 @@ Events come in two kinds. Action events record one attempt and belong to their e
 run or an execution starting or ending (run start and end, ticket start and end) and belong to the run or the
 execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
 events. Action events, schema 2, in the repo's append-only events file carry: flow name, config hash,
-launch profile, ticket, run, vertex, visit, procedure, phase, attempt, duration, outcome, direction, signals
+launch profile, ticket, run, vertex, visit, procedure, phase, ordinal, attempt, duration, outcome, direction, signals
 received and the resolution rule applied. Agent actions add: harness and CLI version, model and effective effort,
 persona hash, resolved tools with hint fields marked, init metadata (plugins, MCP servers), session id and lineage,
 transcript path, usage cumulative and delta, cost delta, peak context, turns, tool calls, compactions, exit code,
@@ -438,14 +441,14 @@ else absent. Peak context is the maximum over the session's requests of `input +
 request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
 harness reports none, or null. Fixtures cover a resumed Claude session and a resumed Codex thread.
 
-Stats: every event carries the vertex id and visit; aggregation defaults to procedure and phase, with vertex,
+Stats: every action event carries the vertex id, visit and ordinal; lifecycle events carry only the run or execution they describe; aggregation defaults to procedure and phase, with vertex,
 harness and model as further dimensions, so two reviewers on the same procedure stay distinguishable and renaming
 a vertex does not hide escalations. `rounds`, `red_failed` and `blocked` remain derivable. The commit trailer text
 `Feature-Flow-Stage:` is kept, carrying vertex and harness.
 
-Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands + the digest
-of the repository's `.claude/skills`, `.claude/commands` and `.claude/agents` content (3.2). Written with the
-resolved flow to the run directory. Secrets never enter it (3.1).
+Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands. It covers the
+pinned configuration only; the repository content digest (3.2) is live and recorded per attempt, outside the hash.
+Written with the resolved flow to the run directory. Secrets never enter it (3.1).
 
 Export: Agent Trajectory Interchange Format (ATIF, Harbor), pinned to the schema version Harbor's validator accepts
 at implementation time and recorded in the file. One parent trajectory per execution whose ATIF steps are the
@@ -491,8 +494,9 @@ Ported as they are:
   with persona hash; commit trailer parsed by outcome refresh.
 - Labels never throw: logged, event, exit code 1; exit 2 on any needs-human. In-progress added only after the
   worktree exists.
-- Stuck detection from label age; reset refuses when a published PR exists and closes every draft; cleanup keeps dirty
-  or unpushed worktrees.
+- Stuck detection: label age past `stuckAfterHours` is the trigger to inspect; a ticket is stuck when its in-progress
+  state label stands and no recoverable execution record is behind it, or the record's lock holder is dead. Reset
+  refuses when a published PR exists and closes every draft; cleanup keeps dirty or unpushed worktrees.
 - Worktree add serialised, ownership validated, branch reused on title change; push without `-u`.
 - Ticket dependency ordering at publish (unknown and cyclic dependencies rejected, blockers resolved to issue
   numbers) and blocker readiness at run, standalone tickets included.

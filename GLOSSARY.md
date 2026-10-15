@@ -76,7 +76,7 @@ The limit on traversals of an Edge or Visits of a Vertex, with the target to go 
 _Avoid_: limit, max
 
 **Action Cap**:
-The limit on Actions in one Execution; exhausting it ends the Execution at needs-human.
+The limit on Attempts in one Execution; exhausting it ends the Execution at needs-human.
 _Avoid_: step cap, ticket cap
 
 **Terminal**:
@@ -126,8 +126,8 @@ The account of earlier failed Attempts on a Ticket that is fed back into a Brief
 _Avoid_: memory
 
 **Declared Command**:
-A named command a repository publishes for gg to run, such as test or lint; the only commands agents and Checks may
-run.
+A named command a repository publishes, such as test or lint, that Checks run and agents may run. Agents may also
+use gg's built-in read-only allowlist, such as read-only git and file reads, which is not a Declared Command.
 _Avoid_: script, task, allowed command
 
 **Permission Intent**:
