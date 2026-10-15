@@ -151,3 +151,14 @@ test('contending processes never throw and grant exactly one owner', async (t) =
     assert.equal(outputs.filter((o) => o.handle).length, 1, `round ${round}: one owner`);
   }
 });
+
+test('the stress loop counts a run as clean only on exit 0 with a # fail 0 summary', async () => {
+  const stress = await import('./support/lock-stress.mjs');
+  const tap = '# tests 6\n# pass 6\n# fail 0\n';
+  assert.equal(stress.passed(0, null, tap), true);
+  assert.equal(stress.passed(1, null, ''), false, 'an empty-output failure is not clean');
+  assert.equal(stress.passed(0, null, ''), false, 'no summary is not clean');
+  assert.equal(stress.passed(1, null, tap), false, 'a non-zero exit is not clean');
+  assert.equal(stress.passed(null, 'SIGTERM', tap), false, 'a signal is not clean');
+  assert.equal(stress.passed(0, null, '# pass 0\n# fail 0\n'), false, 'a run with no passing tests is not clean');
+});

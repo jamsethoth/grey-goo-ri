@@ -3,6 +3,10 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+// A run is clean only when it exited 0 by itself and its TAP summary shows passing tests and no failures.
+export const passed = (code, signal, out) =>
+  code === 0 && signal === null && /^# fail 0$/m.test(out) && /^# pass [1-9]/m.test(out);
+
 // node --test runs support files too; it sets NODE_TEST_CONTEXT, so the loop stays out of npm test.
 if (!process.env.NODE_TEST_CONTEXT) {
   const [copies = 4, rounds = 25] = process.argv.slice(2).map(Number);
@@ -11,13 +15,16 @@ if (!process.env.NODE_TEST_CONTEXT) {
     const child = spawn(process.execPath, ['--test', '--test-reporter=tap', suite], { stdio: ['ignore', 'pipe', 'inherit'] });
     let out = '';
     child.stdout.on('data', (chunk) => { out += chunk; });
-    child.on('close', () => resolve(/^# fail 0$/m.test(out) ? null : out));
+    child.on('error', (error) => resolve({ ok: false, out: `${out}spawn error: ${error.message}` }));
+    child.on('close', (code, signal) => resolve({ ok: passed(code, signal, out), out: `${out}exit ${code}, signal ${signal}` }));
   });
   let clean = 0;
   for (let round = 0; round < rounds; round++) {
-    const failures = (await Promise.all(Array.from({ length: copies }, runOnce))).filter(Boolean);
-    clean += copies - failures.length;
-    for (const out of failures) process.stdout.write(`round ${round} failed:\n${out}\n`);
+    const results = await Promise.all(Array.from({ length: copies }, runOnce));
+    for (const { ok, out } of results) {
+      if (ok) clean++;
+      else process.stdout.write(`round ${round} failed:\n${out}\n`);
+    }
   }
   const total = copies * rounds;
   console.log(`${clean}/${total} runs reported # fail 0 (node ${process.version}, libuv ${process.versions.uv})`);
