@@ -1,0 +1,17 @@
+ PASS  src/cart.test.js
+ FAIL  src/parse.test.js
+  ● parse › rejects bad input
+
+    expect(received).toThrow()
+
+    Received function did not throw, unlike "removes item" which the cart suite still passes
+
+      12 |   it('rejects bad input', () => {
+
+  ● Console
+
+    console.log
+      debugging removes item
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 3 passed, 4 total

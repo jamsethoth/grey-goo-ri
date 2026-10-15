@@ -1,0 +1,18 @@
+TAP version 13
+# Subtest: accepts good input
+ok 1 - accepts good input
+  ---
+  duration_ms: 0.8123
+  ...
+# Subtest: rejects bad input
+not ok 2 - rejects bad input
+  ---
+  duration_ms: 1.2047
+  location: 'test\parse.test.mjs:9:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected exception.'
+  ...
+1..2
+# tests 2
+# pass 1
+# fail 1
