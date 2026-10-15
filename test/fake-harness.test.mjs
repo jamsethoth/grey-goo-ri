@@ -123,6 +123,15 @@ test('hang stays pending until cancel', async () => {
   assert.equal(result.status, 'killed');
 });
 
+test('cancel immediately after run still kills a hung call', async () => {
+  const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { hang: true, files: { 'a.txt': 'a' } } } });
+  const running = harness.run(call(cwd));
+  harness.cancel();
+  assert.equal(await pendingAfter(running, 100), 'settled');
+  const { result } = await running;
+  assert.equal(result.status, 'killed');
+});
+
 test('throw rejects as an unexpected fault', async () => {
   const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { throw: new Error('boom') } } });
   await assert.rejects(harness.run(call(cwd)), /boom/);

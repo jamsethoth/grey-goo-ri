@@ -50,6 +50,8 @@ export function fakeHarness({
     const script = responses[key];
     if (!script) throw new Error(`fake harness has no scripted response for ${key}`);
     if (script.throw) throw script.throw;
+    // Register before the first await so a cancel() during setup is not lost.
+    const cancelled = script.hang ? new Promise((resolve) => hung.push(resolve)) : null;
 
     for (const [path, content] of Object.entries(script.files ?? {})) {
       const target = join(call.cwd, path);
@@ -76,7 +78,10 @@ export function fakeHarness({
       failure: status === 'killed' ? null : failure,
     });
 
-    if (script.hang) return new Promise((resolve) => hung.push(() => resolve(outcome('killed'))));
+    if (cancelled) {
+      await cancelled;
+      return outcome('killed');
+    }
     return outcome(failure ? 'failed' : 'completed');
   }
 
