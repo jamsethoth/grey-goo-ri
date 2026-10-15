@@ -56,6 +56,24 @@ test('red check matches a full pytest identifier', () => {
   assert.equal(checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_accepts_good_input']).ok, false);
 });
 
+test('red check ignores TAP TODO and SKIP results and decodes escaped names', () => {
+  // As printed by node --test --test-reporter=tap: only "old unrelated test" causes the nonzero exit.
+  const output = fixture('tap-directives.txt');
+  for (const name of ['new test', 'skipped one']) {
+    const r = checks.redCheck({ code: 1, output }, [name]);
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /TODO or SKIP/);
+  }
+  // A lone TODO line is still per-test status, not grounds for the substring fallback.
+  const lone = checks.redCheck({ code: 1, output: 'not ok 1 - new test # TODO\n' }, ['new test']);
+  assert.equal(lone.ok, false);
+  assert.ok(!lone.heuristic);
+  assert.deepEqual(checks.redCheck({ code: 1, output }, ['rejects issue #123']), { ok: true });
+  const passing = checks.redCheck({ code: 1, output }, ['passes with \\ backslash and # hash']);
+  assert.equal(passing.ok, false);
+  assert.match(passing.reason, /pass/i);
+});
+
 test('red check falls back to the substring rule and marks it heuristic', () => {
   const r = checks.redCheck({ code: 1, output: fixture('no-status.txt') }, ['rejects bad input']);
   assert.equal(r.ok, true);
