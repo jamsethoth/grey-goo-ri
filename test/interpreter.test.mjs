@@ -202,6 +202,21 @@ test('the visit keeps the configuration pinned at entry when the node changes mi
   assert.ok(g.shells.every((s) => s.command === 'npm test'), `checks ran the pinned command: ${JSON.stringify(g.shells)}`);
   assert.equal(g.rec.snapshot.then, 'done');
   assert.equal(g.rec.snapshot.commands.test, 'npm test');
+  assert.match(g.rec.snapshot.hash, /^[0-9a-f]{64}$/);
+  assert.notEqual(interpreter.snapshotHash({ ...g.rec.snapshot, then: 'needs-human' }), g.rec.snapshot.hash, 'routing is part of the fingerprint');
+});
+
+test('a green call that changes the committed test is an integrity violation', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/green/1'].files['test/add.test.mjs'] = "import { add } from '../lib/add.mjs';\n// weakened\n";
+  const g = await golden.setup(t, { responses });
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'needs-human');
+  const greenCheck = g.readEvents().find((e) => e.type === 'action' && e.phase === 'green' && e.ordinal === 2);
+  assert.equal(greenCheck.outcome, 'integrity-violation');
+  assert.equal(greenCheck.direction, 'stop');
+  assert.deepEqual(greenCheck.violations, ['test/add.test.mjs']);
+  assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'no feat commit after the violation');
 });
 
 test('done removes in-progress and adds ready-for-qa', async (t) => {
