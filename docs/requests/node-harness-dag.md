@@ -1,9 +1,11 @@
-# Request: a node / harness / DAG framework for ticket-driven agentic development
+# Request: a node / harness / workflow-graph framework for ticket-driven agentic development
 
-Date: 2026-10-14. Owner: James Irwin. Status: ready for planning. Supersedes feature-flow (`C:\dev\projects\feature-flow`).
+Date: 2026-10-14, revised 2026-10-15 after an adversarial review. Owner: James Irwin. Status: ready for planning.
+Supersedes feature-flow (`C:\dev\projects\feature-flow`, main at 89e1d67). The new tool is `gg`.
 
 This document is organised by capability. Where it shows config or grammar, the shape is an illustration of what the
-capability must support, not a syntax decision. The planning session decides syntax, ticket by ticket.
+capability must support, not a syntax decision. The planning session decides syntax, ticket by ticket. The authored
+graph is a bounded workflow graph: it has back edges, every one of them bounded. "DAG" in older notes means this.
 
 ## 1. Target, in the owner's words
 
@@ -12,20 +14,25 @@ and mcps and plugins passed to an agentic harness. If we have this core behavior
 and expand or reduce the scope as necessary for different workflows. The node should be an abstraction, with harness
 specific implementation for codex and claude to start."
 
-Also required: usage metrics for every harness, detailed per-node tracing, and a unified end-to-end view of a run.
-The existing feature-flow implementation may be thrown away; this is a ground-up rewrite in this repository.
+Also required: usage metrics for every harness, detailed per-node tracing, a unified end-to-end view of a run, and
+management of the work submitted to a workflow across all its instances on one machine. The existing feature-flow
+implementation is thrown away; this is a ground-up rewrite in this repository.
 
 ## 2. Non-negotiables
 
-- Zero runtime dependencies, plain Node ESM, Node 20+, native Windows first. Spawn without a shell unless a command
-  string is unavoidable, then through the job-object runner.
+- Zero runtime dependencies, plain Node ESM, Node 20+, native Windows first. Spawn executables without a shell;
+  a command string that cannot be avoided goes through the job-object runner.
 - Agents never run git write commands or gh. The orchestrator owns commits, pushes, PRs, comments and labels.
 - Topology is data. Work is code. No per-node code; a node is only configuration.
+- A session starts empty. The shipped defaults add no skills, plugins, MCP servers, hooks or repository instructions
+  to any session. Everything an agent gets is declared in config. Ponytail and every other plugin are user or repo
+  config, never framework.
 - No degraded runs: a node field the harness cannot enforce fails preflight, it is never silently dropped.
 - Every agent step is traced with normalised usage. A field a harness cannot produce is declared absent, never zero.
-- Wrongly advancing is costlier than wrongly holding. Advance needs evidence.
+- Wrongly advancing is costlier than wrongly holding. Advance needs evidence. Evidence and integrity checks are not
+  configurable; the ordering among legitimate outcomes is.
 - GitHub issues are the source of truth for what work exists and what humans decided. The local execution record is
-  the source of truth for where the machine was.
+  the source of truth for where the machine was. Human decisions are read only from records GitHub cannot edit.
 
 ## 3. Capabilities
 
@@ -38,57 +45,97 @@ A node is a named, declarative unit of agent work. Fields, all with declared sem
 | `harness` | `claude` or `codex` |
 | `model`, `effort` | harness-native strings; shape validated at load, value validated by the CLI; effective value recorded per step |
 | `persona` | markdown file name, resolved through the config layers (defaults < user < repo); hashed |
-| `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name ever appears in code |
+| `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name appears in code; default empty |
 | `mode` | `headless` (default) or `interactive` (the planner) |
-| `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates |
+| `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates per surface |
 | `gates` | quality gates: named repo commands that must pass before this node's output is accepted (3.6) |
-| `resolution` | outcome conflict policy for this node (3.4); shipped default, overridable |
+| `resolution` | ordering policy among legitimate outcomes (3.4); shipped default, overridable |
 | `contextBudget` | optional; translated to the harness compaction threshold; compaction count logged |
 | `timeouts` | optional stall and wall-clock overrides (3.5) |
 
 Nodes live in a shared `nodes` library in the layered config. A vertex in a flow either inlines a definition or
-`use`s a library node with field overrides. Provenance, stats and session state key on the vertex id.
+`use`s a library node with field overrides. Provenance, stats, session state and the trace key on the vertex id and
+visit number.
 
-Secrets: any `mcp.env` value that is not a `${VAR}` reference fails validation; expansion happens at launch into an
-ff-owned temp file.
+Secrets: any `mcp.env` value that is not a `${VAR}` reference fails validation. Expansion happens at launch into a
+gg-owned temp file that is deleted after the step. Expanded values never reach the execution record, events, the
+resolved-config snapshot or the trace export; a test injects a sentinel credential and asserts it appears nowhere.
 
 ### 3.2 Harness
 
-One module per CLI exporting the same contract. Tests inject one fake harness object. Names and the capability matrix
-are aligned with Archon's provider contract (`packages/provider-contract/src/capabilities.ts`) for comparability.
+One module per CLI exporting the same contract. Tests inject one fake harness object. Field names and the capability
+matrix follow Archon's provider contract for comparability
+(https://github.com/coleam00/Archon/blob/main/packages/provider-contract/src/capabilities.ts); module layout is
+guidance, not a requirement.
 
 ```
 name, capabilities, validate(node), resolveTools(node, ctx), run(call), interactiveArgs(node, opening, opts),
 metrics(session), doctor(cfg)
 ```
 
-Capability matrix, declared per harness and read by the validator and the trace:
-`interactive`, `background`, `resume` (and its preconditions, e.g. rollout on disk), `structuredOutput`,
-`plugins | mcp | skills: exact | hint | unsupported`, `sandbox: none | codex-windows | codex-posix`,
-`peakContext`, `cost`, `turns`, `toolCalls`, `reasoningTokens`, `backgroundWork: reported | none | unobserved`.
-Hint fields are logged on the event so eval can tell variants apart.
+Capability semantics, per field per harness: `exact` means the harness enforces the field; `hint` means the field
+is passed as prompt text or a best-effort setting and the step is logged as hinted so eval can tell variants apart;
+`unsupported` means a node that lists the field fails preflight. A harness declares one of the three for `skills`,
+`mcp`, `plugins`, `access`, `network`, `contextBudget`. Current declarations: Claude `plugins` exact, `mcp`
+unsupported (until filtering lands), `skills` hint; Codex `plugins` exact, `mcp` exact for config servers, `skills`
+hint until verified per installed version. The matrix also declares `interactive`, `background`, `resume` with its
+preconditions, `structuredOutput`, `sandbox: none | codex-windows | codex-posix`, `peakContext`, `cost`, `turns`,
+`toolCalls`, `reasoningTokens`, `backgroundWork: reported | none | unobserved`.
 
-`run(call)` returns structured output, the session id, normalised usage (cumulative and delta), the transcript path,
-exit code, signal, final event subtype, commands-run count, and on failure a typed `failure.class` of
-`auth | quota | budget | rate-limited | transient | unknown` with `retryAfterMs`. Retries are decided by class.
-Outcomes are classified from the final event, not the exit code.
+Permission intents are enforced per surface, and the harness states which surface each mechanism covers: shell
+commands, built-in file tools, MCP tools, plugins and hooks, network. A combination the harness cannot enforce on
+every surface the node uses fails preflight; for example a Claude read-only node that lists MCP servers, or a Codex
+node with `network: false` and an MCP server that reaches the network. On native Windows Claude has no command
+sandbox, so a Claude `workspace-write` node relies on the Codex-equivalent guarantees coming from the post-step
+assertions in 3.6, and the matrix says so.
 
-`doctor` probes behaviour, not help text: CLI versions against pinned minimums, `codex exec resume` support, login,
-sandbox lock, labels used by terminals exist, resolved flow printout.
+`run(call)` returns three separate things, never conflated: the agent's claim (its structured output), the harness
+result (session id, normalised usage cumulative and delta, transcript path, exit code, signal, final event subtype,
+init metadata, permission denials, commands-run count as diagnostics only), and on failure a typed `failure.class`
+of `auth | quota | budget | rate-limited | transient | unknown` with `retryAfterMs`. The orchestrator derives the
+outcome (3.4). Outcomes are classified from the final event, not the exit code. Every structured output is validated
+by gg against the schema regardless of harness; a reported case where Codex did not enforce the schema with MCP tools
+active is kept as a versioned regression fixture, not a rule.
 
-Claude specifics to build in: `--bare --strict-mcp-config`, an ff-owned settings file, explicit `--permission-mode`
-and `--permission-prompts none`, `--output-format json` (not stream-json), plugins by `--plugin-dir` with every
-installed plugin disabled first, prompts via stdin or file never argv, honour `plugin_errors` and `mcp_server_errors`
-in the init event, read-only runs with `--tools Read,Grep,Glob --disallowedTools "mcp__*"` and a background-wait
-ceiling, drop `mcp` and declare `skills` hint until filtering exists, `--system-prompt-snapshot` recorded on resume,
-spawn the JS entry under `process.execPath` (no `.cmd` shim, no shell).
+`doctor` probes behaviour, not help text: CLI versions against pinned minimums, `codex exec resume` with
+`--output-schema`, login state, sandbox lock, labels the resolved flow references, the Claude launch profile below,
+and a `--bare` probe with `CLAUDE_CODE_OAUTH_TOKEN` so the switch to bare mode happens the day it works on a
+subscription. The launch profile in use is part of the config hash.
 
-Codex specifics: every harness-owned key as a `-c` override (CLI overrides rank above project and user config),
-`--sandbox` and `-C` before `resume`, sandbox policy re-checked from the rollout on resume, strict output schemas
-plus ff-side validation of every output (schema is not enforced when MCP tools are active), `features.hooks` explicit,
-`commandWindows` required for any hook on win32, MXC fallback to unelevated only on an mxc error, usage delta from the
-cumulative `turn.completed`, rollout lookup by session id across the sessions tree, `skills` declared hint until
-verified, tail `$CODEX_HOME/logs` on non-zero exit, assert at least one command ran when the brief expects edits.
+Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this machine with a subscription login:
+
+- `--setting-sources ""` so no user, project or local settings file is read: no hooks, no installed plugins, no
+  `enabledPlugins`. `--strict-mcp-config` with gg's own `--mcp-config` or none. A gg-owned `--settings` file for
+  permissions and gg hooks (the context-budget hook). `--plugin-dir` per listed plugin. Environment
+  `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Verified: the init event listed only
+  built-in plugins, a project `.claude/skills` entry was absent, and a CLAUDE.md instruction was not followed.
+- Read-only steps add `--restricted`, which confines file tools to the working directory and removes Bash and
+  WebFetch, plus `--disallowedTools "mcp__*"` unless the node lists MCP. The review brief carries the diff text, so
+  the reviewer needs no shell. Verified: `--restricted -p` authenticates with the subscription.
+- Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call so a
+  resumed session sees the persona on disk and the persona hash recorded per step is the one the model ran.
+- `--output-format stream-json --verbose`. The init event (first line) supplies `plugins`, `plugin_errors`,
+  `mcp_servers`, `mcp_server_errors` and `capabilities`; a non-empty error array or a listed server not connected
+  fails the step. The result event (last line) supplies usage, cost, turns, `structured_output`,
+  `permission_denials`. Stream liveness feeds the stall timeout. Verified with `--json-schema` on a fresh session and
+  on `--resume`. Fallback if the stream misbehaves on a future version: `--output-format json --verbose`, which
+  returns the same events as one array; observed, not documented.
+- Spawn the resolved `claude` executable directly, no shell. On this machine it is a native `.exe`; a `.cmd` shim is
+  resolved to its target first. Prompts go through stdin or a file, never argv. Paths with spaces are tested.
+- `--bare` is not used: it refuses subscription credentials ("Not logged in", verified), and reporters say the OAuth
+  environment token is ignored under it as well. Bare mode also removes `.claude/skills`, `.claude/commands` and
+  `.claude/agents` discovery, which the profile above does not; the protected-files gate in 3.6 covers agent edits to
+  those paths, and content already in a repo is accepted as the owner's.
+- Cost and usage on `--resume` are the session's cumulative totals; gg stores the previous totals per session and
+  logs the delta. The session id from the first non-resume call of each session is the one persisted; a resumed
+  call's init id is never stored.
+
+Codex specifics: every harness-owned key as a `-c` override, since CLI overrides rank above project and user config;
+`--sandbox` and `-C` before `resume`; sandbox policy re-checked from the rollout on resume; strict output schemas;
+`features.hooks` explicit; `commandWindows` required for any hook on win32; MXC fallback to unelevated only on an mxc
+error and only with equivalent isolation declared; usage delta from the cumulative `turn.completed`; rollout lookup by
+session id across the sessions tree; tail `$CODEX_HOME/logs` on non-zero exit; verify expected filesystem changes and
+gates rather than command counts. Installed: codex-cli 0.162.1, which accepts `exec resume --output-schema`.
 
 Plugin hook injection (Codex without hooks): `harnesses.codex.injectHooks` lists plugin names; a generic hook runner
 reads the plugin's hook manifest, runs its session-start command through the shell runner, and injects the output.
@@ -99,21 +146,32 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
 
 - Persona vertex: a node (3.1) plus a `procedure` with options (3.4) plus edges.
 - `gate` vertex: runs a named repo command, must declare both pass and fail targets.
-- `approval` vertex: records a pending state in the execution record, sets a label, ends the run; the next run
-  continues at its `then` once a human has approved.
-- Terminals: `done` (PR ready, label), `needs-human`, `replan` (label needs-replan, diagnosis posted on ticket and
-  epic).
+- `approval` vertex: pauses for a human decision through GitHub labels (3.5). It declares its request label and a
+  map of decision labels to outcomes; `approved` and `rejected` are the shipped default, a vertex may declare more.
+- Terminals: `done` (PR marked ready, state label), `needs-human`, `replan` (state label, diagnosis posted on the
+  ticket and the epic). `done` requires an open PR for the ticket; a flow that routes to `done` without a vertex that
+  creates one fails validation.
 - Edges: `then: <vertex>` or `route: { <outcome>: <vertex | {to, max, exhausted}> }`. Every back edge has `max` and
-  `exhausted`. Every vertex has `maxVisits`; every ticket has a step cap. Loops exist only as bounded back edges.
+  `exhausted`. Every vertex has `maxVisits` with its own `exhausted`; every ticket has a step cap. Loops exist only
+  as bounded back edges.
+- Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
+  `maxVisits` counts entries per ticket; procedure-internal retries (still-green, test-fix, gate retries) count
+  toward the ticket step cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
+  step the vertex `exhausted` wins; counts survive a restart because they live in the execution record. One worked
+  example with nested retries and a restart ships with the validator tests.
 - Per-ticket graphs are sequential. Parallelism is across tickets only.
 - Two sections: `plan` (epic level, used by `gg plan`) and `ticket` (used by `gg run`). The planner is never a ticket
   vertex. The small flow sets `plan` to null.
+- Entry cases: `gg run <epic>` runs every ready ticket of the epic under the epic's plan approval; `gg run <ticket>`
+  runs one ticket, with or without an epic, under the repo's default flow or `--flow`, and needs no plan approval when
+  the flow has no `plan` section. Readiness requires every blocking issue closed, as today.
 
 Illustration only (shape, not syntax):
 
 ```
 implementer(tdd) -> reviewer(review)
-reviewer: PASS -> done, CHANGES -> {to: implementer, max: 2, exhausted: senior-dev}, REPEAT -> senior-dev
+reviewer: PASS -> done, CHANGES -> {to: implementer-fix, max: 2, exhausted: senior-dev}, REPEAT -> senior-dev
+implementer-fix = use implementer, procedure fix -> reviewer
 senior-dev(fix, maxVisits 1, exhausted needs-human) -> reviewer
 ```
 
@@ -124,10 +182,11 @@ and `use` expansion) to the run directory and hashes that file.
 
 Validation before any ticket starts: unknown nodes or harnesses; unreachable vertices; back edges without bounds;
 `then` and `route` both set; route keys not in the procedure's outcome enum; enum values with no route and no built-in
-default; gate without both targets; gate commands not declared; resume across different vertices, harnesses or persona
-hashes; listed fields the harness cannot enforce; strict-schema lint for Codex nodes; literal secrets in `mcp.env`;
-retries on a node whose harness options disable session persistence; terminal labels missing in the repo; a warning
-when reviewer and implementer share a model.
+default; gate without both targets; gate commands not declared; approval decisions without a route; resume across
+different vertices or harnesses; listed fields the harness declares unsupported; permission intents the harness
+cannot enforce on every surface the node uses; strict-schema lint for Codex nodes; literal secrets in `mcp.env`;
+retries on a node whose harness options disable session persistence; labels the flow references missing in the
+repo; `done` reachable without a PR-creating vertex; a warning when reviewer and implementer share a model.
 
 ### 3.4 Procedures, outcomes and resolution
 
@@ -136,131 +195,211 @@ Procedures are code: named action sequences the interpreter expands into action 
 - `tdd`: red brief, red gate (expected fail, verified), commit tests, green brief in a fresh session with the full
   context (ticket, branch, commands, rules, committed test list, failing output), persona gates, commit, push, draft
   PR. Options: `stillGreen` and `testFix` retry counts (default 1), `resumeGreen` (default false). Still-green
-  resumes red; test-fix resumes green. Splitting red and green onto different vertices is deferred; it is a procedure
-  split, not a grammar change.
-- `fix`: fix brief with history, gates, commit, push.
-- `review`: read-only call, worktree-unchanged assertion, PR comment, findings hash.
+  resumes the red session; test-fix resumes the green session. A `tdd` vertex is entered once per ticket; later
+  rounds enter a `fix` vertex, as the illustration shows. Splitting red and green onto different vertices is
+  deferred and is a procedure split, not a grammar change.
+- `fix`: fix brief with history and the review findings, gates, commit, push. A fix round may change tests when a
+  finding names a test; the tamper baseline then moves to the fix commit and the reviewer brief lists every test
+  file changed since the red commit.
+- `review`: read-only call with the diff in the brief, worktree-unchanged assertion, PR comment, findings hash
+  computed over normalised findings (file, severity, issue text with whitespace and line numbers stripped).
 - `plan`: interactive launch; exit is `gg publish`.
 
-Each procedure declares an outcome enum. Outcomes are read from one dedicated field of the structured output, which
-must hold exactly one enum token. There is no free-text marker fallback: a missing or invalid field is a parse failure
-with its own retry counter. Illustrative enums: `tdd` ok | blocked | misscoped | red-failed | gate-failed(<gate>);
-`fix` ok | blocked | misscoped | gate-failed(<gate>); `review` PASS | CHANGES | REPEAT | misscoped. Built-in defaults:
-blocked posts a note and goes to needs-human; misscoped goes to replan; thrown errors go to needs-human with the error
-on the ticket end event.
+Three layers that never mix: the agent's claim (one dedicated structured-output field holding exactly one enum
+token, no free-text marker fallback; a missing or invalid field is a parse failure with its own retry counter), the
+harness result (completed, failed with class, timed out), and the orchestrator's deterministic checks (gates,
+integrity assertions, findings hash). The outcome is derived from all three.
 
-Resolution policy. Outcomes have a direction: advance (ok, PASS), retry (gate-failed, still-green, test-fix, parse
-failure, timeout, transient), stop (blocked, misscoped, exhausted). A step can receive signals from the agent's claim
-and from deterministic checks. The policy is a node field with a shipped default, never a constant in code:
+Illustrative enums: `tdd` ok | blocked | misscoped | red-failed | gate-failed(<gate>); `fix` ok | blocked |
+misscoped | gate-failed(<gate>); `review` PASS | CHANGES | REPEAT | misscoped. Built-in defaults: blocked posts a
+note and goes to needs-human; misscoped goes to replan; thrown errors go to needs-human with the error on the ticket
+end event. Blocked is honoured after every agent phase including still-green and test-fix; today's ff misses those
+two, so this is a correction, not a port.
 
-1. Advance requires every deterministic check to agree and no stop signal.
-2. On conflict, a stop signal beats retry.
-3. Within a direction, the least long-term impact wins: retry in place before discard and retry; escalate before
-   needs-human; replan on misscoped.
-4. Review PASS requires evidence: no blocker or major findings, definition of done met, gates green. A repeated
-   findings hash routes REPEAT instead of looping.
+Resolution. Outcomes have a direction: advance (ok, PASS), retry (gate-failed, still-green, test-fix, parse failure,
+timeout, transient failure class), stop (blocked, misscoped, exhausted, integrity violation). Fixed, not
+configurable: advance requires every gate and integrity check of the step to pass and no stop signal from any layer;
+an integrity violation always stops; review PASS requires no blocker or major findings, definition of done met and
+gates green, and a repeated findings hash routes REPEAT instead of looping. Configurable per node through
+`resolution`, with a shipped default: the order among non-advance outcomes when several are signalled (default: stop
+beats retry; within retry, in place before discard and retry; within stop, replan on misscoped, escalate before
+needs-human), the weight of the agent's claim when no deterministic evidence exists, and per-class retry budgets.
+Every signal received and the rule that decided are recorded on the step event.
 
-Assumption to confirm at planning: integrity violations (3.6) sit outside the policy and always stop.
+### 3.5 Execution record, approvals and work management
 
-### 3.5 Execution record and work management
+One persisted record per work item (ticket) under `<git common dir>/gg/records/`, plain JSON a human can read,
+schema-versioned. Contents: flow name and config hash, run id, graph position, visit counts per vertex and traversal
+counts per edge, session lineage per phase (session id, harness, persona hash, last cumulative usage), the outputs
+later briefs need (red commit and evidence, implementation reports, review findings and hash, history), worktree
+and branch identity, base revision, PR number, pending approval state, and the write-ahead log below.
 
-One persisted record per work item (ticket) under the repo's feature folder in the git common dir, written after
-every action step: flow name and config hash, graph position, visit counts per vertex and edge, session id per vertex
-visit (first non-resume id only), last cumulative usage per session, red evidence, PR number, pending state, schema
-version. Plain JSON a human can read.
+Action identity is `(ticket, run, vertex, visit, phase, attempt)`. Every action with a side effect is recorded in
+three steps: intent before the effect, the effect's own evidence (commit sha, PR number, comment id, label event),
+completion after. Resume reads the log: an intent without completion is reconciled by looking for the evidence (a
+commit with the trailer, a PR on the head branch, a comment with the marker, a label present) before deciding to
+redo or skip. The golden trace tests kill the process before the effect, between effect and completion, and after
+completion, for a commit, a PR upsert and a comment.
 
-Reconciliation at resume: labels decide whether a ticket runs, the record decides where it continues. Label says
-needs-human and record says mid-step: label wins, record marked abandoned. Label in-progress with no record: stuck,
-reset path. A lost record costs a restart from red, never human state.
+Reconciliation with GitHub at resume: labels decide whether a ticket runs, the record decides where it continues.
+State label says needs-human and record says mid-step: label wins, record marked abandoned. State label in-progress
+with no record: stuck, reset path. Record present but configuration hash changed: the ticket restarts at its current
+vertex entry with the new configuration and the change is logged. Transcript missing for a session the record wants
+to resume: that phase starts fresh with the full brief. Corrupt record: held for a human, never auto-discarded.
 
-Human recovery, `gg work`: list (every repo in the user-dir registry), resume, abandon (keep worktree, forget
-position), reset (today's retry-stuck: discard worktree and branches, clear labels, refuse if a published PR exists),
-approve. Doctor validates records and reports disagreement with GitHub. Single machine; the user dir holds only a
-registry of repo paths appended on each run.
+Dirty state. Unknown uncommitted changes at ticket start are held: the ticket goes to needs-human with the diff stat
+posted, and nothing is deleted. Rollback by gg is limited to changes the record proves this run's agent made (a failed
+red phase in the same run). `gg work reset` is the only destructive path, explicit, refuses when a published PR
+exists, and never runs without the ticket named. Cleanup never deletes a worktree that is dirty or has unpushed
+commits.
 
-Robustness in v1: stall timeout (transcript stops growing, default about 10 min) and wall clock per agent step
-(default about 60 min), per node overridable, expiry kills the process tree through the job object and records a typed
-timeout outcome; idempotent GitHub writes keyed on (ticket, vertex, attempt): PR found by head branch before create,
-one marked comment updated in place, label adds tolerate presence; per-ticket lock file with pid and stale takeover;
-one in-process mutex around every orchestrator git write with retry on index lock; never delete a dirty worktree;
-discard uncommitted changes at ticket start unless the record says the state is known.
+Locks and timeouts. A per-ticket lock file with pid and stale takeover under `<git common dir>/gg/locks/`, and a
+repo-level lock around every orchestrator git write, so two gg processes on one repo serialise correctly; the
+in-process mutex alone is not enough and the document says so. Retry on index lock with backoff. Stall timeout when
+the output stream and transcript stop growing (default about 10 min) and a wall clock per agent step (default about
+60 min), per node overridable; expiry kills the process tree through the job object and records a typed timeout
+outcome. GitHub writes are idempotent by action identity: PR found by head branch before create, one marked comment
+updated in place, label adds that tolerate presence.
+
+Labels are namespaced; the prefix is config, default `gg`:
+
+| Family | Pattern | Written by | Examples |
+|---|---|---|---|
+| Lifecycle state | `gg:state:<name>` | gg only | `gg:state:in-progress`, `gg:state:needs-human`, `gg:state:ready-for-qa`, `gg:state:needs-replan` |
+| Approval request | `gg:await:<vertex>` | gg only | `gg:await:plan`, `gg:await:qa-approval` |
+| Human decision | `gg:decide:<vertex>:<outcome>` | humans only | `gg:decide:plan:approved`, `gg:decide:qa-approval:needs-changes` |
+
+`gg init` creates the labels a resolved flow references; doctor reports missing ones. A human touching a state or
+await label is an external intervention and reconciles as above. The prefix keeps gg's labels apart from ff's during
+cutover.
+
+Approval flow, the only one. When a run reaches an approval vertex, or `gg publish` finishes a plan:
+
+1. gg computes a digest of what is being approved: ticket branch HEAD plus resolved flow hash for a ticket; plan
+   document plus ticket set for a plan.
+2. gg writes the pending state and digest to the execution record, applies the vertex's `await` label, posts one
+   comment naming the digest and the decision labels, and ends the run for that item.
+3. A human applies a `decide` label in the GitHub UI, the mobile app, or with `gg work approve <ticket> [outcome]`,
+   which applies the same label through gh. gg never applies a `decide` label.
+4. On the next run gg reads the issue's event timeline, which has no edit or delete API: it takes its own latest
+   `await` labeled event as the request time, looks for a `decide` labeled event after it that no later unlabeled
+   event undid, checks the actor's repository permission is write or higher (or the actor is in the optional
+   `approvers` list), recomputes the digest and compares it with the record. Match: route the decision's outcome.
+   Digest differs: stale; gg removes the decide label, re-requests with the new digest. Record missing: cannot verify,
+   re-request. Actor, event id and time are recorded on the step event and in the trace.
+
+Human recovery, `gg work`: list across every repo in the user-dir registry, resume, abandon (keep the worktree, forget
+the position), reset (as above), approve. Doctor validates records and reports disagreement with GitHub. Single
+machine; the user dir `~/.agents/gg/` holds config and a registry of repo paths appended on each run; repo config is
+`.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open branches and
+PRs finish under ff; cutover (section 6) archives ff after a real-harness acceptance run.
 
 ### 3.6 Deterministic proof
 
 - Red gate: accepted only when the runner exited non-zero on its own (not timeout, not 127) and the output names at
-  least one test the agent reported. One still-green retry resuming red, then the gate again. Red evidence captured
-  once after the test commit and reused in every PR body.
+  least one test the agent reported. Where the runner's output distinguishes per-test status (node:test TAP, pytest,
+  jest), the named test must be reported failing, not merely present. Otherwise the substring rule is a heuristic and
+  the document says so; the counterexample "named test passed, unrelated old test failed" is a fixture that must be
+  rejected on runners with per-test status. One still-green retry resumes the red session, then the gate runs again.
+  Red evidence is captured once after the test commit and reused in every PR body.
 - Persona gates: `gates` on the node name repo commands (test, lint, format, coverage). Pass or fail by exit code in
   v1; thresholds come from the tool's own flags. Output captured, fed back on the bounded retry, recorded as its own
   event. Gate results go into the reviewer's brief.
-- Test tamper check: diff of test paths between the red commit and the green or fix tree must be empty; a violation is
-  an integrity stop, not a test-fix.
-- Git ownership: after every agent step, HEAD, index and tree of the agent's worktree and of every other active
-  worktree are asserted unchanged by the agent. A change is discarded and stops the ticket.
-- Protected files: agent diffs touching `.claude/`, `.codex/`, `.mcp.json` or `AGENTS.md` are rejected.
+- Test tamper check: test paths are the repo's declared test globs (default pattern shipped) and include additions,
+  renames and shared fixtures. The diff of those paths between the baseline commit and the tree must be empty at the
+  green gate and after test-fix; baseline is the red commit, moving to the fix commit after a fix round that
+  legitimately changed tests. A violation is an integrity stop, not a retry.
+- Git ownership, after every agent step: HEAD and index of the agent's worktree unchanged by the agent; no change to
+  protected files; for read-only steps the tree unchanged as well, untracked files included. Every other worktree
+  that is idle at that moment (not inside its own agent step) is asserted unchanged; worktrees inside a step are
+  guarded by their own assertions and sandbox. A violation discards the agent's changes and stops the ticket.
+- Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md` or `CLAUDE.md`
+  are rejected. Under the Claude launch profile none of these are consumed by the next step anyway; Codex trust
+  level is set explicitly so project config is not consumed either.
 - Agents get read-only git (diff, log, status, show) and no movement commands (checkout, switch, worktree, stash,
-  reset, add, commit, push, remote, gh). Confinement: Codex sandbox, Claude edit scope with prompts off, and the
-  all-worktrees assertion. Agents are never told the worktree root.
+  reset, add, commit, push, remote, gh). Confinement: Codex sandbox; Claude file tools confined to the working
+  directory with prompts off, `--restricted` on read-only steps; the idle-worktree assertion for shell writes.
+  Agents are never told the worktree root.
 - Declared commands are passed in the brief, not assumed read from AGENTS.md.
 
 ### 3.7 Tracing, metrics and export
 
-Events, schema 2, one per action step attempt, in the repo's append-only events file: flow name, config hash, ticket,
-vertex, procedure, phase, attempt, duration, outcome, direction, signals received. Agent steps add: harness and CLI
-version, model and effective effort, persona hash, resolved tools and hint fields, session id, transcript path, usage
-cumulative and delta (input, cached, cache-write, output, reasoning where available), estimated cost delta, peak
-context (max over per-step input plus cache tokens), turns, tool calls, compactions, exit code, signal, final event
-subtype, commands run, failure class. Deterministic steps record events too. Old schema 1 events are still read by
-stats. Stats key on procedure and phase, never on vertex id; `rounds`, `red_failed` and `blocked` remain derivable.
-Commit trailer text `Feature-Flow-Stage:` is kept with vertex and harness content.
+Events, schema 2, one per action step attempt, in the repo's append-only events file: flow name, config hash,
+launch profile, ticket, run, vertex, visit, procedure, phase, attempt, duration, outcome, direction, signals
+received and the resolution rule applied. Agent steps add: harness and CLI version, model and effective effort,
+persona hash, resolved tools with hint fields marked, init metadata (plugins, MCP servers), session id and lineage,
+transcript path, usage cumulative and delta, cost delta, peak context, turns, tool calls, compactions, exit code,
+signal, final event subtype, permission denials, commands run (diagnostic), failure class. Deterministic steps record
+events too. Old schema 1 events are still read by stats.
 
-Config hash = resolved flow + persona hashes + harness settings + declared commands. Written with the resolved flow
-to the run directory.
+Token rules, the same for both harnesses: `input` is uncached input tokens only; `cached` is cache reads;
+`cacheWrite` is cache creation; `output` is output tokens from the result; `reasoning` where the harness reports it,
+else absent. Peak context is the maximum over the session's requests of `input + cached + cacheWrite` for that
+request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
+harness reports none, or null. Fixtures cover a resumed Claude session and a resumed Codex thread.
 
-Export: Agent Trajectory Interchange Format (ATIF, Harbor), pinned schema version. One parent trajectory per ticket
-run whose steps are the action steps, deterministic steps with `llm_call_count: 0`; each agent step's native transcript
-(Claude JSONL, Codex rollout) converted to a subagent trajectory, embedded or referenced by file; vertex, procedure,
-phase and attempt in `extra`; per-step `metrics` and root `final_metrics` from the normalised usage. `gg trace <epic>
-[ticket]` prints the timeline from it; Harbor's viewer or Phoenix render it graphically. ff events remain the index.
+Stats: every event carries the vertex id and visit; aggregation defaults to procedure and phase, with vertex,
+harness and model as further dimensions, so two reviewers on the same procedure stay distinguishable and renaming
+a vertex does not hide escalations. `rounds`, `red_failed` and `blocked` remain derivable. The commit trailer text
+`Feature-Flow-Stage:` is kept, carrying vertex and harness.
+
+Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands. Written with the
+resolved flow to the run directory. Secrets never enter it (3.1).
+
+Export: Agent Trajectory Interchange Format (ATIF, Harbor), pinned to the schema version Harbor's validator accepts
+at implementation time and recorded in the file. One parent trajectory per ticket run whose steps are the action
+steps, deterministic steps with `llm_call_count: 0`, graph identity and init metadata in `extra`. Each agent step
+contributes a subagent trajectory built from the transcript segment that step added (messages after the previous
+step of the same session), with a unique `trajectory_id`, so a resumed session is never exported twice; per-step
+`metrics` and root `final_metrics` come from the normalised usage. The transcript holds the per-message usage,
+model and tool calls this needs; it does not hold init metadata, which is why that comes from the run output.
+`gg trace <epic> [ticket]` prints the timeline from the export. Rendering in Harbor's viewer or Phoenix is a
+separate acceptance step with its own import check; Phoenix truncates very long single sessions, which short
+sessions avoid.
 
 ### 3.8 Planning and replanning
 
 The planner is a node with `mode: interactive`, run at epic level by `gg plan`, with the context-budget stop hook and
 background sessions ported. `misscoped` from any ticket vertex lands in the replan terminal; `gg plan --replan <epic>`
-resumes planning with the collected diagnoses. Publish keeps its planning-session guard for flows with a plan section.
+resumes planning with the collected diagnoses. Publish keeps its planning-session guard for flows with a plan
+section, and publish resolves ticket dependencies into blocking issues as today.
 
 ### 3.9 Config and migration
 
-Three layers, defaults < user < repo, same merge rules as flows. The four stage keys, `stageTools`, `toolkit`,
-`escalationEnabled`, `maxReviewRounds` and `contextBudget.<stage>` are gone; a loud load error prints a migration table
-naming the replacement (`nodes`, `harnesses`, `flows`), not just a key. Keys that stay: `planApproval`, `maxParallel`,
-`stuckAfterHours`, `baseBranch`, `worktreeRoot`, `allowNetwork`, `style`, `apiPrices`, `contextBudget.byModel`. Eval
-variants are config layers and may change flow structure.
+Three layers, defaults < user < repo, same merge rules as flows, under `.agents/gg/`. The shipped defaults declare
+nodes with empty `skills`, `mcp` and `plugins`, no hooks and no injection; the owner's user config adds ponytail or
+anything else. The four stage keys, `stageTools`, `toolkit`, `escalationEnabled`, `maxReviewRounds` and
+`contextBudget.<stage>` do not exist in gg; a gg config file using one gets a loud load error with a migration table
+naming the replacement (`nodes`, `harnesses`, `flows`). Keys that carry over by name: `planApproval`,
+`maxParallel`, `stuckAfterHours`, `baseBranch`, `worktreeRoot`, `allowNetwork`, `style`, `apiPrices`,
+`contextBudget.byModel`. Eval variants are config layers and may change flow structure.
 
-## 4. Hard-won behaviours to port
+## 4. Behaviours to port, and deliberate changes
 
 From feature-flow at 89e1d67; see `C:\dev\ff-review-work\design-vetting-code.md` section 1 for line references.
+
+Ported as they are:
 
 - Red gate acceptance rules, single still-green retry, red evidence captured once, failed red discards the worktree
   and records the reason into history, "No tests were written" as a distinct failure.
 - Resume rules: still-green resumes red, test-fix resumes whatever produced the code, fix never resumes; history goes
   to red and fix briefs only.
-- Blocked short-circuits to a ticket comment and needs-human.
 - Review is read-only with the before and after HEAD and dirty comparison; order after review: event, PR comment, PR
   body re-render with provenance, then ready and labels.
 - Draft PR upserted after every green commit and push; escalation diagnosis comment when non-empty; provenance table
   with persona hash; commit trailer parsed by outcome refresh.
-- Labels never throw: logged, event, exit code 1; exit 2 on any needs-human. `in-progress` added only after the
+- Labels never throw: logged, event, exit code 1; exit 2 on any needs-human. In-progress added only after the
   worktree exists.
 - Stuck detection from label age; reset refuses when a published PR exists and closes every draft; cleanup keeps dirty
   or unpushed worktrees.
 - Worktree add serialised, ownership validated, branch reused on title change; push without `-u`.
+- Ticket dependency ordering at publish (unknown and cyclic dependencies rejected, blockers resolved to issue
+  numbers) and blocker readiness at run, standalone tickets included.
 - Codex: sandbox and `-C` before resume, sandbox re-check from the rollout, thread id fallback, usage delta, MXC
   fallback, node_repl lock warning, persona on first prompt only, strict schemas, allowlists as inline tables, listing
   failures throw, cost from `apiPrices` or null.
-- Claude: user settings skipped, all plugins off then the node's back by directory, allow and deny lists with
-  prefixed twins, `is_error` or missing structured output throws, input token accounting, missing plugin fails before
-  spawn.
+- Claude: all plugins off then the node's back by directory, allow and deny lists with prefixed twins, `is_error` or
+  missing structured output throws, missing plugin fails before spawn.
 - Preflight resolves tools for every active vertex before any gh call or worktree, all failures in one error; plan
   approval gate; pool with `maxParallel`; per-epic log and usage file; run start and end events.
 - Process containment: job object via winjob.ps1 for shell runs, timeout kills orphans, fallback chain and survivor
@@ -268,41 +407,71 @@ From feature-flow at 89e1d67; see `C:\dev\ff-review-work\design-vetting-code.md`
 - Planning: interactive launch with session id and stop-hook budget warning, background sessions, plan marker,
   `--finish`, transcript metrics.
 
-## 5. Tests to port
+Deliberate changes, each with its own regression case:
+
+- Fresh green session with the full brief (ff resumes red).
+- Review PASS requires `dodMet`, `tddEvidenceOk` and no blocker or major findings (ff advances on the verdict alone).
+- Test immutability between the red commit and the green gate, baseline moving only through a fix round.
+- Blocked honoured after still-green and test-fix.
+- Red check requires per-test failure where the runner reports it.
+- Approvals bound to a digest and read from label events, not from a label's presence.
+- Unknown dirty state held, never discarded.
+- Input token accounting split into uncached, cached and cache-write.
+- Sessions start empty; ponytail and skills hints come from config.
+
+## 5. Tests to port and tests to add
 
 Port `test/exec.test.mjs` (18) and `test/publish.test.mjs` (7) unchanged. Port `test/retry-e2e.test.mjs` (7) and
 `test/stuck.test.mjs` to inject the fake harness instead of `deps.invoke`; they are the golden-trace seeds: real bare
 origin, fake gh spread over the real module, fake harness that writes files into cwd. From `test/core.test.mjs` port
-the behaviours listed in `design-vetting-code.md` section 6 (round bounds, Codex usage and pricing, toolkit isolation,
-missing plugin, replaced keys, commit and discard, worktree guards, diff stats and metrics, read-only trust, option
-parsing, pool, red check, plans folder, preflight ordering, doctor rows); skip the four shape-specific ones.
+the behaviours listed in `design-vetting-code.md` section 6 plus the dependency-order tests at lines 71 and 78; skip
+the four shape-specific ones.
 
-Golden trace test, definition of done for the interpreter: with the fake harness, assert the exact action-step
-sequence and events for first-round pass, a CHANGES round, a failed red, an escalation, a persona gate failure, a
-blocked claim with passing tests, and kill after step N then resume at N plus one.
+Golden trace test, staged with the slices in section 6. Slice 1 asserts the exact action-step sequence and events
+for: first-round pass, a CHANGES round into a fix vertex, a failed red, a blocked claim with passing tests, an
+invalid structured output, an integrity violation, and the three crash points around a commit, a PR upsert and a
+comment with resume continuing correctly. Slice 4 adds: an escalation, a persona gate failure with retry, a repeated
+findings hash, a stale approval. Concurrency: two tickets in parallel with the idle-worktree assertion, and two gg
+processes on one repo serialised by the lock.
 
-Fake harness needs: scripted responses keyed by (vertex, phase, attempt), optional file writes into cwd, a session id
-per call, recorded `write` and `resume` arguments, usage with nulls for declared-absent capabilities, a way to throw
-with a failure class, and a capability matrix the validator reads.
+Launcher acceptance, per harness, against the fake CLI: prompt via stdin, stall timeout, wall-clock timeout, cancel,
+orphan descendants killed, diagnostics retained, exit code and signal recorded. The existing exec tests stay and are
+not treated as covering this.
+
+Fake harness needs: scripted responses keyed by (vertex, visit, phase, attempt), optional file writes into cwd, a
+session id per call with lineage, recorded `write`, `resume`, launch profile and tool arguments, usage with nulls for
+declared-absent capabilities, init metadata including error arrays, a way to throw with a failure class, a way to
+hang, and a capability matrix the validator reads.
 
 ## 6. Delivery
 
 - This repository, binary `gg`, own `test` command, so the installed `ff` runs the tickets from a separate checkout.
-- Slice order: (1) harness interface, fake harness, event schema 2, execution record, interpreter with `tdd` and
-  `review` on ported git, gh and exec verbs, golden trace test. (2) Claude harness. (3) Codex harness with sandbox and
-  resume quirks. (4) `fix`, bounds, escalation, resolution policy, persona gates. (5) Flows in config, `--flow`,
-  layering, migration errors. (6) Trace, stats, ATIF export, `gg work`. (7) Planning, publish, replan.
-- Parallel-safe once the interface is frozen: the two harness modules, flow loader and validator, trace renderer,
-  migration table, git/gh/exec ports.
-- Planner guidance: small tickets per file area; one interpreter-touching ticket in flight at a time; the golden
-  trace test is the definition of done for anything the interpreter touches; reinstall nothing until cutover.
-- Cutover: once `gg` runs its own tickets, archive feature-flow.
+  Bootstrap constraint: ff's red gate needs failing tests that name themselves in runner output, so the first ticket
+  lands an importable scaffold (entry points that export stubs) and every later test fails inside a named case,
+  never at import.
+- Slice order: (1) harness interface, fake harness, event schema 2, execution record with write-ahead log,
+  interpreter with `tdd`, `fix` and `review` on ported git, gh and exec verbs, label namespace, slice-1 golden
+  traces. (2) Claude harness with the launch profile and launcher acceptance. (3) Codex harness with sandbox and
+  resume quirks. (4) Bounds and escalation, resolution policy, persona gates, approval vertex, slice-4 golden
+  traces. (5) Flows in config, `--flow`, layering, migration errors. (6) Trace, stats, ATIF export, `gg work`,
+  registry. (7) Planning, publish, replan.
+- Interface freeze: the fake harness, the execution record schema and the event schema are frozen at the end of
+  slice 1 before any parallel ticket starts. Parallel-safe after that: the two harness modules, flow loader and
+  validator, trace renderer, migration table.
+- Serial interpreter work is encoded as ticket dependencies, including merging the prerequisite before the dependent
+  ticket starts.
+- Planner guidance: small tickets per file area; one interpreter-touching ticket in flight at a time; the staged
+  golden trace is the definition of done for anything the interpreter touches.
+- Cutover: a separately authorised acceptance run of `gg` on its own tickets with the real Claude and Codex
+  harnesses on this machine, since fake-harness success proves nothing about native Windows CLI behaviour. Then
+  archive feature-flow; its open branches and PRs are finished under ff first.
 
 ## 7. Deferred
 
-Journal-driven replay beyond resume; node-level brief files; red and green on separate vertices; parallel branches
-and fan-out inside a ticket; non-GitHub ticket sources; multi-machine work management; output parsers for gate
-metrics (coverage numbers); Claude MCP and skill filtering (becomes exact when the CLI supports it).
+Bare-mode launch profile (switch when subscription auth works; doctor probes it); journal-driven replay beyond
+resume; node-level brief files; red and green on separate vertices; parallel branches and fan-out inside a ticket;
+non-GitHub ticket sources; multi-machine work management; multiple approvers and git-native signed approvals;
+output parsers for gate metrics; Claude MCP and skill filtering (becomes exact when the CLI supports it).
 
 ## 8. In-flight work in feature-flow
 
@@ -310,10 +479,32 @@ PR 64 merge then stop; PR 65 discard; PR 66 keep as record. Tickets 33, 35, 36, 
 harness modules. Ticket 46 (single ticket run) and 47 (approval) are covered here. 48 reshaped (guard only for flows
 with a plan section). 45 and 49 reshaped around flows instead of sizes. 50 stays. Epic 1 done.
 
-## 9. References
+## 9. Validated facts this document relies on
+
+All on 2026-10-15, this machine, claude 2.1.300 native executable, codex-cli 0.162.1, subscription login.
+
+| Claim | Result |
+|---|---|
+| `claude --bare -p` with a subscription | Fails: "Not logged in", zero tokens |
+| `--setting-sources "" --strict-mcp-config` plus the two env vars | Init lists built-in plugins only; project skill absent; CLAUDE.md ignored |
+| `--restricted -p` | Authenticates; same clean init |
+| `--safe-mode -p` | Authenticates; installed plugins still listed in init, their skills absent |
+| `--output-format stream-json --verbose --json-schema` | Structured output produced; init event carries plugins and MCP fields |
+| Same on `--resume` | Structured output produced, same session id |
+| `--output-format json --verbose` | Returns the event array including init; undocumented shape |
+| Transcript on disk | Per-message usage, model, tool calls; no init metadata |
+| `codex exec resume --output-schema` | Flag accepted |
+| Codex `-c` precedence | CLI overrides rank above project, profile and user config (OpenAI config docs) |
+| GitHub issue events API | Read-only; `labeled` records actor, time, label |
+| GitHub review update API | Body only; state cannot be edited; dismissal needs write access and a message |
+
+## 10. References
 
 - `C:\dev\ff-state-review-2026-10-14.md`: scorecard, 47 findings, research grounding.
-- `C:\dev\ff-review-work\design-vetting-code.md` and `design-vetting-discourse.md`: findings this document folds in.
+- `C:\dev\ff-review-work\design-vetting-code.md`, `design-vetting-discourse.md`: findings this document folds in.
+- `C:\dev\ff-review-work\astra-review.md`: the adversarial review this revision answers.
 - `C:\dev\ff-review-work\frameworks.md`: 23 candidates scored; build, do not adopt.
-- ATIF: https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md
-- Archon provider contract: `packages/provider-contract/src/capabilities.ts`
+- ATIF RFC: https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md
+- Phoenix ATIF import: https://arize.com/docs/phoenix/tracing/how-to-tracing/importing-and-exporting-traces/importing-atif-trajectories
+- Claude headless and CLI reference: https://code.claude.com/docs/en/headless, https://code.claude.com/docs/en/cli-reference
+- Bare mode and OAuth: https://github.com/anthropics/claude-code/issues/39069
