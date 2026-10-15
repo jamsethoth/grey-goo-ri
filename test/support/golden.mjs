@@ -1,9 +1,10 @@
 // Golden-trace fixture: a temp bare origin and clone with a ticket worktree, a fake gh at lib/github.mjs's seam,
 // a fake test runner, the fake harness, and every process call tagged with the activity it observed.
-import { execFileSync } from 'node:child_process';
+import childProcess, { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
@@ -117,8 +118,11 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
     },
   };
 
-  const git = Object.fromEntries(Object.entries(gitModule).map(([name, fn]) =>
-    [name, typeof fn === 'function' && !['slugify', 'worktreePath'].includes(name) ? (...a) => { observe(`git.${name}`); return fn(...a); } : fn]));
+  // Every real process spawn is observed, including the ones lib modules launch on their own (integrity snapshots).
+  const spawn = childProcess.spawn;
+  childProcess.spawn = (cmd, args, ...rest) => { observe(`${basename(cmd).replace(/\.exe$/i, '')} ${args?.[0]}`); return spawn(cmd, args, ...rest); };
+  syncBuiltinESMExports();
+  t.after(() => { childProcess.spawn = spawn; syncBuiltinESMExports(); });
 
   const gh = fakeGh({ branch: BRANCH, observe });
   github.setGh(gh.gh);
@@ -129,7 +133,7 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
   const clock = { now: () => now, sleep: async (ms) => { now += ms; } };
 
   const options = {
-    flow, record: rec, harness, gh: github, git, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
+    flow, record: rec, harness, gh: github, git: gitModule, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
     commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock,
   };

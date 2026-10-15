@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
@@ -166,6 +167,32 @@ test('activity brackets every launched process', async (t) => {
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.activity.filter((a) => a.what === 'harness').length, 2);
   assert.equal(g.rec.activity.busy, false);
+});
+
+test('the visit keeps the configuration pinned at entry when the node changes mid-visit', async (t) => {
+  const g = await golden.setup(t);
+  const vertex = g.flow.ticket.vertices.implementer;
+  const run = g.harness.run;
+  const seen = {};
+  g.harness.run = async (call) => {
+    seen[call.phase] = structuredClone({ node: call.node, access: call.access, persona: call.persona });
+    if (call.phase === 'red') {
+      vertex.node.model = 'model-y';
+      vertex.node.access = 'read-only';
+      vertex.options.requireTestPass = false;
+      call.node.effort = 'low';
+      writeFileSync(g.personaPath, '# changed\n');
+    }
+    return run(call);
+  };
+  await interpreter.runExecution(g.options);
+  assert.deepEqual(seen.green, seen.red);
+  assert.equal(seen.green.node.model, 'model-x');
+  assert.equal(seen.green.access, 'workspace-write');
+  assert.equal(seen.green.persona.bytes, golden.PERSONA);
+  assert.equal(g.rec.snapshot.node.effort, 'high', 'a harness mutating its call does not reach the snapshot');
+  assert.deepEqual(g.rec.snapshot.options, {});
+  assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%B'), /Feature-Flow-Stage: implementer fake\/model-x\/high/);
 });
 
 test('done removes in-progress and adds ready-for-qa', async (t) => {
