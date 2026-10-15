@@ -28,7 +28,7 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
   to any session. Everything an agent gets is declared in config. Ponytail and every other plugin are user or repo
   config, never framework.
 - No degraded runs: a node field the harness cannot enforce fails preflight, it is never silently dropped.
-- Every agent step is traced with normalised usage. A field a harness cannot produce is declared absent, never zero.
+- Every agent action is traced with normalised usage. A field a harness cannot produce is declared absent, never zero.
 - Wrongly advancing is costlier than wrongly holding. Advance needs evidence. Which checks a procedure declares is
   configuration, visible in validation output; that advance never happens while a declared check is failing, and
   that integrity violations stop, is not. The ordering among legitimate outcomes is per-node configuration.
@@ -44,7 +44,7 @@ A node is a named, declarative unit of agent work. Fields, all with declared sem
 | Field | Meaning |
 |---|---|
 | `harness` | `claude` or `codex` |
-| `model`, `effort` | harness-native strings; shape validated at load, value validated by the CLI; effective value recorded per step |
+| `model`, `effort` | harness-native strings; shape validated at load, value validated by the CLI; effective value recorded per action |
 | `persona` | markdown file name, resolved through the config layers (defaults < user < repo); hashed |
 | `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name appears in code; default empty |
 | `mode` | `headless` (default) or `interactive` (the planner) |
@@ -59,7 +59,7 @@ Nodes live in a shared `nodes` library in the layered config. A vertex in a flow
 visit number.
 
 Secrets: any `mcp.env` value that is not a `${VAR}` reference fails validation. Expansion happens at launch into a
-gg-owned temp file that is deleted after the step. Expanded values never reach the execution record, events, the
+gg-owned temp file that is deleted after the action. Expanded values never reach the execution record, events, the
 resolved-config snapshot, the trace export or any diagnostic gg retains (log tails, error excerpts); gg knows every
 value it expanded and redacts them from anything it derives from a transcript. The one raw artefact gg does not own
 is the CLI's own transcript on disk, which stays where the CLI wrote it under the owner's home directory; gg stores
@@ -79,7 +79,7 @@ metrics(session), doctor(cfg)
 ```
 
 Capability semantics, per field per harness: `exact` means the harness enforces the field; `hint` means the field
-is passed as prompt text or a best-effort setting and the step is logged as hinted so eval can tell variants apart;
+is passed as prompt text or a best-effort setting and the action is logged as hinted so eval can tell variants apart;
 `unsupported` means a node that lists the field fails preflight. A harness declares one of the three for `skills`,
 `mcp`, `plugins`, `access`, `network`, `contextBudget`. Current declarations: Claude `plugins` exact, `mcp`
 unsupported (until filtering lands), `skills` hint; Codex `plugins` exact, `mcp` exact for config servers, `skills`
@@ -94,7 +94,7 @@ node with `network: false` and an MCP server that reaches the network. On native
 sandbox. A Claude `workspace-write` node therefore runs in a declared trusted-command mode, which the matrix names
 as `confinement: trusted-commands` rather than a sandbox: only the repo's declared commands and gg's allow list may
 run, git write and gh commands are denied, network tools are denied unless the node allows network, and the
-post-step assertions in 3.6 detect changes to the checked surfaces only. A command that writes outside the checked
+post-action assertions in 3.6 detect changes to the checked surfaces only. A command that writes outside the checked
 worktrees or reaches the network through its own means is neither prevented nor observed in this mode. The owner
 accepts this knowingly; the mode is recorded on every event and in the config hash, and it is never described as
 equivalent to a sandbox.
@@ -126,10 +126,10 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
 - Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call, with
   the persona supplied from the visit's pinned snapshot (3.5), written to a file in the run directory, never from
   the live layer directories. A resumed call therefore sees exactly the persona the visit entered with, the hash
-  recorded per step is the one the model ran, and a persona edit takes effect at the next vertex entry.
+  recorded per action is the one the model ran, and a persona edit takes effect at the next vertex entry.
 - `--output-format stream-json --verbose`. The init event (first line) supplies `plugins`, `plugin_errors`,
   `mcp_servers`, `mcp_server_errors` and `capabilities`; a non-empty error array or a listed server not connected
-  fails the step. The result event (last line) supplies usage, cost, turns, `structured_output`,
+  fails the action. The result event (last line) supplies usage, cost, turns, `structured_output`,
   `permission_denials`. Stream liveness feeds the stall timeout. Verified with `--json-schema` on a fresh session and
   on `--resume`. Fallback if the stream misbehaves on a future version: `--output-format json --verbose`, which
   returns the same events as one array; observed, not documented.
@@ -141,8 +141,8 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   project skill absent under the profile, so this content is treated as potentially discoverable rather than as
   declared: gg does not rely on it being loaded or unloaded, its digest joins the config hash so two runs that
   differ only in repository `.claude` content are distinguishable, the launcher acceptance test records whether the
-  installed version exposed it, and the protected-files gate in 3.6 stops an agent from changing it. This content
-  is live, not pinned: a human may change it mid-visit, so every agent-step event records its current digest
+  installed version exposed it, and the protected-files check in 3.6 stops an agent from changing it. This content
+  is live, not pinned: a human may change it mid-visit, so every agent-action event records its current digest
   separately from the pinned config hash, and a test edits it between two calls of one visit and asserts both
   digests appear. This is the one stated exception to "sessions start empty".
 - Cost and usage on `--resume` are the session's cumulative totals; gg stores the previous totals per session and
@@ -154,7 +154,7 @@ Codex specifics: every harness-owned key as a `-c` override, since CLI overrides
 `features.hooks` explicit; `commandWindows` required for any hook on win32; MXC fallback to unelevated only on an mxc
 error and only with equivalent isolation declared; usage delta from the cumulative `turn.completed`; rollout lookup by
 session id across the sessions tree; tail `$CODEX_HOME/logs` on non-zero exit; verify expected filesystem changes and
-gates rather than command counts. Installed: codex-cli 0.162.1, which accepts `exec resume --output-schema`.
+checks rather than command counts. Installed: codex-cli 0.162.1, which accepts `exec resume --output-schema`.
 
 Plugin hook injection (Codex without hooks): `harnesses.codex.injectHooks` lists plugin names; a generic hook runner
 reads the plugin's hook manifest, runs its session-start command through the shell runner, and injects the output.
@@ -166,20 +166,20 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
 - Persona vertex: a node (3.1) plus a `procedure` with options (3.4) plus edges.
 - `gate` vertex: runs a named repo command, must declare both pass and fail targets.
 - `approval` vertex: pauses for a human decision through GitHub labels (3.5). It declares its request label and a
-  map of decision labels to outcomes; `approved` and `rejected` are the shipped default, a vertex may declare more.
+  map of decide labels to outcomes; `approved` and `rejected` are the shipped default, a vertex may declare more.
 - Terminals: `done` (PR marked ready, state label), `needs-human`, `replan` (state label, diagnosis posted on the
   ticket and the epic). `done` requires an open PR for the ticket; a flow that routes to `done` without a vertex that
   creates one fails validation.
 - Edges: `then: <vertex>` or `route: { <outcome>: <vertex | {to, max, exhausted}> }`. Every back edge has `max` and
-  `exhausted`. Every vertex has `maxVisits` with its own `exhausted`; every ticket has a step cap. Loops exist only
+  `exhausted`. Every vertex has `maxVisits` with its own `exhausted`; every ticket has a action cap. Loops exist only
   as bounded back edges.
 - Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
   `maxVisits` counts entries per ticket; procedure-internal retries (still-green, test-fix, gate retries) count
-  toward the ticket step cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
-  step the vertex `exhausted` wins; the ticket step cap exhausting goes to needs-human and wins over both; counts
-  survive a restart because they live in the execution record and are checked before the step runs, so a restart at
+  toward the ticket action cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
+  step the vertex `exhausted` wins; the ticket action cap exhausting goes to needs-human and wins over both; counts
+  survive a restart because they live in the execution record and are checked before the action runs, so a restart at
   a boundary routes the same way. Repeat detection for `REPEAT` compares the findings hash with earlier reviews by
-  the same reviewer vertex within the same ticket run only. One worked example with nested retries, a cap boundary
+  the same reviewer vertex within the same execution only. One worked example with nested retries, a cap boundary
   and a restart ships with the validator tests.
 - Per-ticket graphs are sequential. Parallelism is across tickets only.
 - Two sections: `plan` (epic level, used by `gg plan`) and `ticket` (used by `gg run`). The planner is never a ticket
@@ -189,7 +189,7 @@ A flow is a graph over persona vertices plus two deterministic kinds and built-i
   approval. A standalone ticket under a flow whose `plan` section is non-null is rejected before any effect, with
   the message naming a flow that sets `plan` to null. Readiness requires every blocking issue closed, as today.
   Epic-level state, including a pending plan approval, lives in an epic record under the same records directory
-  (3.5), and ticket runs reference it by epic number.
+  (3.5), and executions reference it by epic number.
 
 Illustration only (shape, not syntax):
 
@@ -215,32 +215,32 @@ repo; `done` reachable without a PR-creating vertex; a warning when reviewer and
 
 ### 3.4 Procedures, outcomes and resolution
 
-Procedures are code: named action sequences the interpreter expands into action steps.
+Procedures are code: named action sequences the interpreter expands into actions.
 
-- `tdd`: red brief, red gate (expected fail, verified), commit tests, green brief in a fresh session with the full
-  context (ticket, branch, commands, rules, committed test list, failing output), green gate (the declared test
-  command must pass), persona gates, commit, push, draft PR. Options: `stillGreen` and `testFix` retry counts
+- `tdd`: red brief, red check (expected fail, verified), commit tests, green brief in a fresh session with the full
+  context (ticket, branch, commands, rules, committed test list, failing output), green check (the declared test
+  command must pass), quality gates, commit, push, draft PR. Options: `stillGreen` and `testFix` retry counts
   (default 1), `resumeGreen` (default false), `requireTestPass` (default true; turning it off is allowed, raises a
   loud validation warning, and is recorded on every event so eval can see which variant ran). Still-green resumes
   the red session; test-fix resumes the green session. A `tdd` vertex is entered once per ticket; later rounds enter
   a `fix` vertex, as the illustration shows. Splitting red and green onto different vertices is deferred and is a
   procedure split, not a grammar change.
-- `fix`: fix brief with history and the review findings, green gate under the same option, persona gates, commit,
-  push. A fix round may change tests when a finding names a test; the tamper baseline then moves to the fix commit
+- `fix`: fix brief with history and the review findings, green check under the same option, quality gates, commit,
+  push. A fix round may change tests when a finding names a test; the immutability baseline then moves to the fix commit
   and the reviewer brief lists every test file changed since the red commit.
 - `review`: read-only call with the diff in the brief, worktree-unchanged assertion, PR comment, findings hash
   computed over normalised findings (file, severity, issue text with whitespace and line numbers stripped).
 - `plan`: interactive launch; exit is `gg publish`.
 
-Procedures declare their checks as data: the gates they require, the options that may relax them, and their outcome
+Procedures declare their checks as data: the checks they require, the options that may relax them, and their outcome
 enum. Validation prints the effective check list per vertex, so nothing a procedure verifies is hidden in code.
 
 Three layers that never mix: the agent's claim (one dedicated structured-output field holding exactly one enum
 token, no free-text marker fallback), the harness result (completed, failed with class, timed out, killed), and the
-orchestrator's deterministic checks (gates, integrity assertions, findings hash). Integrity assertions (3.6) run
+orchestrator's deterministic checks (red and green checks, quality gates, integrity assertions, findings hash). Integrity assertions (3.6) run
 after every terminated attempt, whatever the harness result, before the table is consulted; a violation takes the
 integrity row even when the attempt timed out or returned nothing, so a prohibited change never survives into a
-retry. Gates run only on a completed attempt with a valid claim. One transition table, obeyed by every harness and
+retry. Checks other than integrity run only on a completed attempt with a valid claim. One transition table, obeyed by every harness and
 procedure, derives the outcome. It lives in exactly one interpreter module that takes the harness result, the
 validated claim, the check results and the node's `resolution` policy and returns the outcome, its direction and the
 row that fired; harnesses and procedures never decide outcomes. The rows are data-shaped in code so they are tested
@@ -267,14 +267,14 @@ two, so this is a correction, not a port.
 
 Resolution. Outcomes have a direction: advance (ok, PASS), retry (gate-failed, still-green, test-fix, parse failure,
 timeout, transient failure class), stop (blocked, misscoped, exhausted, integrity violation). Fixed, not
-configurable: advance requires a completed harness result, a valid claim, every declared check of the step passing
+configurable: advance requires a completed harness result, a valid claim, every declared check of the action passing
 and no stop signal from any layer; an integrity violation always stops; review PASS requires no blocker or major
 findings, definition of done met and declared checks green, and a repeated findings hash routes REPEAT instead of
 looping. Configurable per node through `resolution`, with a shipped default: the order among non-advance outcomes
-when several are signalled in one step (default: stop beats retry; within retry, in place before discard and retry;
+when several are signalled in one action (default: stop beats retry; within retry, in place before discard and retry;
 within stop, replan on misscoped, escalate before needs-human), the weight of the agent's claim when no deterministic
 evidence exists, and per-class retry budgets. Which checks a procedure declares is procedure configuration (above),
-not resolution policy. Every signal received and the rule that decided are recorded on the step event.
+not resolution policy. Every signal received and the rule that decided are recorded on the action event.
 
 ### 3.5 Execution record, approvals and work management
 
@@ -297,8 +297,8 @@ which is idempotent; a comment without the marker is posted; a label present is 
 kill the process before the effect, between effect and completion, and after completion, for a commit, a PR upsert
 and a comment, assert no duplicate and no stale payload, and include the amended-commit fixture.
 
-Reconciliation with GitHub at resume: labels decide whether a ticket runs, the record decides where it continues.
-State label says needs-human and record says mid-step: label wins, record marked abandoned. State label in-progress
+Reconciliation with GitHub at resume: labels decide whether a executions, the record decides where it continues.
+State label says needs-human and record says mid-action: label wins, record marked abandoned. State label in-progress
 with no record: stuck, reset path. Configuration is pinned per vertex visit: the record stores the resolved
 configuration snapshot a vertex entered with, persona contents included as bytes, not as a path; the current vertex
 finishes on that snapshot even if the config hash or a persona file has changed, every call in the visit is supplied
@@ -317,7 +317,7 @@ Locks and timeouts. A per-ticket lock file with pid and stale takeover under `<g
 epic lock for epic-record writes and approval reconciliation, and a repo-level lock around every orchestrator git
 write, so two gg processes on one repo serialise correctly; the
 in-process mutex alone is not enough and the document says so. Retry on index lock with backoff. Stall timeout when
-the output stream and transcript stop growing (default about 10 min) and a wall clock per agent step (default about
+the output stream and transcript stop growing (default about 10 min) and a wall clock per agent action (default about
 60 min), per node overridable; expiry kills the process tree through the job object and records a typed timeout
 outcome. GitHub writes are idempotent by action identity: PR found by head branch before create, one marked comment
 updated in place, label adds that tolerate presence.
@@ -342,7 +342,7 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
 2. gg retires any earlier request on the item: it removes the vertex's `await` label and every `decide` label for
    that vertex, so no stale decision can follow a new request. It writes the pending instance to the record, applies
    the `await` label, which creates a fresh labeled event, posts one comment naming the instance id, the digest and
-   the decision labels, and ends the run for that item.
+   the decide labels, and ends the run for that item.
 3. A human applies a `decide` label in the GitHub UI, the mobile app, or with `gg work approve <ticket> [outcome]`,
    which applies the same label through gh. gg never applies a `decide` label; it only removes them to retire or
    consume.
@@ -357,7 +357,7 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
    event gg itself created cannot invalidate the decision. More than one surviving authorised decision: hold, retire
    both, re-request. Digest differs: stale, retire, re-request with the new digest. Record or pending instance
    missing: cannot verify, retire, re-request. Epic-level approvals reconcile under an epic lock file; once verified,
-   the epic record stores the approved digest and event id, and every ticket run under that epic reads the epic
+   the epic record stores the approved digest and event id, and every execution under that epic reads the epic
    record rather than the timeline. The stored approval is a cache, not an authority: before admitting any ticket,
    gg recomputes every approval input (plan document, ticket set, each ticket body revision, full config hash) under
    the epic lock and compares it with the approved digest; a mismatch, whether from `gg publish`, a replan, a ticket
@@ -371,32 +371,32 @@ machine; the user dir `~/.agents/gg/` holds config and a registry of repo paths 
 `.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open branches and
 PRs finish under ff; cutover (section 6) archives ff after a real-harness acceptance run.
 
-### 3.6 Deterministic proof
+### 3.6 Checks and evidence
 
-- Red gate: accepted only when the runner exited non-zero on its own (not timeout, not 127) and the output names at
+- Red check: accepted only when the runner exited non-zero on its own (not timeout, not 127) and the output names at
   least one test the agent reported. Where the runner's output distinguishes per-test status (node:test TAP, pytest,
   jest), the named test must be reported failing, not merely present. Otherwise the substring rule is a heuristic and
   the document says so; the counterexample "named test passed, unrelated old test failed" is a fixture that must be
-  rejected on runners with per-test status. One still-green retry resumes the red session, then the gate runs again.
+  rejected on runners with per-test status. One still-green retry resumes the red session, then the check runs again.
   Red evidence is captured once after the test commit and reused in every PR body.
-- Persona gates: `gates` on the node name repo commands (test, lint, format, coverage). Pass or fail by exit code in
+- Quality gates: `gates` on the node name repo commands (test, lint, format, coverage). Pass or fail by exit code in
   v1; thresholds come from the tool's own flags. Output captured, fed back on the bounded retry, recorded as its own
-  event. Gate results go into the reviewer's brief.
-- Test tamper check: test paths are the repo's declared test globs (default pattern shipped) and include additions,
+  event. Quality gate results go into the reviewer's brief.
+- Test test immutability check: test paths are the repo's declared test globs (default pattern shipped) and include additions,
   renames and shared fixtures. The diff of those paths between the baseline commit and the tree must be empty at the
-  green gate and after test-fix; baseline is the red commit, moving to the fix commit after a fix round that
+  green check and after test-fix; baseline is the red commit, moving to the fix commit after a fix round that
   legitimately changed tests. A violation is an integrity stop, not a retry.
-- Git ownership, after every agent step: HEAD and index of the agent's worktree unchanged by the agent; no change to
-  protected files; for read-only steps the tree unchanged as well, untracked files included. Other worktrees are
+- Git ownership, after every agent action: HEAD and index of the agent's worktree unchanged by the agent; no change to
+  protected files; for read-only actions the tree unchanged as well, untracked files included. Other worktrees are
   checked only over intervals in which they are proven idle: every worktree carries in the record a busy flag and
-  an activity generation. The flag is set before any process gg launches in that worktree starts (agent steps,
+  an activity generation. The flag is set before any process gg launches in that worktree starts (agent actions,
   gate and declared commands, git operations) and cleared only after that process and its descendants have
   terminated, with the generation bumped at every transition. A snapshot is three fingerprints: HEAD, the index
-  (`git write-tree` of the index) and the working tree including untracked files. At step start gg reads
+  (`git write-tree` of the index) and the working tree including untracked files. At action start gg reads
   generation, takes the snapshot and the busy flag, and reads generation again, keeping the snapshot only if both
-  reads match and the flag was idle. At step end it repeats the read, and asserts unchanged only a worktree that was idle at both snapshots
-  with the same generation at both. Activity that encloses the step (busy at start) and activity enclosed by it
-  (generation moved) are both skipped, not misattributed; tests cover both shapes, a concurrent format gate in the
+  reads match and the flag was idle. At action end it repeats the read, and asserts unchanged only a worktree that was idle at both snapshots
+  with the same generation at both. Activity that encloses the action (busy at start) and activity enclosed by it
+  (generation moved) are both skipped, not misattributed; tests cover both shapes, a concurrent format quality gate in the
   other worktree, and an index-only mutation in an idle one. A violation discards the agent's changes and stops the
   ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
   protected files. Writes elsewhere on the machine and network effects of commands are not observed, which is the
@@ -407,18 +407,18 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
   Codex trust level is set explicitly so project config is not consumed.
 - Agents get read-only git (diff, log, status, show) and no movement commands (checkout, switch, worktree, stash,
   reset, add, commit, push, remote, gh). Confinement: Codex sandbox; Claude file tools confined to the working
-  directory with prompts off, `--restricted` on read-only steps; the idle-worktree assertion for shell writes.
+  directory with prompts off, `--restricted` on read-only actions; the idle-worktree assertion for shell writes.
   Agents are never told the worktree root.
 - Declared commands are passed in the brief, not assumed read from AGENTS.md.
 
 ### 3.7 Tracing, metrics and export
 
-Events, schema 2, one per action step attempt, in the repo's append-only events file: flow name, config hash,
+Events, schema 2, one per action attempt, in the repo's append-only events file: flow name, config hash,
 launch profile, ticket, run, vertex, visit, procedure, phase, attempt, duration, outcome, direction, signals
-received and the resolution rule applied. Agent steps add: harness and CLI version, model and effective effort,
+received and the resolution rule applied. Agent actions add: harness and CLI version, model and effective effort,
 persona hash, resolved tools with hint fields marked, init metadata (plugins, MCP servers), session id and lineage,
 transcript path, usage cumulative and delta, cost delta, peak context, turns, tool calls, compactions, exit code,
-signal, final event subtype, permission denials, commands run (diagnostic), failure class. Deterministic steps record
+signal, final event subtype, permission denials, commands run (diagnostic), failure class. Deterministic actions record
 events too. Old schema 1 events are still read by stats.
 
 Token rules, the same for both harnesses: `input` is uncached input tokens only; `cached` is cache reads;
@@ -437,10 +437,10 @@ of the repository's `.claude/skills`, `.claude/commands` and `.claude/agents` co
 resolved flow to the run directory. Secrets never enter it (3.1).
 
 Export: Agent Trajectory Interchange Format (ATIF, Harbor), pinned to the schema version Harbor's validator accepts
-at implementation time and recorded in the file. One parent trajectory per ticket run whose steps are the action
-steps, deterministic steps with `llm_call_count: 0`, graph identity and init metadata in `extra`. Each agent step
-contributes a subagent trajectory built from the transcript segment that step added (messages after the previous
-step of the same session), with a unique `trajectory_id`, so a resumed session is never exported twice; per-step
+at implementation time and recorded in the file. One parent trajectory per execution whose ATIF steps are the
+actions, deterministic actions with `llm_call_count: 0`, graph identity and init metadata in `extra`. Each agent action
+contributes a subagent trajectory built from the transcript segment that action added (messages after the previous
+action of the same session), with a unique `trajectory_id`, so a resumed session is never exported twice; per-action
 `metrics` and root `final_metrics` come from the normalised usage. The transcript holds the per-message usage,
 model and tool calls this needs; it does not hold init metadata, which is why that comes from the run output.
 `gg trace <epic> [ticket]` prints the timeline from the export. Rendering in Harbor's viewer or Phoenix is a
@@ -470,7 +470,7 @@ From feature-flow at 89e1d67; see `C:\dev\ff-review-work\design-vetting-code.md`
 
 Ported as they are:
 
-- Red gate acceptance rules, single still-green retry, red evidence captured once, failed red discards the worktree
+- Red check acceptance rules, single still-green retry, red evidence captured once, failed red discards the worktree
   and records the reason into history, "No tests were written" as a distinct failure.
 - Resume rules: still-green resumes red, test-fix resumes whatever produced the code, fix never resumes; history goes
   to red and fix briefs only.
@@ -493,7 +493,7 @@ Ported as they are:
 - Preflight resolves tools for every active vertex before any gh call or worktree, all failures in one error; plan
   approval gate; pool with `maxParallel`; per-epic log and usage file; run start and end events.
 - Process containment: job object via winjob.ps1 for shell runs, timeout kills orphans, fallback chain and survivor
-  reporting; test gate 30 minutes.
+  reporting; green check timeout 30 minutes.
 - Planning: interactive launch with session id and stop-hook budget warning, background sessions, plan marker,
   `--finish`, transcript metrics.
 
@@ -501,7 +501,7 @@ Deliberate changes, each with its own regression case:
 
 - Fresh green session with the full brief (ff resumes red).
 - Review PASS requires `dodMet`, `tddEvidenceOk` and no blocker or major findings (ff advances on the verdict alone).
-- Test immutability between the red commit and the green gate, baseline moving only through a fix round.
+- Test immutability between the red commit and the green check, baseline moving only through a fix round.
 - Blocked honoured after still-green and test-fix.
 - Red check requires per-test failure where the runner reports it.
 - Approvals bound to a digest and read from label events, not from a label's presence.
@@ -519,10 +519,10 @@ origin, fake gh spread over the real module, fake harness that writes files into
 the behaviours listed in `design-vetting-code.md` section 6 plus the dependency-order tests at lines 71 and 78; skip
 the four shape-specific ones.
 
-Golden trace test, staged with the slices in section 6. Slice 1 asserts the exact action-step sequence and events
+Golden trace test, staged with the slices in section 6. Slice 1 asserts the exact action sequence and events
 for: first-round pass, a CHANGES round into a fix vertex, a failed red, a blocked claim with passing tests, an
 invalid structured output, an integrity violation, and the three crash points around a commit, a PR upsert and a
-comment with resume continuing correctly. Slice 4 adds: an escalation, a persona gate failure with retry, a repeated
+comment with resume continuing correctly. Slice 4 adds: an escalation, a quality gate failure with retry, a repeated
 findings hash, a stale approval. Concurrency: two tickets in parallel with the idle-worktree assertion, and two gg
 processes on one repo serialised by the lock.
 
@@ -538,13 +538,13 @@ hang, and a capability matrix the validator reads.
 ## 6. Delivery
 
 - This repository, binary `gg`, own `test` command, so the installed `ff` runs the tickets from a separate checkout.
-  Bootstrap constraint: ff's red gate needs failing tests that name themselves in runner output, so the first ticket
+  Bootstrap constraint: ff's red check needs failing tests that name themselves in runner output, so the first ticket
   lands an importable scaffold (entry points that export stubs) and every later test fails inside a named case,
   never at import.
 - Slice order: (1) harness interface, fake harness, event schema 2, execution record with write-ahead log,
   interpreter with `tdd`, `fix` and `review` on ported git, gh and exec verbs, label namespace, slice-1 golden
   traces. (2) Claude harness with the launch profile and launcher acceptance. (3) Codex harness with sandbox and
-  resume quirks. (4) Bounds and escalation, resolution policy, persona gates, approval vertex, slice-4 golden
+  resume quirks. (4) Bounds and escalation, resolution policy, quality gates, approval vertex, slice-4 golden
   traces. (5) Flows in config, `--flow`, layering, migration errors. (6) Trace, stats, ATIF export, `gg work`,
   registry. (7) Planning, publish, replan.
 - Interface freeze: the fake harness, the execution record schema and the event schema are frozen at the end of
@@ -561,15 +561,15 @@ hang, and a capability matrix the validator reads.
 
 ## 7. Deferred
 
-Bare-mode launch profile (switch when subscription auth works; doctor probes it); journal-driven replay beyond
+Bare-mode launch profile (switch when subscription auth works; doctor probes it); replay beyond
 resume; node-level brief files; red and green on separate vertices; parallel branches and fan-out inside a ticket;
 non-GitHub ticket sources; multi-machine work management; multiple approvers and git-native signed approvals;
-output parsers for gate metrics; Claude MCP and skill filtering (becomes exact when the CLI supports it).
+output parsers for quality gate metrics; Claude MCP and skill filtering (becomes exact when the CLI supports it).
 
 ## 8. In-flight work in feature-flow
 
 PR 64 merge then stop; PR 65 discard; PR 66 keep as record. Tickets 33, 35, 36, 37 paused, their facts move into the
-harness modules. Ticket 46 (single ticket run) and 47 (approval) are covered here. 48 reshaped (guard only for flows
+harness modules. Ticket 46 (single execution) and 47 (approval) are covered here. 48 reshaped (guard only for flows
 with a plan section). 45 and 49 reshaped around flows instead of sizes. 50 stays. Epic 1 done.
 
 ## 9. Validated facts this document relies on

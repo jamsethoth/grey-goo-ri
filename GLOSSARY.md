@@ -55,7 +55,7 @@ _Avoid_: transition, link
 
 **Bound**:
 The limit on traversals of an Edge or Visits of a Vertex, with the Vertex to go to when it is exhausted.
-_Avoid_: cap (reserved for the ticket step cap), limit, max
+_Avoid_: cap (reserved for the ticket action cap), limit, max
 
 **Gate Vertex**:
 A Vertex that runs a declared repository command and routes on pass or fail.
