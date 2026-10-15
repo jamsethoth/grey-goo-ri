@@ -1,3 +1,10 @@
 {
-  "plan": { "model": "claude-fable-5-1", "effort": "high" }
+  "plan":      { "model": "claude-fable-5-1", "effort": "high" },
+  "implement": { "effort": "medium" },
+  "stageTools": {
+    "plan":      { "skills": ["mattpocock-skills:grilling", "mattpocock-skills:to-tickets", "mattpocock-skills:writing-for-agents", "mattpocock-skills:domain-modeling"] },
+    "implement": { "skills": ["mattpocock-skills:tdd", "mattpocock-skills:codebase-design"], "plugins": ["ponytail", "mattpocock-skills"] },
+    "review":    { "plugins": ["ponytail", "mattpocock-skills"] },
+    "escalate":  { "skills": ["mattpocock-skills:diagnosing-bugs", "mattpocock-skills:tdd", "mattpocock-skills:codebase-design"], "plugins": ["ponytail", "mattpocock-skills"] }
+  }
 }
