@@ -495,7 +495,8 @@ Ported as they are:
 - Labels never throw: logged, event, exit code 1; exit 2 on any needs-human. In-progress added only after the
   worktree exists.
 - Stuck detection: label age past `stuckAfterHours` is the trigger to inspect; a ticket is stuck when its in-progress
-  state label stands and no recoverable execution record is behind it, or the record's lock holder is dead. Reset
+  state label stands and no recoverable execution record is behind it; a dead lock holder with a recoverable record
+  is stale-lock takeover (3.5), not stuck. Reset
   refuses when a published PR exists and closes every draft; cleanup keeps dirty or unpushed worktrees.
 - Worktree add serialised, ownership validated, branch reused on title change; push without `-u`.
 - Ticket dependency ordering at publish (unknown and cyclic dependencies rejected, blockers resolved to issue
