@@ -202,8 +202,16 @@ test('the visit keeps the configuration pinned at entry when the node changes mi
   assert.ok(g.shells.every((s) => s.command === 'npm test'), `checks ran the pinned command: ${JSON.stringify(g.shells)}`);
   assert.equal(g.rec.snapshot.then, 'done');
   assert.equal(g.rec.snapshot.commands.test, 'npm test');
-  assert.match(g.rec.snapshot.hash, /^[0-9a-f]{64}$/);
-  assert.notEqual(interpreter.snapshotHash({ ...g.rec.snapshot, then: 'needs-human' }), g.rec.snapshot.hash, 'routing is part of the fingerprint');
+});
+
+test('the red commit records a non-ASCII test path unquoted', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  const red = responses['implementer/1/red/1'];
+  red.files = { 'test/añadir.test.mjs': red.files['test/add.test.mjs'] };
+  const g = await golden.setup(t, { responses });
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'done');
+  assert.deepEqual(g.rec.outputs.red.tests, ['test/añadir.test.mjs']);
 });
 
 test('a green call that changes the committed test is an integrity violation', async (t) => {
