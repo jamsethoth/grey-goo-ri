@@ -35,7 +35,8 @@ if (command === undefined || command === '--help') {
   process.stdout.write(usage);
 } else if (Object.hasOwn(SPECS, command)) {
   try {
-    notImplemented(command, parseOpts(process.argv.slice(3), SPECS[command]));
+    // An omitted bools would fall back to the parser's legacy boolean flags.
+    notImplemented(command, parseOpts(process.argv.slice(3), { bools: [], ...SPECS[command] }));
   } catch (e) {
     if (!(e instanceof UsageError)) throw e;
     process.stderr.write(`gg ${command}: ${e.message}\n\n${usage}`);
