@@ -17,6 +17,8 @@ const allBriefs = () => ({
   green: briefs.greenBrief({ ...base, testFiles, redOutput }),
   fix: briefs.fixBrief(base),
   review: briefs.reviewBrief({ ...base, impl: { claim: 'ok' }, diff: 'diff --git a/x b/x', changedTestFiles: [] }),
+  testFix: briefs.testFixBrief({ ...base, output: 'not ok 3 - widgets render' }),
+  stillGreen: briefs.stillGreenBrief({ ...base, output: 'ok 1 - widgets render' }),
 });
 
 test('styleBlock: caveman only for agent-facing prose, human fields stay natural', () => {
@@ -81,7 +83,7 @@ test('the green brief is a full brief for a fresh session', () => {
 
 test('green and test-fix briefs forbid changing committed tests', () => {
   const g = briefs.greenBrief({ ...base, testFiles, redOutput });
-  const t = briefs.testFixBrief('not ok 3 - widgets render');
+  const t = briefs.testFixBrief({ ...base, output: 'not ok 3 - widgets render' });
   for (const text of [g, t]) {
     assert.match(text, IMMUTABLE);
     assert.match(text, /notes/);
@@ -106,7 +108,6 @@ test('briefs list declared commands and never the worktree path', () => {
     assert.doesNotMatch(text, /AGENTS\.md/, name);
   }
   assert.doesNotMatch(briefs.redBrief({ ...base, commands: {} }), /AGENTS\.md/);
-  assert.ok(!briefs.stillGreenBrief('ok 1 - widgets render').includes(worktree));
 });
 
 test('the review brief lists test files changed since the red commit', () => {
