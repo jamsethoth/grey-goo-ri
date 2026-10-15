@@ -180,12 +180,16 @@ test('the visit keeps the configuration pinned at entry when the node changes mi
       vertex.node.model = 'model-y';
       vertex.node.access = 'read-only';
       vertex.options.requireTestPass = false;
+      // Routing, Procedure and Declared Commands are pinned too: none of these may reach the rest of the Visit.
+      vertex.procedure = 'fix';
+      vertex.then = 'needs-human';
+      g.options.commands.test = 'npm run other';
       call.node.effort = 'low';
       writeFileSync(g.personaPath, '# changed\n');
     }
     return run(call);
   };
-  await interpreter.runExecution(g.options);
+  const { outcome } = await interpreter.runExecution(g.options);
   assert.deepEqual(seen.green, seen.red);
   assert.equal(seen.green.node.model, 'model-x');
   assert.equal(seen.green.access, 'workspace-write');
@@ -193,6 +197,11 @@ test('the visit keeps the configuration pinned at entry when the node changes mi
   assert.equal(g.rec.snapshot.node.effort, 'high', 'a harness mutating its call does not reach the snapshot');
   assert.deepEqual(g.rec.snapshot.options, {});
   assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%B'), /Feature-Flow-Stage: implementer fake\/model-x\/high/);
+  assert.equal(outcome, 'done', 'routing follows the entry snapshot');
+  assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.procedure).map((e) => e.procedure))], ['tdd']);
+  assert.ok(g.shells.every((s) => s.command === 'npm test'), `checks ran the pinned command: ${JSON.stringify(g.shells)}`);
+  assert.equal(g.rec.snapshot.then, 'done');
+  assert.equal(g.rec.snapshot.commands.test, 'npm test');
 });
 
 test('done removes in-progress and adds ready-for-qa', async (t) => {
