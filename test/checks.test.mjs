@@ -100,6 +100,12 @@ test('red check reads jest default multi-file output, where failures are heading
   const passing = checks.redCheck({ code: 1, output }, ['removes item']);
   assert.equal(passing.ok, false);
   assert.ok(!passing.heuristic, 'headings are per-test status, so the substring rule does not apply');
+  // A suite named Console is a real suite; only the bare `● Console` diagnostic heading is excluded.
+  const consoleSuite = '  ● Console › logs on failure\n\n    expect(received).toBe(true)\n\n  ● Console\n\n    console.log\n      hello\n';
+  assert.deepEqual(checks.redCheck({ code: 1, output: consoleSuite }, ['logs on failure']), { ok: true });
+  const quiet = checks.redCheck({ code: 1, output: consoleSuite }, ['hello']);
+  assert.equal(quiet.ok, false);
+  assert.ok(!quiet.heuristic);
 });
 
 test('red check reads TAP, jest and pytest failure lines', () => {
