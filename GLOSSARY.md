@@ -295,7 +295,8 @@ _Avoid_: plan record
 
 **State Database**:
 The per-repository `node:sqlite` file `<git common dir>/gg/gg.db` that holds every Execution Record, Epic Record,
-Event and Pinned Configuration as rows. Locks are not in it; each lock is its own file.
+Event and Pinned Configuration as rows. Locks are not in it: each lock is a separate SQLite database file that gg
+only holds open in an exclusive transaction, so SQLite and the OS own exclusivity and release (ADR 0008).
 _Avoid_: store, state file, db (alone)
 
 **Reconciliation**:
