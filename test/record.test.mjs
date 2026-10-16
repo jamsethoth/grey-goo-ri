@@ -250,8 +250,9 @@ test('an unknown database version is refused by name', async (t) => {
 test('openDb shares one connection between spellings of the same directory', async (t) => {
   const commonDir = await tempCommonDir(t);
   const db = record.openDb(commonDir);
-  assert.equal(record.openDb(join(commonDir, '.', 'gg', '..') + '/'), db, 'a relative-segment spelling hits the cache');
-  await record.close(join(commonDir, 'gg', '..'));
+  // String concatenation, not join: join would normalise the segments before openDb sees them.
+  assert.equal(record.openDb(`${commonDir}/./gg/../`), db, 'a relative-segment spelling hits the cache');
+  await record.close(`${commonDir}\\gg\\..`);
   assert.throws(() => db.prepare('SELECT 1'), /not open/, 'closing by another spelling closed the shared connection');
 });
 
