@@ -2,14 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as opts from '../lib/opts.mjs';
 
-test('parseOpts: boolean flags never swallow the next argument', () => {
-  assert.deepEqual(opts.parseOpts(['--bg', 'Plan the feature']), { _: ['Plan the feature'], bg: true });
-  assert.deepEqual(opts.parseOpts(['--finish', 'abc', '--session', 'xyz']), { _: [], finish: 'abc', session: 'xyz' });
-  assert.deepEqual(opts.parseOpts(['42', '--refresh', '--label', 'A']), { _: ['42'], refresh: true, label: 'A' });
-});
-
 const PLAN_SPEC = { values: ['name', 'session'], bools: ['bg'] };
 const EVAL_SPEC = { values: ['plan', 'runs', 'reset'], bools: [] };
+
+test('parseOpts: boolean flags never swallow the next argument', () => {
+  assert.deepEqual(opts.parseOpts(['--bg', 'x', '--name=n', '--', '--not-a-flag'], { bools: ['bg'], values: ['name'] }), { _: ['x', '--not-a-flag'], bg: true, name: 'n' });
+  assert.deepEqual(opts.parseOpts(['42', '--refresh', '--label', 'A'], { bools: ['refresh'], values: ['label'] }), { _: ['42'], refresh: true, label: 'A' });
+});
+
+test('parseOpts: --finish needs a value', () => {
+  const spec = { bools: ['bg'], values: ['name', 'session', 'replan', 'finish'] };
+  assert.throws(() => opts.parseOpts(['--finish'], spec), (e) => e instanceof opts.UsageError && e.message === '--finish needs a value');
+  assert.deepEqual(opts.parseOpts(['--finish', 'abc'], spec), { _: [], finish: 'abc' });
+});
+
+test('parseOpts: a boolean flag given a value is a usage error', () => {
+  assert.throws(() => opts.parseOpts(['--bg=yes'], PLAN_SPEC), (e) => e instanceof opts.UsageError && e.message === '--bg does not take a value');
+  assert.throws(() => opts.parseOpts(['--bogus'], PLAN_SPEC), (e) => e instanceof opts.UsageError && e.message === 'unknown option --bogus');
+});
 
 test('parseOpts: unknown flags are rejected', () => {
   assert.throws(() => opts.parseOpts(['--bgg', 'x'], PLAN_SPEC), /unknown.*--bgg/i);
