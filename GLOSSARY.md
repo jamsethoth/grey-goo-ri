@@ -361,7 +361,8 @@ The shared set of named Nodes that Vertices use or override.
 _Avoid_: node registry, catalog
 
 **Layer**:
-One of the three configuration sources, defaults, user and repository, merged in that order.
+One of the three configuration sources, defaults, user and repository, merged in that order. The defaults Layer is
+harness-neutral: its Nodes name no Harness, model or effort, so a user or repository Layer supplies them.
 _Avoid_: tier, override file
 
 **Resolved Flow**:
