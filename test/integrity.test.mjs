@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { lstatSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -255,4 +255,22 @@ test('readActivity matches a differently cased path on Windows', { skip: process
   const { other, commonDir } = await twoWorktrees(t);
   await integrity.markBusy(await otherProcessRecord(commonDir));
   assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase()), { busy: true, generation: 1 });
+});
+
+test('a rollback replaces a linked parent directory instead of writing through it', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const wt = join(root, 'wt');
+  const outside = join(root, 'outside');
+  mkdirSync(wt);
+  mkdirSync(outside);
+  sh(wt, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(outside, 'owner.test.mjs'), 'outside');
+  symlinkSync(outside, join(wt, 'sandbox'), 'junction');
+  const set = { files: { 'sandbox/owner.test.mjs': { base64: Buffer.from('owner').toString('base64') } }, pathspecs: [':(glob)**/*.test.*'] };
+
+  await integrity.restoreUntracked(wt, set);
+  assert.equal(readFileSync(join(outside, 'owner.test.mjs'), 'utf8'), 'outside', 'nothing outside the worktree changes');
+  assert.ok(!lstatSync(join(wt, 'sandbox')).isSymbolicLink(), 'the link is replaced by a directory');
+  assert.equal(readFileSync(join(wt, 'sandbox', 'owner.test.mjs'), 'utf8'), 'owner');
 });

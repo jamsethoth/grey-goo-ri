@@ -290,7 +290,8 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   // The reset is a write-ahead side effect whose intent carries the baseline and the History item.
   const [reset] = intents(g.rec, 'reset');
   assert.equal(reset.marker, actionMarker(g, 'still-green', 2));
-  assert.deepEqual(reset.payload, { baseline: g.base, history: g.rec.history[0] });
+  assert.deepEqual({ ...reset.payload, untracked: undefined }, { baseline: g.base, history: g.rec.history[0], untracked: undefined });
+  assert.deepEqual(reset.payload.untracked.files, {}, 'the rollback set of the first red call is saved too');
   assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
   assert.deepEqual(record.openIntents(g.rec), []);
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
@@ -301,6 +302,20 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   assert.equal(reason.rule, 'check-exhausted');
   assert.equal(reason.text, "The red phase failed the Red Check (rule check-exhausted) and the agent's changes were discarded.");
   assert.match(g.gh.comments[0].body, /```\nThe new tests did not fail before implementation/, 'the diagnosis is posted fenced');
+});
+
+test('a failed red rollback removes an ignored test file the red call added', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'].files['test/extra.test.mjs'] = 'extra';
+  responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/extra.test.mjs');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(actionEvent(g, 'still-green', 2).outcome, 'red-failed');
+  assert.ok(!existsSync(join(g.worktree, 'test', 'extra.test.mjs')), 'the ignored test the red call added is removed');
 });
 
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
