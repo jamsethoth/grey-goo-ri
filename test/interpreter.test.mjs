@@ -97,12 +97,12 @@ test('the green call is a fresh session with the full brief', async (t) => {
     assert.equal(call.personaBytes, golden.PERSONA, 'persona bytes come from the visit snapshot');
     assert.equal(call.personaHash, red.personaHash);
   }
-  const session = g.rec.sessions['1/green'];
-  assert.ok(session, 'green session recorded under 1/green');
+  const session = g.rec.sessions['implementer/1/green'];
+  assert.ok(session, 'green session recorded under implementer/1/green');
   assert.equal(session.sessionId, 'fake-session-2');
   assert.match(session.transcriptPath, /fake-session-2\.jsonl$/);
   assert.equal(session.usage.input, 200);
-  assert.equal(g.rec.sessions['1/red'].sessionId, 'fake-session-1');
+  assert.equal(g.rec.sessions['implementer/1/red'].sessionId, 'fake-session-1');
 });
 
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
@@ -908,7 +908,17 @@ const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
 const MAJOR = finding('major', 'lib/add.mjs', 'add ignores non-number input at line 1');
 
 // implementer(tdd) -> reviewer(review); changes -> {implementer-fix, max 2, exhausted needs-human}; implementer-fix(fix) -> reviewer.
-async function reviewSetup(t, responses, { exec } = {}) {
+async function reviewSetup(t, responses, opts) {
+  const g = await reviewFlow(t, responses, opts);
+  g.result = await interpreter.runExecution(g.options);
+  g.events = g.readEvents();
+  g.actions = g.events.filter((e) => e.type === 'action' && e.procedure);
+  g.at = (vertex, visit, phase, ordinal) => g.actions.filter((e) => e.vertex === vertex && e.visit === visit && e.phase === phase && e.ordinal === ordinal);
+  g.subjects = () => golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean).reverse();
+  return g;
+}
+
+async function reviewFlow(t, responses, { exec } = {}) {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses } });
   const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
   writeFileSync(reviewerPersona, REVIEWER_PERSONA);
@@ -923,11 +933,6 @@ async function reviewSetup(t, responses, { exec } = {}) {
     'implementer-fix': { node: structuredClone(implementer.node), procedure: 'fix', options: {}, then: 'reviewer' },
   };
   if (exec) g.options.exec = exec;
-  g.result = await interpreter.runExecution(g.options);
-  g.events = g.readEvents();
-  g.actions = g.events.filter((e) => e.type === 'action' && e.procedure);
-  g.at = (vertex, visit, phase, ordinal) => g.actions.filter((e) => e.vertex === vertex && e.visit === visit && e.phase === phase && e.ordinal === ordinal);
-  g.subjects = () => golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean).reverse();
   return g;
 }
 
@@ -964,12 +969,15 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure), Array(8).fill('review'));
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), Array(5).fill('fix'));
   assert.equal(g.at('reviewer', 1, 'review', 1)[0].outcome, 'changes');
+  assert.equal(g.at('reviewer', 1, 'review', 1)[0].rule, 'claim-route', 'a changes claim routes through claim-route');
   assert.equal(g.at('reviewer', 2, 'review', 1)[0].outcome, 'ok');
 
-  // The review is a read-only call with the diff in its Brief.
+  // The review is a read-only call with the diff and the captured Red and Green Evidence in its Brief.
   const [review1, fix, review2] = g.harness.calls.slice(2);
   assert.equal(review1.access, 'read-only');
   assert.ok(review1.brief.includes('a + b'), 'the diff is in the review Brief');
+  assert.ok(review1.brief.includes(JSON.stringify(golden.RED_OUTPUT)), 'the Red Evidence is in the review Brief');
+  assert.ok(review1.brief.includes(JSON.stringify(golden.GREEN_OUTPUT)), 'the Green Evidence is in the review Brief');
   assert.equal(review1.personaBytes, REVIEWER_PERSONA);
   // fix/1 is a fresh Session whose Brief carries the review Findings.
   assert.equal(fix.resume, null, 'fix never resumes');
@@ -993,6 +1001,50 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
   assert.deepEqual(g.rec.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]]);
   assert.equal(g.events.at(-1).type, 'ticket_end');
   assert.equal(g.events.at(-1).outcome, 'done');
+});
+
+test('a restart at the review-to-fix boundary runs the pending fix with the saved edge count', async (t) => {
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+  g.flow.ticket.vertices.reviewer.route.changes.max = 1;
+  const run = g.harness.run;
+  let crashed = false;
+  g.harness.run = async (call) => {
+    if (call.phase === 'fix' && !crashed) { crashed = true; throw new interpreter.CrashError('crash'); }
+    return run(call);
+  };
+  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+  const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
+  assert.equal(saved.cursor.vertex, 'implementer-fix');
+
+  const before = g.harness.calls.length;
+  const result = await interpreter.runExecution({ ...g.options, record: saved });
+  assert.equal(result.outcome, 'done');
+  assert.deepEqual(g.harness.calls.slice(before).map((c) => (c.brief.startsWith('FIX ROUND') ? 'fix' : c.access)), ['fix', 'read-only'],
+    'the restart runs the pending fix, then review, not the entry');
+  assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
+  assert.deepEqual(saved.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
+});
+
+test('two reviewer vertices keep their own sessions and provenance rows', async (t) => {
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('ok')),
+    'reviewer-2/1/review/1': reviewed(review('ok')),
+  });
+  const { vertices } = g.flow.ticket;
+  vertices.reviewer.route = { ...vertices.reviewer.route, ok: 'reviewer-2' };
+  vertices['reviewer-2'] = { ...structuredClone(vertices.reviewer), route: { ...vertices.reviewer.route, ok: 'done' } };
+  vertices['reviewer-2'].node.model = 'model-s';
+  g.result = await interpreter.runExecution(g.options);
+
+  assert.equal(g.result.outcome, 'done');
+  assert.ok(g.rec.sessions['reviewer/1/review'] && g.rec.sessions['reviewer-2/1/review'], JSON.stringify(Object.keys(g.rec.sessions)));
+  assert.match(g.gh.pr().body, /^\| reviewer \| fake \| model-r \| high \| /m, 'the first reviewer row survives');
+  assert.match(g.gh.pr().body, /^\| reviewer-2 \| fake \| model-s \| high \| /m);
 });
 
 test('the changes edge exhausts after max traversals to needs-human', async (t) => {

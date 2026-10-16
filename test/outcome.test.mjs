@@ -115,6 +115,12 @@ test('a routed check failing on a claim ok advances by its mapped Outcome throug
   assert.equal(r.check, 'review-pass');
 });
 
+test('a changes claim with a failing routed check keeps the claim-route row', () => {
+  const r = outcome.resolve({ result: completed, claim: claim('changes'), checks: [integrityOk, check('review-pass', false)], retries: none,
+    routes: { 'review-pass': 'changes' } });
+  assertRow(r, 'claim-route', 'changes', 'advance');
+});
+
 test('row claim-route: completed, valid changes, every check passing -> changes', () => {
   assertRow(resolve({ claim: claim('changes'), checks: [integrityOk, check('review-pass', true)] }), 'claim-route', 'changes', 'advance');
 });
