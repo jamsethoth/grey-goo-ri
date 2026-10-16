@@ -22,7 +22,10 @@ function newExecution(commonDir, ticket, worktree) {
 // A repo with two worktrees, each owned by a ticket record saved on disk: `own` is the agent's, `other` is idle.
 async function twoWorktrees(t) {
   const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => {
+    record.close(join(root, 'own', '.git'));
+    rmSync(root, { recursive: true, force: true });
+  });
   const own = join(root, 'own');
   const other = join(root, 'other');
   mkdirSync(own);
@@ -264,7 +267,6 @@ test('readActivity reads a record another process saved', async (t) => {
   });
   assert.deepEqual(exit, { code: 0, err: '' });
   assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 3 });
-  await record.close(commonDir);
 });
 
 test('readActivity matches a differently cased path on Windows', { skip: process.platform !== 'win32' }, async (t) => {

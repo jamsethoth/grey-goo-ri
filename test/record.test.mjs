@@ -11,14 +11,8 @@ import * as record from '../lib/record.mjs';
 
 const saver = fileURLToPath(new URL('./support/record-saver.mjs', import.meta.url));
 
-async function tempCommonDir(t) {
-  const dir = await mkdtemp(join(tmpdir(), 'gg-record-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
 // A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
-async function tempDb(t) {
+async function tempCommonDir(t) {
   const dir = await mkdtemp(join(tmpdir(), 'gg-record-'));
   t.after(async () => {
     await record.close(dir);
@@ -85,7 +79,7 @@ test('createExecution mints an execution id and the documented fields', async (t
 });
 
 test('save writes a records row and never a records directory', async (t) => {
-  const commonDir = await tempDb(t);
+  const commonDir = await tempCommonDir(t);
   const r = newExecution(commonDir);
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
   await record.save(r);
@@ -106,7 +100,7 @@ test('save writes a records row and never a records directory', async (t) => {
 });
 
 test('load returns null for a missing row and the record for a saved one', async (t) => {
-  const commonDir = await tempDb(t);
+  const commonDir = await tempCommonDir(t);
   const r = newExecution(commonDir);
   await record.save(r);
   assert.equal(await record.load(commonDir, 'ticket', 9), null);
@@ -170,7 +164,7 @@ test('loadAll lists every ticket record', async (t) => {
 });
 
 test('loadAll reports a corrupt row and an unknown schemaVersion and returns the rest', async (t) => {
-  const commonDir = await tempDb(t);
+  const commonDir = await tempCommonDir(t);
   await record.save(newExecution(commonDir, 8));
   const unknown = JSON.stringify({ schemaVersion: 99, ticket: 10 });
   withDb(commonDir, (db) => {
@@ -204,7 +198,7 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
 });
 
 test('two processes save different records concurrently without loss', async (t) => {
-  const commonDir = await tempDb(t);
+  const commonDir = await tempCommonDir(t);
   const exits = await Promise.all([1, 2].map((ticket) => new Promise((resolve) => {
     const child = spawn(process.execPath, [saver, commonDir, String(ticket), '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
@@ -224,7 +218,7 @@ test('two processes save different records concurrently without loss', async (t)
 });
 
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
-  const commonDir = await tempDb(t);
+  const commonDir = await tempCommonDir(t);
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
   await record.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
   const firstSeen = () => withDb(commonDir, (db) => db.prepare("SELECT firstSeen FROM configs WHERE hash = 'hash-1'").get().firstSeen);
@@ -239,7 +233,7 @@ test('saveConfig stores a pinned configuration once per hash and loadConfig read
 });
 
 test('an unknown database version is refused by name', async (t) => {
-  const commonDir = await tempDb(t);
+  const commonDir = await tempCommonDir(t);
   mkdirSync(join(commonDir, 'gg'));
   const db = new DatabaseSync(dbPath(commonDir));
   db.exec('PRAGMA user_version = 2');
