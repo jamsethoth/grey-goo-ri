@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import * as integrity from '../lib/integrity.mjs';
 import * as record from '../lib/record.mjs';
@@ -249,6 +250,21 @@ test('readActivity reads another ticket\'s record from disk', async (t) => {
   await integrity.markBusy(await otherProcessRecord(commonDir));
   assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 1 });
   assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody')), { busy: false, generation: 0 });
+});
+
+test('readActivity reads a record another process saved', async (t) => {
+  const { other, commonDir } = await twoWorktrees(t);
+  assert.ok(!existsSync(join(commonDir, 'gg', 'records')), 'records are rows, not files');
+  const saver = fileURLToPath(new URL('./support/record-saver.mjs', import.meta.url));
+  const exit = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [saver, commonDir, '2', '3', other], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('close', (code) => resolve({ code, err }));
+  });
+  assert.deepEqual(exit, { code: 0, err: '' });
+  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 3 });
+  await record.close(commonDir);
 });
 
 test('readActivity matches a differently cased path on Windows', { skip: process.platform !== 'win32' }, async (t) => {
