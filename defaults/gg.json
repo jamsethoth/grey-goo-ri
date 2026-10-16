@@ -1,0 +1,32 @@
+{
+  "maxParallel": 2,
+  "baseBranch": "main",
+  "worktreeRoot": "~/worktrees",
+  "labelPrefix": "gg",
+  "nodes": {
+    "implementer": {
+      "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer.md",
+      "skills": [], "mcp": [], "plugins": [], "access": "workspace-write", "network": false
+    },
+    "reviewer": {
+      "harness": "claude", "model": "sonnet", "effort": "high", "persona": "reviewer.md",
+      "skills": [], "mcp": [], "plugins": [], "access": "read-only", "network": false
+    }
+  },
+  "flows": {
+    "default": {
+      "plan": null,
+      "ticket": {
+        "entry": "implementer",
+        "vertices": {
+          "implementer": { "use": "implementer", "procedure": "tdd", "then": "reviewer" },
+          "reviewer": {
+            "use": "reviewer", "procedure": "review",
+            "route": { "ok": "done", "changes": { "to": "implementer-fix", "max": 2, "exhausted": "needs-human" } }
+          },
+          "implementer-fix": { "use": "implementer", "procedure": "fix", "then": "reviewer" }
+        }
+      }
+    }
+  }
+}
