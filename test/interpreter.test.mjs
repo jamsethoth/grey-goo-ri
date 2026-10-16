@@ -1187,6 +1187,25 @@ test('a fix that changes a named test moves the immutability baseline', async (t
   }
 });
 
+test('a fix with no edits keeps the moved immutability baseline', async (t) => {
+  const TEST_EDIT = "import { add } from '../lib/add.mjs';\n// covers negatives\n";
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'test/add.test.mjs', 'the test misses negatives')])),
+    'implementer-fix/1/fix/1': fixed({ 'test/add.test.mjs': TEST_EDIT }),
+    'reviewer/2/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/2/fix/1': fixed({}),
+    'reviewer/3/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/3/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/4/review/1': reviewed(review('ok')),
+  });
+  g.flow.ticket.vertices.reviewer.route.changes.max = 3;
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'done');
+  const checks = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'implementer-fix' && e.phase === 'fix' && e.ordinal === 2);
+  assert.deepEqual(checks.map((e) => [e.visit, e.outcome]), [[1, 'ok'], [2, 'ok'], [3, 'ok']]);
+});
+
 test('misscoped lands in replan with the diagnosis on ticket and epic', async (t) => {
   const diagnosis = 'The ticket asks add to both sum and concatenate.';
   const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('misscoped', [], { diagnosis })) });
