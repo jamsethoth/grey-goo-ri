@@ -29,6 +29,42 @@ test('tdd describes its actions, checks, lineage and outcome map in order', () =
   assert.equal(procedures.describe('tdd', { resumeGreen: true }).lineage.green, 'red');
 });
 
+test('review and fix describe their actions, checks, lineage and outcome maps', () => {
+  const { review, fix } = procedures.PROCEDURES;
+  assert.ok(review, 'PROCEDURES.review exists');
+  assert.ok(fix, 'PROCEDURES.fix exists');
+
+  // review: one read-only call, the Findings Hash, the PR comment, the PR body re-render.
+  assert.deepEqual(pairs(review.actions), [['review', 1], ['review', 2], ['review', 3], ['review', 4]]);
+  assert.deepEqual(pairs(review.actions.filter((a) => a.kind === 'call')), [['review', 1]]);
+  assert.ok(review.actions.every((a) => !a.when), 'every review Action runs');
+  assert.deepEqual(review.checks, ['review-pass']);
+  assert.equal(review.access, 'read-only');
+  assert.deepEqual(review.claims, ['ok', 'changes', 'misscoped']);
+  assert.deepEqual(review.outcomes, ['ok', 'changes', 'repeat', 'misscoped']);
+  assert.deepEqual(review.checkOutcome, { 'review-pass': 'changes' });
+  assert.deepEqual(review.briefs, { review: 'reviewBrief' });
+  const r = procedures.describe('review');
+  assert.deepEqual(r.checks, [{ name: 'review-pass', relaxed: false }]);
+  assert.deepEqual(r.lineage, { review: null });
+
+  // fix: a fresh fix call, the Green Check with one test-fix that resumes fix, commit kind fix, push, PR upsert.
+  assert.deepEqual(fix.actions.filter((a) => !a.when).map((a) => [a.phase, a.ordinal, a.kind]), [
+    ['fix', 1, 'call'], ['fix', 2, 'check'], ['fix', 3, 'commit'], ['fix', 4, 'push'], ['fix', 5, 'pr-upsert'],
+  ]);
+  assert.equal(fix.actions.find((a) => a.phase === 'fix' && a.ordinal === 2).check, 'green');
+  assert.deepEqual(pairs(fix.actions.filter((a) => a.when)), [['test-fix', 1], ['test-fix', 2]]);
+  assert.deepEqual(fix.claims, ['ok', 'blocked', 'misscoped']);
+  assert.deepEqual(fix.outcomes, ['ok', 'blocked', 'misscoped', 'gate-failed(test)']);
+  assert.equal(fix.checkOutcome.test, 'gate-failed(test)');
+  assert.deepEqual(fix.commitKinds, { fix: 'fix' });
+  assert.deepEqual(fix.briefs, { fix: 'fixBrief', 'test-fix': 'testFixBrief' });
+  const f = procedures.describe('fix');
+  assert.deepEqual(f.lineage, { fix: null, 'test-fix': 'fix' });
+  assert.ok(f.checks.some((c) => c.name === 'green' && c.relaxed === false), JSON.stringify(f.checks));
+  assert.ok(f.checks.some((c) => c.name === 'immutability'), JSON.stringify(f.checks));
+});
+
 test('requireTestPass false relaxes the green check in describe', () => {
   const d = procedures.describe('tdd', { requireTestPass: false });
   assert.deepEqual(d.checks, [
