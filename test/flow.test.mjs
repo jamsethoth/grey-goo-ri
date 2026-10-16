@@ -51,6 +51,16 @@ test('resolveFlow rejects an unknown node or procedure naming the vertex', () =>
   assert.throws(() => flow.resolveFlow(unknownProcedure), /odd-vertex/);
 });
 
+test('resolveFlow rejects inherited property names as node or procedure naming the vertex', () => {
+  const inheritedNode = config.loadDefaults();
+  inheritedNode.flows.default.ticket.vertices['odd-vertex'] = { use: 'constructor', procedure: 'fix', then: 'reviewer' };
+  assert.throws(() => flow.resolveFlow(inheritedNode), /odd-vertex/);
+
+  const inheritedProcedure = config.loadDefaults();
+  inheritedProcedure.flows.default.ticket.vertices['odd-vertex'] = { use: 'implementer', procedure: 'constructor', then: 'reviewer' };
+  assert.throws(() => flow.resolveFlow(inheritedProcedure), /odd-vertex/);
+});
+
 test('writeResolved writes the flow and hash to the run directory', (t) => {
   const runDir = mkdtempSync(join(tmpdir(), 'gg-flow-'));
   t.after(() => rmSync(runDir, { recursive: true, force: true }));
