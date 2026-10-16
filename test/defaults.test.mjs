@@ -15,12 +15,9 @@ test('defaults/gg.json declares the default flow and its two nodes', () => {
   assert.deepEqual(Object.keys(gg.nodes).sort(), ['implementer', 'reviewer']);
   const intents = { implementer: 'workspace-write', reviewer: 'read-only' };
   for (const [name, access] of Object.entries(intents)) {
-    const { model, effort, ...node } = gg.nodes[name];
-    assert.equal(typeof model, 'string', `${name} model`);
-    assert.equal(typeof effort, 'string', `${name} effort`);
-    assert.deepEqual(node, {
-      harness: 'claude', persona: `${name}.md`, skills: [], mcp: [], plugins: [], access, network: false,
-    });
+    assert.deepEqual(gg.nodes[name], {
+      persona: `${name}.md`, skills: [], mcp: [], plugins: [], access, network: false,
+    }, `${name} names no harness, model or effort`);
     assert.ok(existsSync(`${defaultsDir}personas/${name}.md`), `${name}.md ships in defaults/personas`);
   }
 

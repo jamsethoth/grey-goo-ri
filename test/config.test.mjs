@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as config from '../lib/config.mjs';
 import * as flow from '../lib/flow.mjs';
 
@@ -55,6 +55,29 @@ test('configHash changes with persona, vertex and command changes and ignores ke
   const command = structuredClone(base);
   command.commands.test = 'npm run test:all';
   assert.notEqual(config.configHash(command), hash, 'a Declared Command changes the hash');
+});
+
+test('the shipped defaults name no harness, model or effort', () => {
+  for (const [name, node] of Object.entries(config.loadDefaults().nodes)) {
+    for (const key of ['harness', 'model', 'effort']) assert.equal(Object.hasOwn(node, key), false, `${name} has no ${key}`);
+  }
+});
+
+test('the Config Hash does not depend on the install path', async (t) => {
+  // Two copies of gg installed under different roots must hash the shipped defaults the same.
+  const hashes = [];
+  for (const install of ['one', 'two']) {
+    const root = join(mkdtempSync(join(tmpdir(), `gg-install-${install}-`)), 'gg');
+    t.after(() => rmSync(join(root, '..'), { recursive: true, force: true }));
+    for (const dir of ['lib', 'defaults']) cpSync(join(repoRoot, dir), join(root, dir), { recursive: true });
+    const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
+    const f = await import(pathToFileURL(join(root, 'lib', 'flow.mjs')).href);
+    const defaults = c.loadDefaults();
+    const input = { flow: f.resolveFlow(defaults), personas: defaults.personas, harnesses: {}, commands: {} };
+    assert.ok(!JSON.stringify(input).includes(JSON.stringify(root).slice(1, -1)), 'no install path in the hashed input');
+    hashes.push(c.configHash(input));
+  }
+  assert.equal(hashes[0], hashes[1]);
 });
 
 // Ported from feature-flow test/core.test.mjs (parseCommands, lib/config.mjs:79-95).

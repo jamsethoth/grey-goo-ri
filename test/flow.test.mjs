@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as config from '../lib/config.mjs';
 import * as flow from '../lib/flow.mjs';
 
@@ -19,8 +20,7 @@ test('resolveFlow expands use with overrides into the resolved flow shape', () =
   const uses = { implementer: 'implementer', reviewer: 'reviewer', 'implementer-fix': 'implementer' };
   for (const [id, use] of Object.entries(uses)) {
     const { node } = vertices[id];
-    assert.ok(existsSync(node.persona), `${id} persona is a readable path: ${node.persona}`);
-    assert.deepEqual({ ...node, persona: basename(node.persona) }, library[use], `${id} node comes from ${use}`);
+    assert.deepEqual(node, { ...library[use], harness: null, model: null, effort: null }, `${id} node comes from ${use}`);
     assert.equal(vertices[id].use, undefined, `${id} no longer carries use`);
     assert.deepEqual(vertices[id].options, {});
   }
@@ -36,9 +36,28 @@ test('resolveFlow expands use with overrides into the resolved flow shape', () =
   overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', then: 'reviewer' };
   const fix = flow.resolveFlow(overridden).ticket.vertices['implementer-fix'];
   assert.equal(fix.node.model, 'model-z', 'a Vertex field overrides the library Node');
-  assert.equal(fix.node.harness, library.implementer.harness, 'the rest comes from the library Node');
+  assert.equal(fix.node.persona, library.implementer.persona, 'the rest comes from the library Node');
+  assert.equal(fix.node.harness, null, 'a missing harness resolves to null');
   assert.equal(fix.model, undefined, 'the override lives on the node, not the Vertex');
   assert.deepEqual(overridden.nodes, library, 'the Node Library is not mutated');
+});
+
+test('the Resolved Flow carries the persona file name, not a path', () => {
+  assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.implementer.node.persona, 'implementer.md');
+});
+
+test('each example Layer merged over the defaults resolves with its harness', () => {
+  for (const harness of ['claude', 'codex']) {
+    const example = JSON.parse(readFileSync(fileURLToPath(new URL(`../examples/${harness}.json`, import.meta.url)), 'utf8'));
+    const merged = config.loadDefaults();
+    assert.deepEqual(Object.keys(example.nodes).sort(), Object.keys(merged.nodes).sort(), `${harness} sets every shipped Node`);
+    for (const [name, node] of Object.entries(example.nodes)) merged.nodes[name] = { ...merged.nodes[name], ...node };
+    for (const [id, { node }] of Object.entries(flow.resolveFlow(merged).ticket.vertices)) {
+      assert.equal(node.harness, harness, `${harness} ${id} harness`);
+      assert.equal(typeof node.model, 'string', `${harness} ${id} model`);
+      assert.equal(typeof node.effort, 'string', `${harness} ${id} effort`);
+    }
+  }
 });
 
 test('resolveFlow rejects an unknown node or procedure naming the vertex', () => {
