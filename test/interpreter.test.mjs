@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
@@ -647,6 +647,36 @@ test('a test-fix that changes the committed test is rolled back to its baseline 
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'no forbidden edit or implementation file survives');
   assert.ok(!readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'), 'the committed test bytes are restored');
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'the red commit survives');
+});
+
+// Ignored paths survive git clean, so the rollback removes the ignored tests the agent added and only those.
+function excludeTests(g, ...paths) {
+  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), paths.join(String.fromCharCode(10)));
+}
+
+test('a test-fix that adds an ignored test file has it removed by the rollback', async (t) => {
+  const g = await greenSetup(t, {
+    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
+  });
+  excludeTests(g, 'test/injected.test.mjs');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(actionEvent(g, 'test-fix', 2).violations, ['test/injected.test.mjs']);
+  assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
+});
+
+test('an ignored test file that was there before the call survives the rollback', async (t) => {
+  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  excludeTests(g, 'test/owner.test.mjs');
+  mkdirSync(join(g.worktree, 'test'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'owner');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(actionEvent(g, 'green', 2).violations, ['test/owner.test.mjs']);
+  assert.equal(readFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'utf8'), 'owner');
 });
 
 test('a timed-out result gets one fresh attempt then needs-human', async (t) => {
