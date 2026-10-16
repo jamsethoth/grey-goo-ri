@@ -76,6 +76,14 @@ test('gg stats with valid options reaches the not-implemented stub', () => {
   assert.equal(r.stderr.trim(), 'gg stats: not implemented');
 });
 
+test('gg plan --finish without an id prints usage', () => {
+  const r = gg('plan', '--finish');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /^gg plan: --finish needs a value\n/);
+  assertUsage(r.stderr);
+  assert.match(r.stderr, /plan --finish <planId>/);
+});
+
 test('gg plan rejects a value on a boolean flag', () => {
   const r = gg('plan', '--bg=yes');
   assert.equal(r.status, 1);

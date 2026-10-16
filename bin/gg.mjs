@@ -6,7 +6,7 @@ const usage = `Usage: gg <command>
 Commands:
   init      set up a repository for gg
   doctor    check the environment and configuration
-  plan      produce the Plan for an Epic
+  plan      produce the Plan for an Epic; plan --finish <planId> finishes one
   publish   publish Tickets from a Plan
   run       carry Tickets through their Flow
   work      list, resume, abandon, reset, approve
@@ -17,7 +17,7 @@ Commands:
 const SPECS = {
   init: {},
   doctor: {},
-  plan: { bools: ['bg'], values: ['name', 'session', 'replan'], optional: ['finish'] },
+  plan: { bools: ['bg'], values: ['name', 'session', 'replan', 'finish'] },
   publish: {},
   run: {},
   work: {},
@@ -35,8 +35,7 @@ if (command === undefined || command === '--help') {
   process.stdout.write(usage);
 } else if (Object.hasOwn(SPECS, command)) {
   try {
-    // An omitted bools would fall back to the parser's legacy boolean flags.
-    notImplemented(command, parseOpts(process.argv.slice(3), { bools: [], ...SPECS[command] }));
+    notImplemented(command, parseOpts(process.argv.slice(3), SPECS[command]));
   } catch (e) {
     if (!(e instanceof UsageError)) throw e;
     process.stderr.write(`gg ${command}: ${e.message}\n\n${usage}`);
