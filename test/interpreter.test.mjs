@@ -667,8 +667,8 @@ test('a test-fix that adds an ignored test file has it removed by the rollback',
   assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
 });
 
-test('an ignored test file that was there before the call survives the rollback', async (t) => {
-  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+test('an ignored test file that was there before the call gets its bytes back from the rollback', async (t) => {
+  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) });
   excludeTests(g, 'test/owner.test.mjs');
   mkdirSync(join(g.worktree, 'test'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'owner');
@@ -677,6 +677,19 @@ test('an ignored test file that was there before the call survives the rollback'
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(actionEvent(g, 'green', 2).violations, ['test/owner.test.mjs']);
   assert.equal(readFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'utf8'), 'owner');
+});
+
+test('an integrity violation on a Protected File also removes an ignored test file the same Attempt added', async (t) => {
+  const g = await greenSetup(t, {
+    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'implementer/1/test-fix/1': ok({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
+  });
+  excludeTests(g, 'test/injected.test.mjs');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(actionEvent(g, 'test-fix', 1).outcome, 'integrity-violation');
+  assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
 });
 
 test('a timed-out result gets one fresh attempt then needs-human', async (t) => {
