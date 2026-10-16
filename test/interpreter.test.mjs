@@ -1172,7 +1172,8 @@ test('a review that changes the tree is an integrity violation', async (t) => {
   assert.equal(call?.outcome, 'integrity-violation');
   assert.ok(call.violations.some((v) => v.surface === 'tree'), JSON.stringify(call.violations));
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
-  assert.equal(readFileSync(join(g.worktree, 'lib', 'add.mjs'), 'utf8'), RIGHT_ADD);
+  // The reset checks the file out again, so core.autocrlf may give it CRLF line endings on Windows.
+  assert.equal(readFileSync(join(g.worktree, 'lib', 'add.mjs'), 'utf8').replace(/\r\n/g, '\n'), RIGHT_ADD);
   assert.equal(prReviewComments(g).length, 0, 'no review comment after a violation');
   const reason = reviewStopReason(g);
   assert.deepEqual(reason.decidedBy, { vertex: 'reviewer', visit: 1, phase: 'review', ordinal: 1 });

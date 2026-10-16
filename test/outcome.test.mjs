@@ -108,6 +108,13 @@ test('exhausted recovery never overrides a stop claim or a passing check', () =>
   assertRow(outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('red', true)], retries: none, exhausted: true }), 'ok', 'ok', 'advance');
 });
 
+test('a routed check failing on a claim ok advances by its mapped Outcome through check-failed', () => {
+  const r = outcome.resolve({ result: completed, claim: claim('ok'), checks: [integrityOk, check('review-pass', false)], retries: none,
+    routes: { 'review-pass': 'changes' } });
+  assertRow(r, 'check-failed', 'changes', 'advance');
+  assert.equal(r.check, 'review-pass');
+});
+
 test('row claim-route: completed, valid changes, every check passing -> changes', () => {
   assertRow(resolve({ claim: claim('changes'), checks: [integrityOk, check('review-pass', true)] }), 'claim-route', 'changes', 'advance');
 });
