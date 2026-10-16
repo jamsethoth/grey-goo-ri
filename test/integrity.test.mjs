@@ -283,3 +283,16 @@ test('a rollback never deletes or writes through a link, and restores every file
   assert.equal(readFileSync(join(wt, 'sandbox', 'a.test.mjs'), 'utf8'), 'a');
   assert.equal(readFileSync(join(wt, 'sandbox', 'b.test.mjs'), 'utf8'), 'b', 'a file that matched through the link is restored too');
 });
+
+test('a rollback clears a file the agent put where a baseline directory was', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const wt = join(root, 'wt');
+  mkdirSync(wt);
+  sh(wt, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(wt, 'sandbox'), 'agent');
+  const set = { files: { 'sandbox/a.test.mjs': { base64: Buffer.from('a').toString('base64') } }, pathspecs: [':(glob)**/*.test.*'] };
+
+  await integrity.restoreUntracked(wt, set);
+  assert.equal(readFileSync(join(wt, 'sandbox', 'a.test.mjs'), 'utf8'), 'a');
+});
