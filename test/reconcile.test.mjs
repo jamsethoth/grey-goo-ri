@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as reconcile from '../lib/reconcile.mjs';
@@ -16,7 +16,7 @@ async function crashedFailedRed(t, when) {
   const git = g.options.git;
   g.options.git = { ...git, resetTo: async (...args) => {
     if (when === 'after reset') await git.resetTo(...args);
-    throw new Error('crash');
+    throw new interpreter.CrashError('crash');
   } };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
@@ -88,11 +88,38 @@ test('a failed HEAD read after the reset of a failed red leaves the History item
   let reset = false;
   g.options.git = { ...git,
     resetTo: async (...args) => { await git.resetTo(...args); reset = true; },
-    headSha: async (cwd) => { if (reset) throw new Error('head read failed'); return git.headSha(cwd); } };
+    headSha: async (cwd) => { if (reset) throw new interpreter.CrashError('head read failed'); return git.headSha(cwd); } };
   await assert.rejects(interpreter.runExecution(g.options), /head read failed/);
 
   const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(loaded.history, [], 'no History item is saved without the reset evidence');
   assert.equal(await reconcile.resets(loaded, { git }), 'continue');
   assert.equal(loaded.history.length, 1);
+});
+
+test('a crash between the reset and the Protected File restore of an integrity violation is finished by Reconciliation', async (t) => {
+  const g = await golden.setup(t);
+  mkdirSync(join(g.worktree, '.claude'), { recursive: true });
+  writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
+  const local = join(g.worktree, '.claude', 'settings.local.json');
+  writeFileSync(local, '{"owner":true}\n');
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    if (call.phase === 'red') writeFileSync(local, '{"agent":true}\n');
+    return out;
+  };
+  const git = g.options.git;
+  g.options.git = { ...git, resetTo: async (...args) => {
+    await git.resetTo(...args);
+    throw new interpreter.CrashError('crash');
+  } };
+  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+  assert.equal(readFileSync(local, 'utf8'), '{"agent":true}\n', 'the crash came before the restore');
+
+  const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.equal(await reconcile.resets(loaded, { git }), 'continue');
+  assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', "the owner's bytes come back from the saved intent");
+  assert.equal(loaded.history[0].kind, 'integrity violation');
+  assert.deepEqual(record.openIntents(loaded), []);
 });
