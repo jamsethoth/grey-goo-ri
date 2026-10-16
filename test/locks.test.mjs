@@ -138,8 +138,9 @@ test('withLock releases on throw', async (t) => {
   assert.equal(await locks.withLock(commonDir, 'epic-1', async () => 42), 42);
 });
 
-test('contending processes never throw and grant exactly one owner', async (t) => {
+test('contending processes never throw and grant at most one owner', async (t) => {
   const commonDir = await tempCommonDir(t);
+  let owners = 0;
   for (let round = 0; round < 5; round++) {
     const children = Array.from({ length: 6 }, () => {
       const child = spawn(process.execPath, [contender, commonDir, 'repo', 'barrier'], { stdio: ['pipe', 'pipe', 'inherit'] });
@@ -155,8 +156,17 @@ test('contending processes never throw and grant exactly one owner', async (t) =
     await Promise.all(children.map(({ exited }) => exited));
     const errors = outputs.filter((o) => o.error);
     assert.deepEqual(errors, [], `round ${round}: no contender throws`);
-    assert.equal(outputs.filter((o) => o.handle).length, 1, `round ${round}: one owner`);
+    const won = outputs.filter((o) => o.handle).length;
+    assert.ok(won <= 1, `round ${round}: at most one owner, got ${won}`);
+    owners += won;
+    if (won === 0) {
+      // Simultaneous BEGIN EXCLUSIVE can hand every contender SQLITE_BUSY (ADR 0008); the lock must then be free, not wedged.
+      const handle = await locks.tryAcquire(commonDir, 'repo');
+      assert.ok(handle, `round ${round}: nobody won, so the lock is free`);
+      await locks.release(handle);
+    }
   }
+  assert.ok(owners >= 1, 'some round had an owner');
 });
 
 test('the stress loop counts a run as clean only on exit 0 with a # fail 0 summary', async () => {
