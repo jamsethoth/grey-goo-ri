@@ -6,6 +6,7 @@ import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
 import * as checks from '../lib/checks.mjs';
+import * as briefs from '../lib/briefs.mjs';
 import * as golden from './support/golden.mjs';
 
 const TDD_PHASES = ['red', 'still-green', 'green', 'test-fix'];
@@ -1231,4 +1232,21 @@ test('a review that changes the tree is an integrity violation', async (t) => {
   assert.deepEqual(reason.decidedBy, { vertex: 'reviewer', visit: 1, phase: 'review', ordinal: 1 });
   assert.equal(reason.outcome, 'integrity-violation');
   assert.match(g.gh.comments.at(-1).body, /\btree\b/);
+});
+
+test('a review on a workspace-write node is still read-only', async (t) => {
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
+  });
+  g.flow.ticket.vertices.reviewer.node.access = 'workspace-write';
+  g.result = await interpreter.runExecution(g.options);
+  const events = g.readEvents();
+
+  assert.equal(g.result.outcome, 'needs-human');
+  const reviewCall = g.harness.calls.find((c) => c.schema === briefs.REVIEW_SCHEMA);
+  assert.equal(reviewCall.access, 'read-only', 'the Harness runs the review read-only');
+  const call = events.find((e) => e.type === 'action' && e.vertex === 'reviewer' && e.phase === 'review' && e.ordinal === 1);
+  assert.equal(call?.outcome, 'integrity-violation');
+  assert.ok(call.violations.some((v) => v.surface === 'tree'), JSON.stringify(call.violations));
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
 });

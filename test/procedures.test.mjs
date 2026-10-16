@@ -39,6 +39,7 @@ test('review and fix describe their actions, checks, lineage and outcome maps', 
   assert.deepEqual(pairs(review.actions.filter((a) => a.kind === 'call')), [['review', 1]]);
   assert.ok(review.actions.every((a) => !a.when), 'every review Action runs');
   assert.deepEqual(review.checks, ['review-pass']);
+  assert.equal(review.access, 'read-only');
   assert.deepEqual(review.claims, ['ok', 'changes', 'misscoped']);
   assert.deepEqual(review.outcomes, ['ok', 'changes', 'repeat', 'misscoped']);
   assert.deepEqual(review.checkOutcome, { 'review-pass': 'changes' });
