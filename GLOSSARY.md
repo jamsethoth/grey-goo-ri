@@ -293,6 +293,12 @@ _Avoid_: journal, checkpoint, state file
 The persisted state of an Epic: its plan Decision and Epic-level pending state.
 _Avoid_: plan record
 
+**State Database**:
+The per-repository `node:sqlite` file `<git common dir>/gg/gg.db` that holds every Execution Record, Epic Record,
+Event and Pinned Configuration as rows. Locks are not in it: each lock is a separate SQLite database file that gg
+only holds open in an exclusive transaction, so SQLite and the OS own exclusivity and release (ADR 0008).
+_Avoid_: store, state file, db (alone)
+
 **Reconciliation**:
 The comparison of an Execution Record with GitHub and git at resume, to decide whether and where an Execution
 continues.
@@ -370,6 +376,11 @@ _Avoid_: pinned config, frozen config
 The fingerprint of the pinned configuration an Execution runs under. It excludes live repository content, which has
 its own Repository Content Digest.
 _Avoid_: config id, variant id
+
+**Pinned Configuration**:
+The resolved configuration a Config Hash fingerprints: Resolved Flow, Persona bytes, harness settings, Launch Profile
+and Declared Commands, stored by hash in the State Database so two hashes can be diffed.
+_Avoid_: config snapshot (reserved for a Visit), config blob
 
 **Repository Content Digest**:
 The fingerprint of repository-owned agent content that a Launch Profile may expose, recorded per Attempt because it

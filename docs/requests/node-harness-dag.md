@@ -20,7 +20,9 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
 
 ## 2. Non-negotiables
 
-- Zero runtime dependencies, plain Node ESM, Node 20+, native Windows first. Spawn executables without a shell;
+- Plain Node ESM, Node 22+ (22.13 or later), native Windows first, nothing to install beyond Node and the harness
+  CLIs; npm dependencies are allowed when they earn their place, node built-ins preferred. Spawn executables without
+  a shell;
   a command string that cannot be avoided goes through the job-object runner.
 - Agents never run git write commands or gh. The orchestrator owns commits, pushes, PRs, comments and labels.
 - Topology is data. Work is code. No per-node code; a node is only configuration.
@@ -288,8 +290,9 @@ not resolution policy. Every signal received and the rule that decided are recor
 
 ### 3.5 Execution record, approvals and work management
 
-One persisted record per work item (ticket) under `<git common dir>/gg/records/`, plus one per epic for plan
-approval and epic-level pending state, plain JSON a human can read, schema-versioned. Contents: flow name and config hash, run id, graph position, visit counts per vertex and traversal
+One persisted record per work item (ticket), plus one per epic for plan approval and epic-level pending state,
+each a schema-versioned JSON document stored as one row of the state database `<git common dir>/gg/gg.db`
+(`node:sqlite`, ADR 0009), readable with any SQLite client and with `gg work show` (slice 6). Contents: flow name and config hash, run id, graph position, visit counts per vertex and traversal
 counts per edge, session lineage per phase (session id, harness, persona hash, last cumulative usage), the outputs
 later briefs need (red commit and evidence, implementation reports, review findings and hash, history), worktree
 and branch identity, base revision, PR number, pending approval state, and the write-ahead log below.
@@ -330,9 +333,10 @@ red phase in the same run). `gg work reset` is the only destructive path, explic
 exists, and never runs without the ticket named. Cleanup never deletes a worktree that is dirty or has unpushed
 commits.
 
-Locks and timeouts. A per-ticket lock file with pid and stale takeover under `<git common dir>/gg/locks/`, an
-epic lock for epic-record writes and approval reconciliation, and a repo-level lock around every orchestrator git
-write, so two gg processes on one repo serialise correctly; the
+Locks and timeouts. A per-ticket lock, an epic lock for epic-record writes and approval reconciliation, and a
+repo-level lock around every orchestrator git write, so two gg processes on one repo serialise correctly. Each lock
+is a `node:sqlite` `BEGIN EXCLUSIVE` transaction held open on `<git common dir>/gg/locks/<name>.db`; the OS releases
+it when the holder dies, so there is no stale takeover (ADR 0008). The
 in-process mutex alone is not enough and the document says so. Retry on index lock with backoff. Stall timeout when
 the output stream and transcript stop growing (default about 10 min) and a wall clock per agent action (default about
 60 min), per node overridable; expiry kills the process tree through the job object and records a typed timeout
@@ -434,13 +438,13 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
 Events come in two kinds. Action events record one attempt and belong to their execution. Lifecycle events record a
 run or an execution starting or ending (run start and end, ticket start and end) and belong to the run or the
 execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
-events. Action events, schema 2, in the repo's append-only events file carry: flow name, config hash,
+events. Action events, schema 2, appended as rows of the state database carry: flow name, config hash,
 launch profile, ticket, run, vertex, visit, procedure, phase, ordinal, attempt, duration, outcome, direction, signals
 received and the resolution rule applied. Agent actions add: harness and CLI version, model and effective effort,
 persona hash, resolved tools with hint fields marked, init metadata (plugins, MCP servers), session id and lineage,
 transcript path, usage cumulative and delta, cost delta, peak context, turns, tool calls, compactions, exit code,
 signal, final event subtype, permission denials, commands run (diagnostic), failure class. Deterministic actions record
-events too. Old schema 1 events are still read by stats.
+events too.
 
 Token rules, the same for both harnesses: `input` is uncached input tokens only; `cached` is cache reads;
 `cacheWrite` is cache creation; `output` is output tokens from the result; `reasoning` where the harness reports it,
@@ -455,7 +459,15 @@ a vertex does not hide escalations. `rounds`, `red_failed` and `blocked` remain 
 
 Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands. It covers the
 pinned configuration only; the repository content digest (3.2) is live and recorded per attempt, outside the hash.
-Written with the resolved flow to the run directory. Secrets never enter it (3.1).
+Written with the resolved flow to the run directory, and the pinned configuration it fingerprints is stored by hash in
+the state database the first time a run uses it, so any two hashes in a trace or a record can be diffed (`gg config
+diff`, slice 6). Secrets never enter it (3.1).
+
+Retention: nothing in the state database is purged automatically. `gg work archive --before <date>` (slice 6) exports
+the events of executions that ended before the date as JSON lines under `<git common dir>/gg/archive/`, deletes those
+rows, their run directories and pinned configurations nothing references any more, then checkpoints and vacuums. An
+execution record is deleted with its merged worktree or by `gg work reset`; an epic record when the epic is closed and
+its ticket records are gone. `gg doctor` reports the database size and the oldest event, with no threshold.
 
 Export: Agent Trajectory Interchange Format (ATIF, Harbor), pinned to the schema version Harbor's validator accepts
 at implementation time and recorded in the file. One parent trajectory per execution whose ATIF steps are the
@@ -502,8 +514,8 @@ Ported as they are:
 - Labels never throw: logged, event, exit code 1; exit 2 on any needs-human. In-progress added only after the
   worktree exists.
 - Stuck detection: label age past `stuckAfterHours` is the trigger to inspect; a ticket is stuck when its in-progress
-  state label stands and no recoverable execution record is behind it; a dead lock holder with a recoverable record
-  is stale-lock takeover (3.5), not stuck. Reset
+  state label stands and no recoverable execution record is behind it; a dead holder's lock is already free (3.5), so a
+  recoverable record with no live holder is resumed, not stuck. Reset
   refuses when a published PR exists and closes every draft; cleanup keeps dirty or unpushed worktrees.
 - Worktree add serialised, ownership validated, branch reused on title change; push without `-u`.
 - Ticket dependency ordering at publish (unknown and cyclic dependencies rejected, blockers resolved to issue
