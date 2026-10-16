@@ -897,7 +897,7 @@ test('a persona edit between green and test-fix does not reach the test-fix call
   assert.equal(g.harness.calls[2].personaHash, g.harness.calls[1].personaHash);
 });
 
-// T18: the review and fix Procedures on an inline Flow matching request 3.3's illustration.
+// T17: the review and fix Procedures on an inline Flow matching request 3.3's illustration.
 const REVIEWER_PERSONA = '# reviewer\nJudge the diff.\n';
 const finding = (severity, file, issue) => ({ severity, file, issue, fix: 'Make it right.' });
 const review = (claim, findings = [], extra = {}) => ({
