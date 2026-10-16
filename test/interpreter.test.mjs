@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
+import * as checks from '../lib/checks.mjs';
 import * as golden from './support/golden.mjs';
 
 const TDD_PHASES = ['red', 'still-green', 'green', 'test-fix'];
@@ -893,4 +894,288 @@ test('a persona edit between green and test-fix does not reach the test-fix call
   assert.equal(g.harness.calls.length, 3);
   assert.equal(g.harness.calls[2].personaBytes, golden.PERSONA, 'test-fix gets the bytes pinned at Visit entry');
   assert.equal(g.harness.calls[2].personaHash, g.harness.calls[1].personaHash);
+});
+
+// T18: the review and fix Procedures on an inline Flow matching request 3.3's illustration.
+const REVIEWER_PERSONA = '# reviewer\nJudge the diff.\n';
+const finding = (severity, file, issue) => ({ severity, file, issue, fix: 'Make it right.' });
+const review = (claim, findings = [], extra = {}) => ({
+  claim, summary: `The review says ${claim}.`, dodMet: true, tddEvidenceOk: true, findings, diagnosis: '', ...extra,
+});
+const reviewed = (response, files = {}) => ({ files, response });
+const fixed = (files) => ({ files, response: { ...golden.greenResponse, summary: 'Address the findings.' } });
+const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
+const MAJOR = finding('major', 'lib/add.mjs', 'add ignores non-number input at line 1');
+
+// implementer(tdd) -> reviewer(review); changes -> {implementer-fix, max 2, exhausted needs-human}; implementer-fix(fix) -> reviewer.
+async function reviewSetup(t, responses, { exec } = {}) {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses } });
+  const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
+  writeFileSync(reviewerPersona, REVIEWER_PERSONA);
+  const implementer = g.flow.ticket.vertices.implementer;
+  g.flow.ticket.vertices = {
+    implementer: { ...implementer, then: 'reviewer' },
+    reviewer: {
+      node: { ...structuredClone(implementer.node), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
+      procedure: 'review', options: {},
+      route: { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' }, misscoped: 'replan' },
+    },
+    'implementer-fix': { node: structuredClone(implementer.node), procedure: 'fix', options: {}, then: 'reviewer' },
+  };
+  if (exec) g.options.exec = exec;
+  g.result = await interpreter.runExecution(g.options);
+  g.events = g.readEvents();
+  g.actions = g.events.filter((e) => e.type === 'action' && e.procedure);
+  g.at = (vertex, visit, phase, ordinal) => g.actions.filter((e) => e.vertex === vertex && e.visit === visit && e.phase === phase && e.ordinal === ordinal);
+  g.subjects = () => golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean).reverse();
+  return g;
+}
+
+const prReviewComments = (g) => g.gh.comments.filter((c) => c.number === g.gh.pr()?.number && /### gg review/.test(c.body));
+const ticketComments = (g) => g.gh.comments.filter((c) => c.target === 'issue' && c.number === golden.TICKET);
+
+// A review or fix stop ends with one Terminal Reason in the record, on ticket_end and in exactly one ticket comment.
+function reviewStopReason(g) {
+  const reason = g.rec.terminalReason;
+  assert.ok(reason, 'the record holds a Terminal Reason');
+  assert.deepEqual(g.events.at(-1).reason, reason, 'ticket_end carries the same Terminal Reason');
+  const posted = ticketComments(g).filter((c) => c.body.includes(`**Terminal Reason:** ${reason.text}`));
+  assert.equal(posted.length, 1, 'the Terminal Reason is posted once on the ticket');
+  assert.match(posted[0].body, /^<!-- gg-action gg:\S+ -->$/m);
+  return reason;
+}
+
+test('golden: a changes verdict routes into the fix vertex and back to review then done', async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok', [finding('minor', 'lib/add.mjs', 'name the parameters')])),
+  });
+
+  assert.equal(g.result.outcome, 'done');
+  const seq = (vertex, visit, phase, n) => Array.from({ length: n }, (_, i) => `${vertex}/${visit}/${phase}/${i + 1}`);
+  assert.deepEqual(g.actions.map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}`), [
+    ...seq('implementer', 1, 'red', 3), ...seq('implementer', 1, 'green', 5),
+    ...seq('reviewer', 1, 'review', 4),
+    ...seq('implementer-fix', 1, 'fix', 5),
+    ...seq('reviewer', 2, 'review', 4),
+  ]);
+  for (const e of g.actions) assert.equal(e.attempt, 1, `${e.vertex}/${e.phase}/${e.ordinal}`);
+  assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure), Array(8).fill('review'));
+  assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), Array(5).fill('fix'));
+  assert.equal(g.at('reviewer', 1, 'review', 1)[0].outcome, 'changes');
+  assert.equal(g.at('reviewer', 2, 'review', 1)[0].outcome, 'ok');
+
+  // The review is a read-only call with the diff in its Brief.
+  const [review1, fix, review2] = g.harness.calls.slice(2);
+  assert.equal(review1.access, 'read-only');
+  assert.ok(review1.brief.includes('a + b'), 'the diff is in the review Brief');
+  assert.equal(review1.personaBytes, REVIEWER_PERSONA);
+  // fix/1 is a fresh Session whose Brief carries the review Findings.
+  assert.equal(fix.resume, null, 'fix never resumes');
+  assert.ok(fix.brief.includes(MAJOR.issue), 'the Findings are in the fix Brief');
+  assert.equal(fix.access, 'workspace-write');
+  assert.equal(g.at('implementer-fix', 1, 'fix', 1)[0].lineage, null);
+  assert.equal(review2.access, 'read-only');
+
+  assert.deepEqual(g.subjects().map((s) => s.split(':')[0]), ['test', 'feat', 'fix']);
+  assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%B'), /Feature-Flow-Stage: implementer-fix fake\/model-x\/high/);
+  assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'), 'fix/4 pushed');
+
+  const comments = prReviewComments(g);
+  assert.equal(comments.length, 2, 'two review comments on the PR');
+  for (const c of comments) assert.match(c.body, /^<!-- gg-action gg:\S+ -->$/m);
+  assert.match(g.gh.pr().body, /^\| reviewer \| fake \| model-r \| high \| /m, 'the PR body carries the reviewer provenance row');
+  assert.equal(g.gh.pr().isDraft, false);
+
+  assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1);
+  assert.deepEqual(g.rec.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
+  assert.deepEqual(g.rec.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]]);
+  assert.equal(g.events.at(-1).type, 'ticket_end');
+  assert.equal(g.events.at(-1).outcome, 'done');
+});
+
+test('the changes edge exhausts after max traversals to needs-human', async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
+    'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
+    'implementer-fix/2/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // two\n' }),
+    'reviewer/3/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'third problem')])),
+  });
+
+  assert.equal(g.result.outcome, 'needs-human');
+  assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 2, 'two changes verdicts traverse the edge twice');
+  assert.equal(g.rec.visits['implementer-fix'], 2);
+  assert.equal(g.rec.visits.reviewer, 3);
+  assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX ROUND')).length, 2, 'no third fix call');
+  assert.ok(!g.actions.some((e) => e.vertex === 'implementer-fix' && e.visit === 3));
+  const third = g.actions.filter((e) => e.vertex === 'reviewer' && e.visit === 3);
+  assert.ok(third.some((e) => e.exhausted === true), 'the deciding Action Event records exhausted');
+  assert.ok(!g.actions.filter((e) => e.vertex === 'reviewer' && e.visit < 3).some((e) => e.exhausted), 'only the third review exhausts');
+  assert.ok(neededHuman(g));
+
+  const reason = reviewStopReason(g);
+  assert.equal(reason.decidedBy.vertex, 'reviewer');
+  assert.equal(reason.decidedBy.visit, 3);
+  assert.equal(reason.outcome, 'changes');
+});
+
+test('review ok without evidence is changes through the review-pass check', async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('ok', [finding('blocker', 'lib/add.mjs', 'add drops the second argument')])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => b + a;\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+
+  const decided = g.actions.filter((e) => e.vertex === 'reviewer' && e.visit === 1 && e.check === 'review-pass');
+  assert.equal(decided.length, 1, 'review-pass is evaluated once on the Structured Response');
+  assert.equal(decided[0].rule, 'check-failed');
+  assert.equal(decided[0].outcome, 'changes');
+  assert.equal(decided[0].signals.claim.claim, 'ok', 'the agent claimed ok');
+  assert.equal(decided[0].signals.checks.find((c) => c.name === 'review-pass').passed, false);
+  assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1, 'the changes edge is taken');
+  assert.equal(g.result.outcome, 'done');
+});
+
+test('a repeated findings hash is flagged', async (t) => {
+  const same = [MAJOR, finding('major', 'test/add.test.mjs', 'the test   misses negatives on line 3')];
+  const reworded = [finding('major', 'test/add.test.mjs', 'the test misses negatives on line 9'), { ...MAJOR, issue: 'add ignores non-number input at line 7' }];
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', same)),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // tried\n' }),
+    'reviewer/2/review/1': reviewed(review('changes', reworded)),
+    'implementer-fix/2/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // again\n' }),
+    'reviewer/3/review/1': reviewed(review('ok')),
+  });
+
+  const [first, second] = g.rec.outputs.reviews;
+  assert.deepEqual([first.vertex, first.visit, second.vertex, second.visit], ['reviewer', 1, 'reviewer', 2]);
+  assert.equal(first.findingsHash, checks.findingsHash(same));
+  assert.equal(second.findingsHash, first.findingsHash, 'normalised Findings hash the same');
+  const hashed = (visit) => g.at('reviewer', visit, 'review', 2)[0];
+  assert.notEqual(hashed(1).repeat, true, 'the first review is not a repeat');
+  assert.equal(hashed(2).repeat, true, 'the second review is flagged as a repeat');
+  assert.equal(hashed(2).outcome, 'changes', 'repeat is not routed in this slice');
+  assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 2);
+  assert.equal(g.result.outcome, 'done');
+});
+
+test('test-fix after fix resumes the fix session', async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': WRONG_ADD }),
+    'implementer-fix/1/test-fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  }, {
+    exec: {
+      runShell: async (command, opts) => {
+        const file = join(opts?.cwd ?? '', 'lib', 'add.mjs');
+        if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
+        return readFileSync(file, 'utf8').includes('a + b')
+          ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
+      },
+    },
+  });
+
+  assert.equal(g.at('implementer-fix', 1, 'fix', 2)[0]?.rule, 'check-failed');
+  const fixCall = g.at('implementer-fix', 1, 'fix', 1)[0];
+  const testFix = g.at('implementer-fix', 1, 'test-fix', 1)[0];
+  assert.ok(testFix, 'test-fix/1 runs after the failing Green Check');
+  assert.equal(testFix.lineage, 'fix', 'test-fix descends from the fix Phase');
+  const call = g.harness.calls.find((c) => c.marker.includes(':test-fix:'));
+  assert.equal(call.resume, fixCall.sessionId, 'test-fix resumes the fix session');
+  assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT));
+  assert.equal(g.result.outcome, 'done');
+});
+
+test('a fix that changes an unnamed test is an integrity violation', async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n', 'test/add.test.mjs': '// weakened\n' }),
+  });
+
+  assert.equal(g.result.outcome, 'needs-human');
+  const check = g.at('implementer-fix', 1, 'fix', 2)[0];
+  assert.equal(check?.outcome, 'integrity-violation');
+  assert.deepEqual(check.violations, ['test/add.test.mjs']);
+  assert.ok(!g.subjects().some((s) => s.startsWith('fix:')), 'no fix commit');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the fix edit is rolled back');
+  assert.ok(!readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'));
+  const reason = reviewStopReason(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer-fix', visit: 1, phase: 'fix', ordinal: 2 });
+  assert.equal(reason.outcome, 'integrity-violation');
+});
+
+test('a fix that changes a named test moves the immutability baseline', async (t) => {
+  const TEST_EDIT = "import { add } from '../lib/add.mjs';\n// covers negatives\n";
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'test/add.test.mjs', 'the test misses negatives')])),
+    'implementer-fix/1/fix/1': fixed({ 'test/add.test.mjs': TEST_EDIT }),
+    'reviewer/2/review/1': reviewed(review('changes', [MAJOR])),
+    // Leaves the test as fix 1 committed it: only a moved baseline lets this pass Test Immutability.
+    'implementer-fix/2/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/3/review/1': reviewed(review('ok')),
+  });
+
+  assert.equal(g.result.outcome, 'done');
+  for (const visit of [1, 2]) {
+    const check = g.at('implementer-fix', visit, 'fix', 2)[0];
+    assert.equal(check?.outcome, 'ok', `fix visit ${visit}: ${check?.rule}`);
+    assert.ok(!check.violations, `fix visit ${visit} has no violations`);
+  }
+  assert.deepEqual(g.subjects().map((s) => s.split(':')[0]), ['test', 'feat', 'fix', 'fix']);
+  assert.equal(readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8'), TEST_EDIT);
+  const reviews = g.harness.calls.filter((c) => c.access === 'read-only');
+  assert.equal(reviews.length, 3);
+  assert.ok(!reviews[0].brief.includes('## Test files changed since the red commit'), 'nothing changed before the fix');
+  for (const r of reviews.slice(1)) {
+    assert.ok(r.brief.includes('## Test files changed since the red commit\n- test/add.test.mjs'), 'every later review Brief lists the changed test');
+  }
+});
+
+test('misscoped lands in replan with the diagnosis on ticket and epic', async (t) => {
+  const diagnosis = 'The ticket asks add to both sum and concatenate.';
+  const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('misscoped', [], { diagnosis })) });
+
+  assert.equal(g.result.outcome, 'replan');
+  assert.equal(g.rec.state, 'replan');
+  const end = g.events.at(-1);
+  assert.equal(end.type, 'ticket_end');
+  assert.equal(end.outcome, 'replan');
+  const edit = g.gh.calls.map((c) => c.args.join(' '))
+    .find((a) => a.startsWith(`issue edit ${golden.TICKET}`) && a.includes('--add-label gg:state:needs-replan'));
+  assert.ok(edit, 'issue edit adding needs-replan');
+  assert.ok(edit.includes('--remove-label gg:state:in-progress'));
+  assert.ok(!neededHuman(g));
+
+  const onTicket = ticketComments(g);
+  assert.equal(onTicket.length, 1, 'the diagnosis comment carries the Terminal Reason, no second comment');
+  assert.ok(onTicket[0].body.includes(diagnosis));
+  const onEpic = g.gh.comments.filter((c) => c.target === 'issue' && c.number === g.rec.epic);
+  assert.equal(onEpic.length, 1, 'the diagnosis is posted on the epic');
+  assert.ok(onEpic[0].body.includes(diagnosis));
+  const reason = reviewStopReason(g);
+  assert.equal(reason.decidedBy.vertex, 'reviewer');
+  assert.equal(reason.outcome, 'misscoped');
+  assert.ok(!reason.text.includes(diagnosis), 'agent text stays fenced, out of the Terminal Reason');
+  assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX ROUND')).length, 0);
+});
+
+test('a review that changes the tree is an integrity violation', async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
+  });
+
+  assert.equal(g.result.outcome, 'needs-human');
+  const call = g.at('reviewer', 1, 'review', 1)[0];
+  assert.equal(call?.outcome, 'integrity-violation');
+  assert.ok(call.violations.some((v) => v.surface === 'tree'), JSON.stringify(call.violations));
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
+  assert.equal(readFileSync(join(g.worktree, 'lib', 'add.mjs'), 'utf8'), RIGHT_ADD);
+  assert.equal(prReviewComments(g).length, 0, 'no review comment after a violation');
+  const reason = reviewStopReason(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'reviewer', visit: 1, phase: 'review', ordinal: 1 });
+  assert.equal(reason.outcome, 'integrity-violation');
+  assert.match(g.gh.comments.at(-1).body, /\btree\b/);
 });
