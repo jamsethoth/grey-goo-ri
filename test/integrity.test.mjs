@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lstatSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import * as integrity from '../lib/integrity.mjs';
 import * as record from '../lib/record.mjs';
@@ -21,7 +22,10 @@ function newExecution(commonDir, ticket, worktree) {
 // A repo with two worktrees, each owned by a ticket record saved on disk: `own` is the agent's, `other` is idle.
 async function twoWorktrees(t) {
   const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => {
+    record.close(join(root, 'own', '.git'));
+    rmSync(root, { recursive: true, force: true });
+  });
   const own = join(root, 'own');
   const other = join(root, 'other');
   mkdirSync(own);
@@ -249,6 +253,20 @@ test('readActivity reads another ticket\'s record from disk', async (t) => {
   await integrity.markBusy(await otherProcessRecord(commonDir));
   assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 1 });
   assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody')), { busy: false, generation: 0 });
+});
+
+test('readActivity reads a record another process saved', async (t) => {
+  const { other, commonDir } = await twoWorktrees(t);
+  assert.ok(!existsSync(join(commonDir, 'gg', 'records')), 'records are rows, not files');
+  const saver = fileURLToPath(new URL('./support/record-saver.mjs', import.meta.url));
+  const exit = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [saver, commonDir, '2', '3', other], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('close', (code) => resolve({ code, err }));
+  });
+  assert.deepEqual(exit, { code: 0, err: '' });
+  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 3 });
 });
 
 test('readActivity matches a differently cased path on Windows', { skip: process.platform !== 'win32' }, async (t) => {

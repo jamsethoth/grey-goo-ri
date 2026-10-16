@@ -1,7 +1,7 @@
 // Golden-trace fixture: a temp bare origin and clone with a ticket worktree, a fake gh at lib/github.mjs's seam,
 // a fake test runner, the fake harness, and every process call tagged with the activity it observed.
 import childProcess, { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -73,7 +73,10 @@ export const trace = (evs) => evs.filter((e) => e.type === 'action')
 export async function setup(t, { responses = firstVisitResponses } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'gg-golden-'));
   if (process.env.GG_KEEP_TEMP) t.diagnostic(`golden temp repo: ${root}`);
-  else t.after(() => rmSync(root, { recursive: true, force: true }));
+  else t.after(() => {
+    record.close(join(root, 'main', '.git'));
+    rmSync(root, { recursive: true, force: true });
+  });
 
   sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
   sh(root, 'clone', '-q', 'origin.git', 'main');
@@ -99,10 +102,10 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
   });
   await record.save(rec);
 
-  // What every launched process saw of the worktree's activity, read from disk as another process would.
-  const recordFile = join(commonDir, 'gg', 'records', `ticket-${TICKET}.json`);
+  // What every launched process saw of the worktree's activity, read from the saved row as another process would.
+  const read = record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?");
   const activity = [];
-  const observe = (what) => activity.push({ what, ...JSON.parse(readFileSync(recordFile, 'utf8')).activity });
+  const observe = (what) => activity.push({ what, ...JSON.parse(read.get(TICKET).json).activity });
 
   const harness = fakeHarness({ transcriptDir: join(root, 'transcripts'), responses, capabilities: { cost: false, reasoningTokens: false } });
   const run = harness.run;
