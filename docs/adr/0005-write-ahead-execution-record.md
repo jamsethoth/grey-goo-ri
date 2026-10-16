@@ -14,4 +14,4 @@ feature-flow held a ticket's position in process memory, so a crash lost it and 
 
 ## Consequences
 
-Configuration is pinned per vertex visit, persona bytes included. Unknown dirty state in a worktree is held for a human, never discarded. The first delivery slice is larger than a pure harness-interface start would be; that was accepted knowingly.
+Configuration is pinned per vertex visit, persona bytes included. Records are JSON documents; where they are stored is ADR 0009. Unknown dirty state in a worktree is held for a human, never discarded. The first delivery slice is larger than a pure harness-interface start would be; that was accepted knowingly.

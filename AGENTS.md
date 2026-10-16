@@ -38,10 +38,10 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 | `lib/outcome.mjs` | the transition table and Resolution Policy |
 | `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, review-pass |
 | `lib/integrity.mjs` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) |
-| `lib/record.mjs` | Execution Record and Epic Record persistence and write-ahead log |
+| `lib/record.mjs` | Execution Record, Epic Record and Pinned Configuration persistence in the State Database, and the write-ahead log |
 | `lib/marker.mjs` | Action Marker format and parse |
 | `lib/reconcile.mjs` | Reconciliation of a record against git and GitHub at resume |
-| `lib/events.mjs` | event schema 2 append and read |
+| `lib/events.mjs` | event schema 2 append and read from the State Database |
 | `lib/labels.mjs` | State, Await and Decide Label names and prefix |
 | `lib/approval.mjs` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.mjs` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
