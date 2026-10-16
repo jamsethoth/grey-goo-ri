@@ -240,6 +240,77 @@ test('an amended commit with the marker holds the ticket', async (t) => {
   assert.equal(g.harness.calls.length, 2);
 });
 
+test('a crash before the commit replays the intended tree, not a human edit', async (t) => {
+  const g = await golden.setup(t);
+  const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
+  writeFileSync(join(g.worktree, 'notes.txt'), 'a human note\n');
+
+  const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+  assert.equal(result.outcome, 'done');
+  const final = await loadTicket(g);
+  const { payload } =final.log.find((e) => e.marker === m && e.step === 'intent');
+  const { sha } = final.log.find((e) => e.marker === m && e.step === 'evidence').evidence;
+  assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^{tree}`), payload.tree, 'the commit has the intended tree');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^`), payload.parent, 'and the intended parent');
+  assert.equal(readFileSync(join(g.worktree, 'notes.txt'), 'utf8'), 'a human note\n', 'the human edit is kept');
+  assert.match(golden.sh(g.worktree, 'status', '--porcelain'), /\?\? notes\.txt/, 'and left uncommitted');
+});
+
+test('a branch moved before the commit replay holds the ticket', async (t) => {
+  const g = await golden.setup(t);
+  const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
+  golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+
+  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  assert.equal(decided.next, 'hold');
+  assert.ok(decided.reason.includes(m), decided.reason);
+
+  await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+  assert.equal((await loadTicket(g)).state, 'held');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
+  assert.equal(remoteSha(g), null, 'nothing is pushed');
+});
+
+test('a branch moved before the push replay holds the ticket', async (t) => {
+  const g = await golden.setup(t);
+  const { m } = await crashed(g, EFFECTS.push.at, 'before-effect');
+  golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+
+  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  assert.equal(decided.next, 'hold');
+  assert.ok(decided.reason.includes(m), decided.reason);
+
+  await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+  assert.equal((await loadTicket(g)).state, 'held');
+  assert.equal(remoteSha(g), null, 'the moved branch is not published');
+});
+
+// A misscoped green ends in replan, whose Terminal posts the diagnosis on the ticket (ordinal 1) and the epic (ordinal 2).
+const DIAGNOSIS = 'The ticket asks add to both sum and concatenate.';
+for (const point of Object.keys(POINTS)) {
+  test(`a crash ${point} of the epic diagnosis comment resumes the same replan Actions`, async (t) => {
+    const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
+      'implementer/1/green/1': { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: DIAGNOSIS } } } });
+    await crashed(g, ['replan', 1, 'replan', 2], point);
+
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.outcome, 'replan');
+    const onEpic = g.gh.comments.filter((c) => c.target === 'issue' && c.number === g.rec.epic);
+    assert.equal(onEpic.length, 1, 'exactly one diagnosis on the epic');
+    assert.ok(onEpic[0].body.includes(DIAGNOSIS));
+    const onTicket = g.gh.comments.filter((c) => c.target === 'issue' && c.number === golden.TICKET);
+    assert.equal(onTicket.length, 1);
+    assert.ok(onTicket[0].body.includes(DIAGNOSIS));
+    assert.ok(g.gh.labels.has('gg:state:needs-replan'), 'the label Action keeps its own payload');
+    const final = await loadTicket(g);
+    assert.equal(final.state, 'replan');
+    for (const e of final.log.filter((x) => x.step === 'intent')) {
+      assert.deepEqual(stepsOf(final, e.marker), ['intent', 'evidence', 'complete'], `${e.action} ${e.marker}`);
+    }
+  });
+}
+
 test('a needs-human label overrides a mid-action record', async (t) => {
   const g = await golden.setup(t);
   await crashed(g, EFFECTS.commit.at, 'before-effect');
