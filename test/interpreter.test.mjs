@@ -633,6 +633,22 @@ test('a failing green check runs test-fix once then derives gate-failed(test)', 
   assert.match(reason.text, /Green Check/);
 });
 
+test('a test-fix that changes the committed test is rolled back to its baseline and stops', async (t) => {
+  const g = await greenSetup(t, {
+    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
+  });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  const check = actionEvent(g, 'test-fix', 2);
+  assert.equal(check.outcome, 'integrity-violation');
+  assert.deepEqual(check.violations, ['test/add.test.mjs']);
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'no forbidden edit or implementation file survives');
+  assert.ok(!readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'), 'the committed test bytes are restored');
+  assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'the red commit survives');
+});
+
 test('a timed-out result gets one fresh attempt then needs-human', async (t) => {
   const red = golden.firstVisitResponses['implementer/1/red/1'];
   const g = await golden.setup(t, { responses: {
