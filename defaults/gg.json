@@ -5,11 +5,11 @@
   "labelPrefix": "gg",
   "nodes": {
     "implementer": {
-      "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer.md",
+      "persona": "implementer.md",
       "skills": [], "mcp": [], "plugins": [], "access": "workspace-write", "network": false
     },
     "reviewer": {
-      "harness": "claude", "model": "sonnet", "effort": "high", "persona": "reviewer.md",
+      "persona": "reviewer.md",
       "skills": [], "mcp": [], "plugins": [], "access": "read-only", "network": false
     }
   },
