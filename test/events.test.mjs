@@ -1,11 +1,35 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as events from '../lib/events.mjs';
+import * as record from '../lib/record.mjs';
 
-const tempDir = () => mkdtempSync(join(tmpdir(), 'gg-events-'));
+const appender = fileURLToPath(new URL('./support/event-appender.mjs', import.meta.url));
+
+// The State Database is closed before the directory is removed, as Windows requires.
+function tempDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'gg-events-'));
+  t.after(() => {
+    record.close(dir);
+    rmSync(dir, { recursive: true, force: true });
+  });
+  return dir;
+}
+
+// Reads the events table directly, as another SQLite client would.
+function rows(commonDir) {
+  const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
+  try {
+    return db.prepare('SELECT id, ts, type, run, execution, ticket, json FROM events ORDER BY id').all().map((row) => ({ ...row }));
+  } finally {
+    db.close();
+  }
+}
 
 const usage = () => ({ peakContext: 1200, turns: 3, toolCalls: 4, compactions: 0, costUsd: null });
 
@@ -30,14 +54,13 @@ const agentRequired = [
   'failureClass',
 ];
 
-test('an action event carries schema 2 and every required field', () => {
-  const dir = tempDir();
-  assert.equal(events.eventsFile(dir), join(dir, 'gg', 'events.jsonl'));
+test('an action event carries schema 2 and every required field', (t) => {
+  const dir = tempDir(t);
   const log = events.eventLog(dir, { run: 'r1' });
   const event = events.actionEvent(actionFields());
   log(event.type, event);
   log('run_end', events.lifecycleEvent('run_end', { run: 'r1' }));
-  const lines = readFileSync(events.eventsFile(dir), 'utf8').split('\n').filter(Boolean);
+  const lines = rows(dir).map((row) => row.json);
   assert.equal(lines.length, 2);
   for (const line of lines) assert.ok(line.startsWith('{"schema":2'), line);
   const back = JSON.parse(lines[0]);
@@ -98,8 +121,8 @@ test('actionEvent checks both Usage members of an agent action', () => {
   assert.equal(events.actionEvent({ ...actionFields(), usage: { cumulative: nulls, delta: nulls } }).type, 'action');
 });
 
-test('eventLog validates every event before appending it', () => {
-  const dir = tempDir();
+test('eventLog validates every event before appending it', (t) => {
+  const dir = tempDir(t);
   const log = events.eventLog(dir);
   assert.throws(() => log('action', {}), /\bflow\b/);
   assert.throws(() => log('stage_call', { run: 'r1' }), /\bstage_call\b/);
@@ -110,8 +133,8 @@ test('eventLog validates every event before appending it', () => {
   assert.throws(() => log('label_failed', { ticket: 7, change: 'add gg:ready', error: undefined }), /\berror\b/);
   assert.deepEqual(events.readEvents(dir), []);
   events.eventLog(dir, { run: 'r1' })('run_start');
-  const [line] = readFileSync(events.eventsFile(dir), 'utf8').split('\n').filter(Boolean);
-  const back = JSON.parse(line);
+  const [row] = rows(dir);
+  const back = JSON.parse(row.json);
   assert.equal(back.schema, 2);
   assert.equal(back.type, 'run_start');
   assert.equal(back.run, 'r1');
@@ -130,21 +153,56 @@ test('lifecycle events validate their required fields per type', () => {
   assert.throws(() => events.lifecycleEvent('stage_call', { run: 'r1' }), /\bstage_call\b/);
 });
 
-test('readEvents keeps schema-1 lines and skips corrupt lines', () => {
-  const dir = tempDir();
-  mkdirSync(join(dir, 'gg'), { recursive: true });
-  writeFileSync(events.eventsFile(dir), [
-    JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', type: 'stage_call', run: 'old' }),
-    '{not json',
-    JSON.stringify({ schema: 2, ts: '2026-02-01T00:00:00.000Z', type: 'run_start', run: 'new' }),
-    '',
-  ].join('\n'));
+test('eventLog appends a row with the identity columns and the full event', (t) => {
+  const dir = tempDir(t);
+  assert.ok(!('eventsFile' in events), 'events no longer exports eventsFile');
+  events.eventLog(dir, { run: 'r1' })('ticket_start', { execution: 'e1', ticket: 7 });
+  assert.deepEqual(readdirSync(join(dir, 'gg')).filter((f) => !f.startsWith('gg.db')), [], 'only the State Database is written');
+  const [row, ...rest] = rows(dir);
+  assert.equal(rest.length, 0);
+  const event = JSON.parse(row.json);
+  assert.deepEqual(event, { schema: 2, ts: event.ts, type: 'ticket_start', run: 'r1', execution: 'e1', ticket: 7 });
+  assert.deepEqual({ ts: row.ts, type: row.type, run: row.run, execution: row.execution, ticket: row.ticket },
+    { ts: event.ts, type: 'ticket_start', run: 'r1', execution: 'e1', ticket: 7 });
+
+  events.eventLog(dir)('label_failed', { ticket: 8, change: 'add gg:ready', error: 'gh 502' });
+  const absent = rows(dir)[1];
+  assert.deepEqual([absent.type, absent.run, absent.execution, absent.ticket], ['label_failed', null, null, 8]);
+});
+
+test('readEvents returns events in insertion order', (t) => {
+  const dir = tempDir(t);
+  const log = events.eventLog(dir, { run: 'r1' });
+  log('run_start');
+  log('ticket_start', { execution: 'e1', ticket: 7 });
+  log('action', events.actionEvent(actionFields()));
+  log('action', events.actionEvent({ ...actionFields(), ordinal: 2 }));
+  log('ticket_end', { execution: 'e1', ticket: 7, outcome: 'done' });
+  log('run_end');
   const read = events.readEvents(dir);
-  assert.equal(read.length, 2);
-  assert.equal(read[0].schema, 1);
-  assert.equal(read[0].type, 'stage_call');
-  assert.equal(read[1].schema, 2);
-  assert.deepEqual(events.readEvents(tempDir()), []);
+  assert.deepEqual(read.map((e) => [e.type, e.ordinal ?? null]),
+    [['run_start', null], ['ticket_start', null], ['action', 1], ['action', 2], ['ticket_end', null], ['run_end', null]]);
+  assert.deepEqual(read, rows(dir).map((row) => JSON.parse(row.json)));
+});
+
+test('two processes append to the same table without loss', async (t) => {
+  const dir = tempDir(t);
+  const exits = await Promise.all(['a', 'b'].map((run) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [appender, dir, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('close', (code) => resolve({ run, code, err }));
+  })));
+  assert.deepEqual(exits, [{ run: 'a', code: 0, err: '' }, { run: 'b', code: 0, err: '' }]);
+  assert.equal(rows(dir).length, 400);
+  const read = events.readEvents(dir);
+  assert.equal(read.length, 400);
+  assert.equal(read.filter((e) => e.run === 'a').length, 200);
+  assert.equal(read.filter((e) => e.run === 'b').length, 200);
+});
+
+test('readEvents on a fresh directory returns nothing', (t) => {
+  assert.deepEqual(events.readEvents(tempDir(t)), []);
 });
 
 test('diffStats splits test and non-test insertions', () => {

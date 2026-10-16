@@ -1,10 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as checks from '../lib/checks.mjs';
+
+function tempDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/runner-output/${name}`, import.meta.url), 'utf8');
 
@@ -122,8 +128,8 @@ test('red check reads TAP, jest and pytest failure lines', () => {
   }
 });
 
-test('test immutability lists added, renamed and modified test paths and ignores lib', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+test('test immutability lists added, renamed and modified test paths and ignores lib', async (t) => {
+  const dir = tempDir(t);
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
   g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
   mkdirSync(join(dir, 'test')); mkdirSync(join(dir, 'lib'));
@@ -146,8 +152,8 @@ test('test immutability lists added, renamed and modified test paths and ignores
   assert.ok(!r.changed.some((p) => p.startsWith('lib/')), `lib ignored: ${r.changed}`);
 });
 
-test('test immutability sees non-ASCII and git-ignored test paths', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+test('test immutability sees non-ASCII and git-ignored test paths', async (t) => {
+  const dir = tempDir(t);
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
   g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
   mkdirSync(join(dir, 'test'));
@@ -164,8 +170,8 @@ test('test immutability sees non-ASCII and git-ignored test paths', async () => 
   assert.deepEqual(r, { ok: false, changed: ['test/café.mjs', 'test/ignored.mjs', 'test/naïve.mjs'] });
 });
 
-test('test immutability sees a test added under an ignored directory but not installed dependencies', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+test('test immutability sees a test added under an ignored directory but not installed dependencies', async (t) => {
+  const dir = tempDir(t);
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
   g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
   writeFileSync(join(dir, '.gitignore'), 'generated/\nnode_modules/\n');
