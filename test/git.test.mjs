@@ -178,6 +178,16 @@ test('remoteSha reports the pushed sha or null', async () => {
   assert.equal(await git.remoteSha(dir, 'ticket/9-unknown'), null);
 });
 
+test('push publishes the given sha, not the branch tip', async () => {
+  const { mainRoot: dir, sh } = cloneWithOrigin();
+  sh(dir, 'checkout', '-q', '-b', 'ticket/9-thing');
+  sh(dir, 'commit', '-q', '--allow-empty', '-m', 'checked');
+  const checked = sh(dir, 'rev-parse', 'HEAD');
+  sh(dir, 'commit', '-q', '--amend', '--allow-empty', '-m', 'amended');
+  await git.push(dir, 'ticket/9-thing', checked);
+  assert.equal(await git.remoteSha(dir, 'ticket/9-thing'), checked);
+});
+
 test('remoteSha surfaces a fetch failure that is not a missing branch', async () => {
   const { root, mainRoot: dir, sh } = cloneWithOrigin();
   sh(dir, 'remote', 'set-url', 'origin', join(root, 'gone.git'));

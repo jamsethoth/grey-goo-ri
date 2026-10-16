@@ -240,6 +240,26 @@ test('an amended commit with the marker holds the ticket', async (t) => {
   assert.equal(g.harness.calls.length, 2);
 });
 
+test('a commit amended after its completion was saved holds the ticket', async (t) => {
+  const g = await golden.setup(t);
+  const { m } = await crashed(g, EFFECTS.commit.at, 'after-completion');
+  // The commit is complete in the record, so no open intent points at it; the amend keeps its marker.
+  writeFileSync(join(g.worktree, 'lib', 'extra.mjs'), 'export const extra = 1;\n');
+  golden.sh(g.worktree, 'add', 'lib/extra.mjs');
+  golden.sh(g.worktree, 'commit', '-q', '--amend', '--no-edit');
+  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+
+  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  assert.equal(decided.next, 'hold');
+  assert.ok(decided.reason.includes(m), `the reason names the marker: ${decided.reason}`);
+
+  await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+  assert.equal((await loadTicket(g)).state, 'held');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
+  assert.equal(remoteSha(g), null, 'the amended commit is not published');
+  assert.equal(g.harness.calls.length, 2);
+});
+
 test('a crash before the commit replays the intended tree, not a human edit', async (t) => {
   const g = await golden.setup(t);
   const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
