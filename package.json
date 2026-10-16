@@ -6,5 +6,5 @@
   "license": "AGPL-3.0-or-later",
   "bin": { "gg": "bin/gg.mjs" },
   "engines": { "node": ">=22.13" },
-  "scripts": { "test": "node --test" }
+  "scripts": { "test": "node scripts/run-suite.mjs" }
 }

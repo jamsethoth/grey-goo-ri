@@ -1,0 +1,1 @@
+prefix_rule(pattern = ["node", "scripts/run-suite.mjs"], decision = "allow", justification = "The suite needs git, MSYS sh, hard links and TEMP renames, which the Windows sandbox blocks; the launcher ignores arguments and code-loading environment", match = ["node scripts/run-suite.mjs"], not_match = ["npm test", "node --import=x scripts/run-suite.mjs", "node scripts/other.mjs"])
