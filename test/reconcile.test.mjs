@@ -311,6 +311,57 @@ for (const point of Object.keys(POINTS)) {
   });
 }
 
+// The red call writes a Protected File, an Integrity Violation: the worktree is rolled back and the ticket goes to needs-human.
+async function violating(t) {
+  const g = await golden.setup(t);
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    if (call.phase === 'red') writeFileSync(join(g.worktree, 'CLAUDE.md'), 'an agent edit\n');
+    return out;
+  };
+  return g;
+}
+
+const RESUMED = {
+  'before-effect': { outcome: 'needs-human', state: 'held' },
+  'after-effect': { outcome: 'needs-human', state: 'needs-human' },
+  'after-completion': { outcome: 'needs-human', state: 'needs-human' },
+};
+for (const [point, expect] of Object.entries(RESUMED)) {
+  test(`a crash ${point} of an integrity violation rollback does not call the harness again`, async (t) => {
+    const g = await violating(t);
+    await crashed(g, ['implementer', 1, 'red', 1], point);
+    assert.equal(g.harness.calls.length, 1);
+
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.outcome, expect.outcome);
+    assert.equal(g.harness.calls.length, 1, 'the violating call is not dispatched again');
+    const final = await loadTicket(g);
+    assert.equal(final.state, expect.state);
+    if (point !== 'before-effect') {
+      assert.equal(final.terminalReason.rule, 'integrity-violation');
+      assert.equal(final.history.filter((h) => h.kind === 'integrity violation').length, 1);
+      assert.ok(!existsSync(join(g.worktree, 'CLAUDE.md')), 'the violation stays rolled back');
+    }
+  });
+}
+
+for (const point of ['after-effect', 'after-completion']) {
+  test(`a crash ${point} of gg's own needs-human label finishes the Terminal`, async (t) => {
+    const g = await violating(t);
+    await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
+    assert.ok(g.gh.labels.has(NEEDS_HUMAN), 'gg applied the label before the crash');
+
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.outcome, 'needs-human');
+    const final = await loadTicket(g);
+    assert.equal(final.state, 'needs-human', 'not mistaken for a human override');
+    assert.deepEqual(record.openIntents(final), []);
+    assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+  });
+}
+
 test('a needs-human label overrides a mid-action record', async (t) => {
   const g = await golden.setup(t);
   await crashed(g, EFFECTS.commit.at, 'before-effect');
