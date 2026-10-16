@@ -362,6 +362,62 @@ for (const point of ['after-effect', 'after-completion']) {
   });
 }
 
+// Each Terminal kind crashes at its needs-human label, then resumes on a freshly loaded record with the same options.
+const CLASSIFIED = {
+  held: {
+    async crash(g) {
+      await crashed(g, EFFECTS.commit.at, 'after-completion');
+      g.options.flow = structuredClone(g.flow);
+      g.options.flow.ticket.vertices = { builder: g.flow.ticket.vertices.implementer };
+      g.options.flow.ticket.entry = 'builder';
+      g.options.record = await loadTicket(g);
+    },
+    check(result, final, end) {
+      assert.equal(result.held, true);
+      assert.equal(final.state, 'held');
+      assert.match(end.reason.text, /implementer/);
+    },
+  },
+  fault: {
+    async crash(g) {
+      const run = g.harness.run;
+      g.harness.run = async (call) => {
+        if (call.phase === 'red') throw new Error('the harness exploded');
+        return run(call);
+      };
+    },
+    check(result, final, end) {
+      assert.equal(result.fault, true);
+      assert.equal(final.state, 'fault');
+      assert.equal(end.error, 'the harness exploded');
+    },
+  },
+  'run stop': {
+    responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    async crash() {},
+    check(result, final) {
+      assert.equal(result.runStop?.failureClass, 'auth');
+      assert.equal(final.state, 'needs-human');
+    },
+  },
+};
+for (const [kind, c] of Object.entries(CLASSIFIED)) {
+  for (const point of Object.keys(POINTS)) {
+    test(`a crash ${point} of the ${kind} needs-human label keeps the ${kind} classification`, async (t) => {
+      const g = await golden.setup(t, c.responses && { responses: c.responses });
+      await c.crash(g);
+      await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
+
+      const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+      assert.equal(result.outcome, 'needs-human');
+      assert.ok(g.gh.labels.has(NEEDS_HUMAN));
+      const ends = g.readEvents().filter((e) => e.type === 'ticket_end');
+      assert.equal(ends.length, 1);
+      c.check(result, await loadTicket(g), ends[0]);
+    });
+  }
+}
+
 test('a needs-human label overrides a mid-action record', async (t) => {
   const g = await golden.setup(t);
   await crashed(g, EFFECTS.commit.at, 'before-effect');
