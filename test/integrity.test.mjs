@@ -257,20 +257,29 @@ test('readActivity matches a differently cased path on Windows', { skip: process
   assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase()), { busy: true, generation: 1 });
 });
 
-test('a rollback replaces a linked parent directory instead of writing through it', async (t) => {
+test('a rollback never deletes or writes through a link, and restores every file under a replaced one', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const wt = join(root, 'wt');
   const outside = join(root, 'outside');
-  mkdirSync(wt);
-  mkdirSync(outside);
+  const elsewhere = join(root, 'elsewhere');
+  for (const d of [wt, outside, elsewhere]) mkdirSync(d);
   sh(wt, ['init', '-q', '-b', 'main']);
-  writeFileSync(join(outside, 'owner.test.mjs'), 'outside');
+  writeFileSync(join(outside, 'a.test.mjs'), 'outside a');
+  writeFileSync(join(outside, 'b.test.mjs'), 'b');
+  writeFileSync(join(outside, 'extra.test.mjs'), 'outside extra');
+  writeFileSync(join(elsewhere, 'x.test.mjs'), 'elsewhere x');
+  // sandbox/ was a real directory at the baseline; evil/ is a new link that no baseline file lives under.
   symlinkSync(outside, join(wt, 'sandbox'), 'junction');
-  const set = { files: { 'sandbox/owner.test.mjs': { base64: Buffer.from('owner').toString('base64') } }, pathspecs: [':(glob)**/*.test.*'] };
+  symlinkSync(elsewhere, join(wt, 'evil'), 'junction');
+  const b64 = (text) => ({ base64: Buffer.from(text).toString('base64') });
+  const set = { files: { 'sandbox/a.test.mjs': b64('a'), 'sandbox/b.test.mjs': b64('b') }, pathspecs: [':(glob)**/*.test.*'] };
 
   await integrity.restoreUntracked(wt, set);
-  assert.equal(readFileSync(join(outside, 'owner.test.mjs'), 'utf8'), 'outside', 'nothing outside the worktree changes');
+  assert.equal(readFileSync(join(outside, 'a.test.mjs'), 'utf8'), 'outside a', 'nothing outside is rewritten');
+  assert.equal(readFileSync(join(outside, 'extra.test.mjs'), 'utf8'), 'outside extra', 'nothing outside is deleted');
+  assert.equal(readFileSync(join(elsewhere, 'x.test.mjs'), 'utf8'), 'elsewhere x', 'nothing behind a new link is deleted');
   assert.ok(!lstatSync(join(wt, 'sandbox')).isSymbolicLink(), 'the link is replaced by a directory');
-  assert.equal(readFileSync(join(wt, 'sandbox', 'owner.test.mjs'), 'utf8'), 'owner');
+  assert.equal(readFileSync(join(wt, 'sandbox', 'a.test.mjs'), 'utf8'), 'a');
+  assert.equal(readFileSync(join(wt, 'sandbox', 'b.test.mjs'), 'utf8'), 'b', 'a file that matched through the link is restored too');
 });
