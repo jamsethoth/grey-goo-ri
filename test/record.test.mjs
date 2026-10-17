@@ -7,9 +7,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as locks from '../lib/locks.mjs';
 import * as record from '../lib/record.mjs';
 
 const saver = fileURLToPath(new URL('./support/record-saver.mjs', import.meta.url));
+const contender = fileURLToPath(new URL('./support/lock-contender.mjs', import.meta.url));
 
 // A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
 async function tempCommonDir(t) {
@@ -217,21 +219,68 @@ test('two processes save different records concurrently without loss', async (t)
   ]);
 });
 
+const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
+
+// Another gg process opening the State Database and saving one record, resolving with its exit and elapsed time.
+function saveOnce(commonDir, ticket) {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('close', (code) => resolve({ ticket, code, err, ms: Date.now() - started }));
+  });
+}
+
+const exitsOf = (results) => results.map(({ ticket, code, err }) => ({ ticket, code, err }));
+const allOk = tickets.map((ticket) => ({ ticket, code: 0, err: '' }));
+const journalMode = (commonDir) => withDb(commonDir, (db) => db.prepare('PRAGMA journal_mode').get().journal_mode);
+
 // Without the creation gate about one open in 100-200 failed with SQLITE_BUSY here, so 240 opens usually catch it.
 test('eight processes creating one new database at once all open it in WAL mode', async (t) => {
   const root = await tempCommonDir(t);
   for (let round = 0; round < 30; round++) {
     const commonDir = join(root, String(round));
-    const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
-    const exits = await Promise.all(tickets.map((ticket) => new Promise((resolve) => {
-      const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], { stdio: ['ignore', 'ignore', 'pipe'] });
-      let err = '';
-      child.stderr.on('data', (chunk) => { err += chunk; });
-      child.on('close', (code) => resolve({ ticket, code, err }));
-    })));
-    assert.deepEqual(exits, tickets.map((ticket) => ({ ticket, code: 0, err: '' })), `round ${round}`);
-    withDb(commonDir, (db) => assert.equal(db.prepare('PRAGMA journal_mode').get().journal_mode, 'wal'));
+    const exits = exitsOf(await Promise.all(tickets.map((ticket) => saveOnce(commonDir, ticket))));
+    assert.deepEqual(exits, allOk, `round ${round}`);
+    assert.equal(journalMode(commonDir), 'wal');
   }
+});
+
+test('openers of a new database queue while the open lock is held and all succeed once it is released', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const gate = await locks.tryAcquire(commonDir, 'open');
+  assert.ok(gate);
+  const pending = tickets.map((ticket) => saveOnce(commonDir, ticket));
+  let finished = 0;
+  for (const p of pending) p.then(() => finished++);
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  assert.equal(finished, 0, 'no opener gets past a held open lock');
+  await locks.release(gate);
+  assert.deepEqual(exitsOf(await Promise.all(pending)), allOk);
+  assert.equal(journalMode(commonDir), 'wal');
+});
+
+test('an opener of a new database proceeds when the process holding the open lock dies', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const holder = spawn(process.execPath, [contender, commonDir, 'open', '60000'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  t.after(() => holder.kill());
+  const report = await new Promise((resolve) => holder.stdout.once('data', (chunk) => resolve(JSON.parse(chunk))));
+  assert.ok(report.handle, 'the child holds the open lock');
+  const pending = saveOnce(commonDir, 1);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  holder.kill();
+  assert.deepEqual(exitsOf([await pending]), [{ ticket: 1, code: 0, err: '' }]);
+  assert.equal(journalMode(commonDir), 'wal');
+});
+
+test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const gate = await locks.tryAcquire(commonDir, 'open');
+  const { code, err, ms } = await saveOnce(commonDir, 1).finally(() => locks.release(gate));
+  assert.notEqual(code, 0);
+  assert.match(err, /errcode: 5/);
+  assert.ok(ms >= 5000 && ms < 15000, `gave up after ${ms} ms`);
 });
 
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
