@@ -35,8 +35,8 @@ function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 }
 
 // A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
-// fake harness. `failEdit` makes every label edit fail as gh does.
-function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, labels = [], harness: harnessName, fullFlow } = {}) {
+// fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view.
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, labels = [], harness: harnessName, fullFlow, issue = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'gg-run-'));
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
@@ -62,7 +62,7 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
     if (noun === 'issue' && verb === 'view') {
       fake.calls.push({ args, cwd, input });
       return JSON.stringify({ number: Number(args[2]), title: 'Add two numbers', body: 'Add `add(a, b)`.', state: 'OPEN',
-        labels: [...fake.labels].map((name) => ({ name })), blockedBy: [], subIssues: [] });
+        labels: [...fake.labels].map((name) => ({ name })), blockedBy: [], subIssues: [], ...issue });
     }
     if (failEdit && noun === 'issue' && verb === 'edit') {
       fake.calls.push({ args, cwd, input });
@@ -246,6 +246,52 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
   assert.deepEqual(record.openIntents(final), []);
 });
 
+test('changes made after an interrupted reset are held, not discarded', async (t) => {
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  await seedExecution(f, { git, exec });
+  // A human works in the worktree after the crash, on top of what the agent left.
+  writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
+  f.options.exec = exec;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2);
+  assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n', 'the human file is untouched');
+  assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.comments().some((b) => b.includes('human.txt')), `a comment carries the diff stat: ${JSON.stringify(f.comments())}`);
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+});
+
+test('a resumed execution still needs its ticket open and unblocked', async (t) => {
+  for (const issue of [{ blockedBy: [{ number: 3, state: 'OPEN' }] }, { state: 'CLOSED' }]) {
+    const f = fixture(t, { labels: [IN_PROGRESS], issue });
+    await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+    const row = f.loadRow();
+    await run.runTarget(f.options);
+    assert.equal(f.harness.calls.length, 2, `no agent started for ${JSON.stringify(issue)}`);
+    assert.equal(f.loadRow(), row, 'the record is not resumed');
+    assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`) && /not ready/.test(l)), `the skip is logged: ${JSON.stringify(f.logs)}`);
+  }
+});
+
+test('a flow mixing harnesses runs each vertex on its own harness', async (t) => {
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'reviewer/1/review/1': { files: {}, response: {
+    claim: 'ok', summary: 'The review says ok.', dodMet: true, tddEvidenceOk: true, findings: [], diagnosis: '' } } };
+  const f = fixture(t, { responses, fullFlow: true });
+  const other = fakeHarness({ name: 'other', transcriptDir: join(f.root, 'transcripts-other'), responses, capabilities: { cost: false, reasoningTokens: false } });
+  f.options.config.nodes.reviewer.harness = 'other';
+  f.options.harnesses.other = other;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0);
+  const vertexOf = (c) => c.marker.split(':')[2];
+  assert.deepEqual(f.harness.calls.map(vertexOf), ['implementer', 'implementer'], 'the implementer runs on its own harness');
+  assert.deepEqual(other.calls.map(vertexOf), ['reviewer'], 'the reviewer runs on its own harness');
+});
+
 test('an in-progress ticket with a recoverable record is resumed', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
   // The push of the green commit was intended but never made.
@@ -260,6 +306,13 @@ test('an in-progress ticket with a recoverable record is resumed', async (t) => 
   assert.equal(final.execution, rec.execution, 'the same Execution is resumed');
   assert.equal(final.state, 'done');
   assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${BRANCH}`).split('\t')[0], sh(f.worktree, 'rev-parse', 'HEAD'));
+  // The resume's Events belong to this Run; the markers keep the Run that wrote them, so no effect is redone.
+  const evs = f.readEvents();
+  const start = evs.findIndex((e) => e.type === 'run_start');
+  const resumed = evs.slice(start).filter((e) => ['action', 'ticket_start', 'ticket_end'].includes(e.type));
+  assert.ok(resumed.some((e) => e.type === 'action'), 'the resume records Action Events');
+  assert.deepEqual([...new Set(resumed.map((e) => e.run))], [evs[start].run], 'every resumed Event carries the new Run id');
+  assert.equal(f.gh.calls.filter((c) => c.args[0] === 'pr' && c.args[1] === 'create').length, 1, 'one PR is opened');
 });
 
 test('an in-progress ticket without a record is skipped', async (t) => {
@@ -319,20 +372,38 @@ test('a held ticket lock skips the ticket', async (t) => {
   assert.equal(f.worktrees(), 1, 'no worktree');
 });
 
-test('an orchestrator commit waits for the repo lock', async (t) => {
+test('every orchestrator git write waits for the repo lock', async (t) => {
   const f = fixture(t);
   const holder = await holdLock(t, f.commonDir, 'repo');
+  const called = [];
+  const verbs = ['ensureWorktree', 'stageAll', 'writeTree', 'commitStaged', 'commitTree', 'push', 'remoteSha', 'resetTo'];
+  const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
+  const pending = verbs.map((v) => git[v]());
+  await sleep(500);
+  assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
+  await holder.release();
+  await Promise.all(pending);
+  assert.deepEqual(called.sort(), [...verbs].sort(), 'every write runs after release');
+});
+
+test('an orchestrator commit waits for the repo lock', async (t) => {
+  const f = fixture(t);
+  // The competing lock is taken during the red call, after the worktree exists, so only the commit can wait on it.
+  let holder = null;
+  const { run: call } = f.harness;
+  f.options.harnesses.fake = { ...f.harness, run: async (c) => { holder ??= await holdLock(t, f.commonDir, 'repo'); return call(c); } };
   const commits = () => {
     const r = spawnSync('git', ['rev-list', '--count', `main..refs/heads/${BRANCH}`], { cwd: f.mainRoot, encoding: 'utf8' });
     return r.status === 0 ? Number(r.stdout.trim()) : 0;
   };
   let settled = false;
   const running = run.runTarget(f.options).finally(() => { settled = true; });
-  // Give the run time to reach its first commit, whether or not it gets as far as the red call first.
-  for (let i = 0; i < 60 && f.harness.calls.length === 0 && !settled; i++) await sleep(50);
+  for (let i = 0; i < 200 && !holder && !settled; i++) await sleep(50);
+  assert.ok(holder, 'the red call ran, so the worktree exists');
   await sleep(1000);
   assert.equal(settled, false, 'the run waits while another process holds the repo lock');
   assert.equal(commits(), 0, 'no commit lands while the repo lock is held');
+  assert.equal(f.harness.calls.length, 1, 'the run is waiting at the red commit');
 
   await holder.release();
   const results = await running;
