@@ -793,6 +793,9 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [terminalMarker(g, 'needs-human', 1)],
     'the interrupted comment stays open for Reconciliation');
+  const end = g.readEvents().find((e) => e.type === 'ticket_end');
+  assert.equal(end.interrupted.terminal, 'needs-human');
+  assert.match(end.interrupted.reason.text, /auth/, 'ticket_end keeps the interrupted Terminal Reason too');
 });
 
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
@@ -807,6 +810,7 @@ test('a crash inside the fault report replays its comment once on resume', async
   assert.equal(posted.length, 1, 'posted exactly once');
   assert.match(posted[0].body, /harness exploded/);
   assert.doesNotMatch(posted[0].body, /Interrupted/, 'a fault inside a Visit interrupted no Terminal');
+  assert.ok(!('interrupted' in g.readEvents().find((e) => e.type === 'ticket_end')));
   assert.deepEqual(record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)), []);
 });
 
