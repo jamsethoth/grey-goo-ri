@@ -157,7 +157,8 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
   const dir = tempDir(t);
   assert.ok(!('eventsFile' in events), 'events no longer exports eventsFile');
   events.eventLog(dir, { run: 'r1' })('ticket_start', { execution: 'e1', ticket: 7 });
-  assert.deepEqual(readdirSync(join(dir, 'gg')).filter((f) => !f.startsWith('gg.db')), [], 'only the State Database is written');
+  assert.deepEqual(readdirSync(join(dir, 'gg')).filter((f) => !f.startsWith('gg.db') && f !== 'locks'), [],
+    'only the State Database and its open lock are written');
   const [row, ...rest] = rows(dir);
   assert.equal(rest.length, 0);
   const event = JSON.parse(row.json);
