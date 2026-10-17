@@ -283,6 +283,16 @@ test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy time
   assert.ok(ms >= 5000 && ms < 15000, `gave up after ${ms} ms`);
 });
 
+test('an opener of an existing WAL database does not wait for the open lock', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  record.openDb(commonDir);
+  await record.close(commonDir);
+  const openLock = await locks.tryAcquire(commonDir, 'open');
+  const { code, err, ms } = await saveOnce(commonDir, 1).finally(() => locks.release(openLock));
+  assert.deepEqual({ code, err }, { code: 0, err: '' });
+  assert.ok(ms < 5000, `opened after ${ms} ms, within the busy timeout`);
+});
+
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
   const commonDir = await tempCommonDir(t);
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
