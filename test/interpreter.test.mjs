@@ -771,6 +771,45 @@ test('an auth failure keeps its run stop when the terminal comment fails', async
   assert.ok(neededHuman(g));
 });
 
+const terminalMarker = (g, phase, ordinal) => marker.formatMarker({
+  execution: g.rec.execution, vertex: 'needs-human', visit: 1, phase, ordinal, run: g.rec.run, attempt: 1,
+});
+
+test('a fault interrupting a Terminal comment posts its own comment with the error and the interrupted Terminal Reason', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  const real = g.options.gh.commentIssue;
+  let calls = 0;
+  g.options.gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, true);
+  assert.equal(result.runStop?.failureClass, 'auth');
+  const [posted, ...rest] = ticketComments(g);
+  assert.equal(rest.length, 0);
+  assert.match(posted.body, /gh comment down/, 'the fault comment carries the error, as its Terminal Reason says');
+  assert.match(posted.body, /\*\*Interrupted:\*\* the needs-human Terminal, whose Terminal Reason was: .*auth/,
+    'the run stop reason survives its failed comment');
+  assert.ok(posted.body.includes(terminalMarker(g, 'fault', 1)), 'the fault report has its own Action Marker');
+  const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [terminalMarker(g, 'needs-human', 1)],
+    'the interrupted comment stays open for Reconciliation');
+});
+
+test('a crash inside the fault report replays its comment once on resume', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
+  const m = terminalMarker(g, 'fault', 1);
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-effect' } }));
+  const mid = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  const result = await interpreter.runExecution({ ...g.options, record: mid });
+
+  assert.equal(result.fault, true);
+  const posted = ticketComments(g);
+  assert.equal(posted.length, 1, 'posted exactly once');
+  assert.match(posted[0].body, /harness exploded/);
+  assert.doesNotMatch(posted[0].body, /Interrupted/, 'a fault inside a Visit interrupted no Terminal');
+  assert.deepEqual(record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)), []);
+});
+
 test('an unknown failure goes to needs-human without retry', async (t) => {
   const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'unknown' } } } });
   const result = await interpreter.runExecution(g.options);
