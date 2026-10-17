@@ -382,7 +382,7 @@ for (const point of ['after-effect', 'after-completion']) {
   });
 }
 
-// Each Terminal kind crashes at its needs-human label, then resumes on a freshly loaded record with the same options.
+// Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a freshly loaded record with the same options.
 const CLASSIFIED = {
   held: {
     async crash(g) {
@@ -399,6 +399,7 @@ const CLASSIFIED = {
     },
   },
   fault: {
+    phase: 'fault',
     async crash(g) {
       const run = g.harness.run;
       g.harness.run = async (call) => {
@@ -426,7 +427,7 @@ for (const [kind, c] of Object.entries(CLASSIFIED)) {
     test(`a crash ${point} of the ${kind} needs-human label keeps the ${kind} classification`, async (t) => {
       const g = await golden.setup(t, c.responses && { responses: c.responses });
       await c.crash(g);
-      await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
+      await crashed(g, ['needs-human', 1, c.phase ?? 'needs-human', 2], point);
 
       const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
       assert.equal(result.outcome, 'needs-human');

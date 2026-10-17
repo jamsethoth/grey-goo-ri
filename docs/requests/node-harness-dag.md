@@ -269,7 +269,7 @@ row by row, and `gg doctor` prints a vertex's effective table next to its effect
 | completed | valid, blocked or misscoped | all run and recorded | stop: comment and needs-human, or replan; passing checks never override this |
 | completed | valid, ok | a declared check fails | retry within the procedure's own bounds; when those are exhausted the procedure signals failure and the interpreter derives the failure outcome (`red-failed`, `gate-failed(<gate>)`), whose route applies, with the built-in default needs-human when no route exists; edge and vertex bounds apply to the traversal as usual |
 | completed | valid, ok | every declared check passes | advance |
-| gg throws: bug, I/O error, gh failure after its own retries | any | any | unexpected fault: ticket to needs-human with the error on its end event, record marked, exit code 1, never retried automatically |
+| gg throws: bug, I/O error, gh failure after its own retries | any | any | unexpected fault: ticket to needs-human with the error on its end event, record marked, exit code 1, never retried automatically; a fault that interrupts a Terminal posts its own comment, carrying the error and the interrupted Terminal's Terminal Reason |
 
 Illustrative enums: `tdd` ok | blocked | misscoped | red-failed | gate-failed(<gate>); `fix` ok | blocked |
 misscoped | gate-failed(<gate>); `review` PASS | CHANGES | REPEAT | misscoped. Built-in defaults: blocked posts a
