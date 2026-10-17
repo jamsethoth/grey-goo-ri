@@ -126,7 +126,7 @@ test('a crash between the reset and the Protected File restore of an integrity v
   assert.deepEqual(record.openIntents(loaded), []);
 });
 
-// T19: crash-and-resume golden traces. Each side-effect Action of the one-Vertex Flow is crashed at one of three points
+// T18: crash-and-resume golden traces. Each side-effect Action of the one-Vertex Flow is crashed at one of three points
 // by runExecution's test-only crashAt, then resumed by a second runExecution on a freshly loaded record.
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 const markerOf = (rec, vertex, visit, phase, ordinal) =>
@@ -268,7 +268,7 @@ test('a crash before the commit replays the intended tree, not a human edit', as
   const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
   assert.equal(result.outcome, 'done');
   const final = await loadTicket(g);
-  const { payload } =final.log.find((e) => e.marker === m && e.step === 'intent');
+  const { payload } = final.log.find((e) => e.marker === m && e.step === 'intent');
   const { sha } = final.log.find((e) => e.marker === m && e.step === 'evidence').evidence;
   assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^{tree}`), payload.tree, 'the commit has the intended tree');
   assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^`), payload.parent, 'and the intended parent');

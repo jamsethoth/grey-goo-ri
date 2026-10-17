@@ -20,6 +20,25 @@ test('commitAll commits everything or returns null; discardChanges resets the wo
   assert.equal(g('status', '--porcelain'), '');
 });
 
+test('commitTree commits a recorded tree on its parent, leaves the index alone, and refuses a moved branch', async () => {
+  const { mainRoot: dir, sh } = cloneWithOrigin();
+  const parent = sh(dir, 'rev-parse', 'HEAD');
+  writeFileSync(join(dir, 'a.txt'), 'a');
+  sh(dir, 'add', 'a.txt');
+  const tree = sh(dir, 'write-tree');
+  sh(dir, 'reset', '-q');
+  assert.equal(await git.commitTree(dir, { message: 'nothing', tree: sh(dir, 'rev-parse', `${parent}^{tree}`), parent }), null);
+  const sha = await git.commitTree(dir, { message: 'feat: a', tree, parent });
+  assert.equal(sh(dir, 'rev-parse', 'HEAD'), sha);
+  assert.equal(sh(dir, 'rev-parse', `${sha}^{tree}`), tree);
+  assert.equal(sh(dir, 'rev-parse', `${sha}^`), parent);
+  // The index still has the parent's tree, so against the new HEAD a.txt shows as staged-deleted and untracked.
+  assert.equal(sh(dir, 'status', '--porcelain'), 'D  a.txt\n?? a.txt');
+  // The branch moved since the intent was recorded: update-ref refuses, so nothing is overwritten.
+  await assert.rejects(git.commitTree(dir, { message: 'feat: again', tree, parent }));
+  assert.equal(sh(dir, 'rev-parse', 'HEAD'), sha);
+});
+
 // A clone of a bare origin with one commit on main, so ensureWorktree can fetch origin/main.
 function cloneWithOrigin() {
   const root = mkdtempSync(join(tmpdir(), 'ff-wt-'));

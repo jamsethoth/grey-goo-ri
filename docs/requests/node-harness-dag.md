@@ -549,6 +549,8 @@ Deliberate changes, each with its own regression case:
 - Sessions start empty; ponytail and skills hints come from config.
 - Harness failures are typed results, not throws (ff's adapters throw on `is_error` and on missing structured
   output); the transition table in 3.4 replaces per-adapter behaviour.
+- Push publishes the last recorded commit by sha, still without `-u`, never the branch tip (ff pushes the branch), so a
+  branch changed by hand is never published.
 
 ## 5. Tests to port and tests to add
 
