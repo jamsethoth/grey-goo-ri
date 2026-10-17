@@ -792,7 +792,7 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   assert.ok(posted.body.includes(terminalMarker(g, 'fault', 1)), 'the fault report has its own Action Marker');
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [terminalMarker(g, 'needs-human', 1)],
-    'the interrupted comment stays open for Reconciliation');
+    'the intent of the interrupted comment stays open, and the fault report never replays it');
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
   assert.equal(end.interrupted.terminal, 'needs-human');
   assert.match(end.interrupted.reason.text, /auth/, 'ticket_end keeps the interrupted Terminal Reason too');
