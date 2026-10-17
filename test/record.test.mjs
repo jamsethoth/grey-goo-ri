@@ -288,9 +288,9 @@ test('an opener of an existing WAL database does not wait for the open lock', as
   record.openDb(commonDir);
   await record.close(commonDir);
   const openLock = await locks.tryAcquire(commonDir, 'open');
-  const { code, err, ms } = await saveOnce(commonDir, 1).finally(() => locks.release(openLock));
+  // The open lock is held until the opener exits, so exit 0 proves it was skipped; waiting for it fails with errcode 5.
+  const { code, err } = await saveOnce(commonDir, 1).finally(() => locks.release(openLock));
   assert.deepEqual({ code, err }, { code: 0, err: '' });
-  assert.ok(ms < 5000, `opened after ${ms} ms, within the busy timeout`);
 });
 
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
