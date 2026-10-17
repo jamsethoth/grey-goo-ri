@@ -176,6 +176,18 @@ test('a node without a harness fails admission naming the vertex and node', asyn
   assert.equal(f.worktrees(), 1, 'no worktree');
 });
 
+test('preflight names an unset harness and an unknown harness in one error', async (t) => {
+  const f = fixture(t, { fullFlow: true });
+  f.options.config.nodes.implementer.harness = null;
+  f.options.config.nodes.reviewer.harness = 'nope';
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.ok(err, 'preflight rejects the run');
+  assert.match(err.message, /no harness configured for node implementer/);
+  assert.match(err.message, /reviewer[^]*nope/, 'the unknown harness is named with its vertex');
+  assert.equal(err.exitCode, 2, 'an unset harness exits 2');
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+});
+
 test('a standalone ticket under a flow with a plan section is rejected before any effect', async (t) => {
   const f = fixture(t);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
