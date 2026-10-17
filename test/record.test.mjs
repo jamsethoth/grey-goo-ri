@@ -236,7 +236,7 @@ const exitsOf = (results) => results.map(({ ticket, code, err }) => ({ ticket, c
 const allOk = tickets.map((ticket) => ({ ticket, code: 0, err: '' }));
 const journalMode = (commonDir) => withDb(commonDir, (db) => db.prepare('PRAGMA journal_mode').get().journal_mode);
 
-// Without the creation gate about one open in 100-200 failed with SQLITE_BUSY here, so 240 opens usually catch it.
+// Without the open lock about one open in 100-200 failed with SQLITE_BUSY here, so 240 opens usually catch it.
 test('eight processes creating one new database at once all open it in WAL mode', async (t) => {
   const root = await tempCommonDir(t);
   for (let round = 0; round < 30; round++) {
@@ -249,14 +249,14 @@ test('eight processes creating one new database at once all open it in WAL mode'
 
 test('openers of a new database queue while the open lock is held and all succeed once it is released', async (t) => {
   const commonDir = await tempCommonDir(t);
-  const gate = await locks.tryAcquire(commonDir, 'open');
-  assert.ok(gate);
+  const openLock = await locks.tryAcquire(commonDir, 'open');
+  assert.ok(openLock);
   const pending = tickets.map((ticket) => saveOnce(commonDir, ticket));
   let finished = 0;
   for (const p of pending) p.then(() => finished++);
   await new Promise((resolve) => setTimeout(resolve, 1500));
   assert.equal(finished, 0, 'no opener gets past a held open lock');
-  await locks.release(gate);
+  await locks.release(openLock);
   assert.deepEqual(exitsOf(await Promise.all(pending)), allOk);
   assert.equal(journalMode(commonDir), 'wal');
 });
@@ -276,8 +276,8 @@ test('an opener of a new database proceeds when the process holding the open loc
 
 test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released', async (t) => {
   const commonDir = await tempCommonDir(t);
-  const gate = await locks.tryAcquire(commonDir, 'open');
-  const { code, err, ms } = await saveOnce(commonDir, 1).finally(() => locks.release(gate));
+  const openLock = await locks.tryAcquire(commonDir, 'open');
+  const { code, err, ms } = await saveOnce(commonDir, 1).finally(() => locks.release(openLock));
   assert.notEqual(code, 0);
   assert.match(err, /errcode: 5/);
   assert.ok(ms >= 5000 && ms < 15000, `gave up after ${ms} ms`);
