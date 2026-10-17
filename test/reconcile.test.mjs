@@ -81,6 +81,17 @@ test('an assume-unchanged edit left at the baseline does not prove the reset don
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 });
 
+test('an ignored test added after an interrupted reset holds the restore and is kept', async (t) => {
+  const g = await crashedFailedRed(t, 'after reset');
+  writeFileSync(join(g.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
+  mkdirSync(join(g.worktree, 'test'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'mine\n');
+
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
+  assert.equal(readFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'utf8'), 'mine\n', 'the human file is untouched');
+  assert.deepEqual(resetEntries(g.loaded), ['intent']);
+});
+
 test('a failed HEAD read after the reset of a failed red leaves the History item to Reconciliation, once', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };

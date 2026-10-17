@@ -11,6 +11,7 @@ import * as events from '../lib/events.mjs';
 import * as flowModule from '../lib/flow.mjs';
 import * as gitModule from '../lib/git.mjs';
 import * as github from '../lib/github.mjs';
+import * as integrity from '../lib/integrity.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as marker from '../lib/marker.mjs';
 import * as record from '../lib/record.mjs';
@@ -265,6 +266,40 @@ test('changes made after an interrupted reset are held, not discarded', async (t
   assert.equal(f.harness.calls.length, 2, 'no agent started');
 });
 
+test('an ignored test added after an interrupted reset is held, not deleted', async (t) => {
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  await seedExecution(f, { git, exec });
+  // An ignored file leaves HEAD and the tree as the agent left them, so only the saved ignored files can tell it apart.
+  writeFileSync(join(f.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
+  writeFileSync(join(f.worktree, 'test', 'human.test.mjs'), 'mine\n');
+  f.options.exec = exec;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2);
+  assert.equal(readFileSync(join(f.worktree, 'test', 'human.test.mjs'), 'utf8'), 'mine\n', 'the human file is untouched');
+  assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+});
+
+test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const f = fixture(t, { responses, labels: [NEEDS_HUMAN] });
+  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  await seedExecution(f, { git, exec });
+  f.options.exec = exec;
+
+  await run.runTarget(f.options);
+  assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), "the agent's changes are kept for the human");
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'abandoned', 'the label overrides the record');
+  assert.deepEqual(f.labelAdds(), [], 'no label written');
+  assert.deepEqual(f.comments(), [], 'no comment posted');
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+});
+
 test('a resumed execution still needs its ticket open and unblocked', async (t) => {
   for (const issue of [{ blockedBy: [{ number: 3, state: 'OPEN' }] }, { state: 'CLOSED' }]) {
     const f = fixture(t, { labels: [IN_PROGRESS], issue });
@@ -384,6 +419,17 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
   await holder.release();
   await Promise.all(pending);
   assert.deepEqual(called.sort(), [...verbs].sort(), 'every write runs after release');
+});
+
+test('an integrity snapshot waits for the repo lock', async (t) => {
+  const f = fixture(t);
+  const holder = await holdLock(t, f.commonDir, 'repo');
+  let settled = false;
+  const pending = integrity.snapshot(f.mainRoot).finally(() => { settled = true; });
+  await sleep(500);
+  assert.equal(settled, false, 'the snapshot writes no object while another process holds the repo lock');
+  await holder.release();
+  assert.equal((await pending).head, f.base, 'the snapshot runs after release');
 });
 
 test('an orchestrator commit waits for the repo lock', async (t) => {
