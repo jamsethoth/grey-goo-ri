@@ -13,6 +13,7 @@ import * as gitModule from '../lib/git.mjs';
 import * as github from '../lib/github.mjs';
 import * as integrity from '../lib/integrity.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
+import * as locks from '../lib/locks.mjs';
 import * as marker from '../lib/marker.mjs';
 import * as record from '../lib/record.mjs';
 import * as run from '../lib/run.mjs';
@@ -486,10 +487,20 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
 
 test('an orchestrator commit waits for the repo lock', async (t) => {
   const f = fixture(t);
-  // The competing lock is taken during the red call, after the worktree exists, so only the commit can wait on it.
+  // The competing lock is taken during the red call, after the worktree exists.
   let holder = null;
   const { run: call } = f.harness;
   f.options.harnesses.fake = { ...f.harness, run: async (c) => { holder ??= await holdLock(t, f.commonDir, 'repo'); return call(c); } };
+  // The snapshot after the call waits on the holder too, so each commit-path write must itself run inside the repo lock.
+  const unlocked = [];
+  f.options.git = { ...gitModule, ...Object.fromEntries(['stageAll', 'writeTree', 'commitStaged', 'push', 'remoteSha'].map((v) => [v, async (...args) => {
+    const probe = await locks.tryAcquire(f.commonDir, 'repo');
+    if (probe) {
+      unlocked.push(v);
+      await locks.release(probe);
+    }
+    return gitModule[v](...args);
+  }])) };
   const commits = () => {
     const r = spawnSync('git', ['rev-list', '--count', `main..refs/heads/${BRANCH}`], { cwd: f.mainRoot, encoding: 'utf8' });
     return r.status === 0 ? Number(r.stdout.trim()) : 0;
@@ -507,6 +518,7 @@ test('an orchestrator commit waits for the repo lock', async (t) => {
   const results = await running;
   assert.equal(run.runExitCode(results), 0);
   assert.ok(commits() >= 2, 'the commits land after release');
+  assert.deepEqual(unlocked, [], 'every commit-path git write ran inside the repo lock');
 });
 
 test('in-progress is set only after the worktree exists', async (t) => {
