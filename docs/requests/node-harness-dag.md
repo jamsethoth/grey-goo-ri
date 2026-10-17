@@ -493,7 +493,9 @@ section, and publish resolves ticket dependencies into blocking issues as today.
 ### 3.9 Config and migration
 
 Three layers, defaults < user < repo, same merge rules as flows, under `.agents/gg/`. The shipped defaults declare
-nodes with empty `skills`, `mcp` and `plugins`, no hooks and no injection; the owner's user config adds ponytail or
+nodes with empty `skills`, `mcp` and `plugins`, no hooks and no injection. They name no harness, model or effort; a
+user or repo Layer supplies them, and `examples/` holds a Claude and a Codex Layer to copy. Until Layers land, only
+the fake harness runs. The owner's user config adds ponytail or
 anything else. The four stage keys, `stageTools`, `toolkit`, `escalationEnabled`, `maxReviewRounds` and
 `contextBudget.<stage>` do not exist in gg; a gg config file using one gets a loud load error with a migration table
 naming the replacement (`nodes`, `harnesses`, `flows`). Keys that carry over by name: `planApproval`,

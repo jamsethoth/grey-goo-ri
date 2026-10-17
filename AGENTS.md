@@ -59,6 +59,7 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 | `lib/plan.mjs` | `gg plan` |
 | `lib/publish.mjs` | `gg publish` (ported) |
 | `scripts/run-suite.mjs` | the suite launcher Codex may run outside its sandbox (ADR 0010) |
+| `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Nodes |
 
 ## Tests
 

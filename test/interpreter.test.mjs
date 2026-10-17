@@ -106,6 +106,14 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.equal(g.rec.sessions['implementer/1/red'].sessionId, 'fake-session-1');
 });
 
+test('a persona file name is read from the shipped personas directory', async (t) => {
+  const g = await golden.setup(t);
+  g.flow.ticket.vertices.implementer.node.persona = 'implementer.md';
+  await interpreter.runExecution(g.options);
+  const shipped = readFileSync(new URL('../defaults/personas/implementer.md', import.meta.url), 'utf8');
+  assert.equal(g.harness.calls[0].personaBytes, shipped);
+});
+
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
   const g = await firstVisit(t);
   const all = g.rec.log.filter((e) => e.step === 'intent');
