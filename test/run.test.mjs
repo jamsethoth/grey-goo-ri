@@ -207,6 +207,19 @@ test('a standalone ticket under a flow with a plan section is rejected before an
   assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
 });
 
+test('a standalone Ticket under a Flow without a plan key is accepted', async (t) => {
+  const f = fixture(t);
+  delete f.options.config.flows.default.plan;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(ticketResult(results).outcome, 'done');
+  assert.equal(f.harness.calls.length, 2, 'both agent Phases ran on the fake Harness');
+  const { run: runId } = f.readEvents().find((e) => e.type === 'run_start');
+  const resolved = JSON.parse(readFileSync(join(f.commonDir, 'gg', 'runs', runId, 'flow.json'), 'utf8'));
+  assert.equal(Object.hasOwn(resolved, 'plan'), false, 'the Resolved Flow has no plan key');
+});
+
 test('following standalone Ticket advice in the repo Layer allows the Ticket to run', async (t) => {
   const f = fixture(t);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
