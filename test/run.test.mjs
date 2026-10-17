@@ -190,15 +190,28 @@ test('preflight names an unset harness and an unknown harness in one error', asy
 
 test('a standalone ticket under a flow with a plan section is rejected before any effect', async (t) => {
   const f = fixture(t);
+  f.options.config.flows['ticket-only'] = structuredClone(f.options.config.flows.default);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'the standalone ticket is rejected');
   assert.match(err.message, /plan/);
-  assert.match(err.message, /null/, 'the message names a Flow whose plan is null');
+  assert.match(err.message, /null/);
+  assert.match(err.message, /Flow ticket-only\b/, 'the message names an available Flow whose plan is null');
   assert.ok(f.gh.calls.length > 0, 'the target was discovered');
   assert.deepEqual(f.gh.calls.filter((c) => !(c.args[0] === 'issue' && c.args[1] === 'view')), [], 'gh recorded only issue view');
   assert.equal(f.worktrees(), 1, 'no worktree');
   assert.equal(f.loadRow(), undefined, 'no record');
+  assert.equal(f.harness.calls.length, 0);
+});
+
+test('a standalone Ticket rejection explains when no null-plan Flow is available', async (t) => {
+  const f = fixture(t);
+  f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
+
+  await assert.rejects(run.runTarget(f.options), /no available Flow sets plan to null/);
+  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no effect');
+  assert.equal(f.worktrees(), 1);
+  assert.equal(f.loadRow(), undefined);
   assert.equal(f.harness.calls.length, 0);
 });
 
@@ -306,6 +319,94 @@ test('a commit interrupted before it landed is held once a human changed the wor
   assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n', 'the human file is untouched');
   assert.equal(sh(f.worktree, 'diff', '--cached', '--name-only'), staged, 'the staged changes are untouched');
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
+});
+
+test('a resumed execution on another Ticket branch is held before recovery', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const seeded = await crashBeforeCommit(f);
+  const branch = 'ticket/99-another-ticket';
+  sh(f.worktree, 'checkout', '-q', '-b', branch);
+  const head = sh(f.worktree, 'rev-parse', 'HEAD');
+  const before = await integrity.snapshot(f.worktree);
+  const implementation = readFileSync(join(f.worktree, 'lib', 'add.mjs'), 'utf8');
+  f.gh.calls.length = 0;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(!f.gh.labels.has(IN_PROGRESS));
+  assert.ok(f.comments().some((b) => b.includes(BRANCH) && b.includes(branch)), 'the hold names both branches');
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+  assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
+  assert.equal(sh(f.worktree, 'rev-parse', branch), head, 'the other Ticket branch did not advance');
+  assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head, 'the recorded branch did not advance');
+  assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the index and worktree are untouched');
+  assert.equal(readFileSync(join(f.worktree, 'lib', 'add.mjs'), 'utf8'), implementation, 'the implementation is kept');
+  assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
+  const final = await record.load(f.commonDir, 'ticket', TICKET);
+  assert.equal(final.state, 'held');
+  assert.equal(final.branch, BRANCH);
+  assert.deepEqual(record.openIntents(final), record.openIntents(seeded), 'the intended commit is kept');
+});
+
+test('a resumed execution detached at the recorded SHA is held before recovery', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const seeded = await crashBeforeCommit(f);
+  const head = sh(f.worktree, 'rev-parse', 'HEAD');
+  sh(f.worktree, 'checkout', '-q', '--detach', head);
+  const before = await integrity.snapshot(f.worktree);
+  f.gh.calls.length = 0;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN));
+  assert.ok(f.comments().some((b) => b.includes('detached HEAD') && b.includes(BRANCH)), 'the hold names the detached HEAD and recorded branch');
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+  assert.equal(sh(f.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD', 'HEAD stays detached');
+  assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head, 'the recorded branch is untouched');
+  assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the index and files are untouched');
+  assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
+  const final = await record.load(f.commonDir, 'ticket', TICKET);
+  assert.equal(final.state, 'held');
+  assert.deepEqual(record.openIntents(final), record.openIntents(seeded));
+});
+
+test('a resumed execution stopped mid-rebase is held without changing the rebase', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'red', 3), point: 'after-completion' }) });
+  const rebase = spawnSync('git', ['rebase', '--exec', 'exit 1', 'main'], { cwd: f.worktree, encoding: 'utf8' });
+  assert.equal(rebase.status, 1, rebase.stderr);
+  assert.equal(sh(f.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD');
+  const rebasePath = sh(f.worktree, 'rev-parse', '--git-path', 'rebase-merge');
+  const todo = readFileSync(join(rebasePath, 'git-rebase-todo'), 'utf8');
+  const before = await integrity.snapshot(f.worktree);
+  const head = sh(f.worktree, 'rev-parse', BRANCH);
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
+  assert.equal(f.harness.calls.length, 1, 'no agent started');
+  assert.deepEqual(await integrity.snapshot(f.worktree), before);
+  assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head);
+  assert.equal(readFileSync(join(rebasePath, 'git-rebase-todo'), 'utf8'), todo, 'the rebase is untouched');
+  assert.deepEqual(record.openIntents(await record.load(f.commonDir, 'ticket', TICKET)), record.openIntents(seeded));
+});
+
+test('an unexpected branch query failure faults before recovery', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const seeded = await crashBeforeCommit(f);
+  const before = await integrity.snapshot(f.worktree);
+  f.options.git = { ...gitModule, runGit: (args, opts) => args[0] === 'symbolic-ref'
+    ? Promise.resolve({ code: 128, stdout: '', stderr: 'fatal: cannot read HEAD' }) : gitModule.runGit(args, opts) };
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
+  assert.match(ticketResult(results).error, /cannot read HEAD/);
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+  assert.deepEqual(await integrity.snapshot(f.worktree), before, 'nothing was replayed or discarded');
+  const final = await record.load(f.commonDir, 'ticket', TICKET);
+  assert.equal(final.state, 'fault');
+  assert.deepEqual(record.openIntents(final).filter((e) => e.action === 'commit'), record.openIntents(seeded));
 });
 
 test('a fault before the first visit still records its action events', async (t) => {
@@ -430,6 +531,44 @@ test('an admission failure on an active execution is reported as a fault', async
   assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), 'the Ticket is at needs-human');
   assert.ok(f.comments().some((b) => b.includes('disk full')), `a comment carries the error: ${JSON.stringify(f.comments())}`);
   assert.match(f.readEvents().find((e) => e.type === 'ticket_end' && e.ticket === TICKET).error, /disk full/);
+});
+
+test('a human needs-human label before the first Visit prevents admission effects', async (t) => {
+  for (const dirty of [false, true]) {
+    const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });
+    await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+      configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+    await record.save(rec);
+    if (dirty) writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
+    const before = await integrity.snapshot(f.worktree);
+
+    const results = await run.runTarget(f.options);
+    assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
+    assert.equal(f.harness.calls.length, 0, 'no agent started');
+    assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write, comment or recovery');
+    assert.deepEqual([...f.gh.labels].sort(), [IN_PROGRESS, NEEDS_HUMAN].sort(), 'the human hold is unchanged');
+    assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the worktree is untouched');
+    if (dirty) assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n');
+    const final = await record.load(f.commonDir, 'ticket', TICKET);
+    assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
+    assert.deepEqual(final.visits, {});
+    assert.deepEqual(final.log, []);
+  }
+});
+
+test('a human needs-human label prevents admission effects without a readable record', async (t) => {
+  for (const corrupt of [false, true]) {
+    const f = fixture(t, { labels: [NEEDS_HUMAN] });
+    if (corrupt) record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
+    const row = f.loadRow();
+
+    await run.runTarget(f.options);
+    assert.equal(f.harness.calls.length, 0, 'no agent started');
+    assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write or comment');
+    assert.equal(f.worktrees(), 1, 'no worktree created');
+    assert.equal(f.loadRow(), row, 'the record is untouched');
+  }
 });
 
 test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
