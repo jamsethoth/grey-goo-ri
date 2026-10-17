@@ -194,25 +194,41 @@ test('a standalone ticket under a flow with a plan section is rejected before an
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'the standalone ticket is rejected');
-  assert.match(err.message, /plan/);
-  assert.match(err.message, /null/);
-  assert.match(err.message, /Flow ticket-only\b/, 'the message names an available Flow whose plan is null');
+  assert.equal(err.exitCode ?? 1, 1, 'the rejection exit code is unchanged');
+  assert.match(err.message, /set plan to null on Flow default\b/);
+  assert.ok(err.message.includes(join(f.mainRoot, '.agents', 'gg', 'gg.json')), 'the message names the repo Layer file');
+  assert.ok(err.message.includes('{"flows":{"default":{"plan":null}}}'), 'the message gives the minimal repo Layer JSON');
+  assert.doesNotMatch(err.message, /ticket-only/, 'the advice does not name an unselectable Flow');
   assert.ok(f.gh.calls.length > 0, 'the target was discovered');
   assert.deepEqual(f.gh.calls.filter((c) => !(c.args[0] === 'issue' && c.args[1] === 'view')), [], 'gh recorded only issue view');
   assert.equal(f.worktrees(), 1, 'no worktree');
   assert.equal(f.loadRow(), undefined, 'no record');
   assert.equal(f.harness.calls.length, 0);
+  assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
 });
 
-test('a standalone Ticket rejection explains when no null-plan Flow is available', async (t) => {
+test('following standalone Ticket advice in the repo Layer allows the Ticket to run', async (t) => {
   const f = fixture(t);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
+  const home = join(f.root, 'home');
+  mkdirSync(join(home, '.agents', 'gg'), { recursive: true });
+  writeFileSync(join(home, '.agents', 'gg', 'gg.json'), JSON.stringify(f.options.config));
+  f.options.config = config.loadConfig(f.mainRoot, home);
 
-  await assert.rejects(run.runTarget(f.options), /no available Flow sets plan to null/);
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no effect');
-  assert.equal(f.worktrees(), 1);
-  assert.equal(f.loadRow(), undefined);
-  assert.equal(f.harness.calls.length, 0);
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.ok(err, 'the user Layer initially enables the plan section');
+  const repoLayer = join(f.mainRoot, '.agents', 'gg', 'gg.json');
+  assert.ok(err.message.includes(repoLayer), 'the advice names the path loadConfig reads');
+  const advice = JSON.parse(err.message.split('\n').at(-1));
+  assert.deepEqual(advice, { flows: { default: { plan: null } } });
+  mkdirSync(join(f.mainRoot, '.agents', 'gg'), { recursive: true });
+  writeFileSync(repoLayer, JSON.stringify(advice));
+  f.options.config = config.loadConfig(f.mainRoot, home);
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(ticketResult(results).outcome, 'done');
+  assert.equal(f.harness.calls.length, 2, 'both agent Phases ran on the fake Harness');
 });
 
 test('a ticket reaching done exits 0 and the run events carry the run id and outcome', async (t) => {
