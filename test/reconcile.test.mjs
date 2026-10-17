@@ -22,6 +22,7 @@ async function crashedFailedRed(t, when) {
   } };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  g.git = git;
   return g;
 }
 
@@ -58,10 +59,20 @@ test('a reset whose evidence was saved but not its completion is completed witho
   assert.deepEqual(resetEntries(rec), ['intent', 'evidence', 'complete']);
 });
 
-test('a crash before the reset holds the Execution and discards nothing', async (t) => {
+test('a crash before the reset is finished by Reconciliation while the worktree is as the agent left it', async (t) => {
   const g = await crashedFailedRed(t, 'before reset');
+  assert.notEqual(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the agent changes are still in the worktree');
+
+  assert.equal(await reconcile.resets(g.loaded, { git: g.git }), 'continue');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', "the record proves the changes the agent's, so they are discarded");
+  assert.deepEqual(g.loaded.history.map((h) => h.kind), ['red phase failed']);
+  assert.deepEqual(resetEntries(g.loaded), ['intent', 'evidence', 'complete']);
+});
+
+test('a crash before the reset holds the Execution and discards nothing once a human changed the worktree', async (t) => {
+  const g = await crashedFailedRed(t, 'before reset');
+  writeFileSync(join(g.worktree, 'human.txt'), 'mine\n');
   const dirty = golden.sh(g.worktree, 'status', '--porcelain');
-  assert.notEqual(dirty, '', 'the agent changes are still in the worktree');
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
@@ -78,6 +89,17 @@ test('an assume-unchanged edit left at the baseline does not prove the reset don
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
   assert.deepEqual(g.loaded.history, []);
+  assert.deepEqual(resetEntries(g.loaded), ['intent']);
+});
+
+test('an ignored test added after an interrupted reset holds the restore and is kept', async (t) => {
+  const g = await crashedFailedRed(t, 'after reset');
+  writeFileSync(join(g.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
+  mkdirSync(join(g.worktree, 'test'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'mine\n');
+
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
+  assert.equal(readFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'utf8'), 'mine\n', 'the human file is untouched');
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 });
 
@@ -343,27 +365,21 @@ async function violating(t) {
   return g;
 }
 
-const RESUMED = {
-  'before-effect': { outcome: 'needs-human', state: 'held' },
-  'after-effect': { outcome: 'needs-human', state: 'needs-human' },
-  'after-completion': { outcome: 'needs-human', state: 'needs-human' },
-};
-for (const [point, expect] of Object.entries(RESUMED)) {
+// Before the effect the worktree is still as the violating call left it, so the record proves the rollback the agent's.
+for (const point of ['before-effect', 'after-effect', 'after-completion']) {
   test(`a crash ${point} of an integrity violation rollback does not call the harness again`, async (t) => {
     const g = await violating(t);
     await crashed(g, ['implementer', 1, 'red', 1], point);
     assert.equal(g.harness.calls.length, 1);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
-    assert.equal(result.outcome, expect.outcome);
+    assert.equal(result.outcome, 'needs-human');
     assert.equal(g.harness.calls.length, 1, 'the violating call is not dispatched again');
     const final = await loadTicket(g);
-    assert.equal(final.state, expect.state);
-    if (point !== 'before-effect') {
-      assert.equal(final.terminalReason.rule, 'integrity-violation');
-      assert.equal(final.history.filter((h) => h.kind === 'integrity violation').length, 1);
-      assert.ok(!existsSync(join(g.worktree, 'CLAUDE.md')), 'the violation stays rolled back');
-    }
+    assert.equal(final.state, 'needs-human');
+    assert.equal(final.terminalReason.rule, 'integrity-violation');
+    assert.equal(final.history.filter((h) => h.kind === 'integrity violation').length, 1);
+    assert.ok(!existsSync(join(g.worktree, 'CLAUDE.md')), 'the violation stays rolled back');
   });
 }
 

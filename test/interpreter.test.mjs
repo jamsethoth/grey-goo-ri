@@ -300,7 +300,9 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   // The reset is a write-ahead side effect whose intent carries the baseline and the History item.
   const [reset] = intents(g.rec, 'reset');
   assert.equal(reset.marker, actionMarker(g, 'still-green', 2));
-  assert.deepEqual({ ...reset.payload, untracked: undefined }, { baseline: g.base, history: g.rec.history[0], untracked: undefined });
+  assert.deepEqual({ ...reset.payload, untracked: undefined, left: undefined }, { baseline: g.base, history: g.rec.history[0], untracked: undefined, left: undefined });
+  assert.equal(reset.payload.left.head, g.base, 'the intent saves the worktree the agent left, so admission can prove it');
+  assert.match(reset.payload.left.tree, /^[0-9a-f]{40}$/);
   assert.deepEqual(reset.payload.untracked.files, {}, 'the rollback set of the first red call is saved too');
   assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
   assert.deepEqual(record.openIntents(g.rec), []);

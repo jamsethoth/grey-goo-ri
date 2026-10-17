@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { parseOpts, UsageError } from '../lib/opts.mjs';
+import { loadConfig } from '../lib/config.mjs';
+import * as exec from '../lib/exec.mjs';
+import * as git from '../lib/git.mjs';
+import * as gh from '../lib/github.mjs';
+import { parseOpts, positiveInt, UsageError } from '../lib/opts.mjs';
+import * as run from '../lib/run.mjs';
 
 const usage = `Usage: gg <command>
 
@@ -26,6 +31,15 @@ const SPECS = {
 };
 const command = process.argv[2];
 
+async function runCommand(opts) {
+  const target = positiveInt(opts._[0], 'ticket');
+  const { mainRoot } = await git.repoInfo(process.cwd());
+  const harnesses = { claude: await import('../lib/harnesses/claude.mjs'), codex: await import('../lib/harnesses/codex.mjs') };
+  const results = await run.runTarget({ target, config: loadConfig(mainRoot), harnesses, gh, git, exec, cwd: mainRoot,
+    log: (m) => process.stdout.write(`${m}\n`) });
+  process.exitCode = run.runExitCode(results);
+}
+
 function notImplemented(name, opts) {
   process.stderr.write(`gg ${name}: not implemented\n`);
   process.exitCode = 1;
@@ -35,11 +49,17 @@ if (command === undefined || command === '--help') {
   process.stdout.write(usage);
 } else if (Object.hasOwn(SPECS, command)) {
   try {
-    notImplemented(command, parseOpts(process.argv.slice(3), SPECS[command]));
+    const opts = parseOpts(process.argv.slice(3), SPECS[command]);
+    if (command === 'run') await runCommand(opts);
+    else notImplemented(command, opts);
   } catch (e) {
-    if (!(e instanceof UsageError)) throw e;
-    process.stderr.write(`gg ${command}: ${e.message}\n\n${usage}`);
-    process.exitCode = 1;
+    if (e instanceof UsageError) {
+      process.stderr.write(`gg ${command}: ${e.message}\n\n${usage}`);
+      process.exitCode = 1;
+    } else if (command === 'run') {
+      process.stderr.write(`gg run: ${e.message}\n`);
+      process.exitCode = e.exitCode ?? 1;
+    } else throw e;
   }
 } else {
   process.stderr.write(`gg: unknown command ${command}\n\n${usage}`);
