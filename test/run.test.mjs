@@ -1,0 +1,383 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { setTimeout as sleep } from 'node:timers/promises';
+import * as config from '../lib/config.mjs';
+import * as events from '../lib/events.mjs';
+import * as flowModule from '../lib/flow.mjs';
+import * as gitModule from '../lib/git.mjs';
+import * as github from '../lib/github.mjs';
+import * as interpreter from '../lib/interpreter.mjs';
+import * as marker from '../lib/marker.mjs';
+import * as record from '../lib/record.mjs';
+import * as run from '../lib/run.mjs';
+import * as golden from './support/golden.mjs';
+import { fakeHarness } from './support/fake-harness.mjs';
+
+const contender = fileURLToPath(new URL('./support/lock-contender.mjs', import.meta.url));
+const TICKET = golden.TICKET;
+const BRANCH = golden.BRANCH;
+const IN_PROGRESS = 'gg:state:in-progress';
+const NEEDS_HUMAN = 'gg:state:needs-human';
+const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+
+// The shipped defaults with every Node on `harness` and, unless `fullFlow`, a one-Vertex Flow from tdd straight to done.
+function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
+  const c = config.loadDefaults();
+  for (const node of Object.values(c.nodes)) Object.assign(node, { harness, model: 'model-x', effort: 'high' });
+  c.worktreeRoot = join(root, 'wt');
+  if (!fullFlow) c.flows.default.ticket = { entry: 'implementer', vertices: { implementer: { use: 'implementer', procedure: 'tdd', then: 'done' } } };
+  return c;
+}
+
+// A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
+// fake harness. `failEdit` makes every label edit fail as gh does.
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, labels = [], harness: harnessName, fullFlow } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'gg-run-'));
+  const mainRoot = join(root, 'main');
+  const commonDir = join(mainRoot, '.git');
+  t.after(() => {
+    record.close(commonDir);
+    rmSync(root, { recursive: true, force: true });
+  });
+  sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
+  sh(root, 'clone', '-q', 'origin.git', 'main');
+  sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
+  writeFileSync(join(mainRoot, 'package.json'), '{ "scripts": { "test": "node --test" } }\n');
+  writeFileSync(join(mainRoot, 'AGENTS.md'), '# repo\n\n## Commands\n\n- test: `npm test`\n');
+  sh(mainRoot, 'add', '-A');
+  sh(mainRoot, 'commit', '-q', '-m', 'init');
+  sh(mainRoot, 'push', '-q', 'origin', 'main');
+  const base = sh(mainRoot, 'rev-parse', 'main');
+
+  const fake = golden.fakeGh({ branch: BRANCH });
+  for (const l of labels) fake.labels.add(l);
+  const inner = fake.gh;
+  fake.gh = async (args, cwd, input) => {
+    const [noun, verb] = args;
+    if (noun === 'issue' && verb === 'view') {
+      fake.calls.push({ args, cwd, input });
+      return JSON.stringify({ number: Number(args[2]), title: 'Add two numbers', body: 'Add `add(a, b)`.', state: 'OPEN',
+        labels: [...fake.labels].map((name) => ({ name })), blockedBy: [], subIssues: [] });
+    }
+    if (failEdit && noun === 'issue' && verb === 'edit') {
+      fake.calls.push({ args, cwd, input });
+      throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
+    }
+    return inner(args, cwd, input);
+  };
+  github.setGh(fake.gh);
+
+  const harness = fakeHarness({ transcriptDir: join(root, 'transcripts'), responses, capabilities: { cost: false, reasoningTokens: false } });
+  const exec = {
+    runShell: async (command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
+      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: golden.RED_OUTPUT, timedOut: false },
+  };
+  const logs = [];
+  let now = Date.parse('2026-10-17T00:00:00Z');
+  const clock = { now: () => now, sleep: async (ms) => { now += ms; } };
+  const cfg = testConfig(root, { harness: harnessName, fullFlow });
+  const worktree = gitModule.worktreePath(cfg.worktreeRoot, 'main', TICKET);
+  const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git: gitModule, exec, cwd: mainRoot,
+    log: (m) => logs.push(m), clock };
+  return {
+    root, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
+    readEvents: () => events.readEvents(commonDir),
+    worktrees: () => sh(mainRoot, 'worktree', 'list').split('\n').length,
+    loadRow: () => record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(TICKET)?.json,
+    comments: () => fake.comments.filter((c) => c.number === TICKET).map((c) => c.body),
+    labelAdds: () => fake.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit')
+      .flatMap((c) => c.args.filter((a, i) => c.args[i - 1] === '--add-label')),
+  };
+}
+
+// An Execution of the fixture's Ticket run straight through the interpreter, as an earlier Run left it.
+async function seedExecution(f, { git = gitModule, crashAt, exec = f.exec } = {}) {
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const flow = flowModule.resolveFlow(f.options.config);
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: flow.name, entry: flow.ticket.entry },
+    configHash: 'cfg-hash', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  await record.save(rec);
+  await assert.rejects(interpreter.runExecution({
+    flow, record: rec, harness: f.harness, gh: github, git, exec, events: events.eventLog(f.commonDir), log: () => {}, cwd: f.mainRoot,
+    commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
+    base: 'main', labelPrefix: 'gg', others: [], clock: f.clock, crashAt: crashAt?.(rec),
+  }), (err) => err instanceof interpreter.CrashError);
+  return record.load(f.commonDir, 'ticket', TICKET);
+}
+
+const markerOf = (rec, vertex, visit, phase, ordinal) =>
+  marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
+
+// Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock.
+function holdLock(t, commonDir, name) {
+  const child = spawn(process.execPath, [contender, commonDir, name, '60000'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  t.after(() => child.kill());
+  const exited = new Promise((resolve) => child.on('exit', resolve));
+  return new Promise((resolve, reject) => {
+    let out = '';
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+      try {
+        const report = JSON.parse(out);
+        if (!report.handle) reject(new Error(`holder did not get the lock: ${out}`));
+        resolve({ release: () => { child.kill(); return exited; } });
+      } catch {}
+    });
+    child.on('exit', () => reject(new Error(`holder exited before reporting: ${out}`)));
+  });
+}
+
+const ticketResult = (results) => results.find((r) => r.ticket === TICKET);
+
+test('runEpic preflight throws naming vertex and harness before any gh call or worktree', async (t) => {
+  const f = fixture(t, { fullFlow: true });
+  f.options.config.nodes.implementer.harness = 'nope';
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.ok(err, 'preflight rejects the run');
+  assert.match(err.message, /implementer/);
+  assert.match(err.message, /nope/);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+  assert.equal(existsSync(join(f.root, 'wt')), false);
+  assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
+  assert.equal(f.harness.calls.length, 0);
+});
+
+test('runEpic preflight names every failing vertex in one error', async (t) => {
+  const f = fixture(t, { fullFlow: true });
+  f.options.config.nodes.implementer.harness = 'nope';
+  f.options.config.nodes.reviewer.harness = 'claude';
+  f.options.harnesses.claude = await import('../lib/harnesses/claude.mjs');
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.ok(err, 'preflight rejects the run');
+  assert.match(err.message, /implementer[^]*nope|nope[^]*implementer/, 'the unknown harness is named with its vertex');
+  assert.match(err.message, /reviewer/);
+  assert.match(err.message, /harness claude: not implemented/);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+  assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
+});
+
+test('a node without a harness fails admission naming the vertex and node', async (t) => {
+  const f = fixture(t, { fullFlow: true });
+  f.options.config.nodes.implementer.harness = null;
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.ok(err, 'admission rejects the run');
+  assert.match(err.message, /no harness configured for node implementer; copy examples\/claude\.json or examples\/codex\.json into a user Layer/);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+});
+
+test('a standalone ticket under a flow with a plan section is rejected before any effect', async (t) => {
+  const f = fixture(t);
+  f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.ok(err, 'the standalone ticket is rejected');
+  assert.match(err.message, /plan/);
+  assert.match(err.message, /null/, 'the message names a Flow whose plan is null');
+  assert.ok(f.gh.calls.length > 0, 'the target was discovered');
+  assert.deepEqual(f.gh.calls.filter((c) => !(c.args[0] === 'issue' && c.args[1] === 'view')), [], 'gh recorded only issue view');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+  assert.equal(f.loadRow(), undefined, 'no record');
+  assert.equal(f.harness.calls.length, 0);
+});
+
+test('a ticket reaching done exits 0 and the run events carry the run id and outcome', async (t) => {
+  const f = fixture(t);
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0);
+  assert.ok(f.gh.labels.has('gg:state:ready-for-qa'));
+  const evs = f.readEvents();
+  const start = evs.find((e) => e.type === 'run_start');
+  const end = evs.find((e) => e.type === 'run_end');
+  assert.ok(start && end, 'run_start and run_end are recorded');
+  assert.equal(typeof start.run, 'string');
+  assert.equal(end.run, start.run);
+  assert.deepEqual(end.tickets, [{ ticket: TICKET, outcome: 'done' }], 'run_end carries the Ticket outcome');
+  assert.equal(evs.find((e) => e.type === 'ticket_end').run, start.run);
+  const runDir = join(f.commonDir, 'gg', 'runs', start.run);
+  assert.ok(existsSync(join(runDir, 'flow.json')), 'the Resolved Flow is in the run directory');
+  assert.ok(existsSync(join(runDir, 'config-hash.txt')), 'the Config Hash is in the run directory');
+  assert.ok(readdirSync(runDir).some((name) => name.endsWith('.log')), 'the run directory has a log file');
+});
+
+test('unknown dirty state is held with the diff stat', async (t) => {
+  const f = fixture(t);
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const edited = '{ "scripts": { "test": "node --test" }, "human": true }\n';
+  writeFileSync(join(f.worktree, 'package.json'), edited);
+  writeFileSync(join(f.worktree, 'notes.txt'), 'my notes\n');
+  const status = sh(f.worktree, 'status', '--porcelain');
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2);
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.comments().some((b) => b.includes('package.json')), `a comment carries the diff stat: ${JSON.stringify(f.comments())}`);
+  assert.equal(readFileSync(join(f.worktree, 'package.json'), 'utf8'), edited, 'the edit is untouched');
+  assert.equal(readFileSync(join(f.worktree, 'notes.txt'), 'utf8'), 'my notes\n', 'the untracked file is untouched');
+  assert.equal(sh(f.worktree, 'status', '--porcelain'), status);
+});
+
+test('agent-made dirty state proven by the record is discarded', async (t) => {
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  // The red test passes before implementation, so the red Phase fails; the crash comes before its reset.
+  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const seeded = await seedExecution(f, { git, exec });
+  assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['reset'], 'the record holds the decided reset');
+  assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), "the agent's test is still in the worktree");
+  f.options.exec = exec;
+
+  await run.runTarget(f.options);
+  assert.equal(sh(f.worktree, 'status', '--porcelain'), '', "the agent's changes are discarded");
+  assert.equal(f.harness.calls.length, 2, 'no agent call is repeated');
+  const final = await record.load(f.commonDir, 'ticket', TICKET);
+  assert.notEqual(final.state, 'held', 'the Ticket is not held for its own agent changes');
+  assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its failed red');
+  assert.deepEqual(final.history.map((h) => h.kind), ['red phase failed']);
+  assert.deepEqual(record.openIntents(final), []);
+});
+
+test('an in-progress ticket with a recoverable record is resumed', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  // The push of the green commit was intended but never made.
+  const rec = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+  assert.equal(rec.state, 'active');
+  assert.deepEqual(record.openIntents(rec).map((e) => e.action), ['push'], 'the push is the open intent');
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0);
+  assert.equal(f.harness.calls.length, 2, 'the resume continues at the cursor; no agent call is repeated');
+  const final = await record.load(f.commonDir, 'ticket', TICKET);
+  assert.equal(final.execution, rec.execution, 'the same Execution is resumed');
+  assert.equal(final.state, 'done');
+  assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${BRANCH}`).split('\t')[0], sh(f.worktree, 'rev-parse', 'HEAD'));
+});
+
+test('an in-progress ticket without a record is skipped', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  await run.runTarget(f.options);
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+  assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`)), `the skip is logged: ${JSON.stringify(f.logs)}`);
+  assert.equal(f.worktrees(), 1, 'no worktree');
+  assert.deepEqual(f.labelAdds(), [], 'no label written');
+  assert.ok(f.gh.labels.has(IN_PROGRESS), 'the State Label is left for Stuck handling');
+});
+
+test('a finished record with open intents is not resumed', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  rec.visits = { implementer: 1 };
+  rec.cursor = { vertex: 'needs-human', visit: null, phase: null, ordinal: 0, attempt: 1 };
+  // A fault report leaves the comment intent of the Terminal it interrupted open for good.
+  const m = markerOf(rec, 'done', 1, 'done', 2);
+  await record.intent(rec, m, 'comment', { target: { kind: 'issue', number: TICKET }, body: 'x', bodyHash: 'h' });
+  rec.state = 'fault';
+  await record.save(rec);
+  const row = f.loadRow();
+
+  await run.runTarget(f.options);
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+  assert.equal(f.loadRow(), row, 'the finished record is unchanged');
+  assert.deepEqual(f.comments(), [], 'the open comment intent is not replayed');
+  assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`)), `the skip is logged: ${JSON.stringify(f.logs)}`);
+});
+
+test('a corrupt record found at admission is held through reconcile', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const corrupt = '{ "schemaVersion": 1, "log": [';
+  record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, corrupt);
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2);
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.comments().some((b) => /corrupt record/.test(b) && b.includes(`ticket-${TICKET}`)),
+    `a comment names the record: ${JSON.stringify(f.comments())}`);
+  assert.equal(f.loadRow(), corrupt, 'the corrupt record is kept');
+});
+
+test('a held ticket lock skips the ticket', async (t) => {
+  const f = fixture(t);
+  await holdLock(t, f.commonDir, `ticket-${TICKET}`);
+  await run.runTarget(f.options);
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+  assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`) && /lock/.test(l)), `the skip is logged: ${JSON.stringify(f.logs)}`);
+  assert.deepEqual(f.labelAdds(), [], 'no label written');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+});
+
+test('an orchestrator commit waits for the repo lock', async (t) => {
+  const f = fixture(t);
+  const holder = await holdLock(t, f.commonDir, 'repo');
+  const commits = () => {
+    const r = spawnSync('git', ['rev-list', '--count', `main..refs/heads/${BRANCH}`], { cwd: f.mainRoot, encoding: 'utf8' });
+    return r.status === 0 ? Number(r.stdout.trim()) : 0;
+  };
+  let settled = false;
+  const running = run.runTarget(f.options).finally(() => { settled = true; });
+  // Give the run time to reach its first commit, whether or not it gets as far as the red call first.
+  for (let i = 0; i < 60 && f.harness.calls.length === 0 && !settled; i++) await sleep(50);
+  await sleep(1000);
+  assert.equal(settled, false, 'the run waits while another process holds the repo lock');
+  assert.equal(commits(), 0, 'no commit lands while the repo lock is held');
+
+  await holder.release();
+  const results = await running;
+  assert.equal(run.runExitCode(results), 0);
+  assert.ok(commits() >= 2, 'the commits land after release');
+});
+
+test('in-progress is set only after the worktree exists', async (t) => {
+  const f = fixture(t);
+  // A plain directory where the worktree belongs makes ensureWorktree fail.
+  mkdirSync(f.worktree, { recursive: true });
+  writeFileSync(join(f.worktree, 'stray.txt'), 'not a worktree\n');
+  await run.runTarget(f.options).catch(() => {});
+  assert.ok(!f.labelAdds().includes(IN_PROGRESS), `in-progress was never added: ${JSON.stringify(f.labelAdds())}`);
+  assert.ok(!f.gh.labels.has(IN_PROGRESS));
+  assert.equal(f.harness.calls.length, 0);
+});
+
+test('a failed label update reaches the log, the event and the exit code', async (t) => {
+  const f = fixture(t, { failEdit: true });
+  const results = await run.runTarget(f.options);
+  assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`) && l.includes('HTTP 502')), `log names the ticket and the error: ${JSON.stringify(f.logs)}`);
+  assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET && e.error.includes('HTTP 502')), 'event names the ticket and the error');
+  assert.equal(ticketResult(results).labelFailed, true);
+  assert.equal(run.runExitCode(results), 1);
+});
+
+test('a crashed ticket keeps the reason from the later lines of the error', async (t) => {
+  const f = fixture(t, { responses: { 'implementer/1/red/1': { throw: new Error('git push origin x exited 1\nremote: Permission to o/r denied to u') } } });
+  const results = await run.runTarget(f.options);
+  assert.match(ticketResult(results).error, /Permission to o\/r denied/);
+  assert.match(f.readEvents().find((e) => e.type === 'ticket_end' && e.ticket === TICKET).error, /Permission to o\/r denied/);
+  assert.equal(run.runExitCode(results), 2, 'a fault ends at needs-human');
+});
+
+test('runExitCode is non-zero when any ticket had a label failure, zero otherwise', () => {
+  assert.equal(run.runExitCode([{ ticket: 1, state: 'ready-for-qa' }]), 0);
+  assert.notEqual(run.runExitCode([{ ticket: 1, state: 'ready-for-qa', labelFailed: true }]), 0);
+  assert.equal(run.runExitCode([{ ticket: 1, state: 'needs-human' }, { ticket: 2, state: 'ready-for-qa', labelFailed: true }]), 1);
+  assert.equal(run.runExitCode([{ ticket: 1, state: 'needs-human' }, { ticket: 2, state: 'ready-for-qa' }]), 2);
+});
+
+const issue = (number, labels = [], extra = {}) => ({ number, state: 'OPEN', labels: labels.map((name) => ({ name })), ...extra });
+
+test('epicProblem explains an epic with no sub-issues or nothing ready', () => {
+  assert.match(run.epicProblem([], []), /no sub-issues/i);
+  const busy = [issue(2, [IN_PROGRESS])];
+  assert.match(run.epicProblem(busy, []), /nothing ready/i);
+  assert.equal(run.epicProblem([issue(3)], [issue(3)]), null);
+});
