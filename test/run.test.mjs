@@ -264,6 +264,38 @@ test('a merge conflict in the worktree of a resumed execution is held, not fault
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
 });
 
+// The green commit was intended, its implementation staged, and the process died before the commit landed.
+const crashBeforeCommit = (f) => seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 3), point: 'before-effect' }) });
+
+test('a commit interrupted before it landed is admitted and replayed', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const seeded = await crashBeforeCommit(f);
+  assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['commit'], 'the record holds the intended commit');
+  assert.notEqual(sh(f.worktree, 'status', '--porcelain'), '', 'the staged implementation waits for its commit');
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(f.harness.calls.length, 2, 'no agent call is repeated');
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'done');
+  assert.equal(sh(f.worktree, 'status', '--porcelain'), '', 'the replayed commit took the staged changes');
+  assert.notEqual(sh(f.worktree, 'ls-tree', 'HEAD', 'lib/add.mjs'), '', 'the implementation is committed');
+});
+
+test('a commit interrupted before it landed is held once a human changed the worktree', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  await crashBeforeCommit(f);
+  writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
+  const staged = sh(f.worktree, 'diff', '--cached', '--name-only');
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n', 'the human file is untouched');
+  assert.equal(sh(f.worktree, 'diff', '--cached', '--name-only'), staged, 'the staged changes are untouched');
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
+});
+
 test('agent-made dirty state proven by the record is discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
   const f = fixture(t, { responses, labels: [IN_PROGRESS] });
