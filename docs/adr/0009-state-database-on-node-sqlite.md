@@ -37,9 +37,10 @@ open exclusive transaction would block every record write if it shared the datab
   upgrades a SHARED lock to RESERVED, and SQLite skips the busy handler there to avoid deadlock (check-in d33771a3,
   https://sqlite.org/src/info/d33771a303d9c20d). `openDb` therefore takes `BEGIN EXCLUSIVE` on the lock file
   `gg/locks/open.db` around the switch. A transaction that starts from no lock does wait on the busy handler, so the
-  switches queue (0 failures in 3,200 concurrent opens, against about 1 in 150 without the open lock). Every
-  process's first open takes it, whether or not the database exists, so an open lock held past `busy_timeout` fails
-  that open with SQLITE_BUSY. The switch must return `wal`, or `openDb` throws. The retry loop Effect-TS adopted for
+  switches queue (0 failures in 3,200 concurrent opens, against about 1 in 150 without the open lock). WAL mode is
+  stored in the file, so an open that already reads `wal` skips the lock; only an open that still has to switch
+  takes it, and an open lock held past `busy_timeout` fails such an open with SQLITE_BUSY. The switch must return
+  `wal`, or `openDb` throws. The retry loop Effect-TS adopted for
   the same bug (https://github.com/Effect-TS/effect/pull/8708) was the alternative; the open lock was preferred
   because it removes the race rather than retrying through it.
 - The frozen record and event schemas are the JSON documents, not the table layout; the table layout carries its own
