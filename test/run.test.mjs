@@ -284,6 +284,58 @@ test('an ignored test added after an interrupted reset is held, not deleted', as
   assert.equal(f.harness.calls.length, 2, 'no agent started');
 });
 
+test('a human change staged after an interrupted reset is held, not discarded', async (t) => {
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  await seedExecution(f, { git, exec });
+  // Staged, then the working-tree bytes put back: HEAD and the worktree match what the agent left, only the index differs.
+  const pkg = join(f.worktree, 'package.json');
+  const original = readFileSync(pkg, 'utf8');
+  writeFileSync(pkg, '{ "human": true }\n');
+  sh(f.worktree, 'add', 'package.json');
+  writeFileSync(pkg, original);
+  f.options.exec = exec;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2);
+  assert.equal(sh(f.worktree, 'show', ':package.json'), '{ "human": true }', 'the staged human content survives');
+  assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+});
+
+test('an interrupted reset whose intent predates the index fingerprint is held', async (t) => {
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const seeded = await seedExecution(f, { git, exec });
+  delete record.openIntents(seeded)[0].payload.left.index;
+  await record.save(seeded);
+  f.options.exec = exec;
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2);
+  assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+});
+
+test('an admission failure on an active execution is reported as a fault', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+  f.options.git = { ...gitModule, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full') } };
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 1, 'a fault exits 1');
+  assert.match(ticketResult(results).error, /disk full/);
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'fault', 'the record is marked, so it is not retried');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), 'the Ticket is at needs-human');
+  assert.ok(f.comments().some((b) => b.includes('disk full')), `a comment carries the error: ${JSON.stringify(f.comments())}`);
+  assert.match(f.readEvents().find((e) => e.type === 'ticket_end' && e.ticket === TICKET).error, /disk full/);
+});
+
 test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
   const f = fixture(t, { responses, labels: [NEEDS_HUMAN] });
