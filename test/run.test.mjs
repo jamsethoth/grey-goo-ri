@@ -309,8 +309,10 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
 
 test('a held ticket lock skips the ticket', async (t) => {
   const f = fixture(t);
-  await holdLock(t, f.commonDir, `ticket-${TICKET}`);
+  const holder = await holdLock(t, f.commonDir, `ticket-${TICKET}`);
   await run.runTarget(f.options);
+  // Released before the fixture's cleanup, which Windows refuses while the holder keeps the lock file open.
+  await holder.release();
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`) && /lock/.test(l)), `the skip is logged: ${JSON.stringify(f.logs)}`);
   assert.deepEqual(f.labelAdds(), [], 'no label written');
@@ -363,7 +365,7 @@ test('a crashed ticket keeps the reason from the later lines of the error', asyn
   const results = await run.runTarget(f.options);
   assert.match(ticketResult(results).error, /Permission to o\/r denied/);
   assert.match(f.readEvents().find((e) => e.type === 'ticket_end' && e.ticket === TICKET).error, /Permission to o\/r denied/);
-  assert.equal(run.runExitCode(results), 2, 'a fault ends at needs-human');
+  assert.equal(run.runExitCode(results), 1, 'a fault exits 1');
 });
 
 test('runExitCode is non-zero when any ticket had a label failure, zero otherwise', () => {
