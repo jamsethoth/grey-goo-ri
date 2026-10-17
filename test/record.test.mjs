@@ -217,6 +217,23 @@ test('two processes save different records concurrently without loss', async (t)
   ]);
 });
 
+// Without the creation gate about one open in 100-200 failed with SQLITE_BUSY here, so 240 opens usually catch it.
+test('eight processes creating one new database at once all open it in WAL mode', async (t) => {
+  const root = await tempCommonDir(t);
+  for (let round = 0; round < 30; round++) {
+    const commonDir = join(root, String(round));
+    const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
+    const exits = await Promise.all(tickets.map((ticket) => new Promise((resolve) => {
+      const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], { stdio: ['ignore', 'ignore', 'pipe'] });
+      let err = '';
+      child.stderr.on('data', (chunk) => { err += chunk; });
+      child.on('close', (code) => resolve({ ticket, code, err }));
+    })));
+    assert.deepEqual(exits, tickets.map((ticket) => ({ ticket, code: 0, err: '' })), `round ${round}`);
+    withDb(commonDir, (db) => assert.equal(db.prepare('PRAGMA journal_mode').get().journal_mode, 'wal'));
+  }
+});
+
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
   const commonDir = await tempCommonDir(t);
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };

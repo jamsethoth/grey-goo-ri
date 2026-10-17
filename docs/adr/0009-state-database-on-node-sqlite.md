@@ -33,5 +33,13 @@ open exclusive transaction would block every record write if it shared the datab
 - `node:sqlite` is Stability 1.1; the floor stays 22.13 (ADR 0008). SQLite locking inside the Codex Windows sandbox
   is unverified; the Codex reviewer cannot run the suite there for unrelated reasons, so nothing changes for review.
 - Tests must close the database before removing a temp directory on Windows, so `record.mjs` exports a close.
+- Two processes switching a new `gg.db` to WAL at once can get SQLITE_BUSY whatever `busy_timeout` says: the switch
+  upgrades a SHARED lock to RESERVED, and SQLite skips the busy handler there to avoid deadlock (check-in d33771a3,
+  https://sqlite.org/src/info/d33771a303d9c20d). `openDb` therefore takes `BEGIN EXCLUSIVE` on the lock file
+  `gg/locks/open.db` around the switch. A transaction that starts from no lock does wait on the busy handler, so the
+  switches queue (0 failures in 3,200 concurrent opens, against about 1 in 150 without the gate). The switch must
+  return `wal`, or `openDb` throws. The retry loop Effect-TS adopted for the same bug
+  (https://github.com/Effect-TS/effect/pull/8708) was the alternative; the gate was preferred because it removes the
+  race rather than retrying through it.
 - The frozen record and event schemas are the JSON documents, not the table layout; the table layout carries its own
   `user_version` and is documented with them.
