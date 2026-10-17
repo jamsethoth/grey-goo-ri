@@ -296,6 +296,20 @@ test('a commit interrupted before it landed is held once a human changed the wor
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
 });
 
+test('a fault before the first visit still records its action events', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  await record.save(rec);
+  f.options.git = { ...gitModule, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 1);
+  const actions = f.readEvents().filter((e) => e.type === 'action' && e.ticket === TICKET);
+  assert.deepEqual(actions.map((e) => `${e.phase} ${e.ordinal}`), ['fault 1', 'fault 2'], 'the comment and the label each record an Event');
+  assert.ok(!f.logs.some((l) => /fault report failed/.test(l)), `no reporting failure is logged: ${JSON.stringify(f.logs)}`);
+});
+
 test('agent-made dirty state proven by the record is discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
   const f = fixture(t, { responses, labels: [IN_PROGRESS] });
