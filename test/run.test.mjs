@@ -227,6 +227,43 @@ test('unknown dirty state is held with the diff stat', async (t) => {
   assert.equal(sh(f.worktree, 'status', '--porcelain'), status);
 });
 
+// A merge conflict left in the worktree: conflict.txt at stages 1 to 3 with the markers on disk. git write-tree refuses
+// such an index, so the snapshot cannot fingerprint it.
+function conflict(worktree) {
+  const blob = (text) => execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: worktree, input: text, encoding: 'utf8' }).trim();
+  const stages = ['base\n', 'ours\n', 'theirs\n'].map((text, i) => `100644 ${blob(text)} ${i + 1}\tconflict.txt`);
+  execFileSync('git', ['update-index', '--index-info'], { cwd: worktree, input: `${stages.join('\n')}\n` });
+  writeFileSync(join(worktree, 'conflict.txt'), '<<<<<<< ours\nours\n=======\ntheirs\n>>>>>>> theirs\n');
+  return { unmerged: sh(worktree, 'ls-files', '-u'), bytes: readFileSync(join(worktree, 'conflict.txt'), 'utf8') };
+}
+
+function assertConflictHeld(f, results, before) {
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.comments().some((b) => b.includes('conflict.txt')), `a comment carries the diff stat: ${JSON.stringify(f.comments())}`);
+  assert.equal(sh(f.worktree, 'ls-files', '-u'), before.unmerged, 'the unmerged index is untouched');
+  assert.equal(readFileSync(join(f.worktree, 'conflict.txt'), 'utf8'), before.bytes, 'the conflicted file is untouched');
+}
+
+test('a merge conflict at ticket start is held with the diff stat', async (t) => {
+  const f = fixture(t);
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const before = conflict(f.worktree);
+
+  assertConflictHeld(f, await run.runTarget(f.options), before);
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+});
+
+test('a merge conflict in the worktree of a resumed execution is held, not faulted', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+  const before = conflict(f.worktree);
+
+  assertConflictHeld(f, await run.runTarget(f.options), before);
+  assert.equal(f.harness.calls.length, 2, 'no agent started');
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
+});
+
 test('agent-made dirty state proven by the record is discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
   const f = fixture(t, { responses, labels: [IN_PROGRESS] });
