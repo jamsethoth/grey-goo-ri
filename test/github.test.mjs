@@ -67,6 +67,19 @@ test('isReady is false while a blocking issue is open', () => {
   assert.equal(github.isReady(issue({ labels: [{ name: 'in-progress' }] })), true);
 });
 
+test('readiness names the closed Ticket, open blockers or State Label', () => {
+  const issue = { number: 7, state: 'OPEN', labels: [], blockedBy: [] };
+  assert.equal(github.readinessReason(issue), null);
+  assert.equal(github.readinessReason({ ...issue, state: 'CLOSED' }), 'closed');
+  assert.equal(github.readinessReason({ ...issue, blockedBy: { nodes: [
+    { number: 3, state: 'OPEN' }, { number: 4, state: 'CLOSED' }, { number: 5, state: 'OPEN' },
+  ] } }), 'blocked by #3, #5');
+  for (const name of labels.BUSY_STATES) {
+    const label = `x:state:${name}`;
+    assert.equal(github.readinessReason({ ...issue, labels: [{ name: label }] }, { prefix: 'x' }), `carries State Label ${label}`);
+  }
+});
+
 test('upsertPr updates an existing PR found by head branch instead of creating', async () => {
   const pr = { number: 12, state: 'OPEN', isDraft: true, url: 'https://github.com/o/r/pull/12' };
   const { gh, calls } = fakeGh((args) => (args[0] === 'pr' && args[1] === 'list' ? [pr] : ''));
@@ -85,18 +98,31 @@ test('upsertPr updates an existing PR found by head branch instead of creating',
 
 test('ensureLabels creates the four prefixed state labels', async () => {
   for (const prefix of ['gg', 'x']) {
-    const { gh, calls } = fakeGh();
+    const { gh, calls } = fakeGh(() => []);
     github.setGh(gh);
     await github.ensureLabels('/repo', { prefix });
     const created = calls.filter(({ args }) => args[0] === 'label' && args[1] === 'create').map(({ args }) => args[2]);
     assert.deepEqual(created.sort(), labels.STATE_LABELS.map((n) => `${prefix}:state:${n}`).sort());
+    assert.ok(calls.every(({ args }) => !args.includes('--force')), 'existing label style is never overwritten');
   }
+});
+
+test('ensureLabels reads all label pages once and creates only missing State Labels', async () => {
+  const { gh, calls } = fakeGh((args) => args[0] === 'api' ? [
+    [{ name: 'gg:state:in-progress' }, { name: 'unrelated' }], [{ name: 'gg:state:needs-human' }],
+  ] : '');
+  github.setGh(gh);
+  await github.ensureLabels('/repo');
+  assert.equal(calls.filter(({ args }) => args[0] === 'api').length, 1);
+  assert.deepEqual(calls.filter(({ args }) => args[0] === 'label').map(({ args }) => args[2]).sort(),
+    ['gg:state:needs-replan', 'gg:state:ready-for-qa']);
+  assert.ok(calls.every(({ args }) => !args.includes('--force')));
 });
 
 test('every label written through gh carries the prefix', async () => {
   const prefix = 'x';
   const l = labels.labels(prefix);
-  const { gh, calls } = fakeGh();
+  const { gh, calls } = fakeGh(() => []);
   github.setGh(gh);
   await github.ensureLabels('/repo', { prefix });
   await github.editLabels(7, { add: [l.state('in-progress')], remove: [l.await('qa-approval')] }, '/repo');

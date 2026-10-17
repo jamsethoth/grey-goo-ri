@@ -9,6 +9,7 @@ import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
 import * as events from '../../lib/events.mjs';
+import * as labelModule from '../../lib/labels.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -147,11 +148,12 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
 }
 
 // A stand-in for the gh executable: records every argv and answers with canned JSON.
-export function fakeGh({ branch, observe = () => {} }) {
+export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
   const calls = [];
   const comments = [];
   // The ticket's labels on GitHub, as issue edits leave them and issue view reports them.
   const labels = new Set();
+  const available = new Set(repoLabels);
   let pr = null;
   const gh = async (args, cwd, input) => {
     observe(`gh ${args[0]} ${args[1]}`);
@@ -171,6 +173,7 @@ export function fakeGh({ branch, observe = () => {} }) {
       return `https://github.com/o/r/issues/${args[2]}#issuecomment-${id}\n`;
     }
     if (noun === 'api') {
+      if (args.at(-1).includes('/labels')) return JSON.stringify([[...available].map((name) => ({ name }))]);
       const n = Number(args.join(' ').match(/issues\/(\d+)\/comments/)?.[1]);
       return JSON.stringify([comments.filter((c) => c.number === n)]);
     }
@@ -182,8 +185,12 @@ export function fakeGh({ branch, observe = () => {} }) {
       args.forEach((a, i) => { if (a === '--add-label') labels.add(args[i + 1]); if (a === '--remove-label') labels.delete(args[i + 1]); });
       return '';
     }
-    if (noun === 'label' && verb === 'create') return '';
+    if (noun === 'label' && verb === 'create') {
+      if (available.has(args[2])) throw new Error(`label ${args[2]} already exists`);
+      available.add(args[2]);
+      return '';
+    }
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
-  return { gh, calls, comments, labels, pr: () => pr };
+  return { gh, calls, comments, labels, repoLabels: available, pr: () => pr };
 }

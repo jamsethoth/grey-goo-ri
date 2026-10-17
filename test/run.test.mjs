@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -38,7 +38,7 @@ function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 
 // A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view.
-function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, labels = [], harness: harnessName, fullFlow, issue = {} } = {}) {
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], harness: harnessName, fullFlow, issue = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'gg-run-'));
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
@@ -56,7 +56,7 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
   sh(mainRoot, 'push', '-q', 'origin', 'main');
   const base = sh(mainRoot, 'rev-parse', 'main');
 
-  const fake = golden.fakeGh({ branch: BRANCH });
+  const fake = golden.fakeGh({ branch: BRANCH, repoLabels });
   for (const l of labels) fake.labels.add(l);
   const inner = fake.gh;
   fake.gh = async (args, cwd, input) => {
@@ -69,6 +69,10 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
     if (failEdit && noun === 'issue' && verb === 'edit') {
       fake.calls.push({ args, cwd, input });
       throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
+    }
+    if (failCreate && noun === 'label' && verb === 'create') {
+      fake.calls.push({ args, cwd, input });
+      throw new Error('HTTP 403: label creation denied');
     }
     return inner(args, cwd, input);
   };
@@ -136,6 +140,44 @@ function holdLock(t, commonDir, name) {
 
 const ticketResult = (results) => results.find((r) => r.ticket === TICKET);
 
+test('a Run ensures missing State Labels once immediately before its first label edit', async (t) => {
+  for (const repoLabels of [[], ['gg:state:in-progress'], ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa']]) {
+    const f = fixture(t, { repoLabels });
+    assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
+    const reads = f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels'));
+    assert.equal(reads.length, 1, 'one repository label read per Run');
+    const creates = f.gh.calls.filter((c) => c.args[0] === 'label');
+    assert.deepEqual(creates.map((c) => c.args[2]).sort(),
+      ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'].filter((l) => !repoLabels.includes(l)).sort());
+    assert.ok(creates.every((c) => !c.args.includes('--force')));
+    const firstEdit = f.gh.calls.findIndex((c) => c.args[0] === 'issue' && c.args[1] === 'edit');
+    assert.equal(f.gh.calls[firstEdit - 1], creates.at(-1) ?? reads[0], 'setup immediately precedes the first label edit');
+  }
+});
+
+test('a State Label creation failure uses the label-failure log, Event and exit code', async (t) => {
+  const f = fixture(t, { repoLabels: [], failCreate: true });
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 1);
+  assert.equal(ticketResult(results).labelFailed, true);
+  assert.ok(f.logs.some((l) => l.includes('label creation denied')));
+  assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET && e.error.includes('label creation denied')));
+  assert.equal(f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length, 1);
+});
+
+test('not-ready skips name the reason and make only the discovery read', async (t) => {
+  for (const [issue, reason] of [
+    [{ state: 'CLOSED' }, 'closed'],
+    [{ blockedBy: [{ number: 3, state: 'OPEN' }, { number: 5, state: 'OPEN' }] }, 'blocked by #3, #5'],
+    [{ labels: [{ name: 'gg:state:ready-for-qa' }] }, 'carries State Label gg:state:ready-for-qa'],
+  ]) {
+    const f = fixture(t, { issue });
+    assert.equal(ticketResult(await run.runTarget(f.options)).outcome, 'skipped');
+    assert.ok(f.logs.includes(`#${TICKET} skipped: it is not ready: ${reason}`), JSON.stringify(f.logs));
+    assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']]);
+  }
+});
+
 test('runEpic preflight throws naming vertex and harness before any gh call or worktree', async (t) => {
   const f = fixture(t, { fullFlow: true });
   f.options.config.nodes.implementer.harness = 'nope';
@@ -159,7 +201,7 @@ test('runEpic preflight names every failing vertex in one error', async (t) => {
   assert.ok(err, 'preflight rejects the run');
   assert.match(err.message, /implementer[^]*nope|nope[^]*implementer/, 'the unknown harness is named with its vertex');
   assert.match(err.message, /reviewer/);
-  assert.match(err.message, /harness claude: not implemented/);
+  assert.equal(err.message.split('\n').find((l) => l.startsWith('vertex reviewer')), 'vertex reviewer: harness claude: not implemented');
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.worktrees(), 1, 'no worktree');
   assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
@@ -170,7 +212,8 @@ test('a node without a harness fails admission naming the vertex and node', asyn
   f.options.config.nodes.implementer.harness = null;
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'admission rejects the run');
-  assert.match(err.message, /no harness configured for node implementer; copy examples\/claude\.json or examples\/codex\.json into a user Layer/);
+  const examples = fileURLToPath(new URL('../examples/', import.meta.url));
+  assert.equal(err.message.split('\n')[1], `vertex implementer: no harness configured for node implementer; copy ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} to the user Layer at ${config.layerPath(homedir())}`);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.equal(f.worktrees(), 1, 'no worktree');
@@ -276,9 +319,15 @@ test('unknown dirty state is held with the diff stat', async (t) => {
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
   assert.ok(f.comments().some((b) => b.includes('package.json')), `a comment carries the diff stat: ${JSON.stringify(f.comments())}`);
+  assert.ok(f.comments().some((b) => b.includes(`Commit, stash or remove these changes in the worktree, then remove the ${NEEDS_HUMAN} label and re-run gg run ${TICKET}.`)));
+  assert.ok(f.comments().every((b) => !b.includes(f.root)));
   assert.equal(readFileSync(join(f.worktree, 'package.json'), 'utf8'), edited, 'the edit is untouched');
   assert.equal(readFileSync(join(f.worktree, 'notes.txt'), 'utf8'), 'my notes\n', 'the untracked file is untouched');
   assert.equal(sh(f.worktree, 'status', '--porcelain'), status);
+  sh(f.worktree, 'restore', 'package.json');
+  rmSync(join(f.worktree, 'notes.txt'));
+  f.gh.labels.delete(NEEDS_HUMAN);
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 0, 'following the advice starts the Ticket');
 });
 
 // A merge conflict left in the worktree: conflict.txt at stages 1 to 3 with the markers on disk. git write-tree refuses
@@ -295,6 +344,8 @@ function assertConflictHeld(f, results, before) {
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
   assert.ok(f.comments().some((b) => b.includes('conflict.txt')), `a comment carries the diff stat: ${JSON.stringify(f.comments())}`);
+  assert.ok(f.comments().some((b) => b.includes('merge conflict') && b.includes('Resolve and commit the conflicted paths in the worktree')));
+  assert.ok(f.comments().every((b) => !b.includes(f.root)));
   assert.equal(sh(f.worktree, 'ls-files', '-u'), before.unmerged, 'the unmerged index is untouched');
   assert.equal(readFileSync(join(f.worktree, 'conflict.txt'), 'utf8'), before.bytes, 'the conflicted file is untouched');
 }
@@ -306,6 +357,28 @@ test('a merge conflict at ticket start is held with the diff stat', async (t) =>
 
   assertConflictHeld(f, await run.runTarget(f.options), before);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
+  writeFileSync(join(f.worktree, 'conflict.txt'), 'resolved\n');
+  sh(f.worktree, 'add', 'conflict.txt');
+  sh(f.worktree, 'commit', '-q', '-m', 'resolve conflict');
+  f.gh.labels.delete(NEEDS_HUMAN);
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 0, 'following the advice starts the Ticket');
+});
+
+test('dirty hold advice explains how a held Execution Record can be inspected and restarted', async (t) => {
+  const f = fixture(t);
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    configHash: 'x', run: 'seed', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  await record.save(rec);
+  writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
+  assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held`) && b.includes('SQLite client')));
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
+  rmSync(join(f.worktree, 'human.txt'));
+  f.gh.labels.delete(NEEDS_HUMAN);
+  assert.equal(ticketResult(await run.runTarget(f.options)).outcome, 'skipped', 'removing the label alone cannot resume a finished record');
+  record.openDb(f.commonDir).prepare("DELETE FROM records WHERE kind = 'ticket' AND n = ?").run(TICKET);
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 0, 'deleting only the held row allows a fresh Execution');
 });
 
 test('a merge conflict in the worktree of a resumed execution is held, not faulted', async (t) => {
@@ -574,9 +647,10 @@ test('a human needs-human label before the first Visit prevents admission effect
 
     const results = await run.runTarget(f.options);
     assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
+    assert.equal(run.runExitCode(results), 2, 'a human needs-human label exits 2');
     assert.equal(f.harness.calls.length, 0, 'no agent started');
-    assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write, comment or recovery');
-    assert.deepEqual([...f.gh.labels].sort(), [IN_PROGRESS, NEEDS_HUMAN].sort(), 'the human hold is unchanged');
+    assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view'], ['issue', 'edit']], 'only the in-progress label is removed');
+    assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
     assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the worktree is untouched');
     if (dirty) assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n');
     const final = await record.load(f.commonDir, 'ticket', TICKET);
@@ -592,7 +666,7 @@ test('a human needs-human label prevents admission effects without a readable re
     if (corrupt) record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
     const row = f.loadRow();
 
-    await run.runTarget(f.options);
+    assert.equal(run.runExitCode(await run.runTarget(f.options)), 2, 'needs-human exits 2 even without a readable record');
     assert.equal(f.harness.calls.length, 0, 'no agent started');
     assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write or comment');
     assert.equal(f.worktrees(), 1, 'no worktree created');
@@ -673,6 +747,7 @@ test('an in-progress ticket without a record is skipped', async (t) => {
   assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`)), `the skip is logged: ${JSON.stringify(f.logs)}`);
   assert.equal(f.worktrees(), 1, 'no worktree');
   assert.deepEqual(f.labelAdds(), [], 'no label written');
+  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no repository label setup on a Stuck Ticket');
   assert.ok(f.gh.labels.has(IN_PROGRESS), 'the State Label is left for Stuck handling');
 });
 
@@ -706,9 +781,33 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
   assert.equal(run.runExitCode(results), 2);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
-  assert.ok(f.comments().some((b) => /corrupt record/.test(b) && b.includes(`ticket-${TICKET}`)),
+  assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET}`) && b.includes('SQLite client')),
     `a comment names the record: ${JSON.stringify(f.comments())}`);
+  assert.ok(f.comments().every((b) => !b.includes(f.root)), 'no comment exposes a local path');
+  assert.ok(f.logs.some((l) => l.includes(f.commonDir)), 'the local log keeps the full diagnostic');
   assert.equal(f.loadRow(), corrupt, 'the corrupt record is kept');
+});
+
+test('local paths in fault comments stay in the local Event only', async (t) => {
+  const f = fixture(t);
+  f.options.harnesses.fake.run = async () => { throw new Error(`Cannot read ${f.worktree}/secret.txt or ${f.commonDir}/gg/gg.db`); };
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 1);
+  assert.ok(f.comments().length > 0);
+  assert.ok(f.comments().every((b) => !b.includes(f.root)), JSON.stringify(f.comments()));
+  assert.ok(f.readEvents().find((e) => e.type === 'ticket_end').error.includes(f.root));
+});
+
+test('local paths in captured Check output and agent text do not reach PR bodies', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  const f = fixture(t, { responses });
+  responses['implementer/1/green/1'].response.summary = `Updated ${f.worktree}/lib/add.mjs`;
+  f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
+    ? { code: 0, output: `${golden.GREEN_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false }
+    : { code: 1, output: `${golden.RED_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false };
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
+  assert.ok(!f.gh.pr().body.includes(f.root), f.gh.pr().body);
+  assert.ok(f.gh.comments.every((c) => !c.body.includes(f.root)));
 });
 
 test('a held ticket lock skips the ticket', async (t) => {
@@ -720,6 +819,7 @@ test('a held ticket lock skips the ticket', async (t) => {
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`) && /lock/.test(l)), `the skip is logged: ${JSON.stringify(f.logs)}`);
   assert.deepEqual(f.labelAdds(), [], 'no label written');
+  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no repository label setup on a held lock');
   assert.equal(f.worktrees(), 1, 'no worktree');
 });
 
