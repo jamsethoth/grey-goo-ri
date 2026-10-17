@@ -150,6 +150,8 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
 export function fakeGh({ branch, observe = () => {} }) {
   const calls = [];
   const comments = [];
+  // The ticket's labels on GitHub, as issue edits leave them and issue view reports them.
+  const labels = new Set();
   let pr = null;
   const gh = async (args, cwd, input) => {
     observe(`gh ${args[0]} ${args[1]}`);
@@ -172,8 +174,16 @@ export function fakeGh({ branch, observe = () => {} }) {
       const n = Number(args.join(' ').match(/issues\/(\d+)\/comments/)?.[1]);
       return JSON.stringify([comments.filter((c) => c.number === n)]);
     }
-    if ((noun === 'issue' && verb === 'edit') || (noun === 'label' && verb === 'create')) return '';
+    if (noun === 'issue' && verb === 'view') {
+      return JSON.stringify({ number: Number(args[2]), title: '', body: '', state: 'OPEN',
+        labels: [...labels].map((name) => ({ name })), blockedBy: [], subIssues: [] });
+    }
+    if (noun === 'issue' && verb === 'edit') {
+      args.forEach((a, i) => { if (a === '--add-label') labels.add(args[i + 1]); if (a === '--remove-label') labels.delete(args[i + 1]); });
+      return '';
+    }
+    if (noun === 'label' && verb === 'create') return '';
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
-  return { gh, calls, comments, pr: () => pr };
+  return { gh, calls, comments, labels, pr: () => pr };
 }
