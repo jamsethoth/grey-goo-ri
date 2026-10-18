@@ -824,6 +824,23 @@ test('a crash inside the fault report replays its comment once on resume', async
   assert.deepEqual(record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)), []);
 });
 
+test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  const real = g.options.gh.commentIssue;
+  let calls = 0;
+  const gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
+  // The run stop's comment fails, so a fault reports it, and the process dies after the fault comment landed.
+  await assert.rejects(interpreter.runExecution({ ...g.options, gh, crashAt: { marker: terminalMarker(g, 'fault', 1), point: 'after-effect' } }),
+    (err) => err instanceof interpreter.CrashError);
+  const lookupDown = { ...g.options.gh, issueComments: async () => { throw new Error('gh api exited 1\nHTTP 502: Bad Gateway'); } };
+
+  const result = await interpreter.runExecution({ ...g.options, gh: lookupDown, record: await record.load(g.commonDir, 'ticket', golden.TICKET) });
+  assert.equal(result.fault, true);
+  assert.equal(result.runStop?.failureClass, 'auth', 'the saved run stop survives the failed recovery');
+  assert.equal(ticketComments(g).length, 1, 'no second comment');
+  assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
+});
+
 test('an unknown failure goes to needs-human without retry', async (t) => {
   const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'unknown' } } } });
   const result = await interpreter.runExecution(g.options);
