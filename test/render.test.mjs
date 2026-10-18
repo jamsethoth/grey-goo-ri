@@ -12,6 +12,21 @@ test('publicText skips filesystem roots and short entries while redacting deeper
     'See https://github.com/o/r/pull/7 and lib/run.mjs; [local]/lib/add.mjs');
 });
 
+test('publicText matches whole directory prefixes without changing repository paths or URLs', () => {
+  const directories = ['/tmp', '/root', 'C:\\Users\\Name\\AppData\\Local\\Temp'];
+  const unchanged = 'Fixed test/tmp.test.mjs and lib/tmpl/x.mjs; see https://x.io/rootfs; Clean up /tmpdir usage';
+  assert.equal(render.publicText(unchanged, directories), unchanged);
+  assert.equal(render.publicText('/tmp/x /tmp "/root/.agents" path=/tmp/x (/root/x) /tmp.', directories),
+    '[local]/x [local] "[local]/.agents" path=[local]/x ([local]/x) [local].');
+  assert.equal(render.publicText('C:\\Users\\Name\\AppData\\Local\\Temp\\gg-x\\wt', directories), '[local]\\gg-x\\wt');
+  assert.equal(render.publicText('file:///C:/Users/Name/AppData/Local/Temp/gg-x/wt', directories), '[local]/gg-x/wt');
+  assert.equal(render.publicText('/private/tree/file', ['/private/tree/']), '[local]/file');
+  assert.equal(render.publicText('/private/tree/tmp/x', ['/private/tree', '/tmp']), '[local]/tmp/x');
+  if (process.platform === 'win32') {
+    assert.equal(render.publicText('c:\\users\\name\\appdata\\local\\temp\\gg-x', directories), '[local]\\gg-x');
+  }
+});
+
 test('commit messages carry the stage and action trailers', () => {
   const m = marker.formatMarker(parts);
   for (const kind of ['test', 'feat', 'fix']) {
