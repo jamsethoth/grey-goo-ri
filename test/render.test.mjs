@@ -6,13 +6,22 @@ import * as marker from '../lib/marker.mjs';
 const parts = { execution: 'e1', vertex: 'implement', visit: 1, phase: 'green', ordinal: 3, run: 'r1', attempt: 1 };
 const asText = (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)]));
 
-test('fence redacts before truncating and keeps only complete lines', () => {
+test('fence redacts before truncating and prefers complete lines', () => {
   const directory = '/private/' + 'person'.repeat(20);
   const raw = `${directory}/proj/file\n${'x'.repeat(2970)}`;
   const redact = (text) => render.publicText(text, [directory]);
   assert.equal(render.fence(raw, redact), '```\n[local]/proj/file\n' + 'x'.repeat(2970) + '\n```');
   assert.equal(render.fence('x'.repeat(3100) + '\nlast line'), '```\nlast line\n```');
-  assert.equal(render.fence('x'.repeat(3100)), '```\n\n```');
+  assert.equal(render.fence('x'.repeat(3100)), '```\n' + 'x'.repeat(3000) + '\n```');
+});
+
+test('fence retains a character tail for JSON errors and overlong final lines', () => {
+  const json = JSON.stringify({ error: 'x'.repeat(3100) });
+  const http = 'gh: HTTP 422 Validation Failed\n' + 'y'.repeat(3100);
+  assert.deepEqual([render.fence(json), render.fence(http)], [
+    '```\n' + 'x'.repeat(2998) + '"}\n```',
+    '```\n' + 'y'.repeat(3000) + '\n```',
+  ]);
 });
 
 test('publicText adversarial matrix masks known directories without changing unrelated text', () => {

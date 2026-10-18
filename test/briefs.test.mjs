@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as briefs from '../lib/briefs.mjs';
-import * as render from '../lib/render.mjs';
+import { homedir } from 'node:os';
 
 const ticket = { number: 7, title: 'Add widgets', body: '## Definition of done\n- [ ] widgets', branch: 'ticket/7-add-widgets' };
 const commands = { test: 'npm test', lint: 'npm run lint' };
@@ -11,16 +11,23 @@ const redOutput = 'not ok 1 - widgets render\n  AssertionError: expected widget'
 const testFiles = ['test/widgets.test.mjs', 'test/support/widget-fixture.mjs'];
 const IMMUTABLE = /committed tests must not be changed/i;
 
-test('Brief output excerpts redact before taking complete-line tails', () => {
-  const directory = '/private/' + 'person'.repeat(20);
-  const redact = (text) => render.publicText(text, [directory]);
-  const failures = [];
+test('Brief output excerpts keep complete-line tails', () => {
   for (const [name, limit] of [['greenBrief', 4000], ['testFixBrief', 6000], ['stillGreenBrief', 3000]]) {
-    const output = `${directory}/test.mjs\n${'x'.repeat(limit - 30)}`;
-    const brief = briefs[name]({ ...base, testFiles, redOutput: output, output, redact });
-    if (!brief.includes('[local]/test.mjs') || brief.includes('personperson')) failures.push(name);
+    const tail = 'x'.repeat(limit - 20) + '\nlast line';
+    const output = 'old diagnostic '.repeat(100) + '\n' + tail;
+    const brief = briefs[name]({ ...base, testFiles, redOutput: output, output });
+    assert.ok(brief.includes('```\n' + tail + '\n```'), name);
+    assert.ok(!brief.includes('old diagnostic'), name);
   }
-  assert.deepEqual(failures, []);
+});
+
+test('agent-facing Briefs preserve distinguishable path-case failures', () => {
+  const output = `expected '${homedir().toLowerCase()}\\a' to equal '${homedir().toUpperCase()}\\a'`;
+  for (const name of ['testFixBrief', 'stillGreenBrief']) {
+    const brief = briefs[name]({ ...base, output });
+    assert.ok(brief.includes(output), name);
+    assert.ok(!brief.includes('[local]'), name);
+  }
 });
 
 const validRed = { claim: 'ok', summary: 's', tests: ['widgets render'], notes: '', diagnosis: '' };

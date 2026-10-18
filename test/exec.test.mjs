@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as exec from '../lib/exec.mjs';
+import * as render from '../lib/render.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'ff-exec-'));
 const script = (name, body) => { const p = join(tmp, name); writeFileSync(p, body); return p; };
@@ -289,11 +290,24 @@ test('run: failure message keeps the child stderr when the argument list is seve
   await assert.rejects(exec.run(process.execPath, args), (e) => e.message.includes('BOOM-STDERR'));
 });
 
-test('run keeps complete error text and arguments for redaction before publication', async () => {
+test('run keeps complete error text and summarizes oversized argument tokens', async () => {
   const diagnostic = 'x'.repeat(3990) + '/private/worktree/secret-file';
   const argument = 'y'.repeat(290) + '/private/worktree/argument';
   await assert.rejects(exec.run(process.execPath, ['-e', 'process.stderr.write(process.argv[1]); process.exit(2)', diagnostic, argument]),
-    (err) => err.message.includes(diagnostic) && err.message.includes(argument));
+    (err) => err.message.includes(diagnostic) && err.message.includes(`<${argument.length} chars>`) && !err.message.includes(argument));
+});
+
+test('a long commit message does not displace a failing hook reason from the fenced error', async () => {
+  const repo = join(tmp, 'hook-repo');
+  await exec.run('git', ['init', '-q', repo]);
+  writeFileSync(join(repo, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\necho "Hook rejected: run lint first" >&2\nexit 1\n', { mode: 0o755 });
+  const message = 'feat: Ticket\n\n' + 'Summary detail.\n'.repeat(230);
+  await assert.rejects(exec.run('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'core.hooksPath=.git/hooks', 'commit', '--allow-empty', '-q', '-m', message], { cwd: repo }),
+    (err) => {
+      assert.ok(err.stderr.includes('Hook rejected: run lint first'), 'the hook ran');
+      assert.ok(render.fence(err.message).includes('Hook rejected: run lint first'));
+      return true;
+    });
 });
 
 test('run never spawns through a shell', () => {
