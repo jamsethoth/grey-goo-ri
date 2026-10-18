@@ -7,6 +7,7 @@ import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
 import * as checks from '../lib/checks.mjs';
 import * as briefs from '../lib/briefs.mjs';
+import * as render from '../lib/render.mjs';
 import * as golden from './support/golden.mjs';
 
 const TDD_PHASES = ['red', 'still-green', 'green', 'test-fix'];
@@ -132,6 +133,10 @@ test('each public field is redacted once and sent exactly as its intent saved it
   const g = await golden.setup(t, { responses });
   g.options.ticket.title = 'Add TOKEN';
   g.options.commands = { test: 'npm test TOKEN' };
+  // Configuration reaches commit trailers and provenance cells too, each of which is public text.
+  const node = g.flow.ticket.vertices.implementer.node;
+  Object.assign(node, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
+  writeFileSync(node.persona, golden.PERSONA);
   const runShell = g.options.exec.runShell;
   g.options.exec.runShell = async (...args) => {
     const r = await runShell(...args);
@@ -147,15 +152,43 @@ test('each public field is redacted once and sent exactly as its intent saved it
   for (const text of sent) assert.doesNotMatch(text, /TOKEN(?!\*)|TOKEN\*\*/, text);
   const body = g.gh.pr().body;
   for (const field of ['TOKEN green summary', 'TOKEN item', 'TOKEN evidence', 'TOKEN setup', 'TOKEN action', 'TOKEN expected',
-    'TOKEN edge', 'TOKEN automated', 'TOKEN manual', 'TOKEN output', '`npm test TOKEN`']) {
+    'TOKEN edge', 'TOKEN automated', 'TOKEN manual', 'TOKEN output', '`npm test TOKEN`', '| model TOKEN |', '| TOKEN effort |', '| TOKEN.md@']) {
     assert.ok(body.includes(field.replace('TOKEN', 'TOKEN*')), field);
   }
+  assert.ok(messages.every((m) => m.includes('Feature-Flow-Stage: implementer fake/model TOKEN*/TOKEN* effort')), messages.join('\n'));
   assert.ok(g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')), 'the PR title');
   assert.deepEqual(intents(rec, 'commit').map((e) => e.payload.message.trim()).reverse(), messages);
   for (const e of [...intents(rec, 'comment'), ...intents(rec, 'pr-upsert')]) {
     assert.ok(g.gh.calls.some((c) => c.input === e.payload.body), `${e.action} is sent as saved`);
   }
 });
+
+// The storage cut of a long Check output must not leave the start of a known directory where redaction cannot match it.
+const ALICE = '/home/alice/' + 'n'.repeat(300);
+const longLines = {
+  'an overlong': ['/home/alice', '/home/alice/private.txt' + ' '.repeat(65_520)],
+  'a redacted overlong': [ALICE, (() => {
+    const first = `${ALICE}/private.txt `;
+    const kept = first.slice(first.indexOf('alice') + 1);
+    const rest = `${ALICE}/x `.repeat(200);
+    return first + rest + ' '.repeat(65_536 - kept.length - rest.length);
+  })()],
+};
+for (const [kind, [directory, output]] of Object.entries(longLines)) {
+  test(`${kind} Check output line publishes no fragment of a known directory`, async (t) => {
+    const g = await golden.setup(t);
+    g.options.publicText = (text) => render.publicText(text, [directory]);
+    const runShell = g.options.exec.runShell;
+    g.options.exec.runShell = async (...args) => {
+      const r = await runShell(...args);
+      return r.code === 0 ? { ...r, output } : r;
+    };
+    await interpreter.runExecution(g.options);
+    assert.ok(g.gh.pr(), 'the PR carries the Green evidence');
+    const sent = JSON.stringify(g.gh.calls.map(({ args, input }) => [args, input]));
+    for (const leak of ['alice', 'lice/']) assert.ok(!sent.includes(leak), `${kind}: ${leak} published`);
+  });
+}
 
 test('a persona file name is read from the shipped personas directory', async (t) => {
   const g = await golden.setup(t);

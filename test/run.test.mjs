@@ -487,6 +487,8 @@ test('a resumed execution on another Ticket branch or another branch of its Tick
     assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
     assert.ok(!f.gh.labels.has(IN_PROGRESS));
     assert.ok(f.comments().some((b) => b.includes(BRANCH) && b.includes(branch)), 'the hold names both branches');
+    assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held and cannot resume. Switch the worktree back to \`${BRANCH}\` or remove it.`)
+      && b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)), `the hold says how to recover: ${JSON.stringify(f.comments())}`);
     assert.equal(f.harness.calls.length, 2, 'no agent started');
     assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
     assert.equal(sh(f.worktree, 'rev-parse', branch), head, 'the other branch did not advance');
@@ -516,6 +518,9 @@ test('fresh admission refuses another Ticket\'s branch without changing it', asy
     assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
     assert.ok(f.comments().some((b) => b.includes(branch) && b.includes(`ticket/${TICKET}-*`)),
       `the hold names the actual and required branches: ${JSON.stringify(f.comments())}`);
+    assert.ok(f.comments().some((b) => b.includes(`Switch the worktree back to a \`ticket/${TICKET}-*\` branch or remove it, then remove the ${NEEDS_HUMAN} label and re-run gg run ${TICKET}.`)),
+      `the hold says how to recover: ${JSON.stringify(f.comments())}`);
+    assert.ok(f.comments().every((b) => !b.includes('`detached HEAD`')), 'a detached HEAD is not shown as a branch name');
     const held = await record.load(f.commonDir, 'ticket', TICKET);
     assert.equal(held?.state, 'held', 'the hold is recorded');
     assert.equal(held.branch, BRANCH, 'the record names the intended branch, never the one found');
@@ -558,6 +563,8 @@ test('resume refuses a recorded branch belonging to another Ticket', async (t) =
     assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
     assert.ok(f.comments().some((b) => b.includes(branch) && b.includes(`ticket/${TICKET}-*`)),
       `the hold names the recorded and required branches: ${JSON.stringify(f.comments())}`);
+    assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held and cannot resume.`)
+      && b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)), `the hold says how to recover: ${JSON.stringify(f.comments())}`);
     assert.equal(f.harness.calls.length, 0, 'no agent started');
     assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
     assert.equal(f.worktrees(), worktrees, 'no worktree was created or removed');
@@ -658,6 +665,8 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
   assert.ok(f.gh.labels.has(NEEDS_HUMAN));
   assert.ok(f.comments().some((b) => b.includes('detached HEAD') && b.includes(BRANCH)), 'the hold names the detached HEAD and recorded branch');
+    assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held and cannot resume. Switch the worktree back to \`${BRANCH}\` or remove it.`)
+      && b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)), `the hold says how to recover: ${JSON.stringify(f.comments())}`);
   assert.equal(f.harness.calls.length, 2, 'no agent started');
   assert.equal(sh(f.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD', 'HEAD stays detached');
   assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head, 'the recorded branch is untouched');

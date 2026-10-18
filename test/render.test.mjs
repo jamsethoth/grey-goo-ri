@@ -112,6 +112,11 @@ test('publicText masks percent-encoded directories in file URLs and plain text',
     ['encoded lookalike', [spaced], 'file:///C:/Users/John%20Smithson/x'],
     ['encoded space after the directory', ['/home/alice'], 'file:///home/alice%20bob/x'],
     ['encoded letter after the directory', ['/home/alic'], 'file:///home/alic%C3%A9/x'],
+    // Windows paths match case-insensitively, so an escaped letter matches the escape of its other case too.
+    ['encoded uppercase of a Windows letter', ['C:/work/José'], 'file:///C:/work/JOS%C3%89/x', '[local]/x'],
+    ['encoded lowercase of a Windows letter', [String.raw`C:\work\JOSÉ`], 'file:///C:/work/jos%c3%a9/x', '[local]/x'],
+    ['literal other case of a Windows letter', ['C:/work/José'], 'C:/WORK/JOSÉ/x', '[local]/x'],
+    ['encoded other case after a Windows directory', ['C:/work/Jos'], 'file:///C:/work/Jos%C3%89/x'],
   ]);
 });
 
@@ -194,8 +199,11 @@ test('comments are fenced and carry the marker line', () => {
 
 test('every builder redacts each public field exactly once', () => {
   const m = marker.formatMarker(parts);
-  const redact = (text) => text.replaceAll('TOKEN', 'TOKEN*');
+  // Marking `gg` too shows that no builder passes its Action Marker through the redactor.
+  const redact = (text) => text.replaceAll('TOKEN', 'TOKEN*').replaceAll('gg', 'g*g');
   const reason = { text: 'TOKEN reason' };
+  const tokenProvenance = provenance.map((p) => ({ ...p, vertex: `TOKEN ${p.vertex}`, harness: `TOKEN ${p.harness}`,
+    model: `TOKEN ${p.model}`, effort: `TOKEN ${p.effort}`, persona: `TOKEN ${p.persona}` }));
   const response = { claim: 'blocked', summary: 'TOKEN summary', notes: 'TOKEN notes', diagnosis: 'TOKEN diagnosis' };
   const tokenImpl = {
     summary: 'TOKEN summary', dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
@@ -206,17 +214,18 @@ test('every builder redacts each public field exactly once', () => {
   const review = { claim: 'changes', summary: 'TOKEN summary', dodMet: true, tddEvidenceOk: true, diagnosis: '',
     findings: [{ severity: 'major', file: 'TOKEN file', issue: 'TOKEN issue', fix: 'TOKEN fix' }] };
   const bodies = {
-    commit: render.commitMessage({ kind: 'feat', title: 'TOKEN title', ticket: 7, summary: 'TOKEN summary', vertex: 'implement',
-      harness: 'claude', model: 'opus', effort: 'high', marker: m }, redact),
-    pr: render.prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance, marker: m }, redact),
-    review: render.reviewComment(review, provenance[1], m, redact),
+    commit: render.commitMessage({ kind: 'TOKEN feat', title: 'TOKEN title', ticket: 7, summary: 'TOKEN summary', vertex: 'TOKEN implement',
+      harness: 'TOKEN claude', model: 'TOKEN opus', effort: 'TOKEN high', marker: m }, redact),
+    pr: render.prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance: tokenProvenance, marker: m }, redact),
+    review: render.reviewComment(review, tokenProvenance[1], m, redact),
     blocked: render.blockedComment(response, m, reason, redact),
-    terminal: render.terminalComment('needs-human', reason, m, 'TOKEN detail', { terminal: 'done', reason: { text: 'TOKEN earlier' } }, redact),
+    terminal: render.terminalComment('TOKEN needs-human', reason, m, 'TOKEN detail', { terminal: 'TOKEN done', reason: { text: 'TOKEN earlier' } }, redact),
     diagnosis: render.diagnosisComment(response, m, reason, redact),
   };
   for (const [name, body] of Object.entries(bodies)) {
     assert.match(body, /TOKEN\*/, name);
     assert.doesNotMatch(body, /TOKEN(?!\*)|TOKEN\*\*/, `${name}: ${body}`);
+    assert.deepEqual(asText(marker.parseMarker(body)), asText(parts), `${name}: the Action Marker is canonical`);
   }
 });
 

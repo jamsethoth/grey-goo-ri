@@ -247,3 +247,13 @@ test('Check evidence keeps raw paths and is bounded on a line boundary', () => {
     assert.equal(output, expected, `${first.length + 1 + last.length} characters`);
   }
 });
+
+test('Check evidence never keeps part of an overlong line', () => {
+  const exact = '/home/alice/private.txt' + ' '.repeat(65_520);
+  const cases = [
+    [exact, `[${exact.length} characters of output omitted]`],
+    ['x'.repeat(70_000) + '\n', '[70001 characters of output omitted]'],
+    ['a\n' + 'x'.repeat(70_000) + '\nend', 'end'],
+  ];
+  for (const [output, expected] of cases) assert.equal(checks.evidence('npm test', { output }).output, expected, `${output.length} characters`);
+});
