@@ -1541,7 +1541,8 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
 // wait longer, so contention does not become a fault.
 test('snapshot and orchestrator writes wait beyond the default lock timeout', { timeout: 180_000 }, async (t) => {
   const f = fixture(t);
-  const holder = await holdLock(t, f.commonDir, 'repo', 70_000);
+  // The holder outlasts the test and is released only after the default waiter times out, however slow the setup.
+  const holder = await holdLock(t, f.commonDir, 'repo', 180_000);
   const lockDir = join(f.commonDir, 'gg', 'locks');
   const mkdir = fsPromises.mkdir;
   const unobserve = () => { fsPromises.mkdir = mkdir; syncBuiltinESMExports(); };
