@@ -166,3 +166,63 @@ test('viewPr, prComments and issueComments read through the injected gh', async 
   assert.ok(apiCalls[0].args.some((a) => a.includes('/12/comments')));
   assert.ok(apiCalls[1].args.some((a) => a.includes('/7/comments')));
 });
+
+// GitHub matches label names case-insensitively, and a create can lose a race to another Run.
+const COLLISION = (name) => new Error(`label with name "${name}" already exists; use --force to update its color and description`);
+const labelsApi = (args) => args[0] === 'api' && args.at(-1).includes('/labels');
+
+test('ensureLabels accepts differently cased existing State Labels', async () => {
+  const { gh, calls } = fakeGh((args) => labelsApi(args) ? [
+    [{ name: 'gg:STATE:in-progress' }, { name: 'unrelated' }], [{ name: 'GG:state:Needs-Human' }, { name: 'Gg:State:Ready-For-QA' }],
+  ] : '');
+  github.setGh(gh);
+  await github.ensureLabels('/repo', { prefix: 'Gg' });
+  assert.equal(calls.filter(({ args }) => labelsApi(args)).length, 1, 'one label list read');
+  assert.deepEqual(calls.filter(({ args }) => args[0] === 'label').map(({ args }) => args[2]), ['Gg:state:needs-replan'],
+    'only the missing label is created, in the configured spelling');
+  assert.ok(calls.every(({ args }) => !args.includes('--force')));
+});
+
+test('ensureLabels accepts a concurrent create after confirming presence', async () => {
+  let reads = 0;
+  const all = labels.STATE_LABELS.map((n) => ({ name: `GG:state:${n}` }));
+  const { gh, calls } = fakeGh((args) => {
+    if (labelsApi(args)) return ++reads === 1 ? [[]] : [all];
+    if (args[0] === 'label') throw COLLISION(args[2]);
+    return '';
+  });
+  github.setGh(gh);
+  await github.ensureLabels('/repo');
+  assert.equal(calls.filter(({ args }) => args[0] === 'label').length, 1, 'a confirmed label is not created again');
+  assert.equal(reads, 2, 'the failed create is confirmed by one more read');
+  assert.ok(calls.every(({ args }) => !args.includes('--force')));
+});
+
+test('ensureLabels does not accept an unconfirmed failed create', async () => {
+  const denied = new Error('HTTP 403: label creation denied');
+  for (const [name, reread] of [['absent', () => [[]]], ['failed re-read', () => { throw new Error('HTTP 502'); }], ['malformed JSON', () => 'not json']]) {
+    let reads = 0;
+    const { gh } = fakeGh((args) => {
+      if (labelsApi(args)) return ++reads === 1 ? [[]] : reread();
+      if (args[0] === 'label') throw denied;
+      return '';
+    });
+    github.setGh(gh);
+    await assert.rejects(github.ensureLabels('/repo'), (err) => err === denied, name);
+  }
+});
+
+test('setLabels reports an unconfirmed setup failure without editing the issue', async () => {
+  const logs = [], events = [];
+  const { gh, calls } = fakeGh((args) => {
+    if (labelsApi(args)) return [[]];
+    if (args[0] === 'label') throw new Error('HTTP 403: label creation denied');
+    return '';
+  });
+  github.setGh(gh);
+  const ok = await github.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo',
+    { log: (m) => logs.push(m), ev: (t, d) => events.push([t, d]), ensureLabels: () => github.ensureLabels('/repo') });
+  assert.equal(ok, false);
+  assert.ok(events.some(([t, d]) => t === 'label_failed' && d.error.includes('label creation denied')), JSON.stringify(events));
+  assert.ok(!calls.some(({ args }) => args[0] === 'issue' && args[1] === 'edit'), 'the issue is not edited');
+});

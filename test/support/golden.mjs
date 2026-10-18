@@ -155,6 +155,7 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
   const labels = new Set();
   const available = new Set(repoLabels);
   let pr = null;
+  const named = (set, name) => [...set].find((l) => l.toLowerCase() === name.toLowerCase());
   const gh = async (args, cwd, input) => {
     observe(`gh ${args[0]} ${args[1]}`);
     calls.push({ args, cwd, input });
@@ -181,12 +182,16 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
       return JSON.stringify({ number: Number(args[2]), title: '', body: '', state: 'OPEN',
         labels: [...labels].map((name) => ({ name })), blockedBy: [], subIssues: [] });
     }
+    // GitHub resolves label names case-insensitively and keeps the repository's spelling.
     if (noun === 'issue' && verb === 'edit') {
-      args.forEach((a, i) => { if (a === '--add-label') labels.add(args[i + 1]); if (a === '--remove-label') labels.delete(args[i + 1]); });
+      args.forEach((a, i) => {
+        if (a === '--add-label') labels.add(named(available, args[i + 1]) ?? args[i + 1]);
+        if (a === '--remove-label') labels.delete(named(labels, args[i + 1]));
+      });
       return '';
     }
     if (noun === 'label' && verb === 'create') {
-      if (available.has(args[2])) throw new Error(`label ${args[2]} already exists`);
+      if (named(available, args[2])) throw new Error(`label with name "${args[2]}" already exists; use --force to update its color and description`);
       available.add(args[2]);
       return '';
     }

@@ -163,7 +163,26 @@ test('a State Label creation failure uses the label-failure log, Event and exit 
   assert.equal(ticketResult(results).labelFailed, true);
   assert.ok(f.logs.some((l) => l.includes('label creation denied')));
   assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET && e.error.includes('label creation denied')));
-  assert.equal(f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length, 2, 'a failed setup is retried at the next label write');
+  // Each failed create is confirmed by one more read before the setup fails, and the next label write repeats both.
+  assert.equal(f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length, 4, 'a failed setup is retried at the next label write');
+});
+
+test('a concurrent State Label create does not fail the Run', async (t) => {
+  const f = fixture(t);
+  // Another Run creates every State Label between this Run's label read and its creates.
+  let reads = 0;
+  const inner = f.gh.gh;
+  github.setGh(async (args, cwd, input) => {
+    if (args[0] === 'api' && args.at(-1).includes('/labels') && ++reads === 1) {
+      f.gh.calls.push({ args, cwd, input });
+      return JSON.stringify([[]]);
+    }
+    return inner(args, cwd, input);
+  });
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(f.readEvents().filter((e) => e.type === 'label_failed').length, 0);
+  assert.ok(f.gh.labels.has('gg:state:ready-for-qa'));
 });
 
 test('a transient State Label setup failure is retried by the later label write', async (t) => {
