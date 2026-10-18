@@ -280,9 +280,9 @@ two, so this is a correction, not a port.
 Admission outcomes are Terminals too: gg creates the record first when none exists, saves the decision and its Terminal
 Reason before the first effect, and an Execution has landed only once its ticket end event exists. A decided hold or
 abandonment whose comment or label fails is not a fault: the run exits 1 with that intent open, and the next run
-finishes those reporting actions, and only those, before it admits any work. A landed hold decided before any
-Execution ran restarts as a new Execution once a human removes needs-human; a held Execution that had already run
-waits for its row to be deleted.
+finishes those reporting actions, and only those, before it admits any work. A landed hold decided when no record
+existed before it restarts as a new Execution once a human removes needs-human; a hold on a record that already
+existed waits for its row to be deleted.
 
 | Admission outcome | Lifecycle events | Exit |
 |---|---|---|
