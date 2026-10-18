@@ -843,6 +843,36 @@ test('an interrupted reset whose intent predates the index fingerprint is held',
   assert.equal(f.harness.calls.length, 2, 'no agent started');
 });
 
+test('a Run resumes a partial restore without repeating the agent call', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  // The agent changes an ignored Protected File and adds another: an Integrity Violation, whose rollback restores both.
+  Object.assign(responses['implementer/1/red/1'].files, { '.claude/settings.local.json': '{"agent":true}\n', '.claude/agent.json': '{}\n' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  mkdirSync(join(f.worktree, '.claude'));
+  writeFileSync(join(f.worktree, '.claude', '.gitignore'), '*\n');
+  writeFileSync(join(f.worktree, '.claude', 'settings.local.json'), '{"owner":true}\n');
+  let reset = false;
+  const git = { ...gitModule, resetTo: async (...args) => { await gitModule.resetTo(...args); reset = true; } };
+  // Crashed after the extra is removed and the changed file deleted, before its rewrite.
+  const restore = golden.crashFs(t, f.worktree, () => reset, { op: 'rm', n: 2, after: true });
+  const seeded = await seedExecution(f, { git });
+  restore();
+  assert.ok(!existsSync(join(f.worktree, '.claude', 'settings.local.json')), 'the crash came mid-restore');
+  assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['reset']);
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.equal(f.harness.calls.length, 1, 'no agent call is repeated');
+  assert.equal(readFileSync(join(f.worktree, '.claude', 'settings.local.json'), 'utf8'), '{"owner":true}\n');
+  assert.ok(!existsSync(join(f.worktree, '.claude', 'agent.json')), 'the extra stays removed');
+  const final = await record.load(f.commonDir, 'ticket', TICKET);
+  assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its Integrity Violation');
+  assert.deepEqual(final.history.map((h) => h.kind), ['integrity violation']);
+  const reset1 = final.log.filter((e) => e.action === 'reset').map((e) => e.step);
+  assert.deepEqual(reset1, ['intent', 'evidence', 'complete']);
+});
+
 test('an admission failure on an active execution is reported as a fault', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
   const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });

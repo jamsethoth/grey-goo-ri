@@ -2,6 +2,7 @@
 // a fake test runner, the fake harness, and every process call tagged with the activity it observed.
 import childProcess, { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -9,6 +10,7 @@ import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
 import * as events from '../../lib/events.mjs';
+import * as interpreter from '../../lib/interpreter.mjs';
 import * as labelModule from '../../lib/labels.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 
@@ -198,4 +200,21 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
   return { gh, calls, comments, labels, repoLabels: available, pr: () => pr };
+}
+
+// Crashes the `n`th `op` (rm or writeFile) on a path under `root` once `active()` holds, after the call has run when
+// `after` is set. lib modules see it through their node:fs/promises imports; it is undone by the returned function or
+// when the test ends.
+export function crashFs(t, root, active, { op, n, after = false }) {
+  const original = fsPromises[op];
+  let calls = 0;
+  fsPromises[op] = async (path, ...rest) => {
+    if (!active() || !String(path).startsWith(root) || ++calls !== n) return original(path, ...rest);
+    if (after) await original(path, ...rest);
+    throw new interpreter.CrashError(`crash at ${op} ${n}`);
+  };
+  syncBuiltinESMExports();
+  const restore = () => { fsPromises[op] = original; syncBuiltinESMExports(); };
+  t.after(restore);
+  return restore;
 }
