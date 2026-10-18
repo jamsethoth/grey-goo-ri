@@ -38,7 +38,7 @@ function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 
 // A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view.
-function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], harness: harnessName, fullFlow, issue = {} } = {}) {
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'gg-run-'));
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
@@ -56,7 +56,7 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
   sh(mainRoot, 'push', '-q', 'origin', 'main');
   const base = sh(mainRoot, 'rev-parse', 'main');
 
-  const fake = golden.fakeGh({ branch: BRANCH, repoLabels });
+  const fake = golden.fakeGh({ branch, repoLabels });
   for (const l of labels) fake.labels.add(l);
   const inner = fake.gh;
   fake.gh = async (args, cwd, input) => {
@@ -162,7 +162,25 @@ test('a State Label creation failure uses the label-failure log, Event and exit 
   assert.equal(ticketResult(results).labelFailed, true);
   assert.ok(f.logs.some((l) => l.includes('label creation denied')));
   assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET && e.error.includes('label creation denied')));
-  assert.equal(f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length, 1);
+  assert.equal(f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length, 2, 'a failed setup is retried at the next label write');
+});
+
+test('a transient State Label setup failure is retried by the later label write', async (t) => {
+  const f = fixture(t);
+  let reads = 0;
+  const inner = f.gh.gh;
+  github.setGh(async (args, cwd, input) => {
+    if (args[0] === 'api' && args.at(-1).includes('/labels') && ++reads === 1) {
+      f.gh.calls.push({ args, cwd, input });
+      throw new Error('HTTP 502: temporary label read failure');
+    }
+    return inner(args, cwd, input);
+  });
+  const results = await run.runTarget(f.options);
+  assert.equal(reads, 2, 'the terminal label write retries setup');
+  assert.equal(run.runExitCode(results), 1, 'the first failure is still reported');
+  assert.equal(f.readEvents().filter((e) => e.type === 'label_failed').length, 1);
+  assert.ok(f.gh.labels.has('gg:state:ready-for-qa'), 'the later label write succeeds');
 });
 
 test('not-ready skips name the reason and make only the discovery read', async (t) => {
@@ -367,12 +385,16 @@ test('a merge conflict at ticket start is held with the diff stat', async (t) =>
 test('dirty hold advice explains how a held Execution Record can be inspected and restarted', async (t) => {
   const f = fixture(t);
   await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  f.options.cwd = f.worktree;
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
     configHash: 'x', run: 'seed', worktree: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(rec);
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held`) && b.includes('SQLite client')));
+  assert.ok(f.comments().some((b) => b.includes(`at .git/gg/gg.db relative to the main checkout, table records, where kind = 'ticket' AND n = ${TICKET}`)));
+  assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir, 'the linked worktree uses the main checkout State Database');
+  assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
   rmSync(join(f.worktree, 'human.txt'));
   f.gh.labels.delete(NEEDS_HUMAN);
@@ -774,6 +796,8 @@ test('a finished record with open intents is not resumed', async (t) => {
 
 test('a corrupt record found at admission is held through reconcile', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  f.options.cwd = f.worktree;
   const corrupt = '{ "schemaVersion": 1, "log": [';
   record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, corrupt);
 
@@ -783,6 +807,9 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
   assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET}`) && b.includes('SQLite client')),
     `a comment names the record: ${JSON.stringify(f.comments())}`);
+  assert.ok(f.comments().some((b) => b.includes(`at .git/gg/gg.db relative to the main checkout, table records, where kind = 'ticket' AND n = ${TICKET}`)));
+  assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir);
+  assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.ok(f.comments().every((b) => !b.includes(f.root)), 'no comment exposes a local path');
   assert.ok(f.logs.some((l) => l.includes(f.commonDir)), 'the local log keeps the full diagnostic');
   assert.equal(f.loadRow(), corrupt, 'the corrupt record is kept');
@@ -802,12 +829,28 @@ test('local paths in captured Check output and agent text do not reach PR bodies
   const responses = structuredClone(golden.firstVisitResponses);
   const f = fixture(t, { responses });
   responses['implementer/1/green/1'].response.summary = `Updated ${f.worktree}/lib/add.mjs`;
+  responses['implementer/1/red/1'].response.summary = `Tested ${f.worktree}/test/add.test.mjs`;
   f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
     ? { code: 0, output: `${golden.GREEN_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false }
     : { code: 1, output: `${golden.RED_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false };
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
   assert.ok(!f.gh.pr().body.includes(f.root), f.gh.pr().body);
   assert.ok(f.gh.comments.every((c) => !c.body.includes(f.root)));
+  assert.ok(!sh(join(f.root, 'origin.git'), 'log', '--format=%B', '--all').includes(f.root), 'pushed commit messages contain no local root');
+  const rec = await record.load(f.commonDir, 'ticket', TICKET);
+  const commits = rec.log.filter((e) => e.step === 'intent' && e.action === 'commit');
+  assert.equal(commits.length, 2);
+  assert.ok(commits.every((e) => !e.payload.message.includes(f.root)), 'commit replay payloads are redacted before the intent is saved');
+});
+
+test('Ticket branch names use the public title before slugifying', async (t) => {
+  const issue = {};
+  const branch = 'ticket/15-add-two-numbers-local';
+  const f = fixture(t, { issue, branch });
+  issue.title = `Add two numbers ${f.mainRoot}`;
+  const results = await run.runTarget(f.options);
+  assert.equal(sh(join(f.root, 'origin.git'), 'for-each-ref', '--format=%(refname:short)', 'refs/heads/ticket/'), branch);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
 });
 
 test('a held ticket lock skips the ticket', async (t) => {

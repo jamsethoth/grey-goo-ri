@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as labels from '../lib/labels.mjs';
+import { fileURLToPath } from 'node:url';
 
 test('label names carry the configured prefix and family', () => {
   const gg = labels.labels('gg');
@@ -27,4 +28,11 @@ test('parse recognises state, await and decide labels and rejects others', () =>
   assert.equal(gg.parse('x:state:in-progress'), null);
   assert.equal(gg.parse('gg:other:thing'), null);
   assert.equal(gg.parse('gg:decide:qa-approval'), null);
+});
+test('Label names never expose the local installation directory in a configured prefix', () => {
+  const directory = fileURLToPath(new URL('../', import.meta.url));
+  const names = labels.labels(directory);
+  for (const name of [names.state('in-progress'), names.await('qa'), names.decide('qa', 'approved')]) {
+    assert.ok(!name.includes(directory), name);
+  }
 });

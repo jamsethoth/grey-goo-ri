@@ -6,6 +6,12 @@ import * as marker from '../lib/marker.mjs';
 const parts = { execution: 'e1', vertex: 'implement', visit: 1, phase: 'green', ordinal: 3, run: 'r1', attempt: 1 };
 const asText = (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)]));
 
+test('publicText skips filesystem roots and short entries while redacting deeper directories', () => {
+  const text = 'See https://github.com/o/r/pull/7 and lib/run.mjs; /private/worktree/lib/add.mjs';
+  assert.equal(render.publicText(text, ['/', 'C:\\', '\\\\server\\share\\', 'x', '/a', '/private/worktree']),
+    'See https://github.com/o/r/pull/7 and lib/run.mjs; [local]/lib/add.mjs');
+});
+
 test('commit messages carry the stage and action trailers', () => {
   const m = marker.formatMarker(parts);
   for (const kind of ['test', 'feat', 'fix']) {
