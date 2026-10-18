@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import * as config from '../lib/config.mjs';
@@ -467,32 +467,157 @@ test('a commit interrupted before it landed is held once a human changed the wor
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
 });
 
-test('a resumed execution on another Ticket branch is held before recovery', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
-  const seeded = await crashBeforeCommit(f);
-  const branch = 'ticket/99-another-ticket';
-  sh(f.worktree, 'checkout', '-q', '-b', branch);
-  const head = sh(f.worktree, 'rev-parse', 'HEAD');
-  const before = await integrity.snapshot(f.worktree);
-  const implementation = readFileSync(join(f.worktree, 'lib', 'add.mjs'), 'utf8');
-  f.gh.calls.length = 0;
+test('a resumed execution on another Ticket branch or another branch of its Ticket is held before recovery', async (t) => {
+  for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-attempt`]) {
+    const f = fixture(t, { labels: [IN_PROGRESS] });
+    const seeded = await crashBeforeCommit(f);
+    sh(f.worktree, 'checkout', '-q', '-b', branch);
+    const head = sh(f.worktree, 'rev-parse', 'HEAD');
+    const before = await integrity.snapshot(f.worktree);
+    const implementation = readFileSync(join(f.worktree, 'lib', 'add.mjs'), 'utf8');
+    f.gh.calls.length = 0;
+
+    const results = await run.runTarget(f.options);
+    assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+    assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+    assert.ok(!f.gh.labels.has(IN_PROGRESS));
+    assert.ok(f.comments().some((b) => b.includes(BRANCH) && b.includes(branch)), 'the hold names both branches');
+    assert.equal(f.harness.calls.length, 2, 'no agent started');
+    assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
+    assert.equal(sh(f.worktree, 'rev-parse', branch), head, 'the other branch did not advance');
+    assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head, 'the recorded branch did not advance');
+    assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the index and worktree are untouched');
+    assert.equal(readFileSync(join(f.worktree, 'lib', 'add.mjs'), 'utf8'), implementation, 'the implementation is kept');
+    assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
+    const final = await record.load(f.commonDir, 'ticket', TICKET);
+    assert.equal(final.state, 'held');
+    assert.equal(final.branch, BRANCH);
+    assert.deepEqual(record.openIntents(final), record.openIntents(seeded), 'the intended commit is kept');
+  }
+});
+
+test('fresh admission refuses another Ticket\'s branch without changing it', async (t) => {
+  // ticket/150-* shares ticket 15's digits, so the prefix must end at the number.
+  for (const branch of ['ticket/99-other', 'ticket/150-other']) {
+    const f = fixture(t);
+    await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    sh(f.worktree, 'checkout', '-q', '-b', branch);
+    const head = sh(f.worktree, 'rev-parse', 'HEAD');
+    const before = await integrity.snapshot(f.worktree);
+
+    const results = await run.runTarget(f.options);
+    assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+    assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+    assert.ok(f.comments().some((b) => b.includes(branch) && b.includes(`ticket/${TICKET}-*`)),
+      `the hold names the actual and required branches: ${JSON.stringify(f.comments())}`);
+    assert.equal(f.loadRow(), undefined, 'no Execution Record adopts the branch');
+    assert.equal(f.harness.calls.length, 0, 'no agent started');
+    assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
+    assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
+    assert.equal(sh(f.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
+    assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the index and files are untouched');
+    assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${branch}`), '', 'nothing was pushed');
+  }
+});
+
+test('fresh admission reuses its Ticket branch after a title change', async (t) => {
+  const branch = `ticket/${TICKET}-old-title`;
+  const f = fixture(t, { branch, issue: { title: 'A new title' } });
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
 
   const results = await run.runTarget(f.options);
-  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
-  assert.ok(!f.gh.labels.has(IN_PROGRESS));
-  assert.ok(f.comments().some((b) => b.includes(BRANCH) && b.includes(branch)), 'the hold names both branches');
-  assert.equal(f.harness.calls.length, 2, 'no agent started');
-  assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
-  assert.equal(sh(f.worktree, 'rev-parse', branch), head, 'the other Ticket branch did not advance');
-  assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head, 'the recorded branch did not advance');
-  assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the index and worktree are untouched');
-  assert.equal(readFileSync(join(f.worktree, 'lib', 'add.mjs'), 'utf8'), implementation, 'the implementation is kept');
-  assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
-  const final = await record.load(f.commonDir, 'ticket', TICKET);
-  assert.equal(final.state, 'held');
-  assert.equal(final.branch, BRANCH);
-  assert.deepEqual(record.openIntents(final), record.openIntents(seeded), 'the intended commit is kept');
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).branch, branch);
+  assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${branch}`).split('\t')[0], sh(f.worktree, 'rev-parse', 'HEAD'));
+  assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/ticket/${TICKET}-a-new-title`), '', 'no branch from the new title');
+});
+
+test('resume refuses a recorded branch belonging to another Ticket', async (t) => {
+  const branch = 'ticket/99-other';
+  for (const existing of [true, false]) {
+    const f = fixture(t, { labels: [IN_PROGRESS] });
+    if (existing) await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
+    const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+      configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch, base: 'main' });
+    await record.save(rec);
+    const worktrees = f.worktrees();
+    const before = existing && await integrity.snapshot(f.worktree);
+
+    const results = await run.runTarget(f.options);
+    assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+    assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+    assert.ok(f.comments().some((b) => b.includes(branch) && b.includes(`ticket/${TICKET}-*`)),
+      `the hold names the recorded and required branches: ${JSON.stringify(f.comments())}`);
+    assert.equal(f.harness.calls.length, 0, 'no agent started');
+    assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
+    assert.equal(f.worktrees(), worktrees, 'no worktree was created or removed');
+    assert.equal(existsSync(f.worktree), existing, 'a missing worktree is not recreated');
+    if (existing) {
+      assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
+      assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the index and files are untouched');
+    } else assert.equal(sh(f.mainRoot, 'branch', '--list', branch), '', 'the foreign branch was not created');
+    const final = await record.load(f.commonDir, 'ticket', TICKET);
+    assert.equal(final.state, 'held');
+    assert.equal(final.branch, branch);
+    assert.deepEqual(record.openIntents(final), record.openIntents(rec));
+  }
+});
+
+const pathKey = (p) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
+
+test('admission detects an agent overwrite of an idle sibling as an Integrity Violation', async (t) => {
+  for (const [seeded, siblingRecord] of [[false, false], [false, true], [true, false], [true, true]]) {
+    const responses = structuredClone(golden.firstVisitResponses);
+    const f = fixture(t, { responses, labels: seeded ? [IN_PROGRESS] : [] });
+    // Outside the configured worktree root, so only git's worktree list can find it.
+    const sibling = join(f.root, 'elsewhere', 'ticket-99');
+    sh(f.mainRoot, 'worktree', 'add', '-q', '-b', 'ticket/99-other', sibling, 'main');
+    if (siblingRecord) {
+      await record.save(record.createExecution({ commonDir: f.commonDir, ticket: 99, epic: null, flow: { name: 'default', entry: 'implementer' },
+        configHash: 'x', run: '20261016T000000Z-seed00', worktree: sibling, branch: 'ticket/99-other', base: 'main' }));
+    }
+    if (seeded) {
+      await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+      await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+        configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
+    }
+    responses['implementer/1/red/1'].files[relative(f.worktree, join(sibling, 'package.json'))] = '{ "overwritten": true }\n';
+
+    const results = await run.runTarget(f.options);
+    const label = JSON.stringify({ seeded, siblingRecord });
+    assert.equal(run.runExitCode(results), 2, `${label} ${JSON.stringify(results)}`);
+    const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === TICKET && e.phase === 'red' && e.agent);
+    assert.equal(red?.outcome, 'integrity-violation', label);
+    assert.equal(red.rule, 'integrity-violation');
+    assert.ok(red.violations.some((v) => pathKey(v.worktree) === pathKey(sibling) && v.surface === 'tree'), JSON.stringify(red.violations));
+    assert.equal(f.harness.calls.length, 1, 'no agent call after the violation');
+    assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
+    assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${BRANCH}`), '', 'nothing was pushed');
+    assert.equal(sh(f.worktree, 'rev-parse', 'HEAD'), f.base, 'the own worktree is back at its baseline head');
+    assert.equal(sh(f.worktree, 'status', '--porcelain'), '', 'the own worktree is restored');
+  }
+});
+
+test('admission excludes non-ticket worktrees from sibling assertions', async (t) => {
+  const f = fixture(t);
+  // git write-tree refuses an unmerged index, so a snapshot of this worktree would fault.
+  const scratch = join(f.root, 'scratch');
+  sh(f.mainRoot, 'worktree', 'add', '-q', '-b', 'scratch', scratch, 'main');
+  conflict(scratch);
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(ticketResult(results).outcome, 'done');
+});
+
+test('sibling discovery failure prevents agent execution', async (t) => {
+  const f = fixture(t);
+  f.options.git = { ...gitModule, listWorktrees: async () => { throw new Error('fatal: cannot list worktrees'); } };
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
+  assert.match(ticketResult(results).error, /cannot list worktrees/);
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
 });
 
 test('a resumed execution detached at the recorded SHA is held before recovery', async (t) => {
