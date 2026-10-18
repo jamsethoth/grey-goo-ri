@@ -464,6 +464,7 @@ test('a needs-human label overrides a mid-action record', async (t) => {
 
   const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
   assert.equal(decided.next, 'abandon');
+  assert.equal((await loadTicket(g)).state, 'active', 'Reconciliation only decides the abandonment');
 
   await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
   assert.equal((await loadTicket(g)).state, 'abandoned');
@@ -472,6 +473,52 @@ test('a needs-human label overrides a mid-action record', async (t) => {
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
   assert.equal(g.gh.pr(), null);
 });
+
+test('dirtyState and humanOverride return decisions without finalizing the record', async (t) => {
+  const g = await golden.setup(t);
+  await crashed(g, EFFECTS.commit.at, 'before-effect');
+  writeFileSync(join(g.worktree, 'human.txt'), 'mine\n');
+  const row = () => record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET).json;
+  const before = row();
+  const rec = await loadTicket(g);
+
+  assert.ok(await reconcile.dirtyState(rec, { git: g.options.git, worktree: g.worktree }), 'the human file is unknown dirty state');
+  assert.equal(rec.state, 'active');
+  assert.equal(row(), before, 'the hold is only decided');
+  assert.equal((await reconcile.humanOverride(rec, [NEEDS_HUMAN], 'gg'))?.next, 'abandon');
+  assert.equal(rec.state, 'active');
+  assert.equal(row(), before, 'the abandonment is only decided');
+});
+
+// Reconciliation holds a moved branch; the hold's comment then crashes. Any git call on resume would replay or check the
+// older commit, which a hold only reports.
+for (const point of Object.keys(POINTS)) {
+  test(`a crash ${point} of a hold comment resumes its reporting Actions without replaying an older commit`, async (t) => {
+    const g = await golden.setup(t);
+    await crashed(g, EFFECTS.commit.at, 'before-effect');
+    golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+    const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+    const hold = markerOf(g.rec, 'needs-human', 1, 'needs-human', 1);
+    await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point } }),
+      (err) => err instanceof interpreter.CrashError);
+    const mid = await loadTicket(g);
+    const older = record.openIntents(mid).filter((e) => e.action === 'commit');
+    assert.equal(older.length, 1);
+    const git = new Proxy({}, { get: (_, verb) => () => { throw new Error(`git ${String(verb)} called`); } });
+
+    const result = await interpreter.runExecution({ ...g.options, git, record: mid });
+    assert.equal(result.outcome, 'needs-human');
+    assert.equal(result.held, true, JSON.stringify(result));
+    const final = await loadTicket(g);
+    assert.equal(final.state, 'held');
+    assert.deepEqual(record.openIntents(final), older, 'only the older commit intent stays open, untouched');
+    assert.equal(withMarker(g.gh.comments.map((c) => c.body), hold).length, 1, 'the hold comment is posted once');
+    assert.ok(g.gh.labels.has(NEEDS_HUMAN));
+    assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+    assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
+    assert.equal(g.harness.calls.length, 2);
+  });
+}
 
 test('a vertex missing from the flow holds the ticket', async (t) => {
   const g = await golden.setup(t);
