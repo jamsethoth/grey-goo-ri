@@ -419,7 +419,9 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
   assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir, 'the linked worktree uses the main checkout State Database');
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
-  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
+  const held = await record.load(f.commonDir, 'ticket', TICKET);
+  assert.equal(held.state, 'held');
+  assert.doesNotMatch(held.terminalReason.text, /DELETE FROM|SQLite/, 'the recovery advice is in the comment, not the Terminal Reason');
   rmSync(join(f.worktree, 'human.txt'));
   f.gh.labels.delete(NEEDS_HUMAN);
   assert.equal(ticketResult(await run.runTarget(f.options)).outcome, 'skipped', 'removing the label alone cannot resume a finished record');
@@ -1008,6 +1010,7 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason', 
     assert.ok(evs.every((e) => e.execution === rec.execution && e.run === lastRun(f)), 'one Execution and Run throughout');
     assert.equal(evs.at(-1).outcome, 'needs-human');
     assert.deepEqual(evs.at(-1).reason, rec.terminalReason);
+    assert.doesNotMatch(rec.terminalReason.text, /re-run|DELETE FROM/, 'the Terminal Reason is one sentence; the advice is in the comment');
     assert.equal(f.harness.calls.length, 0, 'no agent started');
   }
 });
@@ -1093,6 +1096,51 @@ test('human override abandons a pending hold before any label cleanup', async (t
     assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the worktree is untouched');
     assert.equal(f.harness.calls.length, 2, 'no agent ran');
   }
+});
+
+test('a pending fault report whose comment lookup fails stays pending and posts no second comment', async (t) => {
+  const f = fixture(t);
+  f.options.git = { ...gitModule, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
+  const inner = f.gh.gh;
+  let mode = 'crash';
+  github.setGh(async (args, cwd, input) => {
+    if (mode === 'crash' && args[0] === 'issue' && args[1] === 'comment') {
+      await inner(args, cwd, input);
+      throw new interpreter.CrashError('crash after the fault comment landed');
+    }
+    if (mode === 'lookup' && args[0] === 'api' && /issues\/\d+\/comments$/.test(args.at(-1))) {
+      f.gh.calls.push({ args, cwd, input });
+      throw new Error('gh api exited 1\nHTTP 502: Bad Gateway');
+    }
+    return inner(args, cwd, input);
+  });
+
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
+  const mid = await loadTicket(f);
+  const [open] = record.openIntents(mid ?? { log: [] }).filter((e) => e.action === 'comment');
+  assert.ok(open, 'the landed fault comment waits for its completion');
+  assert.equal(f.comments().length, 1);
+
+  mode = 'lookup';
+  const second = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(second), 1, JSON.stringify(second));
+  assert.match(ticketResult(second).error, /HTTP 502/);
+  assert.equal(f.comments().length, 1, 'the stored payload is not posted again');
+  const still = await loadTicket(f);
+  assert.deepEqual(still.terminalReason, mid.terminalReason, 'the fault keeps its Terminal Reason');
+  assert.deepEqual(still.terminalStop, mid.terminalStop);
+  assert.equal(endsOf(f, mid.execution).length, 0, 'the fault stays pending');
+
+  mode = null;
+  const third = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(third), 1, 'a fault exits 1');
+  assert.equal(f.comments().length, 1, 'the marker found the landed comment');
+  const final = await loadTicket(f);
+  assert.deepEqual(final.log.filter((e) => e.marker === open.marker).map((e) => e.step), ['intent', 'evidence', 'complete']);
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the label lands');
+  assert.equal(final.state, 'fault');
+  assert.equal(endsOf(f, final.execution).length, 1);
+  assert.match(endsOf(f, final.execution)[0].error, /disk full/);
 });
 
 test('a Terminal saved before ticket_end resumes finalization exactly once', async (t) => {
