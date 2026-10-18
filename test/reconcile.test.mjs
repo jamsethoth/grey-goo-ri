@@ -490,6 +490,14 @@ test('dirtyState and humanOverride return decisions without finalizing the recor
   assert.equal(row(), before, 'the abandonment is only decided');
 });
 
+test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
+  const g = await golden.setup(t);
+  golden.sh(g.worktree, 'config', 'core.quotePath', 'true');
+  writeFileSync(join(g.worktree, 'café notes.txt'), 'mine\n');
+  const { stat } = await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree });
+  assert.ok(stat.includes(' café notes.txt (untracked)\n'), stat);
+});
+
 // Reconciliation holds a moved branch; the hold's comment then crashes. Any git call on resume would replay or check the
 // older commit, which a hold only reports.
 for (const point of Object.keys(POINTS)) {

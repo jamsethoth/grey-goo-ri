@@ -106,6 +106,57 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.equal(g.rec.sessions['implementer/1/red'].sessionId, 'fake-session-1');
 });
 
+test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
+  const g = await golden.setup(t);
+  const path = join(g.worktree, 'test', 'add.test.mjs');
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (...args) => {
+    const r = await runShell(...args);
+    return { ...r, output: `${r.output}\n    at (${path}:1:1)` };
+  };
+  await interpreter.runExecution(g.options);
+  const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.ok(rec.outputs.red.evidence.output.includes(path), rec.outputs.red.evidence.output);
+  assert.ok(g.harness.calls[1].brief.includes(`${path}:1:1`), 'the green Brief quotes the raw path');
+  assert.ok(!g.gh.pr().body.includes(g.root), 'the PR body does not');
+});
+
+test('each public field is redacted once and sent exactly as its intent saved it', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'].response.summary = 'TOKEN red summary';
+  Object.assign(responses['implementer/1/green/1'].response, {
+    summary: 'TOKEN green summary', dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
+    qa: { setup: 'TOKEN setup', steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
+      edgeCases: ['TOKEN edge'], automated: ['TOKEN automated'], manual: ['TOKEN manual'] },
+  });
+  const g = await golden.setup(t, { responses });
+  g.options.ticket.title = 'Add TOKEN';
+  g.options.commands = { test: 'npm test TOKEN' };
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (...args) => {
+    const r = await runShell(...args);
+    return { ...r, output: `${r.output}\nTOKEN output` };
+  };
+  // Each pass marks the field again, so a second redaction shows as TOKEN** and a missed one as a bare TOKEN.
+  g.options.publicText = (text) => text.replaceAll('TOKEN', 'TOKEN*');
+  await interpreter.runExecution(g.options);
+
+  const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  const messages = golden.sh(g.worktree, 'log', '--format=%B%x00', `${g.base}..HEAD`).split('\0').map((s) => s.trim()).filter(Boolean);
+  const sent = [...g.gh.calls.flatMap((c) => [...c.args, c.input ?? '']), ...messages];
+  for (const text of sent) assert.doesNotMatch(text, /TOKEN(?!\*)|TOKEN\*\*/, text);
+  const body = g.gh.pr().body;
+  for (const field of ['TOKEN green summary', 'TOKEN item', 'TOKEN evidence', 'TOKEN setup', 'TOKEN action', 'TOKEN expected',
+    'TOKEN edge', 'TOKEN automated', 'TOKEN manual', 'TOKEN output', '`npm test TOKEN`']) {
+    assert.ok(body.includes(field.replace('TOKEN', 'TOKEN*')), field);
+  }
+  assert.ok(g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')), 'the PR title');
+  assert.deepEqual(intents(rec, 'commit').map((e) => e.payload.message.trim()).reverse(), messages);
+  for (const e of [...intents(rec, 'comment'), ...intents(rec, 'pr-upsert')]) {
+    assert.ok(g.gh.calls.some((c) => c.input === e.payload.body), `${e.action} is sent as saved`);
+  }
+});
+
 test('a persona file name is read from the shipped personas directory', async (t) => {
   const g = await golden.setup(t);
   g.flow.ticket.vertices.implementer.node.persona = 'implementer.md';

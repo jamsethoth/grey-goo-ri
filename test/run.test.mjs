@@ -5,7 +5,7 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import * as config from '../lib/config.mjs';
 import * as events from '../lib/events.mjs';
@@ -39,8 +39,8 @@ function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 
 // A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view.
-function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {} } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'gg-run-'));
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, rootName = 'gg-run-' } = {}) {
+  const root = mkdtempSync(join(tmpdir(), rootName));
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
   t.after(() => {
@@ -1360,12 +1360,13 @@ test('local paths in fault comments stay in the local Event only', async (t) => 
   assert.ok(f.readEvents().find((e) => e.type === 'ticket_end').error.includes(f.root));
 });
 
-for (const kind of ['Check', 'fault']) {
+// A long Check's stored Evidence is cut too, before its public excerpt is.
+for (const kind of ['Check', 'long Check', 'fault']) {
   test(`truncated ${kind} output does not expose fragments of local paths`, async (t) => {
     const f = fixture(t);
-    const directory = kind === 'Check' ? f.worktree : f.commonDir;
+    const directory = kind === 'fault' ? f.commonDir : f.worktree;
     const line = `    at Object.<anonymous> (${directory}\\lib\\add.mjs:3:9)`;
-    const raw = line + '\n' + 'x'.repeat(3000 - line.length - 1 + line.indexOf(directory) + 1);
+    const raw = (kind === 'long Check' ? 'y'.repeat(70_000) + '\n' : '') + line + '\n' + 'x'.repeat(3000 - line.length - 1 + line.indexOf(directory) + 1);
     if (kind === 'fault') f.options.harnesses.fake.run = async () => { throw new Error(raw); };
     else f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
       ? { code: 0, output: raw, timedOut: false } : { code: 1, output: golden.RED_OUTPUT, timedOut: false };
@@ -1398,6 +1399,35 @@ test('local paths in captured Check output and agent text do not reach PR bodies
   assert.equal(commits.length, 2);
   assert.ok(commits.every((e) => !e.payload.message.includes(f.root)), 'commit replay payloads are redacted before the intent is saved');
 });
+
+for (const kind of ['done', 'fault']) {
+  test(`encoded and JSON-escaped local paths reach no ${kind} publication`, async (t) => {
+    const responses = structuredClone(golden.firstVisitResponses);
+    const issue = {};
+    const f = fixture(t, { responses, issue, rootName: 'gg run é-', branch: 'ticket/15-add-two-numbers-local' });
+    const forms = (path) => `${pathToFileURL(path).href} ${JSON.stringify(path)}`;
+    issue.title = `Add two numbers ${pathToFileURL(f.worktree).href}`;
+    responses['implementer/1/red/1'].response.summary = `Tested ${forms(join(f.worktree, 'test', 'add.test.mjs'))}`;
+    responses['implementer/1/green/1'].response.summary = `Updated ${forms(join(f.worktree, 'lib', 'add.mjs'))}`;
+    if (kind === 'fault') f.options.harnesses.fake.run = async () => { throw new Error(`Cannot read ${forms(f.commonDir)}`); };
+    else f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
+      ? { code: 0, output: `${golden.GREEN_OUTPUT}\n${forms(f.worktree)}`, timedOut: false }
+      : { code: 1, output: `${golden.RED_OUTPUT}\n${forms(f.worktree)}`, timedOut: false };
+    const exit = run.runExitCode(await run.runTarget(f.options));
+    const origin = join(f.root, 'origin.git');
+    const published = {
+      gh: JSON.stringify(f.gh.calls.map(({ args, input }) => [args, input])),
+      commits: sh(origin, 'log', '--format=%B', '--all'),
+      refs: sh(origin, 'for-each-ref', '--format=%(refname)'),
+    };
+    const name = basename(f.root);
+    for (const [where, text] of Object.entries(published)) {
+      for (const leak of [name, encodeURIComponent(name)]) assert.ok(!text.includes(leak), `${where} exposes ${leak}: ${text}`);
+    }
+    assert.ok(kind === 'fault' ? f.comments().length : f.gh.pr());
+    assert.equal(exit, kind === 'fault' ? 1 : 0);
+  });
+}
 
 test('Ticket branch names use the public title before slugifying', async (t) => {
   const issue = {};

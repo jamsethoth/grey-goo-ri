@@ -24,6 +24,23 @@ test('fence retains a character tail for JSON errors and overlong final lines', 
   ]);
 });
 
+test('publicTail falls back to a character tail when the only later newline ends the text', () => {
+  assert.equal(render.publicTail('x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');
+  assert.equal(render.publicTail('a\n' + 'x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');
+  assert.equal(render.publicTail('head line\n' + 'x'.repeat(2995) + '\n', String), 'x'.repeat(2995) + '\n');
+});
+
+function assertMasks(cases) {
+  const failures = [];
+  for (const [name, directories, text, expected = text] of cases) {
+    const actual = render.publicText(text, directories);
+    if (actual !== expected) failures.push({ name, expected, actual });
+    const repeated = render.publicText(actual, directories);
+    if (repeated !== actual) failures.push({ name: `${name}: idempotence`, expected: actual, actual: repeated });
+  }
+  assert.deepEqual(failures, []);
+}
+
 test('publicText adversarial matrix masks known directories without changing unrelated text', () => {
   const home = String.raw`C:\Users\James`;
   const temp = String.raw`C:\Users\Name\AppData\Local\Temp`;
@@ -74,14 +91,28 @@ test('publicText adversarial matrix masks known directories without changing unr
     ['UNC namespace', [String.raw`\\server\share\alice`], String.raw`\\?\UNC\server\share\alice\x`, String.raw`[local]\x`],
     ['already masked', ['/tmp', '/root'], '[local]/tmp/x [local]/root/b'],
   ];
-  const failures = [];
-  for (const [name, directories, text, expected = text] of cases) {
-    const actual = render.publicText(text, directories);
-    if (actual !== expected) failures.push({ name, expected, actual });
-    const repeated = render.publicText(actual, directories);
-    if (repeated !== actual) failures.push({ name: `${name}: idempotence`, expected: actual, actual: repeated });
-  }
-  assert.deepEqual(failures, []);
+  assertMasks(cases);
+});
+
+test('publicText masks percent-encoded directories in file URLs and plain text', () => {
+  const spaced = String.raw`C:\Users\John Smith`;
+  assertMasks([
+    ['space', [spaced], 'file:///C:/Users/John%20Smith/app/x.mjs:3:9', '[local]/app/x.mjs:3:9'],
+    ['space without a scheme', [spaced], 'C:/Users/John%20Smith/x', '[local]/x'],
+    ['non-ASCII', ['/home/josé'], 'file:///home/jos%C3%A9/x', '[local]/x'],
+    ['lowercase hex', ['/home/josé'], 'file:///home/jos%c3%a9/x', '[local]/x'],
+    ['percent', ['/srv/a%b'], 'file:///srv/a%25b/x and /srv/a%b/y', '[local]/x and [local]/y'],
+    ['hash', [String.raw`C:\w\a#b`], 'file:///C:/w/a%23b/x', '[local]/x'],
+    ['question mark', ['/home/a?b'], 'file:///home/a%3Fb/x', '[local]/x'],
+    // Node's pathToFileURL escapes # but keeps + and &, unlike both encodeURI and encodeURIComponent.
+    ['file URL escapes', [String.raw`C:\w\a#b+c&d`], 'file:///C:/w/a%23b+c&d/x', '[local]/x'],
+    ['UNC file URL', [String.raw`\\server\share\John Smith`], 'file://server/share/John%20Smith/x', '[local]/x'],
+    ['JSON-escaped', [spaced], String.raw`{"url":"file:///C:/Users/John%20Smith/x","path":"C:\\Users\\John Smith\\x"}`,
+      String.raw`{"url":"[local]/x","path":"[local]\\x"}`],
+    ['encoded lookalike', [spaced], 'file:///C:/Users/John%20Smithson/x'],
+    ['encoded space after the directory', ['/home/alice'], 'file:///home/alice%20bob/x'],
+    ['encoded letter after the directory', ['/home/alic'], 'file:///home/alic%C3%A9/x'],
+  ]);
 });
 
 test('commit messages carry the stage and action trailers', () => {
@@ -159,6 +190,34 @@ test('comments are fenced and carry the marker line', () => {
   );
   assert.ok(injected.includes(render.fence(file)), 'finding file is fenced');
   assert.doesNotMatch(injected.replace(render.fence(file), ''), /## Outside fence/);
+});
+
+test('every builder redacts each public field exactly once', () => {
+  const m = marker.formatMarker(parts);
+  const redact = (text) => text.replaceAll('TOKEN', 'TOKEN*');
+  const reason = { text: 'TOKEN reason' };
+  const response = { claim: 'blocked', summary: 'TOKEN summary', notes: 'TOKEN notes', diagnosis: 'TOKEN diagnosis' };
+  const tokenImpl = {
+    summary: 'TOKEN summary', dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
+    red: { command: 'TOKEN red', output: 'TOKEN red output' }, green: { command: 'TOKEN green', output: 'TOKEN green output' },
+    qa: { setup: 'TOKEN setup', steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
+      edgeCases: ['TOKEN edge'], automated: ['TOKEN automated'], manual: ['TOKEN manual'] },
+  };
+  const review = { claim: 'changes', summary: 'TOKEN summary', dodMet: true, tddEvidenceOk: true, diagnosis: '',
+    findings: [{ severity: 'major', file: 'TOKEN file', issue: 'TOKEN issue', fix: 'TOKEN fix' }] };
+  const bodies = {
+    commit: render.commitMessage({ kind: 'feat', title: 'TOKEN title', ticket: 7, summary: 'TOKEN summary', vertex: 'implement',
+      harness: 'claude', model: 'opus', effort: 'high', marker: m }, redact),
+    pr: render.prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance, marker: m }, redact),
+    review: render.reviewComment(review, provenance[1], m, redact),
+    blocked: render.blockedComment(response, m, reason, redact),
+    terminal: render.terminalComment('needs-human', reason, m, 'TOKEN detail', { terminal: 'done', reason: { text: 'TOKEN earlier' } }, redact),
+    diagnosis: render.diagnosisComment(response, m, reason, redact),
+  };
+  for (const [name, body] of Object.entries(bodies)) {
+    assert.match(body, /TOKEN\*/, name);
+    assert.doesNotMatch(body, /TOKEN(?!\*)|TOKEN\*\*/, `${name}: ${body}`);
+  }
 });
 
 test('marker-shaped agent text does not displace the rendered marker', () => {

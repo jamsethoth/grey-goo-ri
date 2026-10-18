@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import * as checks from '../lib/checks.mjs';
 
 function tempDir(t) {
@@ -234,5 +234,16 @@ test('green check reports a timeout as failed', async () => {
   assert.equal(r.output, 'still running');
   assert.equal(typeof r.durationMs, 'number');
   assert.deepEqual(calls, [['npm test', { cwd: 'C:/repo', timeoutMs: 30 * 60_000 }]]);
-  assert.deepEqual(checks.evidence('npm test', { output: 'x'.repeat(5000) + '\nend' }), { command: 'npm test', output: 'end' });
+  const output = 'x'.repeat(5000) + '\nend';
+  assert.deepEqual(checks.evidence('npm test', { output }), { command: 'npm test', output });
+});
+
+test('Check evidence keeps raw paths and is bounded on a line boundary', () => {
+  const raw = `at run (${homedir()}\\test.mjs:3:4)\n`;
+  assert.equal(checks.evidence('npm test', { output: raw }).output, raw);
+  const last = 'b'.repeat(65_435);
+  for (const [first, expected] of [['a'.repeat(100), 'a'.repeat(100) + '\n' + last], ['a'.repeat(101), last]]) {
+    const output = checks.evidence('npm test', { output: first + '\n' + last }).output;
+    assert.equal(output, expected, `${first.length + 1 + last.length} characters`);
+  }
 });

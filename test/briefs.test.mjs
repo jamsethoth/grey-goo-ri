@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as briefs from '../lib/briefs.mjs';
+import * as checks from '../lib/checks.mjs';
 import { homedir } from 'node:os';
 
 const ticket = { number: 7, title: 'Add widgets', body: '## Definition of done\n- [ ] widgets', branch: 'ticket/7-add-widgets' };
@@ -26,6 +27,17 @@ test('agent-facing Briefs preserve distinguishable path-case failures', () => {
   for (const name of ['testFixBrief', 'stillGreenBrief']) {
     const brief = briefs[name]({ ...base, output });
     assert.ok(brief.includes(output), name);
+    assert.ok(!brief.includes('[local]'), name);
+  }
+});
+
+test('stored Check evidence reaches the green and review Briefs unredacted', () => {
+  const path = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.mjs`;
+  const red = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${path}:3:4)\n` });
+  const green = briefs.greenBrief({ ...base, testFiles, redOutput: red.output });
+  const review = briefs.reviewBrief({ ...base, impl: { claim: 'ok', red, green: red }, diff: '', changedTestFiles: [] });
+  for (const [name, brief] of [['green', green], ['review', review]]) {
+    assert.ok(brief.includes(`${path}:3:4`), name);
     assert.ok(!brief.includes('[local]'), name);
   }
 });
