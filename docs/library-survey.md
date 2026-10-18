@@ -27,6 +27,10 @@ the Codex Windows sandbox, which cannot build native addons. Line counts are fro
 | Retry on git index lock with backoff | request 3.5 | ~8 | `p-retry` | none | none | **Hand-rolled** |
 | GitHub access | `lib/github.mjs` | 97 | `@octokit/rest` | its own auth; `gh` uses the OS keyring | | **Kept on `gh`** |
 | Trajectory export | slice 6 | | none; Harbor's validator is Python | | | **Hand-rolled** |
+| Durable execution of Visits | `lib/interpreter.mjs`, `lib/reconcile.mjs` | | Temporal, Restate, Inngest, DBOS (TypeScript needs Postgres) | each needs a server or database | | **Hand-rolled** (2026-10-18): the write-ahead Action log stays; ADR 0001 |
+| Retry of GitHub writes and push | `lib/interpreter.mjs` | | `p-retry`, `cockatiel`; `@octokit/plugin-retry` and `plugin-throttling` | in-memory budgets, while gg's must survive a crash; Octokit leaves `gh` | | **Hand-rolled** (2026-10-18); revisit Octokit only if `gh` cannot expose rate-limit headers |
+| Rescue Ref and workspace snapshot | ADR 0011 | | `isomorphic-git`, Jujutsu | a second git implementation or binary | | **git plumbing** (2026-10-18): temporary index, `write-tree`, `commit-tree`, `update-ref` |
+| Retry of file removal on Windows locks | `lib/integrity.mjs` | | `fs.rm` `maxRetries` (built-in) | none | retries EBUSY and EPERM | **Built-in**, in the Interrupted Attempt ticket (ADR 0011) |
 
 ## Retention of the state database
 

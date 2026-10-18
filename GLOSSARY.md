@@ -119,6 +119,16 @@ _Avoid_: try, iteration
 The identity of an Attempt, carried into the side effects it produces so recovery can recognise them.
 _Avoid_: correlation id, tag
 
+**Interrupted Attempt**:
+An agent Attempt whose intent is open at resume because gg died during it. It is rescued, reset to its baseline and
+retried once (ADR 0011).
+_Avoid_: crashed call, orphan
+
+**Rescue Ref**:
+The git ref under `refs/gg/rescue/` that keeps everything an Interrupted Attempt left in the worktree, untracked files
+included, before the reset.
+_Avoid_: backup, stash
+
 **Brief**:
 The task text given to an agent for one Phase.
 _Avoid_: instructions, task

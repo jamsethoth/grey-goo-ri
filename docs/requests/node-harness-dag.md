@@ -329,7 +329,8 @@ wants to resume: that phase starts fresh with the full brief. Corrupt record: he
 
 Dirty state. Unknown uncommitted changes at ticket start are held: the ticket goes to needs-human with the diff stat
 posted, and nothing is deleted. Rollback by gg is limited to changes the record proves this run's agent made (a failed
-red phase or an Integrity Violation in the same run). git does not keep ignored files, so each agent Attempt snapshots the
+red phase or an Integrity Violation in the same run) and to an Interrupted Attempt, whose leftovers are first saved
+to a Rescue Ref and which is then retried once from its saved baseline (ADR 0011). git does not keep ignored files, so each agent Attempt snapshots the
 untracked files, ignored ones included, under the Protected Files and the test paths, and a rollback restores them;
 ignored files outside those paths are neither detected nor rolled back, as in snapshot-based agent checkpoints (only a
 disposable copy per Attempt would cover them). `gg work reset` is the only destructive path, explicit, refuses when a published PR
