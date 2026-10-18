@@ -277,6 +277,23 @@ note and goes to needs-human; misscoped goes to replan; thrown errors go to need
 end event. Blocked is honoured after every agent phase including still-green and test-fix; today's ff misses those
 two, so this is a correction, not a port.
 
+Admission outcomes are Terminals too: gg creates the record first when none exists, saves the decision and its Terminal
+Reason before the first effect, and an Execution has landed only once its ticket end event exists. A decided hold or
+abandonment whose comment or label fails is not a fault: the run exits 1 with that intent open, and the next run
+finishes those reporting actions, and only those, before it admits any work. A landed hold decided before any
+Execution ran restarts as a new Execution once a human removes needs-human; a held Execution that had already run
+waits for its row to be deleted.
+
+| Admission outcome | Lifecycle events | Exit |
+|---|---|---|
+| Preflight or Flow rejection | none | 1, or 2 for an unset Harness |
+| Skip: not ready, locked, stuck, finished | run start and end only | 0, or 2 under needs-human |
+| Admitted | ticket start before the first label write, then the Execution's own | by outcome |
+| Hold: unknown dirty state, merge conflict, wrong branch | ticket start, comment and label actions, ticket end with the Terminal Reason | 2 |
+| Fault: an admission step throws | ticket start, best-effort comment and label actions, ticket end with the error | 1 |
+| Human needs-human label on a readable record | ticket start, an in-progress removal action when the label is there, ticket end `abandoned` | 2 |
+| Hold or abandonment whose comment or label fails | ticket start and the actions that completed, no ticket end | 1; the next run finishes it |
+
 Resolution. Outcomes have a direction: advance (ok, PASS), retry (gate-failed, still-green, test-fix, parse failure,
 timeout, transient failure class), stop (blocked, misscoped, exhausted, integrity violation). Fixed, not
 configurable: advance requires a completed harness result, a valid claim, every declared check of the action passing
