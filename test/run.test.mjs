@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -121,8 +123,8 @@ const markerOf = (rec, vertex, visit, phase, ordinal) =>
   marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
 
 // Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock.
-function holdLock(t, commonDir, name) {
-  const child = spawn(process.execPath, [contender, commonDir, name, '60000'], { stdio: ['ignore', 'pipe', 'inherit'] });
+function holdLock(t, commonDir, name, holdMs = 60_000) {
+  const child = spawn(process.execPath, [contender, commonDir, name, String(holdMs)], { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => child.kill());
   const exited = new Promise((resolve) => child.on('exit', resolve));
   return new Promise((resolve, reject) => {
@@ -1533,6 +1535,43 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   assert.equal(settled, false, 'the snapshot writes no object while another process holds the repo lock');
   await holder.release();
   assert.equal((await pending).head, f.base, 'the snapshot runs after release');
+});
+
+// A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
+// wait longer, so contention does not become a fault.
+test('snapshot and orchestrator writes wait beyond the default lock timeout', { timeout: 180_000 }, async (t) => {
+  const f = fixture(t);
+  const holder = await holdLock(t, f.commonDir, 'repo', 70_000);
+  const lockDir = join(f.commonDir, 'gg', 'locks');
+  const mkdir = fsPromises.mkdir;
+  const unobserve = () => { fsPromises.mkdir = mkdir; syncBuiltinESMExports(); };
+  t.after(unobserve);
+  try {
+    // The snapshot's first attempt is seen before the default waiter starts, so its own deadline would pass first.
+    let tried;
+    const attempted = new Promise((resolve) => { tried = resolve; });
+    fsPromises.mkdir = (path, ...rest) => { if (String(path) === lockDir) tried(); return mkdir(path, ...rest); };
+    syncBuiltinESMExports();
+    const settled = new Set();
+    const track = (name, p) => p.then((v) => { settled.add(name); return v; }, (e) => { settled.add(name); throw e; });
+    const snapshot = track('snapshot', integrity.snapshot(f.mainRoot));
+    await attempted;
+    unobserve();
+    const called = [];
+    const verbs = ['ensureWorktree', 'stageAll', 'writeTree', 'commitStaged', 'commitTree', 'push', 'remoteSha', 'resetTo'];
+    const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
+    const writes = verbs.map((v) => track(v, git[v]()));
+
+    await assert.rejects(locks.acquire(f.commonDir, 'repo'), (err) => err instanceof locks.LockTimeoutError && err.message.includes('60000ms'));
+    assert.deepEqual([...settled], [], 'the snapshot and every write still wait');
+    assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
+    await holder.release();
+    assert.equal((await snapshot).head, f.base, 'the snapshot runs after release');
+    await Promise.all(writes);
+    assert.deepEqual(called.sort(), [...verbs].sort(), 'every write runs after release');
+  } finally {
+    await holder.release();
+  }
 });
 
 test('an orchestrator commit waits for the repo lock', async (t) => {
