@@ -498,10 +498,11 @@ test('a resumed execution on another Ticket branch or another branch of its Tick
 
 test('fresh admission refuses another Ticket\'s branch without changing it', async (t) => {
   // ticket/150-* shares ticket 15's digits, so the prefix must end at the number.
-  for (const branch of ['ticket/99-other', 'ticket/150-other']) {
+  for (const branch of ['ticket/99-other', 'ticket/150-other', 'detached HEAD']) {
     const f = fixture(t);
     await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-    sh(f.worktree, 'checkout', '-q', '-b', branch);
+    if (branch === 'detached HEAD') sh(f.worktree, 'checkout', '-q', '--detach');
+    else sh(f.worktree, 'checkout', '-q', '-b', branch);
     const head = sh(f.worktree, 'rev-parse', 'HEAD');
     const before = await integrity.snapshot(f.worktree);
 
@@ -513,7 +514,7 @@ test('fresh admission refuses another Ticket\'s branch without changing it', asy
     assert.equal(f.loadRow(), undefined, 'no Execution Record adopts the branch');
     assert.equal(f.harness.calls.length, 0, 'no agent started');
     assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');
-    assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
+    assert.equal(sh(f.worktree, 'branch', '--show-current'), branch === 'detached HEAD' ? '' : branch);
     assert.equal(sh(f.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
     assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the index and files are untouched');
     assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${branch}`), '', 'nothing was pushed');
@@ -539,7 +540,8 @@ test('resume refuses a recorded branch belonging to another Ticket', async (t) =
     if (existing) await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
     const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch, base: 'main' });
-    await record.save(rec);
+    await record.intent(rec, 'seed-intent', 'commit', { message: 'red' });
+    assert.equal(record.openIntents(rec).length, 1);
     const worktrees = f.worktrees();
     const before = existing && await integrity.snapshot(f.worktree);
 
@@ -559,22 +561,25 @@ test('resume refuses a recorded branch belonging to another Ticket', async (t) =
     const final = await record.load(f.commonDir, 'ticket', TICKET);
     assert.equal(final.state, 'held');
     assert.equal(final.branch, branch);
-    assert.deepEqual(record.openIntents(final), record.openIntents(rec));
+    assert.deepEqual(record.openIntents(final), record.openIntents(rec), 'the outstanding intent is kept');
   }
 });
 
 const pathKey = (p) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
 
 test('admission detects an agent overwrite of an idle sibling as an Integrity Violation', async (t) => {
-  for (const [seeded, siblingRecord] of [[false, false], [false, true], [true, false], [true, true]]) {
+  const other = 'ticket/99-other';
+  // A second branch of this same Ticket is another worktree too, not the one being admitted.
+  for (const [seeded, siblingRecord, siblingBranch = other] of [[false, false], [false, true], [true, false], [true, true],
+    [false, false, `ticket/${TICKET}-other-suffix`]]) {
     const responses = structuredClone(golden.firstVisitResponses);
     const f = fixture(t, { responses, labels: seeded ? [IN_PROGRESS] : [] });
     // Outside the configured worktree root, so only git's worktree list can find it.
     const sibling = join(f.root, 'elsewhere', 'ticket-99');
-    sh(f.mainRoot, 'worktree', 'add', '-q', '-b', 'ticket/99-other', sibling, 'main');
+    sh(f.mainRoot, 'worktree', 'add', '-q', '-b', siblingBranch, sibling, 'main');
     if (siblingRecord) {
       await record.save(record.createExecution({ commonDir: f.commonDir, ticket: 99, epic: null, flow: { name: 'default', entry: 'implementer' },
-        configHash: 'x', run: '20261016T000000Z-seed00', worktree: sibling, branch: 'ticket/99-other', base: 'main' }));
+        configHash: 'x', run: '20261016T000000Z-seed00', worktree: sibling, branch: other, base: 'main' }));
     }
     if (seeded) {
       await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
@@ -584,7 +589,7 @@ test('admission detects an agent overwrite of an idle sibling as an Integrity Vi
     responses['implementer/1/red/1'].files[relative(f.worktree, join(sibling, 'package.json'))] = '{ "overwritten": true }\n';
 
     const results = await run.runTarget(f.options);
-    const label = JSON.stringify({ seeded, siblingRecord });
+    const label = JSON.stringify({ seeded, siblingRecord, siblingBranch });
     assert.equal(run.runExitCode(results), 2, `${label} ${JSON.stringify(results)}`);
     const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === TICKET && e.phase === 'red' && e.agent);
     assert.equal(red?.outcome, 'integrity-violation', label);
@@ -598,12 +603,16 @@ test('admission detects an agent overwrite of an idle sibling as an Integrity Vi
   }
 });
 
-test('admission excludes non-ticket worktrees from sibling assertions', async (t) => {
+test('admission excludes non-ticket worktrees and its own, however cased, from sibling assertions', async (t) => {
   const f = fixture(t);
   // git write-tree refuses an unmerged index, so a snapshot of this worktree would fault.
   const scratch = join(f.root, 'scratch');
   sh(f.mainRoot, 'worktree', 'add', '-q', '-b', 'scratch', scratch, 'main');
   conflict(scratch);
+  // Windows paths are case-insensitive: the own worktree, listed in another case, would see its agent's writes as violations.
+  if (process.platform === 'win32') {
+    f.options.git = { ...gitModule, listWorktrees: async (root) => (await gitModule.listWorktrees(root)).map((w) => ({ ...w, path: w.path.toUpperCase() })) };
+  }
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
@@ -611,13 +620,22 @@ test('admission excludes non-ticket worktrees from sibling assertions', async (t
 });
 
 test('sibling discovery failure prevents agent execution', async (t) => {
-  const f = fixture(t);
-  f.options.git = { ...gitModule, listWorktrees: async () => { throw new Error('fatal: cannot list worktrees'); } };
+  for (const seeded of [false, true]) {
+    const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [] });
+    if (seeded) {
+      await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+      await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+        configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
+    }
+    f.options.git = { ...gitModule, listWorktrees: async () => { throw new Error('fatal: cannot list worktrees'); } };
 
-  const results = await run.runTarget(f.options);
-  assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
-  assert.match(ticketResult(results).error, /cannot list worktrees/);
-  assert.equal(f.harness.calls.length, 0, 'no agent started');
+    const results = await run.runTarget(f.options);
+    assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
+    assert.match(ticketResult(results).error, /cannot list worktrees/);
+    assert.equal(f.harness.calls.length, 0, 'no agent started');
+    // An active Execution that cannot be admitted is marked as a fault, never left to retry.
+    if (seeded) assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'fault');
+  }
 });
 
 test('a resumed execution detached at the recorded SHA is held before recovery', async (t) => {
