@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import * as config from '../lib/config.mjs';
@@ -231,10 +232,29 @@ test('a node without a harness fails admission naming the vertex and node', asyn
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'admission rejects the run');
   const examples = fileURLToPath(new URL('../examples/', import.meta.url));
-  assert.equal(err.message.split('\n')[1], `vertex implementer: no harness configured for node implementer; copy ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} to the user Layer at ${config.layerPath(homedir())}`);
+  assert.equal(err.message.split('\n')[1], 'vertex implementer: no harness configured for node implementer');
+  assert.equal(err.message.split('\n').at(-1), `Merge ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.equal(f.worktrees(), 1, 'no worktree');
+});
+
+test('preflight lists every unset Vertex and Node before one merge advice line', async (t) => {
+  const f = fixture(t, { fullFlow: true });
+  f.options.config.nodes.implementer.harness = null;
+  f.options.config.nodes.reviewer.harness = null;
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.equal(err.exitCode, 2);
+  const examples = fileURLToPath(new URL('../examples/', import.meta.url));
+  assert.deepEqual(err.message.split('\n'), [
+    'preflight failed:',
+    'vertex implementer: no harness configured for node implementer',
+    'vertex reviewer: no harness configured for node reviewer',
+    'vertex implementer-fix: no harness configured for node implementer',
+    `Merge ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,
+  ]);
+  assert.deepEqual(f.gh.calls, []);
+  assert.equal(f.harness.calls.length, 0);
 });
 
 test('preflight names an unset harness and an unknown harness in one error', async (t) => {
@@ -392,14 +412,16 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held`) && b.includes('SQLite client')));
-  assert.ok(f.comments().some((b) => b.includes(`at .git/gg/gg.db relative to the main checkout, table records, where kind = 'ticket' AND n = ${TICKET}`)));
+  assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
+  assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
   assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir, 'the linked worktree uses the main checkout State Database');
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
   rmSync(join(f.worktree, 'human.txt'));
   f.gh.labels.delete(NEEDS_HUMAN);
   assert.equal(ticketResult(await run.runTarget(f.options)).outcome, 'skipped', 'removing the label alone cannot resume a finished record');
-  record.openDb(f.commonDir).prepare("DELETE FROM records WHERE kind = 'ticket' AND n = ?").run(TICKET);
+  const statement = f.comments().join('\n').match(/`(DELETE FROM records WHERE kind = 'ticket' AND n = \d+;)`/)[1];
+  record.openDb(f.commonDir).exec(statement);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 0, 'deleting only the held row allows a fresh Execution');
 });
 
@@ -783,15 +805,36 @@ test('a finished record with open intents is not resumed', async (t) => {
   // A fault report leaves the comment intent of the Terminal it interrupted open for good.
   const m = markerOf(rec, 'done', 1, 'done', 2);
   await record.intent(rec, m, 'comment', { target: { kind: 'issue', number: TICKET }, body: 'x', bodyHash: 'h' });
-  rec.state = 'fault';
+  for (const state of ['done', 'fault', 'abandoned']) {
+    rec.state = state;
+    await record.save(rec);
+    const row = f.loadRow();
+    assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
+    assert.equal(f.harness.calls.length, 0, 'no agent started');
+    assert.equal(f.loadRow(), row, 'the finished record is unchanged');
+    assert.deepEqual(f.comments(), [], 'the open comment intent is not replayed');
+    assert.ok(f.logs.some((l) => l.includes(`finished (${state})`)));
+  }
+  assert.ok(f.gh.calls.every((c) => c.args[0] === 'issue' && c.args[1] === 'view'));
+});
+
+test('a held Execution Record skip gives row-delete recovery without GitHub writes', async (t) => {
+  const f = fixture(t);
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    configHash: 'x', run: 'seed', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  rec.state = 'held';
   await record.save(rec);
   const row = f.loadRow();
-
-  await run.runTarget(f.options);
-  assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.equal(f.loadRow(), row, 'the finished record is unchanged');
-  assert.deepEqual(f.comments(), [], 'the open comment intent is not replayed');
-  assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`)), `the skip is logged: ${JSON.stringify(f.logs)}`);
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0);
+  assert.equal(ticketResult(results).outcome, 'skipped');
+  assert.ok(f.logs.some((line) => line.includes(`Execution Record ticket-${TICKET} is held and cannot resume.`)
+    && line.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)
+    && line.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
+  assert.ok(f.logs.every((line) => !line.includes('finished (held)')));
+  assert.equal(f.loadRow(), row);
+  assert.equal(f.harness.calls.length, 0);
+  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']]);
 });
 
 test('a corrupt record found at admission is held through reconcile', async (t) => {
@@ -807,7 +850,8 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
   assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET}`) && b.includes('SQLite client')),
     `a comment names the record: ${JSON.stringify(f.comments())}`);
-  assert.ok(f.comments().some((b) => b.includes(`at .git/gg/gg.db relative to the main checkout, table records, where kind = 'ticket' AND n = ${TICKET}`)));
+  assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
+  assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
   assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir);
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.ok(f.comments().every((b) => !b.includes(f.root)), 'no comment exposes a local path');
@@ -824,6 +868,27 @@ test('local paths in fault comments stay in the local Event only', async (t) => 
   assert.ok(f.comments().every((b) => !b.includes(f.root)), JSON.stringify(f.comments()));
   assert.ok(f.readEvents().find((e) => e.type === 'ticket_end').error.includes(f.root));
 });
+
+for (const kind of ['Check', 'fault']) {
+  test(`truncated ${kind} output does not expose fragments of local paths`, async (t) => {
+    const f = fixture(t);
+    const directory = kind === 'Check' ? f.worktree : f.commonDir;
+    const line = `    at Object.<anonymous> (${directory}\\lib\\add.mjs:3:9)`;
+    const raw = line + '\n' + 'x'.repeat(3000 - line.length - 1 + line.indexOf(directory) + 1);
+    if (kind === 'fault') f.options.harnesses.fake.run = async () => { throw new Error(raw); };
+    else f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
+      ? { code: 0, output: raw, timedOut: false } : { code: 1, output: golden.RED_OUTPUT, timedOut: false };
+    assert.equal(run.runExitCode(await run.runTarget(f.options)), kind === 'fault' ? 1 : 0);
+    const bodies = [...f.comments(), ...(f.gh.pr() ? [f.gh.pr().body] : [])];
+    assert.ok(bodies.length);
+    assert.ok(bodies.every((body) => !body.includes(basename(f.root))), `${kind}: a truncated path exposed the temp directory name`);
+    const rec = await record.load(f.commonDir, 'ticket', TICKET);
+    for (const entry of rec.log.filter((e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.action))) {
+      assert.equal(entry.payload.bodyHash, createHash('sha256').update(entry.payload.body).digest('hex'));
+      assert.ok(bodies.includes(entry.payload.body), 'the stored body is the body sent');
+    }
+  });
+}
 
 test('local paths in captured Check output and agent text do not reach PR bodies', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
@@ -847,7 +912,7 @@ test('Ticket branch names use the public title before slugifying', async (t) => 
   const issue = {};
   const branch = 'ticket/15-add-two-numbers-local';
   const f = fixture(t, { issue, branch });
-  issue.title = `Add two numbers ${f.mainRoot}`;
+  issue.title = `Add two numbers ${f.worktree}`;
   const results = await run.runTarget(f.options);
   assert.equal(sh(join(f.root, 'origin.git'), 'for-each-ref', '--format=%(refname:short)', 'refs/heads/ticket/'), branch);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));

@@ -234,5 +234,5 @@ test('green check reports a timeout as failed', async () => {
   assert.equal(r.output, 'still running');
   assert.equal(typeof r.durationMs, 'number');
   assert.deepEqual(calls, [['npm test', { cwd: 'C:/repo', timeoutMs: 30 * 60_000 }]]);
-  assert.deepEqual(checks.evidence('npm test', { output: 'x'.repeat(5000) + 'end' }), { command: 'npm test', output: ('x'.repeat(5000) + 'end').slice(-3000) });
+  assert.deepEqual(checks.evidence('npm test', { output: 'x'.repeat(5000) + '\nend' }), { command: 'npm test', output: 'end' });
 });

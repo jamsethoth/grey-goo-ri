@@ -289,6 +289,13 @@ test('run: failure message keeps the child stderr when the argument list is seve
   await assert.rejects(exec.run(process.execPath, args), (e) => e.message.includes('BOOM-STDERR'));
 });
 
+test('run keeps complete error text and arguments for redaction before publication', async () => {
+  const diagnostic = 'x'.repeat(3990) + '/private/worktree/secret-file';
+  const argument = 'y'.repeat(290) + '/private/worktree/argument';
+  await assert.rejects(exec.run(process.execPath, ['-e', 'process.stderr.write(process.argv[1]); process.exit(2)', diagnostic, argument]),
+    (err) => err.message.includes(diagnostic) && err.message.includes(argument));
+});
+
 test('run never spawns through a shell', () => {
   assert.equal(typeof exec.run, 'function');
   assert.doesNotMatch(readFileSync(new URL('../lib/exec.mjs', import.meta.url), 'utf8'), /shell:\s*true/);

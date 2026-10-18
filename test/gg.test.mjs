@@ -94,9 +94,11 @@ test('gg run without a harness fails admission naming the vertex and node', (t) 
   const { repo, ggIn } = tempRepo(t);
   const r = ggIn('run', '1');
   assert.equal(r.status, 2, r.stderr);
-  assert.ok(r.stderr.includes('no harness configured for node implementer; copy '), r.stderr);
+  assert.ok(r.stderr.includes('vertex implementer: no harness configured for node implementer\n'), r.stderr);
+  assert.ok(r.stderr.includes('vertex reviewer: no harness configured for node reviewer\n'), r.stderr);
   assert.ok(r.stderr.includes(fileURLToPath(new URL('../examples/claude.json', import.meta.url))), r.stderr);
-  assert.ok(r.stderr.includes('to the user Layer at '), r.stderr);
+  assert.ok(r.stderr.includes('into the user Layer at '), r.stderr);
+  assert.equal((r.stderr.match(/Merge /g) ?? []).length, 1);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 

@@ -6,6 +6,15 @@ import * as marker from '../lib/marker.mjs';
 const parts = { execution: 'e1', vertex: 'implement', visit: 1, phase: 'green', ordinal: 3, run: 'r1', attempt: 1 };
 const asText = (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)]));
 
+test('fence redacts before truncating and keeps only complete lines', () => {
+  const directory = '/private/' + 'person'.repeat(20);
+  const raw = `${directory}/proj/file\n${'x'.repeat(2970)}`;
+  const redact = (text) => render.publicText(text, [directory]);
+  assert.equal(render.fence(raw, redact), '```\n[local]/proj/file\n' + 'x'.repeat(2970) + '\n```');
+  assert.equal(render.fence('x'.repeat(3100) + '\nlast line'), '```\nlast line\n```');
+  assert.equal(render.fence('x'.repeat(3100)), '```\n\n```');
+});
+
 test('publicText adversarial matrix masks known directories without changing unrelated text', () => {
   const home = String.raw`C:\Users\James`;
   const temp = String.raw`C:\Users\Name\AppData\Local\Temp`;

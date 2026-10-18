@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import * as github from '../lib/github.mjs';
 import * as labels from '../lib/labels.mjs';
 
+test('createIssue keeps malformed output complete for redaction before publication', async () => {
+  const output = 'x'.repeat(190) + '/private/worktree/secret-file';
+  github.setGh(async () => output);
+  await assert.rejects(github.createIssue({ title: 'Ticket', body: 'body' }, '/repo'), (err) => err.message.includes(output));
+});
+
 // A stand-in for the gh executable: records every argv and answers from `answer(args)`, as gh's stdout.
 const fakeGh = (answer = () => '') => {
   const calls = [];

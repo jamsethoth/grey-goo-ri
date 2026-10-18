@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as briefs from '../lib/briefs.mjs';
+import * as render from '../lib/render.mjs';
 
 const ticket = { number: 7, title: 'Add widgets', body: '## Definition of done\n- [ ] widgets', branch: 'ticket/7-add-widgets' };
 const commands = { test: 'npm test', lint: 'npm run lint' };
@@ -9,6 +10,18 @@ const base = { ticket, base: 'origin/main', commands, worktree, history: [] };
 const redOutput = 'not ok 1 - widgets render\n  AssertionError: expected widget';
 const testFiles = ['test/widgets.test.mjs', 'test/support/widget-fixture.mjs'];
 const IMMUTABLE = /committed tests must not be changed/i;
+
+test('Brief output excerpts redact before taking complete-line tails', () => {
+  const directory = '/private/' + 'person'.repeat(20);
+  const redact = (text) => render.publicText(text, [directory]);
+  const failures = [];
+  for (const [name, limit] of [['greenBrief', 4000], ['testFixBrief', 6000], ['stillGreenBrief', 3000]]) {
+    const output = `${directory}/test.mjs\n${'x'.repeat(limit - 30)}`;
+    const brief = briefs[name]({ ...base, testFiles, redOutput: output, output, redact });
+    if (!brief.includes('[local]/test.mjs') || brief.includes('personperson')) failures.push(name);
+  }
+  assert.deepEqual(failures, []);
+});
 
 const validRed = { claim: 'ok', summary: 's', tests: ['widgets render'], notes: '', diagnosis: '' };
 
