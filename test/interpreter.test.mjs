@@ -1695,3 +1695,29 @@ test('a label update whose failure was saved before its completion is retried on
   assert.equal(steps(await loadTicket(g), label).at(-1), 'complete');
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
 });
+
+test('a record saved before write-ahead Attempts resumes its retried call from the saved session and budget', async (t) => {
+  const red = golden.firstVisitResponses['implementer/1/red/1'];
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
+    'implementer/1/red/1': { ...red, result: { status: 'timed-out' } }, 'implementer/1/red/2': red } });
+  let reads = 0;
+  const others = async () => {
+    if (++reads === 2) throw new interpreter.CrashError('crash before attempt 2');
+    return [];
+  };
+  await assert.rejects(interpreter.runExecution({ ...g.options, others }), (err) => err instanceof interpreter.CrashError);
+  // Reshaped as an earlier gg saved it: no call intents, evidence or settled results, and no heartbeat.
+  const legacy = await loadTicket(g);
+  legacy.log = legacy.log.filter((e) => e.action !== 'call');
+  delete legacy.visitState.settled;
+  delete legacy.heartbeat;
+  assert.equal(legacy.cursor.attempt, 2);
+  assert.deepEqual(legacy.retries['implementer/1/red/1'], { timeout: 1 });
+  await record.save(legacy);
+
+  const result = await interpreter.runExecution({ ...g.options, others, record: await loadTicket(g) });
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(g.harness.calls[1].marker, attemptMarker(g, 'implementer', 1, 'red', 1, 2), 'the resume runs Attempt 2');
+  assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'from the session the record saved');
+  assert.deepEqual((await loadTicket(g)).retries['implementer/1/red/1'], { timeout: 1 }, 'the spent budget is kept');
+});
