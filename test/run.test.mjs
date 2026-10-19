@@ -2163,3 +2163,37 @@ test('a run stop skips queued tickets without admitting them', { timeout: 120_00
   assert.ok(!evs.some((e) => e.ticket === 22), 'nor a Ticket Event');
   assert.equal(evs.find((e) => e.type === 'run_end').failureClass, 'auth');
 });
+
+// #66: one cooldown for every Ticket of the Run.
+test('a rate limit on one Ticket delays the next GitHub write of the other', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22]) });
+  f.options.target = EPIC;
+  f.gh.fail({ matches: (args) => golden.isCommentPost(args, 21), status: 403, headers: { 'Retry-After': '7' },
+    body: { message: 'You have exceeded a secondary rate limit.' } });
+  const aWaiting = gate();
+  const sleeps = [];
+  let wake;
+  const woken = new Promise((resolve) => { wake = resolve; });
+  const bCalls = () => f.gh.calls.filter((c) => c.args.some((a) => a.startsWith('ticket/22-')) || golden.isCommentPost(c.args, 22)).length;
+  // A backs off first; B's wait moves the shared clock once, to A's deadline, and wakes both.
+  f.options.clock = { now: f.clock.now, sleep: async (ms) => {
+    sleeps.push({ ms, bCalls: bCalls() });
+    if (sleeps.length === 1) aWaiting.open();
+    else {
+      await f.clock.sleep(ms);
+      wake();
+    }
+    await woken;
+  } };
+  // B's red call starts once A is backing off.
+  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
+    if (n === 22 && call.phase === 'red') await aWaiting.wait();
+  } });
+
+  const results = await run.runTarget(f.options);
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
+  assert.deepEqual(sleeps.map((s) => s.ms), [7_000, 7_000], "B waited out A's Retry-After");
+  assert.equal(sleeps[1].bCalls, 0, 'before any GitHub write of B');
+  assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args, 21)).length, 2);
+  assert.equal(f.gh.comments.filter((c) => c.number === 21).length, 1);
+});

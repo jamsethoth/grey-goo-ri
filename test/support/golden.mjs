@@ -136,7 +136,9 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
   const logs = [];
   const ev = events.eventLog(commonDir);
   let now = Date.parse('2026-10-15T00:00:00Z');
-  const clock = { now: () => now, sleep: async (ms) => { now += ms; } };
+  // Every sleep is recorded; `onSleep`, when a test sets it, runs before the clock moves on.
+  const sleeps = [];
+  const clock = { now: () => now, sleep: async (ms) => { sleeps.push(ms); await clock.onSleep?.(ms); now += ms; } };
 
   const options = {
     flow, record: rec, harness, gh: github, git: gitModule, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
@@ -144,15 +146,36 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
     base: 'main', labelPrefix: 'gg', others: [], clock,
   };
   return {
-    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath,
+    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath, clock, sleeps,
     readEvents: () => events.readEvents(commonDir),
   };
 }
 
-// A stand-in for the gh executable: records every argv and answers with canned JSON.
+// A comment POST through `gh api`, on issue or PR `n` when given.
+export const isCommentPost = (args, n) => args[0] === 'api' && args.includes('POST')
+  && args.some((a) => (n === undefined ? /issues\/\d+\/comments$/ : new RegExp(`issues/${n}/comments$`)).test(a));
+export const isCommentRead = (args, n) => args[0] === 'api' && !args.includes('POST')
+  && args.some((a) => (n === undefined ? /issues\/\d+\/comments$/ : new RegExp(`issues/${n}/comments$`)).test(a));
+
+// `gh api --include` stdout: the status line and headers, a blank line, then the body.
+export const included = (status, headers, body) =>
+  `HTTP/2.0 ${status} ${STATUS_TEXT[status] ?? ''}\r\n${Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('')}\r\n${JSON.stringify(body)}`;
+const STATUS_TEXT = { 201: 'Created', 401: 'Unauthorized', 403: 'Forbidden', 422: 'Unprocessable Entity', 429: 'Too Many Requests', 502: 'Bad Gateway' };
+
+// A failed gh call as exec.run rejects it: the message and stderr carry gh's reason, stdout what `--include` printed.
+export function ghError(args, { status, headers = {}, body, stderr }) {
+  const message = body?.message ?? STATUS_TEXT[status];
+  const err = stderr ?? `gh: ${message} (HTTP ${status})`;
+  const stdout = args.includes('--include') && status ? included(status, headers, body ?? { message }) : '';
+  return Object.assign(new Error(`${err}\ngh ${args.join(' ')}`), { code: 1, stdout, stderr: err });
+}
+
+// A stand-in for the gh executable: records every argv and answers with canned JSON. `fail(f)` queues a failure: the
+// first unspent one whose `matches(args)` holds fails that call, after its effect when `afterEffect` is set.
 export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
   const calls = [];
   const comments = [];
+  const failures = [];
   // The ticket's labels on GitHub, as issue edits leave them and issue view reports them.
   const labels = new Set();
   const available = new Set(repoLabels);
@@ -163,6 +186,18 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
   const gh = async (args, cwd, input) => {
     observe(`gh ${args[0]} ${args[1]}`);
     calls.push({ args, cwd, input });
+    const failure = failures.find((f) => !f.spent && f.matches(args));
+    if (!failure) return answer(args, input);
+    failure.spent = true;
+    if (failure.afterEffect) await answer(args, input);
+    throw ghError(args, failure);
+  };
+  const post = (n, body) => {
+    const id = 1000 + comments.length;
+    comments.push({ id, body, created_at: '2026-10-15T00:00:00Z', target: prOf(n) ? 'pr' : 'issue', number: n });
+    return id;
+  };
+  const answer = async (args, input) => {
     const [noun, verb] = args;
     const head = args[args.indexOf('--head') + 1];
     if (noun === 'pr' && verb === 'list') return JSON.stringify(prs.has(head) ? [prs.get(head)] : []);
@@ -178,6 +213,12 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
       const id = 1000 + comments.length;
       comments.push({ id, body: input, created_at: '2026-10-15T00:00:00Z', target: noun, number: Number(args[2]) });
       return `https://github.com/o/r/issues/${args[2]}#issuecomment-${id}\n`;
+    }
+    if (isCommentPost(args)) {
+      const n = Number(args.join(' ').match(/issues\/(\d+)\/comments/)[1]);
+      const id = post(n, JSON.parse(input).body);
+      return included(201, { 'Content-Type': 'application/json; charset=utf-8' },
+        { id, html_url: `https://github.com/o/r/issues/${n}#issuecomment-${id}` });
     }
     if (noun === 'api') {
       if (args.at(-1).includes('/labels')) return JSON.stringify([[...available].map((name) => ({ name }))]);
@@ -203,7 +244,7 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
     }
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
-  return { gh, calls, comments, labels, repoLabels: available, pr: () => prs.get(branch) ?? null };
+  return { gh, calls, comments, labels, repoLabels: available, pr: () => prs.get(branch) ?? null, fail: (f) => failures.push({ ...f }) };
 }
 
 // Crashes the `n`th `op` (rm or writeFile) on a path under `root` once `active()` holds, after the call has run when
