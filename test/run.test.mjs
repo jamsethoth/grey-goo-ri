@@ -2071,6 +2071,7 @@ test('a ticket lock failure is that ticket\'s fault and run_end waits for every 
   await aEnded.wait();
   assert.ok(Array.isArray(results), `the Run settles with every Ticket's result: ${results}`);
   assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'fault']]);
+  assert.match(results[1].error, /unable to open database file/, 'the result keeps the acquisition error');
   assert.equal(run.runExitCode(results), 1);
   const evs = f.readEvents();
   const ends = evs.filter((e) => e.type === 'run_end');
