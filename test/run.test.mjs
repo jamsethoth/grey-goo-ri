@@ -18,6 +18,7 @@ import * as integrity from '../lib/integrity.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as locks from '../lib/locks.mjs';
 import * as marker from '../lib/marker.mjs';
+import { canonical, pathKey } from '../lib/paths.mjs';
 import * as record from '../lib/record.mjs';
 import * as run from '../lib/run.mjs';
 import * as golden from './support/golden.mjs';
@@ -451,7 +452,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held`) && b.includes('SQLite client')));
   assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir, 'the linked worktree uses the main checkout State Database');
+  assert.equal(pathKey((await gitModule.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir), 'the linked worktree uses the main checkout State Database');
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   const held = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(held.state, 'held');
@@ -614,7 +615,6 @@ test('resume refuses a recorded branch belonging to another Ticket', async (t) =
   }
 });
 
-const pathKey = (p) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
 
 test('admission detects an agent overwrite of an idle sibling as an Integrity Violation', async (t) => {
   const other = 'ticket/99-other';
@@ -1486,10 +1486,11 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
     `a comment names the record: ${JSON.stringify(f.comments())}`);
   assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir);
+  assert.equal(pathKey((await gitModule.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir));
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.ok(f.comments().every((b) => !b.includes(f.root)), 'no comment exposes a local path');
-  assert.ok(f.logs.some((l) => l.includes(f.commonDir)), 'the local log keeps the full diagnostic');
+  // From the worktree git names the common dir canonically, so the log may carry either spelling.
+  assert.ok(f.logs.some((l) => l.includes(f.commonDir) || l.includes(canonical(f.commonDir))), 'the local log keeps the full diagnostic');
   assert.equal(f.loadRow(), corrupt, 'the corrupt record is kept');
 });
 
@@ -1634,7 +1635,7 @@ test('snapshot and orchestrator writes wait beyond the default lock timeout', { 
     // The snapshot's first attempt is seen before the default waiter starts, so its own deadline would pass first.
     let tried;
     const attempted = new Promise((resolve) => { tried = resolve; });
-    fsPromises.mkdir = (path, ...rest) => { if (String(path) === lockDir) tried(); return mkdir(path, ...rest); };
+    fsPromises.mkdir = (path, ...rest) => { if (pathKey(String(path)) === pathKey(lockDir)) tried(); return mkdir(path, ...rest); };
     syncBuiltinESMExports();
     const settled = new Set();
     const track = (name, p) => p.then((v) => { settled.add(name); return v; }, (e) => { settled.add(name); throw e; });

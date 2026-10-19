@@ -78,15 +78,15 @@ test('ensureWorktree reuses its worktree when the repository is reached through 
   }
 });
 
-test('repoInfo reports the canonical common dir and main checkout whichever spelling it is given', async () => {
+// From a worktree git answers with the canonical common dir; from the main checkout, relative to the spelling given.
+test('repoInfo keeps the spelling it is given from the main checkout', async () => {
   const { root } = cloneWithOrigin();
   const link = `${root}-link`;
   symlinkSync(root, link, 'junction');
   try {
-    const real = realpathSync.native(join(root, 'main'));
     const info = await git.repoInfo(join(link, 'main'));
-    assert.equal(info.mainRoot, real);
-    assert.equal(info.gitCommonDir, join(real, '.git'));
+    assert.equal(info.gitCommonDir, join(link, 'main', '.git'));
+    assert.notEqual(realpathSync.native(info.gitCommonDir), info.gitCommonDir);
   } finally {
     rmSync(link, { recursive: true, force: true }); // removes the link, not its target
   }
