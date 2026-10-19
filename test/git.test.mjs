@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -59,6 +59,37 @@ test('ensureWorktree reuses the existing branch when the title (and so the deriv
   const again = await git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-new-title', base: 'main' });
   assert.equal(again.branch, 'ticket/4-old-title');
   assert.equal(sh(path, 'rev-parse', '--abbrev-ref', 'HEAD'), 'ticket/4-old-title');
+});
+
+// git reports canonical paths, so a repository reached through a junction, a symlinked TMPDIR or a Windows 8.3 name
+// must still be recognised as itself.
+test('ensureWorktree reuses its worktree when the repository is reached through a linked directory', async () => {
+  const { root } = cloneWithOrigin();
+  const link = `${root}-link`;
+  symlinkSync(root, link, 'junction');
+  try {
+    const mainRoot = join(link, 'main');
+    const path = join(link, 'wt', 'ticket-4');
+    await git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-title', base: 'main' });
+    const again = await git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-title', base: 'main' });
+    assert.equal(again.branch, 'ticket/4-title');
+  } finally {
+    rmSync(link, { recursive: true, force: true }); // removes the link, not its target
+  }
+});
+
+test('repoInfo reports the canonical common dir and main checkout whichever spelling it is given', async () => {
+  const { root } = cloneWithOrigin();
+  const link = `${root}-link`;
+  symlinkSync(root, link, 'junction');
+  try {
+    const real = realpathSync.native(join(root, 'main'));
+    const info = await git.repoInfo(join(link, 'main'));
+    assert.equal(info.mainRoot, real);
+    assert.equal(info.gitCommonDir, join(real, '.git'));
+  } finally {
+    rmSync(link, { recursive: true, force: true }); // removes the link, not its target
+  }
 });
 
 test('ensureWorktree rejects a plain folder at the worktree path and names it', async () => {

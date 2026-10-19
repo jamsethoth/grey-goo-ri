@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
@@ -41,13 +41,17 @@ function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 
 // A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view.
-function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, rootName = 'gg-run-' } = {}) {
-  const root = mkdtempSync(join(tmpdir(), rootName));
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, rootName = 'gg-run-', linked = false } = {}) {
+  // linked: every path gg is given goes through a junction, as through a symlinked TMPDIR or a Windows 8.3 name.
+  const real = mkdtempSync(join(tmpdir(), rootName));
+  const root = linked ? `${real}-link` : real;
+  if (linked) symlinkSync(real, root, 'junction');
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
   t.after(() => {
     record.close(commonDir);
-    rmSync(root, { recursive: true, force: true });
+    if (linked) rmSync(root, { recursive: true, force: true }); // removes the link, not its target
+    rmSync(real, { recursive: true, force: true });
   });
   sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
   sh(root, 'clone', '-q', 'origin.git', 'main');
@@ -94,7 +98,7 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
   const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git: gitModule, exec, cwd: mainRoot,
     log: (m) => logs.push(m), clock };
   return {
-    root, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
+    root, real, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
     readEvents: () => events.readEvents(commonDir),
     worktrees: () => sh(mainRoot, 'worktree', 'list').split('\n').length,
     loadRow: () => record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(TICKET)?.json,
@@ -363,6 +367,15 @@ test('a ticket reaching done exits 0 and the run events carry the run id and out
   assert.ok(existsSync(join(runDir, 'flow.json')), 'the Resolved Flow is in the run directory');
   assert.ok(existsSync(join(runDir, 'config-hash.txt')), 'the Config Hash is in the run directory');
   assert.ok(readdirSync(runDir).some((name) => name.endsWith('.log')), 'the run directory has a log file');
+});
+
+test('a Ticket in a repository reached through a linked directory reaches done and publishes no local path', async (t) => {
+  const f = fixture(t, { linked: true });
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.ok(f.gh.labels.has('gg:state:ready-for-qa'));
+  const published = JSON.stringify(f.gh.calls.map(({ args, input }) => [args, input]));
+  assert.ok(!published.includes(basename(f.real)), `gh exposes ${basename(f.real)}: ${published}`);
 });
 
 test('unknown dirty state is held with the diff stat', async (t) => {
