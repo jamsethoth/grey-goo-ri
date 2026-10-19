@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Bumps the SHA pins in .github/workflows. No npm entry: package.json has no dependencies; add one with the first.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci

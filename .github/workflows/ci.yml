@@ -1,0 +1,111 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  # The one Node CI proves: the current LTS, pinned exactly. Bump by PR; Dependabot does not update it.
+  NODE_VERSION: 24.22.0
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  suite:
+    # Stable names: branch protection requires these checks by name.
+    name: suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+        include:
+          - os: windows-2025
+            timeout: 30
+          - os: ubuntu-24.04
+            timeout: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No token in .git/config: a test that reached the real origin fails instead of pushing.
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      # Any real gh, claude or codex spawned by the suite lands in calls.log and fails the job below.
+      # Linux only: Windows spawns without a shell find only .exe, and no stand-in .exe is worth building.
+      - name: Tripwire for real gh, claude and codex
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/tripwire"
+          mkdir -p "$dir"
+          for exe in gh claude codex; do
+            printf '#!/bin/sh\necho "%s $*" >> "%s/calls.log"\nexit 97\n' "$exe" "$dir" > "$dir/$exe"
+            chmod +x "$dir/$exe"
+          done
+          echo "$dir" >> "$GITHUB_PATH"
+
+      # Exactly the local command (ADR 0010). Git Bash on Windows so tee keeps the bytes;
+      # shell: bash runs with pipefail, so the suite's exit code decides the step.
+      - name: Suite
+        id: suite
+        shell: bash
+        run: |
+          node --version
+          git --version
+          node scripts/run-suite.mjs 2>&1 | tee "$RUNNER_TEMP/suite.log"
+
+      - name: No real gh, claude or codex was called
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/tripwire/calls.log"
+          if [ -s "$log" ]; then cat "$log"; exit 1; fi
+
+      # The spec reporter's summary lines and failing test names.
+      - name: Summary
+        if: always()
+        shell: bash
+        env:
+          LEG: ${{ matrix.os }}, node ${{ env.NODE_VERSION }}
+        run: |
+          log="$RUNNER_TEMP/suite.log"
+          {
+            echo "### $LEG"
+            echo '```'
+            grep -aE '^ℹ (tests|pass|fail|cancelled|skipped|todo|duration_ms) ' "$log" || echo 'no summary: the suite did not finish'
+            grep -aE '^✖ ' "$log" | grep -v 'failing tests:' | sort -u || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Tells contention from regression for the timing-sensitive cases (exec.test.mjs:80, :228).
+      # continue-on-error: this step never changes the job's result; the Suite step already failed it.
+      - name: Re-run exec.test.mjs alone (diagnostic)
+        if: failure() && steps.suite.outcome == 'failure'
+        continue-on-error: true
+        shell: bash
+        run: |
+          grep -aqE 'exec\.test\.mjs:[0-9]+' "$RUNNER_TEMP/suite.log" || { echo 'no exec.test.mjs failure in this run'; exit 0; }
+          node --test test/exec.test.mjs
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: suite-${{ matrix.os }}
+          path: ${{ runner.temp }}/suite.log
+          retention-days: 14
+          if-no-files-found: warn

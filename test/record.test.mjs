@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as locks from '../lib/locks.mjs';
 import * as record from '../lib/record.mjs';
@@ -328,7 +328,8 @@ test('openDb shares one connection between spellings of the same directory', asy
   const db = record.openDb(commonDir);
   // String concatenation, not join: join would normalise the segments before openDb sees them.
   assert.equal(record.openDb(`${commonDir}/./gg/../`), db, 'a relative-segment spelling hits the cache');
-  await record.close(`${commonDir}\\gg\\..`);
+  // sep: backslashes on Windows; on POSIX a backslash is a filename character, not another spelling.
+  await record.close(`${commonDir}${sep}gg${sep}..`);
   assert.throws(() => db.prepare('SELECT 1'), /not open/, 'closing by another spelling closed the shared connection');
 });
 
