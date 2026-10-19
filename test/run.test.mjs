@@ -1274,8 +1274,8 @@ const HUMAN_NEEDS_HUMAN = 'GG:State:Needs-Human';
 const SHOUTED_IN_PROGRESS = 'GG:STATE:IN-PROGRESS';
 
 test('mixed-case human needs-human wins before any label write', async (t) => {
-  for (const inProgress of [true, false]) {
-    const f = fixture(t, { labels: [HUMAN_NEEDS_HUMAN, ...(inProgress ? [SHOUTED_IN_PROGRESS] : [])] });
+  for (const inProgress of [SHOUTED_IN_PROGRESS, IN_PROGRESS, null]) {
+    const f = fixture(t, { labels: [HUMAN_NEEDS_HUMAN, ...(inProgress ? [inProgress] : [])] });
     await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
