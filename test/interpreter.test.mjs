@@ -1670,3 +1670,28 @@ test('a failed Event insert at an Action completion saves nothing more of that r
   assert.ok(!g.readEvents().some((e) => e.type === 'action' || e.type === 'ticket_end'));
   assert.equal(g.gh.comments.length, 0);
 });
+
+test('a label update whose failure was saved before its completion is retried on resume', async (t) => {
+  const g = await golden.setup(t);
+  const ev = g.options.events;
+  let crashed = false;
+  // The done label does not land, and gg dies as that Action records its Event: { ok: false } is saved, uncompleted.
+  const events = (type, data) => {
+    if (!crashed && type === 'action' && data.vertex === 'done' && data.ordinal === 3) {
+      crashed = true;
+      throw new interpreter.CrashError('crash at the label Event');
+    }
+    return ev(type, data);
+  };
+  await assert.rejects(interpreter.runExecution({ ...g.options, events, gh: { ...g.options.gh, setLabels: async () => false } }));
+  const label = attemptMarker(g, 'done', 1, 'done', 3);
+  const mid = await loadTicket(g);
+  assert.deepEqual(mid.log.filter((e) => e.marker === label).map((e) => [e.step, e.evidence]), [['intent', undefined], ['evidence', { ok: false }]]);
+  assert.ok(!g.gh.labels.has('gg:state:ready-for-qa'));
+
+  const result = await interpreter.runExecution({ ...g.options, events, record: mid });
+  assert.equal(result.outcome, 'done');
+  assert.ok(g.gh.labels.has('gg:state:ready-for-qa'), 'the failed label update is made on resume');
+  assert.equal(steps(await loadTicket(g), label).at(-1), 'complete');
+  assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+});
