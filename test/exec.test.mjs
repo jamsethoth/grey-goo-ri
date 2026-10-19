@@ -58,11 +58,19 @@ test('runShell with a timeout still returns the exit code and output of a comman
   assert.equal(res.leftovers, undefined, 'a clean command must not report leftovers (e.g. its console host)');
 });
 
+// The longest a timed-out runShell may take, from lib/exec.mjs's budgets. On Windows: the helper's start-up budget and the
+// command's timeout (timeoutMs each), the wait for the helper to stop, then up to two sequential taskkill /T calls (the
+// helper, and the command when no job object exists). Elsewhere: the timeout and one cleanup budget. Plus a second of slack.
+const timeoutBound = (timeoutMs) => 1000 + (process.platform === 'win32'
+  ? 2 * timeoutMs + exec.CLEANUP_BUDGET_MS + 2 * exec.TREE_KILL_BUDGET_MS
+  : timeoutMs + exec.CLEANUP_BUDGET_MS);
+
 test('runShell: a command outliving timeoutMs returns within budget, flagged as timed out', async () => {
-  const p = script('sleep.mjs', `setTimeout(() => {}, 60000);`);
+  // Outlives the bound by far, so a runShell that waited for the command could not pass.
+  const p = script('sleep.mjs', `setTimeout(() => {}, 300000);`);
   const t = Date.now();
   const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 500 });
-  assert.ok(Date.now() - t < 500 + 2500, `took ${Date.now() - t} ms`);
+  assert.ok(Date.now() - t < timeoutBound(500), `took ${Date.now() - t} ms`);
   assert.equal(res.timedOut, true);
 });
 
