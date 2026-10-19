@@ -986,6 +986,20 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
   }
 });
 
+test('a resumed pending report emits no second ticket_start', async (t) => {
+  const { f } = await dirtyTicket(t, false);
+  const failing = failComment(f);
+  const first = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
+  failing.on = false;
+
+  const second = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
+  const { execution } = await loadTicket(f);
+  assert.equal(f.readEvents().filter((e) => e.type === 'ticket_start' && e.execution === execution).length, 1);
+  assert.equal(endsOf(f, execution).length, 1);
+});
+
 test('fixing the worktree while a hold comment is pending still finishes the hold', async (t) => {
   for (const seeded of [false, true]) {
     const { f } = await dirtyTicket(t, seeded);

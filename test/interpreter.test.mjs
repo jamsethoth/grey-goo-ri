@@ -1721,3 +1721,26 @@ test('a record saved before write-ahead Attempts resumes its retried call from t
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'from the session the record saved');
   assert.deepEqual((await loadTicket(g)).retries['implementer/1/red/1'], { timeout: 1 }, 'the spent budget is kept');
 });
+
+test('a fault or abandonment whose ticket_end fails is not saved as finished', async (t) => {
+  for (const [kind, opts, state] of [
+    ['fault', { fault: new Error('admission broke') }, 'fault'],
+    ['abandonment', { admission: { kind: 'abandon', reason: 'A human set needs-human.', inProgress: true } }, 'abandoned'],
+  ]) {
+    await t.test(kind, async (t) => {
+      const g = await golden.setup(t);
+      const db = record.openDb(g.commonDir);
+      db.exec("CREATE TRIGGER fail_end BEFORE INSERT ON events WHEN NEW.type = 'ticket_end' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END");
+      const err = await interpreter.runExecution({ ...g.options, ...opts }).then(() => null, (e) => e);
+      assert.equal(err?.name, 'RecordSaveError', String(err));
+      const mid = await loadTicket(g);
+      assert.equal(mid.state, 'active', 'no finished state without its ticket_end');
+      assert.ok(interpreter.pendingReport(mid), 'the decided report waits for the next Run');
+
+      db.exec('DROP TRIGGER fail_end');
+      await interpreter.runExecution({ ...g.options, record: mid });
+      assert.equal((await loadTicket(g)).state, state);
+      assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+    });
+  }
+});
