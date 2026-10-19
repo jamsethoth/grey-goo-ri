@@ -1331,6 +1331,27 @@ test('a crash between admission and its hold keeps the decision and its one tick
   assert.equal(endsOf(f, mid.execution).length, 1);
 });
 
+test('an Interrupted Attempt hold warns before its record is deleted, then and on the next Run', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const real = f.harness.run;
+  f.harness.run = async () => {
+    f.harness.run = real;
+    throw new interpreter.CrashError('gg died during the call');
+  };
+  await seedExecution(f);
+  const warning = /ignored Protected Files such as \.claude\/settings\.local\.json[^]*before deleting the record/;
+
+  const first = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(first), 2, JSON.stringify(first));
+  assert.equal((await loadTicket(f)).state, 'held');
+  assert.match(f.comments().at(-1) ?? '', warning, 'the hold comment warns');
+
+  await run.runTarget(f.options);
+  const skipped = f.logs.findLast((l) => l.includes('skipped')) ?? '';
+  assert.match(skipped, warning, 'the held-record skip warns too');
+  assert.ok(skipped.search(warning) < skipped.indexOf('DELETE FROM records'), `the warning comes before the delete: ${skipped}`);
+});
+
 test('a human needs-human label before the first Visit prevents admission effects', async (t) => {
   for (const dirty of [false, true]) {
     const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });

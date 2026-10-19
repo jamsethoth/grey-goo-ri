@@ -1532,6 +1532,10 @@ test('an interrupted call that changed an ignored protected file is held', async
       const red = actionMarker(g, 'red', 1);
       assert.deepEqual(record.openIntents(final).map((e) => [e.action, e.marker]), [['call', red]], 'the Attempt intent stays open');
       assert.ok(final.terminalReason.text.includes(red), `the hold names the Attempt: ${final.terminalReason.text}`);
+      // Deleting the record drops the saved baseline, so the hold says to check the files the agent may have changed first.
+      const warning = /ignored Protected Files such as \.claude\/settings\.local\.json[^]*before deleting the record/;
+      assert.match(ticketComments(g).at(-1)?.body ?? '', warning, 'the hold comment warns');
+      assert.ok(g.logs.some((l) => warning.test(l)), `the hold log warns: ${JSON.stringify(g.logs)}`);
     });
   }
 });
