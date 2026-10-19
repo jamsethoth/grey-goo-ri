@@ -892,6 +892,35 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   assert.match(end.interrupted.reason.text, /auth/, 'ticket_end keeps the interrupted Terminal Reason too');
 });
 
+test('a hold over an interrupted blocked terminal posts its own comment', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
+  const g = await golden.setup(t, { responses });
+  const blocked = terminalMarker(g, 'needs-human', 1);
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: blocked, point: 'before-effect' } }),
+    (err) => err instanceof interpreter.CrashError);
+  assert.equal(ticketComments(g).length, 0);
+
+  const result = await interpreter.runExecution({ ...g.options, record: await record.load(g.commonDir, 'ticket', golden.TICKET),
+    admission: { kind: 'hold', name: 'dirty-worktree', text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      advice: 'Commit, stash or remove these changes in the worktree.', detail: ' human.txt (untracked)\n' } });
+
+  assert.equal(result.held, true, JSON.stringify(result));
+  const [posted, ...rest] = ticketComments(g);
+  assert.equal(rest.length, 0, 'only the hold is reported');
+  assert.ok(posted.body.includes(terminalMarker(g, 'hold', 1)), 'the hold has its own Action Marker');
+  assert.match(posted.body, /uncommitted changes gg did not make/);
+  assert.match(posted.body, /Commit, stash or remove/);
+  assert.match(posted.body, /human\.txt \(untracked\)/);
+  assert.doesNotMatch(posted.body, /### gg: blocked|contradicts/, 'the interrupted blocked comment is not replayed');
+  assert.ok(g.gh.labels.has('gg:state:needs-human'));
+  const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.equal(rec.state, 'held');
+  assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [blocked], 'the interrupted blocked intent stays open, untouched');
+  const end = g.readEvents().find((e) => e.type === 'ticket_end');
+  assert.equal(end.reason.decidedBy.hold, 'dirty-worktree');
+});
+
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
   const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
   const m = terminalMarker(g, 'fault', 1);

@@ -1066,7 +1066,7 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason', 
     assert.equal(rec.state, 'held');
     const evs = f.readEvents().filter((e) => e.ticket === TICKET);
     assert.deepEqual(evs.map((e) => (e.type === 'action' ? `${e.vertex} ${e.phase} ${e.ordinal}` : e.type)),
-      ['ticket_start', 'needs-human needs-human 1', 'needs-human needs-human 2', 'ticket_end'], hold);
+      ['ticket_start', 'needs-human hold 1', 'needs-human hold 2', 'ticket_end'], hold);
     assert.ok(evs.every((e) => e.execution === rec.execution && e.run === lastRun(f)), 'one Execution and Run throughout');
     assert.equal(evs.at(-1).outcome, 'needs-human');
     assert.deepEqual(evs.at(-1).reason, rec.terminalReason);
