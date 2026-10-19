@@ -5,6 +5,6 @@
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "bin": { "gg": "bin/gg.mjs" },
-  "engines": { "node": ">=22.13" },
+  "engines": { "node": ">=24.15" },
   "scripts": { "test": "node scripts/run-suite.mjs" }
 }

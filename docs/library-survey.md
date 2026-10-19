@@ -2,8 +2,9 @@
 
 Which hand-rolled behaviour a well-vetted npm package or Node built-in would delete, decided item by item with the
 owner before epic 1 continued with #19 to #23. Constraints: AGENTS.md at ddd552d (dependencies allowed when they earn
-their place, built-ins preferred, never an agentic workflow framework per ADR 0001), native Windows, Node 22.13+, and
-the Codex Windows sandbox, which cannot build native addons. Line counts are from the repository at ddd552d.
+their place, built-ins preferred, never an agentic workflow framework per ADR 0001), native Windows, Node 22.13+
+(since raised to 24.15, ADR 0012), and the Codex Windows sandbox, which cannot build native addons. Line counts are
+from the repository at ddd552d.
 
 | Behaviour | Where | Lines | Candidate | Risk | Windows and sandbox | Decision |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -21,7 +22,7 @@ the Codex Windows sandbox, which cannot build native addons. Line counts are fro
 | Reconciliation | #19 | git log and gh lookups | none applicable | | | **Hand-rolled** |
 | Pool | #22; ff `lib/run.mjs:17-27` | 10 | `p-limit` | a dependency for ten tested lines | none | **Hand-rolled** |
 | Two gg processes on one repository | #22 | | already serialised by the SQLite locks | | | **No change**; #22 gains the shared `events` table in its DoD |
-| Test glob to regex | `lib/checks.mjs:63` | 6 | `picomatch`; `path.matchesGlob` | `path.matchesGlob` is experimental on the 22.13 floor | none | **Hand-rolled**; revisit when the floor makes `matchesGlob` stable |
+| Test glob to regex | `lib/checks.mjs:63` | 6 | `picomatch`; `path.matchesGlob` | `path.matchesGlob` is experimental on the 22.13 floor; stable on the 24.15 floor (ADR 0012) | none | **Hand-rolled**; revisit when the floor makes `matchesGlob` stable |
 | Process tree kill and job object | `lib/exec.mjs`, `lib/winjob.ps1` | 239 + script | `tree-kill`, `execa` | `tree-kill` is `taskkill /T`, which exec already has as fallback; job objects need a native addon | the sandbox cannot build addons | **Kept** |
 | Version compare for `gg doctor` | slice 2 | ~5 | `semver` | none | none | **Hand-rolled** unless prerelease tags appear |
 | Retry on git index lock with backoff | request 3.5 | ~8 | `p-retry` | none | none | **Hand-rolled** |
