@@ -205,6 +205,14 @@ test('every side-effect action leaves intent, evidence and completion with the f
   for (const i of all) assert.deepEqual(steps(g.rec, i.marker), ['intent', 'evidence', 'complete'], `${i.action} ${i.marker}`);
   assert.deepEqual(record.openIntents(g.rec), []);
 
+  // Each agent Attempt is write-ahead too, its intent carrying the baseline the Integrity Assertion compares against.
+  const calls = intents(g.rec, 'call');
+  assert.deepEqual(calls.map((c) => c.marker), [actionMarker(g, 'red', 1), actionMarker(g, 'green', 1)]);
+  for (const c of calls) {
+    assert.deepEqual(Object.keys(c.payload.baseline).sort(), ['head', 'idle', 'own', 'tests', 'untracked']);
+    assert.deepEqual(Object.keys(c.payload.baseline.own).sort(), ['head', 'index', 'tree']);
+  }
+
   const commits = intents(g.rec, 'commit');
   assert.equal(commits.length, 2);
   for (const c of commits) {
@@ -1451,4 +1459,217 @@ test('a review on a workspace-write node is still read-only', async (t) => {
   assert.equal(call?.outcome, 'integrity-violation');
   assert.ok(call.violations.some((v) => v.surface === 'tree'), JSON.stringify(call.violations));
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
+});
+
+// #67: agent Attempts are write-ahead, and each record transition saves with its Event.
+const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKET);
+const ticketRow = (g) => JSON.parse(record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET).json);
+const attemptMarker = (g, vertex, visit, phase, ordinal, attempt = 1) =>
+  marker.formatMarker({ execution: g.rec.execution, vertex, visit, phase, ordinal, run: g.rec.run, attempt });
+
+// A bounded wait for state a timer writes: there is no barrier to await on a heartbeat save.
+async function until(check, ms = 5000) {
+  for (const end = Date.now() + ms; !check();) {
+    if (Date.now() > end) assert.fail(`not reached within ${ms} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+test('a completed call is not rerun after a crash before the next action', async (t) => {
+  await t.test('a red call', async (t) => {
+    const g = await golden.setup(t);
+    await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: actionMarker(g, 'red', 1), point: 'after-completion' } }),
+      (err) => err instanceof interpreter.CrashError);
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+
+    assert.equal(result.outcome, 'done');
+    assert.equal(g.harness.calls.length, 2, 'red and green run once each');
+    assert.deepEqual(tddTrace(g), FIRST_VISIT, 'one Action Event per Action');
+  });
+  await t.test('a review with a changes result', async (t) => {
+    const g = await reviewFlow(t, {
+      'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+      'reviewer/2/review/1': reviewed(review('ok')),
+    });
+    const call = attemptMarker(g, 'reviewer', 1, 'review', 1);
+    await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: call, point: 'after-completion' } }),
+      (err) => err instanceof interpreter.CrashError);
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+
+    assert.equal(result.outcome, 'done');
+    assert.equal(g.harness.calls.filter((c) => c.marker === call).length, 1, 'the first review runs once');
+    const events = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.phase === 'review' && e.ordinal === 1);
+    assert.deepEqual(events.map((e) => e.outcome), ['changes']);
+    const final = await loadTicket(g);
+    assert.equal(final.traversals['reviewer->implementer-fix:changes'], 1, 'the saved changes result routed to the fix');
+    assert.deepEqual(final.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
+  });
+});
+
+test('an interrupted call that changed an ignored protected file is held', async (t) => {
+  for (const changed of [true, false]) {
+    await t.test(changed ? 'with the file changed' : 'with a clean worktree', async (t) => {
+      const g = await golden.setup(t);
+      mkdirSync(join(g.worktree, '.claude'), { recursive: true });
+      writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
+      const local = join(g.worktree, '.claude', 'settings.local.json');
+      writeFileSync(local, '{"owner":true}\n');
+      const run = g.harness.run;
+      let crashed = false;
+      g.harness.run = async (call) => {
+        if (crashed) return run(call);
+        crashed = true;
+        if (changed) writeFileSync(local, '{"agent":true}\n');
+        throw new interpreter.CrashError('gg died during the call');
+      };
+      await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
+      const left = readFileSync(local, 'utf8');
+      const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+
+      assert.equal(result.held, true, JSON.stringify(result));
+      assert.equal(g.harness.calls.length, 0, 'no agent runs again over the interrupted Attempt');
+      assert.equal(readFileSync(local, 'utf8'), left, 'nothing is restored or discarded');
+      const final = await loadTicket(g);
+      assert.equal(final.state, 'held');
+      const red = actionMarker(g, 'red', 1);
+      assert.deepEqual(record.openIntents(final).map((e) => [e.action, e.marker]), [['call', red]], 'the Attempt intent stays open');
+      assert.ok(final.terminalReason.text.includes(red), `the hold names the Attempt: ${final.terminalReason.text}`);
+    });
+  }
+});
+
+test('findings-hash appends once per visit across a crash', async (t) => {
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+  const ev = g.options.events;
+  let crashed = false;
+  // gg dies as the findings-hash Action of the first review records its Event.
+  const events = (type, data) => {
+    if (!crashed && type === 'action' && data.vertex === 'reviewer' && data.phase === 'review' && data.ordinal === 2) {
+      crashed = true;
+      throw new interpreter.CrashError('crash at the findings-hash Event');
+    }
+    return ev(type, data);
+  };
+  await assert.rejects(interpreter.runExecution({ ...g.options, events }));
+  const result = await interpreter.runExecution({ ...g.options, events, record: await loadTicket(g) });
+
+  assert.equal(result.outcome, 'done');
+  const final = await loadTicket(g);
+  assert.deepEqual(final.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]], 'one review entry per Visit');
+  const hashed = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.phase === 'review' && e.ordinal === 2);
+  assert.equal(hashed.length, 1);
+  assert.notEqual(hashed[0].repeat, true, 'the review is not its own repeat');
+});
+
+test('the terminal stop survives a crash before the first terminal action', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'NOTES-7f3: the ticket contradicts itself.' };
+  const g = await golden.setup(t, { responses });
+  const db = record.openDb(g.commonDir);
+  // Every save carrying a Terminal stop fails, as if gg died once the Terminal cursor was saved.
+  db.exec(`CREATE TRIGGER fail_stop BEFORE UPDATE ON records WHEN NEW.json LIKE '%"terminalStop"%'
+    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  await assert.rejects(interpreter.runExecution(g.options));
+  db.exec('DROP TRIGGER fail_stop');
+  assert.equal(ticketComments(g).length, 0);
+  const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+
+  assert.equal(result.outcome, 'needs-human');
+  const posted = ticketComments(g);
+  assert.equal(posted.length, 1);
+  assert.match(posted[0].body, /### gg: blocked/);
+  assert.ok(posted[0].body.includes('NOTES-7f3'), 'the blocked response is in the blocked comment');
+  assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+});
+
+test('attempt numbering continues after resume', async (t) => {
+  const red = golden.firstVisitResponses['implementer/1/red/1'];
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
+    'implementer/1/red/1': { ...red, result: { status: 'timed-out' } }, 'implementer/1/red/2': red } });
+  let reads = 0;
+  // The other worktrees are read once per Attempt before its baseline: gg dies after Attempt 1 retried, before Attempt 2.
+  const others = async () => {
+    if (++reads === 2) throw new interpreter.CrashError('crash before attempt 2');
+    return [];
+  };
+  await assert.rejects(interpreter.runExecution({ ...g.options, others }), (err) => err instanceof interpreter.CrashError);
+  const result = await interpreter.runExecution({ ...g.options, others, record: await loadTicket(g) });
+
+  assert.equal(result.outcome, 'done');
+  assert.deepEqual(attemptsOf(g, 'red', 1).map((e) => e.attempt), [1, 2], 'no second Attempt 1');
+  assert.equal(g.harness.calls.length, 3, 'red twice, green once');
+  assert.equal(g.harness.calls[1].marker, attemptMarker(g, 'implementer', 1, 'red', 1, 2), 'the resume runs Attempt 2');
+  assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'Attempt 2 resumes the session Attempt 1 saved');
+  assert.deepEqual((await loadTicket(g)).retries['implementer/1/red/1'], { timeout: 1 }, 'one retry consumed');
+});
+
+test('the record carries the last heartbeat of a running call', async (t) => {
+  const red = golden.firstVisitResponses['implementer/1/red/1'];
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
+    'implementer/1/red/1': { ...red, hang: true }, 'implementer/1/red/2': red } });
+  let started;
+  const running = new Promise((resolve) => { started = resolve; });
+  const run = g.harness.run;
+  g.harness.run = (call) => {
+    const out = run(call);
+    if (call.attempt === 1) started();
+    return out;
+  };
+  const execution = interpreter.runExecution({ ...g.options, heartbeatMs: 5 });
+  try {
+    await running;
+    const first = ticketRow(g).heartbeat;
+    assert.match(String(first), /^2026-10-15T/, 'the heartbeat is saved with the Attempt intent');
+    await g.options.clock.sleep(60_000);
+    await until(() => ticketRow(g).heartbeat !== first);
+    assert.ok(Date.parse(ticketRow(g).heartbeat) > Date.parse(first), 'updated while the call runs');
+    assert.equal(ticketRow(g).activity.busy, true, 'a heartbeat leaves the activity as it is');
+  } finally {
+    // Settled before the case ends either way, so no Execution outlives its temp repo.
+    g.harness.cancel();
+    await execution.catch(() => {});
+  }
+  assert.equal((await execution).outcome, 'done');
+  assert.equal(ticketRow(g).heartbeat, null, 'cleared once the call ends');
+});
+
+test('a completed call with an integrity violation still rolls back under its own marker', async (t) => {
+  const g = await golden.setup(t);
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    golden.sh(g.worktree, 'add', '-A');
+    golden.sh(g.worktree, 'commit', '-q', '-m', 'agent commit');
+    return out;
+  };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base, 'the branch is back at the baseline head');
+  assert.deepEqual(steps(g.rec, actionMarker(g, 'red', 1)), ['intent', 'evidence', 'complete']);
+  const [reset] = intents(g.rec, 'reset');
+  // After the red Phase's three declared ordinals, keeping the Attempt.
+  assert.equal(reset.marker, actionMarker(g, 'red', 4));
+  assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
+});
+
+test('a failed Event insert at an Action completion saves nothing more of that record', async (t) => {
+  const g = await golden.setup(t);
+  record.openDb(g.commonDir).exec(`CREATE TRIGGER fail_red BEFORE INSERT ON events
+    WHEN NEW.type = 'action' AND json_extract(NEW.json, '$.phase') = 'red' AND json_extract(NEW.json, '$.ordinal') = 1
+    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
+
+  assert.equal(err?.name, 'RecordSaveError', String(err));
+  const saved = await loadTicket(g);
+  assert.equal(saved.state, 'active', 'no fault is saved over the failed transition');
+  assert.deepEqual(saved.sessions, {}, 'the call result rolled back with its Event');
+  assert.deepEqual(steps(saved, actionMarker(g, 'red', 1)), ['intent']);
+  assert.ok(!g.readEvents().some((e) => e.type === 'action' || e.type === 'ticket_end'));
+  assert.equal(g.gh.comments.length, 0);
 });

@@ -307,6 +307,8 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
       const final = await loadTicket(g);
       assert.equal(final.state, 'done');
       assert.equal(g.harness.calls.length, 2, 'the resume continues at the cursor; no agent call is repeated');
+      const acted = g.readEvents().filter((e) => e.type === 'action').map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}/${e.attempt}`);
+      assert.deepEqual(acted, [...new Set(acted)], 'one Action Event per Action');
 
       // One intent, one evidence and one completion per marker.
       for (const e of final.log.filter((x) => x.step === 'intent')) {

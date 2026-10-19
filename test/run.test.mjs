@@ -1287,6 +1287,33 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   assert.equal(f.comments().length, 1);
 });
 
+test('a crash between admission and its hold keeps the decision and its one ticket_start', async (t) => {
+  const { f } = await dirtyTicket(t, false);
+  const db = record.openDb(f.commonDir);
+  // Every save carrying a Terminal stop fails, as if gg died once admission had saved the new record.
+  db.exec(`CREATE TRIGGER fail_stop BEFORE UPDATE ON records WHEN NEW.json LIKE '%"terminalStop"%'
+    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  const first = await run.runTarget(f.options);
+  db.exec('DROP TRIGGER fail_stop');
+  assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
+  const mid = await loadTicket(f);
+  assert.ok(mid, 'admission saved the record');
+  assert.equal(mid.terminalStop, undefined, 'the hold was never saved');
+  assert.equal(f.comments().length, 0);
+
+  const second = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
+  const starts = f.readEvents().filter((e) => e.type === 'ticket_start' && e.ticket === TICKET);
+  assert.deepEqual(starts.map((e) => e.execution), [mid.execution], 'one ticket_start for the Execution');
+  const final = await loadTicket(f);
+  assert.equal(final.state, 'held');
+  assert.equal(final.terminalStop.fresh, true, 'the hold is still the fresh one admission decided');
+  const [comment, ...more] = f.comments();
+  assert.equal(more.length, 0);
+  assert.doesNotMatch(comment, /DELETE FROM records/, 'a fresh hold has no row to delete');
+  assert.equal(endsOf(f, mid.execution).length, 1);
+});
+
 test('a human needs-human label before the first Visit prevents admission effects', async (t) => {
   for (const dirty of [false, true]) {
     const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });
