@@ -500,6 +500,46 @@ for (const point of ['after-effect', 'after-completion']) {
   });
 }
 
+// GitHub keeps the repository's spelling of a label gg adds, and the prefix's case may change between Runs.
+for (const point of ['after-effect', 'after-completion']) {
+  test(`gg-owned mixed-case needs-human completes without abandonment or replay, crash ${point}`, async (t) => {
+    const g = await violating(t);
+    const spelled = 'Gg:state:needs-human';
+    g.gh = golden.fakeGh({ branch: golden.BRANCH, repoLabels: [spelled] });
+    g.options.gh.setGh(g.gh.gh);
+    const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
+    await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
+    assert.deepEqual([...g.gh.labels], [spelled], 'GitHub shows the repository spelling');
+    assert.equal(edits(), 1);
+
+    const result = await interpreter.runExecution({ ...g.options, labelPrefix: 'Gg', record: await loadTicket(g) });
+    assert.equal(result.outcome, 'needs-human');
+    const final = await loadTicket(g);
+    assert.equal(final.state, 'needs-human', 'not mistaken for a human override');
+    assert.deepEqual(record.openIntents(final), []);
+    assert.equal(edits(), 1, 'the label is not applied again');
+    assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+  });
+}
+
+test('label reconciliation requires case-insensitive additions and removals', async (t) => {
+  const g = await violating(t);
+  const { m } = await crashed(g, ['needs-human', 1, 'needs-human', 2], 'after-effect');
+  const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
+  const before = edits();
+  const shows = async (names) => {
+    g.gh.labels.clear();
+    for (const name of names) g.gh.labels.add(name);
+    const rec = await loadTicket(g);
+    assert.equal((await reconcile.terminalEffects(rec, { gh: g.options.gh, labelPrefix: 'gg', cwd: g.mainRoot, markers: [m] })).next, 'continue');
+    return !record.openIntents(await loadTicket(g)).some((e) => e.marker === m);
+  };
+  assert.equal(await shows([NEEDS_HUMAN, 'GG:STATE:IN-PROGRESS']), false, 'a removal still shown differently cased stays open');
+  assert.equal(await shows([]), false, 'an absent addition stays open');
+  assert.equal(await shows(['GG:State:Needs-Human']), true, 'a differently cased addition with the removal absent completes');
+  assert.equal(edits(), before, 'Reconciliation makes no label edit');
+});
+
 // Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a freshly loaded record with the same options.
 const CLASSIFIED = {
   held: {

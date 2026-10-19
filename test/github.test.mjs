@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../lib/github.mjs';
 import * as labels from '../lib/labels.mjs';
+import * as golden from './support/golden.mjs';
 
 test('createIssue keeps malformed output complete for redaction before publication', async () => {
   const output = 'x'.repeat(190) + '/private/worktree/secret-file';
@@ -84,6 +85,47 @@ test('readiness names the closed Ticket, open blockers or State Label', () => {
     const label = `x:state:${name}`;
     assert.equal(github.readinessReason({ ...issue, labels: [{ name: label }] }, { prefix: 'x' }), `carries State Label ${label}`);
   }
+});
+
+test('readiness recognises mixed-case State Labels and preserves their spelling', async () => {
+  const viewed = async (name) => {
+    const fake = golden.fakeGh({});
+    fake.labels.add(name);
+    github.setGh(fake.gh);
+    return github.viewIssue(7, '/repo');
+  };
+  for (const prefix of ['gg', 'Gg']) {
+    for (const name of labels.BUSY_STATES) {
+      const shown = `GG:STATE:${name.toUpperCase()}`;
+      const issue = await viewed(shown);
+      assert.equal(github.isReady(issue, { prefix }), false, `${prefix} ${name}`);
+      assert.equal(github.readinessReason(issue, { prefix }), `carries State Label ${shown}`);
+    }
+    for (const other of ['X:STATE:IN-PROGRESS', 'IN-PROGRESS']) {
+      assert.equal(github.readinessReason(await viewed(other), { prefix }), null, other);
+    }
+  }
+});
+
+test('inProgressSince matches mixed-case event labels', async () => {
+  const pages = [[
+    { event: 'labeled', label: { name: 'GG:State:In-Progress' }, created_at: '2026-10-01T00:00:00Z' },
+    { event: 'unlabeled', label: { name: 'gg:state:in-progress' }, created_at: '2026-10-02T00:00:00Z' },
+    { event: 'labeled', label: { name: 'X:state:in-progress' }, created_at: '2026-10-03T00:00:00Z' },
+  ], [
+    { event: 'labeled', label: { name: 'gg:STATE:IN-PROGRESS' }, created_at: '2026-10-04T00:00:00Z' },
+    { event: 'labeled', created_at: '2026-10-05T00:00:00Z' },
+    { event: 'labeled', label: { name: 'gg:state:needs-human' }, created_at: '2026-10-06T00:00:00Z' },
+    { event: 'commented', created_at: '2026-10-07T00:00:00Z' },
+  ]];
+  for (const prefix of ['gg', 'Gg']) {
+    const { gh, calls } = fakeGh((args) => (args[0] === 'api' ? pages : ''));
+    github.setGh(gh);
+    assert.equal(await github.inProgressSince(7, '/repo', { prefix }), '2026-10-04T00:00:00Z', prefix);
+    assert.ok(calls[0].args.includes('--paginate') && calls[0].args.at(-1).endsWith('/issues/7/events'));
+  }
+  github.setGh(fakeGh(() => [pages[0].slice(1), pages[1].slice(1)]).gh);
+  assert.equal(await github.inProgressSince(7, '/repo'), null);
 });
 
 test('upsertPr updates an existing PR found by head branch instead of creating', async () => {

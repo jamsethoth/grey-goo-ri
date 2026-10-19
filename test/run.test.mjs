@@ -1269,6 +1269,76 @@ test('a human needs-human label prevents admission effects without a readable re
   }
 });
 
+// GitHub matches label names case-insensitively, so a human's own spelling of a State Label is still that label.
+const HUMAN_NEEDS_HUMAN = 'GG:State:Needs-Human';
+const SHOUTED_IN_PROGRESS = 'GG:STATE:IN-PROGRESS';
+
+test('mixed-case human needs-human wins before any label write', async (t) => {
+  for (const inProgress of [true, false]) {
+    const f = fixture(t, { labels: [HUMAN_NEEDS_HUMAN, ...(inProgress ? [SHOUTED_IN_PROGRESS] : [])] });
+    await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+      configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
+    const inner = f.gh.gh;
+    const states = [];
+    github.setGh(async (args, cwd, input) => {
+      if (args[0] === 'issue' && args[1] === 'edit') states.push(JSON.parse(f.loadRow()).state);
+      return inner(args, cwd, input);
+    });
+
+    const results = await run.runTarget(f.options);
+    assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
+    assert.equal(run.runExitCode(results), 2);
+    assert.equal(f.harness.calls.length, 0, 'no agent started');
+    const edits = f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').map((c) => c.args.slice(3));
+    assert.deepEqual(edits, inProgress ? [['--remove-label', IN_PROGRESS]] : [], 'only the in-progress label is removed');
+    assert.deepEqual(states, inProgress ? ['abandoned'] : [], 'the record is abandoned before the label write');
+    assert.deepEqual(f.comments(), [], 'no comment posted');
+    assert.deepEqual([...f.gh.labels], [HUMAN_NEEDS_HUMAN], 'the human hold keeps its spelling');
+    assert.equal((await loadTicket(f)).state, 'abandoned');
+  }
+});
+
+test('mixed-case needs-human skips without a readable record or with a held ticket lock', async (t) => {
+  for (const kind of ['missing record', 'corrupt record', 'held lock']) {
+    const f = fixture(t, { labels: [HUMAN_NEEDS_HUMAN] });
+    if (kind === 'corrupt record') record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
+    const row = f.loadRow();
+    const holder = kind === 'held lock' && await holdLock(t, f.commonDir, `ticket-${TICKET}`);
+    const results = await run.runTarget(f.options);
+    if (holder) await holder.release();
+    assert.equal(ticketResult(results).outcome, 'skipped', `${kind}: ${JSON.stringify(results)}`);
+    assert.equal(ticketResult(results).state, 'needs-human', kind);
+    assert.equal(run.runExitCode(results), 2, kind);
+    assert.equal(f.harness.calls.length, 0, `${kind}: no agent started`);
+    assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], `${kind}: no label write or comment`);
+    assert.equal(f.worktrees(), 1, `${kind}: no worktree created`);
+    assert.equal(f.loadRow(), row, `${kind}: the record is untouched`);
+  }
+});
+
+test('admission does not re-add differently cased in-progress', async (t) => {
+  const f = fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
+  f.options.config.labelPrefix = 'Gg';
+  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(f.harness.calls.length, 2, 'the Execution resumes at its cursor');
+  assert.equal((await loadTicket(f)).state, 'done');
+  assert.deepEqual(f.labelAdds(), ['Gg:state:ready-for-qa'], 'in-progress is not added again');
+  assert.ok(![...f.gh.labels].some((l) => l.toLowerCase() === IN_PROGRESS), `the Terminal removes it: ${[...f.gh.labels]}`);
+
+  const stuck = fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
+  stuck.options.config.labelPrefix = 'Gg';
+  assert.equal(run.runExitCode(await run.runTarget(stuck.options)), 0);
+  assert.ok(stuck.logs.some((l) => l.includes('with no Execution Record behind it')), JSON.stringify(stuck.logs));
+  assert.equal(stuck.harness.calls.length, 0, 'no agent started');
+  assert.deepEqual(stuck.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no write on a Stuck Ticket');
+  assert.equal(stuck.worktrees(), 1, 'no worktree');
+  assert.ok(stuck.gh.labels.has(SHOUTED_IN_PROGRESS), 'the State Label is left for Stuck handling');
+});
+
 test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
   const f = fixture(t, { responses, labels: [NEEDS_HUMAN] });
