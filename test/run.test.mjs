@@ -1196,7 +1196,7 @@ test('human override abandons a pending hold before any label cleanup', async (t
     let failEdit = cleanupFails;
     github.setGh(async (args, cwd, input) => {
       if (args[0] === 'issue' && args[1] === 'edit') {
-        states.push(JSON.parse(f.loadRow()).state);
+        states.push(JSON.parse(f.loadRow()).terminalStop?.abandoned);
         if (failEdit) {
           f.gh.calls.push({ args, cwd, input });
           throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
@@ -1208,14 +1208,16 @@ test('human override abandons a pending hold before any label cleanup', async (t
     let results = await run.runTarget(f.options);
     if (cleanupFails) {
       assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
-      assert.equal((await loadTicket(f)).state, 'abandoned');
+      const pending = await loadTicket(f);
+      assert.equal(pending.terminalStop?.abandoned, true, 'the abandonment is decided durably');
+      assert.equal(pending.state, 'active', 'its final state lands with ticket_end');
       assert.equal(endsOf(f, mid.execution).length, 0, 'the abandonment has not landed');
       failEdit = false;
       results = await run.runTarget(f.options);
     }
     assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
     assert.equal(ticketResult(results).outcome, 'abandoned');
-    assert.ok(states.length && states.every((s) => s === 'abandoned'), `abandoned before any label cleanup: ${JSON.stringify(states)}`);
+    assert.ok(states.length && states.every((s) => s === true), `abandoned before any label cleanup: ${JSON.stringify(states)}`);
     assert.deepEqual(f.comments(), [], 'the pending hold comment is not replayed');
     assert.deepEqual(f.labelAdds(), [], 'no label is added');
     assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS));
@@ -1387,7 +1389,7 @@ test('mixed-case human needs-human wins before any label write', async (t) => {
     const inner = f.gh.gh;
     const states = [];
     github.setGh(async (args, cwd, input) => {
-      if (args[0] === 'issue' && args[1] === 'edit') states.push(JSON.parse(f.loadRow()).state);
+      if (args[0] === 'issue' && args[1] === 'edit') states.push(JSON.parse(f.loadRow()).terminalStop?.abandoned);
       return inner(args, cwd, input);
     });
 
@@ -1397,7 +1399,7 @@ test('mixed-case human needs-human wins before any label write', async (t) => {
     assert.equal(f.harness.calls.length, 0, 'no agent started');
     const edits = f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').map((c) => c.args.slice(3));
     assert.deepEqual(edits, inProgress ? [['--remove-label', IN_PROGRESS]] : [], 'only the in-progress label is removed');
-    assert.deepEqual(states, inProgress ? ['abandoned'] : [], 'the record is abandoned before the label write');
+    assert.deepEqual(states, inProgress ? [true] : [], 'the record is abandoned before the label write');
     assert.deepEqual(f.comments(), [], 'no comment posted');
     assert.deepEqual([...f.gh.labels], [HUMAN_NEEDS_HUMAN], 'the human hold keeps its spelling');
     assert.equal((await loadTicket(f)).state, 'abandoned');
