@@ -1117,6 +1117,55 @@ test('a hold label failure leaves its label intent open for the next Run', async
   assert.equal(endsOf(f, final.execution).length, 1);
 });
 
+function failHoldLabel(f) {
+  const inner = f.gh.gh;
+  const failing = { on: true };
+  github.setGh(async (args, cwd, input) => {
+    if (failing.on && args[0] === 'issue' && args[1] === 'edit' && args.includes(NEEDS_HUMAN)) {
+      f.gh.calls.push({ args, cwd, input });
+      throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
+    }
+    return inner(args, cwd, input);
+  });
+  return failing;
+}
+
+test('a seeded hold label failure is finished on the next Run', async (t) => {
+  const { f } = await dirtyTicket(t, true);
+  const failing = failHoldLabel(f);
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
+  assert.equal(f.comments().length, 1);
+  const mid = await loadTicket(f);
+  assert.deepEqual(record.openIntents(mid).filter((e) => ['comment', 'label'].includes(e.action)).map((e) => e.action), ['label']);
+  assert.equal(endsOf(f, mid.execution).length, 0);
+
+  failing.on = false;
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
+  assert.equal(f.comments().length, 1, 'the landed comment is reused');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS));
+  const final = await loadTicket(f);
+  assert.equal(final.execution, mid.execution);
+  assert.deepEqual(record.openIntents(final).filter((e) => ['comment', 'label'].includes(e.action)), []);
+  assert.equal(final.state, 'held');
+  assert.equal(endsOf(f, final.execution).length, 1);
+});
+
+test('a pending hold is not marked held', async (t) => {
+  for (const pending of ['comment', 'label']) {
+    for (const seeded of [false, true]) {
+      const { f } = await dirtyTicket(t, seeded);
+      const failing = pending === 'comment' ? failComment(f) : failHoldLabel(f);
+      assert.equal(run.runExitCode(await run.runTarget(f.options)), 1, `${pending}, seeded ${seeded}`);
+      const mid = await loadTicket(f);
+      assert.equal(mid.terminalStop?.held, true, `${pending}, seeded ${seeded}: the hold is decided`);
+      assert.notEqual(mid.state, 'held', `${pending}, seeded ${seeded}: a hold whose ${pending} is pending is not held`);
+      failing.on = false;
+      assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
+      assert.equal((await loadTicket(f)).state, 'held', `${pending}, seeded ${seeded}: held once it lands`);
+    }
+  }
+});
+
 test('human override abandons a pending hold before any label cleanup', async (t) => {
   for (const cleanupFails of [false, true]) {
     const { f, seededRec } = await dirtyTicket(t, true);
@@ -1469,6 +1518,44 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
   assert.equal(f.loadRow(), row);
   assert.equal(f.harness.calls.length, 0);
   assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']]);
+});
+
+// A corrupt row stands for a Ticket whose worktree and in-progress label an earlier Run left behind.
+async function corruptTicket(t) {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  f.options.cwd = f.worktree;
+  record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{ "schemaVersion": 1, "log": [');
+  return f;
+}
+
+test('a corrupt-record hold whose label failed is not posted twice', async (t) => {
+  const f = await corruptTicket(t);
+  const failing = failHoldLabel(f);
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
+  assert.equal(f.comments().length, 1);
+  assert.equal(f.gh.labels.has(NEEDS_HUMAN), false);
+
+  failing.on = false;
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
+  assert.equal(f.comments().length, 1, 'the landed comment is found by its marker, not reposted');
+  assert.ok(marker.parseMarker(f.comments()[0]), 'the corrupt-record comment carries an Action Marker');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS));
+});
+
+test('a corrupt-record hold whose comment failed is posted once on the next run', async (t) => {
+  const f = await corruptTicket(t);
+  const failing = failComment(f);
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
+  assert.deepEqual(f.comments(), []);
+  assert.equal(f.gh.labels.has(NEEDS_HUMAN), false);
+
+  failing.on = false;
+  assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
+  assert.equal(f.comments().length, 1);
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS));
+  await run.runTarget(f.options);
+  assert.equal(f.comments().length, 1, 'a labelled corrupt record is not commented again');
 });
 
 test('a corrupt record found at admission is held through reconcile', async (t) => {
