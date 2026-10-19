@@ -38,11 +38,12 @@ test('run and runShell read a multi-byte character split across chunks exactly',
   assert.equal((await exec.runShell(`"${process.execPath}" "${p}"`)).output.trim(), '€');
 });
 
+// Not timed out is the promptness check: a command left waiting on stdin would run until the timeout. A wall-clock bound
+// here measured the Windows job helper's cold start (8 to 15 s early in a loaded suite), so it was dropped, with the
+// owner's approval, from this ported case.
 test('runShell: a command waiting for stdin EOF returns promptly', async () => {
   const p = script('stdin.mjs', `process.stdin.resume(); process.stdin.on('end', () => console.log('eof'));`);
-  const t = Date.now();
   const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000 });
-  assert.ok(Date.now() - t < 10000);
   assert.ok(!res.timedOut);
   assert.match(res.output, /eof/);
 });
@@ -230,6 +231,16 @@ test('runShell: a command that finishes is not reported as timed out while its l
   } finally {
     for (const p of pids) try { process.kill(p); } catch {}
   }
+});
+
+// A cold Windows PowerShell and Add-Type took 3.5 s on a fresh runner and up to 15 s under the suite's load; that start-up
+// must not be charged to the command's timeout.
+test('runShell: the timeout counts from when the command starts, not from the job helper start-up', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
+  const p = script('four-seconds.mjs', 'setTimeout(() => console.log("done"), 4000);');
+  const res = await withEnv({ FF_TEST_SLOWSTART: '3000' }, () => exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000 }));
+  assert.equal(res.timedOut, undefined, `a 4 s command timed out under a 7 s timeout after a 3 s helper start-up: ${res.output}`);
+  assert.equal(res.code, 0);
+  assert.match(res.output, /done/);
 });
 
 test('runShell: a helper that never starts and cannot be killed is reported, and does not keep ff waiting', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {

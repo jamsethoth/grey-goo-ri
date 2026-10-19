@@ -323,6 +323,25 @@ test('an unknown database version is refused by name', async (t) => {
   });
 });
 
+// Another gg process writing events must not starve a new connection: on a loaded Windows runner two appenders saw
+// `database is locked` from openDb's write transaction once its busy_timeout ran out.
+test('opening an existing State Database does not wait for a writer', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  record.openDb(commonDir);
+  await record.close(commonDir);
+  const writer = new DatabaseSync(dbPath(commonDir));
+  writer.exec('BEGIN IMMEDIATE');
+  try {
+    const started = Date.now();
+    const db = record.openDb(commonDir);
+    assert.ok(Date.now() - started < 2000, `openDb waited ${Date.now() - started} ms for the writer`);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM records').get().n, 0, 'reads still work while the writer holds its lock');
+  } finally {
+    writer.exec('ROLLBACK');
+    writer.close();
+  }
+});
+
 test('openDb shares one connection between spellings of the same directory', async (t) => {
   const commonDir = await tempCommonDir(t);
   const db = record.openDb(commonDir);

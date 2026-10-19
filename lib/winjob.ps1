@@ -2,6 +2,7 @@
 # orphans, is killed together. Control: a byte on stdin (or stdin EOF) terminates the job. Exit code: the command's.
 # Diagnostics go to stderr as lines prefixed with \x01FFJOB so exec.mjs can strip and parse them.
 if ($env:FF_TEST_STALL -eq '1') { Start-Sleep 30 } # test seam: a helper that never gets as far as starting the command
+if ($env:FF_TEST_SLOWSTART) { Start-Sleep -Milliseconds ([int]$env:FF_TEST_SLOWSTART) } # test seam: a slow helper start-up
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;

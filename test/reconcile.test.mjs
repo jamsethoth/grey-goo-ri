@@ -543,6 +543,7 @@ test('label reconciliation requires case-insensitive additions and removals', as
 // Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a freshly loaded record with the same options.
 const CLASSIFIED = {
   held: {
+    phase: 'hold',
     async crash(g) {
       await crashed(g, EFFECTS.commit.at, 'after-completion');
       g.options.flow = structuredClone(g.flow);
@@ -648,7 +649,7 @@ for (const point of Object.keys(POINTS)) {
     await crashed(g, EFFECTS.commit.at, 'before-effect');
     golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
     const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
-    const hold = markerOf(g.rec, 'needs-human', 1, 'needs-human', 1);
+    const hold = markerOf(g.rec, 'needs-human', 1, 'hold', 1);
     await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point } }),
       (err) => err instanceof interpreter.CrashError);
     const mid = await loadTicket(g);
@@ -677,7 +678,7 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   const older = markerOf(g.rec, 'reviewer', 1, 'review', 4);
   await record.intent(await loadTicket(g), older, 'comment', { target: { kind: 'pr', number: 7 }, body: 'x', bodyHash: 'h' });
   golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
-  const hold = markerOf(g.rec, 'needs-human', 1, 'needs-human', 1);
+  const hold = markerOf(g.rec, 'needs-human', 1, 'hold', 1);
   await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point: 'before-effect' } }),
     (err) => err instanceof interpreter.CrashError);
   let looked = 0;
