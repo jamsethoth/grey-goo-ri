@@ -30,8 +30,9 @@ open exclusive transaction would block every record write if it shared the datab
   `gg work show` prints it from slice 6. Request 3.5 says so.
 - Database size grows with events only. Nothing is purged automatically; `gg work archive` (slice 6) exports and
   deletes by date, and `gg doctor` reports size.
-- `node:sqlite` is Stability 1.1; the floor stays 22.13 (ADR 0008). SQLite locking inside the Codex Windows sandbox
-  is unverified; the Codex reviewer cannot run the suite there for unrelated reasons, so nothing changes for review.
+- `node:sqlite` is Stability 1.1; the floor stays 22.13 (ADR 0008), since raised to 24.15 by ADR 0012. SQLite
+  locking inside the Codex Windows sandbox is unverified; the Codex reviewer cannot run the suite there for unrelated
+  reasons, so nothing changes for review.
 - Tests must close the database before removing a temp directory on Windows, so `record.mjs` exports a close.
 - Two processes switching a new `gg.db` to WAL at once can get SQLITE_BUSY whatever `busy_timeout` says: the switch
   upgrades a SHARED lock to RESERVED, and SQLite skips the busy handler there to avoid deadlock (check-in d33771a3,

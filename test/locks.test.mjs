@@ -100,7 +100,7 @@ test('a handle keeps the lock while it is referenced', async (t) => {
 
 test('the lock module needs no experimental flag for node:sqlite', async () => {
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.engines.node, '>=22.13');
+  assert.equal(pkg.engines.node, '>=24.15');
   const source = await readFile(locksModule, 'utf8');
   assert.match(source, /from 'node:sqlite'/);
 });

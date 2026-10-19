@@ -20,9 +20,9 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
 
 ## 2. Non-negotiables
 
-- Plain Node ESM, Node 22+ (22.13 or later), native Windows first, nothing to install beyond Node and the harness
-  CLIs; npm dependencies are allowed when they earn their place, node built-ins preferred. Spawn executables without
-  a shell;
+- Plain Node ESM, Node 24 LTS (24.15 or later, ADR 0012), native Windows first, nothing to install beyond Node and
+  the harness CLIs; npm dependencies are allowed when they earn their place, node built-ins preferred. Spawn
+  executables without a shell;
   a command string that cannot be avoided goes through the job-object runner.
 - Agents never run git write commands or gh. The orchestrator owns commits, pushes, PRs, comments and labels.
 - Topology is data. Work is code. No per-node code; a node is only configuration.
