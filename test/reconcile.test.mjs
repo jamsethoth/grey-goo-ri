@@ -473,7 +473,8 @@ async function violating(t) {
 for (const point of ['before-effect', 'after-effect', 'after-completion']) {
   test(`a crash ${point} of an integrity violation rollback does not call the harness again`, async (t) => {
     const g = await violating(t);
-    await crashed(g, ['implementer', 1, 'red', 1], point);
+    // The rollback's own marker: the ordinal after red's three declared Actions.
+    await crashed(g, ['implementer', 1, 'red', 4], point);
     assert.equal(g.harness.calls.length, 1);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
@@ -534,7 +535,8 @@ test('label reconciliation requires case-insensitive additions and removals', as
     for (const name of names) g.gh.labels.add(name);
     const rec = await loadTicket(g);
     assert.equal((await reconcile.terminalEffects(rec, { gh: g.options.gh, labelPrefix: 'gg', cwd: g.mainRoot, markers: [m] })).next, 'continue');
-    return !record.openIntents(await loadTicket(g)).some((e) => e.marker === m);
+    // A found effect has its evidence saved; the interpreter completes it with its Event.
+    return (await loadTicket(g)).log.some((e) => e.marker === m && e.step === 'evidence');
   };
   assert.equal(await shows([NEEDS_HUMAN, 'GG:STATE:IN-PROGRESS']), false, 'a removal still shown differently cased stays open');
   assert.equal(await shows([]), false, 'an absent addition stays open');
@@ -727,13 +729,8 @@ test('a missing transcript starts the phase fresh', async (t) => {
         ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
     },
   };
-  const run = g.harness.run;
-  let crashedOnce = false;
-  g.harness.run = async (call) => {
-    if (call.phase === 'test-fix' && !crashedOnce) { crashedOnce = true; throw new interpreter.CrashError('crash'); }
-    return run(call);
-  };
-  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+  // Before the test-fix Attempt's intent: one interrupted after it would be held instead.
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: markerOf(g.rec, 'implementer', 1, 'test-fix', 1), point: 'before-intent' } }), /crash/);
   const loaded = await loadTicket(g);
   assert.equal(loaded.cursor.phase, 'test-fix');
   rmSync(loaded.sessions['implementer/1/green'].transcriptPath);

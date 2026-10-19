@@ -1273,7 +1273,8 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   const first = await run.runTarget(f.options);
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
   const mid = await loadTicket(f);
-  assert.equal(mid?.state, 'held', 'the Terminal saved its state before ticket_end');
+  assert.equal(mid?.state, 'active', 'the final state rolled back with its ticket_end');
+  assert.equal(mid.terminalStop?.held, true, 'the decided hold waits for the next Run');
   assert.equal(endsOf(f, mid.execution).length, 0);
   db.exec('DROP TRIGGER fail_end');
   const effects = () => f.gh.calls.filter((c) => c.args[0] === 'issue' && ['comment', 'edit'].includes(c.args[1])).length;

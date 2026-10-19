@@ -942,7 +942,8 @@ test('a crash inside the fault report replays its comment once on resume', async
   assert.match(posted[0].body, /harness exploded/);
   assert.doesNotMatch(posted[0].body, /Interrupted/, 'a fault inside a Visit interrupted no Terminal');
   assert.ok(!('interrupted' in g.readEvents().find((e) => e.type === 'ticket_end')));
-  assert.deepEqual(record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)), []);
+  // The faulted Attempt never completed, so its intent stays open on the finished record.
+  assert.deepEqual(record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)).map((e) => e.action), ['call']);
 });
 
 test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
@@ -1202,13 +1203,9 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
     'reviewer/2/review/1': reviewed(review('ok')),
   });
   g.flow.ticket.vertices.reviewer.route.changes.max = 1;
-  const run = g.harness.run;
-  let crashed = false;
-  g.harness.run = async (call) => {
-    if (call.phase === 'fix' && !crashed) { crashed = true; throw new interpreter.CrashError('crash'); }
-    return run(call);
-  };
-  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+  // Before the fix Attempt's intent: one interrupted after it would be held instead.
+  const fix = marker.formatMarker({ execution: g.rec.execution, vertex: 'implementer-fix', visit: 1, phase: 'fix', ordinal: 1, run: g.rec.run, attempt: 1 });
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: fix, point: 'before-intent' } }), /crash/);
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
   assert.equal(saved.cursor.vertex, 'implementer-fix');
