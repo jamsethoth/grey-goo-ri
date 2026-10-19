@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
@@ -18,6 +18,7 @@ import * as integrity from '../lib/integrity.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as locks from '../lib/locks.mjs';
 import * as marker from '../lib/marker.mjs';
+import { canonical, pathKey } from '../lib/paths.mjs';
 import * as record from '../lib/record.mjs';
 import * as run from '../lib/run.mjs';
 import * as golden from './support/golden.mjs';
@@ -41,13 +42,17 @@ function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 
 // A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view.
-function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, rootName = 'gg-run-' } = {}) {
-  const root = mkdtempSync(join(tmpdir(), rootName));
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, rootName = 'gg-run-', linked = false } = {}) {
+  // linked: every path gg is given goes through a junction, as through a symlinked TMPDIR or a Windows 8.3 name.
+  const real = mkdtempSync(join(tmpdir(), rootName));
+  const root = linked ? `${real}-link` : real;
+  if (linked) symlinkSync(real, root, 'junction');
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
   t.after(() => {
     record.close(commonDir);
-    rmSync(root, { recursive: true, force: true });
+    if (linked) rmSync(root, { recursive: true, force: true }); // removes the link, not its target
+    rmSync(real, { recursive: true, force: true });
   });
   sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
   sh(root, 'clone', '-q', 'origin.git', 'main');
@@ -94,7 +99,7 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
   const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git: gitModule, exec, cwd: mainRoot,
     log: (m) => logs.push(m), clock };
   return {
-    root, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
+    root, real, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
     readEvents: () => events.readEvents(commonDir),
     worktrees: () => sh(mainRoot, 'worktree', 'list').split('\n').length,
     loadRow: () => record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(TICKET)?.json,
@@ -365,6 +370,15 @@ test('a ticket reaching done exits 0 and the run events carry the run id and out
   assert.ok(readdirSync(runDir).some((name) => name.endsWith('.log')), 'the run directory has a log file');
 });
 
+test('a Ticket in a repository reached through a linked directory reaches done and publishes no local path', async (t) => {
+  const f = fixture(t, { linked: true });
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.ok(f.gh.labels.has('gg:state:ready-for-qa'));
+  const published = JSON.stringify(f.gh.calls.map(({ args, input }) => [args, input]));
+  assert.ok(!published.includes(basename(f.real)), `gh exposes ${basename(f.real)}: ${published}`);
+});
+
 test('unknown dirty state is held with the diff stat', async (t) => {
   const f = fixture(t);
   await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
@@ -438,7 +452,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held`) && b.includes('SQLite client')));
   assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir, 'the linked worktree uses the main checkout State Database');
+  assert.equal(pathKey((await gitModule.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir), 'the linked worktree uses the main checkout State Database');
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   const held = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(held.state, 'held');
@@ -601,7 +615,6 @@ test('resume refuses a recorded branch belonging to another Ticket', async (t) =
   }
 });
 
-const pathKey = (p) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
 
 test('admission detects an agent overwrite of an idle sibling as an Integrity Violation', async (t) => {
   const other = 'ticket/99-other';
@@ -1473,10 +1486,11 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
     `a comment names the record: ${JSON.stringify(f.comments())}`);
   assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal((await gitModule.repoInfo(f.worktree)).gitCommonDir, f.commonDir);
+  assert.equal(pathKey((await gitModule.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir));
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.ok(f.comments().every((b) => !b.includes(f.root)), 'no comment exposes a local path');
-  assert.ok(f.logs.some((l) => l.includes(f.commonDir)), 'the local log keeps the full diagnostic');
+  // From the worktree git names the common dir canonically, so the log may carry either spelling.
+  assert.ok(f.logs.some((l) => l.includes(f.commonDir) || l.includes(canonical(f.commonDir))), 'the local log keeps the full diagnostic');
   assert.equal(f.loadRow(), corrupt, 'the corrupt record is kept');
 });
 
@@ -1621,7 +1635,7 @@ test('snapshot and orchestrator writes wait beyond the default lock timeout', { 
     // The snapshot's first attempt is seen before the default waiter starts, so its own deadline would pass first.
     let tried;
     const attempted = new Promise((resolve) => { tried = resolve; });
-    fsPromises.mkdir = (path, ...rest) => { if (String(path) === lockDir) tried(); return mkdir(path, ...rest); };
+    fsPromises.mkdir = (path, ...rest) => { if (pathKey(String(path)) === pathKey(lockDir)) tried(); return mkdir(path, ...rest); };
     syncBuiltinESMExports();
     const settled = new Set();
     const track = (name, p) => p.then((v) => { settled.add(name); return v; }, (e) => { settled.add(name); throw e; });

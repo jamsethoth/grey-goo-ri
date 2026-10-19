@@ -50,6 +50,7 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 | `lib/harnesses/codex.mjs` | the Codex Harness |
 | `lib/exec.mjs` | process spawn and job-object runner (ported) |
 | `lib/git.mjs` | git verbs and worktrees (ported) |
+| `lib/paths.mjs` | canonical local paths and the path key every path comparison uses |
 | `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
 | `lib/render.mjs` | commit messages, PR body, comments, provenance, ticket and epic bodies |
 | `lib/work.mjs` | `gg work` and the Registry |
