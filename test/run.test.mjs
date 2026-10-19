@@ -986,6 +986,20 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
   }
 });
 
+test('a resumed pending report emits no second ticket_start', async (t) => {
+  const { f } = await dirtyTicket(t, false);
+  const failing = failComment(f);
+  const first = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
+  failing.on = false;
+
+  const second = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
+  const { execution } = await loadTicket(f);
+  assert.equal(f.readEvents().filter((e) => e.type === 'ticket_start' && e.execution === execution).length, 1);
+  assert.equal(endsOf(f, execution).length, 1);
+});
+
 test('fixing the worktree while a hold comment is pending still finishes the hold', async (t) => {
   for (const seeded of [false, true]) {
     const { f } = await dirtyTicket(t, seeded);
@@ -1182,7 +1196,7 @@ test('human override abandons a pending hold before any label cleanup', async (t
     let failEdit = cleanupFails;
     github.setGh(async (args, cwd, input) => {
       if (args[0] === 'issue' && args[1] === 'edit') {
-        states.push(JSON.parse(f.loadRow()).state);
+        states.push(JSON.parse(f.loadRow()).terminalStop?.abandoned);
         if (failEdit) {
           f.gh.calls.push({ args, cwd, input });
           throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
@@ -1194,14 +1208,16 @@ test('human override abandons a pending hold before any label cleanup', async (t
     let results = await run.runTarget(f.options);
     if (cleanupFails) {
       assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
-      assert.equal((await loadTicket(f)).state, 'abandoned');
+      const pending = await loadTicket(f);
+      assert.equal(pending.terminalStop?.abandoned, true, 'the abandonment is decided durably');
+      assert.equal(pending.state, 'active', 'its final state lands with ticket_end');
       assert.equal(endsOf(f, mid.execution).length, 0, 'the abandonment has not landed');
       failEdit = false;
       results = await run.runTarget(f.options);
     }
     assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
     assert.equal(ticketResult(results).outcome, 'abandoned');
-    assert.ok(states.length && states.every((s) => s === 'abandoned'), `abandoned before any label cleanup: ${JSON.stringify(states)}`);
+    assert.ok(states.length && states.every((s) => s === true), `abandoned before any label cleanup: ${JSON.stringify(states)}`);
     assert.deepEqual(f.comments(), [], 'the pending hold comment is not replayed');
     assert.deepEqual(f.labelAdds(), [], 'no label is added');
     assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS));
@@ -1273,7 +1289,8 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   const first = await run.runTarget(f.options);
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
   const mid = await loadTicket(f);
-  assert.equal(mid?.state, 'held', 'the Terminal saved its state before ticket_end');
+  assert.equal(mid?.state, 'active', 'the final state rolled back with its ticket_end');
+  assert.equal(mid.terminalStop?.held, true, 'the decided hold waits for the next Run');
   assert.equal(endsOf(f, mid.execution).length, 0);
   db.exec('DROP TRIGGER fail_end');
   const effects = () => f.gh.calls.filter((c) => c.args[0] === 'issue' && ['comment', 'edit'].includes(c.args[1])).length;
@@ -1285,6 +1302,54 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   assert.equal(effects(), done, 'no GitHub effect is repeated');
   assert.equal(endsOf(f, mid.execution).length, 1);
   assert.equal(f.comments().length, 1);
+});
+
+test('a crash between admission and its hold keeps the decision and its one ticket_start', async (t) => {
+  const { f } = await dirtyTicket(t, false);
+  const db = record.openDb(f.commonDir);
+  // Every save carrying a Terminal stop fails, as if gg died once admission had saved the new record.
+  db.exec(`CREATE TRIGGER fail_stop BEFORE UPDATE ON records WHEN NEW.json LIKE '%"terminalStop"%'
+    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  const first = await run.runTarget(f.options);
+  db.exec('DROP TRIGGER fail_stop');
+  assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
+  const mid = await loadTicket(f);
+  assert.ok(mid, 'admission saved the record');
+  assert.equal(mid.terminalStop, undefined, 'the hold was never saved');
+  assert.equal(f.comments().length, 0);
+
+  const second = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
+  const starts = f.readEvents().filter((e) => e.type === 'ticket_start' && e.ticket === TICKET);
+  assert.deepEqual(starts.map((e) => e.execution), [mid.execution], 'one ticket_start for the Execution');
+  const final = await loadTicket(f);
+  assert.equal(final.state, 'held');
+  assert.equal(final.terminalStop.fresh, true, 'the hold is still the fresh one admission decided');
+  const [comment, ...more] = f.comments();
+  assert.equal(more.length, 0);
+  assert.doesNotMatch(comment, /DELETE FROM records/, 'a fresh hold has no row to delete');
+  assert.equal(endsOf(f, mid.execution).length, 1);
+});
+
+test('an Interrupted Attempt hold warns before its record is deleted, then and on the next Run', async (t) => {
+  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const real = f.harness.run;
+  f.harness.run = async () => {
+    f.harness.run = real;
+    throw new interpreter.CrashError('gg died during the call');
+  };
+  await seedExecution(f);
+  const warning = /ignored Protected Files such as \.claude\/settings\.local\.json[^]*before deleting the record/;
+
+  const first = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(first), 2, JSON.stringify(first));
+  assert.equal((await loadTicket(f)).state, 'held');
+  assert.match(f.comments().at(-1) ?? '', warning, 'the hold comment warns');
+
+  await run.runTarget(f.options);
+  const skipped = f.logs.findLast((l) => l.includes('skipped')) ?? '';
+  assert.match(skipped, warning, 'the held-record skip warns too');
+  assert.ok(skipped.search(warning) < skipped.indexOf('DELETE FROM records'), `the warning comes before the delete: ${skipped}`);
 });
 
 test('a human needs-human label before the first Visit prevents admission effects', async (t) => {
@@ -1345,7 +1410,7 @@ test('mixed-case human needs-human wins before any label write', async (t) => {
     const inner = f.gh.gh;
     const states = [];
     github.setGh(async (args, cwd, input) => {
-      if (args[0] === 'issue' && args[1] === 'edit') states.push(JSON.parse(f.loadRow()).state);
+      if (args[0] === 'issue' && args[1] === 'edit') states.push(JSON.parse(f.loadRow()).terminalStop?.abandoned);
       return inner(args, cwd, input);
     });
 
@@ -1355,7 +1420,7 @@ test('mixed-case human needs-human wins before any label write', async (t) => {
     assert.equal(f.harness.calls.length, 0, 'no agent started');
     const edits = f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').map((c) => c.args.slice(3));
     assert.deepEqual(edits, inProgress ? [['--remove-label', IN_PROGRESS]] : [], 'only the in-progress label is removed');
-    assert.deepEqual(states, inProgress ? ['abandoned'] : [], 'the record is abandoned before the label write');
+    assert.deepEqual(states, inProgress ? [true] : [], 'the record is abandoned before the label write');
     assert.deepEqual(f.comments(), [], 'no comment posted');
     assert.deepEqual([...f.gh.labels], [HUMAN_NEEDS_HUMAN], 'the human hold keeps its spelling');
     assert.equal((await loadTicket(f)).state, 'abandoned');

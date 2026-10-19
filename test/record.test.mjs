@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as events from '../lib/events.mjs';
 import * as locks from '../lib/locks.mjs';
 import * as record from '../lib/record.mjs';
 
@@ -73,6 +74,7 @@ test('createExecution mints an execution id and the documented fields', async (t
   assert.equal(r.pending, null);
   assert.equal(r.snapshot, null);
   assert.deepEqual(r.activity, { busy: false, generation: 0 });
+  assert.equal(r.heartbeat, null);
   assert.deepEqual(r.log, []);
   assert.notEqual(newExecution(commonDir).execution, r.execution);
 
@@ -138,6 +140,37 @@ test('the write-ahead log records intent, evidence and completion per marker', a
   assert.deepEqual(r.log[1].evidence, { sha: 'deadbeef' });
   const loaded = await record.load(commonDir, 'ticket', 8);
   assert.deepEqual(loaded.log, r.log, 'each step saves');
+});
+
+test('a record transition and its event commit together', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const ev = events.eventLog(commonDir, { run: 'run-1', ticket: 8 });
+  const r = newExecution(commonDir);
+  const db = record.openDb(commonDir);
+  const failEvents = () => db.exec("CREATE TRIGGER fail_event BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END");
+  const eventTypes = () => events.readEvents(commonDir).map((e) => e.type);
+  const start = () => ev('ticket_start', { execution: r.execution });
+
+  failEvents();
+  await assert.rejects(record.save(r, start), (err) => err.name === 'RecordSaveError', 'a failed Event fails the save');
+  assert.equal(await record.load(commonDir, 'ticket', 8), null, 'no record is created without its Event');
+  db.exec('DROP TRIGGER fail_event');
+  await record.save(r, start);
+  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active');
+  assert.deepEqual(eventTypes(), ['ticket_start']);
+
+  failEvents();
+  r.state = 'held';
+  await assert.rejects(record.save(r, () => ev('ticket_end', { execution: r.execution })), (err) => err.name === 'RecordSaveError');
+  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active', 'the previous row stays');
+  assert.deepEqual(eventTypes(), ['ticket_start'], 'and no Event lands');
+  db.exec('DROP TRIGGER fail_event');
+  await record.save(r, () => ev('ticket_end', { execution: r.execution }));
+  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'held');
+  assert.deepEqual(eventTypes(), ['ticket_start', 'ticket_end']);
+  r.state = 'done';
+  await record.save(r);
+  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'done', 'a plain save still works after a rollback');
 });
 
 test('openIntents lists intents without completion oldest first', async (t) => {

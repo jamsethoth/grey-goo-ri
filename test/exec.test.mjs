@@ -58,11 +58,19 @@ test('runShell with a timeout still returns the exit code and output of a comman
   assert.equal(res.leftovers, undefined, 'a clean command must not report leftovers (e.g. its console host)');
 });
 
+// The longest a timed-out runShell may take, from lib/exec.mjs's budgets. On Windows: the helper's start-up budget and the
+// command's timeout (timeoutMs each), the wait for the helper to stop, then up to two sequential taskkill /T calls (the
+// helper, and the command when no job object exists). Elsewhere: the timeout and one cleanup budget. Plus a second of slack.
+const timeoutBound = (timeoutMs) => 1000 + (process.platform === 'win32'
+  ? 2 * timeoutMs + exec.CLEANUP_BUDGET_MS + 2 * exec.TREE_KILL_BUDGET_MS
+  : timeoutMs + exec.CLEANUP_BUDGET_MS);
+
 test('runShell: a command outliving timeoutMs returns within budget, flagged as timed out', async () => {
-  const p = script('sleep.mjs', `setTimeout(() => {}, 60000);`);
+  // Outlives the bound by far, so a runShell that waited for the command could not pass.
+  const p = script('sleep.mjs', `setTimeout(() => {}, 300000);`);
   const t = Date.now();
   const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 500 });
-  assert.ok(Date.now() - t < 500 + 2500, `took ${Date.now() - t} ms`);
+  assert.ok(Date.now() - t < timeoutBound(500), `took ${Date.now() - t} ms`);
   assert.equal(res.timedOut, true);
 });
 
@@ -192,6 +200,26 @@ test('runShell: when the job cannot be set up, the timeout still takes down the 
     if (sandboxed) { if (!dead) assert.ok(res.survivors.some((s) => s.pid === pid && s.error), `live child ${pid} not reported: ${JSON.stringify(res.survivors)}`); }
     else assert.ok(dead, 'a child still linked to the shell was left running');
   } finally {
+    if (pid) try { process.kill(pid); } catch {}
+  }
+});
+
+// A loaded machine can take seconds over taskkill /T. Stopped partway it may have killed the shell but not the children
+// it can then no longer find, so a slow taskkill must be let finish. The seam gets the pid to kill as its last argument.
+test('runShell: when the job cannot be set up, a slow taskkill still takes down the process tree', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
+  const pidFile = join(tmp, 'nojob-slow.pid');
+  const child = script('nojob-slow-child.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
+  const top = script('nojob-slow-top.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }); setTimeout(() => {}, 60000);`);
+  const slow = script('slow-taskkill.mjs', `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 2500);`);
+  const res = await withEnv({ FF_TEST_NOJOB: '1' }, () => exec.runShell(`"${process.execPath}" "${top}"`, { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] }));
+  const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+  try {
+    assert.equal(res.timedOut, true);
+    assert.ok(pid, 'child never started');
+    assert.ok(!res.cleanupErrors.some((e) => /taskkill/.test(e)), JSON.stringify(res.cleanupErrors));
+    assert.ok(await waitFor(() => !alive(pid), 3000), 'a child still linked to the shell was left running');
+  } finally {
+    for (const s of res.survivors) try { process.kill(s.pid); } catch {}
     if (pid) try { process.kill(pid); } catch {}
   }
 });
