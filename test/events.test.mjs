@@ -186,6 +186,17 @@ test('readEvents returns events in insertion order', (t) => {
   assert.deepEqual(read, rows(dir).map((row) => JSON.parse(row.json)));
 });
 
+test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
+  const dir = tempDir(t);
+  const log = events.eventLog(dir, { run: 'r1' });
+  log('ticket_start', { execution: '7.aaa', ticket: 7 });
+  log('run_end');
+  assert.equal(events.hasTicketEnd(dir, '7.aaa'), false, 'a run_end is no ticket_end');
+  log('ticket_end', { execution: '7.bbb', ticket: 7, outcome: 'needs-human' });
+  assert.equal(events.hasTicketEnd(dir, '7.aaa'), false, "another Execution's end of the same Ticket");
+  assert.equal(events.hasTicketEnd(dir, '7.bbb'), true);
+});
+
 test('two processes append to the same table without loss', async (t) => {
   const dir = tempDir(t);
   const exits = await Promise.all(['a', 'b'].map((run) => new Promise((resolve) => {

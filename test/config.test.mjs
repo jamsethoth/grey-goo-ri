@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -30,6 +30,16 @@ test('loadDefaults reads the shipped nodes, flow and personas', () => {
     assert.equal(String(persona.bytes), file.toString('utf8'));
     assert.equal(persona.hash, sha256(file));
   }
+});
+
+test('loadConfig reads the Layer identified by layerPath', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'gg-layer-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = config.layerPath(dir);
+  assert.equal(file, join(dir, '.agents', 'gg', 'gg.json'));
+  mkdirSync(join(dir, '.agents', 'gg'), { recursive: true });
+  writeFileSync(file, '{"baseBranch":"layer-base"}');
+  assert.equal(config.loadConfig(dir, join(dir, 'no-user-layer')).baseBranch, 'layer-base');
 });
 
 test('configHash changes with persona, vertex and command changes and ignores key order', () => {

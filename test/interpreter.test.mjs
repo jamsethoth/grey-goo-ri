@@ -7,6 +7,7 @@ import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
 import * as checks from '../lib/checks.mjs';
 import * as briefs from '../lib/briefs.mjs';
+import * as render from '../lib/render.mjs';
 import * as golden from './support/golden.mjs';
 
 const TDD_PHASES = ['red', 'still-green', 'green', 'test-fix'];
@@ -105,6 +106,89 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.equal(session.usage.input, 200);
   assert.equal(g.rec.sessions['implementer/1/red'].sessionId, 'fake-session-1');
 });
+
+test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
+  const g = await golden.setup(t);
+  const path = join(g.worktree, 'test', 'add.test.mjs');
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (...args) => {
+    const r = await runShell(...args);
+    return { ...r, output: `${r.output}\n    at (${path}:1:1)` };
+  };
+  await interpreter.runExecution(g.options);
+  const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.ok(rec.outputs.red.evidence.output.includes(path), rec.outputs.red.evidence.output);
+  assert.ok(g.harness.calls[1].brief.includes(`${path}:1:1`), 'the green Brief quotes the raw path');
+  assert.ok(!g.gh.pr().body.includes(g.root), 'the PR body does not');
+});
+
+test('each public field is redacted once and sent exactly as its intent saved it', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'].response.summary = 'TOKEN red summary';
+  Object.assign(responses['implementer/1/green/1'].response, {
+    summary: 'TOKEN green summary', dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
+    qa: { setup: 'TOKEN setup', steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
+      edgeCases: ['TOKEN edge'], automated: ['TOKEN automated'], manual: ['TOKEN manual'] },
+  });
+  const g = await golden.setup(t, { responses });
+  g.options.ticket.title = 'Add TOKEN';
+  g.options.commands = { test: 'npm test TOKEN' };
+  // Configuration reaches commit trailers and provenance cells too, each of which is public text.
+  const node = g.flow.ticket.vertices.implementer.node;
+  Object.assign(node, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
+  writeFileSync(node.persona, golden.PERSONA);
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (...args) => {
+    const r = await runShell(...args);
+    return { ...r, output: `${r.output}\nTOKEN output` };
+  };
+  // Each pass marks the field again, so a second redaction shows as TOKEN** and a missed one as a bare TOKEN.
+  g.options.publicText = (text) => text.replaceAll('TOKEN', 'TOKEN*');
+  await interpreter.runExecution(g.options);
+
+  const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  const messages = golden.sh(g.worktree, 'log', '--format=%B%x00', `${g.base}..HEAD`).split('\0').map((s) => s.trim()).filter(Boolean);
+  const sent = [...g.gh.calls.flatMap((c) => [...c.args, c.input ?? '']), ...messages];
+  for (const text of sent) assert.doesNotMatch(text, /TOKEN(?!\*)|TOKEN\*\*/, text);
+  const body = g.gh.pr().body;
+  for (const field of ['TOKEN green summary', 'TOKEN item', 'TOKEN evidence', 'TOKEN setup', 'TOKEN action', 'TOKEN expected',
+    'TOKEN edge', 'TOKEN automated', 'TOKEN manual', 'TOKEN output', '`npm test TOKEN`', '| model TOKEN |', '| TOKEN effort |', '| TOKEN.md@']) {
+    assert.ok(body.includes(field.replace('TOKEN', 'TOKEN*')), field);
+  }
+  assert.ok(messages.every((m) => m.includes('Feature-Flow-Stage: implementer fake/model TOKEN*/TOKEN* effort')), messages.join('\n'));
+  assert.ok(g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')), 'the PR title');
+  assert.deepEqual(intents(rec, 'commit').map((e) => e.payload.message.trim()).reverse(), messages);
+  for (const e of [...intents(rec, 'comment'), ...intents(rec, 'pr-upsert')]) {
+    assert.ok(g.gh.calls.some((c) => c.input === e.payload.body), `${e.action} is sent as saved`);
+  }
+});
+
+// The storage cut of a long Check output must not leave the start of a known directory where redaction cannot match it.
+const ALICE = '/home/alice/' + 'n'.repeat(300);
+const longLines = {
+  'an overlong': ['/home/alice', '/home/alice/private.txt' + ' '.repeat(65_520)],
+  'a redacted overlong': [ALICE, (() => {
+    const first = `${ALICE}/private.txt `;
+    const kept = first.slice(first.indexOf('alice') + 1);
+    const rest = `${ALICE}/x `.repeat(200);
+    return first + rest + ' '.repeat(65_536 - kept.length - rest.length);
+  })()],
+};
+for (const [kind, [directory, output]] of Object.entries(longLines)) {
+  test(`${kind} Check output line publishes no fragment of a known directory`, async (t) => {
+    const g = await golden.setup(t);
+    g.options.publicText = (text) => render.publicText(text, [directory]);
+    const runShell = g.options.exec.runShell;
+    g.options.exec.runShell = async (...args) => {
+      const r = await runShell(...args);
+      return r.code === 0 ? { ...r, output } : r;
+    };
+    await interpreter.runExecution(g.options);
+    assert.ok(g.gh.pr(), 'the PR carries the Green evidence');
+    const sent = JSON.stringify(g.gh.calls.map(({ args, input }) => [args, input]));
+    for (const leak of ['alice', 'lice/']) assert.ok(!sent.includes(leak), `${kind}: ${leak} published`);
+  });
+}
 
 test('a persona file name is read from the shipped personas directory', async (t) => {
   const g = await golden.setup(t);
@@ -300,7 +384,9 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   // The reset is a write-ahead side effect whose intent carries the baseline and the History item.
   const [reset] = intents(g.rec, 'reset');
   assert.equal(reset.marker, actionMarker(g, 'still-green', 2));
-  assert.deepEqual({ ...reset.payload, untracked: undefined }, { baseline: g.base, history: g.rec.history[0], untracked: undefined });
+  assert.deepEqual({ ...reset.payload, untracked: undefined, left: undefined }, { baseline: g.base, history: g.rec.history[0], untracked: undefined, left: undefined });
+  assert.equal(reset.payload.left.head, g.base, 'the intent saves the worktree the agent left, so admission can prove it');
+  assert.match(reset.payload.left.tree, /^[0-9a-f]{40}$/);
   assert.deepEqual(reset.payload.untracked.files, {}, 'the rollback set of the first red call is saved too');
   assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
   assert.deepEqual(record.openIntents(g.rec), []);
@@ -820,6 +906,23 @@ test('a crash inside the fault report replays its comment once on resume', async
   assert.doesNotMatch(posted[0].body, /Interrupted/, 'a fault inside a Visit interrupted no Terminal');
   assert.ok(!('interrupted' in g.readEvents().find((e) => e.type === 'ticket_end')));
   assert.deepEqual(record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)), []);
+});
+
+test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  const real = g.options.gh.commentIssue;
+  let calls = 0;
+  const gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
+  // The run stop's comment fails, so a fault reports it, and the process dies after the fault comment landed.
+  await assert.rejects(interpreter.runExecution({ ...g.options, gh, crashAt: { marker: terminalMarker(g, 'fault', 1), point: 'after-effect' } }),
+    (err) => err instanceof interpreter.CrashError);
+  const lookupDown = { ...g.options.gh, issueComments: async () => { throw new Error('gh api exited 1\nHTTP 502: Bad Gateway'); } };
+
+  const result = await interpreter.runExecution({ ...g.options, gh: lookupDown, record: await record.load(g.commonDir, 'ticket', golden.TICKET) });
+  assert.equal(result.fault, true);
+  assert.equal(result.runStop?.failureClass, 'auth', 'the saved run stop survives the failed recovery');
+  assert.equal(ticketComments(g).length, 1, 'no second comment');
+  assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
 });
 
 test('an unknown failure goes to needs-human without retry', async (t) => {

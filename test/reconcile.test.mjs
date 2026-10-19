@@ -22,6 +22,7 @@ async function crashedFailedRed(t, when) {
   } };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  g.git = git;
   return g;
 }
 
@@ -58,10 +59,20 @@ test('a reset whose evidence was saved but not its completion is completed witho
   assert.deepEqual(resetEntries(rec), ['intent', 'evidence', 'complete']);
 });
 
-test('a crash before the reset holds the Execution and discards nothing', async (t) => {
+test('a crash before the reset is finished by Reconciliation while the worktree is as the agent left it', async (t) => {
   const g = await crashedFailedRed(t, 'before reset');
+  assert.notEqual(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the agent changes are still in the worktree');
+
+  assert.equal(await reconcile.resets(g.loaded, { git: g.git }), 'continue');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', "the record proves the changes the agent's, so they are discarded");
+  assert.deepEqual(g.loaded.history.map((h) => h.kind), ['red phase failed']);
+  assert.deepEqual(resetEntries(g.loaded), ['intent', 'evidence', 'complete']);
+});
+
+test('a crash before the reset holds the Execution and discards nothing once a human changed the worktree', async (t) => {
+  const g = await crashedFailedRed(t, 'before reset');
+  writeFileSync(join(g.worktree, 'human.txt'), 'mine\n');
   const dirty = golden.sh(g.worktree, 'status', '--porcelain');
-  assert.notEqual(dirty, '', 'the agent changes are still in the worktree');
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
@@ -78,6 +89,17 @@ test('an assume-unchanged edit left at the baseline does not prove the reset don
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
   assert.deepEqual(g.loaded.history, []);
+  assert.deepEqual(resetEntries(g.loaded), ['intent']);
+});
+
+test('an ignored test added after an interrupted reset holds the restore and is kept', async (t) => {
+  const g = await crashedFailedRed(t, 'after reset');
+  writeFileSync(join(g.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
+  mkdirSync(join(g.worktree, 'test'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'mine\n');
+
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
+  assert.equal(readFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'utf8'), 'mine\n', 'the human file is untouched');
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 });
 
@@ -124,6 +146,108 @@ test('a crash between the reset and the Protected File restore of an integrity v
   assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', "the owner's bytes come back from the saved intent");
   assert.equal(loaded.history[0].kind, 'integrity violation');
   assert.deepEqual(record.openIntents(loaded), []);
+});
+
+// The baseline an Integrity Violation's rollback restores: ignored Protected Files, an untracked test git clean removes,
+// and an ignored file outside the rollback, which the agent changes and the restore must leave alone.
+const RESTORED = { '.claude/.gitignore': '*\n', '.claude/settings.local.json': '{"owner":true}\n', 'test/owner.test.mjs': 'owner\n' };
+// Where restoreUntracked is crashed: it removes the extra .claude/agent.json (rm 1), then rewrites settings.local.json
+// (rm 2, writeFile 1) and recreates test/owner.test.mjs (rm 3, writeFile 2).
+const RESTORE_CRASHES = {
+  'after deleting an extra': { op: 'rm', n: 1, after: true },
+  'after removing a destination before its rewrite': { op: 'rm', n: 2, after: true },
+  'after the first restored file': { op: 'writeFile', n: 1, after: true },
+  'after the final write before evidence': { op: 'writeFile', n: 2, after: true },
+};
+
+async function crashedRestore(t, crash) {
+  const g = await golden.setup(t);
+  for (const [p, text] of Object.entries(RESTORED)) {
+    mkdirSync(join(g.worktree, p, '..'), { recursive: true });
+    writeFileSync(join(g.worktree, p), text);
+  }
+  // A tdd Visit starts clean, so the untracked test stays ignored until red runs; git clean then removes it.
+  const exclude = join(g.commonDir, 'info', 'exclude');
+  writeFileSync(exclude, 'scratch.log\ntest/owner.test.mjs\n');
+  writeFileSync(join(g.worktree, 'scratch.log'), 'owner log\n');
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    if (call.phase === 'red') {
+      writeFileSync(join(g.worktree, '.claude', 'settings.local.json'), '{"agent":true}\n');
+      writeFileSync(join(g.worktree, '.claude', 'agent.json'), '{}\n');
+      writeFileSync(join(g.worktree, 'scratch.log'), 'agent log\n');
+      writeFileSync(exclude, 'scratch.log\n');
+    }
+    return out;
+  };
+  const git = g.options.git;
+  let reset = false;
+  g.options.git = { ...git, resetTo: async (...args) => { await git.resetTo(...args); reset = true; } };
+  const restore = golden.crashFs(t, g.worktree, () => reset, crash);
+  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
+  restore();
+  g.git = git;
+  g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  return g;
+}
+
+const read = (g, p) => (existsSync(join(g.worktree, p)) ? readFileSync(join(g.worktree, p), 'utf8') : null);
+
+async function assertRestored(g, rec) {
+  for (const [p, text] of Object.entries(RESTORED)) assert.equal(read(g, p), text, p);
+  assert.equal(read(g, '.claude/agent.json'), null, 'the extra is removed');
+  assert.equal(read(g, 'scratch.log'), 'agent log\n', 'an ignored file outside the rollback is untouched');
+  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
+  assert.deepEqual(rec.history.map((h) => h.kind), ['integrity violation']);
+  assert.deepEqual(resetEntries(rec), ['intent', 'evidence', 'complete']);
+  assert.equal(await reconcile.resets(rec, { git: g.git }), 'continue');
+  assert.equal(rec.history.length, 1, 'a further Reconciliation adds nothing');
+  assert.deepEqual(resetEntries(rec), ['intent', 'evidence', 'complete']);
+  for (const [p, text] of Object.entries(RESTORED)) assert.equal(read(g, p), text, `${p} after a further Reconciliation`);
+}
+
+test('an interrupted restore resumes from mixed left, absent and baseline files', async (t) => {
+  // A subtest each, as golden.setup restores its process seams when its own test ends.
+  for (const [name, crash] of Object.entries(RESTORE_CRASHES)) {
+    await t.test(name, async (t) => {
+      const g = await crashedRestore(t, crash);
+      assert.equal(await reconcile.resets(g.loaded, { git: g.git }), 'continue');
+      await assertRestored(g, g.loaded);
+    });
+  }
+});
+
+test('a second crash during restore replay remains resumable', async (t) => {
+  const g = await crashedRestore(t, RESTORE_CRASHES['after deleting an extra']);
+  const restore = golden.crashFs(t, g.worktree, () => true, { op: 'writeFile', n: 1, after: true });
+  await assert.rejects(reconcile.resets(g.loaded, { git: g.git }), (err) => err instanceof interpreter.CrashError);
+  restore();
+  const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.deepEqual(resetEntries(loaded), ['intent']);
+  assert.equal(await reconcile.resets(loaded, { git: g.git }), 'continue');
+  await assertRestored(g, loaded);
+});
+
+test('unknown ignored contents hold a partial restore without changing files', async (t) => {
+  const g = await crashedRestore(t, RESTORE_CRASHES['after removing a destination before its rewrite']);
+  writeFileSync(join(g.worktree, '.claude', 'settings.local.json'), '{"human":true}\n');
+  const paths = [...Object.keys(RESTORED), '.claude/agent.json', 'scratch.log'];
+  const before = paths.map((p) => read(g, p));
+
+  assert.equal(await reconcile.resets(g.loaded, { git: g.git }), 'held');
+  assert.deepEqual(paths.map((p) => read(g, p)), before, 'nothing is restored or removed');
+  assert.deepEqual(g.loaded.history, []);
+  assert.deepEqual(resetEntries(g.loaded), ['intent']);
+});
+
+test('restored non-ignored baseline files are recognised at admission', async (t) => {
+  const g = await crashedRestore(t, RESTORE_CRASHES['after the final write before evidence']);
+  assert.equal(read(g, 'test/owner.test.mjs'), RESTORED['test/owner.test.mjs'], 'the untracked test is back');
+  assert.equal(await reconcile.dirtyState(g.loaded, { git: g.git, worktree: g.worktree }), null);
+  writeFileSync(join(g.worktree, 'notes.txt'), 'mine\n');
+  const held = await reconcile.dirtyState(g.loaded, { git: g.git, worktree: g.worktree });
+  assert.match(held?.stat ?? '', /notes\.txt \(untracked\)/, 'an unrelated untracked addition still holds');
 });
 
 // T18: crash-and-resume golden traces. Each side-effect Action of the one-Vertex Flow is crashed at one of three points
@@ -343,27 +467,21 @@ async function violating(t) {
   return g;
 }
 
-const RESUMED = {
-  'before-effect': { outcome: 'needs-human', state: 'held' },
-  'after-effect': { outcome: 'needs-human', state: 'needs-human' },
-  'after-completion': { outcome: 'needs-human', state: 'needs-human' },
-};
-for (const [point, expect] of Object.entries(RESUMED)) {
+// Before the effect the worktree is still as the violating call left it, so the record proves the rollback the agent's.
+for (const point of ['before-effect', 'after-effect', 'after-completion']) {
   test(`a crash ${point} of an integrity violation rollback does not call the harness again`, async (t) => {
     const g = await violating(t);
     await crashed(g, ['implementer', 1, 'red', 1], point);
     assert.equal(g.harness.calls.length, 1);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
-    assert.equal(result.outcome, expect.outcome);
+    assert.equal(result.outcome, 'needs-human');
     assert.equal(g.harness.calls.length, 1, 'the violating call is not dispatched again');
     const final = await loadTicket(g);
-    assert.equal(final.state, expect.state);
-    if (point !== 'before-effect') {
-      assert.equal(final.terminalReason.rule, 'integrity-violation');
-      assert.equal(final.history.filter((h) => h.kind === 'integrity violation').length, 1);
-      assert.ok(!existsSync(join(g.worktree, 'CLAUDE.md')), 'the violation stays rolled back');
-    }
+    assert.equal(final.state, 'needs-human');
+    assert.equal(final.terminalReason.rule, 'integrity-violation');
+    assert.equal(final.history.filter((h) => h.kind === 'integrity violation').length, 1);
+    assert.ok(!existsSync(join(g.worktree, 'CLAUDE.md')), 'the violation stays rolled back');
   });
 }
 
@@ -381,6 +499,46 @@ for (const point of ['after-effect', 'after-completion']) {
     assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
   });
 }
+
+// GitHub keeps the repository's spelling of a label gg adds, and the prefix's case may change between Runs.
+for (const point of ['after-effect', 'after-completion']) {
+  test(`gg-owned mixed-case needs-human completes without abandonment or replay, crash ${point}`, async (t) => {
+    const g = await violating(t);
+    const spelled = 'Gg:state:needs-human';
+    g.gh = golden.fakeGh({ branch: golden.BRANCH, repoLabels: [spelled] });
+    g.options.gh.setGh(g.gh.gh);
+    const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
+    await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
+    assert.deepEqual([...g.gh.labels], [spelled], 'GitHub shows the repository spelling');
+    assert.equal(edits(), 1);
+
+    const result = await interpreter.runExecution({ ...g.options, labelPrefix: 'Gg', record: await loadTicket(g) });
+    assert.equal(result.outcome, 'needs-human');
+    const final = await loadTicket(g);
+    assert.equal(final.state, 'needs-human', 'not mistaken for a human override');
+    assert.deepEqual(record.openIntents(final), []);
+    assert.equal(edits(), 1, 'the label is not applied again');
+    assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+  });
+}
+
+test('label reconciliation requires case-insensitive additions and removals', async (t) => {
+  const g = await violating(t);
+  const { m } = await crashed(g, ['needs-human', 1, 'needs-human', 2], 'after-effect');
+  const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
+  const before = edits();
+  const shows = async (names) => {
+    g.gh.labels.clear();
+    for (const name of names) g.gh.labels.add(name);
+    const rec = await loadTicket(g);
+    assert.equal((await reconcile.terminalEffects(rec, { gh: g.options.gh, labelPrefix: 'gg', cwd: g.mainRoot, markers: [m] })).next, 'continue');
+    return !record.openIntents(await loadTicket(g)).some((e) => e.marker === m);
+  };
+  assert.equal(await shows([NEEDS_HUMAN, 'GG:STATE:IN-PROGRESS']), false, 'a removal still shown differently cased stays open');
+  assert.equal(await shows([]), false, 'an absent addition stays open');
+  assert.equal(await shows(['GG:State:Needs-Human']), true, 'a differently cased addition with the removal absent completes');
+  assert.equal(edits(), before, 'Reconciliation makes no label edit');
+});
 
 // Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a freshly loaded record with the same options.
 const CLASSIFIED = {
@@ -448,6 +606,7 @@ test('a needs-human label overrides a mid-action record', async (t) => {
 
   const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
   assert.equal(decided.next, 'abandon');
+  assert.equal((await loadTicket(g)).state, 'active', 'Reconciliation only decides the abandonment');
 
   await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
   assert.equal((await loadTicket(g)).state, 'abandoned');
@@ -455,6 +614,83 @@ test('a needs-human label overrides a mid-action record', async (t) => {
   assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'the intended commit is not made');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
   assert.equal(g.gh.pr(), null);
+});
+
+test('dirtyState and humanOverride return decisions without finalizing the record', async (t) => {
+  const g = await golden.setup(t);
+  await crashed(g, EFFECTS.commit.at, 'before-effect');
+  writeFileSync(join(g.worktree, 'human.txt'), 'mine\n');
+  const row = () => record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET).json;
+  const before = row();
+  const rec = await loadTicket(g);
+
+  assert.ok(await reconcile.dirtyState(rec, { git: g.options.git, worktree: g.worktree }), 'the human file is unknown dirty state');
+  assert.equal(rec.state, 'active');
+  assert.equal(row(), before, 'the hold is only decided');
+  assert.equal((await reconcile.humanOverride(rec, [NEEDS_HUMAN], 'gg'))?.next, 'abandon');
+  assert.equal(rec.state, 'active');
+  assert.equal(row(), before, 'the abandonment is only decided');
+});
+
+test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
+  const g = await golden.setup(t);
+  golden.sh(g.worktree, 'config', 'core.quotePath', 'true');
+  writeFileSync(join(g.worktree, 'café notes.txt'), 'mine\n');
+  const { stat } = await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree });
+  assert.ok(stat.includes(' café notes.txt (untracked)\n'), stat);
+});
+
+// Reconciliation holds a moved branch; the hold's comment then crashes. Any git call on resume would replay or check the
+// older commit, which a hold only reports.
+for (const point of Object.keys(POINTS)) {
+  test(`a crash ${point} of a hold comment resumes its reporting Actions without replaying an older commit`, async (t) => {
+    const g = await golden.setup(t);
+    await crashed(g, EFFECTS.commit.at, 'before-effect');
+    golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+    const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+    const hold = markerOf(g.rec, 'needs-human', 1, 'needs-human', 1);
+    await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point } }),
+      (err) => err instanceof interpreter.CrashError);
+    const mid = await loadTicket(g);
+    const older = record.openIntents(mid).filter((e) => e.action === 'commit');
+    assert.equal(older.length, 1);
+    const git = new Proxy({}, { get: (_, verb) => () => { throw new Error(`git ${String(verb)} called`); } });
+
+    const result = await interpreter.runExecution({ ...g.options, git, record: mid });
+    assert.equal(result.outcome, 'needs-human');
+    assert.equal(result.held, true, JSON.stringify(result));
+    const final = await loadTicket(g);
+    assert.equal(final.state, 'held');
+    assert.deepEqual(record.openIntents(final), older, 'only the older commit intent stays open, untouched');
+    assert.equal(withMarker(g.gh.comments.map((c) => c.body), hold).length, 1, 'the hold comment is posted once');
+    assert.ok(g.gh.labels.has(NEEDS_HUMAN));
+    assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+    assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
+    assert.equal(g.harness.calls.length, 2);
+  });
+}
+
+test('a hold report never looks up an older open PR-comment intent', async (t) => {
+  const g = await golden.setup(t);
+  await crashed(g, EFFECTS.commit.at, 'before-effect');
+  // An earlier review comment on the PR crashed before its completion.
+  const older = markerOf(g.rec, 'reviewer', 1, 'review', 4);
+  await record.intent(await loadTicket(g), older, 'comment', { target: { kind: 'pr', number: 7 }, body: 'x', bodyHash: 'h' });
+  golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+  const hold = markerOf(g.rec, 'needs-human', 1, 'needs-human', 1);
+  await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point: 'before-effect' } }),
+    (err) => err instanceof interpreter.CrashError);
+  let looked = 0;
+  const gh = { ...g.options.gh, prComments: async () => { looked++; throw new Error('gh api exited 1\nHTTP 502: Bad Gateway'); } };
+
+  const result = await interpreter.runExecution({ ...g.options, gh, record: await loadTicket(g) });
+  assert.equal(looked, 0, "the older PR's comments are never read");
+  assert.equal(result.held, true, JSON.stringify(result));
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'held');
+  assert.ok(record.openIntents(final).some((e) => e.marker === older), 'the older intent stays open, untouched');
+  assert.equal(withMarker(g.gh.comments.map((c) => c.body), hold).length, 1);
+  assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
 });
 
 test('a vertex missing from the flow holds the ticket', async (t) => {

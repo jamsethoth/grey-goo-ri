@@ -126,6 +126,16 @@ test('acquire times out', async (t) => {
   await locks.release(first);
 });
 
+test('withLock forwards its acquisition timeout without invoking the callback', { timeout: 10_000 }, async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const first = await locks.acquire(commonDir, 'repo');
+  let ran = false;
+  await assert.rejects(locks.withLock(commonDir, 'repo', async () => { ran = true; }, { timeoutMs: 150, pollMs: 20 }),
+    (err) => err instanceof locks.LockTimeoutError && err.message.includes('150ms'));
+  assert.equal(ran, false, 'the callback never runs without the lock');
+  await locks.release(first);
+});
+
 test('withLock releases on throw', async (t) => {
   const commonDir = await tempCommonDir(t);
   await assert.rejects(locks.withLock(commonDir, 'epic-1', async () => {

@@ -2,6 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../lib/github.mjs';
 import * as labels from '../lib/labels.mjs';
+import * as golden from './support/golden.mjs';
+
+test('createIssue keeps malformed output complete for redaction before publication', async () => {
+  const output = 'x'.repeat(190) + '/private/worktree/secret-file';
+  github.setGh(async () => output);
+  await assert.rejects(github.createIssue({ title: 'Ticket', body: 'body' }, '/repo'), (err) => err.message.includes(output));
+});
 
 // A stand-in for the gh executable: records every argv and answers from `answer(args)`, as gh's stdout.
 const fakeGh = (answer = () => '') => {
@@ -67,6 +74,60 @@ test('isReady is false while a blocking issue is open', () => {
   assert.equal(github.isReady(issue({ labels: [{ name: 'in-progress' }] })), true);
 });
 
+test('readiness names the closed Ticket, open blockers or State Label', () => {
+  const issue = { number: 7, state: 'OPEN', labels: [], blockedBy: [] };
+  assert.equal(github.readinessReason(issue), null);
+  assert.equal(github.readinessReason({ ...issue, state: 'CLOSED' }), 'closed');
+  assert.equal(github.readinessReason({ ...issue, blockedBy: { nodes: [
+    { number: 3, state: 'OPEN' }, { number: 4, state: 'CLOSED' }, { number: 5, state: 'OPEN' },
+  ] } }), 'blocked by #3, #5');
+  for (const name of labels.BUSY_STATES) {
+    const label = `x:state:${name}`;
+    assert.equal(github.readinessReason({ ...issue, labels: [{ name: label }] }, { prefix: 'x' }), `carries State Label ${label}`);
+  }
+});
+
+test('readiness recognises mixed-case State Labels and preserves their spelling', async () => {
+  const viewed = async (name) => {
+    const fake = golden.fakeGh({});
+    fake.labels.add(name);
+    github.setGh(fake.gh);
+    return github.viewIssue(7, '/repo');
+  };
+  for (const prefix of ['gg', 'Gg']) {
+    for (const name of labels.BUSY_STATES) {
+      const shown = `GG:STATE:${name.toUpperCase()}`;
+      const issue = await viewed(shown);
+      assert.equal(github.isReady(issue, { prefix }), false, `${prefix} ${name}`);
+      assert.equal(github.readinessReason(issue, { prefix }), `carries State Label ${shown}`);
+    }
+    for (const other of ['X:STATE:IN-PROGRESS', 'IN-PROGRESS']) {
+      assert.equal(github.readinessReason(await viewed(other), { prefix }), null, other);
+    }
+  }
+});
+
+test('inProgressSince matches mixed-case event labels', async () => {
+  const pages = [[
+    { event: 'labeled', label: { name: 'GG:State:In-Progress' }, created_at: '2026-10-01T00:00:00Z' },
+    { event: 'unlabeled', label: { name: 'gg:state:in-progress' }, created_at: '2026-10-02T00:00:00Z' },
+    { event: 'labeled', label: { name: 'X:state:in-progress' }, created_at: '2026-10-03T00:00:00Z' },
+  ], [
+    { event: 'labeled', label: { name: 'gg:STATE:IN-PROGRESS' }, created_at: '2026-10-04T00:00:00Z' },
+    { event: 'labeled', created_at: '2026-10-05T00:00:00Z' },
+    { event: 'labeled', label: { name: 'gg:state:needs-human' }, created_at: '2026-10-06T00:00:00Z' },
+    { event: 'commented', created_at: '2026-10-07T00:00:00Z' },
+  ]];
+  for (const prefix of ['gg', 'Gg']) {
+    const { gh, calls } = fakeGh((args) => (args[0] === 'api' ? pages : ''));
+    github.setGh(gh);
+    assert.equal(await github.inProgressSince(7, '/repo', { prefix }), '2026-10-04T00:00:00Z', prefix);
+    assert.ok(calls[0].args.includes('--paginate') && calls[0].args.at(-1).endsWith('/issues/7/events'));
+  }
+  github.setGh(fakeGh(() => [pages[0].slice(1), pages[1].slice(1)]).gh);
+  assert.equal(await github.inProgressSince(7, '/repo'), null);
+});
+
 test('upsertPr updates an existing PR found by head branch instead of creating', async () => {
   const pr = { number: 12, state: 'OPEN', isDraft: true, url: 'https://github.com/o/r/pull/12' };
   const { gh, calls } = fakeGh((args) => (args[0] === 'pr' && args[1] === 'list' ? [pr] : ''));
@@ -85,18 +146,31 @@ test('upsertPr updates an existing PR found by head branch instead of creating',
 
 test('ensureLabels creates the four prefixed state labels', async () => {
   for (const prefix of ['gg', 'x']) {
-    const { gh, calls } = fakeGh();
+    const { gh, calls } = fakeGh(() => []);
     github.setGh(gh);
     await github.ensureLabels('/repo', { prefix });
     const created = calls.filter(({ args }) => args[0] === 'label' && args[1] === 'create').map(({ args }) => args[2]);
     assert.deepEqual(created.sort(), labels.STATE_LABELS.map((n) => `${prefix}:state:${n}`).sort());
+    assert.ok(calls.every(({ args }) => !args.includes('--force')), 'existing label style is never overwritten');
   }
+});
+
+test('ensureLabels reads all label pages once and creates only missing State Labels', async () => {
+  const { gh, calls } = fakeGh((args) => args[0] === 'api' ? [
+    [{ name: 'gg:state:in-progress' }, { name: 'unrelated' }], [{ name: 'gg:state:needs-human' }],
+  ] : '');
+  github.setGh(gh);
+  await github.ensureLabels('/repo');
+  assert.equal(calls.filter(({ args }) => args[0] === 'api').length, 1);
+  assert.deepEqual(calls.filter(({ args }) => args[0] === 'label').map(({ args }) => args[2]).sort(),
+    ['gg:state:needs-replan', 'gg:state:ready-for-qa']);
+  assert.ok(calls.every(({ args }) => !args.includes('--force')));
 });
 
 test('every label written through gh carries the prefix', async () => {
   const prefix = 'x';
   const l = labels.labels(prefix);
-  const { gh, calls } = fakeGh();
+  const { gh, calls } = fakeGh(() => []);
   github.setGh(gh);
   await github.ensureLabels('/repo', { prefix });
   await github.editLabels(7, { add: [l.state('in-progress')], remove: [l.await('qa-approval')] }, '/repo');
@@ -133,4 +207,64 @@ test('viewPr, prComments and issueComments read through the injected gh', async 
   assert.equal(apiCalls.length, 2);
   assert.ok(apiCalls[0].args.some((a) => a.includes('/12/comments')));
   assert.ok(apiCalls[1].args.some((a) => a.includes('/7/comments')));
+});
+
+// GitHub matches label names case-insensitively, and a create can lose a race to another Run.
+const COLLISION = (name) => new Error(`label with name "${name}" already exists; use --force to update its color and description`);
+const labelsApi = (args) => args[0] === 'api' && args.at(-1).includes('/labels');
+
+test('ensureLabels accepts differently cased existing State Labels', async () => {
+  const { gh, calls } = fakeGh((args) => labelsApi(args) ? [
+    [{ name: 'gg:STATE:in-progress' }, { name: 'unrelated' }], [{ name: 'GG:state:Needs-Human' }, { name: 'Gg:State:Ready-For-QA' }],
+  ] : '');
+  github.setGh(gh);
+  await github.ensureLabels('/repo', { prefix: 'Gg' });
+  assert.equal(calls.filter(({ args }) => labelsApi(args)).length, 1, 'one label list read');
+  assert.deepEqual(calls.filter(({ args }) => args[0] === 'label').map(({ args }) => args[2]), ['Gg:state:needs-replan'],
+    'only the missing label is created, in the configured spelling');
+  assert.ok(calls.every(({ args }) => !args.includes('--force')));
+});
+
+test('ensureLabels accepts a concurrent create after confirming presence', async () => {
+  let reads = 0;
+  const all = labels.STATE_LABELS.map((n) => ({ name: `GG:state:${n}` }));
+  const { gh, calls } = fakeGh((args) => {
+    if (labelsApi(args)) return ++reads === 1 ? [[]] : [all];
+    if (args[0] === 'label') throw COLLISION(args[2]);
+    return '';
+  });
+  github.setGh(gh);
+  await github.ensureLabels('/repo');
+  assert.equal(calls.filter(({ args }) => args[0] === 'label').length, 1, 'a confirmed label is not created again');
+  assert.equal(reads, 2, 'the failed create is confirmed by one more read');
+  assert.ok(calls.every(({ args }) => !args.includes('--force')));
+});
+
+test('ensureLabels does not accept an unconfirmed failed create', async () => {
+  const denied = new Error('HTTP 403: label creation denied');
+  for (const [name, reread] of [['absent', () => [[]]], ['failed re-read', () => { throw new Error('HTTP 502'); }], ['malformed JSON', () => 'not json']]) {
+    let reads = 0;
+    const { gh } = fakeGh((args) => {
+      if (labelsApi(args)) return ++reads === 1 ? [[]] : reread();
+      if (args[0] === 'label') throw denied;
+      return '';
+    });
+    github.setGh(gh);
+    await assert.rejects(github.ensureLabels('/repo'), (err) => err === denied, name);
+  }
+});
+
+test('setLabels reports an unconfirmed setup failure without editing the issue', async () => {
+  const logs = [], events = [];
+  const { gh, calls } = fakeGh((args) => {
+    if (labelsApi(args)) return [[]];
+    if (args[0] === 'label') throw new Error('HTTP 403: label creation denied');
+    return '';
+  });
+  github.setGh(gh);
+  const ok = await github.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo',
+    { log: (m) => logs.push(m), ev: (t, d) => events.push([t, d]), ensureLabels: () => github.ensureLabels('/repo') });
+  assert.equal(ok, false);
+  assert.ok(events.some(([t, d]) => t === 'label_failed' && d.error.includes('label creation denied')), JSON.stringify(events));
+  assert.ok(!calls.some(({ args }) => args[0] === 'issue' && args[1] === 'edit'), 'the issue is not edited');
 });

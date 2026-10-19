@@ -2,6 +2,7 @@
 // a fake test runner, the fake harness, and every process call tagged with the activity it observed.
 import childProcess, { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -9,6 +10,8 @@ import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
 import * as events from '../../lib/events.mjs';
+import * as interpreter from '../../lib/interpreter.mjs';
+import * as labelModule from '../../lib/labels.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -147,12 +150,14 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
 }
 
 // A stand-in for the gh executable: records every argv and answers with canned JSON.
-export function fakeGh({ branch, observe = () => {} }) {
+export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
   const calls = [];
   const comments = [];
   // The ticket's labels on GitHub, as issue edits leave them and issue view reports them.
   const labels = new Set();
+  const available = new Set(repoLabels);
   let pr = null;
+  const named = (set, name) => [...set].find((l) => l.toLowerCase() === name.toLowerCase());
   const gh = async (args, cwd, input) => {
     observe(`gh ${args[0]} ${args[1]}`);
     calls.push({ args, cwd, input });
@@ -171,6 +176,7 @@ export function fakeGh({ branch, observe = () => {} }) {
       return `https://github.com/o/r/issues/${args[2]}#issuecomment-${id}\n`;
     }
     if (noun === 'api') {
+      if (args.at(-1).includes('/labels')) return JSON.stringify([[...available].map((name) => ({ name }))]);
       const n = Number(args.join(' ').match(/issues\/(\d+)\/comments/)?.[1]);
       return JSON.stringify([comments.filter((c) => c.number === n)]);
     }
@@ -178,12 +184,37 @@ export function fakeGh({ branch, observe = () => {} }) {
       return JSON.stringify({ number: Number(args[2]), title: '', body: '', state: 'OPEN',
         labels: [...labels].map((name) => ({ name })), blockedBy: [], subIssues: [] });
     }
+    // GitHub resolves label names case-insensitively and keeps the repository's spelling.
     if (noun === 'issue' && verb === 'edit') {
-      args.forEach((a, i) => { if (a === '--add-label') labels.add(args[i + 1]); if (a === '--remove-label') labels.delete(args[i + 1]); });
+      args.forEach((a, i) => {
+        if (a === '--add-label') labels.add(named(available, args[i + 1]) ?? args[i + 1]);
+        if (a === '--remove-label') labels.delete(named(labels, args[i + 1]));
+      });
       return '';
     }
-    if (noun === 'label' && verb === 'create') return '';
+    if (noun === 'label' && verb === 'create') {
+      if (named(available, args[2])) throw new Error(`label with name "${args[2]}" already exists; use --force to update its color and description`);
+      available.add(args[2]);
+      return '';
+    }
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
-  return { gh, calls, comments, labels, pr: () => pr };
+  return { gh, calls, comments, labels, repoLabels: available, pr: () => pr };
+}
+
+// Crashes the `n`th `op` (rm or writeFile) on a path under `root` once `active()` holds, after the call has run when
+// `after` is set. lib modules see it through their node:fs/promises imports; it is undone by the returned function or
+// when the test ends.
+export function crashFs(t, root, active, { op, n, after = false }) {
+  const original = fsPromises[op];
+  let calls = 0;
+  fsPromises[op] = async (path, ...rest) => {
+    if (!active() || !String(path).startsWith(root) || ++calls !== n) return original(path, ...rest);
+    if (after) await original(path, ...rest);
+    throw new interpreter.CrashError(`crash at ${op} ${n}`);
+  };
+  syncBuiltinESMExports();
+  const restore = () => { fsPromises[op] = original; syncBuiltinESMExports(); };
+  t.after(restore);
+  return restore;
 }

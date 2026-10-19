@@ -314,3 +314,26 @@ test('a rollback clears a file the agent put where a baseline directory was', as
   await integrity.restoreUntracked(wt, set);
   assert.equal(readFileSync(join(wt, 'sandbox', 'a.test.mjs'), 'utf8'), 'a');
 });
+
+test('a rollback restores from mixed states and changes nothing when run again', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const wt = join(root, 'wt');
+  mkdirSync(wt);
+  sh(wt, ['init', '-q', '-b', 'main']);
+  const b64 = (text) => ({ base64: Buffer.from(text).toString('base64') });
+  // One file as the agent left it, one absent, one already restored, and an extra the agent added.
+  writeFileSync(join(wt, 'left.test.mjs'), 'agent');
+  writeFileSync(join(wt, 'done.test.mjs'), 'done');
+  writeFileSync(join(wt, 'extra.test.mjs'), 'extra');
+  const set = { files: { 'left.test.mjs': b64('left'), 'absent.test.mjs': b64('absent'), 'done.test.mjs': b64('done') },
+    pathspecs: [':(glob)**/*.test.*'] };
+
+  for (const pass of ['first', 'second']) {
+    await integrity.restoreUntracked(wt, set);
+    const now = await integrity.untrackedFiles(wt, set.pathspecs);
+    assert.ok(integrity.sameFiles(now, set.files), `${pass} restore: ${JSON.stringify(now)}`);
+    assert.ok(Object.keys(now).every((p) => integrity.sameFile(now[p], set.files[p])));
+  }
+  assert.equal(integrity.sameFile(b64('a'), undefined), false, 'an absent file is never the same');
+});
