@@ -38,11 +38,12 @@ test('run and runShell read a multi-byte character split across chunks exactly',
   assert.equal((await exec.runShell(`"${process.execPath}" "${p}"`)).output.trim(), '€');
 });
 
+// Not timed out is the promptness check: a command left waiting on stdin would run until the timeout. A wall-clock bound
+// here measured the Windows job helper's cold start (8 to 15 s early in a loaded suite), so it was dropped, with the
+// owner's approval, from this ported case.
 test('runShell: a command waiting for stdin EOF returns promptly', async () => {
   const p = script('stdin.mjs', `process.stdin.resume(); process.stdin.on('end', () => console.log('eof'));`);
-  const t = Date.now();
   const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000 });
-  assert.ok(Date.now() - t < 10000);
   assert.ok(!res.timedOut);
   assert.match(res.output, /eof/);
 });
