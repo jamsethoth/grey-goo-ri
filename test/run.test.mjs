@@ -41,8 +41,9 @@ function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 }
 
 // A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
-// fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view.
-function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, rootName = 'gg-run-', linked = false } = {}) {
+// fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view, and `issues`
+// those of one issue number.
+function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, issues = {}, rootName = 'gg-run-', linked = false } = {}) {
   // linked: every path gg is given goes through a junction, as through a symlinked TMPDIR or a Windows 8.3 name.
   const real = mkdtempSync(join(tmpdir(), rootName));
   const root = linked ? `${real}-link` : real;
@@ -72,7 +73,7 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
     if (noun === 'issue' && verb === 'view') {
       fake.calls.push({ args, cwd, input });
       return JSON.stringify({ number: Number(args[2]), title: 'Add two numbers', body: 'Add `add(a, b)`.', state: 'OPEN',
-        labels: [...fake.labels].map((name) => ({ name })), blockedBy: [], subIssues: [], ...issue });
+        labels: [...fake.labels].map((name) => ({ name })), blockedBy: [], subIssues: [], ...issue, ...issues[args[2]] });
     }
     if (failEdit && noun === 'issue' && verb === 'edit') {
       fake.calls.push({ args, cwd, input });
@@ -1824,4 +1825,223 @@ test('epicProblem explains an epic with no sub-issues or nothing ready', () => {
   const busy = [issue(2, [IN_PROGRESS])];
   assert.match(run.epicProblem(busy, []), /nothing ready/i);
   assert.equal(run.epicProblem([issue(3)], [issue(3)]), null);
+});
+
+const EPIC = 20;
+const repoLockWriter = fileURLToPath(new URL('./support/repo-lock-writer.mjs', import.meta.url));
+// The issue views of an epic whose sub-issues are `children`, with `extra` overriding single issues.
+const epicOf = (children, extra = {}) => ({ [EPIC]: { title: 'An epic', subIssues: children.map((number) => ({ number })) }, ...extra });
+const worktreeOf = (f, n) => gitModule.worktreePath(f.options.config.worktreeRoot, 'main', n);
+const addsLabel = (args, n, label) => args[0] === 'issue' && args[1] === 'edit' && args[2] === String(n)
+  && args.some((a, i) => a === label && args[i - 1] === '--add-label');
+
+// Opened once; a wait gives up after a bound, so a broken interleaving fails its case instead of hanging the file.
+function gate() {
+  let open;
+  const opened = new Promise((resolve) => { open = resolve; });
+  const wait = () => Promise.race([opened, sleep(30_000, null, { ref: false }).then(() => { throw new Error('a gate stayed shut'); })]);
+  return { open, wait };
+}
+
+// One fake Harness per Ticket behind the name `fake`, chosen by the worktree each call runs in; `before` runs first.
+function ticketHarnesses(f, tickets, { responses = {}, before = async () => {} } = {}) {
+  const fakes = Object.fromEntries(tickets.map((n) => [n, fakeHarness({ transcriptDir: join(f.root, 'transcripts', String(n)),
+    responses: responses[n] ?? golden.firstVisitResponses, capabilities: { cost: false, reasoningTokens: false } })]));
+  const ticketOf = (cwd) => tickets.find((n) => pathKey(cwd) === pathKey(worktreeOf(f, n)));
+  f.options.harnesses.fake = { ...fakes[tickets[0]], run: async (call) => {
+    const n = ticketOf(call.cwd);
+    await before(n, call);
+    return fakes[n].run(call);
+  } };
+  return fakes;
+}
+
+// Every gh call passes through `hook` first.
+function hookGh(f, hook) {
+  const inner = f.gh.gh;
+  github.setGh(async (args, cwd, input) => {
+    await hook(args);
+    return inner(args, cwd, input);
+  });
+}
+
+test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22, 23], { 23: { blockedBy: [{ number: 21, state: 'OPEN' }] } }) });
+  f.options.target = EPIC;
+  // Each red call waits for the other, so the two Executions overlap under maxParallel 2.
+  const both = gate();
+  let reds = 0;
+  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
+    if (call.phase !== 'red') return;
+    if (++reds === 2) both.open();
+    await both.wait();
+  } });
+
+  const results = await run.runTarget(f.options);
+  assert.equal(f.options.config.maxParallel, 2);
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
+  assert.equal(run.runExitCode(results), 0);
+  const views = f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'view').map((c) => Number(c.args[2]));
+  assert.deepEqual(views.sort((a, b) => a - b), [EPIC, 21, 22, 23], 'the epic and each sub-issue are read');
+  for (const n of [21, 22]) assert.equal((await record.load(f.commonDir, 'ticket', n))?.epic, EPIC, `#${n}'s Execution references the epic`);
+  assert.equal(await record.load(f.commonDir, 'ticket', 23), null, 'the blocked Ticket has no record');
+  assert.equal(existsSync(worktreeOf(f, 23)), false, 'nor a worktree');
+  assert.ok(!f.gh.calls.some((c) => c.args[0] === 'issue' && c.args[1] === 'edit' && c.args[2] === '23'), 'nor a label edit');
+  assert.ok(!f.readEvents().some((e) => e.ticket === 23), 'nor a Ticket Event');
+});
+
+test('pool never exceeds its limit and keeps result order', async () => {
+  let live = 0, peak = 0;
+  const res = await run.pool([1, 2, 3, 4, 5], 2, async (x) => {
+    peak = Math.max(peak, ++live);
+    await new Promise((r) => setTimeout(r, 5));
+    live--;
+    return x * 10;
+  });
+  assert.equal(peak, 2);
+  assert.deepEqual(res, [10, 20, 30, 40, 50]);
+});
+
+test('a stray write into an idle worktree is attributed to the running action', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22]) });
+  f.options.target = EPIC;
+  const aAdmitted = gate();
+  const bIdle = gate();
+  const aEnded = gate();
+  // B starts only after A's admission has read the worktree list: the pool takes A's ticket lock first, and B's waits
+  // at the second lock-directory mkdir. So only a worktree list read per Attempt can see B.
+  const lockDir = join(f.commonDir, 'gg', 'locks');
+  const mkdir = fsPromises.mkdir;
+  let lockDirs = 0;
+  fsPromises.mkdir = async (path, ...rest) => {
+    if (pathKey(String(path)) === pathKey(lockDir) && ++lockDirs === 2) await aAdmitted.wait();
+    return mkdir(path, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => { fsPromises.mkdir = mkdir; syncBuiltinESMExports(); });
+  // A runs its Execution while B is admitted and idle, and B goes on only once A has ended.
+  hookGh(f, async (args) => {
+    if (addsLabel(args, 21, IN_PROGRESS)) { aAdmitted.open(); await bIdle.wait(); }
+    if (addsLabel(args, 22, IN_PROGRESS)) { bIdle.open(); await aEnded.wait(); }
+    if (addsLabel(args, 21, NEEDS_HUMAN)) aEnded.open();
+  });
+  let bActivity;
+  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
+    if (n !== 21 || call.phase !== 'red') return;
+    bActivity = (await record.load(f.commonDir, 'ticket', 22))?.activity;
+    writeFileSync(join(worktreeOf(f, 22), 'package.json'), '{ "stray": true }\n');
+  } });
+
+  const results = await run.runTarget(f.options);
+  assert.deepEqual(bActivity, { busy: false, generation: 0 }, 'B was admitted and idle during the red call of A');
+  const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === 21 && e.phase === 'red' && e.agent);
+  assert.equal(red?.outcome, 'integrity-violation', JSON.stringify(results));
+  assert.ok(red.violations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'), JSON.stringify(red.violations));
+});
+
+test('a busy worktree is never attributed to another ticket\'s action', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22]) });
+  f.options.target = EPIC;
+  const bBusy = gate();
+  const aEnded = gate();
+  // A starts only once B is inside its red call, and B's call returns only once A has ended.
+  hookGh(f, async (args) => {
+    if (addsLabel(args, 21, IN_PROGRESS)) await bBusy.wait();
+    if (addsLabel(args, 21, 'gg:state:ready-for-qa')) aEnded.open();
+  });
+  let bActivity;
+  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
+    if (call.phase !== 'red') return;
+    if (n === 22) {
+      bBusy.open();
+      await aEnded.wait();
+      return;
+    }
+    // B's own Action changes its worktree during A's.
+    bActivity = (await record.load(f.commonDir, 'ticket', 22))?.activity;
+    writeFileSync(join(worktreeOf(f, 22), 'b-at-work.txt'), 'B at work\n');
+  } });
+
+  const results = await run.runTarget(f.options);
+  assert.equal(bActivity?.busy, true, 'B was busy during the red call of A');
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
+  const flagged = f.readEvents().filter((e) => e.type === 'action' && e.ticket === 21 && e.violations);
+  assert.deepEqual(flagged, [], 'no Action of A carries a violation');
+});
+
+test('two processes serialise orchestrator git writes on the repo lock', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t);
+  const log = events.eventLog(f.commonDir, { run: 'parent' });
+  log('run_start');
+  writeFileSync(join(f.mainRoot, 'parent.txt'), 'parent\n');
+  sh(f.mainRoot, 'add', 'parent.txt');
+  const child = spawn(process.execPath, [repoLockWriter, f.commonDir, f.mainRoot, 'child'], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'], shell: false });
+  const exited = new Promise((resolve) => child.on('exit', resolve));
+  t.after(() => child.kill());
+  const message = () => new Promise((resolve, reject) => {
+    child.once('message', resolve);
+    child.once('exit', (code) => reject(new Error(`the writer exited ${code} before reporting`)));
+  });
+
+  const { sha: childSha } = await message();
+  // The child holds the repo lock now; the parent's commit is called while it does.
+  let started = null;
+  const git = run.lockedGit({ ...gitModule, commitStaged: (...args) => { started = Date.now(); return gitModule.commitStaged(...args); } }, f.commonDir);
+  const committing = git.commitStaged(f.mainRoot, 'parent commit');
+  const released = message();
+  child.send('release');
+  const { releasing } = await released;
+  const parentSha = await committing;
+  const committed = Date.now();
+  assert.equal(await exited, 0, 'the writer exits cleanly');
+  log('run_end');
+
+  assert.ok(started >= releasing, `the parent's commit started at ${started}, after the child's release at ${releasing}`);
+  assert.ok(committed >= releasing, 'and landed after it');
+  assert.ok(parentSha, 'the parent commit landed without an index error');
+  assert.equal(sh(f.mainRoot, 'rev-parse', `${parentSha}^`), childSha, 'the parent commit sits on the child commit');
+  assert.deepEqual(sh(f.mainRoot, 'rev-list', 'main').split('\n').slice(0, 2), [parentSha, childSha], 'both shas are on the branch');
+  const evs = f.readEvents();
+  assert.deepEqual(evs.map((e) => [e.run, e.type]), [['parent', 'run_start'], ['child', 'run_start'], ['child', 'run_end'], ['parent', 'run_end']],
+    'both processes appended to the one events table, in insertion order');
+  const rows = record.openDb(f.commonDir).prepare('SELECT json FROM events ORDER BY id').all().map((r) => JSON.parse(r.json));
+  assert.deepEqual(evs, rows);
+});
+
+test('an auth failure stops every active ticket and records the class on run_end', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22]) });
+  f.options.target = EPIC;
+  const bInCall = gate();
+  const aEnded = gate();
+  hookGh(f, async (args) => {
+    if (addsLabel(args, 21, NEEDS_HUMAN)) aEnded.open();
+  });
+  // A's red call fails with auth while B is inside its own red call; B's call returns once A has ended.
+  ticketHarnesses(f, [21, 22], {
+    responses: { 21: { 'implementer/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
+    before: async (n, call) => {
+      if (call.phase !== 'red') return;
+      if (n === 21) await bInCall.wait();
+      else {
+        bInCall.open();
+        await aEnded.wait();
+      }
+    },
+  });
+
+  const results = await run.runTarget(f.options);
+  assert.deepEqual(results.map((r) => [r.ticket, r.state]), [[21, 'needs-human'], [22, 'needs-human']], JSON.stringify(results));
+  assert.equal(run.runExitCode(results), 2);
+  const evs = f.readEvents();
+  const bActions = evs.filter((e) => e.type === 'action' && e.ticket === 22 && e.procedure);
+  assert.deepEqual(bActions.map((e) => [e.phase, e.ordinal, e.outcome]), [['red', 1, 'ok']], 'B finished its red call and started no other Action');
+  const bEnd = evs.find((e) => e.type === 'ticket_end' && e.ticket === 22);
+  assert.equal(bEnd.outcome, 'needs-human');
+  assert.match(bEnd.reason.text, /#21\b.*\bauth\b/, 'the reason of B names the run-stopping failure');
+  const ends = evs.filter((e) => e.type === 'run_end');
+  assert.equal(ends.length, 1);
+  assert.equal(ends[0].failureClass, 'auth');
+  const ticketEnds = evs.flatMap((e, i) => (e.type === 'ticket_end' ? [i] : []));
+  assert.equal(ticketEnds.length, 2);
+  assert.ok(evs.indexOf(ends[0]) > Math.max(...ticketEnds), 'run_end follows both Ticket endings');
 });
