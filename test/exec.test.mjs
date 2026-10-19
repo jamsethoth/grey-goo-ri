@@ -232,6 +232,16 @@ test('runShell: a command that finishes is not reported as timed out while its l
   }
 });
 
+// A cold Windows PowerShell and Add-Type took 3.5 s on a fresh runner and up to 15 s under the suite's load; that start-up
+// must not be charged to the command's timeout.
+test('runShell: the timeout counts from when the command starts, not from the job helper start-up', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
+  const p = script('four-seconds.mjs', 'setTimeout(() => console.log("done"), 4000);');
+  const res = await withEnv({ FF_TEST_SLOWSTART: '3000' }, () => exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000 }));
+  assert.equal(res.timedOut, undefined, `a 4 s command timed out under a 7 s timeout after a 3 s helper start-up: ${res.output}`);
+  assert.equal(res.code, 0);
+  assert.match(res.output, /done/);
+});
+
 test('runShell: a helper that never starts and cannot be killed is reported, and does not keep ff waiting', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
   const t = Date.now();
   const res = await withEnv({ FF_TEST_STALL: '1' }, () => exec.runShell(`"${process.execPath}" -e "1"`, { timeoutMs: 800, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] }));
