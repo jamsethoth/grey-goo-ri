@@ -1,5 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as render from '../lib/render.mjs';
 import * as marker from '../lib/marker.mjs';
 
@@ -117,7 +121,27 @@ test('publicText masks percent-encoded directories in file URLs and plain text',
     ['encoded lowercase of a Windows letter', [String.raw`C:\work\JOSÉ`], 'file:///C:/work/jos%c3%a9/x', '[local]/x'],
     ['literal other case of a Windows letter', ['C:/work/José'], 'C:/WORK/JOSÉ/x', '[local]/x'],
     ['encoded other case after a Windows directory', ['C:/work/Jos'], 'file:///C:/work/Jos%C3%89/x'],
+    // pathToFileURL escapes ~, which Windows 8.3 names such as RUNNER~1 contain.
+    ['encoded tilde', [String.raw`C:\Users\RUNNER~1\AppData`], 'file:///C:/Users/RUNNER%7E1/AppData/x', '[local]/x'],
   ]);
+});
+
+// As on a Windows runner, whose TEMP is the 8.3 name C:\Users\RUNNER~1\... while git reports C:\Users\runneradmin\...
+test('publicText masks the canonical form of the temp directory and of directories given through a link', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-render-'));
+  const saved = Object.fromEntries(['TMPDIR', 'TEMP', 'TMP'].map((k) => [k, process.env[k]]));
+  t.after(() => {
+    for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    rmSync(root, { recursive: true, force: true });
+  });
+  mkdirSync(join(root, 'real', 'tmp'), { recursive: true });
+  mkdirSync(join(root, 'real', 'repo'));
+  symlinkSync(join(root, 'real'), join(root, 'link'), 'junction');
+  const real = realpathSync.native(join(root, 'real'));
+  // Only the linked spellings are known: the temp directory and the repository both arrive through the link.
+  for (const k of Object.keys(saved)) process.env[k] = join(root, 'link', 'tmp');
+  const text = `fatal: ${join(real, 'tmp', 'x')} and ${pathToFileURL(join(real, 'repo', 'y')).href}`;
+  assert.equal(render.publicText(text, [join(root, 'link', 'repo')]), `fatal: [local]${sep}x and [local]/y`);
 });
 
 test('commit messages carry the stage and action trailers', () => {
