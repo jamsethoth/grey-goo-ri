@@ -143,6 +143,7 @@ test('eventLog validates every event before appending it', (t) => {
 test('lifecycle events validate their required fields per type', () => {
   assert.equal(events.lifecycleEvent('run_start', { run: 'r1' }).type, 'run_start');
   assert.throws(() => events.lifecycleEvent('run_end', {}), /\brun\b/);
+  assert.equal(events.lifecycleEvent('run_end', { run: 'r1', tickets: [], failureClass: 'auth' }).failureClass, 'auth');
   assert.equal(events.lifecycleEvent('ticket_start', { run: 'r1', execution: 'e1', ticket: 7 }).type, 'ticket_start');
   assert.throws(() => events.lifecycleEvent('ticket_end', { run: 'r1', ticket: 7 }), /\bexecution\b/);
   assert.equal(events.lifecycleEvent('label_failed', { ticket: 7, change: 'add gg:ready', error: 'gh 502' }).type, 'label_failed');

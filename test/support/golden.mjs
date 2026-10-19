@@ -156,20 +156,24 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
   // The ticket's labels on GitHub, as issue edits leave them and issue view reports them.
   const labels = new Set();
   const available = new Set(repoLabels);
-  let pr = null;
+  // Pull requests by head branch, so each Ticket of an epic gets its own.
+  const prs = new Map();
+  const prOf = (n) => [...prs.values()].find((p) => p.number === n) ?? null;
   const named = (set, name) => [...set].find((l) => l.toLowerCase() === name.toLowerCase());
   const gh = async (args, cwd, input) => {
     observe(`gh ${args[0]} ${args[1]}`);
     calls.push({ args, cwd, input });
     const [noun, verb] = args;
-    if (noun === 'pr' && verb === 'list') return JSON.stringify(pr && args.includes(branch) ? [pr] : []);
+    const head = args[args.indexOf('--head') + 1];
+    if (noun === 'pr' && verb === 'list') return JSON.stringify(prs.has(head) ? [prs.get(head)] : []);
     if (noun === 'pr' && verb === 'create') {
-      pr = { number: 7, state: 'OPEN', isDraft: true, url: 'https://github.com/o/r/pull/7', body: input, headRefName: branch };
-      return `${pr.url}\n`;
+      const number = 7 + prs.size;
+      prs.set(head, { number, state: 'OPEN', isDraft: true, url: `https://github.com/o/r/pull/${number}`, body: input, headRefName: head });
+      return `${prs.get(head).url}\n`;
     }
-    if (noun === 'pr' && verb === 'edit') { pr.body = input; return ''; }
-    if (noun === 'pr' && verb === 'view') return JSON.stringify(pr);
-    if (noun === 'pr' && verb === 'ready') { pr.isDraft = false; return ''; }
+    if (noun === 'pr' && verb === 'edit') { prOf(Number(args[2])).body = input; return ''; }
+    if (noun === 'pr' && verb === 'view') return JSON.stringify(prOf(Number(args[2])));
+    if (noun === 'pr' && verb === 'ready') { prOf(Number(args[2])).isDraft = false; return ''; }
     if ((noun === 'pr' || noun === 'issue') && verb === 'comment') {
       const id = 1000 + comments.length;
       comments.push({ id, body: input, created_at: '2026-10-15T00:00:00Z', target: noun, number: Number(args[2]) });
@@ -199,7 +203,7 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
     }
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
-  return { gh, calls, comments, labels, repoLabels: available, pr: () => pr };
+  return { gh, calls, comments, labels, repoLabels: available, pr: () => prs.get(branch) ?? null };
 }
 
 // Crashes the `n`th `op` (rm or writeFile) on a path under `root` once `active()` holds, after the call has run when
