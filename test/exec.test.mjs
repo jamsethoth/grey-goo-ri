@@ -196,6 +196,26 @@ test('runShell: when the job cannot be set up, the timeout still takes down the 
   }
 });
 
+// A loaded machine can take seconds over taskkill /T. Stopped partway it may have killed the shell but not the children
+// it can then no longer find, so a slow taskkill must be let finish. The seam gets the pid to kill as its last argument.
+test('runShell: when the job cannot be set up, a slow taskkill still takes down the process tree', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
+  const pidFile = join(tmp, 'nojob-slow.pid');
+  const child = script('nojob-slow-child.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
+  const top = script('nojob-slow-top.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }); setTimeout(() => {}, 60000);`);
+  const slow = script('slow-taskkill.mjs', `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 2500);`);
+  const res = await withEnv({ FF_TEST_NOJOB: '1' }, () => exec.runShell(`"${process.execPath}" "${top}"`, { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] }));
+  const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+  try {
+    assert.equal(res.timedOut, true);
+    assert.ok(pid, 'child never started');
+    assert.ok(!res.cleanupErrors.some((e) => /taskkill/.test(e)), JSON.stringify(res.cleanupErrors));
+    assert.ok(await waitFor(() => !alive(pid), 3000), 'a child still linked to the shell was left running');
+  } finally {
+    for (const s of res.survivors) try { process.kill(s.pid); } catch {}
+    if (pid) try { process.kill(pid); } catch {}
+  }
+});
+
 test('runShell: when the job cannot be set up and taskkill is refused, the children still linked to the shell are named', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
   const pidFile = join(tmp, 'nojob-denied.pid');
   const child = script('nojob-denied-child.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
