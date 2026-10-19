@@ -2045,3 +2045,55 @@ test('an auth failure stops every active ticket and records the class on run_end
   assert.equal(ticketEnds.length, 2);
   assert.ok(evs.indexOf(ends[0]) > Math.max(...ticketEnds), 'run_end follows both Ticket endings');
 });
+
+test('a ticket lock failure is that ticket\'s fault and run_end waits for every worker', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22]) });
+  f.options.target = EPIC;
+  // A directory where B's ticket-lock database belongs cannot be opened, so taking B's lock throws.
+  mkdirSync(join(f.commonDir, 'gg', 'locks', 'ticket-22.db'), { recursive: true });
+  const bFailed = gate();
+  const aEnded = gate();
+  f.options.log = (m) => {
+    f.logs.push(m);
+    if (m.startsWith('#22 ERROR')) bFailed.open();
+  };
+  hookGh(f, async (args) => {
+    if (addsLabel(args, 21, 'gg:state:ready-for-qa')) aEnded.open();
+  });
+  // A is inside its red call when B's lock fails, and finishes only after.
+  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
+    if (n === 21 && call.phase === 'red') await bFailed.wait();
+  } });
+
+  const running = run.runTarget(f.options).then((r) => r, (e) => e);
+  running.then(bFailed.open);
+  const results = await running;
+  await aEnded.wait();
+  assert.ok(Array.isArray(results), `the Run settles with every Ticket's result: ${results}`);
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'fault']]);
+  assert.equal(run.runExitCode(results), 1);
+  const evs = f.readEvents();
+  const ends = evs.filter((e) => e.type === 'run_end');
+  assert.equal(ends.length, 1);
+  assert.deepEqual(ends[0].tickets, [{ ticket: 21, outcome: 'done' }, { ticket: 22, outcome: 'fault' }]);
+  assert.ok(evs.indexOf(ends[0]) > evs.findIndex((e) => e.type === 'ticket_end' && e.ticket === 21), 'run_end follows the ending of A');
+});
+
+test('a run stop skips queued tickets without admitting them', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22]) });
+  f.options.target = EPIC;
+  f.options.config.maxParallel = 1;
+  const fakes = ticketHarnesses(f, [21, 22], {
+    responses: { 21: { 'implementer/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
+  });
+
+  const results = await run.runTarget(f.options);
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'needs-human'], [22, 'skipped']], JSON.stringify(results));
+  assert.equal(fakes[22].calls.length, 0, 'no agent ran for the queued Ticket');
+  assert.equal(await record.load(f.commonDir, 'ticket', 22), null, 'the queued Ticket has no record');
+  assert.equal(existsSync(worktreeOf(f, 22)), false, 'nor a worktree');
+  assert.ok(!f.gh.calls.some((c) => c.args[0] === 'issue' && c.args[1] === 'edit' && c.args[2] === '22'), 'nor a label edit');
+  const evs = f.readEvents();
+  assert.ok(!evs.some((e) => e.ticket === 22), 'nor a Ticket Event');
+  assert.equal(evs.find((e) => e.type === 'run_end').failureClass, 'auth');
+});
