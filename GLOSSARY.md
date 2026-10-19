@@ -101,8 +101,8 @@ _Avoid_: recipe, script, playbook
 
 **Phase**:
 A named agent call within a Procedure, such as red, green, still-green, test-fix, fix or review. The deterministic
-Actions that serve a Phase carry its name. A Terminal's Actions carry the Terminal's name in that place, and the
-Actions of a fault report carry `fault`.
+Actions that serve a Phase carry its name. A Terminal's Actions carry the Terminal's name in that place, the Actions
+of a fault report carry `fault`, and the Actions of a hold carry `hold`.
 _Avoid_: step, turn
 
 **Action**:
