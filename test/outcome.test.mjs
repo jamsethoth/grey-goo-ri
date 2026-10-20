@@ -226,7 +226,11 @@ test('remote failures are classified and backed off in GitHub\'s order', () => {
     // exec.run appends the command to the message; a PR title there is not the response's status.
     ['a status only in the appended command', Object.assign(new Error("GraphQL: Head sha can't be blank (createPullRequest)\ngh pr create --draft --title Handle HTTP 502 errors --body-file -"),
       { code: 1, stdout: '', stderr: "GraphQL: Head sha can't be blank (createPullRequest)\n" }), 'unknown', false],
-    ['a status gh printed', Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/7/comments'),
+    // git's http.c reports an HTTP failure of a push or fetch in its own words.
+    ...[[503, 'transient', true], [429, 'rate-limited', true], [403, 'auth', false], [404, 'invalid', false]].map(([status, cls, retryable]) => [
+      `a git ${status}`, Object.assign(new Error(`fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: ${status}\ngit push origin x`),
+        { code: 128, stdout: '', stderr: `fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: ${status}\n` }), cls, retryable]),
+    ['a status gh printed',Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/7/comments'),
       { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)\n' }), 'transient', true],
   ];
   for (const [name, err, cls, retryable] of cases) {
