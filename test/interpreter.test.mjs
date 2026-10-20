@@ -1956,3 +1956,19 @@ test('a cooldown raised while a retry looks for its effect is waited out before 
   assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
   assert.equal(commentPosts(g).length, 1, 'nothing launched after the wait the human override ended');
 });
+
+test('a human needs-human label during a fault report backoff abandons the Execution', async (t) => {
+  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
+  g.gh.fail({ matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 });
+  g.clock.onSleep = () => { g.gh.labels.add('gg:state:needs-human'); };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
+  assert.equal(g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, 1, 'the fault comment is not retried');
+  assert.ok(!g.gh.calls.some((c) => c.args[0] === 'issue' && c.args[1] === 'edit'), 'no label written: in-progress was not there to remove');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'abandoned');
+  const ends = g.readEvents().filter((e) => e.type === 'ticket_end');
+  assert.equal(ends.length, 1);
+  assert.equal(ends[0].outcome, 'abandoned');
+});
