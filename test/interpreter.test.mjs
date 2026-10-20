@@ -1855,7 +1855,7 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.equal(commentPosts(g).length, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
-    assert.equal(g.rec.retries[REVIEW_COMMENT], undefined, 'no retry is reserved');
+    assert.equal(g.rec.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is reserved');
     assert.match(g.rec.terminalStop.error, /HTTP 401/);
     assert.ok(neededHuman(g));
   });
@@ -1873,7 +1873,7 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.equal(pushes, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
-    assert.equal(g.rec.retries['implementer/1/green/4'], undefined, 'no retry is reserved');
+    assert.equal(g.rec.retries['implementer/1/green/4'].remote.count, 0, 'no retry is reserved');
     assert.match(g.rec.terminalStop.error, /non-fast-forward|rejected/);
     assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], theirs, 'nothing was forced');
     assert.ok(neededHuman(g));
