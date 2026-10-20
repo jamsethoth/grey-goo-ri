@@ -2357,7 +2357,9 @@ test('a backoff keeps one idle generation across timer chunks', async (t) => {
 });
 
 test('an invalid or excessive saved retry deadline is logged and held', async (t) => {
-  for (const [name, deadline] of [['excessive', (now) => now + 40 * 24 * HOUR], ['invalid', () => null]]) {
+  // A deadline in Date's range is logged as a time; anything else as its saved JSON value.
+  for (const [name, deadline, shown] of [['excessive', (now) => now + 40 * 24 * HOUR, '2026-11-24T00:00:00.000Z'],
+    ['invalid', () => null, 'null'], ['out of range', () => 1e300, '1e+300']]) {
     await t.test(name, async (t) => {
       const g = await reviewFlow(t, okReview);
       const m = attemptMarker(g, 'reviewer', 1, 'review', 3);
@@ -2372,7 +2374,7 @@ test('an invalid or excessive saved retry deadline is logged and held', async (t
       assert.equal(result.held, true, JSON.stringify(result));
       assert.deepEqual(g.sleeps, [], 'never waited');
       assert.equal(commentPosts(g).length, 1, 'never retried');
-      assert.ok(g.logs.some((l) => l.includes(`#${golden.TICKET} ${REVIEW_COMMENT}`) && l.includes(JSON.stringify(saved.nextEligibleAt))),
+      assert.ok(g.logs.includes(`#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline ${shown} is not a time within 31 days, so it is held`),
         g.logs.join('\n'));
       const final = await loadTicket(g);
       assert.equal(final.state, 'held');
@@ -2389,7 +2391,8 @@ test('a wait over 31 days from GitHub is held without reserving a retry', async 
   assert.equal(result.held, true, JSON.stringify(result));
   assert.deepEqual(g.sleeps, [], 'never waited');
   assert.equal(commentPosts(g).length, 1, 'never retried');
-  assert.ok(g.logs.some((l) => l.includes(`#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline`)), g.logs.join('\n'));
+  assert.ok(g.logs.includes(`#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline 2026-11-24T00:00:00.000Z is not a time within 31 days, so it is held`),
+    g.logs.join('\n'));
   const final = await loadTicket(g);
   assert.equal(final.state, 'held');
   assert.equal(final.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is spent');
@@ -2414,6 +2417,9 @@ test('a run stop during a backoff ends the Execution at needs-human', async (t) 
   assert.equal(final.state, 'needs-human');
   assert.equal(final.terminalReason.rule, 'run-stopped');
   assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry stays as saved');
+  assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
+    + 'Execution stopped while waiting to retry review 3; its retry is kept as saved.');
+  assert.ok(ticketComments(g).some((c) => c.body.includes(final.terminalReason.text)), 'the needs-human comment says so');
   assert.ok(neededHuman(g));
 });
 
@@ -2488,6 +2494,8 @@ test('a run stop during a pr-ready backoff ends at needs-human without marking r
   assert.equal(final.state, 'needs-human');
   assert.equal(final.terminalReason.rule, 'run-stopped');
   assert.deepEqual(final.retries[PR_READY].remote, saved, 'the retry stays as saved');
+  assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
+    + 'Execution stopped while waiting to retry done 1; its retry is kept as saved.');
   assert.ok(neededHuman(g));
 });
 
