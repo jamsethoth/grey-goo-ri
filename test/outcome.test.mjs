@@ -223,6 +223,11 @@ test('remote failures are classified and backed off in GitHub\'s order', () => {
     ['a validation failure', http(422, 'Validation Failed'), 'invalid', false],
     ['a non-fast-forward push', new Error(" ! [rejected]        abc123 -> ticket/1-x (non-fast-forward)\nerror: failed to push some refs to 'origin'"), 'rejected', false],
     ['an unknown failure', new Error('gh comment down'), 'unknown', false],
+    // exec.run appends the command to the message; a PR title there is not the response's status.
+    ['a status only in the appended command', Object.assign(new Error("GraphQL: Head sha can't be blank (createPullRequest)\ngh pr create --draft --title Handle HTTP 502 errors --body-file -"),
+      { code: 1, stdout: '', stderr: "GraphQL: Head sha can't be blank (createPullRequest)\n" }), 'unknown', false],
+    ['a status gh printed', Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/7/comments'),
+      { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)\n' }), 'transient', true],
   ];
   for (const [name, err, cls, retryable] of cases) {
     const f = outcome.classifyRemoteFailure(err);
