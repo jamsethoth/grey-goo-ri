@@ -13,6 +13,7 @@ import * as record from '../lib/record.mjs';
 
 const saver = fileURLToPath(new URL('./support/record-saver.mjs', import.meta.url));
 const contender = fileURLToPath(new URL('./support/lock-contender.mjs', import.meta.url));
+const opener = fileURLToPath(new URL('./support/db-opener.mjs', import.meta.url));
 
 // A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
 async function tempCommonDir(t) {
@@ -230,6 +231,43 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
     assert.equal(json(9), '{', 'the corrupt row is left untouched');
     assert.equal(json(10), unknown);
   });
+});
+
+test('an open that finds no tables waits for the first opener, not for its saves', async (t) => {
+  // Plays the first opener: holds the open lock while it creates the tables, then saves for longer than busy_timeout.
+  // A second opener that read the old version must not wait on the database write lock behind those saves.
+  const commonDir = await tempCommonDir(t);
+  mkdirSync(join(commonDir, 'gg', 'locks'), { recursive: true });
+  const db = new DatabaseSync(dbPath(commonDir));
+  const lock = new DatabaseSync(join(commonDir, 'gg', 'locks', 'open.db'));
+  try {
+    db.exec('PRAGMA journal_mode = WAL');
+    lock.exec('BEGIN EXCLUSIVE');
+    db.exec('BEGIN IMMEDIATE');
+    const child = spawn(process.execPath, [opener, commonDir], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    const exit = new Promise((resolve) => child.on('close', (code) => resolve(code)));
+    await new Promise((resolve) => child.stdout.once('data', resolve));
+    // shortcut: a fixed pause lets the child read the empty version before the tables commit; a slower start only
+    // makes the case pass for the wrong reason, never fail.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    db.exec(`CREATE TABLE records (kind TEXT NOT NULL, n INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (kind, n));
+      CREATE TABLE configs (hash TEXT PRIMARY KEY, json TEXT NOT NULL, firstSeen TEXT NOT NULL);
+      CREATE TABLE events (id INTEGER PRIMARY KEY, ts TEXT NOT NULL, type TEXT NOT NULL, run TEXT, execution TEXT,
+        ticket INTEGER, json TEXT NOT NULL);
+      PRAGMA user_version = ${record.DB_SCHEMA_VERSION};`);
+    db.exec('COMMIT');
+    lock.exec('COMMIT');
+    db.exec('BEGIN IMMEDIATE');
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+    db.exec('COMMIT');
+    assert.equal(await exit, 0, `the second open failed: ${err}`);
+  } finally {
+    if (db.isTransaction) db.exec('ROLLBACK');
+    db.close();
+    lock.close();
+  }
 });
 
 test('two processes save different records concurrently without loss', async (t) => {
