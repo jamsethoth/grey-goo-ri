@@ -1972,3 +1972,22 @@ test('a human needs-human label during a fault report backoff abandons the Execu
   assert.equal(ends.length, 1);
   assert.equal(ends[0].outcome, 'abandoned');
 });
+
+test('a first launch that crashed spends the budget when launched again', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  let posts = 0;
+  // Every POST crashes as it launches, the first included, so each Run's lookup finds the comment absent.
+  g.options.gh.setGh(async (args, cwd, input) => {
+    if (golden.isCommentPost(args, PR) && ++posts) throw new interpreter.CrashError('crash as the POST launched');
+    return g.gh.gh(args, cwd, input);
+  });
+  const outcomes = [];
+  for (let run = 0; run < 4; run++) {
+    const record = run ? { record: await loadTicket(g) } : {};
+    const got = await interpreter.runExecution({ ...g.options, ...record }).then((r) => r, (err) => err);
+    outcomes.push(got instanceof interpreter.CrashError ? 'crash' : got.fault ? 'fault' : JSON.stringify(got));
+  }
+  assert.deepEqual(outcomes, ['crash', 'crash', 'crash', 'fault'], 'the first launch and two relaunches, then none');
+  assert.equal(posts, 3);
+  assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
+});
