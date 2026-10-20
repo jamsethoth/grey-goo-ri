@@ -2381,6 +2381,20 @@ test('an invalid or excessive saved retry deadline is logged and held', async (t
   }
 });
 
+test('a wait over 31 days from GitHub is held without reserving a retry', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(rateLimitedFor(40 * 24 * HOUR));
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.held, true, JSON.stringify(result));
+  assert.deepEqual(g.sleeps, [], 'never waited');
+  assert.equal(commentPosts(g).length, 1, 'never retried');
+  assert.ok(g.logs.some((l) => l.includes(`#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline`)), g.logs.join('\n'));
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'held');
+  assert.equal(final.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is spent');
+});
+
 test('a run stop during a backoff ends the Execution at needs-human', async (t) => {
   const g = await reviewFlow(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
