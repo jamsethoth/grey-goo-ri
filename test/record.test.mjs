@@ -124,6 +124,21 @@ test('load returns null for a missing row and the record for a saved one', async
   assert.deepEqual(await record.load(commonDir, 'epic', 1), epic);
 });
 
+test('a record saved with snapshot.node loads with snapshot.agent', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const r = newExecution(commonDir);
+  await record.save(r);
+  const agent = { harness: 'claude', model: 'opus', effort: 'high', persona: 'implementer.md' };
+  const snapshot = { vertex: 'implement', visit: 1, procedure: 'tdd', options: {} };
+  withDb(commonDir, (db) => {
+    db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8")
+      .run(JSON.stringify({ ...withoutCommonDir(r), snapshot: { ...snapshot, node: agent } }));
+  });
+  const loaded = await record.load(commonDir, 'ticket', 8);
+  assert.deepEqual(loaded.snapshot, { ...snapshot, agent });
+  assert.deepEqual((await record.loadAll(commonDir, 'ticket'))[0].snapshot, { ...snapshot, agent });
+});
+
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {
   const commonDir = await tempCommonDir(t);
   const r = newExecution(commonDir);

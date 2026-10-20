@@ -57,7 +57,7 @@ export const oneVertexFlow = (persona) => ({
     entry: 'implementer',
     vertices: {
       implementer: {
-        node: {
+        agent: {
           harness: 'fake', model: 'model-x', effort: 'high', persona, skills: [], mcp: [], plugins: [],
           access: 'workspace-write', network: false,
         },

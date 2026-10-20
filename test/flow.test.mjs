@@ -9,7 +9,7 @@ import * as flow from '../lib/flow.mjs';
 
 test('resolveFlow expands use with overrides into the resolved flow shape', () => {
   const defaults = config.loadDefaults();
-  const library = structuredClone(defaults.nodes);
+  const library = structuredClone(defaults.agents);
   const resolved = flow.resolveFlow(defaults);
 
   assert.equal(resolved.name, 'default');
@@ -19,8 +19,8 @@ test('resolveFlow expands use with overrides into the resolved flow shape', () =
   assert.deepEqual(Object.keys(vertices).sort(), ['implementer', 'implementer-fix', 'reviewer']);
   const uses = { implementer: 'implementer', reviewer: 'reviewer', 'implementer-fix': 'implementer' };
   for (const [id, use] of Object.entries(uses)) {
-    const { node } = vertices[id];
-    assert.deepEqual(node, { ...library[use], harness: null, model: null, effort: null }, `${id} node comes from ${use}`);
+    const { agent } = vertices[id];
+    assert.deepEqual(agent, { ...library[use], harness: null, model: null, effort: null }, `${id} agent comes from ${use}`);
     assert.equal(vertices[id].use, undefined, `${id} no longer carries use`);
     assert.deepEqual(vertices[id].options, {});
   }
@@ -35,45 +35,45 @@ test('resolveFlow expands use with overrides into the resolved flow shape', () =
   const overridden = structuredClone(defaults);
   overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', then: 'reviewer' };
   const fix = flow.resolveFlow(overridden).ticket.vertices['implementer-fix'];
-  assert.equal(fix.node.model, 'model-z', 'a Vertex field overrides the library Node');
-  assert.equal(fix.node.persona, library.implementer.persona, 'the rest comes from the library Node');
-  assert.equal(fix.node.harness, null, 'a missing harness resolves to null');
-  assert.equal(fix.model, undefined, 'the override lives on the node, not the Vertex');
-  assert.deepEqual(overridden.nodes, library, 'the Node Library is not mutated');
+  assert.equal(fix.agent.model, 'model-z', 'a Vertex field overrides the library Agent');
+  assert.equal(fix.agent.persona, library.implementer.persona, 'the rest comes from the library Agent');
+  assert.equal(fix.agent.harness, null, 'a missing harness resolves to null');
+  assert.equal(fix.model, undefined, 'the override lives on the agent, not the Vertex');
+  assert.deepEqual(overridden.agents, library, 'the Agent Library is not mutated');
 });
 
 test('the Resolved Flow carries the persona file name, not a path', () => {
-  assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.implementer.node.persona, 'implementer.md');
+  assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.implementer.agent.persona, 'implementer.md');
 });
 
 test('each example Layer merged over the defaults resolves with its harness', () => {
   for (const harness of ['claude', 'codex']) {
     const example = JSON.parse(readFileSync(fileURLToPath(new URL(`../examples/${harness}.json`, import.meta.url)), 'utf8'));
     const merged = config.loadDefaults();
-    assert.deepEqual(Object.keys(example.nodes).sort(), Object.keys(merged.nodes).sort(), `${harness} sets every shipped Node`);
-    for (const [name, node] of Object.entries(example.nodes)) merged.nodes[name] = { ...merged.nodes[name], ...node };
-    for (const [id, { node }] of Object.entries(flow.resolveFlow(merged).ticket.vertices)) {
-      assert.equal(node.harness, harness, `${harness} ${id} harness`);
-      assert.equal(typeof node.model, 'string', `${harness} ${id} model`);
-      assert.equal(typeof node.effort, 'string', `${harness} ${id} effort`);
+    assert.deepEqual(Object.keys(example.agents).sort(), Object.keys(merged.agents).sort(), `${harness} sets every shipped Agent`);
+    for (const [name, agent] of Object.entries(example.agents)) merged.agents[name] = { ...merged.agents[name], ...agent };
+    for (const [id, { agent }] of Object.entries(flow.resolveFlow(merged).ticket.vertices)) {
+      assert.equal(agent.harness, harness, `${harness} ${id} harness`);
+      assert.equal(typeof agent.model, 'string', `${harness} ${id} model`);
+      assert.equal(typeof agent.effort, 'string', `${harness} ${id} effort`);
     }
   }
 });
 
-test('resolveFlow rejects an unknown node or procedure naming the vertex', () => {
-  const unknownNode = config.loadDefaults();
-  unknownNode.flows.default.ticket.vertices['odd-vertex'] = { use: 'no-such-node', procedure: 'fix', then: 'reviewer' };
-  assert.throws(() => flow.resolveFlow(unknownNode), /odd-vertex/);
+test('resolveFlow rejects an unknown agent or procedure naming the vertex', () => {
+  const unknownAgent = config.loadDefaults();
+  unknownAgent.flows.default.ticket.vertices['odd-vertex'] = { use: 'no-such-agent', procedure: 'fix', then: 'reviewer' };
+  assert.throws(() => flow.resolveFlow(unknownAgent), /odd-vertex/);
 
   const unknownProcedure = config.loadDefaults();
   unknownProcedure.flows.default.ticket.vertices['odd-vertex'] = { use: 'implementer', procedure: 'no-such-procedure', then: 'reviewer' };
   assert.throws(() => flow.resolveFlow(unknownProcedure), /odd-vertex/);
 });
 
-test('resolveFlow rejects inherited property names as node or procedure naming the vertex', () => {
-  const inheritedNode = config.loadDefaults();
-  inheritedNode.flows.default.ticket.vertices['odd-vertex'] = { use: 'constructor', procedure: 'fix', then: 'reviewer' };
-  assert.throws(() => flow.resolveFlow(inheritedNode), /odd-vertex/);
+test('resolveFlow rejects inherited property names as agent or procedure naming the vertex', () => {
+  const inheritedAgent = config.loadDefaults();
+  inheritedAgent.flows.default.ticket.vertices['odd-vertex'] = { use: 'constructor', procedure: 'fix', then: 'reviewer' };
+  assert.throws(() => flow.resolveFlow(inheritedAgent), /odd-vertex/);
 
   const inheritedProcedure = config.loadDefaults();
   inheritedProcedure.flows.default.ticket.vertices['odd-vertex'] = { use: 'implementer', procedure: 'constructor', then: 'reviewer' };

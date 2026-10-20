@@ -758,9 +758,9 @@ test('bounds survive a restart', async (t) => {
   const implementer = g.flow.ticket.vertices.implementer;
   g.flow.ticket.vertices = {
     implementer: { ...implementer, then: 'reviewer' },
-    reviewer: { node: { ...structuredClone(implementer.node), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
+    reviewer: { agent: { ...structuredClone(implementer.agent), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
       options: {}, route: { ok: 'done', changes: { to: 'implementer-fix', max: 1, exhausted: 'needs-human' } } },
-    'implementer-fix': { node: structuredClone(implementer.node), procedure: 'fix', options: {}, then: 'reviewer' },
+    'implementer-fix': { agent: structuredClone(implementer.agent), procedure: 'fix', options: {}, then: 'reviewer' },
   };
   const key = 'reviewer->implementer-fix:changes';
   const { loaded } = await crashed(g, ['reviewer', 2, 'review', 3], 'after-completion');

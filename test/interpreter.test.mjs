@@ -140,9 +140,9 @@ test('each public field is redacted once and sent exactly as its intent saved it
   g.options.ticket.title = 'Add TOKEN';
   g.options.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
-  const node = g.flow.ticket.vertices.implementer.node;
-  Object.assign(node, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
-  writeFileSync(node.persona, golden.PERSONA);
+  const agent = g.flow.ticket.vertices.implementer.agent;
+  Object.assign(agent, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
+  writeFileSync(agent.persona, golden.PERSONA);
   const runShell = g.options.exec.runShell;
   g.options.exec.runShell = async (...args) => {
     const r = await runShell(...args);
@@ -200,7 +200,7 @@ for (const [kind, [directory, output]] of Object.entries(longLines)) {
 
 test('a persona file name is read from the shipped personas directory', async (t) => {
   const g = await golden.setup(t);
-  g.flow.ticket.vertices.implementer.node.persona = 'implementer.md';
+  g.flow.ticket.vertices.implementer.agent.persona = 'implementer.md';
   await interpreter.runExecution(g.options);
   const shipped = readFileSync(new URL('../defaults/personas/implementer.md', import.meta.url), 'utf8');
   assert.equal(g.harness.calls[0].personaBytes, shipped);
@@ -280,32 +280,32 @@ test('activity brackets every launched process', async (t) => {
   assert.equal(g.rec.activity.busy, false);
 });
 
-test('the visit keeps the configuration pinned at entry when the node changes mid-visit', async (t) => {
+test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {
   const g = await golden.setup(t);
   const vertex = g.flow.ticket.vertices.implementer;
   const run = g.harness.run;
   const seen = {};
   g.harness.run = async (call) => {
-    seen[call.phase] = structuredClone({ node: call.node, access: call.access, persona: call.persona });
+    seen[call.phase] = structuredClone({ agent: call.agent, access: call.access, persona: call.persona });
     if (call.phase === 'red') {
-      vertex.node.model = 'model-y';
-      vertex.node.access = 'read-only';
+      vertex.agent.model = 'model-y';
+      vertex.agent.access = 'read-only';
       vertex.options.requireTestPass = false;
       // Routing, Procedure and Declared Commands are pinned too: none of these may reach the rest of the Visit.
       vertex.procedure = 'fix';
       vertex.then = 'needs-human';
       g.options.commands.test = 'npm run other';
-      call.node.effort = 'low';
+      call.agent.effort = 'low';
       writeFileSync(g.personaPath, '# changed\n');
     }
     return run(call);
   };
   const { outcome } = await interpreter.runExecution(g.options);
   assert.deepEqual(seen.green, seen.red);
-  assert.equal(seen.green.node.model, 'model-x');
+  assert.equal(seen.green.agent.model, 'model-x');
   assert.equal(seen.green.access, 'workspace-write');
   assert.equal(seen.green.persona.bytes, golden.PERSONA);
-  assert.equal(g.rec.snapshot.node.effort, 'high', 'a harness mutating its call does not reach the snapshot');
+  assert.equal(g.rec.snapshot.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
   assert.deepEqual(g.rec.snapshot.options, {});
   assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%B'), /Feature-Flow-Stage: implementer fake\/model-x\/high/);
   assert.equal(outcome, 'done', 'routing follows the entry snapshot');
@@ -1127,11 +1127,11 @@ async function reviewFlow(t, responses, { exec } = {}) {
   g.flow.ticket.vertices = {
     implementer: { ...implementer, then: 'reviewer' },
     reviewer: {
-      node: { ...structuredClone(implementer.node), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
+      agent: { ...structuredClone(implementer.agent), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
       procedure: 'review', options: {},
       route: { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' }, misscoped: 'replan' },
     },
-    'implementer-fix': { node: structuredClone(implementer.node), procedure: 'fix', options: {}, then: 'reviewer' },
+    'implementer-fix': { agent: structuredClone(implementer.agent), procedure: 'fix', options: {}, then: 'reviewer' },
   };
   if (exec) g.options.exec = exec;
   return g;
@@ -1235,7 +1235,7 @@ test('two reviewer vertices keep their own sessions and provenance rows', async 
   const { vertices } = g.flow.ticket;
   vertices.reviewer.route = { ...vertices.reviewer.route, ok: 'reviewer-2' };
   vertices['reviewer-2'] = { ...structuredClone(vertices.reviewer), route: { ...vertices.reviewer.route, ok: 'done' } };
-  vertices['reviewer-2'].node.model = 'model-s';
+  vertices['reviewer-2'].agent.model = 'model-s';
   g.result = await interpreter.runExecution(g.options);
 
   assert.equal(g.result.outcome, 'done');
@@ -1449,11 +1449,11 @@ test('a review that changes the tree is an integrity violation', async (t) => {
   assert.match(g.gh.comments.at(-1).body, /\btree\b/);
 });
 
-test('a review on a workspace-write node is still read-only', async (t) => {
+test('a review on a workspace-write agent is still read-only', async (t) => {
   const g = await reviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
   });
-  g.flow.ticket.vertices.reviewer.node.access = 'workspace-write';
+  g.flow.ticket.vertices.reviewer.agent.access = 'workspace-write';
   g.result = await interpreter.runExecution(g.options);
   const events = g.readEvents();
 
