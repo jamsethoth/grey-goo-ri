@@ -245,6 +245,7 @@ test('an open that finds no tables waits for the first opener, not for its saves
     lock.exec('BEGIN EXCLUSIVE');
     db.exec('BEGIN IMMEDIATE');
     const child = spawn(process.execPath, [opener, commonDir], { stdio: ['ignore', 'pipe', 'pipe'] });
+    t.after(() => { if (child.exitCode === null) child.kill(); });
     let err = '';
     child.stderr.on('data', (chunk) => { err += chunk; });
     const exit = new Promise((resolve) => child.on('close', (code) => resolve(code)));
