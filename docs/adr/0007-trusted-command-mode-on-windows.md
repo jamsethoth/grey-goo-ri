@@ -8,7 +8,7 @@ date: 2026-10-15
 Codex has a native Windows sandbox; Claude Code has none, and the owner's machine is native Windows. Refusing
 workspace-write on Claude Windows would mean Claude cannot implement here. We instead run Claude implementation
 steps in a named trusted-command mode: only declared commands and gg's allow list may run, git write and gh commands
-are denied, network tools are denied unless the node allows network, and integrity assertions after every attempt
+are denied, network tools are denied unless the agent allows network, and integrity assertions after every attempt
 detect changes to the checked surfaces (the worktree's HEAD, index and tree, other idle worktrees, protected files,
 committed tests). A command that writes elsewhere on the machine or reaches the network through its own means is
 neither prevented nor observed. The owner accepts this knowingly.
