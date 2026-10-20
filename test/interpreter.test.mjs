@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { join, resolve } from 'node:path';
+import * as gitModule from '../lib/git.mjs';
+import * as locks from '../lib/locks.mjs';
+import * as run from '../lib/run.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
@@ -2015,4 +2020,85 @@ test('a pending report waiting out a sibling cooldown checks the human override 
   assert.equal(g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, posted, 'the report is not posted');
   assert.equal((await loadTicket(g)).state, 'abandoned');
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+});
+
+// Another holder takes the repo lock at the first lock attempt after `arm()`, so that attempt fails and waits; at the
+// next attempt `during()` runs and the lock is released, and the waiting git write goes ahead behind a contended lock.
+// The lock attempts are seen through locks.tryAcquire's mkdir of the lock directory.
+function contendRepoLock(t, commonDir, during) {
+  const original = fsPromises.mkdir;
+  let state = 'idle';
+  let held = null;
+  let own = false;
+  fsPromises.mkdir = async (path, ...rest) => {
+    if (!own && String(path) === join(commonDir, 'gg', 'locks')) {
+      if (state === 'armed') {
+        state = 'holding';
+        own = true;
+        held = await locks.tryAcquire(commonDir, 'repo');
+        own = false;
+      } else if (state === 'holding') {
+        state = 'released';
+        await during();
+        await locks.release(held);
+      }
+    }
+    return original(path, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => { fsPromises.mkdir = original; syncBuiltinESMExports(); });
+  return { arm: () => { state = 'armed'; }, state: () => state };
+}
+
+// The golden Execution on the orchestrator's locked git; `after(verb, n)` runs after the nth raw call of a verb.
+function lockedSetup(g, after) {
+  const counts = {};
+  const raw = Object.fromEntries(['writeTree', 'commitStaged', 'push'].map((verb) => [verb, async (...args) => {
+    const out = await gitModule[verb](...args);
+    counts[verb] = (counts[verb] ?? 0) + 1;
+    after(verb, counts[verb]);
+    return out;
+  }]));
+  g.options.git = run.lockedGit({ ...gitModule, ...raw }, g.commonDir);
+  return counts;
+}
+
+test('a git write queued behind another holder of the repo lock checks the human override first', async (t) => {
+  await t.test('a queued push', async (t) => {
+    const g = await golden.setup(t);
+    const lock = contendRepoLock(t, g.commonDir, () => { g.gh.labels.add('gg:state:needs-human'); });
+    // The green commit's write is the last before the push, whose lock attempt then waits.
+    const counts = lockedSetup(g, (verb, n) => { if (verb === 'commitStaged' && n === 2) lock.arm(); });
+    const result = await interpreter.runExecution(g.options);
+
+    assert.equal(lock.state(), 'released', 'the push waited for the lock');
+    assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
+    assert.equal(counts.push ?? 0, 0, 'nothing was pushed');
+    assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
+    assert.equal((await loadTicket(g)).state, 'abandoned');
+  });
+  await t.test('a queued push whose commit origin already has', async (t) => {
+    const g = await golden.setup(t);
+    const lock = contendRepoLock(t, g.commonDir, () => golden.sh(g.worktree, 'push', '-q', 'origin', `HEAD:refs/heads/${golden.BRANCH}`));
+    const counts = lockedSetup(g, (verb, n) => { if (verb === 'commitStaged' && n === 2) lock.arm(); });
+    const result = await interpreter.runExecution(g.options);
+
+    assert.equal(lock.state(), 'released', 'the push waited for the lock');
+    assert.equal(result.outcome, 'done', JSON.stringify(result));
+    assert.equal(counts.push ?? 0, 0, 'the commit is on origin, so it is not pushed again');
+    assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'));
+  });
+  await t.test('a queued commit', async (t) => {
+    const g = await golden.setup(t);
+    const lock = contendRepoLock(t, g.commonDir, () => { g.gh.labels.add('gg:state:needs-human'); });
+    // The green commit's tree is written; its commit is the next locked write.
+    const counts = lockedSetup(g, (verb, n) => { if (verb === 'writeTree' && n === 2) lock.arm(); });
+    const result = await interpreter.runExecution(g.options);
+
+    assert.equal(lock.state(), 'released', 'the commit waited for the lock');
+    assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
+    assert.equal(counts.commitStaged, 1, 'only the red commit was made');
+    assert.deepEqual(golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean).length, 1);
+    assert.equal((await loadTicket(g)).state, 'abandoned');
+  });
 });
