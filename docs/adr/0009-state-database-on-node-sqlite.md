@@ -43,6 +43,8 @@ open exclusive transaction would block every record write if it shared the datab
   takes it, and an open lock held past `busy_timeout` fails such an open with SQLITE_BUSY. The switch must return
   `wal`, or `openDb` throws. The retry loop Effect-TS adopted for
   the same bug (https://github.com/Effect-TS/effect/pull/8708) was the alternative; the open lock was preferred
-  because it removes the race rather than retrying through it.
+  because it removes the race rather than retrying through it. The first open of a new `gg.db` also creates its
+  tables under the open lock: an opener that read no tables otherwise waited on the database write lock behind the
+  first opener's record saves until `busy_timeout` ran out. Under the lock it reads the version again and finds them.
 - The frozen record and event schemas are the JSON documents, not the table layout; the table layout carries its own
   `user_version` and is documented with them.
