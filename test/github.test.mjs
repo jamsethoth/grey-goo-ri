@@ -268,3 +268,24 @@ test('setLabels reports an unconfirmed setup failure without editing the issue',
   assert.ok(events.some(([t, d]) => t === 'label_failed' && d.error.includes('label creation denied')), JSON.stringify(events));
   assert.ok(!calls.some(({ args }) => args[0] === 'issue' && args[1] === 'edit'), 'the issue is not edited');
 });
+
+// #66: a comment POST keeps the response headers a retry needs.
+test('a comment is posted through gh api, and a failed one keeps its status and headers', async () => {
+  const url = 'https://github.com/o/r/issues/7#issuecomment-5';
+  const { gh, calls } = fakeGh(() => golden.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }));
+  github.setGh(gh);
+  assert.equal(await github.commentIssue(7, 'a "quoted"\nbody', '/repo'), url);
+  assert.equal(await github.comment(7, 'on the PR', '/repo'), url);
+  assert.ok(calls.every(({ args }) => golden.isCommentPost(args, 7) && args.includes('--include')), JSON.stringify(calls));
+  assert.deepEqual(calls.map(({ input }) => JSON.parse(input)), [{ body: 'a "quoted"\nbody' }, { body: 'on the PR' }]);
+
+  github.setGh(async (args) => {
+    throw golden.ghError(args, { status: 403, headers: { 'Retry-After': '7', 'X-RateLimit-Remaining': '12' },
+      body: { message: 'You have exceeded a secondary rate limit.' } });
+  });
+  await assert.rejects(github.commentIssue(7, 'b', '/repo'), (err) => {
+    assert.deepEqual(err.http, { status: 403, headers: { 'retry-after': '7', 'x-ratelimit-remaining': '12' } });
+    assert.match(err.message, /secondary rate limit/);
+    return true;
+  });
+});

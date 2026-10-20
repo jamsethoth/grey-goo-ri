@@ -913,15 +913,16 @@ test('an admission failure on an active execution is reported as a fault', async
   assert.equal(ticketResult(second).outcome, 'skipped');
 });
 
-// Makes `gh issue comment` fail with HTTP 502 while `on` is set; `lost` lets the comment land first, as a lost response does.
+// Makes every comment POST fail with HTTP 502 while `on` is set, its retries too; `lost` lets the comment land first, as
+// a lost response does.
 function failComment(f, { lost = false } = {}) {
   const inner = f.gh.gh;
   const failing = { on: true };
   github.setGh(async (args, cwd, input) => {
-    if (failing.on && args[0] === 'issue' && args[1] === 'comment') {
+    if (failing.on && golden.isCommentPost(args)) {
       if (lost) await inner(args, cwd, input);
       else f.gh.calls.push({ args, cwd, input });
-      throw new Error('gh issue comment exited 1\nHTTP 502: Bad Gateway');
+      throw golden.ghError(args, { status: 502 });
     }
     return inner(args, cwd, input);
   });
@@ -1033,13 +1034,11 @@ test('fixing the worktree while a hold comment is pending still finishes the hol
 
 test('a landed hold comment with a lost response is not posted twice', async (t) => {
   const { f } = await dirtyTicket(t, false);
-  const failing = failComment(f, { lost: true });
-  assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
-  assert.equal(f.comments().length, 1, 'the comment landed before its response was lost');
-  failing.on = false;
-
+  failComment(f, { lost: true });
+  // The retry looks for the comment by its marker first, so the hold lands within the Run.
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.equal(f.comments().length, 1, 'the marker found it, so it was not posted again');
+  assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, 1);
   const final = await loadTicket(f);
   const comment = final.log.find((e) => e.step === 'intent' && e.action === 'comment');
   assert.deepEqual(final.log.filter((e) => e.marker === comment.marker).map((e) => e.step), ['intent', 'evidence', 'complete']);
@@ -1243,7 +1242,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   const inner = f.gh.gh;
   let mode = 'crash';
   github.setGh(async (args, cwd, input) => {
-    if (mode === 'crash' && args[0] === 'issue' && args[1] === 'comment') {
+    if (mode === 'crash' && golden.isCommentPost(args)) {
       await inner(args, cwd, input);
       throw new interpreter.CrashError('crash after the fault comment landed');
     }
@@ -1293,7 +1292,7 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   assert.equal(mid.terminalStop?.held, true, 'the decided hold waits for the next Run');
   assert.equal(endsOf(f, mid.execution).length, 0);
   db.exec('DROP TRIGGER fail_end');
-  const effects = () => f.gh.calls.filter((c) => c.args[0] === 'issue' && ['comment', 'edit'].includes(c.args[1])).length;
+  const effects = () => f.gh.calls.filter((c) => golden.isCommentPost(c.args) || (c.args[0] === 'issue' && c.args[1] === 'edit')).length;
   const done = effects();
 
   const second = await run.runTarget(f.options);
@@ -1947,7 +1946,9 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
   assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
   assert.equal(run.runExitCode(results), 0);
   const views = f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'view').map((c) => Number(c.args[2]));
-  assert.deepEqual(views.sort((a, b) => a - b), [EPIC, 21, 22, 23], 'the epic and each sub-issue are read');
+  // A git write of one Ticket that waited for the repo lock behind the other reads its labels again, so count each once.
+  assert.deepEqual([...new Set(views)].sort((a, b) => a - b), [EPIC, 21, 22, 23], 'the epic and each sub-issue are read');
+  assert.equal(views.filter((n) => n === 23).length, 1, 'the blocked sub-issue only by discovery');
   for (const n of [21, 22]) assert.equal((await record.load(f.commonDir, 'ticket', n))?.epic, EPIC, `#${n}'s Execution references the epic`);
   assert.equal(await record.load(f.commonDir, 'ticket', 23), null, 'the blocked Ticket has no record');
   assert.equal(existsSync(worktreeOf(f, 23)), false, 'nor a worktree');
@@ -2162,4 +2163,38 @@ test('a run stop skips queued tickets without admitting them', { timeout: 120_00
   const evs = f.readEvents();
   assert.ok(!evs.some((e) => e.ticket === 22), 'nor a Ticket Event');
   assert.equal(evs.find((e) => e.type === 'run_end').failureClass, 'auth');
+});
+
+// #66: one cooldown for every Ticket of the Run.
+test('a rate limit on one Ticket delays the next GitHub write of the other', { timeout: 120_000 }, async (t) => {
+  const f = fixture(t, { issues: epicOf([21, 22]) });
+  f.options.target = EPIC;
+  f.gh.fail({ matches: (args) => golden.isCommentPost(args, 21), status: 403, headers: { 'Retry-After': '7' },
+    body: { message: 'You have exceeded a secondary rate limit.' } });
+  const aWaiting = gate();
+  const sleeps = [];
+  let wake;
+  const woken = new Promise((resolve) => { wake = resolve; });
+  const bCalls = () => f.gh.calls.filter((c) => c.args.some((a) => a.startsWith('ticket/22-')) || golden.isCommentPost(c.args, 22)).length;
+  // A backs off first; B's wait moves the shared clock once, to A's deadline, and wakes both.
+  f.options.clock = { now: f.clock.now, sleep: async (ms) => {
+    sleeps.push({ ms, bCalls: bCalls() });
+    if (sleeps.length === 1) aWaiting.open();
+    else {
+      await f.clock.sleep(ms);
+      wake();
+    }
+    await woken;
+  } };
+  // B's red call starts once A is backing off.
+  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
+    if (n === 22 && call.phase === 'red') await aWaiting.wait();
+  } });
+
+  const results = await run.runTarget(f.options);
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
+  assert.deepEqual(sleeps.map((s) => s.ms), [7_000, 7_000], "B waited out A's Retry-After");
+  assert.equal(sleeps[1].bCalls, 0, 'before any GitHub write of B');
+  assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args, 21)).length, 2);
+  assert.equal(f.gh.comments.filter((c) => c.number === 21).length, 1);
 });

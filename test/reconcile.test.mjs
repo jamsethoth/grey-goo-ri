@@ -789,3 +789,34 @@ test('a corrupt record holds the ticket', async (t) => {
   const row = db.prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET);
   assert.equal(row.json, corrupt, 'the corrupt record is never discarded');
 });
+
+// #66: a lookup that fails proves nothing either way.
+test('a failed lookup is unknown, not absent', async (t) => {
+  const g = await golden.setup(t);
+  // The done comment landed before the crash, so only a working lookup can tell.
+  const { m, loaded } = await crashed(g, EFFECTS.comment.at, 'after-effect');
+  const entry = record.openIntents(loaded).find((e) => e.marker === m);
+  const badGateway = () => Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/15/comments'),
+    { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)' });
+  const down = { ...g.options.gh, issueComments: async () => { throw badGateway(); } };
+
+  const found = await reconcile.findEffect(entry, { rec: loaded, gh: down, cwd: g.mainRoot });
+  assert.equal(found.status, 'unknown');
+  assert.match(found.error.message, /HTTP 502/);
+  await assert.rejects(reconcile.reconcile({ ...reconcileArgs(g, loaded), gh: down }), /HTTP 502/, 'never taken for absence');
+  assert.deepEqual(stepsOf(loaded, m), ['intent'], 'no evidence or completion');
+  const posted = () => withMarker(g.gh.comments.map((c) => c.body), m).length;
+  assert.equal(posted(), 1);
+
+  // In a Run the failed lookup is retried on the Action's budget, and finds the landed comment.
+  let failures = 1;
+  const once = { ...g.options.gh, issueComments: async (...args) => {
+    if (failures-- > 0) throw badGateway();
+    return g.options.gh.issueComments(...args);
+  } };
+  const result = await interpreter.runExecution({ ...g.options, gh: once, record: await loadTicket(g) });
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(posted(), 1, 'not posted again');
+  assert.deepEqual(g.sleeps, [60_000]);
+  assert.deepEqual(stepsOf(await loadTicket(g), m), ['intent', 'evidence', 'complete']);
+});

@@ -202,3 +202,46 @@ test('resolve is pure: it does not mutate its inputs', () => {
   outcome.resolve(input);
   assert.deepEqual(input, copy);
 });
+
+// #66: GitHub and git failures of a remote Action, classified as gh and git report them.
+const http = (status, message, headers = {}) =>
+  Object.assign(new Error(`gh: ${message} (HTTP ${status})\ngh api repos/{owner}/{repo}/issues/7/comments`), { code: 1, http: { status, headers } });
+
+test('remote failures are classified and backed off in GitHub\'s order', () => {
+  const now = 1_790_000_000_000;
+  const cases = [
+    ['a 502', http(502, 'Bad Gateway'), 'transient', true],
+    ['a 500 from a gh verb', new Error('HTTP 500: Internal Server Error (https://api.github.com/graphql)'), 'transient', true],
+    ['a reset connection', new Error('Post "https://api.github.com/graphql": read tcp 10.0.0.2:5000->140.82.112.6:443: read: connection reset by peer'), 'transient', true],
+    ['an unresolved host on push', new Error("fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: github.com"), 'transient', true],
+    ['a secondary rate limit', http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': '7' }), 'rate-limited', true],
+    ['a primary rate limit', http(403, 'API rate limit exceeded for user ID 1.', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((now + 30_000) / 1000) }), 'rate-limited', true],
+    ['a rate limit a gh verb reports', new Error('HTTP 403: You have exceeded a secondary rate limit. (https://api.github.com/graphql)'), 'rate-limited', true],
+    ['a 429', http(429, 'Too Many Requests'), 'rate-limited', true],
+    ['a bare 403', http(403, 'Resource not accessible by integration'), 'auth', false],
+    ['a 401', http(401, 'Bad credentials'), 'auth', false],
+    ['a validation failure', http(422, 'Validation Failed'), 'invalid', false],
+    ['a non-fast-forward push', new Error(" ! [rejected]        abc123 -> ticket/1-x (non-fast-forward)\nerror: failed to push some refs to 'origin'"), 'rejected', false],
+    ['an unknown failure', new Error('gh comment down'), 'unknown', false],
+    // exec.run appends the command to the message; a PR title there is not the response's status.
+    ['a status only in the appended command', Object.assign(new Error("GraphQL: Head sha can't be blank (createPullRequest)\ngh pr create --draft --title Handle HTTP 502 errors --body-file -"),
+      { code: 1, stdout: '', stderr: "GraphQL: Head sha can't be blank (createPullRequest)\n" }), 'unknown', false],
+    // git's http.c reports an HTTP failure of a push or fetch in its own words.
+    ...[[503, 'transient', true], [429, 'rate-limited', true], [403, 'auth', false], [404, 'invalid', false]].map(([status, cls, retryable]) => [
+      `a git ${status}`, Object.assign(new Error(`fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: ${status}\ngit push origin x`),
+        { code: 128, stdout: '', stderr: `fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: ${status}\n` }), cls, retryable]),
+    ['a status gh printed',Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/7/comments'),
+      { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)\n' }), 'transient', true],
+  ];
+  for (const [name, err, cls, retryable] of cases) {
+    const f = outcome.classifyRemoteFailure(err);
+    assert.equal(f.class, cls, name);
+    assert.equal(f.retryable, retryable, name);
+  }
+  const delay = (err, n) => outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), n, now);
+  assert.equal(delay(cases[4][1], 1), 7_000, 'Retry-After first');
+  assert.equal(delay(cases[5][1], 1), 30_000, 'then the reset time once no requests remain');
+  assert.equal(delay(http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': 'soon' }), 1), 60_000, 'an invalid header falls through');
+  assert.equal(delay(cases[0][1], 1), 60_000, 'else at least 60 s');
+  assert.equal(delay(cases[0][1], 2), 120_000, 'growing exponentially');
+});
