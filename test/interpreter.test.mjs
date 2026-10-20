@@ -2455,6 +2455,51 @@ test('a rate-limited push keeps the fallback without a probe', async (t) => {
   assert.ok(!g.gh.calls.some((c) => c.args[0] === 'api' && c.args[1] === 'rate_limit'), 'git gives no quota to read');
 });
 
+test('a run stop during a pr-ready backoff ends at needs-human without marking ready', async (t) => {
+  const g = await golden.setup(t);
+  g.gh.fail({ matches: isPr('ready'), status: 502 });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  let saved;
+  g.clock.onSleep = () => {
+    saved = ticketRow(g).retries[PR_READY].remote;
+    runState.stop = { failureClass: 'auth', ticket: 21 };
+  };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.deepEqual(g.sleeps, [60_000]);
+  assert.equal(prCalls(g, 'ready').length, 1, 'no retry launched');
+  assert.equal(g.gh.pr().isDraft, true, 'the PR is not marked ready');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'needs-human');
+  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.retries[PR_READY].remote, saved, 'the retry stays as saved');
+  assert.ok(neededHuman(g));
+});
+
+test('a run stop during a resume lookup backoff ends at needs-human', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  const m = attemptMarker(g, 'reviewer', 1, 'review', 3);
+  g.gh.fail(onPr({ status: 502 }));
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-retry-saved' } }),
+    (err) => err instanceof interpreter.CrashError);
+  const mid = await loadTicket(g);
+  const saved = structuredClone(mid.retries[REVIEW_COMMENT].remote);
+  const runState = { stop: null, remoteNotBefore: 0 };
+  // Reconciliation's lookup waits out the saved retry; another Ticket stops the run meanwhile.
+  g.clock.onSleep = () => { runState.stop = { failureClass: 'auth', ticket: 21 }; };
+  const result = await interpreter.runExecution({ ...g.options, record: mid, runState });
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.deepEqual(g.sleeps, [60_000]);
+  assert.equal(commentPosts(g).length, 1, 'no retry launched');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'needs-human');
+  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry stays as saved');
+  assert.ok(neededHuman(g));
+});
+
 test('a failed activity save around a backoff allows no later save or effect', async (t) => {
   const retried = `json_extract(NEW.json, '$.retries."${REVIEW_COMMENT}".remote.count') = 1`;
   for (const [name, from, to, sleeps] of [['idle', 1, 0, []], ['busy', 0, 1, [60_000]]]) {
