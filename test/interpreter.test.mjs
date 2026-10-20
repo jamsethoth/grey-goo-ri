@@ -2145,3 +2145,180 @@ test('a transient read inside a retry spends the budget and is never taken for a
     });
   }
 });
+
+// #83: the pr-upsert, pr-ready and push paths of the in-Action retry, end to end.
+const PUSH = 'implementer/1/green/4';
+const PR_UPSERT = 'implementer/1/green/5';
+const PR_READY = 'done/1/done/1';
+const isPr = (verb) => (args) => args[0] === 'pr' && args[1] === verb;
+const prCalls = (g, verb) => g.gh.calls.filter((c) => isPr(verb)(c.args));
+const originSha = (g) => golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0];
+// A failed push as git reports it: only its text carries the status, with no headers to say how long to wait.
+const pushError = () => Object.assign(new Error('git push exited 128'),
+  { code: 128, stdout: '', stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 503" });
+
+// The golden Execution on the orchestrator's locked git, whose nth raw push runs `push(n, real)`; returns the count.
+function pushThrough(g, push) {
+  let n = 0;
+  g.options.git = run.lockedGit({ ...gitModule, push: (...args) => push(++n, () => gitModule.push(...args)) }, g.commonDir);
+  return () => n;
+}
+
+// Fails the first two launches of `gh pr <verb>` transiently and crashes the third as it launches; returns the count.
+function crashPr(g, verb) {
+  let n = 0;
+  for (let i = 0; i < 2; i++) g.gh.fail({ matches: isPr(verb), status: 502 });
+  g.options.gh.setGh(async (args, cwd, input) => {
+    if (isPr(verb)(args) && ++n === 3) throw new interpreter.CrashError(`crash as pr ${verb} launched`);
+    return g.gh.gh(args, cwd, input);
+  });
+  return () => n;
+}
+
+// A retried Action that finished: the Ticket is done, the Action has one evidence and completion, and one retry was
+// spent after the 60 s fallback.
+async function retriedOnce(g, result, key, m) {
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.deepEqual(g.sleeps, [60_000]);
+  const final = await loadTicket(g);
+  assert.deepEqual(steps(final, m), ['intent', 'evidence', 'complete']);
+  assert.equal(final.retries[key].remote.count, 1);
+  return final;
+}
+
+test('a transient pr-upsert failure is retried and opens one PR', async (t) => {
+  const g = await golden.setup(t);
+  g.gh.fail({ matches: isPr('create'), status: 502 });
+  let during;
+  g.clock.onSleep = () => { during = ticketRow(g).pr; };
+  const result = await interpreter.runExecution(g.options);
+
+  const final = await retriedOnce(g, result, PR_UPSERT, attemptMarker(g, 'implementer', 1, 'green', 5));
+  assert.equal(during, null, 'no PR is recorded during the backoff');
+  assert.equal(prCalls(g, 'create').length, 2, 'the failed create and one retry');
+  assert.equal(g.gh.pr().number, PR, 'one PR');
+  assert.equal(final.pr, PR);
+  assert.equal(g.gh.pr().isDraft, false);
+});
+
+test('an accepted pr-upsert whose call errored is found, not repeated', async (t) => {
+  const g = await golden.setup(t);
+  g.gh.fail({ matches: isPr('create'), status: 502, afterEffect: true });
+  const result = await interpreter.runExecution(g.options);
+
+  const m = attemptMarker(g, 'implementer', 1, 'green', 5);
+  const final = await retriedOnce(g, result, PR_UPSERT, m);
+  assert.equal(prCalls(g, 'create').length, 1, 'never created again');
+  assert.equal(prCalls(g, 'edit').length, 0, 'nor edited');
+  assert.deepEqual(final.log.find((e) => e.marker === m && e.step === 'evidence').evidence, { number: PR, url: g.gh.pr().url });
+  assert.equal(g.rec.pr, PR, 'restored from the found PR');
+  assert.equal(final.pr, PR, 'and saved');
+  assert.deepEqual(prCalls(g, 'ready').map((c) => c.args[2]), [String(PR)], 'the found PR is the one made ready');
+});
+
+test('a transient pr-ready failure is retried and the PR ends ready', async (t) => {
+  const g = await golden.setup(t);
+  g.gh.fail({ matches: isPr('ready'), status: 502 });
+  const result = await interpreter.runExecution(g.options);
+
+  await retriedOnce(g, result, PR_READY, attemptMarker(g, 'done', 1, 'done', 1));
+  assert.equal(prCalls(g, 'ready').length, 2, 'the failed call and one retry');
+  assert.equal(g.gh.pr().isDraft, false);
+});
+
+test('an accepted pr-ready whose call errored is repeated with one state change', async (t) => {
+  const g = await golden.setup(t);
+  g.gh.fail({ matches: isPr('ready'), status: 502, afterEffect: true });
+  const drafts = [];
+  g.options.gh.setGh(async (args, cwd, input) => {
+    if (isPr('ready')(args)) drafts.push(g.gh.pr().isDraft);
+    return g.gh.gh(args, cwd, input);
+  });
+  const result = await interpreter.runExecution(g.options);
+
+  await retriedOnce(g, result, PR_READY, attemptMarker(g, 'done', 1, 'done', 1));
+  assert.deepEqual(drafts, [true, false], 'made again on a PR already ready: one state change');
+  assert.equal(g.gh.pr().isDraft, false);
+});
+
+test('a transient push failure is retried and pushes once', async (t) => {
+  const g = await golden.setup(t);
+  const pushes = pushThrough(g, (n, push) => (n === 1 ? Promise.reject(pushError()) : push()));
+  const result = await interpreter.runExecution(g.options);
+
+  await retriedOnce(g, result, PUSH, actionMarker(g, 'green', 4));
+  assert.equal(pushes(), 2, 'the failed push and one retry');
+  assert.equal(originSha(g), golden.sh(g.worktree, 'rev-parse', 'HEAD'));
+});
+
+test('a push that landed but whose call errored is found on origin, not pushed again', async (t) => {
+  const g = await golden.setup(t);
+  const pushes = pushThrough(g, async (n, push) => {
+    await push();
+    if (n === 1) throw pushError();
+  });
+  let during;
+  g.clock.onSleep = () => { during = originSha(g); };
+  const result = await interpreter.runExecution(g.options);
+
+  const m = actionMarker(g, 'green', 4);
+  const final = await retriedOnce(g, result, PUSH, m);
+  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+  assert.equal(during, head, 'origin had the commit during the backoff');
+  assert.equal(pushes(), 1, 'never pushed again');
+  assert.deepEqual(final.log.find((e) => e.marker === m && e.step === 'evidence').evidence, { remoteSha: head });
+});
+
+test('a pr-upsert, pr-ready or push whose retries run out holds with the exhausted reason', async (t) => {
+  for (const [name, key, where, what, inject] of [
+    ['pr-upsert', PR_UPSERT, 'green 5', 'A transient GitHub failure (HTTP 502)',
+      (g) => { for (let i = 0; i < 3; i++) g.gh.fail({ matches: isPr('create'), status: 502 }); }],
+    ['pr-ready', PR_READY, 'done 1', 'A transient GitHub failure (HTTP 502)',
+      (g) => { for (let i = 0; i < 3; i++) g.gh.fail({ matches: isPr('ready'), status: 502 }); }],
+    ['push', PUSH, 'green 4', 'A transient push failure (HTTP 503)', (g) => pushThrough(g, () => Promise.reject(pushError()))],
+  ]) {
+    await t.test(name, async (t) => {
+      const g = await golden.setup(t);
+      inject(g);
+      const result = await interpreter.runExecution(g.options);
+
+      assert.equal(result.fault, true, JSON.stringify(result));
+      assert.deepEqual(g.sleeps, [60_000, 120_000]);
+      assert.equal(g.rec.terminalReason.text, `${what} at ${where} persisted after 2 retries; the error is in this comment and on ticket_end.`);
+      assert.ok(g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)), g.logs.join('\n'));
+      const final = await loadTicket(g);
+      assert.equal(final.retries[key].remote.count, 2);
+      assert.equal(final.state, 'fault');
+      assert.ok(neededHuman(g));
+    });
+  }
+});
+
+test('a pr-upsert, pr-ready or push that crashes after launch spends its saved budget on resume', async (t) => {
+  for (const [name, key, where, what, inject] of [
+    ['pr-upsert', PR_UPSERT, 'green 5', 'A transient GitHub failure', (g) => crashPr(g, 'create')],
+    ['pr-ready', PR_READY, 'done 1', 'A transient GitHub failure', (g) => crashPr(g, 'ready')],
+    ['push', PUSH, 'green 4', 'A transient push failure', (g) => pushThrough(g, (n) => Promise.reject(n === 3
+      ? new interpreter.CrashError('crash as the push launched') : pushError()))],
+  ]) {
+    await t.test(name, async (t) => {
+      const g = await golden.setup(t);
+      const launches = inject(g);
+      // Two transient failures spend the budget; the second retry crashes as it launches.
+      await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
+      const mid = await loadTicket(g);
+      assert.equal(mid.retries[key].remote.count, 2);
+      assert.equal(mid.retries[key].remote.started, true, 'the last retry launched');
+
+      const result = await interpreter.runExecution({ ...g.options, record: mid });
+      assert.equal(result.fault, true, JSON.stringify(result));
+      assert.equal(launches(), 3, 'no fourth launch');
+      const final = await loadTicket(g);
+      assert.equal(final.retries[key].remote.count, 2, 'the budget is not refilled');
+      assert.equal(final.terminalReason.text, `${what} at ${where} persisted after 2 retries; the error is in this comment and on ticket_end.`);
+      assert.ok(g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)), g.logs.join('\n'));
+      assert.equal(final.state, 'fault');
+      assert.ok(neededHuman(g));
+    });
+  }
+});
