@@ -1,7 +1,7 @@
 {
   "name": "grey-goo-ri",
   "version": "0.0.0",
-  "description": "Configurable DAG of persona nodes on agentic harnesses: tickets to reviewed PRs with gates, tracing and usage metrics",
+  "description": "Configurable bounded workflow graph of persona Agents on agentic harnesses: tickets to reviewed PRs with gates, tracing and usage metrics",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "bin": { "gg": "bin/gg.mjs" },

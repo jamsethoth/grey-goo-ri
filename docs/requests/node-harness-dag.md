@@ -46,7 +46,7 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
 
 ### 3.1 Agent
 
-An agent is a named, declarative unit of agent work. Fields, all with declared semantics per harness (3.2):
+An Agent is a named, declarative unit of work for one Agent CLI. Fields, all with declared semantics per harness (3.2):
 
 | Field | Meaning |
 |---|---|
