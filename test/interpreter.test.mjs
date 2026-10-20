@@ -159,7 +159,9 @@ test('each public field is redacted once and sent exactly as its intent saved it
   assert.ok(g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')), 'the PR title');
   assert.deepEqual(intents(rec, 'commit').map((e) => e.payload.message.trim()).reverse(), messages);
   for (const e of [...intents(rec, 'comment'), ...intents(rec, 'pr-upsert')]) {
-    assert.ok(g.gh.calls.some((c) => c.input === e.payload.body), `${e.action} is sent as saved`);
+    // A comment goes as the JSON body of its gh api POST.
+    const wire = e.action === 'comment' ? JSON.stringify({ body: e.payload.body }) : e.payload.body;
+    assert.ok(g.gh.calls.some((c) => c.input === wire), `${e.action} is sent as saved`);
   }
 });
 

@@ -913,15 +913,16 @@ test('an admission failure on an active execution is reported as a fault', async
   assert.equal(ticketResult(second).outcome, 'skipped');
 });
 
-// Makes `gh issue comment` fail with HTTP 502 while `on` is set; `lost` lets the comment land first, as a lost response does.
+// Makes every comment POST fail with HTTP 502 while `on` is set, its retries too; `lost` lets the comment land first, as
+// a lost response does.
 function failComment(f, { lost = false } = {}) {
   const inner = f.gh.gh;
   const failing = { on: true };
   github.setGh(async (args, cwd, input) => {
-    if (failing.on && args[0] === 'issue' && args[1] === 'comment') {
+    if (failing.on && golden.isCommentPost(args)) {
       if (lost) await inner(args, cwd, input);
       else f.gh.calls.push({ args, cwd, input });
-      throw new Error('gh issue comment exited 1\nHTTP 502: Bad Gateway');
+      throw golden.ghError(args, { status: 502 });
     }
     return inner(args, cwd, input);
   });
@@ -1033,13 +1034,11 @@ test('fixing the worktree while a hold comment is pending still finishes the hol
 
 test('a landed hold comment with a lost response is not posted twice', async (t) => {
   const { f } = await dirtyTicket(t, false);
-  const failing = failComment(f, { lost: true });
-  assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
-  assert.equal(f.comments().length, 1, 'the comment landed before its response was lost');
-  failing.on = false;
-
+  failComment(f, { lost: true });
+  // The retry looks for the comment by its marker first, so the hold lands within the Run.
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.equal(f.comments().length, 1, 'the marker found it, so it was not posted again');
+  assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, 1);
   const final = await loadTicket(f);
   const comment = final.log.find((e) => e.step === 'intent' && e.action === 'comment');
   assert.deepEqual(final.log.filter((e) => e.marker === comment.marker).map((e) => e.step), ['intent', 'evidence', 'complete']);
@@ -1243,7 +1242,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   const inner = f.gh.gh;
   let mode = 'crash';
   github.setGh(async (args, cwd, input) => {
-    if (mode === 'crash' && args[0] === 'issue' && args[1] === 'comment') {
+    if (mode === 'crash' && golden.isCommentPost(args)) {
       await inner(args, cwd, input);
       throw new interpreter.CrashError('crash after the fault comment landed');
     }
@@ -1293,7 +1292,7 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   assert.equal(mid.terminalStop?.held, true, 'the decided hold waits for the next Run');
   assert.equal(endsOf(f, mid.execution).length, 0);
   db.exec('DROP TRIGGER fail_end');
-  const effects = () => f.gh.calls.filter((c) => c.args[0] === 'issue' && ['comment', 'edit'].includes(c.args[1])).length;
+  const effects = () => f.gh.calls.filter((c) => golden.isCommentPost(c.args) || (c.args[0] === 'issue' && c.args[1] === 'edit')).length;
   const done = effects();
 
   const second = await run.runTarget(f.options);

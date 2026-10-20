@@ -209,11 +209,6 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
     if (noun === 'pr' && verb === 'edit') { prOf(Number(args[2])).body = input; return ''; }
     if (noun === 'pr' && verb === 'view') return JSON.stringify(prOf(Number(args[2])));
     if (noun === 'pr' && verb === 'ready') { prOf(Number(args[2])).isDraft = false; return ''; }
-    if ((noun === 'pr' || noun === 'issue') && verb === 'comment') {
-      const id = 1000 + comments.length;
-      comments.push({ id, body: input, created_at: '2026-10-15T00:00:00Z', target: noun, number: Number(args[2]) });
-      return `https://github.com/o/r/issues/${args[2]}#issuecomment-${id}\n`;
-    }
     if (isCommentPost(args)) {
       const n = Number(args.join(' ').match(/issues\/(\d+)\/comments/)[1]);
       const id = post(n, JSON.parse(input).body);
