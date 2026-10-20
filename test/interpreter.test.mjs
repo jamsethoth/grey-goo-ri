@@ -2285,6 +2285,7 @@ test('a pr-upsert, pr-ready or push whose retries run out holds with the exhaust
       assert.equal(result.fault, true, JSON.stringify(result));
       assert.deepEqual(g.sleeps, [60_000, 120_000]);
       assert.equal(g.rec.terminalReason.text, `${what} at ${where} persisted after 2 retries; the error is in this comment and on ticket_end.`);
+      assert.ok(g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)), g.logs.join('\n'));
       const final = await loadTicket(g);
       assert.equal(final.retries[key].remote.count, 2);
       assert.equal(final.state, 'fault');
@@ -2315,6 +2316,7 @@ test('a pr-upsert, pr-ready or push that crashes after launch spends its saved b
       const final = await loadTicket(g);
       assert.equal(final.retries[key].remote.count, 2, 'the budget is not refilled');
       assert.equal(final.terminalReason.text, `${what} at ${where} persisted after 2 retries; the error is in this comment and on ticket_end.`);
+      assert.ok(g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)), g.logs.join('\n'));
       assert.equal(final.state, 'fault');
       assert.ok(neededHuman(g));
     });
