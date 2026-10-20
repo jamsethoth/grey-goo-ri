@@ -1946,7 +1946,9 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
   assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
   assert.equal(run.runExitCode(results), 0);
   const views = f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'view').map((c) => Number(c.args[2]));
-  assert.deepEqual(views.sort((a, b) => a - b), [EPIC, 21, 22, 23], 'the epic and each sub-issue are read');
+  // A git write of one Ticket that waited for the repo lock behind the other reads its labels again, so count each once.
+  assert.deepEqual([...new Set(views)].sort((a, b) => a - b), [EPIC, 21, 22, 23], 'the epic and each sub-issue are read');
+  assert.equal(views.filter((n) => n === 23).length, 1, 'the blocked sub-issue only by discovery');
   for (const n of [21, 22]) assert.equal((await record.load(f.commonDir, 'ticket', n))?.epic, EPIC, `#${n}'s Execution references the epic`);
   assert.equal(await record.load(f.commonDir, 'ticket', 23), null, 'the blocked Ticket has no record');
   assert.equal(existsSync(worktreeOf(f, 23)), false, 'nor a worktree');
