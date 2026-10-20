@@ -2102,3 +2102,25 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal((await loadTicket(g)).state, 'abandoned');
   });
 });
+
+test('a remote budget that runs out says so in the Terminal Reason', async (t) => {
+  await t.test('a transient comment failure', async (t) => {
+    const g = await reviewFlow(t, okReview);
+    for (let i = 0; i < 3; i++) g.gh.fail(onPr({ status: 502 }));
+    const result = await interpreter.runExecution(g.options);
+
+    assert.equal(result.fault, true, JSON.stringify(result));
+    const text = 'A transient GitHub failure (HTTP 502) at review 3 persisted after 2 retries; the error is in this comment and on ticket_end.';
+    assert.equal(g.rec.terminalReason.text, text);
+    assert.ok(ticketComments(g).some((c) => c.body.includes(`**Terminal Reason:** ${text}`)), 'the comment carries it');
+    assert.ok(g.logs.some((l) => /reviewer\/1\/review\/3: transient failure, retries exhausted after 2 of 2/.test(l)), g.logs.join('\n'));
+  });
+  await t.test('an auth failure keeps the unexpected-fault reason', async (t) => {
+    const g = await reviewFlow(t, okReview);
+    g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
+    await interpreter.runExecution(g.options);
+
+    assert.equal(g.rec.terminalReason.text, 'An unexpected fault stopped the Execution at review 3; the error is in this comment and on ticket_end.');
+    assert.ok(!g.logs.some((l) => /retries exhausted/.test(l)));
+  });
+});
