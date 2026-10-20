@@ -364,6 +364,13 @@ the output stream and transcript stop growing (default about 10 min) and a wall 
 outcome. GitHub writes are idempotent by action identity: PR found by head branch before create, one marked comment
 updated in place, label adds that tolerate presence.
 
+Remote retry cooldown. The Actions of one `gg run` share the latest retry deadline, and each Action's retry, with its
+deadline, is saved before it waits, so a resumed Execution waits out what is left of it. Separate Runs, and so two gg
+processes, do not share a cooldown, by decision: GitHub counts its quotas per credential and resource across every
+repository, so a deadline kept in one repository's State Database would hold back writes the quota still allows and miss
+the same account's writes from any other repository. Each Run reads GitHub's own wait instead: Retry-After, the reset
+time of an exhausted quota, or a read of `gh api rate_limit` when the failure gave neither (#85).
+
 Labels are namespaced; the prefix is config, default `gg`:
 
 | Family | Pattern | Written by | Examples |
