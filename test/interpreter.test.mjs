@@ -2454,3 +2454,33 @@ test('a rate-limited push keeps the fallback without a probe', async (t) => {
   assert.equal(pushes(), 2);
   assert.ok(!g.gh.calls.some((c) => c.args[0] === 'api' && c.args[1] === 'rate_limit'), 'git gives no quota to read');
 });
+
+test('a failed activity save around a backoff allows no later save or effect', async (t) => {
+  const retried = `json_extract(NEW.json, '$.retries."${REVIEW_COMMENT}".remote.count') = 1`;
+  for (const [name, from, to, sleeps] of [['idle', 1, 0, []], ['busy', 0, 1, [60_000]]]) {
+    await t.test(name, async (t) => {
+      const g = await reviewFlow(t, okReview);
+      g.gh.fail(onPr({ status: 502 }));
+      // The backoff's own transition fails: the first save after the retry that flips the worktree that way.
+      record.openDb(g.commonDir).exec(`CREATE TRIGGER fail_activity BEFORE UPDATE ON records
+        WHEN json_extract(OLD.json, '$.activity.busy') = ${from} AND json_extract(NEW.json, '$.activity.busy') = ${to} AND ${retried}
+        BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+      let before;
+      g.clock.onSleep = () => { before = g.gh.calls.length; };
+      const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
+
+      assert.equal(err?.name, 'RecordSaveError', String(err));
+      assert.deepEqual(g.sleeps, sleeps);
+      const saved = await loadTicket(g);
+      assert.equal(saved.state, 'active', 'no fault is saved');
+      assert.equal(saved.terminalStop ?? null, null, 'nor its Terminal');
+      assert.equal(saved.cursor.vertex, 'reviewer');
+      assert.equal(saved.activity.busy, !to, 'the failed transition is not saved by a cleanup');
+      assert.equal(saved.retries[REVIEW_COMMENT].remote.count, 1);
+      if (before !== undefined) assert.equal(g.gh.calls.length, before, 'no lookup or effect after the wait');
+      assert.equal(commentPosts(g).length, 1);
+      assert.equal(ticketComments(g).length, 0, 'no fault report');
+      assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
+    });
+  }
+});
