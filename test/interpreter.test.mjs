@@ -2477,6 +2477,32 @@ test('a run stop during a pr-ready backoff ends at needs-human without marking r
   assert.ok(neededHuman(g));
 });
 
+test('a run stop during the done comment backoff ends at needs-human after pr-ready', async (t) => {
+  const g = await golden.setup(t);
+  const DONE_COMMENT = 'done/1/done/2';
+  g.gh.fail({ matches: (args) => golden.isCommentPost(args, golden.TICKET) && prCalls(g, 'ready').length > 0, status: 502 });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  let saved;
+  g.clock.onSleep = () => {
+    saved = ticketRow(g).retries[DONE_COMMENT].remote;
+    runState.stop = { failureClass: 'auth', ticket: 21 };
+  };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.deepEqual(g.sleeps, [60_000]);
+  assert.equal(prCalls(g, 'ready').length, 1);
+  assert.equal(g.gh.pr().isDraft, false, 'pr-ready had landed');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'needs-human');
+  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.retries[DONE_COMMENT].remote, saved, 'the retry stays as saved');
+  assert.ok(!ticketComments(g).some((c) => c.body.startsWith('### gg: done')), 'no done comment lands');
+  assert.ok(ticketComments(g).some((c) => c.body.startsWith('### gg: needs-human')), 'the needs-human comment lands');
+  assert.ok(neededHuman(g));
+  assert.ok(!g.gh.calls.some((c) => c.args.join(' ').includes('--add-label gg:state:ready-for-qa')), 'not labelled ready-for-qa');
+});
+
 test('a run stop during a resume lookup backoff ends at needs-human', async (t) => {
   const g = await reviewFlow(t, okReview);
   const m = attemptMarker(g, 'reviewer', 1, 'review', 3);
