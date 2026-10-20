@@ -2124,3 +2124,24 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
     assert.ok(!g.logs.some((l) => /retries exhausted/.test(l)));
   });
 });
+
+test('a transient read inside a retry spends the budget and is never taken for absence', async (t) => {
+  for (const [name, matches] of [
+    ['the comment lookup', (args) => golden.isCommentRead(args, PR)],
+    ['the label read', (args) => args[0] === 'issue' && args[1] === 'view'],
+  ]) {
+    await t.test(name, async (t) => {
+      const g = await reviewFlow(t, okReview);
+      g.gh.fail(onPr({ status: 502 }));
+      // The retry's first read of `name` fails too; its next one works.
+      g.gh.fail({ matches, status: 502 });
+      const result = await interpreter.runExecution(g.options);
+
+      assert.equal(result.outcome, 'done', JSON.stringify(result));
+      assert.deepEqual(g.sleeps, [60_000, 120_000], 'the failed read spent the second retry');
+      assert.equal(commentPosts(g).length, 2, 'the failed POST and one retry, launched only after a read that worked');
+      assert.equal(prReviewComments(g).length, 1);
+      assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
+    });
+  }
+});
