@@ -1991,3 +1991,28 @@ test('a first launch that crashed spends the budget when launched again', async 
   assert.equal(posts, 3);
   assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
 });
+
+test('a pending report waiting out a sibling cooldown checks the human override again before posting', async (t) => {
+  const g = await golden.setup(t);
+  const onTicket = { matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 };
+  for (let i = 0; i < 3; i++) g.gh.fail(onTicket);
+  // The hold comment fails through its whole budget, so the hold stays pending for the next Run.
+  const first = await interpreter.runExecution({ ...g.options,
+    admission: { kind: 'hold', name: 'dirty-worktree', text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.' } });
+  assert.equal(first.fault, true, JSON.stringify(first));
+  const mid = await loadTicket(g);
+  assert.ok(interpreter.pendingReport(mid));
+  const posted = g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length;
+
+  // Another Ticket of the next Run is backing off; a human sets needs-human during the wait.
+  const runState = { stop: null, remoteNotBefore: g.clock.now() + 7_000 };
+  g.sleeps.length = 0;
+  g.clock.onSleep = () => { g.gh.labels.add('gg:state:needs-human'); };
+  const result = await interpreter.runExecution({ ...g.options, record: mid, runState });
+
+  assert.deepEqual(g.sleeps, [7_000]);
+  assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
+  assert.equal(g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, posted, 'the report is not posted');
+  assert.equal((await loadTicket(g)).state, 'abandoned');
+  assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+});
