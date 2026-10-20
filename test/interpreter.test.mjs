@@ -1894,3 +1894,65 @@ test('a human needs-human label during backoff abandons before the retry', async
   assert.ok(!g.gh.calls.some((c) => c.args[0] === 'issue' && c.args[1] === 'edit'), 'no label written: in-progress was not there to remove');
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
 });
+
+// Crashes the `n`th review-comment POST as it launches, after the queued failures before it.
+function crashPost(g, n) {
+  let posts = 0;
+  g.options.gh.setGh(async (args, cwd, input) => {
+    if (golden.isCommentPost(args, PR) && ++posts === n) throw new interpreter.CrashError('crash as the POST launched');
+    return g.gh.gh(args, cwd, input);
+  });
+  return () => posts;
+}
+
+test('a retry that crashed as it launched needs a new retry to launch again', async (t) => {
+  await t.test('within the budget', async (t) => {
+    const g = await reviewFlow(t, okReview);
+    g.gh.fail(onPr({ status: 502 }));
+    const posts = crashPost(g, 2);
+    await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
+    assert.deepEqual((await loadTicket(g)).retries[REVIEW_COMMENT].remote.started, true, 'the first retry launched');
+
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.outcome, 'done', JSON.stringify(result));
+    assert.equal(posts(), 3);
+    assert.equal(prReviewComments(g).length, 1);
+    assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2, 'the relaunch spent the second retry');
+  });
+  await t.test('with the budget spent', async (t) => {
+    const g = await reviewFlow(t, okReview);
+    g.gh.fail(onPr({ status: 502 }));
+    g.gh.fail(onPr({ status: 502 }));
+    const posts = crashPost(g, 3);
+    await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
+    assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
+
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.fault, true, JSON.stringify(result));
+    assert.equal(posts(), 3, 'no fourth write');
+    assert.equal(prReviewComments(g).length, 0);
+    assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
+    assert.ok(neededHuman(g));
+  });
+});
+
+test('a cooldown raised while a retry looks for its effect is waited out before the launch', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(onPr({ status: 502 }));
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const { prComments } = g.options.gh;
+  let raised = false;
+  // Another Ticket backs off while this retry's lookup is in flight.
+  g.options.gh = { ...g.options.gh, prComments: async (...args) => {
+    if (!raised) runState.remoteNotBefore = g.clock.now() + 10_000;
+    raised = true;
+    return prComments(...args);
+  } };
+  // A human sets needs-human during that second wait.
+  g.clock.onSleep = (ms) => { if (ms === 10_000) g.gh.labels.add('gg:state:needs-human'); };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.deepEqual(g.sleeps, [60_000, 10_000], 'the launch waits for the cooldown raised during its lookup');
+  assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
+  assert.equal(commentPosts(g).length, 1, 'nothing launched after the wait the human override ended');
+});
