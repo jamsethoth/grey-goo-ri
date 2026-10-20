@@ -5,6 +5,7 @@ import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { join, resolve } from 'node:path';
 import * as gitModule from '../lib/git.mjs';
+import * as integrity from '../lib/integrity.mjs';
 import * as locks from '../lib/locks.mjs';
 import * as run from '../lib/run.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
@@ -2321,4 +2322,135 @@ test('a pr-upsert, pr-ready or push that crashes after launch spends its saved b
       assert.ok(neededHuman(g));
     });
   }
+});
+
+// #85: a backoff is bounded, stops with the Run, and leaves its worktree idle while it waits.
+const HOUR = 3_600_000;
+const rateLimitedFor = (ms) => onPr({ status: 403, headers: { 'Retry-After': String(ms / 1000) },
+  body: { message: 'You have exceeded a secondary rate limit.' } });
+
+test('a backoff longer than the timer limit sleeps in bounded chunks', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(rateLimitedFor(30 * 24 * HOUR));
+  const calls = new Set();
+  g.clock.onSleep = () => { calls.add(g.gh.calls.length); };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(g.sleeps.length, 720, `one sleep per hour of the 30 days, not ${JSON.stringify(g.sleeps)}`);
+  assert.ok(g.sleeps.every((ms) => ms === HOUR));
+  assert.deepEqual([...calls], [g.gh.calls.indexOf(commentPosts(g)[0]) + 1], 'no lookup or launch between the chunks');
+  assert.equal(prReviewComments(g).length, 1);
+});
+
+test('a backoff keeps one idle generation across timer chunks', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(rateLimitedFor(2 * HOUR));
+  const seen = [];
+  g.clock.onSleep = () => { seen.push(ticketRow(g).activity); };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(seen.length, 2, JSON.stringify(seen));
+  assert.equal(seen[0].busy, false, 'idle while it waits');
+  assert.deepEqual(seen[1], seen[0], 'one generation across the chunks');
+});
+
+test('an invalid or excessive saved retry deadline is logged and held', async (t) => {
+  for (const [name, deadline] of [['excessive', (now) => now + 40 * 24 * HOUR], ['invalid', () => null]]) {
+    await t.test(name, async (t) => {
+      const g = await reviewFlow(t, okReview);
+      const m = attemptMarker(g, 'reviewer', 1, 'review', 3);
+      g.gh.fail(onPr({ status: 502 }));
+      await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-retry-saved' } }),
+        (err) => err instanceof interpreter.CrashError);
+      const mid = await loadTicket(g);
+      mid.retries[REVIEW_COMMENT].remote.nextEligibleAt = deadline(g.clock.now());
+      const saved = structuredClone(mid.retries[REVIEW_COMMENT].remote);
+      const result = await interpreter.runExecution({ ...g.options, record: mid });
+
+      assert.equal(result.held, true, JSON.stringify(result));
+      assert.deepEqual(g.sleeps, [], 'never waited');
+      assert.equal(commentPosts(g).length, 1, 'never retried');
+      assert.ok(g.logs.some((l) => l.includes(`#${golden.TICKET} ${REVIEW_COMMENT}`) && l.includes(JSON.stringify(saved.nextEligibleAt))),
+        g.logs.join('\n'));
+      const final = await loadTicket(g);
+      assert.equal(final.state, 'held');
+      assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the saved retry is kept');
+    });
+  }
+});
+
+test('a run stop during a backoff ends the Execution at needs-human', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(onPr({ status: 502 }));
+  const runState = { stop: null, remoteNotBefore: 0 };
+  let saved;
+  // Another Ticket's harness call stops the run while this one backs off.
+  g.clock.onSleep = () => {
+    saved = ticketRow(g).retries[REVIEW_COMMENT].remote;
+    runState.stop = { failureClass: 'auth', ticket: 21 };
+  };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.deepEqual(g.sleeps, [60_000]);
+  assert.equal(commentPosts(g).length, 1, 'no retry launched');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'needs-human');
+  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry stays as saved');
+  assert.ok(neededHuman(g));
+});
+
+test('a latched run stop does not consume a relaunch retry', async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(onPr({ status: 502 }));
+  const posts = crashPost(g, 2);
+  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
+  const mid = await loadTicket(g);
+  const saved = structuredClone(mid.retries[REVIEW_COMMENT].remote);
+  assert.equal(saved.started, true, 'the first retry launched');
+  // Another Ticket stops the run once this Action is under way, after the Visit's own check.
+  let stop = null;
+  const runState = { remoteNotBefore: 0, get stop() { return (stop ??= ticketRow(g).activity.busy ? { failureClass: 'auth', ticket: 21 } : null); } };
+  const result = await interpreter.runExecution({ ...g.options, record: mid, runState });
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.equal(posts(), 2, 'not launched again');
+  const final = await loadTicket(g);
+  assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry is not spent');
+  assert.equal(final.terminalReason.rule, 'run-stopped');
+});
+
+test("a worktree backing off is idle to other Tickets' integrity checks", async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(onPr({ status: 502 }));
+  // Another Ticket's Action, in the main checkout, writes into this worktree while it backs off.
+  const other = { worktree: g.mainRoot, commonDir: g.commonDir };
+  const check = { others: [g.worktree], protectedPaths: interpreter.PROTECTED_PATHS };
+  const stray = join(g.worktree, 'stray.txt');
+  let violations;
+  g.clock.onSleep = async () => {
+    const baseline = await integrity.begin({ record: other, ...check });
+    writeFileSync(stray, 'stray\n');
+    ({ violations } = await integrity.end({ baseline, record: other, access: 'workspace-write', ...check }));
+    rmSync(stray);
+  };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.ok(violations?.some((v) => v.worktree === g.worktree && v.surface === 'tree'), JSON.stringify(violations));
+});
+
+test('a rate-limited push keeps the fallback without a probe', async (t) => {
+  const g = await golden.setup(t);
+  const limited = () => Object.assign(pushError(),
+    { stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429" });
+  const pushes = pushThrough(g, (n, push) => (n === 1 ? Promise.reject(limited()) : push()));
+  const result = await interpreter.runExecution(g.options);
+
+  await retriedOnce(g, result, PUSH, actionMarker(g, 'green', 4));
+  assert.equal(pushes(), 2);
+  assert.ok(!g.gh.calls.some((c) => c.args[0] === 'api' && c.args[1] === 'rate_limit'), 'git gives no quota to read');
 });

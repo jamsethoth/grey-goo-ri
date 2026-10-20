@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../lib/github.mjs';
 import * as labels from '../lib/labels.mjs';
+import * as outcome from '../lib/outcome.mjs';
 import * as golden from './support/golden.mjs';
 
 test('createIssue keeps malformed output complete for redaction before publication', async () => {
@@ -288,4 +289,39 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
     assert.match(err.message, /secondary rate limit/);
     return true;
   });
+});
+
+// #85: a rate limit whose response gives no wait is read from GitHub's own quota, once.
+const NOW = Date.parse('2026-10-15T00:00:00Z');
+const isProbe = (args) => args[0] === 'api' && args[1] === 'rate_limit';
+
+test('a rate-limited PR write uses the wait GitHub gives', async () => {
+  const { gh, calls } = fakeGh((args) => {
+    if (isProbe(args)) {
+      return { resources: { core: { limit: 5000, remaining: 4999, reset: NOW / 1000 + 3600 }, graphql: { limit: 5000, remaining: 0, reset: NOW / 1000 + 37 } } };
+    }
+    if (args[0] === 'pr' && args[1] === 'list') return [];
+    // gh pr create goes through GraphQL, whose rate limit has no HTTP status.
+    throw golden.ghError(args, { stderr: 'GraphQL: API rate limit exceeded for user ID 1.' });
+  });
+  github.setGh(gh);
+  const err = await github.upsertPr({ branch: 'b', base: 'main', title: 'T', body: 'B' }, '/repo').then(() => null, (e) => e);
+
+  assert.match(err?.message ?? '', /API rate limit exceeded/);
+  assert.equal(calls.filter(({ args }) => isProbe(args)).length, 1, 'one probe');
+  assert.equal(outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), 1, NOW), 37_000);
+});
+
+test('a failed rate-limit probe keeps the 60/120 s fallback', async () => {
+  const { gh, calls } = fakeGh((args) => {
+    throw isProbe(args) ? new Error('HTTP 502') : golden.ghError(args, { status: 403, body: { message: 'API rate limit exceeded for user ID 1.' } });
+  });
+  github.setGh(gh);
+  const err = await github.markReady(7, '/repo').then(() => null, (e) => e);
+
+  assert.match(err?.message ?? '', /API rate limit exceeded/, 'the original error');
+  assert.equal(calls.filter(({ args }) => isProbe(args)).length, 1, 'probed once');
+  const failure = outcome.classifyRemoteFailure(err);
+  assert.equal(failure.class, 'rate-limited');
+  assert.deepEqual([1, 2].map((n) => outcome.remoteRetryDelay(failure, n, NOW)), [60_000, 120_000]);
 });
