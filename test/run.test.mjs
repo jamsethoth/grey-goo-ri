@@ -31,16 +31,18 @@ const IN_PROGRESS = 'gg:state:in-progress';
 const NEEDS_HUMAN = 'gg:state:needs-human';
 const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-// The shipped defaults with every Agent on `harness` and, unless `fullFlow`, a one-Vertex Flow from tdd straight to done.
+// The shipped defaults with every Agent on `harness`, the repository Layer's test command and, unless `fullFlow`, a
+// one-Vertex Flow from tdd straight to done.
 function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   const c = config.loadDefaults();
+  c.commands = { test: 'npm test' };
   for (const agent of Object.values(c.agents)) Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   c.worktreeRoot = join(root, 'wt');
   if (!fullFlow) c.flows.default.ticket = { entry: 'implementer', vertices: { implementer: { use: 'implementer', procedure: 'tdd', then: 'done' } } };
   return c;
 }
 
-// A temp origin and clone with AGENTS.md, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
+// A temp origin and clone, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view, and `issues`
 // those of one issue number.
 function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, issues = {}, rootName = 'gg-run-', linked = false } = {}) {
@@ -59,7 +61,6 @@ function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, 
   sh(root, 'clone', '-q', 'origin.git', 'main');
   sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
   writeFileSync(join(mainRoot, 'package.json'), '{ "scripts": { "test": "node --test" } }\n');
-  writeFileSync(join(mainRoot, 'AGENTS.md'), '# repo\n\n## Commands\n\n- test: `npm test`\n');
   sh(mainRoot, 'add', '-A');
   sh(mainRoot, 'commit', '-q', '-m', 'init');
   sh(mainRoot, 'push', '-q', 'origin', 'main');
@@ -338,6 +339,34 @@ test('preflight names an unset harness and an unknown harness in one error', asy
   assert.deepEqual(f.gh.calls, [], 'no gh call');
 });
 
+test('gg run runs the Declared Commands of its config, not those of AGENTS.md', async (t) => {
+  const f = fixture(t);
+  writeFileSync(join(f.mainRoot, 'AGENTS.md'), '# repo\n\n## Commands\n\n- test: `agents-md-test`\n');
+  const ran = [];
+  const { runShell } = f.options.exec;
+  f.options.exec = { ...f.options.exec, runShell: (command, opts) => (ran.push(command), runShell(command, opts)) };
+  const results = await run.runTarget(f.options);
+  assert.equal(ticketResult(results).outcome, 'done', JSON.stringify(results));
+  assert.ok(ran.length > 0, 'the Checks ran');
+  assert.deepEqual([...new Set(ran)], ['npm test']);
+});
+
+test('preflight lists every malformed Declared Command and a missing test, naming the repository Layer', async (t) => {
+  const f = fixture(t);
+  f.options.config.commands = { Test: 'npm test', lint: '' };
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const file = join(f.mainRoot, '.agents', 'gg', 'gg.json');
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    `${file}: command name "Test" must match [a-z][a-z0-9-]*`,
+    `${file}: command lint must be a non-empty single-line string`,
+    `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`,
+  ]);
+  assert.equal(err.exitCode, 1);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+});
+
 test('a standalone ticket under a flow with a plan section is rejected before any effect', async (t) => {
   const f = fixture(t);
   f.options.config.flows['ticket-only'] = structuredClone(f.options.config.flows.default);
@@ -374,18 +403,20 @@ test('following standalone Ticket advice in the repo Layer allows the Ticket to 
   const f = fixture(t);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
   const home = join(f.root, 'home');
+  const { commands, ...user } = f.options.config;
   mkdirSync(join(home, '.agents', 'gg'), { recursive: true });
-  writeFileSync(join(home, '.agents', 'gg', 'gg.json'), JSON.stringify(f.options.config));
+  writeFileSync(join(home, '.agents', 'gg', 'gg.json'), JSON.stringify(user));
+  const repoLayer = join(f.mainRoot, '.agents', 'gg', 'gg.json');
+  mkdirSync(join(f.mainRoot, '.agents', 'gg'), { recursive: true });
+  writeFileSync(repoLayer, JSON.stringify({ commands }));
   f.options.config = config.loadConfig(f.mainRoot, home);
 
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'the user Layer initially enables the plan section');
-  const repoLayer = join(f.mainRoot, '.agents', 'gg', 'gg.json');
   assert.ok(err.message.includes(repoLayer), 'the advice names the path loadConfig reads');
   const advice = JSON.parse(err.message.split('\n').at(-1));
   assert.deepEqual(advice, { flows: { default: { plan: null } } });
-  mkdirSync(join(f.mainRoot, '.agents', 'gg'), { recursive: true });
-  writeFileSync(repoLayer, JSON.stringify(advice));
+  writeFileSync(repoLayer, JSON.stringify({ ...advice, commands }));
   f.options.config = config.loadConfig(f.mainRoot, home);
 
   const results = await run.runTarget(f.options);
