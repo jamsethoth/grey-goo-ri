@@ -143,8 +143,9 @@ The account of earlier failed Attempts on a Ticket that is fed back into a Brief
 _Avoid_: memory
 
 **Declared Command**:
-A named command a repository publishes, such as test or lint, that Checks run and agents may run. Agents may also
-use gg's built-in read-only allowlist, such as read-only git and file reads, which is not a Declared Command.
+A named command a repository publishes in its repository Layer, such as test or lint, that Checks run and agents
+may run. No other Layer may set one. Agents may also use gg's built-in read-only allowlist, such as read-only git and
+file reads, which is not a Declared Command.
 _Avoid_: script, task, allowed command
 
 **Permission Intent**:
