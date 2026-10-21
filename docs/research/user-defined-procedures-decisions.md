@@ -119,7 +119,26 @@ The running record of the planning session. The research behind it is in
 - V2. Scenario runs are backlogged as grey-goo-ri issue #98: scripted Claims and Check results run through the real
   interpreter offline on the fake harness, to show every branch is reachable and behaves as intended.
 
+## Effects (option 3 contract, 2026-10-21)
+
+- Q5. An effect Action may declare `confirm`: a command that reads the effect's real state by its Action Marker and
+  answers `present`, `absent`, `conflicting` or `unknown`. It confirms the intended effect exists; it does not judge
+  whether the effect is good.
+  - Recovery uses it when an intent has no evidence: `present` saves the evidence, `absent` redoes the effect,
+    `conflicting` holds, `unknown` retries the read on the Action's budget and then holds.
+  - It may also run after a successful `run`; there `absent` or `conflicting` is a fault, as push's origin check is
+    today. gg's own GitHub Actions confirm at recovery only, to spare the rate limit; push keeps its check.
+  - With no `confirm`, an interrupted effect holds for a human by default. `onInterrupt: rerun` must be declared
+    explicitly, and `gg doctor` warns about it.
+  - gg passes the Action Marker to every effect as an idempotency key.
+  - `retryable: true` from `run` asserts the effect did not land or is safe to repeat; gg's normal retry budget and
+    cooldown then apply.
+  - `irreversible: true` (for example merge, grey-goo-ri issue #89) brings in the publishing fence (Q3g) and a
+    human-override check immediately before launch.
+- Q5a. Naming: gg's internal finders become Confirmation. Proposed glossary entry: **Confirmation**, the read of an
+  effect's real state by its Action Marker, after the effect and at Reconciliation. `verify` and `check` are avoided,
+  since Checks verify the agent's work.
+
 ## Open
 
-- Q5. An effect Action with no `find`.
 - Q8. Whether grey-goo-ri issue #23 waits for this design.
