@@ -139,6 +139,20 @@ The running record of the planning session. The research behind it is in
   effect's real state by its Action Marker, after the effect and at Reconciliation. `verify` and `check` are avoided,
   since Checks verify the agent's work.
 
+## Delivery and the freeze (2026-10-21)
+
+- Q8. Option 1 in full (data-defined Procedures, Claim tokens and `requires`, Check settings, the outcome tables,
+  Vertex `inputs`, routable stop and harness Outcomes, the publishing fence, the validator, and the shape changes they
+  bring) is built now, before grey-goo-ri issue #23. #23 then freezes the final shapes, with no version bump and no
+  readers for old markers.
+- Option 3 (user-defined Actions) comes after the freeze. #23 reserves what it needs, as it reserves `rescue` for
+  grey-goo-ri issue #68: `intent.action` as an open string, `confirm` evidence in the evidence slot, and `onInterrupt`.
+- Settled inside the tickets that need them: PR body and comment templates over `inputs` (replacing `render.prBody`),
+  the option-reference syntax, and where Layer Briefs, schemas and Personas live (lifting the "shipped Personas only"
+  shortcut in `lib/config.mjs`).
+- grey-goo-ri PR #92 (Node to Agent) merges first.
+
 ## Open
 
-- Q8. Whether grey-goo-ri issue #23 waits for this design.
+- Step 7: slice option 1 into tickets.
+- The ADR draft reversing request section 3.4.
