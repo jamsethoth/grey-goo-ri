@@ -168,6 +168,18 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     `max`; the total stays bounded.
   - Limit, to note in ADR 0014: the tree covers tracked and staged content, not untracked ignored files.
 
+- R2. One agent step per Procedure; multi-step work is Vertex composition (replaces the multi-Phase proposal):
+  - (a) A Procedure has at most one agent step, plus its recovery Phases. Zero agent steps is a deterministic Vertex
+    (a gate, a publish, later an effect).
+  - (b) Multi-step work is composed from Vertices. The shipped Flow becomes red, then green, then the reviewer and fix
+    loop, then done; `red` commits the tests and `green` reads them through `inputs`.
+  - (c) `resumeGreen` is dropped. Resuming a Session across Vertices waits for a use case.
+  - (d) A passing write Vertex leaves its work committed, and a write Vertex starts only on a clean worktree or one gg's
+    own records explain. This replaces the literal `phase === 'red'` dirty-worktree guard.
+  - (e) Rule tables may match typed `inputs` under the Q4a field rules.
+  - (f) Parallel Vertices (fan-out and join) are a possible future capability, outside this design.
+  - With one Claim per Visit, finding 2 of the review no longer applies; the Q3d gate applies once, at the Visit's end.
+
 ## Open
 
 - Step 7: slice option 1 into tickets.
