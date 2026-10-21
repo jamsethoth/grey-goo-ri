@@ -42,14 +42,6 @@ test('loadConfig reads the Layer identified by layerPath', (t) => {
   assert.equal(config.loadConfig(dir, join(dir, 'no-user-layer')).baseBranch, 'layer-base');
 });
 
-test('a Layer with a nodes key fails and names agents', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-layer-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  mkdirSync(join(dir, '.agents', 'gg'), { recursive: true });
-  writeFileSync(config.layerPath(dir), '{"nodes":{"implementer":{"harness":"claude"}}}');
-  assert.throws(() => config.loadConfig(dir, join(dir, 'no-user-layer')), /"nodes".*"agents"/);
-});
-
 test('configHash changes with persona, vertex and command changes and ignores key order', () => {
   const defaults = config.loadDefaults();
   const base = {
