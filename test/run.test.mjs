@@ -31,10 +31,10 @@ const IN_PROGRESS = 'gg:state:in-progress';
 const NEEDS_HUMAN = 'gg:state:needs-human';
 const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-// The shipped defaults with every Node on `harness` and, unless `fullFlow`, a one-Vertex Flow from tdd straight to done.
+// The shipped defaults with every Agent on `harness` and, unless `fullFlow`, a one-Vertex Flow from tdd straight to done.
 function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   const c = config.loadDefaults();
-  for (const node of Object.values(c.nodes)) Object.assign(node, { harness, model: 'model-x', effort: 'high' });
+  for (const agent of Object.values(c.agents)) Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   c.worktreeRoot = join(root, 'wt');
   if (!fullFlow) c.flows.default.ticket = { entry: 'implementer', vertices: { implementer: { use: 'implementer', procedure: 'tdd', then: 'done' } } };
   return c;
@@ -246,7 +246,7 @@ test('every line a Run prints names its repository, in the terminal and in run.l
 
 test('every error a Run throws names its repository', async (t) => {
   const p = fixture(t);
-  p.options.config.nodes.implementer.harness = 'nope';
+  p.options.config.agents.implementer.harness = 'nope';
   const preflight = await run.runTarget(p.options).then(() => null, (e) => e);
   assert.ok(preflight?.message.startsWith('[main] preflight failed:'), preflight?.message);
 
@@ -268,7 +268,7 @@ test('every error a Run throws names its repository', async (t) => {
 
 test('runEpic preflight throws naming vertex and harness before any gh call or worktree', async (t) => {
   const f = fixture(t, { fullFlow: true });
-  f.options.config.nodes.implementer.harness = 'nope';
+  f.options.config.agents.implementer.harness = 'nope';
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'preflight rejects the run');
   assert.match(err.message, /implementer/);
@@ -282,8 +282,8 @@ test('runEpic preflight throws naming vertex and harness before any gh call or w
 
 test('runEpic preflight names every failing vertex in one error', async (t) => {
   const f = fixture(t, { fullFlow: true });
-  f.options.config.nodes.implementer.harness = 'nope';
-  f.options.config.nodes.reviewer.harness = 'claude';
+  f.options.config.agents.implementer.harness = 'nope';
+  f.options.config.agents.reviewer.harness = 'claude';
   f.options.harnesses.claude = await import('../lib/harnesses/claude.mjs');
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'preflight rejects the run');
@@ -295,31 +295,31 @@ test('runEpic preflight names every failing vertex in one error', async (t) => {
   assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
 });
 
-test('a node without a harness fails admission naming the vertex and node', async (t) => {
+test('an agent without a harness fails admission naming the vertex and agent', async (t) => {
   const f = fixture(t, { fullFlow: true });
-  f.options.config.nodes.implementer.harness = null;
+  f.options.config.agents.implementer.harness = null;
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'admission rejects the run');
   const examples = fileURLToPath(new URL('../examples/', import.meta.url));
-  assert.equal(err.message.split('\n')[1], 'vertex implementer: no harness configured for node implementer');
+  assert.equal(err.message.split('\n')[1], 'vertex implementer: no harness configured for agent implementer');
   assert.equal(err.message.split('\n').at(-1), `Merge ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.equal(f.worktrees(), 1, 'no worktree');
 });
 
-test('preflight lists every unset Vertex and Node before one merge advice line', async (t) => {
+test('preflight lists every unset Vertex and Agent before one merge advice line', async (t) => {
   const f = fixture(t, { fullFlow: true });
-  f.options.config.nodes.implementer.harness = null;
-  f.options.config.nodes.reviewer.harness = null;
+  f.options.config.agents.implementer.harness = null;
+  f.options.config.agents.reviewer.harness = null;
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.equal(err.exitCode, 2);
   const examples = fileURLToPath(new URL('../examples/', import.meta.url));
   assert.deepEqual(err.message.split('\n'), [
     '[main] preflight failed:',
-    'vertex implementer: no harness configured for node implementer',
-    'vertex reviewer: no harness configured for node reviewer',
-    'vertex implementer-fix: no harness configured for node implementer',
+    'vertex implementer: no harness configured for agent implementer',
+    'vertex reviewer: no harness configured for agent reviewer',
+    'vertex implementer-fix: no harness configured for agent implementer',
     `Merge ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,
   ]);
   assert.deepEqual(f.gh.calls, []);
@@ -328,11 +328,11 @@ test('preflight lists every unset Vertex and Node before one merge advice line',
 
 test('preflight names an unset harness and an unknown harness in one error', async (t) => {
   const f = fixture(t, { fullFlow: true });
-  f.options.config.nodes.implementer.harness = null;
-  f.options.config.nodes.reviewer.harness = 'nope';
+  f.options.config.agents.implementer.harness = null;
+  f.options.config.agents.reviewer.harness = 'nope';
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'preflight rejects the run');
-  assert.match(err.message, /no harness configured for node implementer/);
+  assert.match(err.message, /no harness configured for agent implementer/);
   assert.match(err.message, /reviewer[^]*nope/, 'the unknown harness is named with its vertex');
   assert.equal(err.exitCode, 2, 'an unset harness exits 2');
   assert.deepEqual(f.gh.calls, [], 'no gh call');
@@ -1541,7 +1541,7 @@ test('a flow mixing harnesses runs each vertex on its own harness', async (t) =>
     claim: 'ok', summary: 'The review says ok.', dodMet: true, tddEvidenceOk: true, findings: [], diagnosis: '' } } };
   const f = fixture(t, { responses, fullFlow: true });
   const other = fakeHarness({ name: 'other', transcriptDir: join(f.root, 'transcripts-other'), responses, capabilities: { cost: false, reasoningTokens: false } });
-  f.options.config.nodes.reviewer.harness = 'other';
+  f.options.config.agents.reviewer.harness = 'other';
   f.options.harnesses.other = other;
 
   const results = await run.runTarget(f.options);

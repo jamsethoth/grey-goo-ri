@@ -3,7 +3,7 @@
   "baseBranch": "main",
   "worktreeRoot": "~/worktrees",
   "labelPrefix": "gg",
-  "nodes": {
+  "agents": {
     "implementer": {
       "persona": "implementer.md",
       "skills": [], "mcp": [], "plugins": [], "access": "workspace-write", "network": false

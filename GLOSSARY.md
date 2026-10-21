@@ -43,17 +43,18 @@ _Avoid_: spec, roadmap
 
 ### Graph
 
-**Node**:
+**Agent**:
 A reusable declaration of agent work: harness, model, effort, Persona, tools, Permission Intents and Quality Gates.
-_Avoid_: stage, role, agent (for the declaration)
+The running work is an Attempt in a Session; lowercase "agent" in its ordinary sense is fine.
+_Avoid_: stage, role, node (for the declaration)
 
 **Vertex**:
 A placement in a Flow that an Execution can occupy. Three kinds: Persona Vertex, Gate Vertex, Approval Vertex.
-_Avoid_: step, state
+_Avoid_: step, state, node (for the placement)
 
 **Persona Vertex**:
-A Vertex that runs a Node through a Procedure.
-_Avoid_: agent vertex, node (when the placement is meant)
+A Vertex that runs an Agent through a Procedure.
+_Avoid_: agent vertex
 
 **Gate Vertex**:
 A Vertex that runs one Declared Command and routes on pass or fail.
@@ -89,7 +90,7 @@ the named hold that stopped the Execution before any Action), its Outcome and ru
 _Avoid_: rationale, cause, end reason
 
 **Escalation**:
-Routing to a Persona Vertex with a stronger Node after a Bound is exhausted. It is automatic; needs-human is not.
+Routing to a Persona Vertex with a stronger Agent after a Bound is exhausted. It is automatic; needs-human is not.
 _Avoid_: fallback, hand-off
 
 ### Procedure
@@ -134,7 +135,7 @@ The task text given to an agent for one Phase.
 _Avoid_: instructions, task
 
 **Persona**:
-The text that defines how a Node's agent behaves, supplied as its system prompt.
+The text an Agent supplies as the system prompt of its Sessions, defining how they behave.
 _Avoid_: role, character
 
 **History**:
@@ -147,7 +148,7 @@ use gg's built-in read-only allowlist, such as read-only git and file reads, whi
 _Avoid_: script, task, allowed command
 
 **Permission Intent**:
-What a Node asks for in the abstract, such as read-only or workspace-write access and network, which each Harness
+What an Agent asks for in the abstract, such as read-only or workspace-write access and network, which each Harness
 translates into its own mechanisms.
 _Avoid_: permissions (the translated rules), allowlist
 
@@ -174,8 +175,8 @@ The Check that the test Declared Command passes after implementation.
 _Avoid_: green gate, test gate
 
 **Quality Gate**:
-A Check a Node declares over a Declared Command, such as lint, format or coverage, that must pass before the Node's
-output is accepted. A Node acceptance check, not a graph placement.
+A Check an Agent declares over a Declared Command, such as lint, format or coverage, that must pass before the
+Agent's output is accepted. An Agent acceptance check, not a graph placement.
 _Avoid_: gate (alone), persona gate
 
 **Integrity Assertion**:
@@ -246,14 +247,14 @@ The kind of an Outcome: advance, retry or stop.
 _Avoid_: category, severity
 
 **Resolution Policy**:
-A Node's rules for deriving one Outcome when its Signals disagree: ordering among non-advance Outcomes, the weight
+An Agent's rules for deriving one Outcome when its Signals disagree: ordering among non-advance Outcomes, the weight
 of the Claim without deterministic evidence, and retry budgets by Failure Class.
 _Avoid_: priority, precedence, conflict rule
 
 ### Harness
 
 **Harness**:
-The module that drives one Agent CLI for a Node and returns a Harness Result with normalised Usage.
+The module that drives one Agent CLI as an Agent declares and returns a Harness Result with normalised Usage.
 _Avoid_: adapter, provider, backend
 
 **Agent CLI**:
@@ -261,13 +262,13 @@ The external agent program a Harness drives: Claude Code or Codex.
 _Avoid_: model (for the program), harness (for the program)
 
 **Capability**:
-What a Harness declares it supports and how: exact, hint or unsupported for a Node field, and the presence or
+What a Harness declares it supports and how: exact, hint or unsupported for an Agent field, and the presence or
 absence of a measurement or behaviour.
 _Avoid_: feature, support level
 
 **Launch Profile**:
 The way a Harness starts sessions: the fixed flags and environment that give every session the same isolation,
-plus the per-call additions a Node's declaration requires.
+plus the per-call additions an Agent requires.
 _Avoid_: isolation mode, bare mode (one specific profile)
 
 **Confinement**:
@@ -363,21 +364,21 @@ _Avoid_: digest (alone), checksum
 
 **Approver**:
 An actor whose Decision gg accepts.
-_Avoid_: reviewer (reserved for the review Node), owner
+_Avoid_: reviewer (reserved for the review Agent), owner
 
 ### Configuration and trace
 
-**Node Library**:
-The shared set of named Nodes that Vertices use or override.
-_Avoid_: node registry, catalog
+**Agent Library**:
+The shared set of named Agents that Vertices use or override.
+_Avoid_: node library, agent registry, catalog
 
 **Layer**:
 One of the three configuration sources, defaults, user and repository, merged in that order. The defaults Layer is
-harness-neutral: its Nodes name no Harness, model or effort, so a user or repository Layer supplies them.
+harness-neutral: its Agents name no Harness, model or effort, so a user or repository Layer supplies them.
 _Avoid_: tier, override file
 
 **Resolved Flow**:
-A Flow after layering and Node expansion, as a Run actually uses it.
+A Flow after layering and Agent expansion, as a Run actually uses it.
 _Avoid_: compiled flow, effective flow
 
 **Configuration Snapshot**:

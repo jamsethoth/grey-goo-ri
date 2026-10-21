@@ -1,7 +1,7 @@
 # grey-goo-ri
 
-Node CLI (`gg`) that carries GitHub tickets through a configurable bounded workflow graph of persona nodes on
-agentic harnesses (Claude Code, Codex) to reviewed pull requests.
+Node CLI (`gg`) that carries GitHub tickets through a configurable bounded workflow graph whose Vertices run
+persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 
 ## Documents and their authority
 
@@ -30,7 +30,7 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 | `bin/gg.mjs` | `gg` entry point: usage and command dispatch |
 | `lib/opts.mjs` | option parsing |
 | `lib/config.mjs` | Layers, merge, migration table, Config Hash, Persona and Declared Command loading |
-| `lib/flow.mjs` | Flow loading, Node Library expansion, validation, Resolved Flow |
+| `lib/flow.mjs` | Flow loading, Agent Library expansion, validation, Resolved Flow |
 | `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
 | `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
 | `lib/procedures.mjs` | tdd, fix, review, plan as data (Actions, declared Checks, options, Outcome enum) |
@@ -60,7 +60,7 @@ agentic harnesses (Claude Code, Codex) to reviewed pull requests.
 | `lib/plan.mjs` | `gg plan` |
 | `lib/publish.mjs` | `gg publish` (ported) |
 | `scripts/run-suite.mjs` | the suite launcher Codex may run outside its sandbox (ADR 0010) |
-| `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Nodes |
+| `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Agents |
 
 ## Tests
 

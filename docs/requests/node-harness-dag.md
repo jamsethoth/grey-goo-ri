@@ -1,4 +1,4 @@
-# Request: a node / harness / workflow-graph framework for ticket-driven agentic development
+# Request: an agent / harness / workflow-graph framework for ticket-driven agentic development
 
 Date: 2026-10-14, revised 2026-10-15 after an adversarial review. Owner: James Irwin. Status: ready for planning.
 Supersedes feature-flow (`C:\dev\projects\feature-flow`, main at 89e1d67). The new tool is `gg`.
@@ -14,6 +14,9 @@ and mcps and plugins passed to an agentic harness. If we have this core behavior
 and expand or reduce the scope as necessary for different workflows. The node should be an abstraction, with harness
 specific implementation for codex and claude to start."
 
+In gg's language (GLOSSARY.md) "node" in this quote is now an Agent, the reusable declaration, or a Vertex, its
+placement in a Flow.
+
 Also required: usage metrics for every harness, detailed per-vertex tracing, a unified end-to-end view of a run, and
 management of the work submitted to a workflow across all its instances on one machine. The existing feature-flow
 implementation is thrown away; this is a ground-up rewrite in this repository.
@@ -25,25 +28,25 @@ implementation is thrown away; this is a ground-up rewrite in this repository.
   executables without a shell;
   a command string that cannot be avoided goes through the job-object runner.
 - Agents never run git write commands or gh. The orchestrator owns commits, pushes, PRs, comments and labels.
-- Topology is data. Work is code. No per-node code; a node is only configuration.
+- Topology is data. Work is code. No per-agent code; an agent is only configuration.
 - A session starts empty. The shipped defaults add no skills, plugins, MCP servers, hooks or repository instructions
   to any session. Everything an agent gets is declared in config. Ponytail and every other plugin are user or repo
   config, never framework.
-- No degraded runs: a node field its harness declares unsupported fails preflight; a field declared hint runs with
+- No degraded runs: an agent field its harness declares unsupported fails preflight; a field declared hint runs with
   its declared semantics and is recorded as hinted; a permission intent must be enforceable on every surface the
-  node uses or preflight fails. Nothing is silently dropped.
+  agent uses or preflight fails. Nothing is silently dropped.
 - Every agent action is traced with normalised usage. A field a harness cannot produce is declared absent, never zero.
 - Wrongly advancing is costlier than wrongly holding. Advance needs evidence. Which checks a procedure declares is
   configuration, visible in validation output; that advance never happens while a declared check is failing, and
-  that integrity violations stop, is not. The ordering among legitimate outcomes is per-node configuration.
+  that integrity violations stop, is not. The ordering among legitimate outcomes is per-agent configuration.
 - GitHub issues are the source of truth for what work exists and what humans decided. The local execution record is
   the source of truth for where the machine was. Human decisions are read only from records GitHub cannot edit.
 
 ## 3. Capabilities
 
-### 3.1 Node
+### 3.1 Agent
 
-A node is a named, declarative unit of agent work. Fields, all with declared semantics per harness (3.2):
+An Agent is a named, declarative unit of work for one Agent CLI. Fields, all with declared semantics per harness (3.2):
 
 | Field | Meaning |
 |---|---|
@@ -53,13 +56,13 @@ A node is a named, declarative unit of agent work. Fields, all with declared sem
 | `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name appears in code; default empty |
 | `mode` | `headless` (default) or `interactive` (the planner) |
 | `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates per surface |
-| `gates` | quality gates: named repo commands that must pass before this node's output is accepted (3.6) |
+| `gates` | quality gates: named repo commands that must pass before this agent's output is accepted (3.6) |
 | `resolution` | ordering policy among legitimate outcomes (3.4); shipped default, overridable |
 | `contextBudget` | optional; translated to the harness compaction threshold; compaction count logged |
 | `timeouts` | optional stall and wall-clock overrides (3.5) |
 
-Nodes live in a shared `nodes` library in the layered config. A vertex in a flow either inlines a definition or
-`use`s a library node with field overrides. Provenance, stats, session state and the trace key on the vertex id and
+Agents live in a shared `agents` library in the layered config. A vertex in a flow either inlines a definition or
+`use`s a library agent with field overrides. Provenance, stats, session state and the trace key on the vertex id and
 visit number.
 
 Secrets: any `mcp.env` value that is not a `${VAR}` reference fails validation. Expansion happens at launch into a
@@ -78,13 +81,13 @@ matrix follow Archon's provider contract for comparability
 guidance, not a requirement.
 
 ```
-name, capabilities, validate(node), resolveTools(node, ctx), run(call), interactiveArgs(node, opening, opts),
+name, capabilities, validate(agent), resolveTools(agent, ctx), run(call), interactiveArgs(agent, opening, opts),
 metrics(session), doctor(cfg)
 ```
 
 Capability semantics, per field per harness: `exact` means the harness enforces the field; `hint` means the field
 is passed as prompt text or a best-effort setting and the action is logged as hinted so eval can tell variants apart;
-`unsupported` means a node that lists the field fails preflight. A harness declares one of the three for `skills`,
+`unsupported` means an agent that lists the field fails preflight. A harness declares one of the three for `skills`,
 `mcp`, `plugins`, `access`, `network`, `contextBudget`. Current declarations: Claude `plugins` exact, `mcp`
 unsupported (until filtering lands), `skills` hint; Codex `plugins` exact, `mcp` exact for config servers, `skills`
 hint until verified per installed version. The matrix also declares `interactive`, `background`, `resume` with its
@@ -93,11 +96,11 @@ preconditions, `structuredOutput`, `sandbox: none | codex-windows | codex-posix`
 
 Permission intents are enforced per surface, and the harness states which surface each mechanism covers: shell
 commands, built-in file tools, MCP tools, plugins and hooks, network. A combination the harness cannot enforce on
-every surface the node uses fails preflight; for example a Claude read-only node that lists MCP servers, or a Codex
-node with `network: false` and an MCP server that reaches the network. On native Windows Claude has no command
-sandbox. A Claude `workspace-write` node therefore runs in a declared trusted-command mode, which the matrix names
+every surface the agent uses fails preflight; for example a Claude read-only agent that lists MCP servers, or a Codex
+agent with `network: false` and an MCP server that reaches the network. On native Windows Claude has no command
+sandbox. A Claude `workspace-write` agent therefore runs in a declared trusted-command mode, which the matrix names
 as `confinement: trusted-commands` rather than a sandbox: only the repo's declared commands and gg's allow list may
-run, git write and gh commands are denied, network tools are denied unless the node allows network, and the
+run, git write and gh commands are denied, network tools are denied unless the agent allows network, and the
 post-action assertions in 3.6 detect changes to the checked surfaces only. A command that writes outside the checked
 worktrees or reaches the network through its own means is neither prevented nor observed in this mode. The owner
 accepts this knowingly; the mode is recorded on every event and in the config hash, and it is never described as
@@ -126,7 +129,7 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Verified: the init event listed only
   built-in plugins, a project `.claude/skills` entry was absent, and a CLAUDE.md instruction was not followed.
 - Read-only actions add `--restricted`, which confines file tools to the working directory and removes Bash and
-  WebFetch, plus `--disallowedTools "mcp__*"` unless the node lists MCP. The review brief carries the diff text, so
+  WebFetch, plus `--disallowedTools "mcp__*"` unless the agent lists MCP. The review brief carries the diff text, so
   the reviewer needs no shell. Verified: `--restricted -p` authenticates with the subscription.
 - Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call, with
   the persona supplied from the visit's pinned snapshot (3.5), written to a file in the run directory, never from
@@ -168,7 +171,7 @@ reads the plugin's hook manifest, runs its session-start command through the she
 
 A flow is a graph over persona vertices plus two deterministic kinds and built-in terminals.
 
-- Persona vertex: a node (3.1) plus a `procedure` with options (3.4) plus edges.
+- Persona vertex: an agent (3.1) plus a `procedure` with options (3.4) plus edges.
 - `gate` vertex: runs a named repo command, must declare both pass and fail targets.
 - `approval` vertex: pauses for a human decision through GitHub labels (3.5). It declares its await label and a
   map of decide labels to outcomes; `approved` and `rejected` are the shipped default, a vertex may declare more.
@@ -217,12 +220,12 @@ Flows live inside the layered config as a `flows` map, selected by `--flow <name
 runs after the merge and names the layer file that broke it. Every run writes the fully resolved flow (after layering
 and `use` expansion) to the run directory and hashes that file.
 
-Validation before any ticket starts: unknown nodes or harnesses; unreachable vertices; back edges without bounds;
+Validation before any ticket starts: unknown agents or harnesses; unreachable vertices; back edges without bounds;
 `then` and `route` both set; route keys not in the procedure's outcome enum; enum values with no route and no built-in
 default; gate without both targets; gate commands not declared; approval decisions without a route; resume across
 different vertices or harnesses; listed fields the harness declares unsupported; permission intents the harness
-cannot enforce on every surface the node uses; strict-schema lint for Codex nodes; literal secrets in `mcp.env`;
-retries on a node whose harness options disable session persistence; labels the flow references missing in the
+cannot enforce on every surface the agent uses; strict-schema lint for Codex agents; literal secrets in `mcp.env`;
+retries on an agent whose harness options disable session persistence; labels the flow references missing in the
 repo; `done` reachable without a PR-creating vertex; a warning when reviewer and implementer share a model.
 
 ### 3.4 Procedures, outcomes and resolution
@@ -254,7 +257,7 @@ after every terminated attempt, whatever the harness result, before the table is
 integrity row even when the attempt timed out or returned nothing, so a prohibited change never survives into a
 retry. Checks other than integrity run only on a completed attempt with a valid claim. One transition table, obeyed by every harness and
 procedure, derives the outcome. It lives in exactly one interpreter module that takes the harness result, the
-validated claim, the check results and the node's `resolution` policy and returns the outcome, its direction and the
+validated claim, the check results and the agent's `resolution` policy and returns the outcome, its direction and the
 row that fired; harnesses and procedures never decide outcomes. The rows are data-shaped in code so they are tested
 row by row, and `gg doctor` prints a vertex's effective table next to its effective check list:
 
@@ -299,7 +302,7 @@ timeout, transient failure class), stop (blocked, misscoped, exhausted, integrit
 configurable: advance requires a completed harness result, a valid claim, every declared check of the action passing
 and no stop signal from any layer; an integrity violation always stops; review PASS requires no blocker or major
 findings, definition of done met and declared checks green, and a repeated findings hash routes REPEAT instead of
-looping. Configurable per node through `resolution`, with a shipped default: the order among non-advance outcomes
+looping. Configurable per agent through `resolution`, with a shipped default: the order among non-advance outcomes
 when several are signalled in one action (default: stop beats retry; within retry, in place before discard and retry;
 within stop, replan on misscoped, escalate before needs-human), the weight of the agent's claim when no deterministic
 evidence exists, and per-class retry budgets. Which checks a procedure declares is procedure configuration (above),
@@ -360,7 +363,7 @@ is a `node:sqlite` `BEGIN EXCLUSIVE` transaction held open on `<git common dir>/
 it when the holder dies, so there is no stale takeover (ADR 0008). The
 in-process mutex alone is not enough and the document says so. Retry on index lock with backoff. Stall timeout when
 the output stream and transcript stop growing (default about 10 min) and a wall clock per agent action (default about
-60 min), per node overridable; expiry kills the process tree through the job object and records a typed timeout
+60 min), per agent overridable; expiry kills the process tree through the job object and records a typed timeout
 outcome. GitHub writes are idempotent by action identity: PR found by head branch before create, one marked comment
 updated in place, label adds that tolerate presence.
 
@@ -429,7 +432,7 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
   the document says so; the counterexample "named test passed, unrelated old test failed" is a fixture that must be
   rejected on runners with per-test status. One still-green retry resumes the red session, then the check runs again.
   Red evidence is captured once after the test commit and reused in every PR body.
-- Quality gates: `gates` on the node name repo commands (test, lint, format, coverage). Pass or fail by exit code in
+- Quality gates: `gates` on the agent name repo commands (test, lint, format, coverage). Pass or fail by exit code in
   v1; thresholds come from the tool's own flags. Output captured, fed back on the bounded retry, recorded as its own
   event. Quality gate results go into the reviewer's brief.
 - Test test immutability check: test paths are the repo's declared test globs (default pattern shipped) and include additions,
@@ -510,7 +513,7 @@ sessions avoid.
 
 ### 3.8 Planning and replanning
 
-The planner is a node with `mode: interactive`, run at epic level by `gg plan`, with the context-budget stop hook and
+The planner is an agent with `mode: interactive`, run at epic level by `gg plan`, with the context-budget stop hook and
 background sessions ported. `misscoped` from any ticket vertex lands in the replan terminal; `gg plan --replan <epic>`
 resumes planning with the collected diagnoses. Publish keeps its planning-session guard for flows with a plan
 section, and publish resolves ticket dependencies into blocking issues as today.
@@ -518,12 +521,12 @@ section, and publish resolves ticket dependencies into blocking issues as today.
 ### 3.9 Config and migration
 
 Three layers, defaults < user < repo, same merge rules as flows, under `.agents/gg/`. The shipped defaults declare
-nodes with empty `skills`, `mcp` and `plugins`, no hooks and no injection. They name no harness, model or effort; a
+agents with empty `skills`, `mcp` and `plugins`, no hooks and no injection. They name no harness, model or effort; a
 user or repo Layer supplies them, and `examples/` holds a Claude and a Codex Layer to copy. Until Layers land, only
 the fake harness runs. The owner's user config adds ponytail or
 anything else. The four stage keys, `stageTools`, `toolkit`, `escalationEnabled`, `maxReviewRounds` and
 `contextBudget.<stage>` do not exist in gg; a gg config file using one gets a loud load error with a migration table
-naming the replacement (`nodes`, `harnesses`, `flows`). Keys that carry over by name: `planApproval`,
+naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry over by name: `planApproval`,
 `maxParallel`, `stuckAfterHours`, `baseBranch`, `worktreeRoot`, `allowNetwork`, `style`, `apiPrices`,
 `contextBudget.byModel`. Eval variants are config layers and may change flow structure.
 
@@ -553,7 +556,7 @@ Ported as they are:
 - Codex: sandbox and `-C` before resume, sandbox re-check from the rollout, thread id fallback, usage delta, MXC
   fallback, node_repl lock warning, persona on first prompt only, strict schemas, allowlists as inline tables, listing
   failures throw, cost from `apiPrices` or null.
-- Claude: all plugins off then the node's back by directory, allow and deny lists with prefixed twins, missing plugin
+- Claude: all plugins off then the agent's back by directory, allow and deny lists with prefixed twins, missing plugin
   fails before spawn. (ff's throw on `is_error` or missing structured output is superseded; see the deliberate
   changes below.)
 - Preflight resolves tools for every active vertex before any gh call or worktree, all failures in one error; plan
@@ -630,7 +633,7 @@ hang, and a capability matrix the validator reads.
 ## 7. Deferred
 
 Bare-mode launch profile (switch when subscription auth works; doctor probes it); replay beyond
-resume; node-level brief files; red and green on separate vertices; parallel branches and fan-out inside a ticket;
+resume; agent-level brief files; red and green on separate vertices; parallel branches and fan-out inside a ticket;
 non-GitHub ticket sources; multi-machine work management; multiple approvers and git-native signed approvals;
 output parsers for quality gate metrics; Claude MCP and skill filtering (becomes exact when the CLI supports it).
 

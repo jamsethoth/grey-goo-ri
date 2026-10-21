@@ -90,12 +90,12 @@ test('gg run fails preflight naming the unimplemented harness', (t) => {
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
-test('gg run without a harness fails admission naming the vertex and node', (t) => {
+test('gg run without a harness fails admission naming the vertex and agent', (t) => {
   const { repo, ggIn } = tempRepo(t);
   const r = ggIn('run', '1');
   assert.equal(r.status, 2, r.stderr);
-  assert.ok(r.stderr.includes('vertex implementer: no harness configured for node implementer\n'), r.stderr);
-  assert.ok(r.stderr.includes('vertex reviewer: no harness configured for node reviewer\n'), r.stderr);
+  assert.ok(r.stderr.includes('vertex implementer: no harness configured for agent implementer\n'), r.stderr);
+  assert.ok(r.stderr.includes('vertex reviewer: no harness configured for agent reviewer\n'), r.stderr);
   assert.ok(r.stderr.includes(fileURLToPath(new URL('../examples/claude.json', import.meta.url))), r.stderr);
   assert.ok(r.stderr.includes('into the user Layer at '), r.stderr);
   assert.equal((r.stderr.match(/Merge /g) ?? []).length, 1);

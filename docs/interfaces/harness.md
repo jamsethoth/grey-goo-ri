@@ -9,12 +9,12 @@ decided by request section 3.2; Usage token rules by section 3.7.
 
 | Member | Shape |
 | --- | --- |
-| `name` | string, the Harness name a Node selects |
+| `name` | string, the Harness name an Agent selects |
 | `capabilities` | the Capability matrix below |
-| `validate(node)` | checks a Node against the matrix; returns a typed result, never throws |
-| `resolveTools(node, ctx)` | the tools the Harness will pass for this Node, hint fields marked |
+| `validate(agent)` | checks an Agent against the matrix; returns a typed result, never throws |
+| `resolveTools(agent, ctx)` | the tools the Harness will pass for this Agent, hint fields marked |
 | `run(call)` | runs one Attempt; resolves `{ response, result, failure }` |
-| `interactiveArgs(node, opening, opts)` | argv for an interactive session opened with `opening` |
+| `interactiveArgs(agent, opening, opts)` | argv for an interactive session opened with `opening` |
 | `metrics(session)` | cumulative Usage of a Session |
 | `doctor(cfg)` | behaviour probes for `gg doctor` |
 
@@ -26,7 +26,7 @@ decided by request section 3.2; Usage token rules by section 3.7.
 
 | Field | Values |
 | --- | --- |
-| `skills`, `mcp`, `plugins`, `access`, `network`, `contextBudget` | `exact` (the Harness enforces it), `hint` (passed as prompt text or best effort, logged as hinted), `unsupported` (a Node listing it fails preflight) |
+| `skills`, `mcp`, `plugins`, `access`, `network`, `contextBudget` | `exact` (the Harness enforces it), `hint` (passed as prompt text or best effort, logged as hinted), `unsupported` (an Agent listing it fails preflight) |
 | `interactive` | whether `interactiveArgs` is available |
 | `background` | whether the Harness can run an Attempt in the background |
 | `resume` | whether a Session can be resumed, with its preconditions |
@@ -39,7 +39,7 @@ decided by request section 3.2; Usage token rules by section 3.7.
 ## `run(call)`
 
 ```
-call = { marker, vertex, visit, phase, attempt, node, persona: { bytes, hash }, brief, schema, cwd,
+call = { marker, vertex, visit, phase, attempt, agent, persona: { bytes, hash }, brief, schema, cwd,
          resume: sessionId | null, access, network, tools, timeouts: { stallMs, wallMs }, env }
 ```
 

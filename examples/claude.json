@@ -1,5 +1,5 @@
 {
-  "nodes": {
+  "agents": {
     "implementer": { "harness": "claude", "model": "opus", "effort": "high" },
     "reviewer": { "harness": "claude", "model": "sonnet", "effort": "high" }
   }

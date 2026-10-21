@@ -17,7 +17,7 @@ const call = (cwd, overrides = {}) => ({
   visit: 1,
   phase: 'red',
   attempt: 1,
-  node: { harness: 'fake' },
+  agent: { harness: 'fake' },
   persona: { bytes: '# implementer\n', hash: 'sha256:persona' },
   brief: 'write the failing tests',
   schema: { type: 'object' },

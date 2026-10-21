@@ -17,11 +17,11 @@ const reversed = (value) => Array.isArray(value) ? value.map(reversed)
   : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, reversed(v)]))
     : value;
 
-test('loadDefaults reads the shipped nodes, flow and personas', () => {
+test('loadDefaults reads the shipped agents, flow and personas', () => {
   const defaults = config.loadDefaults();
-  assert.deepEqual(Object.keys(defaults.nodes).sort(), ['implementer', 'reviewer']);
-  assert.equal(defaults.nodes.implementer.persona, 'implementer.md');
-  assert.equal(defaults.nodes.reviewer.persona, 'reviewer.md');
+  assert.deepEqual(Object.keys(defaults.agents).sort(), ['implementer', 'reviewer']);
+  assert.equal(defaults.agents.implementer.persona, 'implementer.md');
+  assert.equal(defaults.agents.reviewer.persona, 'reviewer.md');
   assert.equal(defaults.flows.default.ticket.entry, 'implementer');
   for (const name of ['implementer.md', 'reviewer.md']) {
     const file = readFileSync(personaPath(name));
@@ -68,8 +68,8 @@ test('configHash changes with persona, vertex and command changes and ignores ke
 });
 
 test('the shipped defaults name no harness, model or effort', () => {
-  for (const [name, node] of Object.entries(config.loadDefaults().nodes)) {
-    for (const key of ['harness', 'model', 'effort']) assert.equal(Object.hasOwn(node, key), false, `${name} has no ${key}`);
+  for (const [name, agent] of Object.entries(config.loadDefaults().agents)) {
+    for (const key of ['harness', 'model', 'effort']) assert.equal(Object.hasOwn(agent, key), false, `${name} has no ${key}`);
   }
 });
 
