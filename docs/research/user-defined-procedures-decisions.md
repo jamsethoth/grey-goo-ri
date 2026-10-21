@@ -180,6 +180,10 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (f) Parallel Vertices (fan-out and join) are a possible future capability, outside this design.
   - With one Claim per Visit, finding 2 of the review no longer applies; the Q3d gate applies once, at the Visit's end.
 
+  - (g) The shipped Flow routes a review's `changes` by a typed reviewer field: `needsTest: true` goes to `red` (a
+    failing test reproduces the finding first), anything else to `implementer-fix`. `red` reads the findings through
+    an `optional` input, absent on its first Visit. `optional` stays.
+
 ## Open
 
 - Step 7: slice option 1 into tickets.
