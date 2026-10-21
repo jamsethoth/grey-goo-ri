@@ -38,7 +38,8 @@ The running record of the planning session. The research behind it is in
 - Q4. User outcome rows are first match, checked at admission:
   - A row that can never fire, because earlier rows cover every case it matches, is an error.
   - A partial overlap is a warning naming the input combinations where an earlier row wins; `gg doctor` prints them.
-  - With no row matching and no `otherwise`, the Outcome is `needs-human`. A missing input holds the Ticket (D4).
+  - With no row matching and no `otherwise`, the Outcome is the Claim token (amended under Q3e). A missing input holds
+    the Ticket (D4).
 - Q4a. A row may match only enum, boolean and integer fields:
   - gg's own facts: Check state, harness status and failure class.
   - The user's own vocabulary: Claim tokens, Check ids, and typed fields in the user's response schemas (later, a user
@@ -48,9 +49,29 @@ The running record of the planning session. The research behind it is in
 - Q4b. Integers compare with `<`, `<=`, `>`, `>=` and `=` against constants only, so the overlap check stays exact by
   testing each row's boundary values. Comparing two fields to each other is not allowed.
 
+- Q3. Claim roles. Each Claim token a Procedure declares has one role, which steers the Visit while it runs:
+  - `advance`: gating Checks block it; a failing gating Check runs its `recover` Phase while one is left. Remaining
+    Actions run.
+  - `route`: Checks are recorded but do not block; no recovery; remaining Actions run.
+  - `stop`: Checks are recorded; the remaining Actions are skipped and the Visit ends.
+  - Every Procedure declares at least one `advance` token. The shipped `tdd` is `{ ok: advance, blocked: stop,
+    misscoped: stop }`; nothing compares against the literal tokens any more.
+- Q3a. A commit Action declares `requires: [<check ids>]`. Admission rejects a commit reachable after a write-access
+  agent step unless it requires at least one Check that ran after that step. When a required Check failed, the commit
+  is skipped and the Ticket holds with the work uncommitted.
+- Q3b. A Check step has an `id`, a kind (option 1: `command`, `tests-fail`, `changes`, `immutability`, `repeat`), the
+  kind's parameters, `gate` (default true), `recover` (a Phase) and `onFail` (an Outcome). Its state is `passed`,
+  `failed` or `exhausted`, and each result records its effective `gate`.
+- Q3c. `relaxed` is dropped. A Vertex option may set a Check's `gate` to false; `gg doctor` warns loudly when an option
+  turns off a gate the Procedure declared gating. Integrity Assertions are never non-gating (Q2).
+- Q3d. The Outcome is decided in this order, first decision wins: gg's fixed rows; a `stop` token's Outcome; for an
+  `advance` token with a failed gating Check, its `recover` Phase or else its `onFail` (the first failing gate in step
+  order), with user rules skipped; the user rules (Q4); `otherwise`; the token itself.
+- Q3e. Admission lists every Outcome a Procedure can produce (tokens, `onFail` values, rule Outcomes, `otherwise`) and
+  rejects any that has no route on the Vertex and is not a Terminal.
+
 ## Open
 
-- Q3. The role model for the transition table (Claim tokens get the role advance, route or stop).
 - Q5. An effect Action with no `find`.
 - Q6. Whether stop Claims are routable.
 - Q7. Data between Vertices for use case e.
