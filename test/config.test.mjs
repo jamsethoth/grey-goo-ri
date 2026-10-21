@@ -90,33 +90,70 @@ test('the Config Hash does not depend on the install path', async (t) => {
   assert.equal(hashes[0], hashes[1]);
 });
 
-// Ported from feature-flow test/core.test.mjs (parseCommands, lib/config.mjs:79-95).
-test('parseCommands reads the ## Commands section only', () => {
-  const md = '# Repo\n- test: `nope`\n\n## Commands\n\n- test: `npm test`\n* Lint: `npm run lint`\n- run: `TODO`\n\n## Other\n- run: `x`\n';
-  assert.deepEqual(config.parseCommands(md), { test: 'npm test', lint: 'npm run lint' });
-});
-
-test('parseCommands accepts hyphenated names', () => {
-  assert.deepEqual(config.parseCommands('## Commands\n- lint-js: `x`\n'), { 'lint-js': 'x' });
-});
-
-test('parseCommands warns about duplicate names via the warn callback', () => {
-  const warnings = [];
-  const out = config.parseCommands('## Commands\n- test: `a`\n- test: `b`\n', (m) => warnings.push(m));
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /test/);
-  assert.equal(out.test, 'b');
-});
-
-test('parseCommands of this repository AGENTS.md declares the suite launcher as test', () => {
-  const md = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8');
-  assert.deepEqual(config.parseCommands(md), { test: 'node scripts/run-suite.mjs' });
-});
-
-test('loadCommands reads AGENTS.md from the repository root and is empty without one', (t) => {
+// A repository root and a home directory, each with the Layer text given (or none).
+function layers(t, { repo, home } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-config-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  assert.deepEqual(config.loadCommands(dir), {});
-  writeFileSync(join(dir, 'AGENTS.md'), '# r\n\n## Commands\n\n- test: `npm test`\n');
-  assert.deepEqual(config.loadCommands(dir), { test: 'npm test' });
+  const roots = { repo: join(dir, 'repo'), home: join(dir, 'home') };
+  for (const [name, text] of Object.entries({ repo, home })) {
+    mkdirSync(join(roots[name], '.agents', 'gg'), { recursive: true });
+    if (text !== undefined) writeFileSync(config.layerPath(roots[name]), text);
+  }
+  return roots;
+}
+
+test('loadConfig takes Declared Commands whole from the repository Layer', (t) => {
+  const { repo, home } = layers(t, { repo: '{"commands":{"test":"npm test","lint-js":"npm run lint"}}', home: '{"baseBranch":"dev"}' });
+  const c = config.loadConfig(repo, home);
+  assert.deepEqual(c.commands, { test: 'npm test', 'lint-js': 'npm run lint' });
+  assert.equal(c.baseBranch, 'dev');
+  assert.equal(Object.hasOwn(config.loadDefaults(), 'commands'), false, 'the shipped defaults declare no commands');
+});
+
+test('loadConfig reads no Declared Commands from AGENTS.md', (t) => {
+  const { repo, home } = layers(t);
+  writeFileSync(join(repo, 'AGENTS.md'), '# r\n\n## Commands\n\n- test: `npm test`\n');
+  assert.equal(config.loadConfig(repo, home).commands, undefined);
+});
+
+test('a commands key in the user Layer is a load error naming the file', (t) => {
+  const { repo, home } = layers(t, { repo: '{"commands":{"test":"npm test"}}', home: '{"commands":{"test":"npm test"}}' });
+  assert.throws(() => config.loadConfig(repo, home), (err) => {
+    assert.equal(err.message, `${config.layerPath(home)}: commands may be set only in a repository Layer`);
+    return true;
+  });
+});
+
+test('a Layer with a duplicate key in one object is a load error naming the file and key', (t) => {
+  const repoDup = layers(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
+  assert.throws(() => config.loadConfig(repoDup.repo, repoDup.home),
+    { message: `${config.layerPath(repoDup.repo)}: key "test" appears twice in one object` });
+  const userDup = layers(t, { home: '{"agents":{"implementer":{"model":"a","model":"b"}}}' });
+  assert.throws(() => config.loadConfig(userDup.repo, userDup.home),
+    { message: `${config.layerPath(userDup.home)}: key "model" appears twice in one object` });
+  // Equal keys in sibling objects, in array elements and inside a string value are not duplicates.
+  const fine = layers(t, { repo: '{"a":{"k":1},"b":{"k":"\\"k\\": 2"},"c":[{"k":1},{"k":2}],"d":{"k\\"":1,"k":2}}' });
+  assert.deepEqual(config.loadConfig(fine.repo, fine.home).b, { k: '"k": 2' });
+});
+
+test('commandProblems accepts a valid set and names each malformed entry', () => {
+  const file = config.layerPath('repo');
+  const missing = `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
+  const value = (name) => `${file}: command ${name} must be a non-empty single-line string`;
+  assert.deepEqual(config.commandProblems({ test: 'npm test', 'lint-js': 'x' }, file), []);
+  assert.deepEqual(config.commandProblems(undefined, file), [missing]);
+  assert.deepEqual(config.commandProblems({ Test: 'npm test' }, file), [`${file}: command name "Test" must match [a-z][a-z0-9-]*`, missing]);
+  for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) assert.deepEqual(config.commandProblems({ test: bad }, file), [value('test')], JSON.stringify(bad));
+  for (const bad of [['npm test'], 'npm test', null]) {
+    assert.deepEqual(config.commandProblems(bad, file), [`${file}: commands must be an object from name to command line`], JSON.stringify(bad));
+  }
+});
+
+// Until the cutover (grey-goo-ri issue #97): feature-flow builds this repository and reads its AGENTS.md line.
+test('this repository AGENTS.md Commands line matches its repository Layer', (t) => {
+  const md = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8');
+  const [, line] = md.match(/^## Commands\n\n- test: `([^`]+)`/m);
+  assert.equal(line, 'node scripts/run-suite.mjs');
+  const { home } = layers(t);
+  assert.deepEqual(config.loadConfig(repoRoot, home).commands, { test: line });
 });

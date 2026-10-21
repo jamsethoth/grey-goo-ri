@@ -528,7 +528,9 @@ anything else. The four stage keys, `stageTools`, `toolkit`, `escalationEnabled`
 `contextBudget.<stage>` do not exist in gg; a gg config file using one gets a loud load error with a migration table
 naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry over by name: `planApproval`,
 `maxParallel`, `stuckAfterHours`, `baseBranch`, `worktreeRoot`, `allowNetwork`, `style`, `apiPrices`,
-`contextBudget.byModel`. Eval variants are config layers and may change flow structure.
+`contextBudget.byModel`. Eval variants are config layers and may change flow structure. Declared Commands are a
+`commands` object in the repo Layer only: a `commands` key in the defaults or user Layer is a load error, as is a
+Layer file with a duplicate key, and preflight checks each name and command line (ADR 0013).
 
 ## 4. Behaviours to port, and deliberate changes
 
