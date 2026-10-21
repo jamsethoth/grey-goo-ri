@@ -49,29 +49,35 @@ The running record of the planning session. The research behind it is in
 - Q4b. Integers compare with `<`, `<=`, `>`, `>=` and `=` against constants only, so the overlap check stays exact by
   testing each row's boundary values. Comparing two fields to each other is not allowed.
 
-- Q3. Claim roles. Each Claim token a Procedure declares has one role, which steers the Visit while it runs:
-  - `advance`: gating Checks block it; a failing gating Check runs its `recover` Phase while one is left. Remaining
-    Actions run.
-  - `route`: Checks are recorded but do not block; no recovery; remaining Actions run.
-  - `stop`: Checks are recorded; the remaining Actions are skipped and the Visit ends.
-  - Every Procedure declares at least one `advance` token. The shipped `tdd` is `{ ok: advance, blocked: stop,
-    misscoped: stop }`; nothing compares against the literal tokens any more.
+- Q3. Claim tokens (revised 2026-10-21; the earlier advance/route/stop roles are replaced). Each Claim token a
+  Procedure declares is either `{ requires: [<check ids>] }` or `{ stop: true }`:
+  - A Check the claimed token requires blocks it. While that Check has recovery left, its `recover` Phase runs.
+    Remaining Actions run. `requires: []` is what a review's `changes` used to be.
+  - A `stop` token records its Phase's Checks, skips the remaining Actions and ends the Visit.
+  - Nothing compares against literal tokens any more. The shipped `tdd` is `{ ok: { requires: [red, green] },
+    blocked: { stop: true }, misscoped: { stop: true } }` (Check ids illustrative).
 - Q3a. A commit Action declares `requires: [<check ids>]`. Admission rejects a commit reachable after a write-access
   agent step unless it requires at least one Check that ran after that step. When a required Check failed, the commit
   is skipped and the Ticket holds with the work uncommitted.
 - Q3b. A Check step has an `id`, a kind (option 1: `command`, `tests-fail`, `changes`, `immutability`, `repeat`), the
-  kind's parameters, `gate` (default true), `recover` (a Phase) and `onFail` (an Outcome). Its state is `passed`,
-  `failed` or `exhausted`, and each result records its effective `gate`.
-- Q3c. `relaxed` is dropped. A Vertex option may set a Check's `gate` to false; `gg doctor` warns loudly when an option
-  turns off a gate the Procedure declared gating. Integrity Assertions are never non-gating (Q2).
-- Q3d. The Outcome is decided in this order, first decision wins: gg's fixed rows; a `stop` token's Outcome; for an
-  `advance` token with a failed gating Check, its `recover` Phase or else its `onFail` (the first failing gate in step
-  order), with user rules skipped; the user rules (Q4); `otherwise`; the token itself.
+  kind's parameters, an optional `recover: { phase, max }` and an optional `onFail` Outcome. It records `state`
+  (`passed` or `failed`) and `runs` (an integer). There is no `gate` setting: whether a Check blocks depends on the
+  claimed token's `requires`.
+- Q3c. `relaxed` and `exhausted` are dropped as Check states. Rules see a Check only after recovery has finished, so
+  `failed` is final; a rule that cares how many times it ran matches `runs` (Q4b). A Vertex option may remove a Check
+  from a token's `requires` (today's `requireTestPass: false`); `gg doctor` warns loudly when it does. Integrity
+  Assertions are never removable (Q2).
+- Q3d. **Under review.** The Outcome order (gg's fixed rows; a `stop` token; a required Check failed after recovery
+  gives its `onFail`, skipping user rules; user rules; `otherwise`; the token) is to be revisited in detail, together
+  with whether a token that can lead to `done` may have `requires: []`.
 - Q3e. Admission lists every Outcome a Procedure can produce (tokens, `onFail` values, rule Outcomes, `otherwise`) and
   rejects any that has no route on the Vertex and is not a Terminal.
 
 ## Open
 
+- Q3d. The Outcome order, and empty `requires` on a token that can reach `done`.
+- Q3f. Whether harness exhaustion (timeout, transient, unparsed) is a routable gg-named Outcome; integrity and
+  run-stop never are.
 - Q5. An effect Action with no `find`.
 - Q6. Whether stop Claims are routable.
 - Q7. Data between Vertices for use case e.
