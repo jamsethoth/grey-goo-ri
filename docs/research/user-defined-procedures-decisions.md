@@ -105,6 +105,20 @@ The running record of the planning session. The research behind it is in
   - Open for step 5: `pr-upsert` and `comment` bodies become templates over `inputs` and the Vertex's own outputs,
     replacing the hard-coded `render.prBody`.
 
+## Validation (2026-10-21)
+
+- V1. Static first: everything checkable from the definition is checked from the definition; only facts that need
+  execution (a test result, an agent's answer, a remote call) are runtime errors.
+  - One validator module produces the Resolved Flow plus errors and warnings. `gg doctor` and `gg run` admission
+    both call it, so a config cannot pass one and fail the other. `gg doctor` prints each Vertex's effective
+    Procedure, Checks, rule tables and reachable Outcomes, and exits non-zero on any error.
+  - It checks: syntax and name resolution; strict response schemas whose Claim enum equals the declared tokens, with
+    no case-only differences; the Procedure rules (Q1, Q3, Q3a, Q2); the rule tables (Q4, Q3d, Q6); the graph (every
+    Outcome routed, the publishing fence, every cycle and escalation chain bounded, inputs produced on every path,
+    unreachable Vertices warned); and trust and harness admission (I5, `validate`).
+- V2. Scenario runs are backlogged as grey-goo-ri issue #98: scripted Claims and Check results run through the real
+  interpreter offline on the fake harness, to show every branch is reachable and behaves as intended.
+
 ## Open
 
 - Q5. An effect Action with no `find`.
