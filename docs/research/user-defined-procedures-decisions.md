@@ -183,6 +183,19 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     an `optional` input, absent on its first Visit. `optional` stays.
   - With one Claim per Visit, finding 2 of the review no longer applies; the Q3d gate applies once, at the Visit's end.
 
+- R3. Test Immutability:
+  - (a) It is in gg's fixed integrity row, asserted after every agent Attempt of every write Vertex, recovery Attempts
+    included. It is not declared, not recoverable and not routable; a violation stops the Ticket (Q2).
+  - (b) A Procedure declares how much it may touch tests: `tests: frozen` (the default), `tests: named: <input>` (only
+    the test files listed in an input, as `implementer-fix` with the review's findings), or `tests: write` (`red`,
+    `qa`). `gg doctor` prints each Vertex's setting.
+  - (c) The baseline is the last commit gg made in the Execution, or the Execution's base before any. Every gg commit
+    either passed Test Immutability or came from a Vertex allowed to change tests.
+  - (d) The reviewer's "test files changed since red" becomes "since the Execution's first test commit", found from
+    gg's own commit records.
+  - (e) Test paths are a repository-Layer setting, `testPaths`, defaulting to today's `DEFAULT_TEST_GLOBS` plus the
+    dependency directories. Only the repository Layer may set it, as with `commands` (ADR 0013).
+
 ## Open
 
 - Step 7: slice option 1 into tickets.
