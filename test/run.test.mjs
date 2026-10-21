@@ -219,9 +219,51 @@ test('not-ready skips name the reason and make only the discovery read', async (
   ]) {
     const f = fixture(t, { issue });
     assert.equal(ticketResult(await run.runTarget(f.options)).outcome, 'skipped');
-    assert.ok(f.logs.includes(`#${TICKET} skipped: it is not ready: ${reason}`), JSON.stringify(f.logs));
+    assert.ok(f.logs.includes(`[main] #${TICKET} skipped: it is not ready: ${reason}`), JSON.stringify(f.logs));
     assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']]);
   }
+});
+
+test('every line a Run prints names its repository, in the terminal and in run.log', async (t) => {
+  // A fault whose report gets HTTP 502 and whose label edit fails logs from run, the interpreter and github.
+  const f = fixture(t, { labels: [IN_PROGRESS], failEdit: true });
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  await record.save(rec);
+  f.options.git = { ...gitModule, ensureWorktree: async () => { throw new Error('worktree add failed'); } };
+  failComment(f);
+
+  await run.runTarget(f.options);
+  const prefix = `[${basename(f.mainRoot)}] `;
+  for (const line of [`${prefix}#${TICKET} ERROR worktree add failed`, `${prefix}#${TICKET} fault report failed:`, `${prefix}#${TICKET} ERROR label update`]) {
+    assert.ok(f.logs.some((l) => l.startsWith(line)), `${line}: ${JSON.stringify(f.logs)}`);
+  }
+  assert.ok(f.logs.some((l) => l.startsWith(prefix) && /failure, retry 1 of/.test(l)), `the retry line: ${JSON.stringify(f.logs)}`);
+  assert.ok(f.logs.every((l) => l.startsWith(prefix)), JSON.stringify(f.logs));
+  const runLog = readFileSync(join(f.commonDir, 'gg', 'runs', lastRun(f), 'run.log'), 'utf8');
+  for (const m of f.logs) assert.ok(runLog.includes(` ${m}\n`), `run.log holds ${m}`);
+});
+
+test('every error a Run throws names its repository', async (t) => {
+  const p = fixture(t);
+  p.options.config.nodes.implementer.harness = 'nope';
+  const preflight = await run.runTarget(p.options).then(() => null, (e) => e);
+  assert.ok(preflight?.message.startsWith('[main] preflight failed:'), preflight?.message);
+
+  const v = fixture(t);
+  github.setGh(async (args) => { throw new Error(`gh ${args.join(' ')} exited 1\nHTTP 404: Not Found`); });
+  const view = await run.runTarget(v.options).then(() => null, (e) => e);
+  assert.ok(view?.message.startsWith(`[main] gh issue view ${TICKET} `), view?.message);
+
+  const f = fixture(t, { issues: epicOf([21], { 21: { state: 'CLOSED' } }) });
+  f.options.target = EPIC;
+  const epic = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.ok(epic?.message.startsWith(`[main] #${EPIC}: nothing ready`), epic?.message);
+
+  const g = fixture(t);
+  g.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
+  const standalone = await run.runTarget(g.options).then(() => null, (e) => e);
+  assert.ok(standalone?.message.startsWith(`[main] #${TICKET} is a standalone Ticket`), standalone?.message);
 });
 
 test('runEpic preflight throws naming vertex and harness before any gh call or worktree', async (t) => {
@@ -274,7 +316,7 @@ test('preflight lists every unset Vertex and Node before one merge advice line',
   assert.equal(err.exitCode, 2);
   const examples = fileURLToPath(new URL('../examples/', import.meta.url));
   assert.deepEqual(err.message.split('\n'), [
-    'preflight failed:',
+    '[main] preflight failed:',
     'vertex implementer: no harness configured for node implementer',
     'vertex reviewer: no harness configured for node reviewer',
     'vertex implementer-fix: no harness configured for node implementer',
@@ -2121,7 +2163,7 @@ test('a ticket lock failure is that ticket\'s fault and run_end waits for every 
   const aEnded = gate();
   f.options.log = (m) => {
     f.logs.push(m);
-    if (m.startsWith('#22 ERROR')) bFailed.open();
+    if (m.startsWith('[main] #22 ERROR')) bFailed.open();
   };
   hookGh(f, async (args) => {
     if (addsLabel(args, 21, 'gg:state:ready-for-qa')) aEnded.open();
