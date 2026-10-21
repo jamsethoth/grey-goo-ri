@@ -88,11 +88,16 @@ The running record of the planning session. The research behind it is in
 - Q3e. Admission lists every Outcome a Procedure can produce (tokens, `onFail` values, rule Outcomes, `otherwise`) and
   rejects any that has no route on the Vertex and is not a Terminal.
 
+- Q6. A `stop` token's Outcome is routable, defaulting to `needs-human`. A third first-match table, `stopped`, may
+  refine it; it reads only the Claim and its typed fields, since the remaining Actions never ran. The shipped
+  `misscoped -> replan` becomes an ordinary route in the shipped Flow, not a default in `edge()`.
+- Q3f. Harness exhaustion is routable through three gg-named Outcomes, each defaulting to `needs-human`:
+  `harness-timeout`, `harness-transient` and `harness-unparsed`. Integrity violations and run-stop classes (`auth`,
+  `quota`, `budget`) are never routable.
+- Both Q6 and Q3f Outcomes are fenced from publishing Terminals (Q3g), and each target Vertex needs its own bound (I3).
+
 ## Open
 
-- Q3f. Whether harness exhaustion (timeout, transient, unparsed) is a routable gg-named Outcome; integrity and
-  run-stop never are.
 - Q5. An effect Action with no `find`.
-- Q6. Whether stop Claims are routable.
 - Q7. Data between Vertices for use case e.
 - Q8. Whether grey-goo-ri issue #23 waits for this design.
