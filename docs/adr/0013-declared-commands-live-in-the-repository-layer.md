@@ -32,7 +32,7 @@ string, and a missing `test`, each naming the repository Layer file.
   carries the authoritative list (request 3.6).
 - The Config Hash of an unchanged command set is unchanged: the pinned `commands` object has the same shape.
 - `JSON.parse` keeps the last of two equal keys, so every Layer file, the shipped defaults included, is scanned for
-  duplicate keys in one object. That also catches duplicates in `nodes` and `flows`.
+  duplicate keys in one object. That also catches duplicates in `agents` and `flows`.
 - Names are no longer lowercased: `Test` is rejected rather than read as `test`.
 - The `TODO` placeholder that `ff init` wrote has no meaning in JSON. `gg init` scaffolds the repository Layer without
   a `test` command, so preflight asks for one; `gg doctor` reports what preflight reports.

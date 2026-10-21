@@ -128,7 +128,7 @@ test('a Layer with a duplicate key in one object is a load error naming the file
   const repoDup = layers(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
   assert.throws(() => config.loadConfig(repoDup.repo, repoDup.home),
     { message: `${config.layerPath(repoDup.repo)}: key "test" appears twice in one object` });
-  const userDup = layers(t, { home: '{"nodes":{"implementer":{"model":"a","model":"b"}}}' });
+  const userDup = layers(t, { home: '{"agents":{"implementer":{"model":"a","model":"b"}}}' });
   assert.throws(() => config.loadConfig(userDup.repo, userDup.home),
     { message: `${config.layerPath(userDup.home)}: key "model" appears twice in one object` });
   // Equal keys in sibling objects, in array elements and inside a string value are not duplicates.
