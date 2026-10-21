@@ -33,10 +33,24 @@ The running record of the planning session. The research behind it is in
 - Option 3's config shape is designed with Option 1, so `do: <name>` resolves to a gg primitive or a declared Action
   without a grammar change.
 
+## Step 3: outcome rules (2026-10-21)
+
+- Q4. User outcome rows are first match, checked at admission:
+  - A row that can never fire, because earlier rows cover every case it matches, is an error.
+  - A partial overlap is a warning naming the input combinations where an earlier row wins; `gg doctor` prints them.
+  - With no row matching and no `otherwise`, the Outcome is `needs-human`. A missing input holds the Ticket (D4).
+- Q4a. A row may match only enum, boolean and integer fields:
+  - gg's own facts: Check state, harness status and failure class.
+  - The user's own vocabulary: Claim tokens, Check ids, and typed fields in the user's response schemas (later, a user
+    Action's output schema).
+  - gg reads the user's schemas at admission. Matching a free-text field, or naming a value the schema does not allow,
+    fails admission.
+- Q4b. Integers compare with `<`, `<=`, `>`, `>=` and `=` against constants only, so the overlap check stays exact by
+  testing each row's boundary values. Comparing two fields to each other is not allowed.
+
 ## Open
 
 - Q3. The role model for the transition table (Claim tokens get the role advance, route or stop).
-- Q4. Hit policy for user outcome rows: unique or first match.
 - Q5. An effect Action with no `find`.
 - Q6. Whether stop Claims are routable.
 - Q7. Data between Vertices for use case e.
