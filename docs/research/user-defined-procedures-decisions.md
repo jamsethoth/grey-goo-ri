@@ -196,6 +196,19 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (e) Test paths are a repository-Layer setting, `testPaths`, defaulting to today's `DEFAULT_TEST_GLOBS` plus the
     dependency directories. Only the repository Layer may set it, as with `commands` (ADR 0013).
 
+- R4. Response and repeat Checks:
+  - (a) A `response` Check kind evaluates the agent's recorded response: `{ field, is }` on an enum or boolean field;
+    `{ none | any | all: <list>, where: {...} }` over an array of objects' enum or boolean fields; and
+    `{ count: <list>, where: {...}, "<=": N }` (integer bounds against constants). Admission checks every referenced
+    field against the response schema.
+  - (b) The shipped `review-pass` is a `response` Check (`dodMet`, `tddEvidenceOk`, no `blocker` or `major` finding),
+    and the review's `ok` requires it, so it may reach `done`.
+  - (c) A `repeat` Check kind compares a list's normalised fields (the shipped findings: `file`, `severity`, `issue`
+    with whitespace and line numbers stripped) with earlier reviews by the same Vertex in the Execution: `passed` is
+    new findings, `failed` a repeat. Not required by `changes`, it is a fact rules route on.
+  - (d) The shipped Flow routes `repeat` to a bounded escalation Vertex. This completes the request's repeat routing
+    and removes the `shortcut:` in `interpreter.mjs`. The review comment and PR update still run on a repeat.
+
 ## Open
 
 - Step 7: slice option 1 into tickets.
