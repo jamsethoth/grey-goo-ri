@@ -76,3 +76,6 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 ## Commands
 
 - test: `node scripts/run-suite.mjs` (`npm test` is the same)
+
+gg reads Declared Commands from `.agents/gg/gg.json` (ADR 0013). This section stays, equal to it, for feature-flow
+until the cutover (grey-goo-ri issue #97).

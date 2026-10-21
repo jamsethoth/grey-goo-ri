@@ -1,0 +1,5 @@
+{
+  "commands": {
+    "test": "node scripts/run-suite.mjs"
+  }
+}
