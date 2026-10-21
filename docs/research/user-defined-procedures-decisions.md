@@ -67,15 +67,29 @@ The running record of the planning session. The research behind it is in
   `failed` is final; a rule that cares how many times it ran matches `runs` (Q4b). A Vertex option may remove a Check
   from a token's `requires` (today's `requireTestPass: false`); `gg doctor` warns loudly when it does. Integrity
   Assertions are never removable (Q2).
-- Q3d. **Under review.** The Outcome order (gg's fixed rows; a `stop` token; a required Check failed after recovery
-  gives its `onFail`, skipping user rules; user rules; `otherwise`; the token) is to be revisited in detail, together
-  with whether a token that can lead to `done` may have `requires: []`.
+- Q3d. The Outcome order (2026-10-21):
+  1. gg's fixed rows, at each agent Attempt: integrity, harness failure, parse. They can end the Visit there.
+  2. A `stop` token's Outcome. Its Phase's Checks are still recorded.
+  3. One split: did every Check the claimed token requires pass (after recovery)?
+     - Yes: the `passed` table (first match), then `otherwise`, then the token itself.
+     - No: the `failed` table (first match), then `otherwise`, then the first failing Check's `onFail` in step order,
+       then `needs-human`.
+  - Once a required Check has failed for good, the current Phase's remaining Checks still run, so the `failed` table
+    sees every Check of the work that was done. Further recovery Phases, later agent Phases and effect Actions
+    (commit, push, comment, pr-upsert) are skipped. A Check that could not run records `not-run` with `runs: 0`.
+  - Check states are therefore `passed`, `failed` and `not-run` (amends Q3b). Admission includes `not-run` when it
+    enumerates combinations (Q4) and warns on a rule that references a Check always `not-run` in that table.
+- Q3g. The publishing fence (closes the empty-`requires` question). An Outcome that routes directly to a publishing
+  Terminal can only come from the `passed` table, or its default, of a token that requires at least one Check.
+  Admission rejects a `failed` rule routed to a publishing Terminal, and `ok: { requires: [] }` routed to one.
+  Publishing Terminals are a named set: `done` today, and any later Terminal that publishes or cannot be undone, such
+  as merge (grey-goo-ri issue #89). An Outcome may route to another Vertex freely, since that Vertex is held to the
+  same rules.
 - Q3e. Admission lists every Outcome a Procedure can produce (tokens, `onFail` values, rule Outcomes, `otherwise`) and
   rejects any that has no route on the Vertex and is not a Terminal.
 
 ## Open
 
-- Q3d. The Outcome order, and empty `requires` on a token that can reach `done`.
 - Q3f. Whether harness exhaustion (timeout, transient, unparsed) is a routable gg-named Outcome; integrity and
   run-stop never are.
 - Q5. An effect Action with no `find`.
