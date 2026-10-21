@@ -152,6 +152,22 @@ The running record of the planning session. The research behind it is in
   shortcut in `lib/config.mjs`).
 - grey-goo-ri PR #92 (Node to Agent) merges first.
 
+## Review round 1 (2026-10-21)
+
+The merged review is [user-defined-procedures-review.md](user-defined-procedures-review.md). Main has moved: Declared
+Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99, ADR 0013), so references above to
+"`AGENTS.md` `## Commands`" read "the repository Layer's `commands`", and this design's ADR is 0014.
+
+- R1. Fresh Check results after recovery:
+  - (a) After a recovery Phase, every Check of the Phase it recovered runs again, in step order.
+  - (b) Each Check result records the worktree tree it checked (`integrity.snapshot`). A commit and the `passed` table
+    count a required Check only if its tree equals the current tree; a stale one counts as failed. This replaces the
+    step-order inference in Q3a.
+  - (c) Results of earlier Phases' Checks stand as history (the Red Check proved the tests failed before green).
+  - (d) With several recoverable Checks, the first failing one in step order recovers first, each within its own
+    `max`; the total stays bounded.
+  - Limit, to note in ADR 0014: the tree covers tracked and staged content, not untracked ignored files.
+
 ## Open
 
 - Step 7: slice option 1 into tickets.
