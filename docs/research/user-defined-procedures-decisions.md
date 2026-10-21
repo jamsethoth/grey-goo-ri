@@ -96,8 +96,16 @@ The running record of the planning session. The research behind it is in
   `quota`, `budget`) are never routable.
 - Both Q6 and Q3f Outcomes are fenced from publishing Terminals (Q3g), and each target Vertex needs its own bound (I3).
 
+- Q7. Data between Vertices uses explicit `inputs` on the consuming Vertex: `{ from: <vertex>.<step id>.<field> }`.
+  - `visits` defaults to the producer's latest completed Visit; `visits: all` gives a list across Visits.
+  - A required input must come from a step on every path from the entry to the consuming Vertex; otherwise admission
+    fails, unless the input is marked `optional`.
+  - Briefs and Check parameters read `inputs.<name>`. `gg doctor` prints each Vertex's inputs and their sources.
+  - Agent Sessions stay inside a Vertex; no Session is resumed across Vertices.
+  - Open for step 5: `pr-upsert` and `comment` bodies become templates over `inputs` and the Vertex's own outputs,
+    replacing the hard-coded `render.prBody`.
+
 ## Open
 
 - Q5. An effect Action with no `find`.
-- Q7. Data between Vertices for use case e.
 - Q8. Whether grey-goo-ri issue #23 waits for this design.
