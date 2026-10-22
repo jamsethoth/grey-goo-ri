@@ -682,10 +682,18 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
   - Decided (owner, 2026-10-22): (b) touches the record and Event schemas grey-goo-ri issue #23 freezes, so #23
     names an Execution's owner generically, `{ kind: ticket | epic, number }`, and slice 7 needs no version bump.
 
+## Review of the filed Epic (2026-10-22)
+
+Round 5 ([merged](user-defined-procedures-review5.md)) reviewed the Epic grey-goo-ri issue #101 as filed. The owner
+accepted Y1–Y4 and Y7–Y15 as recommended, and the issues were edited to match.
+
+- Y6. The `changes` Check kind is deferred: ADR 0014 and request 3.4 name it as built after option 1, and the Epic's
+  Out of scope lists it. It has no decided parameters, and the example does not use it.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
 - Round 4 is decided (W1–W10).
 - Revisit: migration of old records instead of holding them (R7d).
-- Step 7: slice option 1 into tickets.
-- The ADR draft reversing request section 3.4.
+- Step 7 is done: filed as the Epic grey-goo-ri issue #101.
+- Y5 (round 5): how the validator tickets and the engine tickets share `lib/flow.mjs`.
