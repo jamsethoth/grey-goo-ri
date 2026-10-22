@@ -419,8 +419,30 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (e) One resolver and validator handle every reference path (rules, Briefs, templates, Check parameters,
     `tests: named`).
 
+## Review round 2 (2026-10-21)
+
+The merged review is [user-defined-procedures-review2.md](user-defined-procedures-review2.md).
+
+- T1. What is published must be what was checked:
+  - (a) A publishing Action (`pr-ready`, later merge) runs only if each required Check's recorded tree equals the tree
+    of the commit being published and the worktree is clean at that commit; otherwise the Ticket holds. The target
+    commit and its evidence are kept through retries and Reconciliation.
+  - (b) A Check must leave the worktree tree unchanged; if it changes it (a formatter, an unignored coverage
+    directory), the Check fails with that reason.
+  - (c) Admission requires a commit on every passing path of a write Vertex, which makes R2d enforceable.
+- T2. The draft PR stays early: `implement` and `fix` keep push and a draft `pr-upsert` after their commit. Only
+  `pr-ready` and later merge are publishing Actions under R11d. `publish` re-renders the PR body and marks it ready.
+- T3. A Flow declares default `routes` that every Vertex inherits and may override in its own `route`. R12b reads
+  "every Outcome is routed by the Vertex or by the Flow's defaults", and `gg doctor` shows which applied. The shipped
+  Flow's defaults are `misscoped: { end: needs-replan }` and `"*": { end: needs-human }`, so any agent that finds the
+  Ticket misscoped reaches the planner. R9b's Outcome is named `misscoped`.
+- T5. Vertex `maxVisits` and the Ticket's Action Cap (in the request and glossary, not on main) are built in the
+  option 1 slices, no later than the slice that ships the new Flow, and before grey-goo-ri issue #23. The shipped
+  `repeat` edge gets its own bound (`max: 1`).
+
 ## Open
 
+- Round 2 items still on hold: T4, T6–T14.
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
