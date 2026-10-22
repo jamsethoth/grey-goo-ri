@@ -1,16 +1,16 @@
 # User-defined Procedures: slicing (step 7)
 
-Draft, 2026-10-22, for the owner's review. It slices option 1 as decided in
+Draft, 2026-10-22; the owner accepted its approach and the audit folds the same day. It slices option 1 as decided in
 [user-defined-procedures-decisions.md](user-defined-procedures-decisions.md) and shown in
 [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md). It replaces the round-1 S1–S6
 proposal. Slice ids here (A1, E1, C1) are local to this file. Nothing is filed until the owner approves.
 
 ## Shape
 
-Seventeen tickets, sub-issues of one Epic, in three tracks:
+Eighteen tickets, sub-issues of one Epic, in three tracks:
 
 - **A, groundwork**: pure modules and config, built and tested against fixtures. Only A1 and A4 touch the interpreter.
-- **E, engine**: interpreter tickets, strictly serial (request section 6: one interpreter-touching ticket in flight).
+- **E, engine**: E0 fixes and splits the interpreter first (from the 2026-10-21 audit, below); then interpreter tickets, strictly serial (request section 6: one interpreter-touching ticket in flight).
   Each changes main's shipped Flow in place and regenerates the golden traces it names, so the suite is green after
   every ticket and no second engine lives beside the first.
 - **C, cutover**: `gg init` writes the example, then the defaults Layer stops shipping a Flow (U8).
@@ -34,7 +34,8 @@ before grey-goo-ri issue #23.
 | A4 | Templates for Briefs, the PR body and comments | yes, call sites | none |
 | A5 | The Flow shape, its validator and `gg doctor` | no | A2, A3 |
 | A6 | Graph analysis: routing, bounds, publishing, commits, inputs | no | A5 |
-| E1 | Red and green on separate Vertices | yes | A1 |
+| E0 | Audit fixes, then split the retry engine and Terminals out of the interpreter | yes | none |
+| E1 | Red and green on separate Vertices | yes | E0, A1 |
 | E2 | Action ids and the Recovery Number | yes | E1 |
 | E3 | Ends, Flow routes and the `publish` Vertex | yes | E2, A4 |
 | E4 | Vertex inputs | yes | E3 |
@@ -46,7 +47,7 @@ before grey-goo-ri issue #23.
 | C1 | `gg init` writes the example; this repository gets its own Flow | no | E9 |
 | C2 | The defaults Layer ships no Flow | no | C1 |
 
-Serial chain: A1 → A4 → E1 → … → E9 (A4 may go before or after A1). A2, A3, A5 and A6 run beside it. grey-goo-ri
+Serial chain: E0 → A1 → A4 → E1 → … → E9 (A4 may go before or after A1). A2, A3, A5 and A6 run beside it. grey-goo-ri
 issue #23 is marked blocked by C2.
 
 ## Tickets
@@ -54,6 +55,19 @@ issue #23 is marked blocked by C2.
 Each entry lists the decisions it builds, then what it names under S7: golden traces regenerated, glossary entries,
 and `gg doctor` output. "Goldens" means the `golden:` cases in `test/interpreter.test.mjs` and the crash-and-resume
 traces in `test/reconcile.test.mjs`.
+
+### E0. Audit fixes, then the interpreter split
+
+Audit findings 1, 2, 14 and 5, all checked on main. (1) The plain `record.save` path (`lib/record.mjs:139`) wraps its
+error in `RecordSaveError`, so a failed busy or idle save is fatal and never saved again; `saveRetry` goes. (2)
+`lockGuard` checks `runState.stop` as `cooldown` already does (#85), so a remote write waiting for the repo lock does
+not write after a run stop. (14) The test GitHub fake keys labels by issue, so a sibling's needs-human no longer looks
+like a human override. (5) Then, with no behaviour change, the retry engine (`reserveRetry` through `sideEffect`)
+moves to `lib/effects.mjs` and `hold`, `abandon`, `fault`, `decide` and the Terminal functions to `lib/terminal.mjs`,
+both added to the AGENTS.md Layout table.
+- Tests: a failed busy or idle save stops saving (beside `test/interpreter.test.mjs:1670`); a sibling's run stop during
+  a lock wait ends the Ticket at needs-human with no GitHub write.
+- Goldens: unchanged. Glossary: none. Doctor: none.
 
 ### A1. `testPaths` is required and feeds every consumer
 
@@ -63,8 +77,9 @@ defaults or user Layer is a load error. The value is pinned in the snapshot and 
 Immutability, the rollback set, `TEST_PATHSPECS`, the review's changed-test list and `events.diffStats`, which drops
 its own `TEST_PATH` regex. Excluding dependency directories stays in code. This repository's `.agents/gg/gg.json`
 gains today's `DEFAULT_TEST_GLOBS`.
-- Tests: a test file outside today's globs is covered by Test Immutability, rollback and diffStats; the three
-  preflight failures; the user-Layer load error.
+- Tests: a test file outside today's globs is covered by Test Immutability, rollback and diffStats; Test Immutability
+  and diffStats agree on every path, case included (audit 4: today `spec/` and `fixtures/` disagree, and only the
+  stats regex ignores case); the three preflight failures; the user-Layer load error.
 - Goldens: unchanged (fixtures pin `DEFAULT_TEST_GLOBS`). Glossary: none. Doctor: the preflight messages.
 
 ### A2. Rule tables: the first-match evaluator and the analyser
@@ -92,7 +107,10 @@ a reference path for rules, `pick`, `response` Check fields and inputs.
 U1, Q7, S5, T10, W6. One template mechanism: a name resolves to gg's own context (computed only when named), the
 Vertex's own outputs, or `inputs`; an absent value renders empty. Today's Brief builders, the nudge, `render.prBody`,
 the review comment and the blocked and replan comments become template files beside the shipped Personas, with
-byte-identical output. The syntax is settled here (see question 3).
+byte-identical output, except that `FIX ROUND` becomes `FIX VISIT` (audit 19) and `blockedComment` and
+`diagnosisComment` become one template (audit 10). The syntax is a Mustache subset (question 3): `{{name}}`,
+`{{#x}}…{{/x}}` (once per item, or once if present), `{{^x}}…{{/x}}` (absent or empty); no HTML escaping, partials or
+helpers. Truncation, JSON, numbering and redaction happen in gg before a value reaches a template.
 - Tests: byte-identical output for every ported builder; a context value not named is never computed.
 - Goldens: unchanged. Glossary: none. Doctor: none yet.
 
@@ -133,7 +151,9 @@ outputs from the record; E4 makes that an input.
 R6, S1. The marker becomes `gg:<execution>:<vertex>:<visit>:<action>:<recovery>:<run>:<attempt>`; the cursor,
 `rec.retries`, the settled result and the Action Event key on Action id and Recovery Number; `rec.sessions` on the
 agent Action. The recovery Phases count as Recovery Numbers until E6 removes them. Reconciliation parses the new
-marker.
+marker. From the audit: one `actionKeyOf(at)` replaces the three ways the retry key is built and `outcome.resolve`
+returns the retry kind (6); the PR's provenance table counts one call per Attempt from each Attempt's `usage.delta`,
+so a resumed Session is not counted twice (3); the copied `markerOf` test helper moves to `test/support/` (16).
 - Goldens: every trace (markers). Glossary: Action id, Action identity, Recovery Number. Doctor: none.
 
 ### E3. Ends, Flow routes and the `publish` Vertex
@@ -144,7 +164,8 @@ Terminals; `then` goes; the Flow's default `routes` and `"*"`; `harness-timeout`
 comment and goes to the Epic too at `needs-replan`; `misscoped` reaches the planner through the Flow's default route.
 A `publish` Vertex (code Procedure: the test Check, `pr-upsert`, `pr-ready`) replaces `done`; `pr-ready` runs only if
 the Check's tree equals the published commit's and the worktree is clean, with the target kept through retries and
-Reconciliation. `comment` takes `target`.
+Reconciliation. `comment` takes `target`. The `TERMINALS` copies in `interpreter.mjs` and `reconcile.mjs` become
+one definition of the end states (audit 8).
 - Goldens: every case ending at `done` (now `publish` then `ready-for-qa`), the blocked and replan cases. Glossary:
   end state, publishing Action. Doctor: none until E7.
 
@@ -166,7 +187,8 @@ state, tree }`; a commit and the `passed` table count only results whose tree is
 tree fails. `review-pass` becomes a `response` Check and the review's first `passed` row, evaluated through A2;
 `repeat` is a recorded fact (its route is E8). `CHECK_NAMES`, `checkOutcome`, `gate-failed(test)` and `red-failed`
 go: a final failure is the `failed` table's Outcome, else the engine Outcome `failed`, with the Terminal Reason
-rendered from the Check signal. A failed red ending at an end leaves its work in place (U10).
+rendered from the Check signal. A failed red ending at an end leaves its work in place (U10). The two integrity
+rollback blocks in `runVisit` become one (audit 7).
 - Goldens: failed red, test-fix exhausted, review ok without evidence. Glossary: Signal gains the Check signal. Doctor: none
   until E7.
 
@@ -205,7 +227,8 @@ a route after edge and Visit exhaustion. The shipped review routes `repeat` (edg
 R5a, R5c–e, U5, W3; the Rescue Ref piece of grey-goo-ri issue #68 (ADR 0011's layout). A failed or stopped write
 Vertex whose effective target is another Vertex rescues its work to `refs/gg/rescue/<digest of the Action Marker>`
 (never overwriting), resets through the write-ahead `reset`, adds a History item, and exposes `<vertex>.rescue` as
-`{ ref, diffStat, output }`. Anything gg's records do not prove is the agent's holds.
+`{ ref, diffStat, output }`. Anything gg's records do not prove is the agent's holds. First, `crashFs` picks its
+crash by path rather than by call count (audit 20), so reordering a restore cannot silently move a crash test.
 - Goldens: a failed fix rescued into an escalation Vertex; the same failure left in place once the escalation is
   exhausted. Glossary: Rescue Ref output. Doctor: unchanged (A6 already prints it). #68 is rewritten to reuse this.
 
@@ -213,7 +236,7 @@ Vertex whose effective target is another Vertex rescues its work to `refs/gg/res
 
 P1b–c, P3, U8, R9, U3, U11, W6–W10. `gg init` writes the example (Flow, Agents with `senior`, Procedures, Briefs,
 Personas, schemas, `testPaths`) into `.agents/gg/`, refusing to overwrite an existing Layer. `examples/*.json` gain
-`senior`. One test proves the example passes admission and pins its golden trace; the tests that load the shipped
+`senior`. `checks.DEFAULT_TEST_GLOBS` is what `gg init` writes, so the audit's unused-export cleanup keeps it. One test proves the example passes admission and pins its golden trace; the tests that load the shipped
 Flow today (`config`, `defaults`, `flow`, `procedures` and `run` tests) move to fixture Flows. This repository's
 `.agents/gg/gg.json` gets its Flow from `gg init`.
 - Goldens: the example's trace. Glossary: none. Doctor: the example printed in full.
@@ -231,13 +254,34 @@ and `gg doctor` fail naming `gg init`.
   and when #23 is next touched.
 - Option 3, V2 scenario runs (grey-goo-ri issue #98), migration of old records (R7d).
 
-## Questions for the owner
+## Decided (2026-10-22)
 
-1. **Engine strategy.** Recommended: change the interpreter in place, one serial ticket at a time, regenerating
-   goldens each time (above). The alternative is a second Visit runner for data Procedures beside today's, with a
-   switch ticket at the end: fewer golden regenerations, but two marker formats in Reconciliation and a big-bang
-   switch.
-2. **`ajv` (A3). Decided 2026-10-22: no `ajv`.** Validation stays hand-rolled over the strict subset Claude and
-   Codex structured outputs accept.
-3. **Template syntax (A4).** Recommended: a small Mustache subset (`{{name}}`, `{{#list}}…{{/list}}`, `{{^name}}…{{/name}}`
-   for absent), no helpers or logic, hand-written. Or leave it to the A4 ticket.
+1. **Engine strategy**: the interpreter changes in place, one serial ticket at a time, regenerating goldens each time.
+2. **`ajv` (A3)**: no `ajv`. Validation stays hand-rolled over the strict subset Claude and Codex structured outputs
+   accept.
+3. **Template syntax (A4)**: the Mustache subset described in A4, hand-written.
+
+## The 2026-10-21 audit
+
+`C:\dev\ff-review-work\grey-goo-ri-audit-2026-10-21.md` read `ccfe163`. Every finding was re-checked on main at
+`bd60df9` on 2026-10-22; all hold, with these corrections:
+
+- 2: `cooldown` already checks `runState.stop` (#85); only `lockGuard` does not.
+- 5: `interpreter.mjs` is 967 lines, not 911.
+- 13: `interpreter.PROTECTED_PATHS` is imported by `test/interpreter.test.mjs:2451`; `DEFAULT_TEST_GLOBS` and
+  `DEFAULTS_DIR` are used inside their own modules, so only their `export` is unused. `DEFAULT_TEST_GLOBS` stays
+  exported for C1.
+- 17: `admit()` is about 110 lines now (`lib/run.mjs:214`).
+
+Where each finding goes:
+
+| Findings | Where |
+|---|---|
+| 1, 2, 5, 14 | E0 |
+| 4 | A1 |
+| 10, 19 (`FIX ROUND`) | A4 |
+| 3, 6, 16 (`markerOf`) | E2 |
+| 8 (`TERMINALS`) | E3 |
+| 7 | E5 |
+| 20 (`crashFs`) | E9 |
+| 8 (rest), 9, 11, 12, 13, 15, 16 (rest), 17, 18, 19 (rest), 20 (temp dirs), the three left-out items | Not in the Epic: one cleanup ticket after C2, or backlog. 12 matters only off Windows. |
