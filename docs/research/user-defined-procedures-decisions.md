@@ -585,11 +585,21 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
   else the engine's `failed` (T7). Which Check failed is in the Check signal (S6), and the Terminal Reason is rendered
   from it. Behaviour is unchanged (both routed to `needs-human` before, and `failed` does through `"*"`); the golden
   traces and Terminal Reason texts change, and ADR 0014 amends request section 3.4's illustrative enums.
+- U10. R5b stands for every Vertex, `red` included: a failure routed to an end leaves the work in the worktree, with no
+  Rescue Ref and no reset. Today a failed red is discarded (`lib/interpreter.mjs:523`). Rescue Refs are written only
+  for an interrupted Attempt (ADR 0011, grey-goo-ri issue #68) and for R5a.
+- U11. `retest` exhausted goes to a `senior-red` Vertex: `tests-fail` with the `senior` Agent, `maxVisits: 1`, routing
+  `ok` to `green`, so the stronger model writes the failing test and the red-before-green proof holds. `senior-dev`
+  keeps `tests: named`, since a Vertex that must make tests pass must not also be free to edit them (R3c). The `reason`
+  enum of `tests-fail`'s schema gains `no-test-needed`; its `stopped` table maps it to the Outcome `no-test`, which
+  `senior-red` routes to `senior-dev` (rescued and reset, R5a) and `red` leaves to `"*"` (no review exists on its
+  first Visit, S4). `green`'s inputs and `senior-dev.previous` become lists across `red`/`senior-red` and
+  `implementer-fix`/`senior-red` (T6).
 
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
-- Round 3: U10 and U11 on hold (see the merged review).
+- Round 3 is decided; the example Flow carries U1–U15. A round-4 review before slicing (owner, 2026-10-22).
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.

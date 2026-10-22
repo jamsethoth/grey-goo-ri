@@ -1,14 +1,26 @@
 # User-defined Procedures: the example Flow, in full
 
 Step 2 of the handoff: the Agents, Procedures and Flow that `gg init` writes into a repository Layer (P1, P3), with every
-accepted decision (R1–R14, S1–S7, T1–T14, P1–P5). gg ships no default Flow; this is an example the repository then owns.
-Spelling is illustrative (S3 fixes it), YAML stands for the JSON of `.agents/gg/gg.json`, and Brief, schema, Persona and
-template names stand for files `gg init` writes beside it. Comments cite the decision behind each line.
+accepted decision (R1–R14, S1–S7, T1–T14, P1–P5, U1–U15). gg ships no default Flow; this is an example the repository
+then owns. Spelling is illustrative (S3 fixes it), YAML stands for the JSON of `.agents/gg/gg.json`, and Brief, schema,
+Persona and template names stand for files `gg init` writes beside it. Comments cite the decision behind each line.
 
 ```yaml
 testPaths: [...]                             # required (P4); gg init writes today's DEFAULT_TEST_GLOBS
-commands: { test: ... }                      # required (ADR 0013)
+commands: { test: ... }                      # required (ADR 0013); Checks name it, never a command line (U13)
 ```
+
+## What Briefs and templates read (U1)
+
+- **gg's own context**, for any Brief or template that names it, never inserted: the Ticket, base, branch diff,
+  Declared Commands, History, provenance, Action Marker, and the test files changed since the Execution's first test
+  commit (R3d). gg computes a value only when a template names it.
+- **The Vertex's own outputs**, by Action id (`fix.response`, `test.evidence`).
+- **Everything another Vertex produced**, through `inputs` (Q7), snapshotted at Visit entry (S4).
+
+The example's Briefs use what today's do: red and green the Ticket and commands; fix the History and findings; the
+reviewer the diff, the changed test files, the report and both evidences. `pr-body.md` reads `report`, `red` and
+`green` (today's `render.prBody`), and each `pr-upsert` binds them with `with:`.
 
 ## Agents
 
@@ -21,10 +33,14 @@ agents:                                      # harness, model and effort come fr
 
 ## Procedures
 
-Every Procedure's `stopped` table is the same (R9b): the shared `blocked` token, refined by its `reason`. It is written
-out in each Procedure because tables belong to the Procedure.
+Every response schema's `reason` enum includes `none` for a Claim that is not a stop (U3). Every Procedure's `stopped`
+table refines the shared `blocked` token by its `reason` (R9b); it is written out in each Procedure because tables
+belong to the Procedure. A stop token's `comment` template replaces the end's Terminal Reason comment and includes the
+reason (U6).
 
-### tests-fail (the `red` Vertex)
+### tests-fail (the `red` and `senior-red` Vertices)
+
+`red.schema.json`'s `reason` is `none | misscoped | needs-input | environment | no-test-needed` (U11).
 
 ```yaml
 tests-fail:
@@ -35,18 +51,22 @@ tests-fail:
   actions:
     - { id: red,       do: agent, brief: red.md, schema: red.schema.json }        # response: tests (names), summary
     - { id: red-check, do: check, kind: tests-fail, command: test, names: response.tests,
-        recoverBrief: still-green.md }        # "tests unexpectedly passed" is recoverable; missing names are not (T4c)
-    - { id: commit,    do: commit, type: test }
+        recoverBrief: still-green.md }
+        # recoverable: the named tests unexpectedly passed (T4c)
+        # not: named tests missing from the output; no file under testPaths changed since the Visit's baseline (U2)
+    - { id: commit,    do: commit, type: test }                # nothing to commit: a no-op, files: [] (U2)
   recover: { max: 1, brief: recover.md }    # today's stillGreen: 1 (T4a)
   passed: []                                 # no rows: the claimed token, ok (S3)
-  failed: []                                 # no rows: the engine Outcome failed (T7)
+  failed: []                                 # no rows: the engine Outcome failed (T7, U14)
   stopped:
-    - { when: { response.reason: misscoped }, outcome: misscoped }
+    - { when: { response.reason: misscoped },      outcome: misscoped }
+    - { when: { response.reason: no-test-needed }, outcome: no-test }       # U11
                                              # no match: the token, blocked
 ```
 
-- Outcomes: `ok`, `failed`, `misscoped`, `blocked`, `harness-*`.
-- Outputs read later: `commit.files`, `red-check.evidence`.
+- Outcomes: `ok`, `failed`, `misscoped`, `no-test`, `blocked`, `harness-*`.
+- Outputs read later: `commit.files`, `red-check.evidence`, and `rescue` when a failure or stop routes to another
+  Vertex (R5c).
 
 ### implement (the `green` Vertex)
 
@@ -61,7 +81,8 @@ implement:
     - { id: test,   do: check, kind: command, command: test, recoverBrief: test-fix.md }   # non-zero exit recoverable
     - { id: commit, do: commit, type: feat }
     - { id: push,   do: push }
-    - { id: pr,     do: pr-upsert, draft: true, body: pr-body.md }    # T2: the draft PR stays early
+    - { id: pr,     do: pr-upsert, draft: true, body: pr-body.md,                  # T2: the draft PR stays early
+        with: { report: green.response, red: inputs.red, green: test.evidence } }
   recover: { max: 1, brief: recover.md }    # today's testFix: 1
   passed: []
   failed: []
@@ -83,9 +104,10 @@ fix:
   actions:
     - { id: fix,    do: agent, brief: fix.md, schema: implement.schema.json }     # findings, History, previous
     - { id: test,   do: check, kind: command, command: test, recoverBrief: test-fix.md }
-    - { id: commit, do: commit, type: fix }
+    - { id: commit, do: commit, type: fix }                    # no edits: a no-op, as today (U2)
     - { id: push,   do: push }
-    - { id: pr,     do: pr-upsert, draft: true, body: pr-body.md }
+    - { id: pr,     do: pr-upsert, draft: true, body: pr-body.md,
+        with: { report: fix.response, red: inputs.red, green: test.evidence } }
   recover: { max: 1, brief: recover.md }
   passed: []
   failed: []
@@ -98,11 +120,12 @@ fix:
 
 ### review (the `reviewer` Vertex)
 
-The response schema gains `needsTest` (boolean, R2g), `reason` and `diagnosis` (R9a), and the Claim enum becomes
+The response schema gains `needsTest` (boolean, R2g), `reason` and `diagnosis` (R9a, U3), and the Claim enum becomes
 `ok | changes | blocked`.
 
 ```yaml
 review:
+  access: read-only                          # caps the Agent's access whatever it declares (U12)
   claims:                                    # neither requires a Check, so effects always run (P5a)
     ok:      { requires: [] }
     changes: { requires: [] }
@@ -116,7 +139,8 @@ review:
     - { id: repeat,      do: check, kind: repeat, list: response.findings,
         fields: [file, severity, issue] }    # R4c: failed means a repeat; a fact, required by nothing
     - { id: comment,     do: comment, body: review-comment.md }
-    - { id: pr,          do: pr-upsert, body: pr-body.md }
+    - { id: pr,          do: pr-upsert, body: pr-body.md,
+        with: { report: inputs.report, red: inputs.red, green: inputs.green } }
   passed:                                    # every review lands here: nothing is required (P5a, P5b)
     - { when: { claim: ok, check.review-pass: passed }, outcome: ok }   # the only way to ok
     - { when: { check.repeat: failed }, outcome: repeat }
@@ -139,7 +163,8 @@ publish:
   actions:
     - { id: test,     do: check, kind: command, command: test }   # no agent to recover with; failed ends at
                                              # needs-human through the Flow's "*" (P5c)
-    - { id: pr,       do: pr-upsert, body: pr-body.md }           # re-renders the body (T2)
+    - { id: pr,       do: pr-upsert, body: pr-body.md,            # re-renders the body (T2)
+        with: { report: inputs.report, red: inputs.red, green: inputs.green } }
     - { id: pr-ready, do: pr-ready }         # publishing: test's tree = the published commit's, clean worktree (T1a)
   passed: []
   failed: []
@@ -149,13 +174,16 @@ publish:
 
 ## The Flow
 
+The implementation report and the two evidences are declared the same way wherever they are read (T6: the latest Visit
+across the list wins). They are shown once as `&impl`; the JSON spells them out at each Vertex.
+
 ```yaml
 flows:
   default:
     ticket:
       entry: red
       routes:                                # T3: every Vertex inherits these
-        misscoped: { end: needs-replan }
+        misscoped: { end: needs-replan }     # also posts the diagnosis to the Epic (U6)
         "*":       { end: needs-human }
       vertices:
         red:
@@ -163,32 +191,45 @@ flows:
           procedure: tests-fail
           inputs:
             findings: { from: reviewer.review.findings, optional: true }       # absent on the first Visit (T10)
-          route: { ok: green }
+          route: { ok: green }               # no-test falls to "*": no review yet to fix from (S4)
 
         green:
           use: implementer
           procedure: implement
           inputs:
-            tests:    { from: red.commit.files }
-            evidence: { from: red.red-check.evidence }
+            tests: { from: [red.commit.files, senior-red.commit.files] }
+            red:   { from: [red.red-check.evidence, senior-red.red-check.evidence] }
           route: { ok: reviewer }
 
         reviewer:
           use: reviewer
           procedure: review
-          inputs:                            # T6: the latest of the three
-            report:   { from: [green.green.response, implementer-fix.fix.response, senior-dev.fix.response] }
-            evidence: { from: [green.test.evidence, implementer-fix.test.evidence, senior-dev.test.evidence] }
+          inputs: &impl                      # U1, T6
+            report: { from: [green.green.response, implementer-fix.fix.response, senior-dev.fix.response] }
+            red:    { from: [red.red-check.evidence, senior-red.red-check.evidence] }
+            green:  { from: [green.test.evidence, implementer-fix.test.evidence, senior-dev.test.evidence] }
           route:
             ok:      publish
-            retest:  { to: red,             max: 2, exhausted: senior-dev }
+            retest:  { to: red,             max: 2, exhausted: senior-red }    # U11
             changes: { to: implementer-fix, max: 2, exhausted: senior-dev }
             repeat:  { to: senior-dev,      max: 1, exhausted: { end: needs-human } }   # T5
+
+        senior-red:                          # U11: the stronger model writes the failing test; green makes it pass
+          use: senior
+          procedure: tests-fail
+          maxVisits: 1
+          exhausted: { end: needs-human }
+          inputs:
+            findings: { from: reviewer.review.findings }
+          route:
+            ok:      green
+            no-test: senior-dev              # a stop routed to a Vertex: rescued and reset (R5a)
 
         implementer-fix:
           use: implementer
           procedure: fix
           inputs:
+            <<: *impl
             findings:  { from: reviewer.review.findings }
             testFiles: { from: reviewer.review.findings, pick: file }           # T8
           route:
@@ -201,46 +242,56 @@ flows:
           maxVisits: 1                       # T5
           exhausted: { end: needs-human }
           inputs:
+            <<: *impl
             findings:  { from: reviewer.review.findings }
             testFiles: { from: reviewer.review.findings, pick: file }
-            previous:  { from: implementer-fix.rescue, optional: true }         # produced on implementer-fix failed (T9)
+            previous:  { from: [implementer-fix.rescue, senior-red.rescue], optional: true }   # T9, U11
           route: { ok: reviewer }
 
         publish:
           procedure: publish                 # no Agent
+          inputs: *impl                      # U1
           route: { ok: { end: ready-for-qa } }
 ```
 
 ## What admission sees
 
 - **Every Outcome is routed** (R12b, T3). The Flow's `"*"` catches `blocked`, `failed` (except `implementer-fix`'s),
-  `harness-*`, and every unlisted Outcome; `misscoped` goes to the planner from any Vertex.
+  `harness-*`, `red`'s `no-test`, and every unlisted Outcome; `misscoped` goes to the planner from any Vertex.
 - **Every path to `end: ready-for-qa` runs `pr-ready`** (R11e): only `publish` reaches it.
 - **Publishing** (R11d, T1a): `publish` requires `test` and runs `pr-ready` only on that Check's tree.
-- **Commits** (S2, T1c): every passing path of `red`, `green`, `implementer-fix` and `senior-dev` commits, and each
-  committing token requires a Check.
-- **Inputs** (Q7, S4, T6, T9): `green.tests` and `green.evidence` come from `red` on every path; the reviewer's
-  `report` and `evidence` from one of three producers on every path; `red.findings` and `senior-dev.previous` are
-  optional, each with a producing path.
+- **Commits** (S2, T1c): every passing path of `red`, `senior-red`, `green`, `implementer-fix` and `senior-dev`
+  commits, and each committing token requires a Check.
+- **Inputs** (Q7, S4, T6, T9, U1): `green.tests` and `green.red` come from `red` or `senior-red` on every path; every
+  `report`, `red` and `green` from one of their producers on every path, since `red` and `green` precede every
+  reviewer; `senior-red.findings` and the fix Vertices' `findings` from `reviewer`, which precedes them on every
+  path; `red.findings` and `senior-dev.previous` are optional, each with a producing path.
 - **Bounds** (I3, T5): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`; `reviewer → implementer-fix →
-  reviewer` by `changes`' `max: 2`; every path into `senior-dev` by its `maxVisits: 1`; the Ticket's Action Cap over
-  all of them.
-- **Rules** (R8): no unreachable or never-firing row. Two partial-overlap warnings in the review's `passed` table,
-  both intended: a clean `ok` whose findings repeat earlier ones stays `ok` (row 1 wins), and a repeat that also has
-  `needsTest: true` goes to `repeat` (row 2 wins).
+  reviewer` by `changes`' `max: 2`; every path into `senior-red` and `senior-dev` by their `maxVisits: 1`; the
+  Ticket's Action Cap over all of them.
+- **Rules** (R8, U4): no unreachable or never-firing row. Three partial-overlap warnings in the review's `passed`
+  table, all intended: a clean `ok` whose findings repeat earlier ones stays `ok` (row 1 over row 2); a clean `ok` that
+  also has `needsTest: true` stays `ok` (row 1 over row 3); a repeat that also has `needsTest: true` goes to `repeat`
+  (row 2 over row 3).
+- **Rescue** (R5, U5): decided on the effective target. `implementer-fix`'s `failed` and `senior-red`'s `no-test`
+  rescue and reset while `senior-dev` has a Visit left; once it is spent they end at `needs-human` with the work in
+  place (R5b).
 
 ## Changes from today's shipped Flow
 
 - It is no longer shipped: `defaults/gg.json` loses `agents` and `flows`, and `gg init` writes this (P1, P3).
-
 - `tdd` splits into `red` and `green` (R2b); `still-green` and `test-fix` become each Vertex's `recover` (T4).
-  `resumeGreen` and `requireTestPass` go (R2c, Q3c).
-- The review's `misscoped` token becomes `blocked` with `reason: misscoped`, and the reviewer may now stop (R9c).
+  `resumeGreen` and `requireTestPass` go (R2c, U7).
+- `red-failed` and `gate-failed(test)` become `failed`, with the failing Check named in its signal and Terminal Reason
+  (U14). A failed `red` ending at `needs-human` leaves its work in place instead of discarding it (R5b, U10).
+- The review's `misscoped` token becomes `blocked` with `reason: misscoped`, and the reviewer may now stop (R9c). The
+  review declares `access: read-only` itself (U12).
 - `repeat` routes to `senior-dev` instead of `changes` (R4d), removing the `shortcut:` in `interpreter.mjs`.
-- `changes` exhausted goes to `senior-dev`, not `needs-human`. A `needsTest` review goes back to `red`.
+- `changes` exhausted goes to `senior-dev`, not `needs-human`. A `needsTest` review goes back to `red`, and
+  `retest` exhausted to `senior-red`.
 - `done` becomes `publish` plus `end: ready-for-qa` (R11).
 - New Agent `senior`; the example Layers gain an entry for it.
 
 ## Decided
 
-The four questions this draft raised are P5 (a)–(d) in the decisions file.
+The four questions the first draft raised are P5 (a)–(d), and the round-3 changes are U1–U15, in the decisions file.
