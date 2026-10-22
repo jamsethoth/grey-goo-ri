@@ -315,6 +315,68 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - `needs-replan` ends the Ticket's Execution because replanning changes the Epic's Plan, which belongs to the Epic's
     plan section, not to any one Ticket.
 
+- R12. Routing:
+  - (a) `then` is dropped; every route is written in `route`.
+  - (b) Every Outcome a Vertex's own config can produce (tokens, `onFail` values, rule Outcomes, `otherwise`) must be
+    routed, explicitly or by the Vertex's `"*"` catch-all, or admission fails.
+  - (c) The engine Outcomes (`harness-timeout`, `harness-transient`, `harness-unparsed`) route to `end: needs-human`
+    unless the Vertex routes them.
+  - (d) `gg doctor` shows, for each Vertex, which Outcomes fall to `"*"` and which to the engine default.
+  - (e) The shipped Flow (Procedure names and input paths illustrative; exact spelling is S3's):
+
+    ```yaml
+    agents:                                    # no harness or model in the defaults Layer
+      implementer: { persona: implementer.md, access: workspace-write }
+      reviewer:    { persona: reviewer.md,    access: read-only }
+      senior:      { persona: implementer.md, access: workspace-write }   # meant for a stronger model
+    flows:
+      default:
+        ticket:
+          entry: red
+          vertices:
+            red:
+              use: implementer
+              procedure: tests-fail            # tests: write
+              inputs: { findings: { from: reviewer.review.findings, optional: true } }
+              route: { ok: green, "*": { end: needs-human } }
+            green:
+              use: implementer
+              procedure: implement             # tests: frozen; recover: test-fix
+              inputs: { tests: { from: red.commit.files }, evidence: { from: red.red-check.evidence } }
+              route: { ok: reviewer, "*": { end: needs-human } }
+            reviewer:
+              use: reviewer
+              procedure: review                # ok requires review-pass; repeat Check; needsTest field
+              route:
+                ok:        publish
+                retest:    { to: red,             max: 2, exhausted: senior-dev }
+                changes:   { to: implementer-fix, max: 2, exhausted: senior-dev }
+                repeat:    senior-dev
+                misscoped: { end: needs-replan }
+                "*":       { end: needs-human }
+            implementer-fix:
+              use: implementer
+              procedure: fix                   # tests: named: inputs.findings
+              inputs: { findings: { from: reviewer.review.findings } }
+              route: { ok: reviewer, "*": { end: needs-human } }
+            senior-dev:
+              use: senior
+              procedure: fix
+              maxVisits: 1
+              exhausted: { end: needs-human }
+              inputs:
+                findings: { from: reviewer.review.findings }
+                previous: { from: implementer-fix.rescue, optional: true }
+              route: { ok: reviewer, "*": { end: needs-human } }
+            publish:                           # no agent step
+              procedure: publish               # requires the test command; push, pr-upsert, pr-ready
+              route: { ok: { end: ready-for-qa }, "*": { end: needs-human } }
+    ```
+
+  - Notes: Vertex `maxVisits` is in the request (section 3.3) but not built; it lands with routable Outcomes (S6),
+    since `senior-dev` depends on it for its bound. `senior` is a new Agent the user must configure; the example
+    Layers gain a `senior` entry.
+
 ## Open
 
 - Revisit: migration of old records instead of holding them (R7d).
