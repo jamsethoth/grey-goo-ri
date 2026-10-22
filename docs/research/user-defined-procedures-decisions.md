@@ -220,6 +220,18 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (e) The Rescue Ref piece of grey-goo-ri issue #68 moves into this work, using ADR 0011's layout
     (`refs/gg/rescue/<digest of the Action Marker>`). #68 keeps rescuing interrupted Attempts and their retry.
 
+- R6. Action identity:
+  - (a) An Action's identity is its execution, Vertex, Visit, step id, Recovery Number, Run and Attempt. The Recovery
+    Number is 0 on the Vertex's first pass through its steps; each recovery Phase run increments it, and the Checks that
+    run again after it carry the new number.
+  - (b) The Action Marker keeps eight parts, with `<step>:<recovery>` replacing `<phase>:<ordinal>`:
+    `gg:<execution>:<vertex>:<visit>:<step>:<recovery>:<run>:<attempt>`.
+  - (c) `rec.retries`, the settled result in `visitState` and the Action Event key on step and Recovery Number;
+    `rec.sessions` keys on the agent step, since recovery resumes the same Session.
+  - (d) Step ids are unique within a Procedure and contain no `:`, checked at admission.
+  - (e) Glossary: a **Recovery Number** entry ("how many recovery Phases have run in this Visit; 0 before the
+    first"), and the Action identity entry rewritten. grey-goo-ri issue #23 freezes it.
+
 ## Open
 
 - Step 7: slice option 1 into tickets.
