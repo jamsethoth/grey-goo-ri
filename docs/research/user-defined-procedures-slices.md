@@ -113,7 +113,9 @@ the review comment and the blocked and replan comments become template files bes
 byte-identical output, except that `FIX ROUND` becomes `FIX VISIT` (audit 19) and `blockedComment` and
 `diagnosisComment` become one template (audit 10). The syntax is a Mustache subset (question 3): `{{name}}`,
 `{{#x}}…{{/x}}` (once per item, or once if present), `{{^x}}…{{/x}}` (absent or empty); no HTML escaping, partials or
-helpers. Truncation, JSON, numbering and redaction happen in gg before a value reaches a template.
+helpers. Truncation, JSON, numbering and redaction happen in gg before a value reaches a template. `briefs.styleBlock`
+(the writing-style section, called today only by tests) is decided here: template text in the example's Briefs, a
+named context value, or deleted with its tests.
 - Tests: byte-identical output for every ported builder; a context value not named is never computed.
 - Goldens: unchanged. Glossary: none. Doctor: none yet.
 
@@ -260,9 +262,13 @@ rewrite much of the cited code. No behaviour change.
 - One "keep the last whole lines" cutter with a fallback option, serving `checks.evidence` and `render.publicTail` (9).
 - The `?? 'gg'` and `= 'gg'` label prefix fallbacks go, except the one in `labels()` (11).
 - `addWorktree` compares paths with `paths.pathKey`, so only Windows ignores case (12).
-- Code with no reference anywhere is deleted: `github.openPrs`, `github.closePr`, `git.deleteRemoteBranch`,
-  `render.ticketBody`, `render.epicBody`; unused `export`s are dropped, `DEFAULT_TEST_GLOBS` excepted (C1). The code
-  used only by tests, ported ahead of `gg work`, `publish` and `plan`, stays for those slices (13).
+- Code with no caller in `lib/`, `bin/` or `scripts/` is deleted with the tests that exist only for it (13). The
+  owner's rule: code ported from feature-flow ahead of its slice is of doubtful use, so `gg work`, `publish` and
+  `plan` port what they need when they land. That is `github.openPrs`, `closePr`, `createIssue` and
+  `inProgressSince`; `git.deleteRemoteBranch`, `commitAll`, `discardChanges`, `ticketBranches`, `discardBranch` and
+  `cleanupMerged`, with `isDirty`, `hasUnpushed`, `removeWorktree` and the `git.mjs` → `github.mjs` import that only
+  they use; `render.ticketBody` and `epicBody`. Unused `export`s are dropped, `DEFAULT_TEST_GLOBS` excepted (C1).
+  `record.createEpicRecord` is gg's own (Epic Record, request 3.5), not a port, and stays for planning.
 - Fixtures restore the previous GitHub transport after `setGh` (15).
 - The copied test helpers (`sh`, `loadTicket`, `newExecution`, the bare-origin and clone setup, the fake `a + b`
   runner) move to `test/support/` (16).
