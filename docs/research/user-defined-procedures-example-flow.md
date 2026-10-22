@@ -188,6 +188,7 @@ across the list wins). They are shown once as `&impl`; the JSON spells them out 
 flows:
   default:
     plan: null                               # X2: no Epic-level planning; standalone tickets run
+    actionCap: 40                            # K2: every Attempt in the Execution, a required spend ceiling
     ticket:
       entry: red
       routes:                                # T3: every Vertex inherits these

@@ -702,6 +702,20 @@ accepted Y1–Y4 and Y7–Y15 as recommended, and the issues were edited to matc
 - Y22. A Vertex id may not equal an end name (`ready-for-qa`, `needs-human`, `needs-replan`), so a Vertex's Action
   markers never collide with end reporting's (issue #106).
 
+## Review round 6 (2026-10-22)
+
+Round 6 ([merged](user-defined-procedures-review6.md)) reviewed all 25 issues with fresh reviewers. K3–K14 await the
+owner.
+
+- K1. `approvers` is an optional top-level list of GitHub logins in the repository Layer, like `testPaths` a load
+  error elsewhere; without it only write permission or higher counts (request 3.5). Issue #119 also extends the
+  validator for `decisions`, has `ensureLabels` create the Await and Decide Labels, and adds the `gh` timeline and
+  permission verbs.
+- K2. The Action Cap stays, as a required Flow key `actionCap` (a positive integer counting every Attempt in the
+  Execution, request 3.3); the example writes 40. Comparable systems all add one run-wide bound over per-step limits
+  (LangGraph `recursion_limit`, OpenAI Agents `max_turns`, OpenHands `max_iterations`, Step Functions' history limit).
+  A spend budget (tokens or cost) is a later ticket.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
