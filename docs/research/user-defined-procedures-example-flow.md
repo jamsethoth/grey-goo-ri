@@ -59,8 +59,9 @@ tests-fail:
     - { id: red,       do: agent, brief: red.md, schema: red.schema.json }        # response: tests (names), summary
     - { id: red-check, do: check, kind: tests-fail, command: test, names: response.tests,
         recoverBrief: still-green.md }
-        # recoverable: the named tests unexpectedly passed (T4c)
-        # not: named tests missing from the output; no file under testPaths changed since the Visit's baseline (U2)
+        # recoverable: the named tests unexpectedly passed (T4c); no file under testPaths changed since the
+        #   Visit's baseline (U2, K7)
+        # not: named tests missing from the output
     - { id: commit,    do: commit, type: test }                # nothing to commit: a no-op, files: [] (U2)
   recover: { max: 1, brief: recover.md }    # today's stillGreen: 1 (T4a)
   passed: []                                 # no rows: the claimed token, ok (S3)
@@ -188,6 +189,7 @@ across the list wins). They are shown once as `&impl`; the JSON spells them out 
 flows:
   default:
     plan: null                               # X2: no Epic-level planning; standalone tickets run
+    actionCap: 40                            # K2: every Attempt in the Execution, a required spend ceiling
     ticket:
       entry: red
       routes:                                # T3: every Vertex inherits these

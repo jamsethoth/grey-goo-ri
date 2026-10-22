@@ -556,7 +556,8 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
   and `senior-dev` declare `report`, `red` and `green` (T6 lists). Context size stays per Brief, as today.
 - U2. "No file under `testPaths` changed since the Visit's baseline" is a non-recoverable `tests-fail` failure (T4c),
   as today's "No tests were written". In the example it is `failed`, routed by the Flow's `"*"` to `needs-human`, on a
-  retest Visit too. A `commit` with nothing to commit is a no-op with `files: []`.
+  retest Visit too. A `commit` with nothing to commit is a no-op with `files: []`. Amended by K7: the failure is
+  recoverable, and `failed` follows only after recovery.
 - U3. R9a's `reason` enum gains `none`, since strict schemas require every field.
 - U4. The review's `passed` table has three intended partial overlaps; the third, `ok` with review-pass passed and
   `needsTest: true`, stays `ok`. The example's admission summary names all three.
@@ -682,10 +683,56 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
   - Decided (owner, 2026-10-22): (b) touches the record and Event schemas grey-goo-ri issue #23 freezes, so #23
     names an Execution's owner generically, `{ kind: ticket | epic, number }`, and slice 7 needs no version bump.
 
+## Review of the filed Epic (2026-10-22)
+
+Round 5 ([merged](user-defined-procedures-review5.md)) reviewed the Epic grey-goo-ri issue #101 as filed. The owner
+accepted Y1–Y4 and Y7–Y15 as recommended, and the issues were edited to match.
+
+- Y6. The `changes` Check kind is deferred: ADR 0014 and request 3.4 name it as built after option 1, and the Epic's
+  Out of scope lists it. It has no decided parameters, and the example does not use it.
+- Y5. The validator is a new module, `lib/validate.mjs` (issues #106 and #107), with its own Resolved Flow, so it
+  stays parallel to the engine work. `resolveFlow` in `lib/flow.mjs` stays the interpreter's loader, changed only by
+  the serial engine tickets (#112, #113), until #116 switches admission to the validator and deletes it; #117 then
+  extends the validator's Resolved Flow (Y16).
+- Round 5b: the owner accepted Y16–Y21 as recommended, and the issues were edited to match.
+- Y18. End, hold and fault reporting Actions keep the end's name in the Vertex slot and get fixed Action ids
+  `<report>-<step>` with Recovery Number 0 (issue #111): `<report>` is `end`, `hold` or `fault`; `<step>` is
+  `comment`, `epic-comment` or `label` (and `pr-ready` until issue #112). One shared id such as `hold` would give a
+  hold's comment and label one marker, so the label would find the comment's evidence and never be set. Example:
+  `gg:142.4f9e21:needs-human:1:hold-comment:0:<run>:1`. Issue #23 freezes these ids.
+- Y22. A Vertex id may not equal an end name (`ready-for-qa`, `needs-human`, `needs-replan`), so a Vertex's Action
+  markers never collide with end reporting's (issue #106).
+
+## Review round 6 (2026-10-22)
+
+Round 6 ([merged](user-defined-procedures-review6.md)) reviewed all 25 issues with fresh reviewers. The owner accepted K3–K6 and K8–K14 as recommended,
+and the issues were edited to match. K7 was decided after research.
+
+- K1. `approvers` is an optional top-level list of GitHub logins in the repository Layer, like `testPaths` a load
+  error elsewhere; without it only write permission or higher counts (request 3.5). Issue #119 also extends the
+  validator for `decisions`, has `ensureLabels` create the Await and Decide Labels, and adds the `gh` timeline and
+  permission verbs.
+- K2. The Action Cap stays, as a required Flow key `actionCap` (a positive integer counting every Attempt in the
+  Execution, request 3.3); the example writes 40. Comparable systems all add one run-wide bound over per-step limits
+  (LangGraph `recursion_limit`, OpenAI Agents `max_turns`, OpenHands `max_iterations`, Step Functions' history limit).
+  A spend budget (tokens or cost) is a later ticket.
+- K7. U2 is built, and its first part is now recoverable. An agent that judges no test needed already has the stop
+  reason `no-test-needed` (U11); a red that claims `ok` with no test file changed is a Claim its evidence
+  contradicts. Agentic TDD tools answer that with feedback and a bounded retry, then escalation (TDD Guard and
+  pi-red-green keep the agent in red with the reason; bounded-repair pipelines cap retries, then escalate; TDFlow,
+  EACL 2026, finds test writing the hardest step, so a miss is ordinary). So:
+  - Issue #113: every `commit` records `files`; nothing to commit makes no commit and records `files: []`, since
+    #113's Flow reads `red.commit.files` and runs before #114.
+  - Issue #114: the `tests-fail` failure "no file under `testPaths` changed since the Visit's baseline", where any
+    path in the baseline-to-worktree diff counts (added, modified, deleted, either side of a rename), replaces the
+    commit Action's special case.
+  - Issue #115: that failure is recoverable within red's `recover` budget (T4c gains it); after it, `failed` is
+    routed by the Flow, `"*"` → `needs-human` in the example. Named tests missing from the output stay
+    non-recoverable.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
 - Round 4 is decided (W1–W10).
 - Revisit: migration of old records instead of holding them (R7d).
-- Step 7: slice option 1 into tickets.
-- The ADR draft reversing request section 3.4.
+- Step 7 is done: filed as the Epic grey-goo-ri issue #101.

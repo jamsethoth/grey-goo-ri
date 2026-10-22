@@ -2,13 +2,16 @@
 
 State of the planning session on user-defined Procedures, Actions and Outcomes for gg, as of 2026-10-22, written so
 a fresh session can continue without the conversation. Read this first, then the decisions file, then the example
-Flow. The design is fully decided through four review rounds; the next step is slicing.
+Flow. The design is fully decided through four review rounds, sliced, and filed as the Epic grey-goo-ri issue #101.
 
 ## Where things are
 
-- **Branch** `research-user-procedures` in the worktree `C:\dev\worktrees\grey-goo-ri\research-user-procedures`,
-  local only (not pushed), rebased onto main at bd60df9 on 2026-10-22. It only adds files under `docs/research/`, so a rebase is
-  trivial.
+- **Filed** 2026-10-22: the Epic grey-goo-ri issue #101 (`ff:epic`) with its 22 tickets as sub-issues, each blocked
+  by the tickets in its "Depends on" line. Slice ids map to issues: A1–A7 are #102–#108, E0 is #109, E1–E10 are
+  #110–#119, C1 is #120, C2 is #121, C4 is #122 and C3 is #123. The issues are now the authority for ticket text.
+  Run it with `ff run 101`.
+- **Merged.** The research files, ADR 0014 and the request amendments reached main through grey-goo-ri PR #100
+  (30bcf99); the branch `research-user-procedures` is done.
 - **Files** in `docs/research/`:
 
   | File | What it is |
@@ -23,11 +26,11 @@ Flow. The design is fully decided through four review rounds; the next step is s
   | `user-defined-procedures-review3.md` (+ `-astra`, `-fable`) | Round 3: U1–U15, including the grey-goo-ri issue #95 session's handoff (U13–U15) |
   | `user-defined-procedures-review4.md` (+ `-raw`) | Round 4: W1–W10, the last review before slicing |
 
-- **Main** (`C:\dev\projects\grey-goo-ri`) is at bd60df9: grey-goo-ri PR #92 (Node renamed to Agent), PR #94 and
-  PR #99 (Declared Commands in the repository Layer, ADR 0013) are merged. This design's ADR is **0014**. Reviewers
-  read main from the worktree with `git show bd60df9:<path>` (Codex's sandbox cannot read the main checkout).
-- **Related issues:** grey-goo-ri issue #23 (the freeze; waits for all of option 1), #68 (Interrupted Attempt rescue,
-  ADR 0011; its Rescue Ref piece moves into this work, R5e), #89 (merge on done; option 3 era), #96 (faking a green
+- **Main** (`C:\dev\projects\grey-goo-ri`) is at 30bcf99 (grey-goo-ri PR #100), after grey-goo-ri PR #92 (Node
+  renamed to Agent), PR #94 and PR #99 (Declared Commands in the repository Layer, ADR 0013). This design's ADR is
+  **0014**. Codex's sandbox cannot read the main checkout, so reviewers read main from a worktree.
+- **Related issues:** grey-goo-ri issue #23 (the freeze; blocked by #121, C2, and carrying item 4's reservations),
+  #68 (Interrupted Attempt rescue, ADR 0011; rewritten to reuse #118's Rescue Ref and blocked by it, R5e), #89 (merge on done; option 3 era), #96 (faking a green
   run through what `test` delegates to; P4 is its option 1, U15), #97 (unaffected), #98 (backlog: scenario runs, V2).
 - Nothing is running in the background.
 
@@ -107,7 +110,7 @@ admission (V1).
 
 ## Open, in the order to take them
 
-1. **Slicing (step 7)**: drafted in [user-defined-procedures-slices.md](user-defined-procedures-slices.md), accepted 2026-10-22 with the audit folded in (E0, C3). ADR 0014 and the request amendments are drafted on the branch (rebased onto bd60df9); the Epic and ticket text are drafted in [user-defined-procedures-epic.md](user-defined-procedures-epic.md), awaiting the owner's review before the docs PR and filing. The round-1 S1–S6 proposal is out of date.
+1. **Slicing (step 7)**: done and filed (see "Where things are"). Drafted in [user-defined-procedures-slices.md](user-defined-procedures-slices.md), accepted 2026-10-22 with the audit folded in (E0, C3). ADR 0014 and the request amendments are drafted on the branch (rebased onto bd60df9); the Epic and ticket text are drafted in [user-defined-procedures-epic.md](user-defined-procedures-epic.md), awaiting the owner's review before the docs PR and filing. The round-1 S1–S6 proposal is out of date.
    Slices must cover:
    - Procedures as data with Vertex-composed red/green; one-agent-step Procedures.
    - Recovery per Visit (T4, W1).
@@ -133,7 +136,8 @@ admission (V1).
    - the tree-fingerprint limit (R1).
 3. **Glossary changes** with their slices: Action id and Action identity, Recovery Number, pass, publishing Action,
    end state, Vertex input, Rescue Ref output, Claim token `requires`, Confirmation (option 3).
-4. **grey-goo-ri issue #23 additions** (S6, T4f): the Check signal `{ id, kind, state, tree }`, rule identity
+4. **grey-goo-ri issue #23 additions** (S6, T4f), done 2026-10-22, with X1e's approval fields and Q8's option 3
+   fields: the Check signal `{ id, kind, state, tree }`, rule identity
    `{ table, row }`, inputs snapshot, Recovery Number, definition hash, Rescue Ref output, the Event without
    `requireTestPass`/`repeat`/`exhausted`, unknown `intent.action` holds, `record.md` worked examples, and an
    Execution's owner named generically as `{ kind: ticket | epic, number }` (X3).

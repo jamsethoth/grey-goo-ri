@@ -239,7 +239,8 @@ repo; `end: ready-for-qa` reachable without `pr-ready`; a warning when reviewer 
 ### 3.4 Procedures, outcomes and resolution
 
 Procedures are data (ADR 0014), declared in the repo Layer and built only from gg's Actions (agent, check, commit,
-push, pr-upsert, pr-ready, comment, await-approval) and Check kinds (`command`, `tests-fail`, `changes`, `response`, `repeat`). A
+push, pr-upsert, pr-ready, comment, await-approval) and Check kinds (`command`, `tests-fail`, `response`, `repeat`; `changes`
+is named but built after option 1). A
 Procedure has at most one agent Action. It declares its Claim tokens, each `{ requires: [<check ids>] }` or
 `{ stop: true }`; its Checks; `tests: frozen | named | write`; optionally `access: read-only`; `recover: { max, brief }`;
 and its `passed`, `failed` and `stopped` rule tables with `otherwise`. Multi-step work is composed from Vertices, and

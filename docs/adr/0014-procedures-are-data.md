@@ -10,7 +10,8 @@ Outcomes lived in `lib/procedures.mjs`, and the interpreter special-cased Phase 
 test-fix), Check names and Outcomes such as `red-failed` and `gate-failed(test)`. A repository owner could not add a
 QA stage, a lint or scope gate, a custom review shape or a stronger escalation without changing gg. Procedures now are
 data, declared in the repository Layer and built only from gg's own Actions (agent, check, commit, push, pr-upsert,
-pr-ready, comment, await-approval), Check kinds (`command`, `tests-fail`, `changes`, `response`, `repeat`) and fixed integrity rows.
+pr-ready, comment, await-approval), Check kinds (`command`, `tests-fail`, `response`, `repeat`, and `changes`, which is
+named but built after option 1) and fixed integrity rows.
 The interpreter names no Procedure, Action or Check.
 
 - **One agent step per Procedure.** A Procedure has at most one agent Action; with none it is a deterministic Vertex
