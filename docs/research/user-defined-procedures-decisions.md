@@ -22,12 +22,20 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | Q4b: overlap by testing boundary values | R8: exact box subtraction |
 | Q6: `misscoped` as its own stop token | R9: one `blocked` token with a `reason` |
 | Q7: `visits: all` | R14b: dropped |
-| Q8: "no version bump" | R7: holds only after the freeze |
+| Q8: "no version bump" | R7: versions stay fixed before the freeze and bump after it |
 | R6: Action identity with "step" | S1: Action id |
 | Q3b `recover` per Check, R1d ordering, R8b `runs` | T4: Vertex-level `recover`, `pass`, no per-Check `runs` |
 | Q3g fence; R11d tree check against the current worktree | T1: against the tree of the commit being published |
 | R9b "routes to `replan`" | T3: the Outcome `misscoped`, routed by the Flow's default `routes` |
 | R12e: push and pr-upsert only in `publish` | T2: `implement` and `fix` keep push and a draft pr-upsert |
+| Q7: `from` names one source | T6: `from` may name a list; the latest Visit across it wins |
+| R14a: an unmatched `failed` table falls to "the routing default" | T7: the engine Outcome `failed` |
+| Q1: the read-only `gg doctor` warning | T11: dropped |
+| Q4: "a missing input holds the Ticket" | T10: required inputs only; an absent optional input is the value `absent` |
+| R3e: where `testPaths`' default lives | T12: in code, `DEFAULT_TEST_GLOBS` |
+| R12e: the shipped Flow | T8, T9, T13 and step 2's rewrite |
+| Q3e, R12b: `onFail` values among a Vertex's Outcomes | R14a (fixed in R12b in place) |
+| Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -219,8 +227,9 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     either passed Test Immutability or came from a Vertex allowed to change tests.
   - (d) The reviewer's "test files changed since red" becomes "since the Execution's first test commit", found from
     gg's own commit records.
-  - (e) Test paths are a repository-Layer setting, `testPaths`, defaulting to today's `DEFAULT_TEST_GLOBS` plus the
-    dependency directories. Only the repository Layer may set it, as with `commands` (ADR 0013).
+  - (e) Test paths are a repository-Layer setting, `testPaths`, defaulting to today's `DEFAULT_TEST_GLOBS`, with the
+    dependency directories excluded (`lib/checks.mjs:79`). Only the repository Layer may set it, as with `commands`
+    (ADR 0013).
 
 - R4. Response and repeat Checks:
   - (a) A `response` Check kind evaluates the agent's recorded response: `{ field, is }` on an enum or boolean field;
@@ -254,7 +263,8 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     `gg:<execution>:<vertex>:<visit>:<step>:<recovery>:<run>:<attempt>`.
   - (c) `rec.retries`, the settled result in `visitState` and the Action Event key on step and Recovery Number;
     `rec.sessions` keys on the agent step, since recovery resumes the same Session.
-  - (d) Step ids are unique within a Procedure and contain no `:`, checked at admission.
+  - (d) Step ids are unique within a Procedure and contain no `:` and no whitespace (`lib/marker.mjs:14`), checked at
+    admission.
   - (e) Glossary: a **Recovery Number** entry ("how many recovery Phases have run in this Visit; 0 before the
     first"), and the Action identity entry rewritten. grey-goo-ri issue #23 freezes it.
 
@@ -265,7 +275,7 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     bump.
   - (c) Between pre-freeze slices, delete any real `.git/gg/gg.db` before upgrading, noted in the epic.
   - (d) No migration code for now; after the freeze, the version check holds old records cleanly.
-  - This corrects Q8's "no version bump", which holds only after the freeze.
+  - This corrects Q8: versions stay fixed before the freeze, and a change after it bumps them.
 
 - R8. The rule-table analysis (replaces Q4b's "testing boundary values", which misses ranges):
   - (a) Each rule is a box: per-field value sets (enum and boolean subsets, integer intervals; an unmentioned field
@@ -343,7 +353,7 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
 
 - R12. Routing:
   - (a) `then` is dropped; every route is written in `route`.
-  - (b) Every Outcome a Vertex's own config can produce (tokens, `onFail` values, rule Outcomes, `otherwise`) must be
+  - (b) Every Outcome a Vertex's own config can produce (tokens, rule Outcomes, `otherwise`) must be
     routed, explicitly or by the Vertex's `"*"` catch-all, or admission fails.
   - (c) The engine Outcomes (`harness-timeout`, `harness-transient`, `harness-unparsed`) route to `end: needs-human`
     unless the Vertex routes them.
@@ -461,9 +471,37 @@ The merged review is [user-defined-procedures-review2.md](user-defined-procedure
     `failed` rule to another Vertex (R5 rescues the work).
   - (f) The frozen Check signal (S6) is `{ id, kind, state, tree }`.
 
+- T6. `from` accepts one source or a list. With a list, the input takes the value from the latest Visit, in the
+  Execution's Visit order, that produced any of the sources. All sources must have the same type, checked at admission;
+  the snapshot's provenance (S4) names the source that supplied it. A required list input needs one of its sources on
+  every path (Q7). The shipped reviewer's "latest implementation report" reads from `green`, `implementer-fix` and
+  `senior-dev`.
+- T7. When no `failed` row matches and the table has no `otherwise`, the Outcome is the engine Outcome `failed`, never
+  the Claim token. It is routable and defaults to `end: needs-human`, like the `harness-*` Outcomes (R12c). Admission
+  lists it among the Vertex's Outcomes unless the `failed` table covers every case (R8).
+- T8. Shipped Flow fix: a `tests: named` Procedure reads a list of file paths, so `implementer-fix` and `senior-dev`
+  take `testFiles: { from: reviewer.review.findings, pick: file }` and `fix` declares `tests: named: inputs.testFiles`
+  (R13c, R13d already require it).
+- T9. Admission errors when an `optional` input has no path on which any of its sources is produced (the per-Outcome
+  path analysis, S4). The shipped Flow routes `implementer-fix`'s failures to `senior-dev`, so `senior-dev.previous`
+  (the rescued work, R5) is produced.
+- T10. An absent `optional` input never holds the Ticket; only a missing required input, which admission prevents,
+  would. For a matchable optional input, `absent` is a value in the rule domain (R8 includes it), and a condition on a
+  field of an absent input does not match. Briefs and templates render it as empty.
+- T11. Q1's `gg doctor` warning on a read-only Vertex advancing on its Claim alone is dropped; R11d guards publishing.
+  The rest of Q1 stands.
+- T12. `testPaths`' default lives in code (`DEFAULT_TEST_GLOBS`), not in `defaults/gg.json`. A `testPaths` key in the
+  defaults or user Layer is a load error, as with `commands` (ADR 0013), so the repository's value arrives whole.
+- T13. The shipped `failed` and `stopped` tables of `tests-fail`, `implement`, `review`, `fix` and `publish` are written
+  out in full with the step 2 rewrite, including review's `review-pass failed -> changes`.
+- T14. Wording, fixed in place: R7's closing sentence, R3e (dependency directories are excluded), R12b (no `onFail`),
+  R6d (no whitespace in Action ids); the reading guide names the superseded names. The round-1 review's S7 field
+  `session: fresh | resume` has no remaining use, since T4a always resumes the agent's Session.
+
 ## Open
 
-- Round 2 items still on hold: T6–T14 (see the handoff document for the recommendations).
+- Step 2: rewrite the shipped Flow and its tables in full (T1–T13).
+- A short round-3 review of the shipped Flow and the decisions changed since round 2.
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.

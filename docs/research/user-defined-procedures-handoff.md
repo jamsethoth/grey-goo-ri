@@ -104,24 +104,11 @@ only runtime facts are runtime errors (V1). Scenario runs are backlogged (V2, gr
 **The shipped Flow** is in the decisions file, R12e: `red → green → reviewer → publish → end: ready-for-qa`, with
 `retest → red` and `changes → implementer-fix` loops (`max: 2`, exhausted to `senior-dev`), `repeat → senior-dev`,
 and `senior-dev` (`maxVisits: 1`). It must be updated for T1–T5 (draft PR in `implement`/`fix`, Flow default routes,
-`max: 1` on `repeat`) and T8/T9 when those are accepted.
+`max: 1` on `repeat`) and T6, T8, T9 and T13.
 
 ## Open, in the order to take them
 
-1. **Round-2 items on hold, with the recommendations given:**
-   - T6: `from:` accepts a list (latest by Visit order across it), for the reviewer's and the PR body's
-     "latest implementation report" from `green`, `implementer-fix` or `senior-dev`.
-   - T7: an unmatched `failed` table produces an engine Outcome `failed`, routable, default `end: needs-human`.
-   - T8: `tests: named` uses a `testFiles` input with `pick: file`.
-   - T9: route `implementer-fix`'s failures to `senior-dev`, making its `previous` (rescued work) input real.
-   - T10: `absent` is a value in the rule domain for `optional` inputs.
-   - T11: drop Q1's read-only warning (R11d guards publishing).
-   - T12: `testPaths`' default lives in code (ADR 0013 lets only the repository Layer set it).
-   - T13: write the shipped `failed` and `stopped` tables out in full, including review's `review-pass failed →
-     changes`.
-   - T14: wording fixes (R7's closing sentence; R3e's dependency directories are excluded, `checks.mjs:79`; R12b's
-     `onFail`; S7's `session` field now applies only to recovery; Action ids also forbid whitespace) and the reading
-     guide.
+1. ~~Round-2 items on hold~~: T6–T14 decided 2026-10-21 (decisions file, Review round 2).
 2. **Rewrite the shipped Flow and its tables in full** with every accepted change.
 3. **A short round-3 review** of the shipped Flow and the decisions changed since round 2, by the same reviewers.
 4. **Slicing (step 7).** The S1–S6 proposal in the round-1 review is out of date. It must now also cover: Vertex-level
