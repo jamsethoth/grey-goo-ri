@@ -170,13 +170,14 @@ reads the plugin's hook manifest, runs its session-start command through the she
 
 ### 3.3 Workflow definition
 
-A flow is a graph of Vertices, each running one Procedure (3.4), plus the approval vertex. A Vertex routes to another
-Vertex or to an end (ADR 0014).
+A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes to another Vertex or to an end
+(ADR 0014).
 
 - Vertex: a `procedure` (3.4), an agent (3.1) when the Procedure has an agent Action, `inputs` read from earlier
   Vertices, and edges. A gate is a Vertex whose Procedure has no agent Action and a `command` Check.
-- `approval` vertex: pauses for a human decision through GitHub labels (3.5). It declares its await label and a
-  map of decide labels to outcomes; `approved` and `rejected` are the shipped default, a vertex may declare more.
+- An approval vertex is a Vertex whose Procedure ends in an `await-approval` Action, after any Checks and with no
+  agent Action. It pauses for a human decision through GitHub labels (3.5); the Action declares its `decisions`
+  (`approved` and `rejected` by default, more allowed), and the Decision is the Visit's Outcome (ADR 0014).
 - Ends: `end: ready-for-qa`, `end: needs-human`, `end: needs-replan`, each setting its state label; the set is fixed.
   Marking the PR ready is the `pr-ready` Action in a Vertex that requires a Check, so a flow in which a path reaches
   `end: ready-for-qa` without running `pr-ready` fails validation. At `end: needs-replan` the stop comment is posted on
@@ -238,7 +239,7 @@ repo; `end: ready-for-qa` reachable without `pr-ready`; a warning when reviewer 
 ### 3.4 Procedures, outcomes and resolution
 
 Procedures are data (ADR 0014), declared in the repo Layer and built only from gg's Actions (agent, check, commit,
-push, pr-upsert, pr-ready, comment) and Check kinds (`command`, `tests-fail`, `changes`, `response`, `repeat`). A
+push, pr-upsert, pr-ready, comment, await-approval) and Check kinds (`command`, `tests-fail`, `changes`, `response`, `repeat`). A
 Procedure has at most one agent Action. It declares its Claim tokens, each `{ requires: [<check ids>] }` or
 `{ stop: true }`; its Checks; `tests: frozen | named | write`; optionally `access: read-only`; `recover: { max, brief }`;
 and its `passed`, `failed` and `stopped` rule tables with `otherwise`. Multi-step work is composed from Vertices, and

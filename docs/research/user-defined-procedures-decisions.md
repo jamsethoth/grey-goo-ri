@@ -50,6 +50,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | T4a, T4b, T4d: `recover` as a Vertex setting | W1: a Procedure setting, applying per Visit |
 | R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
+| Request 3.3: the `approval` vertex as its own kind | X1: an `await-approval` Action in a Procedure with no agent step |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -625,6 +626,26 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
   reserved (D3). This settles U6's "fixed end behaviour".
 - W10. `green` declares `findings: { from: reviewer.review.response.findings, optional: true }`, so after a retest it
   sees the review's other findings; absent on the first Visit (T10).
+
+## After ADR 0014 (2026-10-22)
+
+- X1. A human approval inside a ticket Flow is a gg Action, not a kind of Vertex (D3):
+  - (a) `do: await-approval` with `decisions: [<outcome>, ...]` (request 3.3's default is `approved` and `rejected`),
+    each matching `[a-z][a-z0-9-]*`. It is the last Action of a Procedure with no agent Action; Checks before it run
+    first, and a failed one gives `failed` as usual (R11f), so the human is never asked about work that failed.
+  - (b) Reaching it writes the Approval Request (ADR 0003, request 3.5: Pending Instance, digest of branch HEAD, ticket
+    body revision and full config hash, the Await Label, one comment) as write-ahead Actions, and ends the run for
+    that Ticket, which is Awaiting, not Stuck.
+  - (c) A later run consumes exactly one authorised Decision as in request 3.5. The Decision is the Visit's Outcome,
+    routed like any other: by the Vertex, the Flow's `routes`, or `"*"`. A stale digest, a missing record or two
+    surviving Decisions retire and re-request without ending the Visit.
+  - (d) The validator treats `decisions` as the Procedure's Outcomes (R12b); every Decision label the Flow can request
+    must exist in the repository (request 3.3's label check).
+  - (e) Built inside the option 1 Epic, before grey-goo-ri issue #23, so #23 freezes the Pending Instance and
+    consumption record fields with everything else.
+  - (f) Plan approval at the Epic level stays with `gg plan` and `gg publish` and is not part of this design.
+  - Glossary, with its slice: Approval Vertex becomes "a Vertex whose Procedure ends in an `await-approval` Action";
+    Vertex loses its three kinds.
 
 ## Open
 

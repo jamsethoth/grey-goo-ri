@@ -7,7 +7,7 @@ proposal. Slice ids here (A1, E1, C1) are local to this file. Nothing is filed u
 
 ## Shape
 
-Nineteen tickets, sub-issues of one Epic, in three tracks:
+Twenty-one tickets, sub-issues of one Epic, in three tracks:
 
 - **A, groundwork**: pure modules and config, built and tested against fixtures. Only A1 and A4 touch the interpreter.
 - **E, engine**: E0 fixes and splits the interpreter first (from the 2026-10-21 audit, below); then interpreter tickets, strictly serial (request section 6: one interpreter-touching ticket in flight).
@@ -35,6 +35,7 @@ before grey-goo-ri issue #23.
 | A4 | Templates for Briefs, the PR body and comments | yes, call sites | none |
 | A5 | The Flow shape, its validator and `gg doctor` | no | A2, A3 |
 | A6 | Graph analysis: routing, bounds, publishing, commits, inputs | no | A5 |
+| A7 | The approval protocol: Approval Request, timeline read and consumption | no | none |
 | E0 | Audit fixes, then split the retry engine and Terminals out of the interpreter | yes | none |
 | E1 | Red and green on separate Vertices | yes | E0, A1 |
 | E2 | Action ids and the Recovery Number | yes | E1 |
@@ -45,11 +46,12 @@ before grey-goo-ri issue #23.
 | E7 | Procedures come from config; admission runs the validator | yes | E6, A6 |
 | E8 | `maxVisits`, the Action Cap and `repeat` routing | yes | E7 |
 | E9 | Rescue Refs for work routed to another Vertex | yes | E8 |
-| C1 | `gg init` writes the example; this repository gets its own Flow | no | E9 |
+| E10 | The `await-approval` Action | yes | E9, A7 |
+| C1 | `gg init` writes the example; this repository gets its own Flow | no | E10 |
 | C2 | The defaults Layer ships no Flow | no | C1 |
 | C3 | Audit cleanup: copies, dead code, names and test hygiene | yes | C2 |
 
-Serial chain: E0 → A1 → A4 → E1 → … → E9 (A4 may go before or after A1). A2, A3, A5 and A6 run beside it. grey-goo-ri
+Serial chain: E0 → A1 → A4 → E1 → … → E10 (A4 may go before or after A1). A2, A3, A5, A6 and A7 run beside it. grey-goo-ri
 issue #23 is marked blocked by C2. C3 changes no record or Event shape, so it does not block #23, but it touches the
 interpreter and so does not run while #23 is in flight.
 
@@ -58,19 +60,6 @@ interpreter and so does not run while #23 is in flight.
 Each entry lists the decisions it builds, then what it names under S7: golden traces regenerated, glossary entries,
 and `gg doctor` output. "Goldens" means the `golden:` cases in `test/interpreter.test.mjs` and the crash-and-resume
 traces in `test/reconcile.test.mjs`.
-
-### E0. Audit fixes, then the interpreter split
-
-Audit findings 1, 2, 14 and 5, all checked on main. (1) The plain `record.save` path (`lib/record.mjs:139`) wraps its
-error in `RecordSaveError`, so a failed busy or idle save is fatal and never saved again; `saveRetry` goes. (2)
-`lockGuard` checks `runState.stop` as `cooldown` already does (#85), so a remote write waiting for the repo lock does
-not write after a run stop. (14) The test GitHub fake keys labels by issue, so a sibling's needs-human no longer looks
-like a human override. (5) Then, with no behaviour change, the retry engine (`reserveRetry` through `sideEffect`)
-moves to `lib/effects.mjs` and `hold`, `abandon`, `fault`, `decide` and the Terminal functions to `lib/terminal.mjs`,
-both added to the AGENTS.md Layout table.
-- Tests: a failed busy or idle save stops saving (beside `test/interpreter.test.mjs:1670`); a sibling's run stop during
-  a lock wait ends the Ticket at needs-human with no GitHub write.
-- Goldens: unchanged. Glossary: none. Doctor: none.
 
 ### A1. `testPaths` is required and feeds every consumer
 
@@ -141,6 +130,29 @@ unreachable Vertices warned.
 - Tests: one fixture per rule; the example's admission summary (example-flow "What admission sees") reproduced.
 - Goldens: none. Glossary: none. Doctor: which Outcomes fall to `"*"` and which to the engine default (R12d); where
   each failure's work goes (rescued or left in place, on the effective target).
+
+### A7. The approval protocol: Approval Request, timeline read and consumption
+
+X1, ADR 0003, request 3.5. `lib/approval.mjs` builds the Pending Instance and the Approval Digest (branch HEAD, ticket
+body revision, full config hash), reads the issue's event timeline for the Await Label event and the Decide Label
+events after it, checks each actor's permission (write or higher, or the optional `approvers` list) and returns one
+of: consume (exactly one authorised Decision, matching digest), stale, ambiguous, or missing. No interpreter change.
+- Tests: a decision before the request is ignored; an undone decide label is ignored; a triage-only actor is ignored;
+  two surviving decisions are ambiguous; a changed branch HEAD, ticket body or config hash is stale.
+- Goldens: none. Glossary: none (the approval terms exist). Doctor: none.
+
+### E0. Audit fixes, then the interpreter split
+
+Audit findings 1, 2, 14 and 5, all checked on main. (1) The plain `record.save` path (`lib/record.mjs:139`) wraps its
+error in `RecordSaveError`, so a failed busy or idle save is fatal and never saved again; `saveRetry` goes. (2)
+`lockGuard` checks `runState.stop` as `cooldown` already does (#85), so a remote write waiting for the repo lock does
+not write after a run stop. (14) The test GitHub fake keys labels by issue, so a sibling's needs-human no longer looks
+like a human override. (5) Then, with no behaviour change, the retry engine (`reserveRetry` through `sideEffect`)
+moves to `lib/effects.mjs` and `hold`, `abandon`, `fault`, `decide` and the Terminal functions to `lib/terminal.mjs`,
+both added to the AGENTS.md Layout table.
+- Tests: a failed busy or idle save stops saving (beside `test/interpreter.test.mjs:1670`); a sibling's run stop during
+  a lock wait ends the Ticket at needs-human with no GitHub write.
+- Goldens: unchanged. Glossary: none. Doctor: none.
 
 ### E1. Red and green on separate Vertices
 
@@ -236,6 +248,18 @@ Vertex whose effective target is another Vertex rescues its work to `refs/gg/res
 crash by path rather than by call count (audit 20), so reordering a restore cannot silently move a crash test.
 - Goldens: a failed fix rescued into an escalation Vertex; the same failure left in place once the escalation is
   exhausted. Glossary: Rescue Ref output. Doctor: unchanged (A6 already prints it). #68 is rewritten to reuse this.
+
+### E10. The `await-approval` Action
+
+X1. `do: await-approval` with `decisions`, last in a Procedure with no agent Action. Reaching it writes the Approval
+Request (Pending Instance to the record, earlier await and decide labels removed, the Await Label, one comment) as
+write-ahead Actions and ends the run for the Ticket, which is Awaiting. A later run, under the ticket lock, consumes
+the Decision through A7 as a write-ahead Action (record first, then the decide label removed); the Decision is the
+Visit's Outcome. Stale, ambiguous or missing retire and re-request. Reconciliation resumes a crash at every step
+without reading the timeline twice. A5 and A6 treat `decisions` as Outcomes and check that their labels exist.
+- Goldens: the request posted and the run ended; an approval consumed and routed onward; a `rejected` routed back;
+  a stale digest re-requested; crashes before and after the decide label's removal (request 3.5's list).
+- Glossary: Approval Vertex redefined, Vertex loses its kinds. Doctor: each approval Vertex's decisions and routes.
 
 ### C1. `gg init` writes the example; this repository gets its own Flow
 

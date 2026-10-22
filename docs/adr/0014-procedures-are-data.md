@@ -10,7 +10,7 @@ Outcomes lived in `lib/procedures.mjs`, and the interpreter special-cased Phase 
 test-fix), Check names and Outcomes such as `red-failed` and `gate-failed(test)`. A repository owner could not add a
 QA stage, a lint or scope gate, a custom review shape or a stronger escalation without changing gg. Procedures now are
 data, declared in the repository Layer and built only from gg's own Actions (agent, check, commit, push, pr-upsert,
-pr-ready, comment), Check kinds (`command`, `tests-fail`, `changes`, `response`, `repeat`) and fixed integrity rows.
+pr-ready, comment, await-approval), Check kinds (`command`, `tests-fail`, `changes`, `response`, `repeat`) and fixed integrity rows.
 The interpreter names no Procedure, Action or Check.
 
 - **One agent step per Procedure.** A Procedure has at most one agent Action; with none it is a deterministic Vertex
@@ -25,6 +25,9 @@ The interpreter names no Procedure, Action or Check.
   Check failed recoverably, then every Check runs again.
 - **Integrity is never configurable.** Protected Files, read-only enforcement and Test Immutability over `testPaths`
   run after every agent Attempt; a Procedure only declares how much it may touch tests (`frozen`, `named`, `write`).
+- **A human approval is an Action.** `await-approval` ends a Procedure with no agent Action, asks for a Decision
+  through ADR 0003's label protocol, and ends the run for the Ticket; the Decision a later run consumes is the
+  Visit's Outcome, routed like any other. There is no separate approval kind of Vertex.
 - **Ends replace Terminals.** A Vertex routes to a Vertex or to `end: ready-for-qa | needs-human | needs-replan`.
   Publishing (`pr-ready`) is an Action in a Vertex that requires a Check, and runs only on the tree that Check passed.
 - **The repository owns its Flow.** gg ships no default Flow and no library of Procedures, Briefs, Personas or
@@ -56,7 +59,7 @@ example `gg init` writes is `docs/research/user-defined-procedures-example-flow.
 - Amends ADR 0004: acceptance follows the claimed token's `requires`, not every declared Check, and stop Outcomes are
   routable. Its separation of claim, harness result and Checks, and its fixed integrity row, stand.
 - Amends the request: section 2 ("Work is code" now means gg's Actions; a Procedure is composition), 3.1 (agent
-  `gates` and `resolution`), 3.3 (Terminals, `then`, the `gate` vertex, Flow layering), 3.4 (Procedures are data; the
+  `gates` and `resolution`), 3.3 (Terminals, `then`, the `gate` and `approval` vertices, Flow layering), 3.4 (Procedures are data; the
   illustrative enums), 3.5 (Action identity), 3.6 (Checks and test paths), 3.9 (the defaults Layer) and 7 (red and
   green on separate Vertices is no longer deferred).
 - The Action Marker becomes `gg:<execution>:<vertex>:<visit>:<action>:<recovery>:<run>:<attempt>`.
