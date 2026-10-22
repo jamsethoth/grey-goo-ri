@@ -24,6 +24,10 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | Q7: `visits: all` | R14b: dropped |
 | Q8: "no version bump" | R7: holds only after the freeze |
 | R6: Action identity with "step" | S1: Action id |
+| Q3b `recover` per Check, R1d ordering, R8b `runs` | T4: Vertex-level `recover`, `pass`, no per-Check `runs` |
+| Q3g fence; R11d tree check against the current worktree | T1: against the tree of the commit being published |
+| R9b "routes to `replan`" | T3: the Outcome `misscoped`, routed by the Flow's default `routes` |
+| R12e: push and pr-upsert only in `publish` | T2: `implement` and `fix` keep push and a draft pr-upsert |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -440,9 +444,26 @@ The merged review is [user-defined-procedures-review2.md](user-defined-procedure
   option 1 slices, no later than the slice that ships the new Flow, and before grey-goo-ri issue #23. The shipped
   `repeat` edge gets its own bound (`max: 1`).
 
+- T4. Recovery and passes (replaces per-Check `recover`, Q3b, and R1d's ordering rule):
+  - (a) Recovery is a Vertex setting, `recover: { max, brief }`. After a pass in which a Check the claimed token
+    requires failed in a recoverable way, while recoveries are left, the agent's Session resumes with a recovery Brief,
+    then every Check runs again (R1a).
+  - (b) Each Check may supply `recoverBrief`; the recovery Brief is the Vertex's `brief` frame plus the section of
+    every Check that failed in that pass, with its output. A Check without one gets a default section (its name and
+    failing output).
+  - (c) Each Check kind declares which failure modes are recoverable (`tests-fail`: tests unexpectedly passed is,
+    named tests missing from the output is not; `command`: a non-zero exit is, a timeout or a missing command is
+    not). A Check may set `recoverable: false`. Integrity Assertions are never recoverable.
+  - (d) A Vertex-level `pass` (Recovery Number + 1) runs from 1 to 1 + `recover.max` and is matchable in rules.
+    Checks record only `state` (`passed`, `failed`, `not-run`) from the last pass; per-Check `runs` is dropped, and
+    R8b's coupled state-and-runs field with it.
+  - (e) A different agent or approach for a failing Check is routing, not recovery: `recoverable: false` plus a
+    `failed` rule to another Vertex (R5 rescues the work).
+  - (f) The frozen Check signal (S6) is `{ id, kind, state, tree }`.
+
 ## Open
 
-- Round 2 items still on hold: T4, T6–T14.
+- Round 2 items still on hold: T6–T14 (see the handoff document for the recommendations).
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
