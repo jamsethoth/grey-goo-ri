@@ -3,6 +3,28 @@
 The running record of the planning session. The research behind it is in
 [user-defined-procedures.md](user-defined-procedures.md).
 
+## Reading guide: later decisions that amend earlier ones
+
+Decisions are recorded in the order they were made; a later one wins. In particular:
+
+| Earlier | Amended or replaced by |
+|---|---|
+| D4, Q3b: Declared Commands in `AGENTS.md` | Main: the repository Layer's `commands` (ADR 0013) |
+| Every "step id" | S1: **Action id** |
+| Q3: tokens over several Phases; Q3d's per-Phase reading | R2: one agent step per Procedure, one Claim per Visit |
+| Q3a: commit `requires` | S2 (commit runs on the claimed token's fresh required Checks) and R1b (freshness by tree) |
+| Q3b: `immutability` as a declarable Check kind | R3: Test Immutability is in gg's fixed integrity row |
+| Q3b, Q3d: `onFail` | R14a: dropped |
+| Q3b: `recover` reruns only its own Check | R1a: every Check of the Vertex runs again after recovery |
+| Q3g: the publishing fence on routes to publishing Terminals | R11d: publishing Actions require fresh passing Checks in their own Vertex; R11e |
+| Q3e, Q6, Q3f: routes to Terminals `done`, `needs-human`, `replan` | R11a: `end: ready-for-qa / needs-human / needs-replan`; R12: routing rules |
+| Q4: no-match default | S3 (the token, `passed` table only) and R12 (unrouted Outcomes) |
+| Q4b: overlap by testing boundary values | R8: exact box subtraction |
+| Q6: `misscoped` as its own stop token | R9: one `blocked` token with a `reason` |
+| Q7: `visits: all` | R14b: dropped |
+| Q8: "no version bump" | R7: holds only after the freeze |
+| R6: Action identity with "step" | S1: Action id |
+
 ## Step 1: use cases and users (2026-10-21)
 
 - D1. Use cases a–g are all in scope: (a) a QA stage whose agent may commit only test changes; (b) merge on done
@@ -387,6 +409,15 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     templates. `tests: named:` requires a list of strings, checked at admission.
   - (e) Every path (rule paths, input `from` paths, `pick` fields, `response` Check fields) is validated against its
     schema at admission.
+
+- R14. Simplifications (closes review question 6):
+  - (a) `onFail` is dropped. A `failed` table with no matching rule falls to `otherwise`, then to the routing default
+    (R12).
+  - (b) `visits: all` is dropped until a use case needs it; inputs read the latest Visit that produced the value (S4).
+  - (c) Routing the `harness-*` Outcomes stays as decided (Q3f).
+  - (d) One first-match evaluator and one analyser (R8) serve the `passed`, `failed` and `stopped` tables.
+  - (e) One resolver and validator handle every reference path (rules, Briefs, templates, Check parameters,
+    `tests: named`).
 
 ## Open
 
