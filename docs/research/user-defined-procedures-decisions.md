@@ -47,6 +47,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | Q3c: a Vertex option may remove a Check from `requires` | U7: dropped; declare a second Procedure |
 | Q7, R12e: `<vertex>.<action>.<field>` with the response implied | W2: `response` is named |
 | T2, R12e: `draft: true` on `pr-upsert` | W4: no flag; `pr-upsert` never changes draft state |
+| T4a, T4b, T4d: `recover` as a Vertex setting | W1: a Procedure setting, applying per Visit |
 | R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 
@@ -602,6 +603,10 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
 
 The merged review is [user-defined-procedures-review4.md](user-defined-procedures-review4.md).
 
+- W1. `recover: { max, brief }` is a Procedure setting, like `tests` and `access`, applying per Visit of any Vertex
+  that uses the Procedure. Every Vertex using a Procedure gets its budget; a different budget is a second Procedure (U7).
+  T4's semantics stand: one budget and one Session resume per pass, every failing Check's section in the recovery
+  Brief, every Check rerun. Amends T4a's "a Vertex setting" and T4b/T4d's "Vertex-level".
 - W2. One reference form: `<vertex>.<action id>.<field>`, where an agent Action's output is `response`
   (`reviewer.review.response.findings`, `green.green.response`); a Vertex's own outputs omit the Vertex
   (`test.evidence`). R13e validates every reference in this form.
@@ -624,7 +629,7 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
-- Round 4: W1 (where `recover` is declared) on hold.
+- Round 4 is decided (W1–W10).
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.

@@ -290,7 +290,7 @@ flows:
 ## Changes from today's shipped Flow
 
 - It is no longer shipped: `defaults/gg.json` loses `agents` and `flows`, and `gg init` writes this (P1, P3).
-- `tdd` splits into `red` and `green` (R2b); `still-green` and `test-fix` become each Vertex's `recover` (T4).
+- `tdd` splits into `red` and `green` (R2b); `still-green` and `test-fix` become each Procedure's `recover` (T4, W1).
   `resumeGreen` and `requireTestPass` go (R2c, U7).
 - `red-failed` and `gate-failed(test)` become `failed`, with the failing Check named in its signal and Terminal Reason
   (U14). A failed `red` ending at `needs-human` leaves its work in place instead of discarding it (R5b, U10).
@@ -304,4 +304,4 @@ flows:
 
 ## Decided
 
-The four questions the first draft raised are P5 (a)–(d), and the round-3 changes are U1–U15, in the decisions file.
+The four questions the first draft raised are P5 (a)–(d), the round-3 changes are U1–U15 and the round-4 changes W1–W10, in the decisions file.
