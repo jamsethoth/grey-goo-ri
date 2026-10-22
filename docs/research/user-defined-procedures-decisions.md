@@ -256,6 +256,21 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (f) It proves logical consistency over the declared domain, not runtime reachability (grey-goo-ri issue #98).
   - S3 also makes the library survey's deferred `ajv` decision for schema validation.
 
+- R9. One stop token with a reason:
+  - (a) The shipped Procedures use one stop token, `blocked`, with a response `reason` enum `misscoped | needs-input |
+    environment` and a `diagnosis` field. `misscoped` stops being a token.
+  - (b) The shipped `stopped` table routes `reason: misscoped` to `replan` (diagnosis to the Ticket and its Epic);
+    anything else falls to `blocked`, which routes to `needs-human`.
+  - (c) Every shipped Procedure offers `blocked`, the reviewer included (today its Claim is `ok | changes |
+    misscoped`).
+  - (d) Users may still declare several stop tokens. The `stopped` table stays (it has a use case now).
+- R10. Rule tables and Layers:
+  - (a) Rule tables belong to the Procedure. They may be set in any Layer, since a rule only picks an Outcome and the
+    fence and admission checks still apply.
+  - (b) A later Layer replaces a table whole (arrays replace in the Layer merge), so the effective first-match order
+    is always visible in one place. `gg doctor` prints the effective table and the Layer it came from.
+  - (c) Per-Vertex differences go through the Vertex's `route`, not per-Vertex rule overrides.
+
 ## Open
 
 - Revisit: migration of old records instead of holding them (R7d).
