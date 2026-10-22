@@ -191,8 +191,9 @@ A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes
   Action's event for the full Signals rather than copying them.
 - Edges: `route: { <outcome>: <vertex | {end} | {to, max, exhausted}> }`; a Flow's default `routes`, `"*"`
   included, apply to every Vertex that does not route the Outcome itself. Every back edge has `max` and
-  `exhausted`. Every vertex has `maxVisits` with its own `exhausted`; every ticket has a action cap. Loops exist only
-  as bounded back edges.
+  `exhausted`. A vertex may have `maxVisits` with its own `exhausted`; every cycle contains an edge with `max` or a
+  vertex with `maxVisits`, and every ticket has an action cap, which does not count as a cycle's bound. Loops exist
+  only as bounded back edges.
 - Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
   `maxVisits` counts entries per ticket; recovery passes (`recover`) and Attempt retries count
   toward the ticket action cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
@@ -215,6 +216,7 @@ Illustration only (shape, not syntax):
 
 ```
 red(tests-fail) -> green(implement) -> reviewer(review)
+green: failed -> senior-green(implement, maxVisits 1, exhausted end: needs-human) -> reviewer
 reviewer: ok -> publish, changes -> {to: implementer-fix, max: 2, exhausted: senior-dev}, repeat -> senior-dev
 implementer-fix = use implementer, procedure fix -> reviewer
 senior-dev(fix, maxVisits 1, exhausted end: needs-human) -> reviewer

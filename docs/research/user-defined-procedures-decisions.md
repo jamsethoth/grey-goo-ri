@@ -51,6 +51,11 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 | Request 3.3: the `approval` vertex as its own kind | X1: an `await-approval` Action in a Procedure with no agent step |
+| U2: "no test file changed" is non-recoverable | K7: recoverable once, then `failed` |
+| K2: the example's `actionCap: 40` | V2: 128 |
+| I3, request 3.3: the Action Cap bounds a cycle; every Vertex has `maxVisits` | V3: a cycle needs an edge `max` or a `maxVisits`; `maxVisits` is optional |
+| R8c: box subtraction | V5: enumeration over the finite partition |
+| ADR 0011: a change after the last heartbeat is not the agent's and holds | V9: no heartbeat rule; the Rescue Ref keeps every change |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -729,6 +734,46 @@ and the issues were edited to match. K7 was decided after research.
   - Issue #115: that failure is recoverable within red's `recover` budget (T4c gains it); after it, `failed` is
     routed by the Flow, `"*"` → `needs-human` in the example. Named tests missing from the output stay
     non-recoverable.
+
+## Review round 7 (2026-10-22)
+
+Round 7 (Fable and Astra, fresh reviewers briefed to judge the Epic's intent against online research on comparable
+agentic tooling) found every major design choice sound: Procedures as data over fixed Actions (GitHub Agentic
+Workflows' safe outputs, Step Functions' closed step kinds), test-first gating with K7 (TDD Guard, pi-red-green,
+TDFlow), Claims, Checks and first-match tables (Step Functions, Temporal, Camunda DMN), Session recovery (Aider,
+Claude Code's Stop hook), routing to ends (Step Functions Catch, Copilot's draft PR), run-wide bounds (LangGraph,
+OpenAI Agents, OpenHands), approval as an Action (LangGraph interrupts) and publishing a checked tree (branch
+protection). The owner accepted the findings below, and the issues were edited to match.
+
+- V1. Reaching the Action Cap stops the Flow's Actions; engine reporting (`end-*`, `hold-*`, `fault-*`) still runs,
+  with its own retry, and its Attempts are traced. A restart after exhaustion resumes only that reporting (Astra A1;
+  LangGraph reports `GraphRecursionError` outside the exhausted graph). Issue #117.
+- V2. The example's `actionCap` is 128 (Astra A2). At 40, two `retest` loops (13 Attempts each pass) used 39 before
+  `senior-red` started, so the example could not finish its own escalation. Issues #117, #120.
+- V3. Every cycle contains an edge with `max` or a Vertex with `maxVisits`; the Action Cap is not a cycle's bound,
+  since it is required and would make the rule vacuous (Fable F2). `maxVisits` is optional, as the example has it;
+  request 3.3 is amended. Issue #107.
+- V4. Engine Outcome names are reserved: no Claim token, table `outcome`, `otherwise` or `await-approval` decision
+  may equal `failed` or an end name, or start with `harness-` (Fable F1; Step Functions reserves `States.*`).
+  Issues #106, #119.
+- V5. The rule-table analyser enumerates the finite partition of each table's domain (enum and boolean values,
+  `absent`, `pass` 1 to `max + 1`, integer intervals cut at the table's constants) instead of subtracting boxes;
+  findings are unchanged. Amends R8c; R8e's brute-force cross-check becomes the analyser (Fable F3). Issue #103.
+- V6. `green`'s `failed` routes to a `senior-green` Vertex (`implement`, `senior`, `maxVisits: 1`), which reads the
+  rescued work as `previous`, as `implementer-fix` escalates to `senior-dev` (T9). A failed `green` means the normal
+  Agent could not pass the tests after its recovery; the senior Agent had not implemented (Fable F6). Issue #120.
+- V7. A stop token still runs every Check, as request 3.4's table has it: the output is evidence for the human who
+  reads the stop comment (Fable F4; reason recorded, no change).
+- V8. `tests-fail` checks for a changed test file before running the command and skips the run when none changed,
+  so one failure is reported and recovered (Fable F5). Issue #114. `fix.md` and `green.md` tell the agent to read
+  rescued work with `git diff HEAD <ref>` (Fable F7). Issue #120.
+- V9. The heartbeat ownership rule goes (Astra A3). The heartbeat is saved about every 60 s, so the agent can write
+  after the last one; on Ctrl+C, a closed console, a tree kill or power loss no process survives to record the kill
+  time; and on POSIX the agent's process group does not die with gg. The rule mostly turned ordinary crashes into
+  holds. Since the Rescue Ref keeps every change, a human edit made between the crash and the resume moves into the
+  ref, which the History names, and is not lost. ADR 0011 and issue #68 are amended; the heartbeat remains #67's
+  liveness signal.
+- Noted, no ticket: a per-Attempt turn cap (`claude -p --max-turns`) for the Claude Harness slice (Fable F8).
 
 ## Open
 
