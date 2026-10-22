@@ -7,13 +7,14 @@ proposal. Slice ids here (A1, E1, C1) are local to this file. Nothing is filed u
 
 ## Shape
 
-Eighteen tickets, sub-issues of one Epic, in three tracks:
+Nineteen tickets, sub-issues of one Epic, in three tracks:
 
 - **A, groundwork**: pure modules and config, built and tested against fixtures. Only A1 and A4 touch the interpreter.
 - **E, engine**: E0 fixes and splits the interpreter first (from the 2026-10-21 audit, below); then interpreter tickets, strictly serial (request section 6: one interpreter-touching ticket in flight).
   Each changes main's shipped Flow in place and regenerates the golden traces it names, so the suite is green after
   every ticket and no second engine lives beside the first.
-- **C, cutover**: `gg init` writes the example, then the defaults Layer stops shipping a Flow (U8).
+- **C, cutover**: `gg init` writes the example, then the defaults Layer stops shipping a Flow (U8); C3 then clears
+  the rest of the 2026-10-21 audit.
 
 The engine order puts the Flow-level changes (red and green Vertices, ends, inputs) before Procedures move into
 config, so that when E7 wires the validator into admission the shipped Flow is already in its final shape.
@@ -46,9 +47,11 @@ before grey-goo-ri issue #23.
 | E9 | Rescue Refs for work routed to another Vertex | yes | E8 |
 | C1 | `gg init` writes the example; this repository gets its own Flow | no | E9 |
 | C2 | The defaults Layer ships no Flow | no | C1 |
+| C3 | Audit cleanup: copies, dead code, names and test hygiene | yes | C2 |
 
 Serial chain: E0 → A1 → A4 → E1 → … → E9 (A4 may go before or after A1). A2, A3, A5 and A6 run beside it. grey-goo-ri
-issue #23 is marked blocked by C2.
+issue #23 is marked blocked by C2. C3 changes no record or Event shape, so it does not block #23, but it touches the
+interpreter and so does not run while #23 is in flight.
 
 ## Tickets
 
@@ -248,6 +251,35 @@ go. `flows` or `procedures` in the defaults or user Layer is a load error naming
 and `gg doctor` fail naming `gg init`.
 - Goldens: none. Glossary: none. Doctor: the missing-Flow failure.
 
+### C3. Audit cleanup: copies, dead code, names and test hygiene
+
+The audit findings no earlier slice absorbs, each re-checked against main when the ticket starts, since the E slices
+rewrite much of the cited code. No behaviour change.
+- Copies (8): one `sha256`, one default `clock`, one `git` stdout-trim wrapper; `gh.postComment` returns `{ id, url }`
+  from the API's JSON, dropping the comment-id regex; one needs-human cursor, if E3 left any.
+- One "keep the last whole lines" cutter with a fallback option, serving `checks.evidence` and `render.publicTail` (9).
+- The `?? 'gg'` and `= 'gg'` label prefix fallbacks go, except the one in `labels()` (11).
+- `addWorktree` compares paths with `paths.pathKey`, so only Windows ignores case (12).
+- Code with no reference anywhere is deleted: `github.openPrs`, `github.closePr`, `git.deleteRemoteBranch`,
+  `render.ticketBody`, `render.epicBody`; unused `export`s are dropped, `DEFAULT_TEST_GLOBS` excepted (C1). The code
+  used only by tests, ported ahead of `gg work`, `publish` and `plan`, stays for those slices (13).
+- Fixtures restore the previous GitHub transport after `setGh` (15).
+- The copied test helpers (`sh`, `loadTicket`, `newExecution`, the bare-origin and clone setup, the fake `a + b`
+  runner) move to `test/support/` (16).
+- `admit()`'s corrupt-record branch becomes its own function, and `runTicket` reuses `admit`'s skipped-but-needs-human
+  logic (17).
+- One exec timeout-note helper; `[ff: …]`, `FF_CMD` and `FF_TEST_*` become `gg` names (18). `Feature-Flow-Stage:`
+  stays (request doc line 479).
+- `record.proof` takes a glossary name; the JSON-key sorter in `config.mjs` stops sharing `canonical` with
+  `paths.canonical` (19).
+- Fixtures in `git.test.mjs`, `fake-harness.test.mjs` and `harnesses-contract.test.mjs` remove their temp directories
+  (20).
+- The left-out items: `record.load`, `record.save` and `reconcile.humanOverride` lose `async` if still synchronous;
+  one rule for an error with an empty message; one reader for the GitHub `?.nodes` shape.
+- Tests: the existing suite, plus one case for `addWorktree` on a case-sensitive platform and one that a second
+  fixture's `setGh` does not reach the first.
+- Goldens: unchanged. Glossary: the name chosen for `record.proof`, if new. Doctor: none.
+
 ## What is not sliced here
 
 - ADR 0014 (handoff step 2) and the grey-goo-ri issue #23 additions (step 4) are planning work, done before filing
@@ -284,4 +316,4 @@ Where each finding goes:
 | 8 (`TERMINALS`) | E3 |
 | 7 | E5 |
 | 20 (`crashFs`) | E9 |
-| 8 (rest), 9, 11, 12, 13, 15, 16 (rest), 17, 18, 19 (rest), 20 (temp dirs), the three left-out items | Not in the Epic: one cleanup ticket after C2, or backlog. 12 matters only off Windows. |
+| 8 (rest), 9, 11, 12, 13, 15, 16 (rest), 17, 18, 19 (rest), 20 (temp dirs), the three left-out items | C3 |
