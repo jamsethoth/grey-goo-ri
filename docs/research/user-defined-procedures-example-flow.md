@@ -22,9 +22,9 @@ commands: { test: ... }                      # required (ADR 0013); Checks name 
   Vertex's work (W3).
 
 The example's Briefs use what today's do: red and green the Ticket and commands, and the findings when present (R2g,
-W10); fix the History, findings and any rescued work; the reviewer the diff, the changed test files, the report and
-both evidences. `pr-body.md` reads `report`, `red` and
-`green` (today's `render.prBody`), and each `pr-upsert` binds them with `with:`.
+W10); green also any rescued work, for `senior-green` (V6); fix the History, findings and any rescued work; the reviewer
+the diff, the changed test files, the report and both evidences. `pr-body.md` reads `report`, `red` and `green` (today's
+`render.prBody`), and each `pr-upsert` binds them with `with:`.
 
 ## Agents
 
@@ -76,7 +76,7 @@ tests-fail:
 - Outputs read later: `commit.files`, `red-check.evidence`, and `rescue` when a failure or stop routes to another
   Vertex (R5c).
 
-### implement (the `green` Vertex)
+### implement (the `green` and `senior-green` Vertices)
 
 ```yaml
 implement:
@@ -189,7 +189,7 @@ across the list wins). They are shown once as `&impl`; the JSON spells them out 
 flows:
   default:
     plan: null                               # X2: no Epic-level planning; standalone tickets run
-    actionCap: 40                            # K2: every Attempt in the Execution, a required spend ceiling
+    actionCap: 128                           # K2, V2: every Attempt in the Execution, a required spend ceiling
     ticket:
       entry: red
       routes:                                # T3: every Vertex inherits these
@@ -210,15 +210,32 @@ flows:
             tests:    { from: [red.commit.files, senior-red.commit.files] }
             red:      { from: [red.red-check.evidence, senior-red.red-check.evidence] }
             findings: { from: reviewer.review.response.findings, optional: true }   # W10
+            previous: { from: green.rescue, optional: true }   # V6: the shared green.md reads it, as W7
+          route:
+            ok:     reviewer
+            failed: senior-green             # V6: rescues the work (R5a), so senior-green.previous exists
+
+        senior-green:                        # V6: tests the implementer could not pass go to the stronger model once
+          use: senior
+          procedure: implement
+          maxVisits: 1
+          exhausted: { end: needs-human }
+          inputs:
+            tests:    { from: [red.commit.files, senior-red.commit.files] }
+            red:      { from: [red.red-check.evidence, senior-red.red-check.evidence] }
+            findings: { from: reviewer.review.response.findings, optional: true }
+            previous: { from: green.rescue, optional: true }
           route: { ok: reviewer }
 
         reviewer:
           use: reviewer
           procedure: review
           inputs: &impl                      # U1, T6
-            report: { from: [green.green.response, implementer-fix.fix.response, senior-dev.fix.response] }
+            report: { from: [green.green.response, senior-green.green.response, implementer-fix.fix.response,
+                              senior-dev.fix.response] }
             red:    { from: [red.red-check.evidence, senior-red.red-check.evidence] }
-            green:  { from: [green.test.evidence, implementer-fix.test.evidence, senior-dev.test.evidence] }
+            green:  { from: [green.test.evidence, senior-green.test.evidence, implementer-fix.test.evidence,
+                              senior-dev.test.evidence] }
           route:
             ok:      publish
             retest:  { to: red,             max: 2, exhausted: senior-red }    # U11
@@ -268,27 +285,32 @@ flows:
 
 ## What admission sees
 
-- **Every Outcome is routed** (R12b, T3). The Flow's `"*"` catches `blocked`, `failed` (except `implementer-fix`'s),
-  `harness-*`, `red`'s `no-test`, and every unlisted Outcome; `misscoped` goes to the planner from any Vertex.
+- **Every Outcome is routed** (R12b, T3). The Flow's `"*"` catches `blocked`, `failed` (except `green`'s and
+  `implementer-fix`'s), `harness-*`, `red`'s `no-test`, and every unlisted Outcome; `misscoped` goes to the planner from
+  any Vertex.
 - **Every path to `end: ready-for-qa` runs `pr-ready`** (R11e): only `publish` reaches it.
 - **Publishing** (R11d, T1a): `publish` requires `test` and runs `pr-ready` only on that Check's tree.
-- **Commits** (S2, T1c): every passing path of `red`, `senior-red`, `green`, `implementer-fix` and `senior-dev`
-  commits, and each committing token requires a Check.
-- **Inputs** (Q7, S4, T6, T9, U1): `green.tests` and `green.red` come from `red` or `senior-red` on every path; every
-  `report`, `red` and `green` from one of their producers on every path, since `red` and `green` precede every
-  reviewer; `senior-red.findings` and the fix Vertices' `findings` from `reviewer`, which precedes them on every
-  path; `red.findings`, `green.findings` and both fix Vertices' `previous` are optional, each with a producing path
-  (`implementer-fix.previous` through `senior-red → senior-dev → reviewer → implementer-fix`).
-- **Bounds** (I3, T5): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`; `reviewer → implementer-fix →
-  reviewer` by `changes`' `max: 2`; every path into `senior-red` and `senior-dev` by their `maxVisits: 1`; the
-  Ticket's Action Cap over all of them.
+- **Commits** (S2, T1c): every passing path of `red`, `senior-red`, `green`, `senior-green`, `implementer-fix` and
+  `senior-dev` commits, and each committing token requires a Check.
+- **Inputs** (Q7, S4, T6, T9, U1): `tests` and `red` of `green` and `senior-green` come from `red` or `senior-red` on
+  every path; every `report`, `red` and `green` from one of their producers on every path, since `red` and `green`
+  precede every reviewer; `senior-red.findings` and the fix Vertices' `findings` from `reviewer`, which precedes them on
+  every path; `red.findings`, both green Vertices' `findings` and `previous`, and both fix Vertices' `previous` are
+  optional, each with a producing path (`implementer-fix.previous` through `senior-red → senior-dev → reviewer →
+  implementer-fix`; `green.previous` through `green → senior-green → reviewer → red → green`).
+- **Bounds** (I3, T5, V3): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`;
+  `reviewer → implementer-fix → reviewer` by `changes`' `max: 2`; every path into `senior-red`, `senior-green` and
+  `senior-dev` by their `maxVisits: 1`; the Ticket's Action Cap over all of them. The cap covers the longest bounded
+  path: three passes of red, green and review (13 Attempts each, two `retest` loops), then `senior-red`, `green`,
+  `senior-green`, review, two `changes` loops, `senior-dev`, review and `publish`, about 90 Attempts, and about 125
+  with one recovery per agent Visit (V2).
 - **Rules** (R8, U4): no unreachable or never-firing row. Three partial-overlap warnings in the review's `passed`
   table, all intended: a clean `ok` whose findings repeat earlier ones stays `ok` (row 1 over row 2); a clean `ok` that
   also has `needsTest: true` stays `ok` (row 1 over row 3); a repeat that also has `needsTest: true` goes to `repeat`
   (row 2 over row 3).
-- **Rescue** (R5, U5): decided on the effective target. `implementer-fix`'s `failed` and `senior-red`'s `no-test`
-  rescue and reset while `senior-dev` has a Visit left; once it is spent they end at `needs-human` with the work in
-  place (R5b).
+- **Rescue** (R5, U5): decided on the effective target. `green`'s `failed` rescues and resets while `senior-green` has a
+  Visit left; `implementer-fix`'s `failed` and `senior-red`'s `no-test` while `senior-dev` has one. Once the Visit is
+  spent they end at `needs-human` with the work in place (R5b).
 
 ## Changes from today's shipped Flow
 
@@ -297,6 +319,7 @@ flows:
   `resumeGreen` and `requireTestPass` go (R2c, U7).
 - `red-failed` and `gate-failed(test)` become `failed`, with the failing Check named in its signal and Terminal Reason
   (U14). A failed `red` ending at `needs-human` leaves its work in place instead of discarding it (R5b, U10).
+- A failed `green` escalates once to `senior-green` instead of ending at `needs-human` (V6).
 - The review's `misscoped` token becomes `blocked` with `reason: misscoped`, and the reviewer may now stop (R9c). The
   review declares `access: read-only` itself (U12).
 - `repeat` routes to `senior-dev` instead of `changes` (R4d), removing the `shortcut:` in `interpreter.mjs`.

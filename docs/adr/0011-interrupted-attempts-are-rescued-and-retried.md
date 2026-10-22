@@ -14,10 +14,15 @@ fresh Session, within a crash-retry budget of one. Each step is a write-ahead Ac
 during recovery neither repeats nor skips a step. Nothing is discarded: the Rescue Ref keeps whatever was in the
 worktree, whoever made it.
 
-The baseline proves what to restore, not who made the later changes. Two rules narrow the risk that a human edit
-made between the crash and the resume is moved out of the worktree: the agent's process tree dies with gg (the job
-object ends when gg's control pipe closes), so a file modified after the Attempt's last recorded heartbeat is not the
-agent's and holds the Ticket; and a worktree that does not match its Rescue Ref after the rescue holds the Ticket.
+The baseline proves what to restore, not who made the later changes, and gg cannot tell them apart: a human edit
+made between the crash and the resume is rescued with the agent's leftovers, moves out of the worktree into the
+Rescue Ref, and is not lost. A worktree that does not match its Rescue Ref after the rescue holds the Ticket.
+
+Amended 2026-10-22 (decision V9 in `docs/research/user-defined-procedures-decisions.md`): this ADR first held the
+Ticket when a file was modified after the Attempt's last recorded heartbeat, on the grounds that the agent's process
+tree dies with gg. The heartbeat is saved about every 60 seconds, so the agent can write after the last one; on
+Ctrl+C, a closed console, a tree kill or power loss no process survives to record when the agent died; and on POSIX
+the agent's process group does not die with gg. The rule mostly held ordinary crashes, so it was dropped.
 Merge conflicts, a moved branch and an exhausted budget hold as before.
 
 ## Considered options
@@ -41,8 +46,10 @@ Merge conflicts, a moved branch and an exhausted budget hold as before.
 - Ignored files outside the Protected Files and test paths are still neither rescued nor restored, as before.
 - A retried agent call is not a replay: it may produce a different result, and every Check after it runs again.
 - Tools the agent ran that changed anything outside the worktree are not undone.
-- A tool that breaks away from the job object can outlive gg and write after the heartbeat; the heartbeat rule then
-  holds the Ticket, which is the safe outcome.
+- A tool that breaks away from the job object, or an agent on POSIX, can outlive gg and write during the rescue;
+  the rescue's verification then finds the worktree unlike the Rescue Ref and holds the Ticket.
+- A human edit made between the crash and the resume leaves the worktree; the History and any hold comment name the
+  Rescue Ref that keeps it.
 
 ## Sources
 
