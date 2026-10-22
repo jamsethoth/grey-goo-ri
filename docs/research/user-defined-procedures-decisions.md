@@ -556,7 +556,8 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
   and `senior-dev` declare `report`, `red` and `green` (T6 lists). Context size stays per Brief, as today.
 - U2. "No file under `testPaths` changed since the Visit's baseline" is a non-recoverable `tests-fail` failure (T4c),
   as today's "No tests were written". In the example it is `failed`, routed by the Flow's `"*"` to `needs-human`, on a
-  retest Visit too. A `commit` with nothing to commit is a no-op with `files: []`.
+  retest Visit too. A `commit` with nothing to commit is a no-op with `files: []`. Amended by K7: the failure is
+  recoverable, and `failed` follows only after recovery.
 - U3. R9a's `reason` enum gains `none`, since strict schemas require every field.
 - U4. The review's `passed` table has three intended partial overlaps; the third, `ok` with review-pass passed and
   `needsTest: true`, stays `ok`. The example's admission summary names all three.
@@ -705,7 +706,7 @@ accepted Y1–Y4 and Y7–Y15 as recommended, and the issues were edited to matc
 ## Review round 6 (2026-10-22)
 
 Round 6 ([merged](user-defined-procedures-review6.md)) reviewed all 25 issues with fresh reviewers. The owner accepted K3–K6 and K8–K14 as recommended,
-and the issues were edited to match. K7 (U2 has no ticket) is open.
+and the issues were edited to match. K7 was decided after research.
 
 - K1. `approvers` is an optional top-level list of GitHub logins in the repository Layer, like `testPaths` a load
   error elsewhere; without it only write permission or higher counts (request 3.5). Issue #119 also extends the
@@ -715,6 +716,19 @@ and the issues were edited to match. K7 (U2 has no ticket) is open.
   Execution, request 3.3); the example writes 40. Comparable systems all add one run-wide bound over per-step limits
   (LangGraph `recursion_limit`, OpenAI Agents `max_turns`, OpenHands `max_iterations`, Step Functions' history limit).
   A spend budget (tokens or cost) is a later ticket.
+- K7. U2 is built, and its first part is now recoverable. An agent that judges no test needed already has the stop
+  reason `no-test-needed` (U11); a red that claims `ok` with no test file changed is a Claim its evidence
+  contradicts. Agentic TDD tools answer that with feedback and a bounded retry, then escalation (TDD Guard and
+  pi-red-green keep the agent in red with the reason; bounded-repair pipelines cap retries, then escalate; TDFlow,
+  EACL 2026, finds test writing the hardest step, so a miss is ordinary). So:
+  - Issue #113: every `commit` records `files`; nothing to commit makes no commit and records `files: []`, since
+    #113's Flow reads `red.commit.files` and runs before #114.
+  - Issue #114: the `tests-fail` failure "no file under `testPaths` changed since the Visit's baseline", where any
+    path in the baseline-to-worktree diff counts (added, modified, deleted, either side of a rename), replaces the
+    commit Action's special case.
+  - Issue #115: that failure is recoverable within red's `recover` budget (T4c gains it); after it, `failed` is
+    routed by the Flow, `"*"` → `needs-human` in the example. Named tests missing from the output stay
+    non-recoverable.
 
 ## Open
 
