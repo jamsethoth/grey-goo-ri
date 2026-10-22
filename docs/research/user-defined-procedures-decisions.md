@@ -35,6 +35,8 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | R3e: where `testPaths`' default lives | T12: in code, `DEFAULT_TEST_GLOBS` |
 | R12e: the shipped Flow | T8, T9, T13 and step 2's rewrite |
 | Q3e, R12b: `onFail` values among a Vertex's Outcomes | R14a (fixed in R12b in place) |
+| D3, R12e, T3: shipped defaults-Layer Procedures and the shipped Flow | P1: no default Flow; the example Flow |
+| R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 
 ## Step 1: use cases and users (2026-10-21)
@@ -497,6 +499,23 @@ The merged review is [user-defined-procedures-review2.md](user-defined-procedure
 - T14. Wording, fixed in place: R7's closing sentence, R3e (dependency directories are excluded), R12b (no `onFail`),
   R6d (no whitespace in Action ids); the reading guide names the superseded names. The round-1 review's S7 field
   `session: fresh | resume` has no remaining use, since T4a always resumes the agent's Session.
+
+## After round 2 (2026-10-22)
+
+- P1. gg ships no default Flow. A Flow is the repository's own process, so nothing is merged in under it:
+  - (a) Without a declared Flow, preflight and `gg doctor` fail, naming `gg init`, as a missing `test` command does.
+  - (b) `gg init` writes the example Flow and its Agents into the repository Layer; after that the repository owns them,
+    and a gg upgrade never changes them. Improvements to the example reach existing repositories through release notes.
+  - (c) The example lives in the docs and in `gg init`'s output. A test proves it passes admission and pins its golden
+    trace; every other test uses fixture Flows.
+  - (d) Amends D3 (no shipped defaults-Layer Procedures), T3 (the default `routes` are the example's) and R12e (the
+    shipped Flow is the example Flow; the step 2 draft keeps its content).
+  - Open: whether gg keeps a library of Procedures, Briefs, Personas and schemas a Flow may name, or `gg init` copies
+    them too.
+- P2. Flows and Procedures, with their tables, are declared only in the repository Layer. A `flows` or `procedures` key
+  in the defaults or user Layer is a load error naming the file, as with `commands` (ADR 0013), so a Flow arrives whole
+  and R10's cross-Layer replacement no longer applies. The user Layer keeps per-person settings, such as an Agent's
+  harness, model and effort.
 
 ## Open
 
