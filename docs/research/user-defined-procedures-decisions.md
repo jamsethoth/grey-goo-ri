@@ -36,6 +36,10 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | R12e: the shipped Flow | T8, T9, T13 and step 2's rewrite |
 | Q3e, R12b: `onFail` values among a Vertex's Outcomes | R14a (fixed in R12b in place) |
 | D3, R12e, T3: shipped defaults-Layer Procedures and the shipped Flow | P1: no default Flow; the example Flow |
+| P1 (open): a library of shipped Procedures | P3: no library; `gg init` writes the whole example |
+| R3e, T12: `testPaths` defaults to `DEFAULT_TEST_GLOBS` | P4: `testPaths` is required |
+| R4a: one condition per `response` Check | P5d: `all-of` |
+| R4b: the review's `ok` requires `review-pass` | P5a: `ok` requires nothing; a `passed` row decides |
 | R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 
@@ -510,16 +514,31 @@ The merged review is [user-defined-procedures-review2.md](user-defined-procedure
     trace; every other test uses fixture Flows.
   - (d) Amends D3 (no shipped defaults-Layer Procedures), T3 (the default `routes` are the example's) and R12e (the
     shipped Flow is the example Flow; the step 2 draft keeps its content).
-  - Open: whether gg keeps a library of Procedures, Briefs, Personas and schemas a Flow may name, or `gg init` copies
-    them too.
 - P2. Flows and Procedures, with their tables, are declared only in the repository Layer. A `flows` or `procedures` key
   in the defaults or user Layer is a load error naming the file, as with `commands` (ADR 0013), so a Flow arrives whole
   and R10's cross-Layer replacement no longer applies. The user Layer keeps per-person settings, such as an Agent's
   harness, model and effort.
+- P3. gg ships no library of Procedures, Briefs, Personas or schemas. gg's code holds only its Actions, Check kinds and
+  fixed integrity rows; `gg init` writes the whole example (Flow, Agents, Procedures, Briefs, Personas, schemas) into
+  the repository. A shipped library would save a few lines in each repository but change behaviour silently on upgrade,
+  and hide that Briefs need the template mechanism, which user Procedures need anyway: the example's Briefs prove it
+  before the example ships. This lifts the "shipped Personas only" shortcut in `lib/config.mjs`.
+- P4. `testPaths` is required in the repository Layer, like `commands.test` (amends R3e and T12). Preflight rejects a
+  missing or empty list or a value that is not a glob string, naming the file. `gg init` writes today's
+  `DEFAULT_TEST_GLOBS`. Excluding dependency directories stays gg's own rule, in code.
+- P5. The example Flow's open questions (step 2 draft):
+  - (a) The review's `ok` requires nothing (amends R4b). The `passed` table's first row, `ok` with `review-pass`
+    passed, is the only way to `ok`; anything else is a repeat, a retest or `changes`. So an `ok` review that fails
+    review-pass still posts its comment and PR update, as today. R11d guards publishing in `publish`; `gg doctor`
+    shows if a replaced table drops the row (R10b).
+  - (b) With no required Check, the review has no `failed` table; `otherwise: changes` serves the `passed` table.
+  - (c) `publish`'s failing `test` ends at `needs-human` through the Flow's `"*"`.
+  - (d) A `response` Check may take `all-of: [...]` over R4a's forms, passing when every condition holds; its failing
+    output names the conditions that failed, as `reviewPass`'s `reasons` do.
 
 ## Open
 
-- Step 2: rewrite the shipped Flow and its tables in full (T1–T13).
+- Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
 - A short round-3 review of the shipped Flow and the decisions changed since round 2.
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.

@@ -109,7 +109,8 @@ and `senior-dev` (`maxVisits: 1`). It must be updated for T1–T5 (draft PR in `
 ## Open, in the order to take them
 
 1. ~~Round-2 items on hold~~: T6–T14 decided 2026-10-21 (decisions file, Review round 2).
-2. **Rewrite the shipped Flow and its tables in full** with every accepted change.
+2. ~~Rewrite the shipped Flow~~: done as the example Flow, `user-defined-procedures-example-flow.md`; P1–P5 decided
+   2026-10-22 (no default Flow, repository Layer only, no library, `testPaths` required). Was: **Rewrite the shipped Flow and its tables in full** with every accepted change.
 3. **A short round-3 review** of the shipped Flow and the decisions changed since round 2, by the same reviewers.
 4. **Slicing (step 7).** The S1–S6 proposal in the round-1 review is out of date. It must now also cover: Vertex-level
    recovery; Test Immutability in the fixed row with `testPaths`; the `response` and `repeat` kinds; the Rescue Ref

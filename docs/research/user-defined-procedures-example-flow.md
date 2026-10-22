@@ -1,14 +1,19 @@
-# User-defined Procedures: the shipped Flow, in full
+# User-defined Procedures: the example Flow, in full
 
-Step 2 of the handoff: the defaults Layer's Agents, Procedures and Flow, rewritten with every accepted decision (R1–R14,
-S1–S7, T1–T14). It is a draft for the owner and the round-3 review. Spelling is illustrative (S3 fixes it), YAML stands
-for the JSON of `defaults/gg.json`, and Brief, schema and template names stand for files the slices add. Comments cite
-the decision behind each line.
+Step 2 of the handoff: the Agents, Procedures and Flow that `gg init` writes into a repository Layer (P1, P3), with every
+accepted decision (R1–R14, S1–S7, T1–T14, P1–P5). gg ships no default Flow; this is an example the repository then owns.
+Spelling is illustrative (S3 fixes it), YAML stands for the JSON of `.agents/gg/gg.json`, and Brief, schema, Persona and
+template names stand for files `gg init` writes beside it. Comments cite the decision behind each line.
+
+```yaml
+testPaths: [...]                             # required (P4); gg init writes today's DEFAULT_TEST_GLOBS
+commands: { test: ... }                      # required (ADR 0013)
+```
 
 ## Agents
 
 ```yaml
-agents:                                      # no harness or model in the defaults Layer
+agents:                                      # harness, model and effort come from the user Layer (P2)
   implementer: { persona: implementer.md, access: workspace-write }
   reviewer:    { persona: reviewer.md,    access: read-only }
   senior:      { persona: implementer.md, access: workspace-write }   # meant for a stronger model (R12e)
@@ -17,7 +22,7 @@ agents:                                      # no harness or model in the defaul
 ## Procedures
 
 Every Procedure's `stopped` table is the same (R9b): the shared `blocked` token, refined by its `reason`. It is written
-out in each Procedure because tables belong to the Procedure and a later Layer replaces one whole (R10).
+out in each Procedure because tables belong to the Procedure.
 
 ### tests-fail (the `red` Vertex)
 
@@ -98,13 +103,13 @@ The response schema gains `needsTest` (boolean, R2g), `reason` and `diagnosis` (
 
 ```yaml
 review:
-  claims:
-    ok:      { requires: [review-pass] }     # R4b; see question 1
+  claims:                                    # neither requires a Check, so effects always run (P5a)
+    ok:      { requires: [] }
     changes: { requires: [] }
     blocked: { stop: true, comment: blocked.md }
   actions:
     - { id: review,      do: agent, brief: review.md, schema: review.schema.json }
-    - { id: review-pass, do: check, kind: response, recoverable: false,  # R4a, R4b; see question 4
+    - { id: review-pass, do: check, kind: response,                       # R4a, P5d
         all-of: [ { field: dodMet, is: true },
                   { field: tddEvidenceOk, is: true },
                   { none: findings, where: { severity: [blocker, major] } } ] }
@@ -112,20 +117,17 @@ review:
         fields: [file, severity, issue] }    # R4c: failed means a repeat; a fact, required by nothing
     - { id: comment,     do: comment, body: review-comment.md }
     - { id: pr,          do: pr-upsert, body: pr-body.md }
-  passed:                                    # claim ok with review-pass passed, or claim changes
-    - { when: { claim: changes, check.repeat: failed }, outcome: repeat }
-    - { when: { claim: changes, response.needsTest: true }, outcome: retest }
-                                             # no match: the token (ok or changes)
-  failed:                                    # claim ok with review-pass failed (T13)
+  passed:                                    # every review lands here: nothing is required (P5a, P5b)
+    - { when: { claim: ok, check.review-pass: passed }, outcome: ok }   # the only way to ok
     - { when: { check.repeat: failed }, outcome: repeat }
     - { when: { response.needsTest: true }, outcome: retest }
-  otherwise: changes                         # failed table only reaches it; see question 2
+  otherwise: changes                         # claim changes, or ok with review-pass failed (T13)
   stopped:
     - { when: { response.reason: misscoped }, outcome: misscoped }
 ```
 
-- Outcomes: `ok`, `changes`, `retest`, `repeat`, `misscoped`, `blocked`, `harness-*`. The `failed` table is total
-  with `otherwise`, so the engine Outcome `failed` is not listed (T7).
+- Outcomes: `ok`, `changes`, `retest`, `repeat`, `misscoped`, `blocked`, `harness-*`. No token requires a Check, so
+  the review has no `failed` table and never produces the engine Outcome `failed` (T7).
 - Outputs read later: `review.response.findings`.
 
 ### publish (the `publish` Vertex)
@@ -135,7 +137,8 @@ No agent step, so its implicit Claim `ok` requires every Check (R11f).
 ```yaml
 publish:
   actions:
-    - { id: test,     do: check, kind: command, command: test }   # nothing to recover with: no agent
+    - { id: test,     do: check, kind: command, command: test }   # no agent to recover with; failed ends at
+                                             # needs-human through the Flow's "*" (P5c)
     - { id: pr,       do: pr-upsert, body: pr-body.md }           # re-renders the body (T2)
     - { id: pr-ready, do: pr-ready }         # publishing: test's tree = the published commit's, clean worktree (T1a)
   passed: []
@@ -222,10 +225,13 @@ flows:
 - **Bounds** (I3, T5): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`; `reviewer → implementer-fix →
   reviewer` by `changes`' `max: 2`; every path into `senior-dev` by its `maxVisits: 1`; the Ticket's Action Cap over
   all of them.
-- **Rules** (R8): no unreachable or never-firing row. Two warnings, both intended: in the review's `passed` and
-  `failed` tables a repeat that also has `needsTest: true` goes to `repeat`, which wins by order.
+- **Rules** (R8): no unreachable or never-firing row. Two partial-overlap warnings in the review's `passed` table,
+  both intended: a clean `ok` whose findings repeat earlier ones stays `ok` (row 1 wins), and a repeat that also has
+  `needsTest: true` goes to `repeat` (row 2 wins).
 
 ## Changes from today's shipped Flow
+
+- It is no longer shipped: `defaults/gg.json` loses `agents` and `flows`, and `gg init` writes this (P1, P3).
 
 - `tdd` splits into `red` and `green` (R2b); `still-green` and `test-fix` become each Vertex's `recover` (T4).
   `resumeGreen` and `requireTestPass` go (R2c, Q3c).
@@ -235,23 +241,6 @@ flows:
 - `done` becomes `publish` plus `end: ready-for-qa` (R11).
 - New Agent `senior`; the example Layers gain an entry for it.
 
-## Questions for the owner
+## Decided
 
-1. **A failing `ok` review no longer posts its comment.** Today, an `ok` review that fails review-pass routes as
-   `changes` and still posts the review comment and PR update. Under Q3d, a failed required Check skips the remaining
-   effect Actions, so with `ok: { requires: [review-pass] }` that review's findings never reach the PR. Recommendation:
-   `ok: { requires: [] }` with a first `passed` row `{ claim: ok, check.review-pass: failed } → changes` (its
-   `repeat` and `retest` rows ahead of it). R11d now guards publishing in `publish`, so R4b's reason for requiring it
-   is gone; the cost is that a later Layer replacing the review's table could drop the row, which `gg doctor` shows
-   (R10b). Otherwise keep R4b and accept the missing comment.
-2. **The review's `otherwise: changes`.** It applies to the `failed` table only, since `passed` already falls to the
-   token (S3). If question 1 goes as recommended, the `failed` table is never reached and both `failed` and
-   `otherwise` are dropped.
-3. **`publish`'s `test` failing.** It falls to `"*"` and `end: needs-human`. Routing it back to `implementer-fix` is
-   possible, but a suite that passed in `green` or `fix` and fails on the same tree points at flakiness or the
-   environment, which is the human's.
-4. **review-pass needs three conditions in one Check.** R4a defines each `response` form (`{ field, is }`, `none`,
-   `any`, `all`, `count`) as a whole Check, so review-pass (`dodMet`, `tddEvidenceOk`, no blocker or major finding)
-   would be three Checks, each named in `requires` and in rules. Recommendation: a `response` Check takes `all-of: [...]`
-   over those forms, passing when every condition holds; its failing output names the conditions that failed, as
-   `reviewPass`'s `reasons` do today.
+The four questions this draft raised are P5 (a)–(d) in the decisions file.
