@@ -232,7 +232,18 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (e) Glossary: a **Recovery Number** entry ("how many recovery Phases have run in this Visit; 0 before the
     first"), and the Action identity entry rewritten. grey-goo-ri issue #23 freezes it.
 
+- R7. Versions before the freeze (accepted for now; the owner will revisit migration):
+  - (a) No version bumps before the freeze: `SCHEMA_VERSION` stays 1 and the Event schema 2 through S1–S6. With no users
+    and no State Databases, a bump protects nothing.
+  - (b) grey-goo-ri issue #23 sets the first frozen record and Event versions; after it, a change needs an ADR and a
+    bump.
+  - (c) Between pre-freeze slices, delete any real `.git/gg/gg.db` before upgrading, noted in the epic.
+  - (d) No migration code for now; after the freeze, the version check holds old records cleanly.
+  - This corrects Q8's "no version bump", which holds only after the freeze.
+
 ## Open
+
+- Revisit: migration of old records instead of holding them (R7d).
 
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
