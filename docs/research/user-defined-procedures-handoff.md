@@ -107,7 +107,7 @@ admission (V1).
 
 ## Open, in the order to take them
 
-1. **Slicing (step 7)**: drafted in [user-defined-procedures-slices.md](user-defined-procedures-slices.md), awaiting the owner's answers to its three questions. The round-1 S1–S6 proposal is out of date.
+1. **Slicing (step 7)**: drafted in [user-defined-procedures-slices.md](user-defined-procedures-slices.md), accepted 2026-10-22 with the audit folded in (E0 added); next is ADR 0014, then the Epic and ticket text for review. The round-1 S1–S6 proposal is out of date.
    Slices must cover:
    - Procedures as data with Vertex-composed red/green; one-agent-step Procedures.
    - Recovery per Visit (T4, W1).
