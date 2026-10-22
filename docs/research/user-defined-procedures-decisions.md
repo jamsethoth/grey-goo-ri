@@ -295,6 +295,26 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     removal of literal-name special cases; one interpreter-touching ticket in flight (request section 6); each slice
     names its golden-trace regeneration, glossary entries and `gg doctor` output.
 
+- R11. End states and publishing (answers review question 1):
+  - (a) An Execution ends with `end: ready-for-qa | needs-human | needs-replan`, the existing State Labels. Reaching it
+    sets that label, writes `ticket_end` with the Terminal Reason, and posts the Terminal Reason comment; nothing else
+    runs at the end. Terminals stop being a special kind of Vertex: a Vertex routes to a Vertex or to `end`.
+  - (b) The set is fixed, since each value is a contract with an outside reader (people, `gg plan --replan`, gg's own
+    override logic). Adding one (for example `merged`) is a deliberate change with its label.
+  - (c) Publishing (`pr-ready`, later merge) is an Action in an ordinary deterministic Vertex. The shipped Flow gets a
+    `publish` Vertex that requires the `test` command.
+  - (d) A Vertex containing a publishing Action must require at least one Check, and the Action runs only on fresh
+    passing results (R1b). This replaces Q3g's routing fence: whatever path the work took, it is published only after
+    passing Checks in the Vertex that publishes it.
+  - (e) Every path to `end: ready-for-qa` must run `pr-ready`, checked at admission with the per-Outcome path analysis
+    (S4).
+  - (f) A Vertex with no agent step has an implicit Claim `ok` that requires all its Checks.
+  - (g) Rich blocked and replan reports may be deterministic Vertices before the end.
+  - (h) Fault, hold and abandonment keep their engine-owned paths, independent of user config, and end with
+    `needs-human`.
+  - `needs-replan` ends the Ticket's Execution because replanning changes the Epic's Plan, which belongs to the Epic's
+    plan section, not to any one Ticket.
+
 ## Open
 
 - Revisit: migration of old records instead of holding them (R7d).
