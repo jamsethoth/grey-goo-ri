@@ -40,6 +40,10 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | R3e, T12: `testPaths` defaults to `DEFAULT_TEST_GLOBS` | P4: `testPaths` is required |
 | R4a: one condition per `response` Check | P5d: `all-of` |
 | R4b: the review's `ok` requires `review-pass` | P5a: `ok` requires nothing; a `passed` row decides |
+| Q7: Briefs and templates read `inputs` | U1: plus gg's own context, by name only |
+| R9a: `reason` enum | U3: gains `none` |
+| R5a, R5b: rescue by the route's target | U5: by the effective target, after exhaustion |
+| R11a, S5: end comment and stop template | U6: the stop template replaces the end comment |
 | R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 
@@ -536,10 +540,37 @@ The merged review is [user-defined-procedures-review2.md](user-defined-procedure
   - (d) A `response` Check may take `all-of: [...]` over R4a's forms, passing when every condition holds; its failing
     output names the conditions that failed, as `reviewPass`'s `reasons` do.
 
+## Review round 3 (2026-10-22)
+
+The merged review is [user-defined-procedures-review3.md](user-defined-procedures-review3.md).
+
+- U1. Briefs and templates have two sources. gg's own context (the Ticket, base, branch diff, Declared Commands,
+  History, provenance, Action Marker, and the test files changed since the Execution's first test commit, R3d) is
+  available to a Brief or template that names it, never inserted; gg computes a value only when a template names it.
+  Everything a Vertex produced comes through `inputs` (Q7). The example's `reviewer`, `publish`, `implementer-fix`
+  and `senior-dev` declare `report`, `red` and `green` (T6 lists). Context size stays per Brief, as today.
+- U2. "No file under `testPaths` changed since the Visit's baseline" is a non-recoverable `tests-fail` failure (T4c),
+  as today's "No tests were written". In the example it is `failed`, routed by the Flow's `"*"` to `needs-human`, on a
+  retest Visit too. A `commit` with nothing to commit is a no-op with `files: []`.
+- U3. R9a's `reason` enum gains `none`, since strict schemas require every field.
+- U4. The review's `passed` table has three intended partial overlaps; the third, `ok` with review-pass passed and
+  `needsTest: true`, stays `ok`. The example's admission summary names all three.
+- U5. R5a and R5b decide on the effective target, after edge `max` and `maxVisits` exhaustion: a failure whose route
+  is exhausted to an end leaves the work in place.
+- U6. A stop token's template replaces the end's Terminal Reason comment and must include the reason, so the Ticket
+  gets one comment. `end: needs-replan` also posts the diagnosis to the Epic, as fixed end behaviour (R11b).
+- U8. Carried into slicing (step 7): working `gg init` and `gg doctor`, repository-Layer Briefs, Personas and schemas,
+  and this repository's own Flow, Procedures and `testPaths` land before `agents`, `flows` and `defaults/personas`
+  leave the defaults Layer. The slice names the tests that load the shipped Flow and adds `senior` to
+  `examples/*.json`.
+- U9. One pinned repository `testPaths` value feeds every consumer: Test Immutability, the rollback set,
+  `TEST_PATHSPECS`, the review's changed-test list and `events.diffStats` (replacing its own `TEST_PATH` regex). A test
+  covers test files outside today's globs.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
-- A short round-3 review of the shipped Flow and the decisions changed since round 2.
+- Round 3: U7 and U10–U15 on hold (see the merged review).
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
