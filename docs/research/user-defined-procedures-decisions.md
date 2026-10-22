@@ -271,6 +271,30 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     is always visible in one place. `gg doctor` prints the effective table and the Layer it came from.
   - (c) Per-Vertex differences go through the Vertex's `route`, not per-Vertex rule overrides.
 
+- Review "should change" items, accepted:
+  - S1. ADR 0014 amends ADR 0004 (acceptance follows the claimed token's `requires`; stop Outcomes are routable),
+    request section 3.4 (Procedures are code; the blocked and misscoped defaults, now R9) and clarifies section 2's
+    "Work is code" (a Procedure is composition, an Action is work). Every "step id" above reads **Action id**, since
+    the glossary bans "step" for Actions; the marker is `gg:<execution>:<vertex>:<visit>:<action>:<recovery>:<run>:
+    <attempt>`, and rules write `check.<action id>`.
+  - S2. Commit `requires` is dropped. A commit runs only when every Check the claimed token requires has passed and is
+    fresh (R1b); admission rejects a write Vertex whose committing token requires no Check. This replaces Q3a.
+  - S3. Q4's no-match default (the token) applies to the `passed` table only; Q3d gives the others.
+  - S4. Inputs are checked per Outcome (a producer that takes a failed or stop route never runs its later effects);
+    `latest` means the latest Visit that produced the value; resolved inputs and their provenance (producer Vertex,
+    Visit, Action) are snapshotted at Visit entry.
+  - S5. Terminal comments are templates on the stop token (`blocked: { stop: true, comment: blocked.md }`), sharing the
+    PR body's template mechanism; the replan diagnosis still goes to the Ticket and its Epic; a `changes` review still
+    posts its comment.
+  - S6. grey-goo-ri issue #23 also freezes: the Check signal `{ id, kind, state, runs, tree }`; a rule identity
+    `{ table, row }`; the inputs snapshot; the Recovery Number; the Procedure definition hash; the Rescue Ref output;
+    the Action Event without `requireTestPass`, `repeat` and `exhausted`. An unknown `intent.action` holds rather than
+    counting as absent (today `reconcile.findEffect` returns absent). `record.md` gains worked examples of a custom
+    effect, its Confirmation and an interrupted run.
+  - S7. Carried into slicing: split S2 into the generic model (shipped behaviour unchanged, proved by fixtures) and the
+    removal of literal-name special cases; one interpreter-touching ticket in flight (request section 6); each slice
+    names its golden-trace regeneration, glossary entries and `gg doctor` output.
+
 ## Open
 
 - Revisit: migration of old records instead of holding them (R7d).
