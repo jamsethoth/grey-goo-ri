@@ -377,6 +377,17 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     since `senior-dev` depends on it for its bound. `senior` is a new Agent the user must configure; the example
     Layers gain a `senior` entry.
 
+- R13. Nested fields, arrays and inputs:
+  - (a) Rules may use dotted paths into nested objects, ending at an enum, boolean or integer field
+    (`response.risk.level`). They never index arrays; arrays reach rules only through Check states (R4).
+  - (b) Inputs carry any JSON value (scalar, object, list), typed from the producer's schema or gg's own outputs.
+  - (c) `pick: <field>` projects a list of objects to a list of one field (`findings` with `pick: file` gives the
+    named file paths), replacing the interpreter's hard-coded `findings.map((f) => f.file)`.
+  - (d) Only enum, boolean and integer inputs are matchable in rules; lists, objects and free text are for Briefs and
+    templates. `tests: named:` requires a list of strings, checked at admission.
+  - (e) Every path (rule paths, input `from` paths, `pick` fields, `response` Check fields) is validated against its
+    schema at admission.
+
 ## Open
 
 - Revisit: migration of old records instead of holding them (R7d).
