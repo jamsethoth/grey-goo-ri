@@ -137,6 +137,8 @@ admission (V1).
    `{ table, row }`, inputs snapshot, Recovery Number, definition hash, Rescue Ref output, the Event without
    `requireTestPass`/`repeat`/`exhausted`, unknown `intent.action` holds, `record.md` worked examples.
 5. **Revisit migration** of old records (R7d), when the owner wants to.
+6. **Before grey-goo-ri issue #23: Epic-owned Executions (X3b).** The owner's slice 7 planning Flow needs
+   Executions an Epic owns; decide whether #23 names an Execution's owner generically.
 
 ## How the session worked
 

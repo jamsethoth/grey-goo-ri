@@ -113,7 +113,7 @@ named context value, or deleted with its tests.
 
 V1, U13, R6d, R13e, W2, W3, T6, U7, U12, R3b, W1, P5d. `lib/flow.mjs` validates the final shape (Agents, Procedures
 with Action ids, `do:` kinds, Check kinds and parameters, Claim tokens, `tests`, `access`, `recover`, the three tables
-and `otherwise`; Flows with `plan` (required, `null` for none, X2b), `entry`, `routes`, Vertices, `inputs`, `route`, `maxVisits`, `exhausted`) and produces the
+and `otherwise`; Flows with `plan` (required, and `null` until Epic planning lands; X2b, X2d), `entry`, `routes`, Vertices, `inputs`, `route`, `maxVisits`, `exhausted`) and produces the
 Resolved Flow. Named commands must be declared (U13). Every reference is typed through A3; tables are analysed
 through A2. `gg doctor` prints each Vertex's effective Procedure, access, `tests`, Checks, tables, reachable Outcomes
 and inputs with their sources, and exits non-zero on any error. Not yet called by admission (E7).

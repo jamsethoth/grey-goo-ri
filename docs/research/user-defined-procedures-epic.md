@@ -233,7 +233,7 @@ prints it.
 ### In scope
 - The shape (example-flow doc): `agents`; `procedures` with Action ids, `do:` kinds, Check kinds and parameters,
   Claim tokens, `tests`, `access`, `recover`, the three tables and `otherwise`; `flows` with `plan` (required,
-  `null` for none; X2b), `entry`, `routes`, Vertices (`use`, `procedure`, `inputs`, `route`, `maxVisits`, `exhausted`).
+  and `null` until Epic planning lands; X2b, X2d), `entry`, `routes`, Vertices (`use`, `procedure`, `inputs`, `route`, `maxVisits`, `exhausted`).
 - Checks: syntax and name resolution; Action ids unique per Procedure with no `:` or whitespace (R6d); Claim enum
   equals tokens (A3); every named command declared (U13); every reference path typed through A3 (R13e, W2, W3); list
   `from` sources of one type (T6); `tests: named` reads a list of strings (R13d); tables through A2; `access:

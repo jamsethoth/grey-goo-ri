@@ -654,6 +654,33 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
   - (b) A Flow declares `plan` explicitly, `null` when it has no Epic-level planning; a missing key is a validation
     error, since nothing a repository configures is silently defaulted. The example writes `plan: null`.
   - (c) Per-ticket Flow choice inside one Epic (for example by label) is not part of this design.
+  - (d) Until Epic planning is designed (request slice 7), `plan` must be `null`. A non-null value is a validation
+    error saying Epic planning is not built yet, so nothing unvalidated is accepted.
+
+## For request slice 7: planning Flows (owner requirement, 2026-10-22; not yet designed)
+
+- X3. The owner wants to define a planning Flow that engages several agents to research and evaluate the plan's
+  details, with a review after each round of interactive planning. In option 1's terms that reads as a bounded
+  loop at the Epic level, for example:
+
+  ```text
+  draft (interactive planner) -> research (one or more agents) -> evaluate -> review
+  review: changes -> draft (next round, findings in its Brief; bounded edge), ok -> approve (await-approval, X1)
+  approve: approved -> publish tickets, needs-changes -> draft
+  ```
+
+  What option 1 already gives it: Procedures as data, inputs between Vertices, rule tables, bounded back edges,
+  `await-approval`. What it would still need, to design in slice 7:
+  - (a) An interactive agent Action: the Session ends when the human finishes the round (`gg plan --finish`), and
+    its output is the plan document rather than a Claim.
+  - (b) Executions owned by an Epic. Today an Execution belongs to a ticket: its id is `<ticket>.<hex>`
+    (`record.createExecution`) and `ticket_start`/`ticket_end` require `ticket` (`lib/events.mjs`).
+  - (c) Where the plan lives between rounds (a branch and worktree, or the Epic Record), and a
+    `publish-tickets` Action for what `gg publish` does.
+  - (d) Research by several agents at once is fan-out, deferred (request section 7, R2f); sequential Vertices work
+    without it.
+  - Open, before grey-goo-ri issue #23: (b) touches the record and Event schemas #23 freezes. Recommended: #23
+    names an Execution's owner generically (`{ kind: ticket | epic, number }`) so slice 7 needs no version bump.
 
 ## Open
 
