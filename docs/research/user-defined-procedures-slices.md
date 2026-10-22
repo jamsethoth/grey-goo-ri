@@ -29,15 +29,15 @@ before grey-goo-ri issue #23.
 
 | Id | Ticket | Interpreter | Depends on |
 |---|---|---|---|
-| A1 | `testPaths` is required and feeds every consumer | yes, small | none |
+| A1 | `testPaths` is required and feeds every consumer | yes, small | E0 |
 | A2 | Rule tables: the first-match evaluator and the analyser | no | none |
 | A3 | Response schemas as data: the strict subset and typed reference paths | no | none |
-| A4 | Templates for Briefs, the PR body and comments | yes, call sites | none |
+| A4 | Templates for Briefs, the PR body and comments | yes, call sites | A1 |
 | A5 | The Flow shape, its validator and `gg doctor` | no | A2, A3 |
 | A6 | Graph analysis: routing, bounds, publishing, commits, inputs | no | A5 |
 | A7 | The approval protocol: Approval Request, timeline read and consumption | no | none |
 | E0 | Audit fixes, then split the retry engine and Terminals out of the interpreter | yes | none |
-| E1 | Red and green on separate Vertices | yes | E0, A1 |
+| E1 | Red and green on separate Vertices | yes | A4 |
 | E2 | Action ids and the Recovery Number | yes | E1 |
 | E3 | Ends, Flow routes and the `publish` Vertex | yes | E2, A4 |
 | E4 | Vertex inputs | yes | E3 |
@@ -51,7 +51,7 @@ before grey-goo-ri issue #23.
 | C2 | The defaults Layer ships no Flow | no | C1 |
 | C3 | Audit cleanup: copies, dead code, names and test hygiene | yes | C2 |
 
-Serial chain: E0 → A1 → A4 → E1 → … → E10 (A4 may go before or after A1). A2, A3, A5, A6 and A7 run beside it. grey-goo-ri
+Serial chain: E0 → A1 → A4 → E1 → … → E10, encoded as dependencies. A2, A3, A5, A6 and A7 run beside it. grey-goo-ri
 issue #23 is marked blocked by C2. C3 changes no record or Event shape, so it does not block #23, but it touches the
 interpreter and so does not run while #23 is in flight.
 
