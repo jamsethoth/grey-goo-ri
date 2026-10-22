@@ -44,6 +44,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | R9a: `reason` enum | U3: gains `none` |
 | R5a, R5b: rescue by the route's target | U5: by the effective target, after exhaustion |
 | R11a, S5: end comment and stop template | U6: the stop template replaces the end comment |
+| Q3c: a Vertex option may remove a Check from `requires` | U7: dropped; declare a second Procedure |
 | R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 
@@ -566,11 +567,24 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
 - U9. One pinned repository `testPaths` value feeds every consumer: Test Immutability, the rollback set,
   `TEST_PATHSPECS`, the review's changed-test list and `events.diffStats` (replacing its own `TEST_PATH` regex). A test
   covers test files outside today's globs.
+- U7. Q3c's Vertex option to remove a Check from a token's `requires` is dropped, with its `gg doctor` warning. With
+  no shipped library (P3) the repository owns every Procedure and edits `requires` directly; a relaxed variant is a
+  second Procedure, visible as such. Integrity Assertions were never in `requires` (R3a).
+- U12. A Procedure may declare `access: read-only`, which caps its Agent's access whatever the Agent declares, as
+  today's `review`; `gg doctor` shows each Vertex's effective access. The example's `review` declares it.
+- U13. A Procedure, Check or later gate names a Declared Command (`command: test`), never a command line, so ADR
+  0013's allowlist stays the only source of what runs unsandboxed. The validator (V1) errors on any named command the
+  repository Layer does not declare, generalising preflight's `test` rule (`config.commandProblems`); `test` stays
+  required.
+- U15. P4 is grey-goo-ri issue #96's option 1: a repository adds its test launcher to `testPaths`, and Test
+  Immutability, rescue and rollback cover it. ADR 0014 records the limit that `package.json` cannot be listed without
+  also freezing dependencies, so `scripts.test` stays exposed unless `test` calls a launcher file; #96 stays open for
+  that.
 
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
-- Round 3: U7 and U10–U15 on hold (see the merged review).
+- Round 3: U10, U11 and U14 on hold (see the merged review).
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
