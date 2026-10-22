@@ -241,6 +241,21 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (d) No migration code for now; after the freeze, the version check holds old records cleanly.
   - This corrects Q8's "no version bump", which holds only after the freeze.
 
+- R8. The rule-table analysis (replaces Q4b's "testing boundary values", which misses ranges):
+  - (a) Each rule is a box: per-field value sets (enum and boolean subsets, integer intervals; an unmentioned field
+    allows every value).
+  - (b) A Check's state and runs are one coupled field (`not-run` has `runs` 0; `passed` and `failed` have 1 to
+    `max + 1`). Analysis is split per Claim token by its required Checks, and each table's unreachable regions (for
+    example a required Check `failed` in the `passed` table) are treated as rules ahead of the first rule.
+  - (c) A rule that is unreachable or never fires is an error, computed exactly by subtracting every box above it
+    (pattern-match usefulness, as in Maranget and rustc, over DMN-style boxes, as in Calvanese et al.).
+  - (d) A partial overlap is a warning with one example input; `gg doctor` can show an example input that falls to the
+    default.
+  - (e) Hand-written in plain JavaScript, no solver dependency (ADR 0001). Tests cross-check it against brute-force
+    enumeration over a finite partition on generated tables.
+  - (f) It proves logical consistency over the declared domain, not runtime reachability (grey-goo-ri issue #98).
+  - S3 also makes the library survey's deferred `ajv` decision for schema validation.
+
 ## Open
 
 - Revisit: migration of old records instead of holding them (R7d).
