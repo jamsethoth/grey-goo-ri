@@ -3,7 +3,8 @@
 Draft, 2026-10-22; the owner accepted its approach and the audit folds the same day. It slices option 1 as decided in
 [user-defined-procedures-decisions.md](user-defined-procedures-decisions.md) and shown in
 [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md). It replaces the round-1 S1–S6
-proposal. Slice ids here (A1, E1, C1) are local to this file. Nothing is filed until the owner approves.
+proposal. Slice ids here (A1, E1, C1) are local to this file. Filed 2026-10-22 as the Epic grey-goo-ri issue #101:
+A1–A7 are grey-goo-ri issues #102–#108, E0 is #109, E1–E10 are #110–#119, C1 is #120, C2 is #121, C4 is #122 and C3 is #123.
 
 ## Shape
 

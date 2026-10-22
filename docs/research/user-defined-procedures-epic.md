@@ -1,7 +1,8 @@
 # User-defined Procedures: Epic and ticket drafts
 
-Draft text for filing, 2026-10-22, from [user-defined-procedures-slices.md](user-defined-procedures-slices.md). Nothing
-is filed until the owner approves. On filing:
+Draft text for filing, 2026-10-22, from [user-defined-procedures-slices.md](user-defined-procedures-slices.md).
+**Filed 2026-10-22** as the Epic grey-goo-ri issue #101 and its sub-issues: A1–A7 are grey-goo-ri issues #102–#108, E0 is #109, E1–E10 are #110–#119, C1 is #120, C2 is #121, C4 is #122 and C3 is #123. The issues are now the
+authority for ticket text; this file keeps the drafts as filed. On filing:
 
 - The research files, ADR 0014 and the request amendments merge to main first (a docs PR from this branch), since
   every ticket cites them and ff runs from a checkout of main.
