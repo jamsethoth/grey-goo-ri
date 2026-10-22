@@ -244,6 +244,5 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
 ## Open
 
 - Revisit: migration of old records instead of holding them (R7d).
-
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
