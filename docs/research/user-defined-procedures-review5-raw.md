@@ -108,3 +108,25 @@ Filing fidelity: no findings (a mechanical diff shows every ticket byte-identica
 
 No findings in the serial chain's order against the code, in contradictions for #110–#115, #117, #121, #122, or in the
 remaining cover-list items.
+
+## Round 5b (the altered issues)
+
+### Astra
+
+- **FRB-1 — #23 — blocks.** "Hold Actions carry the Action id `hold`": a hold performs separate comment and label Actions (`lib/interpreter.mjs:935–954`), told apart today by ordinal, which #111 replaces with the Recovery Number; both would collide, and the comment's evidence could suppress the label write. Replacement: distinct stable ids (`hold-comment`, `hold-label`) with Recovery Number 0, distinct from fault and end reporting; golden traces and crash-resume tests prove completing one never completes another.
+- **FRB-2 — #118, #68 — blocks.** Ignored files are "copied into the intent payload", but the done-check wants them to "survive in its Rescue Ref"; `add -A` does not add ignored untracked files. Replacement: explicitly add the selected ignored paths to the temporary index; persist the payload before effects; verify the ref and all rescued contents before reset; test retrieving an ignored test's bytes from the ref.
+- **FRB-3 — #116 — should fix.** "whatever else in `lib/flow.mjs` the validator does not use" includes `writeResolved` (`lib/run.mjs:7,118`). Preserve it and its regression, or move it with every caller updated.
+- **FRB-4 — #113, #106 — should fix.** "A template name with no binding and no gg-context meaning is an admission error" rejects the direct own-output and `inputs` references #105 and `example-flow.md:19–22` allow. Replacement: templates may name gg context, own outputs and declared inputs; `with` adds aliases; admission rejects anything else; #113 resolves, #106 validates, #116 enables it.
+- **FRB-5 — #106, #107, #116, #117 — should fix.** Validator cases are still in `test/flow.test.mjs`; #106 assigns loader edits to #117, but #116 deletes the loader first and #117 depends on #116. Replacement: tests in `test/validate.test.mjs`; #112 and #113 adapt the interim loader; #116 replaces it; #117 uses the validator's resolved `maxVisits` and `exhausted`.
+- **FRB-6 — #105, #121 — should fix.** The engine's end-comment template sits beside shipped Personas, which #121 deletes with "the template files". Keep it outside the defaults library; #121 retains it.
+- **FRB-7 — #23 — should fix.** `rule` "is the rule identity `{ table, row }`" loses request 3.3's null for a hold; hold, abandonment and fault paths write null (`lib/interpreter.mjs:412,422,440`).
+
+### Fable
+
+Y1–Y15 applied correctly; every requirement of the original #68 is owned by exactly one of #68 and #118.
+
+- **FB-1 — #106, #107, #116 — should fix.** Validator tests named in `test/flow.test.mjs`; move to `test/validate.test.mjs`. #116 should delete `resolveFlow` and its cases, and keep or move `writeResolved` (`lib/run.mjs:117`).
+- **FB-2 — #112 — nit.** #112 never says it edits `resolveFlow`, and its agent-less `publish` fails `lib/flow.mjs:12`. Add it; #113 and #117 likewise for `VERTEX_FIELDS`.
+- **FB-3 — #118 — nit.** No test for "a crash at each step resumes…", nor for the locked-file reset hold; #118's holds should name the Rescue Ref.
+- **FB-4 — #106, #113 — nit.** Parameter list lacks `body`, `type` and the stop token's `comment`; #113's binding check needs templates only #116 loads.
+- **FB-5 — #23 — nit.** `rule` is null for a hold, and fixed rows and the token fallback match no table row.

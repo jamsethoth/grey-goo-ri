@@ -68,3 +68,38 @@ lines accurate. The pre-rewrite text of issue #68 was not in the export; this me
 - **Y13.** Issue #116: say what `lib/procedures.mjs` keeps (the Action and Check kind definitions), and update its Layout row. (Fable FR-11)
 - **Y14.** Issue #120: this repository's Layer already exists, so its Flow is merged by hand from `gg init`'s output in a temp directory. (Fable FR-12)
 - **Y15.** Issue #119: add "Awaiting" to its Glossary line. (Fable FR-13)
+
+## Round 5b: the altered issues
+
+Astra and Fable re-reviewed the 16 altered issues on 2026-10-22 ([raw](user-defined-procedures-review5-raw.md)),
+with issue #68's original text this time. Both found Y1–Y15 applied as recommended. They also found every
+requirement of the original issue #68 owned by exactly one of issues #68 and #118. Each finding below was checked
+against main.
+
+- **Y16. Y5's split, finished (Fable FB-1, FB-2; Astra FRB-3, FRB-5).** Issues #106 and #107 name their tests in
+  `test/flow.test.mjs`; they belong in `test/validate.test.mjs`. Issue #116's "whatever else in `lib/flow.mjs`" would
+  delete `writeResolved`, which `gg run` uses (`lib/run.mjs:7, 118`). Issue #117 depends on #116, which deletes the
+  loader, so it extends the validator's shape, not `resolveFlow`. Issues #112 and #113 do not say they adapt
+  `resolveFlow` (#112's `publish` Vertex has no `use`, which `lib/flow.mjs:12` requires).
+- **Y17. Ignored files belong in the Rescue Ref itself (Astra FRB-2, Fable FB-3).** Issue #118 copies ignored
+  Protected Files and test files into the intent payload, but its done-check wants them in the Rescue Ref, and
+  `add -A` skips ignored files. The original #68 had the same gap. Recommendation: force-add those paths to the
+  temporary index, so `git show <ref>:<path>` holds their bytes. Also name the two untested done-checks
+  (crash-resume, a locked file). #118's own holds name the Rescue Ref, as #68's do.
+- **Y18. End reporting needs distinct Action ids (Astra FRB-1).** End reporting is a ticket comment, an Epic comment
+  (replan) and a label (`lib/interpreter.mjs:935-954`), told apart today only by ordinal. Under issue #111's
+  `<action>:<recovery>` identity, a single `hold` id would collide, and one Action's evidence would complete another.
+  Recommendation: issue #111 gives each end reporting Action a fixed id (`end-comment`, `end-epic-comment`,
+  `end-label`), and issue #23's item points to them.
+- **Y19. `rule` is not always `{ table, row }` (both: FB-5, FRB-7).** Request 3.3 makes it null for a hold, and
+  abandonment and faults write null (`lib/interpreter.mjs:412, 422, 440`). Recommendation: `{ table, row }` when a
+  table row or one of gg's fixed rows decided (fixed rows under the table name `fixed`). Null for a hold, an
+  abandonment or a fault.
+- **Y20. Template names (Astra FRB-4, Fable FB-4).** Y7's "a template name with no binding … is an error" forbids
+  the direct `{{test.evidence}}` references that issue #105 and the example allow. The check also needs templates,
+  which only load in issue #116. Recommendation: a template may name gg context, the Vertex's own outputs and its
+  `inputs`, plus `with` aliases. Admission rejects any other name, a check enabled in #116. Issue #106's parameter
+  list gains `body`, `type` and the stop token's `comment`.
+- **Y21. The Terminal Reason comment template must survive the defaults cutover (Astra FRB-6).** Issue #105 puts it
+  beside the shipped Personas, and issue #121 deletes those along with "the template files". Recommendation: it is
+  engine-owned and lives with gg's code (`lib/templates/`), and #121 keeps it.
