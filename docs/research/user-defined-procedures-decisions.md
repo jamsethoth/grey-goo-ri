@@ -580,11 +580,16 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
   Immutability, rescue and rollback cover it. ADR 0014 records the limit that `package.json` cannot be listed without
   also freezing dependencies, so `scripts.test` stays exposed unless `test` calls a launcher file; #96 stays open for
   that.
+- U14. The Check-to-command binding becomes data. `CHECK_NAMES` and the `checkOutcome` Outcomes `gate-failed(test)`
+  and `red-failed` are removed in the slice that ports the Checks: a final failure is whatever the `failed` table says,
+  else the engine's `failed` (T7). Which Check failed is in the Check signal (S6), and the Terminal Reason is rendered
+  from it. Behaviour is unchanged (both routed to `needs-human` before, and `failed` does through `"*"`); the golden
+  traces and Terminal Reason texts change, and ADR 0014 amends request section 3.4's illustrative enums.
 
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
-- Round 3: U10, U11 and U14 on hold (see the merged review).
+- Round 3: U10 and U11 on hold (see the merged review).
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
