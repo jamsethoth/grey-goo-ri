@@ -679,8 +679,8 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
     `publish-tickets` Action for what `gg publish` does.
   - (d) Research by several agents at once is fan-out, deferred (request section 7, R2f); sequential Vertices work
     without it.
-  - Open, before grey-goo-ri issue #23: (b) touches the record and Event schemas #23 freezes. Recommended: #23
-    names an Execution's owner generically (`{ kind: ticket | epic, number }`) so slice 7 needs no version bump.
+  - Decided (owner, 2026-10-22): (b) touches the record and Event schemas grey-goo-ri issue #23 freezes, so #23
+    names an Execution's owner generically, `{ kind: ticket | epic, number }`, and slice 7 needs no version bump.
 
 ## Open
 

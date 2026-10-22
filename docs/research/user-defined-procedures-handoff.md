@@ -135,10 +135,10 @@ admission (V1).
    end state, Vertex input, Rescue Ref output, Claim token `requires`, Confirmation (option 3).
 4. **grey-goo-ri issue #23 additions** (S6, T4f): the Check signal `{ id, kind, state, tree }`, rule identity
    `{ table, row }`, inputs snapshot, Recovery Number, definition hash, Rescue Ref output, the Event without
-   `requireTestPass`/`repeat`/`exhausted`, unknown `intent.action` holds, `record.md` worked examples.
+   `requireTestPass`/`repeat`/`exhausted`, unknown `intent.action` holds, `record.md` worked examples, and an
+   Execution's owner named generically as `{ kind: ticket | epic, number }` (X3).
 5. **Revisit migration** of old records (R7d), when the owner wants to.
-6. **Before grey-goo-ri issue #23: Epic-owned Executions (X3b).** The owner's slice 7 planning Flow needs
-   Executions an Epic owns; decide whether #23 names an Execution's owner generically.
+6. **Slice 7 planning Flows (X3)**: the owner's requirement is recorded; its Execution-owner reservation is in item 4.
 
 ## How the session worked
 
