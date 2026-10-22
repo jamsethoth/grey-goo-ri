@@ -209,6 +209,17 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (d) The shipped Flow routes `repeat` to a bounded escalation Vertex. This completes the request's repeat routing
     and removes the `shortcut:` in `interpreter.mjs`. The review comment and PR update still run on a repeat.
 
+- R5. The worktree after a failed Vertex:
+  - (a) A failed or stopped write Vertex whose Outcome routes to another Vertex rescues its work to a Rescue Ref,
+    resets to its Visit's baseline through the write-ahead `reset`, and adds a History item naming the failure and the
+    ref. The next Vertex starts clean.
+  - (b) One whose Outcome routes to a Terminal leaves the work in place for the human, as today.
+  - (c) The rescued work (ref, diff stat, the failing Check's output) is an output later Vertices may take as an input,
+    so an escalation sees what failed.
+  - (d) A reset touches only changes gg's records prove are the agent's (ADR 0005); anything else holds the Ticket.
+  - (e) The Rescue Ref piece of grey-goo-ri issue #68 moves into this work, using ADR 0011's layout
+    (`refs/gg/rescue/<digest of the Action Marker>`). #68 keeps rescuing interrupted Attempts and their retry.
+
 ## Open
 
 - Step 7: slice option 1 into tickets.
