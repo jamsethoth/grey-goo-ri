@@ -187,6 +187,7 @@ across the list wins). They are shown once as `&impl`; the JSON spells them out 
 ```yaml
 flows:
   default:
+    plan: null                               # X2: no Epic-level planning; standalone tickets run
     ticket:
       entry: red
       routes:                                # T3: every Vertex inherits these

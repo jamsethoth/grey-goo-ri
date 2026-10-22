@@ -646,6 +646,14 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
   - (f) Plan approval at the Epic level stays with `gg plan` and `gg publish` and is not part of this design.
   - Glossary, with its slice: Approval Vertex becomes "a Vertex whose Procedure ends in an `await-approval` Action";
     Vertex loses its three kinds.
+- X2. Choosing a Flow per run joins the Epic, so a repository can run a lighter Flow (a small bug fix) as soon as
+  option 1 lands, without waiting for request slice 5:
+  - (a) `gg run <n> --flow <name>` selects a Flow the repository Layer declares; without it, `default` runs. An
+    unknown name fails preflight, listing the declared Flows. The chosen name is pinned with the record, and a
+    resumed Execution keeps its Flow whatever `--flow` says.
+  - (b) A Flow declares `plan` explicitly, `null` when it has no Epic-level planning; a missing key is a validation
+    error, since nothing a repository configures is silently defaulted. The example writes `plan: null`.
+  - (c) Per-ticket Flow choice inside one Epic (for example by label) is not part of this design.
 
 ## Open
 

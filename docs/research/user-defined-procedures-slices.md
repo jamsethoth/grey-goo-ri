@@ -7,14 +7,14 @@ proposal. Slice ids here (A1, E1, C1) are local to this file. Nothing is filed u
 
 ## Shape
 
-Twenty-one tickets, sub-issues of one Epic, in three tracks:
+Twenty-two tickets, sub-issues of one Epic, in three tracks:
 
 - **A, groundwork**: pure modules and config, built and tested against fixtures. Only A1 and A4 touch the interpreter.
 - **E, engine**: E0 fixes and splits the interpreter first (from the 2026-10-21 audit, below); then interpreter tickets, strictly serial (request section 6: one interpreter-touching ticket in flight).
   Each changes main's shipped Flow in place and regenerates the golden traces it names, so the suite is green after
   every ticket and no second engine lives beside the first.
-- **C, cutover**: `gg init` writes the example, then the defaults Layer stops shipping a Flow (U8); C3 then clears
-  the rest of the 2026-10-21 audit.
+- **C, cutover**: `gg init` writes the example, then the defaults Layer stops shipping a Flow (U8); C4 adds `--flow`
+  (X2); C3 then clears the rest of the 2026-10-21 audit.
 
 The engine order puts the Flow-level changes (red and green Vertices, ends, inputs) before Procedures move into
 config, so that when E7 wires the validator into admission the shipped Flow is already in its final shape.
@@ -49,10 +49,11 @@ before grey-goo-ri issue #23.
 | E10 | The `await-approval` Action | yes | E9, A7 |
 | C1 | `gg init` writes the example; this repository gets its own Flow | no | E10 |
 | C2 | The defaults Layer ships no Flow | no | C1 |
-| C3 | Audit cleanup: copies, dead code, names and test hygiene | yes | C2 |
+| C4 | `gg run --flow` selects a declared Flow | no | C2 |
+| C3 | Audit cleanup: copies, dead code, names and test hygiene | yes | C4 |
 
 Serial chain: E0 → A1 → A4 → E1 → … → E10, encoded as dependencies. A2, A3, A5, A6 and A7 run beside it. grey-goo-ri
-issue #23 is marked blocked by C2. C3 changes no record or Event shape, so it does not block #23, but it touches the
+issue #23 is marked blocked by C2. C4 and C3 change no record or Event shape, so they do not block #23; but it touches the
 interpreter and so does not run while #23 is in flight.
 
 ## Tickets
@@ -112,7 +113,7 @@ named context value, or deleted with its tests.
 
 V1, U13, R6d, R13e, W2, W3, T6, U7, U12, R3b, W1, P5d. `lib/flow.mjs` validates the final shape (Agents, Procedures
 with Action ids, `do:` kinds, Check kinds and parameters, Claim tokens, `tests`, `access`, `recover`, the three tables
-and `otherwise`; Flows with `entry`, `routes`, Vertices, `inputs`, `route`, `maxVisits`, `exhausted`) and produces the
+and `otherwise`; Flows with `plan` (required, `null` for none, X2b), `entry`, `routes`, Vertices, `inputs`, `route`, `maxVisits`, `exhausted`) and produces the
 Resolved Flow. Named commands must be declared (U13). Every reference is typed through A3; tables are analysed
 through A2. `gg doctor` prints each Vertex's effective Procedure, access, `tests`, Checks, tables, reachable Outcomes
 and inputs with their sources, and exits non-zero on any error. Not yet called by admission (E7).
@@ -267,7 +268,7 @@ P1b–c, P3, U8, R9, U3, U11, W6–W10. `gg init` writes the example (Flow, Agen
 Personas, schemas, `testPaths`) into `.agents/gg/`, refusing to overwrite an existing Layer. `examples/*.json` gain
 `senior`. `checks.DEFAULT_TEST_GLOBS` is what `gg init` writes, so the audit's unused-export cleanup keeps it. One test proves the example passes admission and pins its golden trace; the tests that load the shipped
 Flow today (`config`, `defaults`, `flow`, `procedures` and `run` tests) move to fixture Flows. This repository's
-`.agents/gg/gg.json` gets its Flow from `gg init`.
+`.agents/gg/gg.json` gets its Flow from `gg init`. The example writes `plan: null` explicitly (X2b).
 - Goldens: the example's trace. Glossary: none. Doctor: the example printed in full.
 
 ### C2. The defaults Layer ships no Flow
@@ -276,6 +277,14 @@ P1a, P2, P3. `defaults/gg.json` loses `agents`, `flows` and `procedures`; `defau
 go. `flows` or `procedures` in the defaults or user Layer is a load error naming the file. Without a Flow, preflight
 and `gg doctor` fail naming `gg init`.
 - Goldens: none. Glossary: none. Doctor: the missing-Flow failure.
+
+### C4. `gg run --flow` selects a declared Flow
+
+X2. `gg run <n> --flow <name>` runs a Flow the repository Layer declares, else `default`; an unknown name fails
+preflight listing the declared Flows; a resumed Execution keeps the Flow pinned in its record. The `shortcut:` in
+`lib/run.mjs` that tells a standalone Ticket to edit the default Flow's `plan` names a null-plan Flow to pass with
+`--flow` instead.
+- Goldens: none. Glossary: none. Doctor: lists the declared Flows.
 
 ### C3. Audit cleanup: copies, dead code, names and test hygiene
 

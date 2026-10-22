@@ -28,8 +28,8 @@ Read first: `AGENTS.md`, then ADR 0014 (`docs/adr/0014-procedures-are-data.md`),
 ### Decisions taken in planning
 
 - **Order.** One interpreter-touching ticket in flight at a time (request section 6), encoded as dependencies: E0,
-  A1, A4, then E1 to E10 in order. A2, A3, A5, A6 and A7 touch no interpreter code and may run beside them. C1, C2
-  and C3 come last.
+  A1, A4, then E1 to E10 in order. A2, A3, A5, A6 and A7 touch no interpreter code and may run beside them. C1, C2,
+  C4 and C3 come last.
 - **In place.** The interpreter changes in place. Each engine ticket moves main's shipped Flow one step toward the
   example and regenerates the golden traces it names; the suite is green after every ticket.
 - **Shapes before the freeze.** Record and Event versions stay at their current values (R7); grey-goo-ri issue #23
@@ -232,8 +232,8 @@ prints it.
 
 ### In scope
 - The shape (example-flow doc): `agents`; `procedures` with Action ids, `do:` kinds, Check kinds and parameters,
-  Claim tokens, `tests`, `access`, `recover`, the three tables and `otherwise`; `flows` with `entry`, `routes`,
-  Vertices (`use`, `procedure`, `inputs`, `route`, `maxVisits`, `exhausted`).
+  Claim tokens, `tests`, `access`, `recover`, the three tables and `otherwise`; `flows` with `plan` (required,
+  `null` for none; X2b), `entry`, `routes`, Vertices (`use`, `procedure`, `inputs`, `route`, `maxVisits`, `exhausted`).
 - Checks: syntax and name resolution; Action ids unique per Procedure with no `:` or whitespace (R6d); Claim enum
   equals tokens (A3); every named command declared (U13); every reference path typed through A3 (R13e, W2, W3); list
   `from` sources of one type (T6); `tests: named` reads a list of strings (R13d); tables through A2; `access:
@@ -776,6 +776,7 @@ gg still ships a Flow in its defaults Layer, and `gg init` is not implemented (P
 - One test proves the example passes admission and pins its golden trace; the tests that load the shipped Flow
   (`config`, `defaults`, `flow`, `procedures`, `run`) move to fixture Flows.
 - This repository's `.agents/gg/gg.json` gets its Flow from `gg init`.
+- The example Flow writes `plan: null` explicitly (X2b).
 
 ### Out of scope
 - Removing the defaults' Flow (C2).
@@ -820,6 +821,44 @@ gg ships no Flow, and a repository without one is told to run `gg init`.
 
 ### Notes
 Depends on C1. grey-goo-ri issue #23 is blocked by this ticket. Glossary: none.
+
+---
+
+## C4. `gg run --flow` selects a declared Flow
+
+Part of #EPIC.
+
+### Problem
+A repository can declare several Flows, but `gg run` always runs `default` (`lib/run.mjs:94`), so a lighter Flow for
+a small bug fix cannot run. A `shortcut:` at `lib/run.mjs:110` tells a standalone Ticket to edit the default Flow
+instead.
+
+### Goal
+`gg run <n> --flow <name>` runs any Flow the repository Layer declares (X2).
+
+### In scope
+- The `--flow` option on `gg run`; without it, `default`.
+- An unknown name fails preflight, listing the declared Flows.
+- The chosen Flow's name is pinned with the record; a resumed Execution keeps its Flow whatever `--flow` says.
+- The standalone-Ticket rejection (request 3.3) names a null-plan Flow to pass with `--flow`, replacing the
+  `shortcut:` advice.
+- `gg doctor` lists the declared Flows.
+
+### Out of scope
+- Choosing a Flow per Ticket inside an Epic (X2c).
+
+### Definition of done
+- [ ] A standalone Ticket runs under a named null-plan Flow.
+- [ ] `npm test` passes.
+
+### Tests to write first
+- test/run.test.mjs: `--flow runs the named Flow`; `an unknown --flow fails preflight listing the declared Flows`;
+  `a resumed Execution keeps its pinned Flow`; `a standalone Ticket under a planned Flow is told to pass a null-plan
+  Flow`.
+- test/opts.test.mjs: `gg run accepts --flow with a value`.
+
+### Notes
+Depends on C2. Does not block grey-goo-ri issue #23. Glossary: none.
 
 ---
 
@@ -871,5 +910,5 @@ The remaining findings are fixed with no behaviour change.
 - test/render.test.mjs: `the line cutter falls back as configured when no line fits`.
 
 ### Notes
-Depends on C2. Does not block grey-goo-ri issue #23, but touches the interpreter, so it does not run while #23 is in
+Depends on C4. Does not block grey-goo-ri issue #23, but touches the interpreter, so it does not run while #23 is in
 flight. Glossary: the name chosen for `record.proof`, if new.
