@@ -691,7 +691,10 @@ accepted Y1–Y4 and Y7–Y15 as recommended, and the issues were edited to matc
   Out of scope lists it. It has no decided parameters, and the example does not use it.
 - Y5. The validator is a new module, `lib/validate.mjs` (issues #106 and #107), with its own Resolved Flow, so it
   stays parallel to the engine work. `resolveFlow` in `lib/flow.mjs` stays the interpreter's loader, changed only by
-  the serial engine tickets (#112, #113, #117), until #116 switches admission to the validator and deletes it.
+  the serial engine tickets (#112, #113), until #116 switches admission to the validator and deletes it; #117 then
+  extends the validator's Resolved Flow (Y16).
+- Round 5b: the owner accepted Y16, Y17 and Y19–Y21 as recommended, and the issues were edited to match. Y18 (end
+  reporting Action ids) is open.
 
 ## Open
 
