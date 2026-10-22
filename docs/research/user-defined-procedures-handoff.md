@@ -7,7 +7,7 @@ Flow. The design is fully decided through four review rounds; the next step is s
 ## Where things are
 
 - **Branch** `research-user-procedures` in the worktree `C:\dev\worktrees\grey-goo-ri\research-user-procedures`,
-  local only (not pushed), cut from main at ccfe163. It only adds files under `docs/research/`, so a rebase is
+  local only (not pushed), rebased onto main at bd60df9 on 2026-10-22. It only adds files under `docs/research/`, so a rebase is
   trivial.
 - **Files** in `docs/research/`:
 
