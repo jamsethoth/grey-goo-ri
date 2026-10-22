@@ -51,7 +51,29 @@ at bd60df9; the code references are main's. Each item carries a recommendation f
 - **U9. `testPaths` reaches every consumer. (Both: A4, F8.)** Main uses the default globs in Test Immutability, the
   rollback set, `TEST_PATHSPECS` (`lib/checks.mjs:82`, `lib/interpreter.mjs:51, 630`) and the review's changed-test
   list (`lib/interpreter.mjs:610`). Recommendation: one pinned repository value feeds all of them, with a test whose
-  test files live outside today's globs.
+  test files live outside today's globs. This includes `events.diffStats`' own `TEST_PATH` regex
+  (`lib/events.mjs:73`), which disagrees with `DEFAULT_TEST_GLOBS` today (`fixtures/` counts only for immutability,
+  `spec/` only for stats, and only stats ignores case; the 2026-10-21 code-quality audit, finding 4).
+
+## From the grey-goo-ri issue #95 session (Declared Commands, 2026-10-22)
+
+That session's handoff, checked against main. Its constraints already hold in the design; these make them explicit.
+
+- **U13. Commands by name only.** A Procedure, Check or later gate names a Declared Command (`command: test`), never a
+  command line. With P2 no other Layer may declare Procedures, but naming keeps ADR 0013's allowlist the only source
+  of what runs unsandboxed. Recommendation: record it; the validator (V1) errors on any named command the repository
+  Layer does not declare, generalising preflight's "`test` is required" (`config.commandProblems`). `test` stays
+  required, since the example and Test Immutability's intent assume a suite.
+- **U14. The command name leaves the Outcome vocabulary.** Today `checkOutcome: { test: 'gate-failed(test)' }` and
+  `CHECK_NAMES` bind a Check to `commands.test` in code (`lib/procedures.mjs`, `lib/interpreter.mjs`). With Checks as
+  data, Outcomes come from the tables or the engine's `failed` (T7), and Check ids are the user's. Recommendation:
+  record that `gate-failed(<name>)` and `CHECK_NAMES` are removed in the slice that ports the Checks.
+- **U15. grey-goo-ri issue #96 (an agent can fake a green run by editing what a command delegates to).** P4 builds the
+  repository-Layer test globs that issue's option 1 asked for, required rather than defaulted, so a repository can add
+  its test launcher (`scripts/run-suite.mjs`) to `testPaths` and Test Immutability, rescue and rollback cover it.
+  Limit: adding `package.json` would also stop an implementer adding a dependency, so `scripts.test` stays exposed
+  unless the `test` command calls a launcher file directly. Recommendation: P4 closes #96's option 1; ADR 0014 records
+  the `package.json` limit, and #96 stays open for it.
 
 ## Questions for the owner
 
