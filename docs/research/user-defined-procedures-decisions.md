@@ -693,8 +693,14 @@ accepted Y1–Y4 and Y7–Y15 as recommended, and the issues were edited to matc
   stays parallel to the engine work. `resolveFlow` in `lib/flow.mjs` stays the interpreter's loader, changed only by
   the serial engine tickets (#112, #113), until #116 switches admission to the validator and deletes it; #117 then
   extends the validator's Resolved Flow (Y16).
-- Round 5b: the owner accepted Y16, Y17 and Y19–Y21 as recommended, and the issues were edited to match. Y18 (end
-  reporting Action ids) is open.
+- Round 5b: the owner accepted Y16–Y21 as recommended, and the issues were edited to match.
+- Y18. End, hold and fault reporting Actions keep the end's name in the Vertex slot and get fixed Action ids
+  `<report>-<step>` with Recovery Number 0 (issue #111): `<report>` is `end`, `hold` or `fault`; `<step>` is
+  `comment`, `epic-comment` or `label` (and `pr-ready` until issue #112). One shared id such as `hold` would give a
+  hold's comment and label one marker, so the label would find the comment's evidence and never be set. Example:
+  `gg:142.4f9e21:needs-human:1:hold-comment:0:<run>:1`. Issue #23 freezes these ids.
+- Y22. A Vertex id may not equal an end name (`ready-for-qa`, `needs-human`, `needs-replan`), so a Vertex's Action
+  markers never collide with end reporting's (issue #106).
 
 ## Open
 
