@@ -79,7 +79,7 @@ New module, added to the AGENTS.md Layout table.
 
 ### A3. Response schemas as data
 
-V1, R13a, R13c, R13e; makes the library survey's deferred `ajv` decision. `briefs.assertStrict` and
+V1, R13a, R13c, R13e; carries the owner's decision: no `ajv`. `briefs.assertStrict` and
 `validateResponse` accept any repository schema within a declared strict subset and reject other keywords at load;
 a Claim-enum check (the enum equals the declared tokens, no case-only differences); `fieldType(schema, path)` types
 a reference path for rules, `pick`, `response` Check fields and inputs.
@@ -237,8 +237,7 @@ and `gg doctor` fail naming `gg init`.
    goldens each time (above). The alternative is a second Visit runner for data Procedures beside today's, with a
    switch ticket at the end: fewer golden regenerations, but two marker formats in Reconciliation and a big-bang
    switch.
-2. **`ajv` (A3).** Recommended: stay hand-rolled. User schemas are limited to the strict subset Claude and Codex
-   structured outputs accept, which gg must type anyway for rule paths; `ajv` would validate more than gg may accept
-   and add the first dependency.
+2. **`ajv` (A3). Decided 2026-10-22: no `ajv`.** Validation stays hand-rolled over the strict subset Claude and
+   Codex structured outputs accept.
 3. **Template syntax (A4).** Recommended: a small Mustache subset (`{{name}}`, `{{#list}}…{{/list}}`, `{{^name}}…{{/name}}`
    for absent), no helpers or logic, hand-written. Or leave it to the A4 ticket.
