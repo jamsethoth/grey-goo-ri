@@ -14,12 +14,16 @@ commands: { test: ... }                      # required (ADR 0013); Checks name 
 
 - **gg's own context**, for any Brief or template that names it, never inserted: the Ticket, base, branch diff,
   Declared Commands, History, provenance, Action Marker, and the test files changed since the Execution's first test
-  commit (R3d). gg computes a value only when a template names it.
+  commit (R3d); a stop template also reads the Terminal Reason and the end's name (W6). gg computes a value only when
+  a template names it.
 - **The Vertex's own outputs**, by Action id (`fix.response`, `test.evidence`).
-- **Everything another Vertex produced**, through `inputs` (Q7), snapshotted at Visit entry (S4).
+- **Everything another Vertex produced**, through `inputs` (Q7), snapshotted at Visit entry (S4), as
+  `<vertex>.<action id>.<field>` (W2), or `<vertex>.rescue`, `{ ref, diffStat, output }`, when R5a rescued that
+  Vertex's work (W3).
 
-The example's Briefs use what today's do: red and green the Ticket and commands; fix the History and findings; the
-reviewer the diff, the changed test files, the report and both evidences. `pr-body.md` reads `report`, `red` and
+The example's Briefs use what today's do: red and green the Ticket and commands, and the findings when present (R2g,
+W10); fix the History, findings and any rescued work; the reviewer the diff, the changed test files, the report and
+both evidences. `pr-body.md` reads `report`, `red` and
 `green` (today's `render.prBody`), and each `pr-upsert` binds them with `with:`.
 
 ## Agents
@@ -35,8 +39,11 @@ agents:                                      # harness, model and effort come fr
 
 Every response schema's `reason` enum includes `none` for a Claim that is not a stop (U3). Every Procedure's `stopped`
 table refines the shared `blocked` token by its `reason` (R9b); it is written out in each Procedure because tables
-belong to the Procedure. A stop token's `comment` template replaces the end's Terminal Reason comment and includes the
-reason (U6).
+belong to the Procedure. A stop token's `comment` template replaces the end's Terminal Reason comment, goes to the
+Ticket, and to the Epic too at `end: needs-replan` (U6, W5, W9). `blocked.md` reads `summary`, `diagnosis` and the
+Terminal Reason, which every schema and stop provides (W6).
+
+`pr-upsert` creates the PR as a draft and never changes its draft state; only `pr-ready` makes it ready (W4).
 
 ### tests-fail (the `red` and `senior-red` Vertices)
 
@@ -81,7 +88,7 @@ implement:
     - { id: test,   do: check, kind: command, command: test, recoverBrief: test-fix.md }   # non-zero exit recoverable
     - { id: commit, do: commit, type: feat }
     - { id: push,   do: push }
-    - { id: pr,     do: pr-upsert, draft: true, body: pr-body.md,                  # T2: the draft PR stays early
+    - { id: pr,     do: pr-upsert, body: pr-body.md,                               # T2: the draft PR stays early
         with: { report: green.response, red: inputs.red, green: test.evidence } }
   recover: { max: 1, brief: recover.md }    # today's testFix: 1
   passed: []
@@ -106,7 +113,7 @@ fix:
     - { id: test,   do: check, kind: command, command: test, recoverBrief: test-fix.md }
     - { id: commit, do: commit, type: fix }                    # no edits: a no-op, as today (U2)
     - { id: push,   do: push }
-    - { id: pr,     do: pr-upsert, draft: true, body: pr-body.md,
+    - { id: pr,     do: pr-upsert, body: pr-body.md,
         with: { report: fix.response, red: inputs.red, green: test.evidence } }
   recover: { max: 1, brief: recover.md }
   passed: []
@@ -138,7 +145,7 @@ review:
                   { none: findings, where: { severity: [blocker, major] } } ] }
     - { id: repeat,      do: check, kind: repeat, list: response.findings,
         fields: [file, severity, issue] }    # R4c: failed means a repeat; a fact, required by nothing
-    - { id: comment,     do: comment, body: review-comment.md }
+    - { id: comment,     do: comment, target: pr, body: review-comment.md }   # W5
     - { id: pr,          do: pr-upsert, body: pr-body.md,
         with: { report: inputs.report, red: inputs.red, green: inputs.green } }
   passed:                                    # every review lands here: nothing is required (P5a, P5b)
@@ -190,15 +197,16 @@ flows:
           use: implementer
           procedure: tests-fail
           inputs:
-            findings: { from: reviewer.review.findings, optional: true }       # absent on the first Visit (T10)
+            findings: { from: reviewer.review.response.findings, optional: true }       # absent on the first Visit (T10)
           route: { ok: green }               # no-test falls to "*": no review yet to fix from (S4)
 
         green:
           use: implementer
           procedure: implement
           inputs:
-            tests: { from: [red.commit.files, senior-red.commit.files] }
-            red:   { from: [red.red-check.evidence, senior-red.red-check.evidence] }
+            tests:    { from: [red.commit.files, senior-red.commit.files] }
+            red:      { from: [red.red-check.evidence, senior-red.red-check.evidence] }
+            findings: { from: reviewer.review.response.findings, optional: true }   # W10
           route: { ok: reviewer }
 
         reviewer:
@@ -220,7 +228,7 @@ flows:
           maxVisits: 1
           exhausted: { end: needs-human }
           inputs:
-            findings: { from: reviewer.review.findings }
+            findings: { from: reviewer.review.response.findings }
           route:
             ok:      green
             no-test: senior-dev              # a stop routed to a Vertex: rescued and reset (R5a)
@@ -230,8 +238,9 @@ flows:
           procedure: fix
           inputs:
             <<: *impl
-            findings:  { from: reviewer.review.findings }
-            testFiles: { from: reviewer.review.findings, pick: file }           # T8
+            findings:  { from: reviewer.review.response.findings }
+            testFiles: { from: reviewer.review.response.findings, pick: file }           # T8
+            previous:  { from: [implementer-fix.rescue, senior-red.rescue], optional: true }   # W7
           route:
             ok:     reviewer
             failed: senior-dev               # T9: rescues the work (R5a), so senior-dev.previous exists
@@ -243,8 +252,8 @@ flows:
           exhausted: { end: needs-human }
           inputs:
             <<: *impl
-            findings:  { from: reviewer.review.findings }
-            testFiles: { from: reviewer.review.findings, pick: file }
+            findings:  { from: reviewer.review.response.findings }
+            testFiles: { from: reviewer.review.response.findings, pick: file }
             previous:  { from: [implementer-fix.rescue, senior-red.rescue], optional: true }   # T9, U11
           route: { ok: reviewer }
 
@@ -265,7 +274,8 @@ flows:
 - **Inputs** (Q7, S4, T6, T9, U1): `green.tests` and `green.red` come from `red` or `senior-red` on every path; every
   `report`, `red` and `green` from one of their producers on every path, since `red` and `green` precede every
   reviewer; `senior-red.findings` and the fix Vertices' `findings` from `reviewer`, which precedes them on every
-  path; `red.findings` and `senior-dev.previous` are optional, each with a producing path.
+  path; `red.findings`, `green.findings` and both fix Vertices' `previous` are optional, each with a producing path
+  (`implementer-fix.previous` through `senior-red → senior-dev → reviewer → implementer-fix`).
 - **Bounds** (I3, T5): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`; `reviewer → implementer-fix →
   reviewer` by `changes`' `max: 2`; every path into `senior-red` and `senior-dev` by their `maxVisits: 1`; the
   Ticket's Action Cap over all of them.

@@ -39,12 +39,14 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | P1 (open): a library of shipped Procedures | P3: no library; `gg init` writes the whole example |
 | R3e, T12: `testPaths` defaults to `DEFAULT_TEST_GLOBS` | P4: `testPaths` is required |
 | R4a: one condition per `response` Check | P5d: `all-of` |
-| R4b: the review's `ok` requires `review-pass` | P5a: `ok` requires nothing; a `passed` row decides |
+| R4b, T13: the review's `ok` requires `review-pass`; its `failed` table | P5a: `ok` requires nothing; a `passed` row decides |
 | Q7: Briefs and templates read `inputs` | U1: plus gg's own context, by name only |
 | R9a: `reason` enum | U3: gains `none` |
 | R5a, R5b: rescue by the route's target | U5: by the effective target, after exhaustion |
 | R11a, S5: end comment and stop template | U6: the stop template replaces the end comment |
 | Q3c: a Vertex option may remove a Check from `requires` | U7: dropped; declare a second Procedure |
+| Q7, R12e: `<vertex>.<action>.<field>` with the response implied | W2: `response` is named |
+| T2, R12e: `draft: true` on `pr-upsert` | W4: no flag; `pr-upsert` never changes draft state |
 | R10a: rule tables in any Layer | P2: Flows and Procedures in the repository Layer only |
 | Round-1 review S7: `session: fresh \| resume` on agent Phases | T4a: recovery always resumes the agent's Session; no field |
 
@@ -596,10 +598,33 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
   first Visit, S4). `green`'s inputs and `senior-dev.previous` become lists across `red`/`senior-red` and
   `implementer-fix`/`senior-red` (T6).
 
+## Review round 4 (2026-10-22)
+
+The merged review is [user-defined-procedures-review4.md](user-defined-procedures-review4.md).
+
+- W2. One reference form: `<vertex>.<action id>.<field>`, where an agent Action's output is `response`
+  (`reviewer.review.response.findings`, `green.green.response`); a Vertex's own outputs omit the Vertex
+  (`test.evidence`). R13e validates every reference in this form.
+- W3. `<vertex>.rescue` is the one Vertex-level output, `{ ref, diffStat, output }`, written by gg when R5a rescues
+  the Vertex's work; T6's same-type check compares it across Vertices.
+- W4. `pr-upsert` creates the PR as a draft and never changes its draft state, as `upsertPr` does today
+  (`lib/github.mjs:93-101`); it has no `draft` flag. Only `pr-ready` makes a PR ready (R11d).
+- W5. The `comment` Action takes `target: pr | ticket`; the review's comment targets the PR, as today
+  (`lib/interpreter.mjs:823`). A stop token's comment always goes to the Ticket (U6).
+- W6. U1's gg context adds the Terminal Reason and the end's name, for stop templates. The example's `blocked.md`
+  reads `summary` and `diagnosis`, which every response schema has, and each Brief tells a blocked agent to explain in
+  `diagnosis` (today's blocked comment reads `notes`, which the review schema lacks).
+- W7. `implementer-fix` declares `previous` optional too, since the shared `fix.md` reads it.
+- W8. Stale text: T13 joins the R4b → P5a reading-guide row; the example's Brief note says `red` also reads `findings`.
+- W9. `end: needs-replan` posts the same rendered stop-token comment to the Epic as to the Ticket; no response field is
+  reserved (D3). This settles U6's "fixed end behaviour".
+- W10. `green` declares `findings: { from: reviewer.review.response.findings, optional: true }`, so after a retest it
+  sees the review's other findings; absent on the first Visit (T10).
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
-- Round 3 is decided; the example Flow carries U1–U15. A round-4 review before slicing (owner, 2026-10-22).
+- Round 4: W1 (where `recover` is declared) on hold.
 - Revisit: migration of old records instead of holding them (R7d).
 - Step 7: slice option 1 into tickets.
 - The ADR draft reversing request section 3.4.
