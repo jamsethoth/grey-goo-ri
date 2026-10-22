@@ -704,8 +704,8 @@ accepted Y1–Y4 and Y7–Y15 as recommended, and the issues were edited to matc
 
 ## Review round 6 (2026-10-22)
 
-Round 6 ([merged](user-defined-procedures-review6.md)) reviewed all 25 issues with fresh reviewers. K3–K14 await the
-owner.
+Round 6 ([merged](user-defined-procedures-review6.md)) reviewed all 25 issues with fresh reviewers. The owner accepted K3–K6 and K8–K14 as recommended,
+and the issues were edited to match. K7 (U2 has no ticket) is open.
 
 - K1. `approvers` is an optional top-level list of GitHub logins in the repository Layer, like `testPaths` a load
   error elsewhere; without it only write permission or higher counts (request 3.5). Issue #119 also extends the
