@@ -51,7 +51,8 @@ Merge conflicts, a moved branch and an exhausted budget hold as before.
   identity; at resume a helper still running is killed and confirmed gone first. An uncontained Attempt (POSIX, or a
   helper that failed to start) is rescued and held, never reset, since a surviving writer could write after the
   rescue's verification. A tool that explicitly breaks away from the job is an accepted residual risk. Linux cgroup
-  containment is backlogged (grey-goo-ri issue #128).
+  containment is backlogged (grey-goo-ri issue #128). A call that returns normally kills its leftover processes too
+  (decision L6), so routed rescues and resets meet the same rule.
 - A human edit made between the crash and the resume leaves the worktree; the History and any hold comment name the
   Rescue Ref that keeps it.
 

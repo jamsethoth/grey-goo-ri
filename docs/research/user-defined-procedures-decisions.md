@@ -879,6 +879,16 @@ Round 10 (fresh Astra and Fable) found the architecture sound. The owner's decis
 - L5. "Write or higher" means the REST collaborator `permission` field is `admin` or `write` (maintain folds into
   write, triage into read) (Fable F4). Issue #108.
 - Noted: an Execution is time-bounded by per-call timeouts and the Action Cap together (Fable F5); no change.
+- L6. Every process gg runs in a worktree kills its leftovers when it returns, and names them (Astra A1, extending N1
+  to calls that return normally). Today the Windows helper leaves a finished command's background children running
+  (`lib/winjob.ps1:115`), so a background writer could write after a rescue's verification or into the next
+  Vertex's worktree. Windows keeps kill-on-close through cleanup; POSIX kills the process group and the observed
+  descendants and confirms the group is empty; a process that starts its own session or explicitly breaks away is an
+  accepted residual risk (Linux cgroups, grey-goo-ri issue #128, close it). Practice: the GitHub Actions runner kills
+  a job's orphan processes at job end; hosted agents (OpenHands, SWE-agent, Copilot) discard the whole environment;
+  Claude Code and Codex CLI users report leaked children as bugs, and Codex moved to killing the process group.
+  #23's harness contract says a call returns only once its processes are gone, or reports that it could not
+  confirm it, which holds a reset. Issues #118, #23.
 
 ## Open
 
