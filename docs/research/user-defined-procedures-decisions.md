@@ -64,6 +64,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | V2: the example's `actionCap: 128` | M3: 160 |
 | R3a, V6: a wrong red test reaches a human through green's failures | M2: green stops with `bad-test`; red rewrites once |
 | L1: the example starts at `baseline` | L7: red's `others-pass` detects a red base; `base-check` is optional |
+| L7: `others-pass` | L8: `baseline` at entry again, cached per base tree; no `others-pass` |
 | M3: the example's `actionCap: 160` | L7: 180 |
 
 ## Step 1: use cases and users (2026-10-21)
@@ -632,7 +633,8 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
 - W3. `<vertex>.rescue` is the one Vertex-level output, `{ ref, diffStat, output }`, written by gg when R5a rescues
   the Vertex's work; T6's same-type check compares it across Vertices.
 - W4. `pr-upsert` creates the PR as a draft and never changes its draft state, as `upsertPr` does today
-  (`lib/github.mjs:93-101`); it has no `draft` flag. Only `pr-ready` makes a PR ready (R11d).
+  (`lib/github.mjs:93-101`); it has no `draft` flag. Only `pr-ready` makes a PR ready (R11d). gh-aw likewise enforces
+  `draft: true` as policy the agent cannot override, and Copilot's coding agent opens one PR per task (round 11).
 - W5. The `comment` Action takes `target: pr | ticket`; the review's comment targets the PR, as today
   (`lib/interpreter.mjs:823`). A stop token's comment always goes to the Ticket (U6).
 - W6. U1's gg context adds the Terminal Reason and the end's name, for stop templates. The example's `blocked.md`
@@ -891,17 +893,40 @@ Round 10 (fresh Astra and Fable) found the architecture sound. The owner's decis
   Claude Code and Codex CLI users report leaked children as bugs, and Codex moved to killing the process group.
   #23's harness contract says a call returns only once its processes are gone, or reports that it could not
   confirm it, which holds a reset. Issues #118, #23.
-- L7. Red detects a base that already fails, replacing L1's `baseline` in the example's path. A new Check kind
-  `others-pass` (`of: red-check`, `command`, `names`) reuses red-check's run, or runs the command itself when red-check
-  did not run (a stop, or V8's skip), and fails when any test the agent did not name is failing; output gg cannot
-  parse passes, saying so. It is recoverable once ("name these if they are yours"). `tests-fail`'s `ok` requires it;
-  its `failed` table and a `stopped` row ahead of `no-test` map it to the Outcome `base-red`, which the example routes
-  to `end: needs-human` listing the failing tests, before any implementation; the red Visit's work is left in place
-  uncommitted (Q3a, R5b). Green cannot make this call: on N6's no-test path every test it runs is an existing one, so
-  a failure there may be its own regression; the last tree equal to the base is red's. Guidance on agent test
+- L7. (Superseded by L8.) Red detects a base that already fails, replacing L1's `baseline` in the example's path. A new
+  Check kind `others-pass` (`of: red-check`, `command`, `names`) reuses red-check's run, or runs the command itself when
+  red-check did not run (a stop, or V8's skip), and fails when any test the agent did not name is failing; output gg
+  cannot parse passes, saying so. It is recoverable once ("name these if they are yours"). `tests-fail`'s `ok` requires
+  it; its `failed` table and a `stopped` row ahead of `no-test` map it to the Outcome `base-red`, which the example
+  routes to `end: needs-human` listing the failing tests, before any implementation; the red Visit's work is left in
+  place uncommitted (Q3a, R5b). Green cannot make this call: on N6's no-test path every test it runs is an existing one,
+  so a failure there may be its own regression; the last tree equal to the base is red's. Guidance on agent test
   baselines says to record pre-existing failures and not fix them as a side effect, so a `repair` Procedure is
   backlogged as grey-goo-ri issue #131. `base-check` stays documented as an option for runners whose output gg cannot
   parse. The example's `actionCap` becomes 180 (`others` adds an Attempt to every red pass). Issues #114, #115, #120.
+
+## Review round 11 (2026-10-23)
+
+Round 11 (Fable, and Astra after a model-access error and a retry) found the architecture sound; Astra showed L7's
+inference unsound. The owner's decisions:
+
+- L8. L7 is withdrawn. A failing test the agent did not name proves nothing about the base: red can break an existing
+  test through a shared fixture on a green base, and an already-failing test the agent names passes `others-pass`
+  and can even satisfy the red Check (Astra A1). SWE-bench and TDFlow take "failing before" from a run before the
+  change. So the example starts at `baseline` again (L1), and its `test` Check takes a new `command` parameter
+  `reuse: tree`: a result recorded in this repository for the same tree, command and Config Hash is reused, so the
+  Tickets on one base share one run, and a failing result stands until the base changes. A green base means every
+  test failing at red is new or broken by red, so red's Check needs no base comparison; a test red broke reaches
+  green, which can stop with `bad-test` (M2). `others-pass` and `base-red` are dropped. `publish` keeps re-running
+  (M4). The `actionCap` stays 180 as headroom. The reuse cache is a State Database table #23 documents. Issues #114,
+  #115, #120, #23, #131.
+- L9. L3 does not stop the repository's existing CI from running agent-written code with `GITHUB_TOKEN` and secrets on
+  gg's push (Fable F2); gh-aw runs its agent read-only and Copilot holds workflow runs for approval, which gg cannot do
+  from the client. ADR 0014 records the limit, and `gg init` recommends read-only default workflow permissions. A
+  `gg doctor` warning is backlogged as grey-goo-ri issue #132. Issue #120.
+- L10. Request 3.6 lists the `.github/` Protected Files (Fable F3).
+- W4 cites practice (Fable F4); see W4.
+- Noted: SWE-agent is in maintenance-only mode; future comparisons cite mini-swe-agent (Fable F5).
 
 ## Open
 

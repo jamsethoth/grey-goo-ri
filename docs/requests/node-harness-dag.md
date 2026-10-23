@@ -466,10 +466,11 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
   ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
   protected files. Writes elsewhere on the machine and network effects of commands are not observed, which is the
   stated weakness of the trusted-command mode in 3.2.
-- Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md` or `CLAUDE.md`
-  are rejected. Under the Claude launch profile, settings, hooks, `.mcp.json`, CLAUDE.md and memory are not
-  consumed; `.claude/skills`, `.claude/commands` and `.claude/agents` are potentially discoverable, as 3.2 states.
-  Codex trust level is set explicitly so project config is not consumed.
+- Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`,
+  `.github/workflows/` or `.github/actions/` are rejected (the last two added by decision L3). Under the Claude launch
+  profile, settings, hooks, `.mcp.json`, CLAUDE.md and memory are not consumed; `.claude/skills`, `.claude/commands` and
+  `.claude/agents` are potentially discoverable, as 3.2 states. Codex trust level is set explicitly so project config is
+  not consumed.
 - Agents get read-only git (diff, log, status, show) and no movement commands (checkout, switch, worktree, stash,
   reset, add, commit, push, remote, gh). Confinement: Codex sandbox; Claude file tools confined to the working
   directory with prompts off, `--restricted` on read-only actions; the idle-worktree assertion for shell writes.
