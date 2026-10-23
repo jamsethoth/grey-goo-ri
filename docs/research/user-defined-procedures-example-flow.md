@@ -23,10 +23,11 @@ commands: { test: ... }                      # required (ADR 0013); Checks name 
 
 The example's Briefs use what today's do: red and green the Ticket and commands, and the findings when present (R2g,
 W10); green also any rescued work, for `senior-green` (V6); fix the History, findings and any rescued work; the reviewer
-the diff, the changed test files, the report and both evidences, and, when `red` is absent because red stopped with
-`no-test-needed`, whether a test was in fact needed (`needsTest: true` sends it back through `retest`; N6). `pr-body.md`
-reads `report`, `red` and `green` (today's `render.prBody`), says so when no failing test exists, and each `pr-upsert`
-binds them with `with:`.
+the diff, the changed test files, the report and both evidences, and, when `redReport.reason` is `no-test-needed`,
+whether a test was in fact needed (`needsTest: true` sends it back through `retest`; N6, N10). Green, the reviewer and
+`pr-body.md` show red's no-test notes whenever its latest Claim says so, since after a `retest` the `tests` and `red`
+inputs still hold an earlier Visit's values (S4). `pr-body.md` reads `report`, `red`, `green` and `redReport` (today's
+`render.prBody`), and each `pr-upsert` binds them with `with:`.
 
 ## Agents
 
@@ -215,6 +216,7 @@ flows:
             red:      { from: [red.red-check.evidence, senior-red.red-check.evidence], optional: true }
             findings: { from: reviewer.review.response.findings, optional: true }   # W10
             previous: { from: green.rescue, optional: true }   # V6: the shared green.md reads it, as W7
+            redReport: { from: [red.red.response, senior-red.red.response] }   # N10: red's latest Claim
           route:
             ok:     reviewer
             failed: senior-green             # V6: rescues the work (R5a), so senior-green.previous exists
@@ -229,6 +231,7 @@ flows:
             red:      { from: [red.red-check.evidence, senior-red.red-check.evidence], optional: true }
             findings: { from: reviewer.review.response.findings, optional: true }
             previous: { from: green.rescue, optional: true }
+            redReport: { from: [red.red.response, senior-red.red.response] }   # N10: red's latest Claim
           route: { ok: reviewer }
 
         reviewer:
@@ -238,6 +241,7 @@ flows:
             report: { from: [green.green.response, senior-green.green.response, implementer-fix.fix.response,
                               senior-dev.fix.response] }
             red:    { from: [red.red-check.evidence, senior-red.red-check.evidence], optional: true }   # N6
+            redReport: { from: [red.red.response, senior-red.red.response] }   # N10
             green:  { from: [green.test.evidence, senior-green.test.evidence, implementer-fix.test.evidence,
                               senior-dev.test.evidence] }
           route:
@@ -299,12 +303,13 @@ flows:
 - **Commits** (S2, T1c): every passing path of `red`, `senior-red`, `green`, `senior-green`, `implementer-fix` and
   `senior-dev` commits, and each committing token requires a Check.
 - **Inputs** (Q7, S4, T6, T9, U1, N6): `tests` and `red` of `green` and `senior-green`, and every `red` evidence, are
-  optional: `red`'s `no-test` path produces neither (`red-check.evidence` exists only when the Check passed, as today);
-  every `report` and `green` comes from one of their producers on every path, since `green` precedes every reviewer;
-  `senior-red.findings` and the fix Vertices' `findings` from `reviewer`, which precedes them on every path;
-  `red.findings`, both green Vertices' `findings` and `previous`, and both fix Vertices' `previous` are optional, each
-  with a producing path (`implementer-fix.previous` through `senior-red → senior-dev → reviewer → implementer-fix`;
-  `green.previous` through `green → senior-green → reviewer → red → green`).
+  optional: `red`'s `no-test` path produces neither (`red-check.evidence` exists only when the Check passed, N9); every
+  `redReport` comes from `red`, whose agent Action responds on every Visit, stops included (N10); every `report` and
+  `green` comes from one of their producers on every path, since `green` precedes every reviewer; `senior-red.findings`
+  and the fix Vertices' `findings` from `reviewer`, which precedes them on every path; `red.findings`, both green
+  Vertices' `findings` and `previous`, and both fix Vertices' `previous` are optional, each with a producing path
+  (`implementer-fix.previous` through `senior-red → senior-dev → reviewer → implementer-fix`; `green.previous` through
+  `green → senior-green → reviewer → red → green`).
 - **Bounds** (I3, T5, V3): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`;
   `reviewer → implementer-fix → reviewer` by `changes`' `max: 2`; every path into `senior-red`, `senior-green` and
   `senior-dev` by their `maxVisits: 1`; `publish`'s self-edge by its `max: 1` (N4); the Ticket's Action Cap over all

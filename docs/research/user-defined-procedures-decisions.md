@@ -60,6 +60,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | T4c, K7: named tests missing from the output are not recoverable | N5: recoverable |
 | U11: `red`'s `no-test` falls to `"*"` | N6: routes to `green`; the reviewer judges it |
 | P5c: `publish`'s failed test ends at `needs-human` | N4: re-runs once first |
+| N6: the reviewer judges a no-test claim when `red` is absent | N10: when `redReport.reason` is `no-test-needed` |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -816,6 +817,15 @@ accepted the findings below after a research pass, and the issues were edited to
 - N7. The slices doc's #107 summary now says the Action Cap is not a cycle's bound (Fable F4, V3).
 - N8. R4c records that `repeat` matches only exact repeats (Fable F5). A reviewer-marked repeat is backlogged as
   grey-goo-ri issue #127; the field lives in the repository-owned response, which #23 documents as opaque.
+- N9. A Check's `evidence` output is produced only when the Check passed, as today (`lib/interpreter.mjs:733`). A
+  failing Check's output still reaches the recovery Brief (T4b), the rescue's `output` (R5c) and the Check signal, but
+  is never read as proof by a later Vertex or the PR body. Issue #114.
+- N10. Correction to N6: inputs read the latest Visit that produced a value (S4), so after a `retest`, a red Visit that
+  stops with `no-test-needed` leaves the earlier Visit's `tests` and `red` evidence in place, and "`red` absent" would
+  not show the claim. Green, `senior-green` and every `&impl` reader take `redReport: { from: [red.red.response,
+  senior-red.red.response] }`, required, since an agent Action responds on every Visit, stops included; the Briefs and
+  the PR body show red's no-test notes whenever `redReport.reason` is `no-test-needed`. `no-test` still routes to
+  `green` as N6 decided. Issue #120.
 
 ## Open
 
