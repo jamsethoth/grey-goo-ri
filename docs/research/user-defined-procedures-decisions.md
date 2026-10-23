@@ -61,6 +61,8 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | U11: `red`'s `no-test` falls to `"*"` | N6: routes to `green`; the reviewer judges it |
 | P5c: `publish`'s failed test ends at `needs-human` | N4: re-runs once first |
 | N6: the reviewer judges a no-test claim when `red` is absent | N10: when `redReport.reason` is `no-test-needed` |
+| V2: the example's `actionCap: 128` | M3: 160 |
+| R3a, V6: a wrong red test reaches a human through green's failures | M2: green stops with `bad-test`; red rewrites once |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -367,7 +369,9 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     `publish` Vertex that requires the `test` command.
   - (d) A Vertex containing a publishing Action must require at least one Check, and the Action runs only on fresh
     passing results (R1b). This replaces Q3g's routing fence: whatever path the work took, it is published only after
-    passing Checks in the Vertex that publishes it.
+    passing Checks in the Vertex that publishes it. The example's `publish` re-runs a suite that already passed on the
+    same tree on purpose: publishing never depends on which Vertex ran before it, for one extra suite run per Ticket
+    (M4).
   - (e) Every path to `end: ready-for-qa` must run `pr-ready`, checked at admission with the per-Outcome path analysis
     (S4).
   - (f) A Vertex with no agent step has an implicit Claim `ok` that requires all its Checks.
@@ -726,7 +730,9 @@ and the issues were edited to match. K7 was decided after research.
 - K2. The Action Cap stays, as a required Flow key `actionCap` (a positive integer counting every Attempt in the
   Execution, request 3.3); the example writes 40. Comparable systems all add one run-wide bound over per-step limits
   (LangGraph `recursion_limit`, OpenAI Agents `max_turns`, OpenHands `max_iterations`, Step Functions' history limit).
-  A spend budget (tokens or cost) is a later ticket.
+  A spend budget (tokens or cost) is a later ticket. It sums gg's own `usage.delta` (request 3.7); `claude -p
+  --max-budget-usd` is only a per-Attempt fuse, since spend restored on `--resume` does not count toward it and spend
+  can pass it (M6).
 - K7. U2 is built, and its first part is now recoverable. An agent that judges no test needed already has the stop
   reason `no-test-needed` (U11); a red that claims `ok` with no test file changed is a Claim its evidence
   contradicts. Agentic TDD tools answer that with feedback and a bounded retry, then escalation (TDD Guard and
@@ -826,6 +832,31 @@ accepted the findings below after a research pass, and the issues were edited to
   senior-red.red.response] }`, required, since an agent Action responds on every Visit, stops included; the Briefs and
   the PR body show red's no-test notes whenever `redReport.reason` is `no-test-needed`. `no-test` still routes to
   `green` as N6 decided. Issue #120.
+
+## Review round 9 (2026-10-23)
+
+Round 9 (fresh Astra and Fable, the same brief) found the design sound; Astra saw no reason to reopen the
+architecture. The owner accepted every finding.
+
+- M1. `pr-ready` reads the PR's head (repository, ref and commit) fresh before every launch and retry and compares it
+  with the checked target; a mismatch or a failed read holds (Astra A1). Without it, a push to the remote branch after
+  gg's push would be marked ready on an unchecked commit: `viewPr` reads no `headRefOid` (`lib/github.mjs:104`) and
+  `markReady` takes only the number (`:128`). Residual: the read and GitHub's ready call are not atomic, so a push
+  between them cannot be excluded, as with GitHub's own required checks. Issue #112.
+- M2. A green Vertex that finds red's test wrong stops with `reason: bad-test` (`implement.schema.json`'s enum gains
+  it), which the `implement` Procedure's `stopped` table maps to the Outcome `bad-test`. The example routes it from
+  `green` and `senior-green` to `red` with `max: 1`, then `needs-human`; the work is rescued and reset (R5a); `red`
+  reads `previous: { from: [green.green.response, senior-green.green.response], optional: true }` and `red.md` shows
+  its `diagnosis` when `reason` is `bad-test` (Fable F1). Green still cannot edit tests (R3a); a different agent
+  judges the claim. TDFlow (EACL 2026) finds bad tests its main failure with no correction path, and ImpossibleBench
+  found an explicit abort option cut test gaming from 54% to 9%. Issues #104, #120.
+- M3. The example's `actionCap` is 160, since M2's detours lengthen the longest bounded path to about 155 Attempts
+  with one recovery per agent Visit. Issues #117, #120.
+- M4. R11d records why `publish` re-runs a suite that passed on the same tree (Fable F2).
+- M5. The example's `tests-fail` comment lists N5's recoverable failure (Astra A2, Fable F4).
+- M6. K2 records that a spend budget sums gg's `usage.delta`; `--max-budget-usd` is a per-Attempt fuse (Fable F5).
+- Backlog: an opt-in `gg init --diff` showing how a repository's Flow differs from the current example (Fable F3),
+  grey-goo-ri issue #130; P1b's no-silent-change rule stands.
 
 ## Open
 
