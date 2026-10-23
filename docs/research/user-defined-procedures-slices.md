@@ -123,12 +123,12 @@ and inputs with their sources, and exits non-zero on any error. Not yet called b
 
 ### A6. Graph analysis
 
-R12b, T3, R12c–d, I3, R11d–e, T1a (admission part), S2, T1c, S4, Q7, T9, U5. Every Outcome routed by the Vertex or
-the Flow's `routes`; the engine Outcomes default to `end: needs-human`; every cycle bounded by an edge `max`,
-`maxVisits` or the Action Cap; publishing Actions only in Vertices requiring a Check, and every path to
-`end: ready-for-qa` running `pr-ready`; a commit on every passing path of a write Vertex whose committing token
-requires a Check; inputs produced on every path per Outcome, and an optional input produced on some path;
-unreachable Vertices warned.
+R12b, T3, R12c–d, I3, R11d–e, T1a (admission part), S2, T1c, S4, Q7, T9, U5. Every Outcome routed by the Vertex or the
+Flow's `routes`; the engine Outcomes default to `end: needs-human`; every cycle containing an edge with `max` or a
+Vertex with `maxVisits`, the Action Cap not counting as a cycle's bound (V3); publishing Actions only in Vertices
+requiring a Check, and every path to `end: ready-for-qa` running `pr-ready`; a commit on every passing path of a write
+Vertex whose committing token requires a Check; inputs produced on every path per Outcome, and an optional input
+produced on some path; unreachable Vertices warned.
 - Tests: one fixture per rule; the example's admission summary (example-flow "What admission sees") reproduced.
 - Goldens: none. Glossary: none. Doctor: which Outcomes fall to `"*"` and which to the engine default (R12d); where
   each failure's work goes (rescued or left in place, on the effective target).

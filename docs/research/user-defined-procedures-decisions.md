@@ -56,6 +56,10 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | I3, request 3.3: the Action Cap bounds a cycle; every Vertex has `maxVisits` | V3: a cycle needs an edge `max` or a `maxVisits`; `maxVisits` is optional |
 | R8c: box subtraction | V5: enumeration over the finite partition |
 | ADR 0011: a change after the last heartbeat is not the agent's and holds | V9: no heartbeat rule; the Rescue Ref keeps every change |
+| V9: rescue verification catches a surviving writer | N1: reset only after confirmed termination; uncontained holds |
+| T4c, K7: named tests missing from the output are not recoverable | N5: recoverable |
+| U11: `red`'s `no-test` falls to `"*"` | N6: routes to `green`; the reviewer judges it |
+| P5c: `publish`'s failed test ends at `needs-human` | N4: re-runs once first |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -260,7 +264,8 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     and the review's `ok` requires it, so it may reach `done`.
   - (c) A `repeat` Check kind compares a list's normalised fields (the shipped findings: `file`, `severity`, `issue`
     with whitespace and line numbers stripped) with earlier reviews by the same Vertex in the Execution: `passed` is
-    new findings, `failed` a repeat. Not required by `changes`, it is a fact rules route on.
+    new findings, `failed` a repeat. Not required by `changes`, it is a fact rules route on. It matches only exact
+    repeats: a reworded finding counts as new, and the `changes` edge's `max` is the backstop (N8).
   - (d) The shipped Flow routes `repeat` to a bounded escalation Vertex. This completes the request's repeat routing
     and removes the `shortcut:` in `interpreter.mjs`. The review comment and PR update still run on a repeat.
 
@@ -774,6 +779,43 @@ protection). The owner accepted the findings below, and the issues were edited t
   ref, which the History names, and is not lost. ADR 0011 and issue #68 are amended; the heartbeat remains #67's
   liveness signal.
 - Noted, no ticket: a per-Attempt turn cap (`claude -p --max-turns`) for the Claude Harness slice (Fable F8).
+
+## Review round 8 (2026-10-23)
+
+Round 8 (fresh Astra and Fable, the round 7 brief) again found the design sound against comparable tooling. The owner
+accepted the findings below after a research pass, and the issues were edited to match.
+
+- N1. An Interrupted Attempt's worktree is reset only after its writers are confirmed gone (Astra A1). The call
+  intent records the containment (`job`: a Windows job object with kill-on-close; `none` otherwise) and the job
+  helper's process id and start time. At resume a `job` helper still running (same id and start time) is killed and
+  confirmed gone, then rescue, reset and retry; `none` (POSIX, or a helper that failed to start) is rescued and held,
+  never reset. Research: Linux children outlive their parent unless a cgroup is killed (`cgroup.kill`, kernel 5.14);
+  `PR_SET_PDEATHSIG` is per thread and not inherited; a job object with `BREAKAWAY_OK` loses only processes that
+  explicitly break away (an accepted residual risk); fencing tokens need a store that checks them, which a
+  filesystem is not. Linux cgroup containment is backlogged as grey-goo-ri issue #128. Issues #68, #118, #23 (which
+  reserves the fields) and ADR 0011.
+- N2. The rule-table analyser keeps V5's enumeration, with a work limit computed before it starts: points (the product
+  of each mentioned field's partition size) times rows, an admission error above 10 million naming the table and its
+  largest fields, never sampled (Astra A2). Exact analysis is NP-complete in general (SAT reduces to exhaustiveness,
+  per rustc's pattern analysis), so box subtraction would not avoid the limit; rustc and `match-lang` likewise count
+  work and report "too complex". #103 measures the analyser on a complex fixture Flow to set the limit and to show
+  how often admission can afford to run it. Issue #103.
+- N3. An unknown `intent.action` holds at Reconciliation; recognised Actions with no finder that are safe to repeat
+  (`pr-upsert`, `pr-ready`) are listed and replay (Astra A3, completing round 6's K4). Issue #118.
+- N4. The example's `publish` routes `failed` back to itself once (`max: 1`, then `needs-human`): its suite re-runs
+  on a tree that already passed, so a failure there is most likely a flake (Fable F1). A rescue with nothing to
+  rescue makes no ref and no reset. Issues #120, #107, #118.
+- N5. "Named tests missing from the output" is a recoverable `tests-fail` failure, with its own section asking for
+  the names as the runner prints them; a timeout or a missing command stays not (Fable F2; amends T4c and K7).
+  Reading structured per-test results, with no format prescribed by gg, is backlogged as grey-goo-ri issue #126;
+  it records the frozen Check signal and evidence shapes, so the freeze does not block it. Issue #115.
+- N6. The example routes `red`'s `no-test` to `green` (rescued and reset, R5a). `tests` and every `red` evidence
+  input are optional; the review Brief judges a no-test claim and sends it back with `needsTest: true` (`retest`,
+  bounded by `max: 2` then `senior-red`); the PR body says when no failing test exists (Fable F3, option b; amends
+  U11's routing). Issue #120.
+- N7. The slices doc's #107 summary now says the Action Cap is not a cycle's bound (Fable F4, V3).
+- N8. R4c records that `repeat` matches only exact repeats (Fable F5). A reviewer-marked repeat is backlogged as
+  grey-goo-ri issue #127; the field lives in the repository-owned response, which #23 documents as opaque.
 
 ## Open
 
