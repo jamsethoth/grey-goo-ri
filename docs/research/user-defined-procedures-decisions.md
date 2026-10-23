@@ -858,6 +858,28 @@ architecture. The owner accepted every finding.
 - Backlog: an opt-in `gg init --diff` showing how a repository's Flow differs from the current example (Fable F3),
   grey-goo-ri issue #130; P1b's no-silent-change rule stands.
 
+## Review round 10 (2026-10-23)
+
+Round 10 (fresh Astra and Fable) found the architecture sound. The owner's decisions:
+
+- L1. The example starts at an optional `baseline` Vertex with no Agent (Procedure `base-check`: the `test` Check),
+  `ok` → `red`, `failed` → `"*"` → `needs-human` naming `baseline.test` (Fable F1). It costs one suite run per
+  Execution; a repository with a slow suite can drop it. Without it a red base fails every implementation Visit
+  (about 11 Attempts and two senior calls) and ends at `needs-human` blaming the implementation; the example-flow doc
+  records the trace. SWE-bench likewise takes its must-keep-passing tests from a base run. Reading the base's CI result
+  instead was considered: GitHub's check-run, status and rollup APIs can disagree, CI may run another command, and a
+  pending result says nothing. Issues #120, #107 (an agentless entry Vertex is admitted).
+- L2. Every `pr-upsert` binds `redReport`, and `senior-red` declares the optional `previous` that the shared `red.md`
+  reads (Astra A2: N10 and M2 were wired incompletely; #113 rejects an undeclared template name). Issue #120.
+- L3. `.github/workflows/` and `.github/actions/` are Protected Files (Fable F2): gg pushes agent commits under the
+  owner's identity, so an edited workflow would run with repository secrets before a human looks. Copilot's coding
+  agent likewise holds its workflow runs for a person's approval. Never configurable (Q2). Issue #102, ADR 0014.
+- L4. `review.md` reads the History, so a reviewer learns of a `bad-test` detour (Fable F3). History items are a kind
+  and a sentence each, a few hundred tokens even near the Action Cap. Issue #120.
+- L5. "Write or higher" means the REST collaborator `permission` field is `admin` or `write` (maintain folds into
+  write, triage into read) (Fable F4). Issue #108.
+- Noted: an Execution is time-bounded by per-call timeouts and the Action Cap together (Fable F5); no change.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).

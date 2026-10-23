@@ -24,11 +24,11 @@ commands: { test: ... }                      # required (ADR 0013); Checks name 
 The example's Briefs use what today's do: red and green the Ticket and commands, and the findings when present (R2g,
 W10); red also green's `diagnosis` when green stopped with `bad-test` (M2); green also any rescued work, for
 `senior-green` (V6); fix the History, findings and any rescued work; the reviewer the diff, the changed test files, the
-report and both evidences, and, when `redReport.reason` is `no-test-needed`, whether a test was in fact needed
-(`needsTest: true` sends it back through `retest`; N6, N10). Green, the reviewer and `pr-body.md` show red's no-test
-notes whenever its latest Claim says so, since after a `retest` the `tests` and `red` inputs still hold an earlier
-Visit's values (S4). `pr-body.md` reads `report`, `red`, `green` and `redReport` (today's `render.prBody`), and each
-`pr-upsert` binds them with `with:`.
+report, both evidences and the History, which records a `bad-test` detour (L4), and, when `redReport.reason` is
+`no-test-needed`, whether a test was in fact needed (`needsTest: true` sends it back through `retest`; N6, N10). Green,
+the reviewer and `pr-body.md` show red's no-test notes whenever its latest Claim says so, since after a `retest` the
+`tests` and `red` inputs still hold an earlier Visit's values (S4). `pr-body.md` reads `report`, `red`, `green` and
+`redReport` (today's `render.prBody`), and each `pr-upsert` binds them with `with:`.
 
 ## Agents
 
@@ -48,6 +48,26 @@ Ticket, and to the Epic too at `end: needs-replan` (U6, W5, W9). `blocked.md` re
 Terminal Reason, which every schema and stop provides (W6).
 
 `pr-upsert` creates the PR as a draft and never changes its draft state; only `pr-ready` makes it ready (W4).
+
+### base-check (the `baseline` Vertex)
+
+No agent step, so its implicit Claim `ok` requires its Check (R11f); a Check leaves the tree unchanged (T1b).
+
+```yaml
+base-check:
+  actions:
+    - { id: test, do: check, kind: command, command: test }   # the suite on the untouched base
+  passed: []
+  failed: []
+```
+
+- Outcomes: `ok`, `failed`.
+- It costs one suite run per Execution and is optional (L1). Without it, a base with a failing test still lets red
+  pass, since red needs only a named test failing (request 3.6), then fails every implementation: `green`, its
+  recovery, `senior-green` and its recovery each fail on the unrelated test (about 11 Attempts and two senior calls),
+  and the Ticket ends at `needs-human` with a Terminal Reason that blames the implementation. A green that blames red's
+  test can also stop with `bad-test`, sending the Ticket to red, which may edit the unrelated test (`tests: write`);
+  the reviewer sees that edit in the diff.
 
 ### tests-fail (the `red` and `senior-red` Vertices)
 
@@ -94,7 +114,8 @@ implement:
     - { id: commit, do: commit, type: feat }
     - { id: push,   do: push }
     - { id: pr,     do: pr-upsert, body: pr-body.md,                               # T2: the draft PR stays early
-        with: { report: green.response, red: inputs.red, green: test.evidence } }
+        with: { report: green.response, red: inputs.red, green: test.evidence,
+                redReport: inputs.redReport } }
   recover: { max: 1, brief: recover.md }    # today's testFix: 1
   passed: []
   failed: []
@@ -122,7 +143,8 @@ fix:
     - { id: commit, do: commit, type: fix }                    # no edits: a no-op, as today (U2)
     - { id: push,   do: push }
     - { id: pr,     do: pr-upsert, body: pr-body.md,
-        with: { report: fix.response, red: inputs.red, green: test.evidence } }
+        with: { report: fix.response, red: inputs.red, green: test.evidence,
+                redReport: inputs.redReport } }
   recover: { max: 1, brief: recover.md }
   passed: []
   failed: []
@@ -155,7 +177,7 @@ review:
         fields: [file, severity, issue] }    # R4c: failed means a repeat; a fact, required by nothing
     - { id: comment,     do: comment, target: pr, body: review-comment.md }   # W5
     - { id: pr,          do: pr-upsert, body: pr-body.md,
-        with: { report: inputs.report, red: inputs.red, green: inputs.green } }
+        with: { report: inputs.report, red: inputs.red, green: inputs.green, redReport: inputs.redReport } }
   passed:                                    # every review lands here: nothing is required (P5a, P5b)
     - { when: { claim: ok, check.review-pass: passed }, outcome: ok }   # the only way to ok
     - { when: { check.repeat: failed }, outcome: repeat }
@@ -179,7 +201,7 @@ publish:
     - { id: test,     do: check, kind: command, command: test }   # no agent to recover with; failed re-runs
                                              # once through the Flow (N4), then needs-human (P5c)
     - { id: pr,       do: pr-upsert, body: pr-body.md,            # re-renders the body (T2)
-        with: { report: inputs.report, red: inputs.red, green: inputs.green } }
+        with: { report: inputs.report, red: inputs.red, green: inputs.green, redReport: inputs.redReport } }
     - { id: pr-ready, do: pr-ready }         # publishing: test's tree = the published commit's, clean worktree (T1a)
   passed: []
   failed: []
@@ -198,11 +220,15 @@ flows:
     plan: null                               # X2: no Epic-level planning; standalone tickets run
     actionCap: 160                           # K2, V2, M3: every Attempt in the Execution, a required spend ceiling
     ticket:
-      entry: red
+      entry: baseline                        # L1: optional; drop it to skip the base run
       routes:                                # T3: every Vertex inherits these
         misscoped: { end: needs-replan }     # also posts the diagnosis to the Epic (U6)
         "*":       { end: needs-human }
       vertices:
+        baseline:
+          procedure: base-check              # no Agent
+          route: { ok: red }                 # failed falls to "*": the base is red before any agent runs
+
         red:
           use: implementer
           procedure: tests-fail
@@ -265,6 +291,7 @@ flows:
           exhausted: { end: needs-human }
           inputs:
             findings: { from: reviewer.review.response.findings }
+            previous: { from: [green.green.response, senior-green.green.response], optional: true }   # L2: red.md reads it
           route:
             ok:      green
             no-test: senior-dev              # a stop routed to a Vertex: rescued and reset (R5a)
@@ -307,6 +334,7 @@ flows:
   `implementer-fix`'s and `publish`'s), `harness-*`, and every unlisted Outcome; `bad-test` goes back to `red`;
   `misscoped` goes to the planner from any Vertex.
 - **Every path to `end: ready-for-qa` runs `pr-ready`** (R11e): only `publish` reaches it.
+- **Entry** (L1): `baseline` has no Agent; its `failed` falls to `"*"`, naming `baseline.test`.
 - **Publishing** (R11d, T1a): `publish` requires `test` and runs `pr-ready` only on that Check's tree.
 - **Commits** (S2, T1c): every passing path of `red`, `senior-red`, `green`, `senior-green`, `implementer-fix` and
   `senior-dev` commits, and each committing token requires a Check.
@@ -325,7 +353,7 @@ flows:
   a `bad-test` edge by that edge's `max: 1` (M2); the Ticket's Action Cap over all of them. The cap covers the longest
   bounded path: three passes of red, green and review (13 Attempts each, two `retest` loops), then `senior-red`,
   `green`, `senior-green`, review, two `changes` loops, `senior-dev`, review and `publish`, about 90 Attempts; the two
-  `bad-test` detours add about 20 and one recovery per agent Visit about 45, so about 155 (V2, M3).
+  `bad-test` detours add about 20, one recovery per agent Visit about 45 and `baseline` 1, so about 156 (V2, M3, L1).
 - **Rules** (R8, U4): no unreachable or never-firing row. Three partial-overlap warnings in the review's `passed`
   table, all intended: a clean `ok` whose findings repeat earlier ones stays `ok` (row 1 over row 2); a clean `ok` that
   also has `needsTest: true` stays `ok` (row 1 over row 3); a repeat that also has `needsTest: true` goes to `repeat`
@@ -338,6 +366,7 @@ flows:
 ## Changes from today's shipped Flow
 
 - It is no longer shipped: `defaults/gg.json` loses `agents` and `flows`, and `gg init` writes this (P1, P3).
+- An optional `baseline` Vertex runs the suite on the base before any agent (L1).
 - `tdd` splits into `red` and `green` (R2b); `still-green` and `test-fix` become each Procedure's `recover` (T4, W1).
   `resumeGreen` and `requireTestPass` go (R2c, U7).
 - `red-failed` and `gate-failed(test)` become `failed`, with the failing Check named in its signal and Terminal Reason
