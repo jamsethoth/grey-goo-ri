@@ -63,6 +63,8 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | N6: the reviewer judges a no-test claim when `red` is absent | N10: when `redReport.reason` is `no-test-needed` |
 | V2: the example's `actionCap: 128` | M3: 160 |
 | R3a, V6: a wrong red test reaches a human through green's failures | M2: green stops with `bad-test`; red rewrites once |
+| L1: the example starts at `baseline` | L7: red's `others-pass` detects a red base; `base-check` is optional |
+| M3: the example's `actionCap: 160` | L7: 180 |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -889,6 +891,17 @@ Round 10 (fresh Astra and Fable) found the architecture sound. The owner's decis
   Claude Code and Codex CLI users report leaked children as bugs, and Codex moved to killing the process group.
   #23's harness contract says a call returns only once its processes are gone, or reports that it could not
   confirm it, which holds a reset. Issues #118, #23.
+- L7. Red detects a base that already fails, replacing L1's `baseline` in the example's path. A new Check kind
+  `others-pass` (`of: red-check`, `command`, `names`) reuses red-check's run, or runs the command itself when red-check
+  did not run (a stop, or V8's skip), and fails when any test the agent did not name is failing; output gg cannot
+  parse passes, saying so. It is recoverable once ("name these if they are yours"). `tests-fail`'s `ok` requires it;
+  its `failed` table and a `stopped` row ahead of `no-test` map it to the Outcome `base-red`, which the example routes
+  to `end: needs-human` listing the failing tests, before any implementation; the red Visit's work is left in place
+  uncommitted (Q3a, R5b). Green cannot make this call: on N6's no-test path every test it runs is an existing one, so
+  a failure there may be its own regression; the last tree equal to the base is red's. Guidance on agent test
+  baselines says to record pre-existing failures and not fix them as a side effect, so a `repair` Procedure is
+  backlogged as grey-goo-ri issue #131. `base-check` stays documented as an option for runners whose output gg cannot
+  parse. The example's `actionCap` becomes 180 (`others` adds an Attempt to every red pass). Issues #114, #115, #120.
 
 ## Open
 
