@@ -1011,7 +1011,7 @@ Round 13 (fresh Astra and Fable) found the architecture sound. The owner decided
 - J8. A `tests-fail` pass found only by a name match, with no statuses the runner printed (`heuristic: true`,
   `lib/checks.mjs:44`), carries `heuristic: true` in its evidence, and `review.md` shows it, so the reviewer can
   judge whether red's test fails for the right reason (Fable F4). Structured results stay grey-goo-ri issue #126.
-  Issues #114, #120.
+  #23 freezes the flag. Issues #114, #120, #23.
 
 ## Open
 
