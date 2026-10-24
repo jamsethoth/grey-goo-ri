@@ -22,6 +22,13 @@ so the wait ends when the other writer's burst does, and only a lock truly held 
 
 ## Consequences
 
-- A write behind a stuck writer fails after 60 s instead of 5 s.
+- The 60 s bounds only the wait for another connection's lock. A write that holds the lock is never timed out, so a
+  slow save of gg's own, a disk stall for example, finishes however long it takes.
+- A write behind a writer that holds the lock longer fails after 60 s instead of 5 s, with SQLITE_BUSY before it
+  takes the lock, so nothing of it reaches `gg.db`. A record save becomes a `RecordSaveError`: the Ticket's
+  interpreter saves nothing more of that record and runs no further Action, so no side effect follows an intent that
+  was not saved (ADR 0005). The pool reports that Ticket as a fault, other Tickets carry on, `gg run` exits non-zero,
+  and the next `gg run` resumes the Ticket from its last saved record through Reconciliation, as after a crash. A
+  lock held that long means a hung process, which this surfaces instead of making every other gg process wait.
 - The open lock (`gg/locks/open.db`) keeps its 5 s timeout, and the locks keep `busy_timeout = 0` (ADR 0008).
 - `test/record.test.mjs` holds the write lock for 6 s and checks that a save waits it out.
