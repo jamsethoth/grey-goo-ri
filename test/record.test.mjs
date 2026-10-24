@@ -234,8 +234,8 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
 });
 
 test('an open that finds no tables waits for the first opener, not for its saves', async (t) => {
-  // Plays the first opener: holds the open lock while it creates the tables, then saves for longer than busy_timeout.
-  // A second opener that read the old version must not wait on the database write lock behind those saves.
+  // Plays the first opener: holds the open lock while it creates the tables, then saves for six seconds. A second
+  // opener that read the old version must not wait on the database write lock behind those saves: it finishes first.
   const commonDir = await tempCommonDir(t);
   mkdirSync(join(commonDir, 'gg', 'locks'), { recursive: true });
   const db = new DatabaseSync(dbPath(commonDir));
@@ -262,6 +262,7 @@ test('an open that finds no tables waits for the first opener, not for its saves
     lock.exec('COMMIT');
     db.exec('BEGIN IMMEDIATE');
     await new Promise((resolve) => setTimeout(resolve, 6000));
+    assert.equal(child.exitCode, 0, `the second open waited behind the saves or failed: ${err}`);
     db.exec('COMMIT');
     assert.equal(await exit, 0, `the second open failed: ${err}`);
   } finally {
@@ -289,6 +290,25 @@ test('two processes save different records concurrently without loss', async (t)
     [1, { busy: false, generation: 200 }],
     [2, { busy: false, generation: 200 }],
   ]);
+});
+
+// SQLite's busy handler is not fair, so on a loaded Windows runner another process's burst of writes held a save off
+// past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136).
+test('a save waits out another process that holds the write lock for longer than 5 s', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  record.openDb(commonDir);
+  await record.close(commonDir);
+  const writer = new DatabaseSync(dbPath(commonDir));
+  try {
+    writer.exec('BEGIN IMMEDIATE');
+    const pending = saveOnce(commonDir, 1);
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+    writer.exec('COMMIT');
+    assert.deepEqual(exitsOf([await pending]), [{ ticket: 1, code: 0, err: '' }]);
+  } finally {
+    if (writer.isTransaction) writer.exec('ROLLBACK');
+    writer.close();
+  }
 });
 
 const tickets = [1, 2, 3, 4, 5, 6, 7, 8];

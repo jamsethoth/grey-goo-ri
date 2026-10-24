@@ -13,7 +13,7 @@ that `node:sqlite` is in the project, one state database `<git common dir>/gg/gg
 with one JSON document per Execution Record and Epic Record, an `events` table with one row per Event, its identity
 columns indexed and the full Event as JSON, and a `configs` table with the Pinned Configuration behind every Config
 Hash a run has used. The write-ahead log stays inside the record document, so ADR 0005 and Reconciliation are
-untouched. The database is opened in WAL mode with a short `busy_timeout`; locks keep their own files, because an
+untouched. The database is opened in WAL mode with a `busy_timeout` (60 s since ADR 0015); locks keep their own files, because an
 open exclusive transaction would block every record write if it shared the database.
 
 ## Considered options
