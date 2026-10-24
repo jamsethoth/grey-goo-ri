@@ -49,14 +49,7 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
     if (linked) rmSync(root, { recursive: true, force: true }); // removes the link, not its target
     rmSync(real, { recursive: true, force: true });
   });
-  sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
-  sh(root, 'clone', '-q', 'origin.git', 'main');
-  sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
-  writeFileSync(join(mainRoot, 'package.json'), '{ "scripts": { "test": "node --test" } }\n');
-  sh(mainRoot, 'add', '-A');
-  sh(mainRoot, 'commit', '-q', '-m', 'init');
-  sh(mainRoot, 'push', '-q', 'origin', 'main');
-  const base = sh(mainRoot, 'rev-parse', 'main');
+  const base = golden.seedRepos(real);
 
   const fake = golden.fakeGh({ branch, repoLabels });
   for (const l of labels) fake.labels.add(l);
