@@ -64,7 +64,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 ## Tests
 
-- One `test/<module>.test.mjs` per module.
+- One `test/<module>.test.mjs` per module. A large module may also have area files `test/<module>.<area>.test.mjs`;
+  new tests for it still go in `test/<module>.test.mjs`. node runs files in parallel but a file's tests serially, so
+  once a file's serial time passes about 3 minutes, move tests out of it to an area file.
 - Tests import modules as namespaces (`import * as record from '../lib/record.mjs'`) and call `record.fn()`, so a
   missing export fails inside the case.
 - A test for a module that does not exist yet uses `await import()` inside the case.

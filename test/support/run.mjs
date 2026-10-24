@@ -1,0 +1,202 @@
+// Helpers the run test files share.
+import assert from 'node:assert/strict';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as config from '../../lib/config.mjs';
+import * as events from '../../lib/events.mjs';
+import * as flowModule from '../../lib/flow.mjs';
+import * as gitModule from '../../lib/git.mjs';
+import * as github from '../../lib/github.mjs';
+import * as interpreter from '../../lib/interpreter.mjs';
+import * as marker from '../../lib/marker.mjs';
+import * as record from '../../lib/record.mjs';
+import * as golden from './golden.mjs';
+import { fakeHarness } from './fake-harness.mjs';
+
+export const contender = fileURLToPath(new URL('./lock-contender.mjs', import.meta.url));
+export const TICKET = golden.TICKET;
+export const BRANCH = golden.BRANCH;
+export const IN_PROGRESS = 'gg:state:in-progress';
+export const NEEDS_HUMAN = 'gg:state:needs-human';
+export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+
+// The shipped defaults with every Agent on `harness`, the repository Layer's test command and, unless `fullFlow`, a
+// one-Vertex Flow from tdd straight to done.
+export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
+  const c = config.loadDefaults();
+  c.commands = { test: 'npm test' };
+  for (const agent of Object.values(c.agents)) Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
+  c.worktreeRoot = join(root, 'wt');
+  if (!fullFlow) c.flows.default.ticket = { entry: 'implementer', vertices: { implementer: { use: 'implementer', procedure: 'tdd', then: 'done' } } };
+  return c;
+}
+
+// A temp origin and clone, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
+// fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view, and `issues`
+// those of one issue number.
+export function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, issues = {}, rootName = 'gg-run-', linked = false } = {}) {
+  // linked: every path gg is given goes through a junction, as through a symlinked TMPDIR or a Windows 8.3 name.
+  const real = mkdtempSync(join(tmpdir(), rootName));
+  const root = linked ? `${real}-link` : real;
+  if (linked) symlinkSync(real, root, 'junction');
+  const mainRoot = join(root, 'main');
+  const commonDir = join(mainRoot, '.git');
+  t.after(() => {
+    record.close(commonDir);
+    if (linked) rmSync(root, { recursive: true, force: true }); // removes the link, not its target
+    rmSync(real, { recursive: true, force: true });
+  });
+  sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
+  sh(root, 'clone', '-q', 'origin.git', 'main');
+  sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
+  writeFileSync(join(mainRoot, 'package.json'), '{ "scripts": { "test": "node --test" } }\n');
+  sh(mainRoot, 'add', '-A');
+  sh(mainRoot, 'commit', '-q', '-m', 'init');
+  sh(mainRoot, 'push', '-q', 'origin', 'main');
+  const base = sh(mainRoot, 'rev-parse', 'main');
+
+  const fake = golden.fakeGh({ branch, repoLabels });
+  for (const l of labels) fake.labels.add(l);
+  const inner = fake.gh;
+  fake.gh = async (args, cwd, input) => {
+    const [noun, verb] = args;
+    if (noun === 'issue' && verb === 'view') {
+      fake.calls.push({ args, cwd, input });
+      return JSON.stringify({ number: Number(args[2]), title: 'Add two numbers', body: 'Add `add(a, b)`.', state: 'OPEN',
+        labels: [...fake.labels].map((name) => ({ name })), blockedBy: [], subIssues: [], ...issue, ...issues[args[2]] });
+    }
+    if (failEdit && noun === 'issue' && verb === 'edit') {
+      fake.calls.push({ args, cwd, input });
+      throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
+    }
+    if (failCreate && noun === 'label' && verb === 'create') {
+      fake.calls.push({ args, cwd, input });
+      throw new Error('HTTP 403: label creation denied');
+    }
+    return inner(args, cwd, input);
+  };
+  github.setGh(fake.gh);
+
+  const harness = fakeHarness({ transcriptDir: join(root, 'transcripts'), responses, capabilities: { cost: false, reasoningTokens: false } });
+  const exec = {
+    runShell: async (command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
+      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: golden.RED_OUTPUT, timedOut: false },
+  };
+  const logs = [];
+  let now = Date.parse('2026-10-17T00:00:00Z');
+  const clock = { now: () => now, sleep: async (ms) => { now += ms; } };
+  const cfg = testConfig(root, { harness: harnessName, fullFlow });
+  const worktree = gitModule.worktreePath(cfg.worktreeRoot, 'main', TICKET);
+  const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git: gitModule, exec, cwd: mainRoot,
+    log: (m) => logs.push(m), clock };
+  return {
+    root, real, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
+    readEvents: () => events.readEvents(commonDir),
+    worktrees: () => sh(mainRoot, 'worktree', 'list').split('\n').length,
+    loadRow: () => record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(TICKET)?.json,
+    comments: () => fake.comments.filter((c) => c.number === TICKET).map((c) => c.body),
+    labelAdds: () => fake.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit')
+      .flatMap((c) => c.args.filter((a, i) => c.args[i - 1] === '--add-label')),
+  };
+}
+
+// An Execution of the fixture's Ticket run straight through the interpreter, as an earlier Run left it.
+export async function seedExecution(f, { git = gitModule, crashAt, exec = f.exec } = {}) {
+  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const flow = flowModule.resolveFlow(f.options.config);
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: flow.name, entry: flow.ticket.entry },
+    configHash: 'cfg-hash', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  await record.save(rec);
+  await assert.rejects(interpreter.runExecution({
+    flow, record: rec, harness: f.harness, gh: github, git, exec, events: events.eventLog(f.commonDir), log: () => {}, cwd: f.mainRoot,
+    commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
+    base: 'main', labelPrefix: 'gg', others: [], clock: f.clock, crashAt: crashAt?.(rec),
+  }), (err) => err instanceof interpreter.CrashError);
+  return record.load(f.commonDir, 'ticket', TICKET);
+}
+
+export const markerOf = (rec, vertex, visit, phase, ordinal) =>
+  marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
+
+// Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock.
+export function holdLock(t, commonDir, name, holdMs = 60_000) {
+  const child = spawn(process.execPath, [contender, commonDir, name, String(holdMs)], { stdio: ['ignore', 'pipe', 'inherit'] });
+  t.after(() => child.kill());
+  const exited = new Promise((resolve) => child.on('exit', resolve));
+  return new Promise((resolve, reject) => {
+    let out = '';
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+      try {
+        const report = JSON.parse(out);
+        if (!report.handle) reject(new Error(`holder did not get the lock: ${out}`));
+        resolve({ release: () => { child.kill(); return exited; } });
+      } catch {}
+    });
+    child.on('exit', () => reject(new Error(`holder exited before reporting: ${out}`)));
+  });
+}
+
+export const ticketResult = (results) => results.find((r) => r.ticket === TICKET);
+
+// A merge conflict left in the worktree: conflict.txt at stages 1 to 3 with the markers on disk. git write-tree refuses
+// such an index, so the snapshot cannot fingerprint it.
+export function conflict(worktree) {
+  const blob = (text) => execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: worktree, input: text, encoding: 'utf8' }).trim();
+  const stages = ['base\n', 'ours\n', 'theirs\n'].map((text, i) => `100644 ${blob(text)} ${i + 1}\tconflict.txt`);
+  execFileSync('git', ['update-index', '--index-info'], { cwd: worktree, input: `${stages.join('\n')}\n` });
+  writeFileSync(join(worktree, 'conflict.txt'), '<<<<<<< ours\nours\n=======\ntheirs\n>>>>>>> theirs\n');
+  return { unmerged: sh(worktree, 'ls-files', '-u'), bytes: readFileSync(join(worktree, 'conflict.txt'), 'utf8') };
+}
+
+// The green commit was intended, its implementation staged, and the process died before the commit landed.
+export const crashBeforeCommit = (f) => seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 3), point: 'before-effect' }) });
+
+// Makes every comment POST fail with HTTP 502 while `on` is set, its retries too; `lost` lets the comment land first, as
+// a lost response does.
+export function failComment(f, { lost = false } = {}) {
+  const inner = f.gh.gh;
+  const failing = { on: true };
+  github.setGh(async (args, cwd, input) => {
+    if (failing.on && golden.isCommentPost(args)) {
+      if (lost) await inner(args, cwd, input);
+      else f.gh.calls.push({ args, cwd, input });
+      throw golden.ghError(args, { status: 502 });
+    }
+    return inner(args, cwd, input);
+  });
+  return failing;
+}
+export const endsOf = (f, execution) => f.readEvents().filter((e) => e.type === 'ticket_end' && e.execution === execution);
+export const lastRun = (f) => f.readEvents().findLast((e) => e.type === 'run_start').run;
+export const loadTicket = (f) => record.load(f.commonDir, 'ticket', TICKET);
+
+// A worktree with a human file: fresh, or the worktree of an Execution whose commit was interrupted (with its Visits).
+export async function dirtyTicket(t, seeded) {
+  const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [] });
+  const seededRec = seeded ? await crashBeforeCommit(f) : null;
+  if (!seeded) await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
+  return { f, seededRec };
+}
+
+export function failHoldLabel(f) {
+  const inner = f.gh.gh;
+  const failing = { on: true };
+  github.setGh(async (args, cwd, input) => {
+    if (failing.on && args[0] === 'issue' && args[1] === 'edit' && args.includes(NEEDS_HUMAN)) {
+      f.gh.calls.push({ args, cwd, input });
+      throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
+    }
+    return inner(args, cwd, input);
+  });
+  return failing;
+}
+
+export const EPIC = 20;
+
+// The issue views of an epic whose sub-issues are `children`, with `extra` overriding single issues.
+export const epicOf = (children, extra = {}) => ({ [EPIC]: { title: 'An epic', subIssues: children.map((number) => ({ number })) }, ...extra });
