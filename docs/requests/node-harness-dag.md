@@ -431,10 +431,10 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
 
 Human recovery, `gg work`: list across every repo in the user-dir registry, resume (with `--at <vertex>` to hand a
 `needs-human` Ticket back to gg), done (a person finished it: the human end `done`, decision L12), abandon (keep the
-worktree, forget the position), reset (as above), approve. Doctor validates records and reports disagreement with GitHub. Single
-machine; the user dir `~/.agents/gg/` holds config and a registry of repo paths appended on each run; repo config is
-`.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open branches and
-PRs finish under ff; cutover (section 6) archives ff after a real-harness acceptance run.
+worktree, forget the position), reset (as above), approve. Doctor validates records and reports disagreement with
+GitHub. Single machine; the user dir `~/.agents/gg/` holds config and a registry of repo paths appended on each run;
+repo config is `.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open
+branches and PRs finish under ff; cutover (section 6) archives ff after a real-harness acceptance run.
 
 ### 3.6 Checks and evidence
 
