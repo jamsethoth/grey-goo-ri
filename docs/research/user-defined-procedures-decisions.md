@@ -769,9 +769,9 @@ protection). The owner accepted the findings below, and the issues were edited t
 - V3. Every cycle contains an edge with `max` or a Vertex with `maxVisits`; the Action Cap is not a cycle's bound,
   since it is required and would make the rule vacuous (Fable F2). `maxVisits` is optional, as the example has it;
   request 3.3 is amended. Issue #107.
-- V4. Engine Outcome names are reserved: no Claim token, table `outcome`, `otherwise` or `await-approval` decision
-  may equal `failed` or an end name, or start with `harness-` (Fable F1; Step Functions reserves `States.*`).
-  Issues #106, #119.
+- V4. Engine Outcome names are reserved: no Claim token, table `outcome`, `otherwise` or `await-approval` decision may
+  equal `failed` or an end name, or start with `harness-`; no Vertex may be named `cleanup`, the Await Label's reserved
+  name (L11) (Fable F1; Step Functions reserves `States.*`). Issues #106, #119.
 - V5. The rule-table analyser enumerates the finite partition of each table's domain (enum and boolean values,
   `absent`, `pass` 1 to `max + 1`, integer intervals cut at the table's constants) instead of subtracting boxes;
   findings are unchanged. Amends R8c; R8e's brute-force cross-check becomes the analyser (Fable F3). Issue #103.
@@ -927,6 +927,14 @@ inference unsound. The owner's decisions:
 - L10. Request 3.6 lists the `.github/` Protected Files (Fable F3).
 - W4 cites practice (Fable F4); see W4.
 - Noted: SWE-agent is in maintenance-only mode; future comparisons cite mini-swe-agent (Fable F5).
+- L11. Unconfirmed cleanup stops the Ticket, not only a reset (Astra A2): a successful Visit never resets, so a
+  surviving writer would race the integrity checks, the commit (whose Check results would go stale, T1), the next
+  agent (whose baseline, rescue and blame it would corrupt) and publishing. Every agent call and Check returns
+  `cleanup: { confirmed, survivors }`, recorded and readable as the Action's `cleanup` output; `confirmed: false` is
+  engine-owned, like an Integrity Assertion (Q2), since no Flow can wait for or kill a process. It becomes a Pending
+  cleanup hold (`gg:await:cleanup`, reusing #119's Pending): the Ticket resumes by itself once the survivors are gone,
+  continuing with the next Action on an unchanged tree or re-running the Visit's Checks on a changed one; a human can
+  kill the listed processes or abandon it. Issues #118, #119, #23.
 
 ## Open
 
