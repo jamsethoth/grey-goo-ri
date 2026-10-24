@@ -59,7 +59,7 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
     if (noun === 'issue' && verb === 'view') {
       fake.calls.push({ args, cwd, input });
       return JSON.stringify({ number: Number(args[2]), title: 'Add two numbers', body: 'Add `add(a, b)`.', state: 'OPEN',
-        labels: [...fake.labels].map((name) => ({ name })), blockedBy: [], subIssues: [], ...issue, ...issues[args[2]] });
+        labels: [...fake.labelsOf(Number(args[2]))].map((name) => ({ name })), blockedBy: [], subIssues: [], ...issue, ...issues[args[2]] });
     }
     if (failEdit && noun === 'issue' && verb === 'edit') {
       fake.calls.push({ args, cwd, input });

@@ -90,7 +90,7 @@ test('readiness names the closed Ticket, open blockers or State Label', () => {
 
 test('readiness recognises mixed-case State Labels and preserves their spelling', async () => {
   const viewed = async (name) => {
-    const fake = golden.fakeGh({});
+    const fake = golden.fakeGh({ ticket: 7 });
     fake.labels.add(name);
     github.setGh(fake.gh);
     return github.viewIssue(7, '/repo');

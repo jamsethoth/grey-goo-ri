@@ -198,12 +198,13 @@ export function ghError(args, { status, headers = {}, body, stderr }) {
 
 // A stand-in for the gh executable: records every argv and answers with canned JSON. `fail(f)` queues a failure: the
 // first unspent one whose `matches(args)` holds fails that call, after its effect when `afterEffect` is set.
-export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
+export function fakeGh({ branch, ticket = TICKET, observe = () => {}, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
   const calls = [];
   const comments = [];
   const failures = [];
-  // The ticket's labels on GitHub, as issue edits leave them and issue view reports them.
-  const labels = new Set();
+  // Each issue's labels on GitHub, as issue edits leave them and issue view reports them.
+  const issueLabels = new Map();
+  const labelsOf = (n) => issueLabels.get(n) ?? issueLabels.set(n, new Set()).get(n);
   const available = new Set(repoLabels);
   // Pull requests by head branch, so each Ticket of an epic gets its own.
   const prs = new Map();
@@ -248,10 +249,11 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
     }
     if (noun === 'issue' && verb === 'view') {
       return JSON.stringify({ number: Number(args[2]), title: '', body: '', state: 'OPEN',
-        labels: [...labels].map((name) => ({ name })), blockedBy: [], subIssues: [] });
+        labels: [...labelsOf(Number(args[2]))].map((name) => ({ name })), blockedBy: [], subIssues: [] });
     }
     // GitHub resolves label names case-insensitively and keeps the repository's spelling.
     if (noun === 'issue' && verb === 'edit') {
+      const labels = labelsOf(Number(args[2]));
       args.forEach((a, i) => {
         if (a === '--add-label') labels.add(named(available, args[i + 1]) ?? args[i + 1]);
         if (a === '--remove-label') labels.delete(named(labels, args[i + 1]));
@@ -265,7 +267,8 @@ export function fakeGh({ branch, observe = () => {}, repoLabels = labelModule.ST
     }
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
-  return { gh, calls, comments, labels, repoLabels: available, pr: () => prs.get(branch) ?? null, fail: (f) => failures.push({ ...f }) };
+  // `labels` are the fixture Ticket's.
+  return { gh, calls, comments, labels: labelsOf(ticket), labelsOf, repoLabels: available, pr: () => prs.get(branch) ?? null, fail: (f) => failures.push({ ...f }) };
 }
 
 // Crashes the `n`th `op` (rm or writeFile) on a path under `root` once `active()` holds, after the call has run when
