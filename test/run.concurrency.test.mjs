@@ -97,7 +97,7 @@ test('snapshot and orchestrator writes wait beyond the default lock timeout', { 
   }
 });
 
-test('an orchestrator commit waits for the repo lock', async (t) => {
+test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, async (t) => {
   const f = fixture(t);
   // The competing lock is taken during the red call, after the worktree exists.
   let holder = null;
@@ -119,7 +119,8 @@ test('an orchestrator commit waits for the repo lock', async (t) => {
   };
   let settled = false;
   const running = run.runTarget(f.options).finally(() => { settled = true; });
-  for (let i = 0; i < 200 && !holder && !settled; i++) await sleep(50);
+  // The case timeout bounds this wait: a 10 s bound of its own ran out before the red call on a loaded machine.
+  while (!holder && !settled) await sleep(50);
   assert.ok(holder, 'the red call ran, so the worktree exists');
   await sleep(1000);
   assert.equal(settled, false, 'the run waits while another process holds the repo lock');
