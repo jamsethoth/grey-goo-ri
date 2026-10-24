@@ -66,6 +66,10 @@ example `gg init` writes is `docs/research/user-defined-procedures-example-flow.
 - The Action Marker becomes `gg:<execution>:<vertex>:<visit>:<action>:<recovery>:<run>:<attempt>`.
 - A Check records the worktree tree it checked; a commit and the `passed` table count only results on the current
   tree. The tree covers tracked and staged content, not untracked ignored files.
+- `.github/workflows/` and `.github/actions/` are Protected Files (decision L3): gg pushes an agent's commit under the
+  owner's identity, so a workflow the agent edited would run with repository secrets before any human review. It does
+  not stop the repository's existing workflows from running agent-written code, such as tests, with `GITHUB_TOKEN` on
+  that push (decision L9); `gg init` recommends read-only default workflow permissions.
 - `testPaths` cannot list `package.json` without freezing its dependencies, so a `scripts.test` that does not call a
   launcher file stays changeable by an agent (grey-goo-ri issue #96).
 - A failure routed to another Vertex rescues the work to a Rescue Ref and resets; one routed to an end leaves it in

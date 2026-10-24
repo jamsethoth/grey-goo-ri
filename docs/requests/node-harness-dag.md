@@ -389,7 +389,7 @@ Labels are namespaced; the prefix is config, default `gg`:
 
 | Family | Pattern | Written by | Examples |
 |---|---|---|---|
-| Lifecycle state | `gg:state:<name>` | gg only | `gg:state:in-progress`, `gg:state:needs-human`, `gg:state:ready-for-qa`, `gg:state:needs-replan` |
+| Lifecycle state | `gg:state:<name>` | gg only | `gg:state:in-progress`, `gg:state:needs-human`, `gg:state:ready-for-qa`, `gg:state:needs-replan`, `gg:state:done` (set by `gg work done`) |
 | Approval request | `gg:await:<vertex>` | gg only | `gg:await:plan`, `gg:await:qa-approval` |
 | Human decision | `gg:decide:<vertex>:<outcome>` | humans only | `gg:decide:plan:approved`, `gg:decide:qa-approval:needs-changes` |
 
@@ -429,11 +429,12 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
    body edit and a config change after approval. The golden trace covers record loss, a repeated
    visit to the same vertex, crashes around consumption, and two ticket processes entering under one epic approval.
 
-Human recovery, `gg work`: list across every repo in the user-dir registry, resume, abandon (keep the worktree, forget
-the position), reset (as above), approve. Doctor validates records and reports disagreement with GitHub. Single
-machine; the user dir `~/.agents/gg/` holds config and a registry of repo paths appended on each run; repo config is
-`.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open branches and
-PRs finish under ff; cutover (section 6) archives ff after a real-harness acceptance run.
+Human recovery, `gg work`: list across every repo in the user-dir registry, resume (with `--at <vertex>` to hand a
+`needs-human` Ticket back to gg), done (a person finished it: the human end `done`, decision L12), abandon (keep the
+worktree, forget the position), reset (as above), approve. Doctor validates records and reports disagreement with
+GitHub. Single machine; the user dir `~/.agents/gg/` holds config and a registry of repo paths appended on each run;
+repo config is `.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open
+branches and PRs finish under ff; cutover (section 6) archives ff after a real-harness acceptance run.
 
 ### 3.6 Checks and evidence
 
@@ -466,10 +467,11 @@ PRs finish under ff; cutover (section 6) archives ff after a real-harness accept
   ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
   protected files. Writes elsewhere on the machine and network effects of commands are not observed, which is the
   stated weakness of the trusted-command mode in 3.2.
-- Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md` or `CLAUDE.md`
-  are rejected. Under the Claude launch profile, settings, hooks, `.mcp.json`, CLAUDE.md and memory are not
-  consumed; `.claude/skills`, `.claude/commands` and `.claude/agents` are potentially discoverable, as 3.2 states.
-  Codex trust level is set explicitly so project config is not consumed.
+- Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`,
+  `.github/workflows/` or `.github/actions/` are rejected (the last two added by decision L3). Under the Claude launch
+  profile, settings, hooks, `.mcp.json`, CLAUDE.md and memory are not consumed; `.claude/skills`, `.claude/commands` and
+  `.claude/agents` are potentially discoverable, as 3.2 states. Codex trust level is set explicitly so project config is
+  not consumed.
 - Agents get read-only git (diff, log, status, show) and no movement commands (checkout, switch, worktree, stash,
   reset, add, commit, push, remote, gh). Confinement: Codex sandbox; Claude file tools confined to the working
   directory with prompts off, `--restricted` on read-only actions; the idle-worktree assertion for shell writes.
@@ -493,7 +495,9 @@ Token rules, the same for both harnesses: `input` is uncached input tokens only;
 `cacheWrite` is cache creation; `output` is output tokens from the result; `reasoning` where the harness reports it,
 else absent. Peak context is the maximum over the session's requests of `input + cached + cacheWrite` for that
 request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
-harness reports none, or null. Fixtures cover a resumed Claude session and a resumed Codex thread.
+harness reports none, or null, and carries its basis (`reported`, `priced` or null); an Attempt also records the
+subscription quota and credit snapshots its harness saw, or null (decision J13; reports in grey-goo-ri issue #135).
+Fixtures cover a resumed Claude session and a resumed Codex thread.
 
 Stats: every action event carries the vertex id, visit, action id and recovery; lifecycle events carry only the run or execution they describe; aggregation defaults to procedure and action, with vertex,
 harness and model as further dimensions, so two reviewers on the same procedure stay distinguishable and renaming

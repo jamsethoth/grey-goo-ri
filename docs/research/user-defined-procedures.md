@@ -208,7 +208,7 @@ it for gg:
 | Effects with no lookup | Reject an effect with no `probe` at preflight | Not an `idempotent: true` promise; rerun only where the effect contract allows | **For the owner (Q5 below).** Both reject a bare promise. The earlier sketch in this session allowed `idempotent: true`; neither track supports that as written |
 | Hit policy | `unique` for user rows | `first` in option 1, `unique` in option 2 | **For the owner (Q4).** `unique` catches overlap in copied rules; `first` matches gg's current `ROWS` |
 | Cost | Relative to Option 1 (×1.5–2, ×3–5) | Engineer-weeks (3–5, 5–8, 8–12+) | Both are inference. gg is built by agent Tickets, so the relative sizes are the useful part |
-| LangGraph recursion default | 1000 | (not stated) | **Unsure.** Sources say 25 or 1000 depending on version. Not relevant to gg's design |
+| LangGraph recursion default | 1000 | (not stated) | **Settled (round 12):** 1000 since LangGraph 1.0.6. Not relevant to gg's design |
 | ImpossibleBench ">79%" | Claude models | (not cited) | **Corrected:** the figure covers Claude models together with Qwen3-Coder |
 
 ## 5. New design facts this research surfaced

@@ -154,8 +154,8 @@ translates into its own mechanisms.
 _Avoid_: permissions (the translated rules), allowlist
 
 **Protected File**:
-A path an agent may never change because the next Action could consume it: agent and tool configuration and
-repository instructions.
+A path an agent may never change because the next Action could consume it: agent and tool configuration,
+repository instructions, and CI workflow definitions, which gg's push would run.
 _Avoid_: locked file, reserved path
 
 ### Evidence

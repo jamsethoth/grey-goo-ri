@@ -46,8 +46,13 @@ Merge conflicts, a moved branch and an exhausted budget hold as before.
 - Ignored files outside the Protected Files and test paths are still neither rescued nor restored, as before.
 - A retried agent call is not a replay: it may produce a different result, and every Check after it runs again.
 - Tools the agent ran that changed anything outside the worktree are not undone.
-- A tool that breaks away from the job object, or an agent on POSIX, can outlive gg and write during the rescue;
-  the rescue's verification then finds the worktree unlike the Rescue Ref and holds the Ticket.
+- The worktree is reset only after the interrupted Attempt's writers are confirmed gone (decision N1, 2026-10-23): the
+  call intent records the containment (a Windows job object with kill-on-close, or none) and the job helper's process
+  identity; at resume a helper still running is killed and confirmed gone first. An uncontained Attempt (POSIX, or a
+  helper that failed to start) is rescued and held, never reset, since a surviving writer could write after the
+  rescue's verification. A tool that explicitly breaks away from the job is an accepted residual risk. Linux cgroup
+  containment is backlogged (grey-goo-ri issue #128). A call that returns normally kills its leftover processes too
+  (decision L6), so routed rescues and resets meet the same rule.
 - A human edit made between the crash and the resume leaves the worktree; the History and any hold comment name the
   Rescue Ref that keeps it.
 

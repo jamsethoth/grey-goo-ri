@@ -56,6 +56,23 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | I3, request 3.3: the Action Cap bounds a cycle; every Vertex has `maxVisits` | V3: a cycle needs an edge `max` or a `maxVisits`; `maxVisits` is optional |
 | R8c: box subtraction | V5: enumeration over the finite partition |
 | ADR 0011: a change after the last heartbeat is not the agent's and holds | V9: no heartbeat rule; the Rescue Ref keeps every change |
+| V9: rescue verification catches a surviving writer | N1: reset only after confirmed termination; uncontained holds |
+| T4c, K7: named tests missing from the output are not recoverable | N5: recoverable |
+| U11: `red`'s `no-test` falls to `"*"` | N6: routes to `green`; the reviewer judges it |
+| P5c: `publish`'s failed test ends at `needs-human` | N4: re-runs once first |
+| N6: the reviewer judges a no-test claim when `red` is absent | N10: when `redReport.reason` is `no-test-needed` |
+| V2: the example's `actionCap: 128` | M3: 160 |
+| R3a, V6: a wrong red test reaches a human through green's failures | M2: green stops with `bad-test`; red rewrites once |
+| L1: the example starts at `baseline` | L7: red's `others-pass` detects a red base; `base-check` is optional |
+| L7: `others-pass` | L8: `baseline` at entry again, cached per base tree; no `others-pass` |
+| L8: any result is reused, keyed with the Config Hash | L13: passing results only, keyed on tree and command line |
+| L11: resume once the recorded survivors are gone | L14, L15: fresh containment check; integrity first |
+| M3: the example's `actionCap: 160` | L7: 180 |
+| Request 3.7: Usage is tokens and cost | J13: plus `costBasis`, and a reserved per-Attempt `quota` snapshot |
+| N4: `publish`'s failed test re-runs once | J1: ends at `needs-human` again (P5c); tests are deterministic |
+| L13: a failing result is not reused, so a flake clears | J2: so a repaired environment clears |
+| D4: option 1 covers use cases a, d, e and g | J5: use case a waits for the `changes` Check |
+| L11, L15: a cleanup hold continues with the recorded next Action | J4: the suspended Action's completion resumes from its recorded result |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -260,7 +277,8 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     and the review's `ok` requires it, so it may reach `done`.
   - (c) A `repeat` Check kind compares a list's normalised fields (the shipped findings: `file`, `severity`, `issue`
     with whitespace and line numbers stripped) with earlier reviews by the same Vertex in the Execution: `passed` is
-    new findings, `failed` a repeat. Not required by `changes`, it is a fact rules route on.
+    new findings, `failed` a repeat. Not required by `changes`, it is a fact rules route on. It matches only exact
+    repeats: a reworded finding counts as new, and the `changes` edge's `max` is the backstop (N8).
   - (d) The shipped Flow routes `repeat` to a bounded escalation Vertex. This completes the request's repeat routing
     and removes the `shortcut:` in `interpreter.mjs`. The review comment and PR update still run on a repeat.
 
@@ -361,7 +379,9 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     `publish` Vertex that requires the `test` command.
   - (d) A Vertex containing a publishing Action must require at least one Check, and the Action runs only on fresh
     passing results (R1b). This replaces Q3g's routing fence: whatever path the work took, it is published only after
-    passing Checks in the Vertex that publishes it.
+    passing Checks in the Vertex that publishes it. The example's `publish` re-runs a suite that already passed on the
+    same tree on purpose: publishing never depends on which Vertex ran before it, for one extra suite run per Ticket
+    (M4).
   - (e) Every path to `end: ready-for-qa` must run `pr-ready`, checked at admission with the per-Outcome path analysis
     (S4).
   - (f) A Vertex with no agent step has an implicit Claim `ok` that requires all its Checks.
@@ -620,7 +640,8 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
 - W3. `<vertex>.rescue` is the one Vertex-level output, `{ ref, diffStat, output }`, written by gg when R5a rescues
   the Vertex's work; T6's same-type check compares it across Vertices.
 - W4. `pr-upsert` creates the PR as a draft and never changes its draft state, as `upsertPr` does today
-  (`lib/github.mjs:93-101`); it has no `draft` flag. Only `pr-ready` makes a PR ready (R11d).
+  (`lib/github.mjs:93-101`); it has no `draft` flag. Only `pr-ready` makes a PR ready (R11d). gh-aw likewise enforces
+  `draft: true` as policy the agent cannot override, and Copilot's coding agent opens one PR per task (round 11).
 - W5. The `comment` Action takes `target: pr | ticket`; the review's comment targets the PR, as today
   (`lib/interpreter.mjs:823`). A stop token's comment always goes to the Ticket (U6).
 - W6. U1's gg context adds the Terminal Reason and the end's name, for stop templates. The example's `blocked.md`
@@ -720,7 +741,9 @@ and the issues were edited to match. K7 was decided after research.
 - K2. The Action Cap stays, as a required Flow key `actionCap` (a positive integer counting every Attempt in the
   Execution, request 3.3); the example writes 40. Comparable systems all add one run-wide bound over per-step limits
   (LangGraph `recursion_limit`, OpenAI Agents `max_turns`, OpenHands `max_iterations`, Step Functions' history limit).
-  A spend budget (tokens or cost) is a later ticket.
+  A spend budget (tokens or cost) is a later ticket. It sums gg's own `usage.delta` (request 3.7); `claude -p
+  --max-budget-usd` is only a per-Attempt fuse, since spend restored on `--resume` does not count toward it and spend
+  can pass it (M6).
 - K7. U2 is built, and its first part is now recoverable. An agent that judges no test needed already has the stop
   reason `no-test-needed` (U11); a red that claims `ok` with no test file changed is a Claim its evidence
   contradicts. Agentic TDD tools answer that with feedback and a bounded retry, then escalation (TDD Guard and
@@ -753,9 +776,9 @@ protection). The owner accepted the findings below, and the issues were edited t
 - V3. Every cycle contains an edge with `max` or a Vertex with `maxVisits`; the Action Cap is not a cycle's bound,
   since it is required and would make the rule vacuous (Fable F2). `maxVisits` is optional, as the example has it;
   request 3.3 is amended. Issue #107.
-- V4. Engine Outcome names are reserved: no Claim token, table `outcome`, `otherwise` or `await-approval` decision
-  may equal `failed` or an end name, or start with `harness-` (Fable F1; Step Functions reserves `States.*`).
-  Issues #106, #119.
+- V4. Engine Outcome names are reserved: no Claim token, table `outcome`, `otherwise` or `await-approval` decision may
+  equal `failed` or an end name, or start with `harness-`; no Vertex may be named `cleanup`, the Await Label's reserved
+  name (L11) (Fable F1; Step Functions reserves `States.*`). Issues #106, #119.
 - V5. The rule-table analyser enumerates the finite partition of each table's domain (enum and boolean values,
   `absent`, `pass` 1 to `max + 1`, integer intervals cut at the table's constants) instead of subtracting boxes;
   findings are unchanged. Amends R8c; R8e's brute-force cross-check becomes the analyser (Fable F3). Issue #103.
@@ -774,6 +797,252 @@ protection). The owner accepted the findings below, and the issues were edited t
   ref, which the History names, and is not lost. ADR 0011 and issue #68 are amended; the heartbeat remains #67's
   liveness signal.
 - Noted, no ticket: a per-Attempt turn cap (`claude -p --max-turns`) for the Claude Harness slice (Fable F8).
+
+## Review round 8 (2026-10-23)
+
+Round 8 (fresh Astra and Fable, the round 7 brief) again found the design sound against comparable tooling. The owner
+accepted the findings below after a research pass, and the issues were edited to match.
+
+- N1. An Interrupted Attempt's worktree is reset only after its writers are confirmed gone (Astra A1). The call
+  intent records the containment (`job`: a Windows job object with kill-on-close; `none` otherwise) and the job
+  helper's process id and start time. At resume a `job` helper still running (same id and start time) is killed and
+  confirmed gone, then rescue, reset and retry; `none` (POSIX, or a helper that failed to start) is rescued and held,
+  never reset. Research: Linux children outlive their parent unless a cgroup is killed (`cgroup.kill`, kernel 5.14);
+  `PR_SET_PDEATHSIG` is per thread and not inherited; a job object with `BREAKAWAY_OK` loses only processes that
+  explicitly break away (an accepted residual risk); fencing tokens need a store that checks them, which a
+  filesystem is not. Linux cgroup containment is backlogged as grey-goo-ri issue #128. Issues #68, #118, #23 (which
+  reserves the fields) and ADR 0011.
+- N2. The rule-table analyser keeps V5's enumeration, with a work limit computed before it starts: points (the product
+  of each mentioned field's partition size) times rows, an admission error above 10 million naming the table and its
+  largest fields, never sampled (Astra A2). Exact analysis is NP-complete in general (SAT reduces to exhaustiveness,
+  per rustc's pattern analysis), so box subtraction would not avoid the limit; rustc and `match-lang` likewise count
+  work and report "too complex". #103 measures the analyser on a complex fixture Flow to set the limit and to show
+  how often admission can afford to run it. Issue #103.
+- N3. An unknown `intent.action` holds at Reconciliation; recognised Actions with no finder that are safe to repeat
+  (`pr-upsert`, `pr-ready`) are listed and replay (Astra A3, completing round 6's K4). Issue #118.
+- N4. The example's `publish` routes `failed` back to itself once (`max: 1`, then `needs-human`): its suite re-runs
+  on a tree that already passed, so a failure there is most likely a flake (Fable F1). A rescue with nothing to
+  rescue makes no ref and no reset. Issues #120, #107, #118.
+- N5. "Named tests missing from the output" is a recoverable `tests-fail` failure, with its own section asking for
+  the names as the runner prints them; a timeout or a missing command stays not (Fable F2; amends T4c and K7).
+  Reading structured per-test results, with no format prescribed by gg, is backlogged as grey-goo-ri issue #126;
+  it records the frozen Check signal and evidence shapes, so the freeze does not block it. Issue #115.
+- N6. The example routes `red`'s `no-test` to `green` (rescued and reset, R5a). `tests` and every `red` evidence
+  input are optional; the review Brief judges a no-test claim and sends it back with `needsTest: true` (`retest`,
+  bounded by `max: 2` then `senior-red`); the PR body says when no failing test exists (Fable F3, option b; amends
+  U11's routing). Issue #120.
+- N7. The slices doc's #107 summary now says the Action Cap is not a cycle's bound (Fable F4, V3).
+- N8. R4c records that `repeat` matches only exact repeats (Fable F5). A reviewer-marked repeat is backlogged as
+  grey-goo-ri issue #127; the field lives in the repository-owned response, which #23 documents as opaque.
+- N9. A Check's `evidence` output is produced only when the Check passed, as today (`lib/interpreter.mjs:733`). A
+  failing Check's output still reaches the recovery Brief (T4b), the rescue's `output` (R5c) and the Check signal, but
+  is never read as proof by a later Vertex or the PR body. Issue #114.
+- N10. Correction to N6: inputs read the latest Visit that produced a value (S4), so after a `retest`, a red Visit that
+  stops with `no-test-needed` leaves the earlier Visit's `tests` and `red` evidence in place, and "`red` absent" would
+  not show the claim. Green, `senior-green` and every `&impl` reader take `redReport: { from: [red.red.response,
+  senior-red.red.response] }`, required, since an agent Action responds on every Visit, stops included; the Briefs and
+  the PR body show red's no-test notes whenever `redReport.reason` is `no-test-needed`. `no-test` still routes to
+  `green` as N6 decided. Issue #120.
+
+## Review round 9 (2026-10-23)
+
+Round 9 (fresh Astra and Fable, the same brief) found the design sound; Astra saw no reason to reopen the
+architecture. The owner accepted every finding.
+
+- M1. `pr-ready` reads the PR's head (repository, ref and commit) fresh before every launch and retry and compares it
+  with the checked target; a mismatch or a failed read holds (Astra A1). Without it, a push to the remote branch after
+  gg's push would be marked ready on an unchecked commit: `viewPr` reads no `headRefOid` (`lib/github.mjs:104`) and
+  `markReady` takes only the number (`:128`). Residual: the read and GitHub's ready call are not atomic, so a push
+  between them cannot be excluded, as with GitHub's own required checks. Issue #112.
+- M2. A green Vertex that finds red's test wrong stops with `reason: bad-test` (`implement.schema.json`'s enum gains
+  it), which the `implement` Procedure's `stopped` table maps to the Outcome `bad-test`. The example routes it from
+  `green` and `senior-green` to `red` with `max: 1`, then `needs-human`; the work is rescued and reset (R5a); `red`
+  reads `previous: { from: [green.green.response, senior-green.green.response], optional: true }` and `red.md` shows
+  its `diagnosis` when `reason` is `bad-test` (Fable F1). Green still cannot edit tests (R3a); a different agent
+  judges the claim. TDFlow (EACL 2026) finds bad tests its main failure with no correction path, and ImpossibleBench
+  found an explicit abort option cut test gaming from 54% to 9%. Issues #104, #120.
+- M3. The example's `actionCap` is 160, since M2's detours lengthen the longest bounded path to about 155 Attempts
+  with one recovery per agent Visit. Issues #117, #120.
+- M4. R11d records why `publish` re-runs a suite that passed on the same tree (Fable F2).
+- M5. The example's `tests-fail` comment lists N5's recoverable failure (Astra A2, Fable F4).
+- M6. K2 records that a spend budget sums gg's `usage.delta`; `--max-budget-usd` is a per-Attempt fuse (Fable F5).
+- Backlog: an opt-in `gg init --diff` showing how a repository's Flow differs from the current example (Fable F3),
+  grey-goo-ri issue #130; P1b's no-silent-change rule stands.
+
+## Review round 10 (2026-10-23)
+
+Round 10 (fresh Astra and Fable) found the architecture sound. The owner's decisions:
+
+- L1. The example starts at an optional `baseline` Vertex with no Agent (Procedure `base-check`: the `test` Check),
+  `ok` → `red`, `failed` → `"*"` → `needs-human` naming `baseline.test` (Fable F1). It costs one suite run per
+  Execution; a repository with a slow suite can drop it. Without it a red base fails every implementation Visit
+  (about 11 Attempts and two senior calls) and ends at `needs-human` blaming the implementation; the example-flow doc
+  records the trace. SWE-bench likewise takes its must-keep-passing tests from a base run. Reading the base's CI result
+  instead was considered: GitHub's check-run, status and rollup APIs can disagree, CI may run another command, and a
+  pending result says nothing. Issues #120, #107 (an agentless entry Vertex is admitted).
+- L2. Every `pr-upsert` binds `redReport`, and `senior-red` declares the optional `previous` that the shared `red.md`
+  reads (Astra A2: N10 and M2 were wired incompletely; #113 rejects an undeclared template name). Issue #120.
+- L3. `.github/workflows/` and `.github/actions/` are Protected Files (Fable F2): gg pushes agent commits under the
+  owner's identity, so an edited workflow would run with repository secrets before a human looks. Copilot's coding
+  agent likewise holds its workflow runs for a person's approval. Never configurable (Q2). Issue #102, ADR 0014.
+- L4. `review.md` reads the History, so a reviewer learns of a `bad-test` detour (Fable F3). History items are a kind
+  and a sentence each, a few hundred tokens even near the Action Cap. Issue #120.
+- L5. "Write or higher" means the REST collaborator `permission` field is `admin` or `write` (maintain folds into
+  write, triage into read) (Fable F4). Issue #108.
+- Noted: an Execution is time-bounded by per-call timeouts and the Action Cap together (Fable F5); no change.
+- L6. Every process gg runs in a worktree kills its leftovers when it returns, and names them (Astra A1, extending N1
+  to calls that return normally). Today the Windows helper leaves a finished command's background children running
+  (`lib/winjob.ps1:115`), so a background writer could write after a rescue's verification or into the next
+  Vertex's worktree. Windows keeps kill-on-close through cleanup; POSIX kills the process group and the observed
+  descendants and confirms the group is empty; a process that starts its own session or explicitly breaks away is an
+  accepted residual risk (Linux cgroups, grey-goo-ri issue #128, close it). Practice: the GitHub Actions runner kills
+  a job's orphan processes at job end; hosted agents (OpenHands, SWE-agent, Copilot) discard the whole environment;
+  Claude Code and Codex CLI users report leaked children as bugs, and Codex moved to killing the process group.
+  #23's harness contract says a call returns only once its processes are gone, or reports that it could not
+  confirm it, which holds a reset. Issues #118, #23.
+- L7. (Superseded by L8.) Red detects a base that already fails, replacing L1's `baseline` in the example's path. A new
+  Check kind `others-pass` (`of: red-check`, `command`, `names`) reuses red-check's run, or runs the command itself when
+  red-check did not run (a stop, or V8's skip), and fails when any test the agent did not name is failing; output gg
+  cannot parse passes, saying so. It is recoverable once ("name these if they are yours"). `tests-fail`'s `ok` requires
+  it; its `failed` table and a `stopped` row ahead of `no-test` map it to the Outcome `base-red`, which the example
+  routes to `end: needs-human` listing the failing tests, before any implementation; the red Visit's work is left in
+  place uncommitted (Q3a, R5b). Green cannot make this call: on N6's no-test path every test it runs is an existing one,
+  so a failure there may be its own regression; the last tree equal to the base is red's. Guidance on agent test
+  baselines says to record pre-existing failures and not fix them as a side effect, so a `repair` Procedure is
+  backlogged as grey-goo-ri issue #131. `base-check` stays documented as an option for runners whose output gg cannot
+  parse. The example's `actionCap` becomes 180 (`others` adds an Attempt to every red pass). Issues #114, #115, #120.
+
+## Review round 11 (2026-10-23)
+
+Round 11 (Fable, and Astra after a model-access error and a retry) found the architecture sound; Astra showed L7's
+inference unsound. The owner's decisions:
+
+- L8. L7 is withdrawn. A failing test the agent did not name proves nothing about the base: red can break an existing
+  test through a shared fixture on a green base, and an already-failing test the agent names passes `others-pass`
+  and can even satisfy the red Check (Astra A1). SWE-bench and TDFlow take "failing before" from a run before the
+  change. So the example starts at `baseline` again (L1), and its `test` Check takes a new `command` parameter
+  `reuse: tree`: a result recorded in this repository for the same tree, command and Config Hash is reused, so the
+  Tickets on one base share one run, and a failing result stands until the base changes. A green base means every
+  test failing at red is new or broken by red, so red's Check needs no base comparison; a test red broke reaches
+  green, which can stop with `bad-test` (M2). `others-pass` and `base-red` are dropped. `publish` keeps re-running
+  (M4). The `actionCap` stays 180 as headroom. The reuse cache is a State Database table #23 documents. Issues #114,
+  #115, #120, #23, #131.
+- L9. L3 does not stop the repository's existing CI from running agent-written code with `GITHUB_TOKEN` and secrets on
+  gg's push (Fable F2); gh-aw runs its agent read-only and Copilot holds workflow runs for approval, which gg cannot do
+  from the client. ADR 0014 records the limit, and `gg init` recommends read-only default workflow permissions. A
+  `gg doctor` warning is backlogged as grey-goo-ri issue #132. Issue #120.
+- L10. Request 3.6 lists the `.github/` Protected Files (Fable F3).
+- W4 cites practice (Fable F4); see W4.
+- Noted: SWE-agent is in maintenance-only mode; future comparisons cite mini-swe-agent (Fable F5).
+- L11. Unconfirmed cleanup stops the Ticket, not only a reset (Astra A2): a successful Visit never resets, so a
+  surviving writer would race the integrity checks, the commit (whose Check results would go stale, T1), the next
+  agent (whose baseline, rescue and blame it would corrupt) and publishing. Every agent call and Check returns
+  `cleanup: { confirmed, survivors }`, recorded and readable as the Action's `cleanup` output; `confirmed: false` is
+  engine-owned, like an Integrity Assertion (Q2), since no Flow can wait for or kill a process. It becomes a Pending
+  cleanup hold (`gg:await:cleanup`, reusing #119's Pending): the Ticket resumes by itself once the survivors are gone,
+  continuing with the next Action on an unchanged tree or re-running the Visit's Checks on a changed one; a human can
+  kill the listed processes or abandon it. Issues #118, #119, #23.
+- L12. A person can resolve or hand back a `needs-human` Ticket (owner requirement). `gg work done <ticket>` records a
+  human end `done` (`decidedBy: { human: <login> }`, a `ticket_resolved` Event, `gg:state:done`) and closes the issue
+  once its PR is merged, or with `--close` when no change was needed, so dependents become ready. `gg work resume
+  <ticket> --at <vertex>` re-enters the Execution at a Vertex of the pinned Flow on a clean worktree whose pushed
+  commits become the baseline, keeping every bound's count (a `ticket_resumed` Event). `done` extends R11b's fixed
+  end set as a human-only end: no Flow routes to it and no Vertex is named after it. #23 reserves the shapes now; the
+  commands are slice 6's, grey-goo-ri issue #133.
+
+## Review round 12 (2026-10-23)
+
+Round 12 (fresh Astra and Fable) found the architecture sound; its findings fell on L8, L11 and L12. The owner
+accepted all of them, with Fable's version of the cache fix.
+
+- L13. `reuse: tree` reuses passing results only, keyed on the tree and the resolved command line, not the whole
+  Config Hash, whose per-person harness and model settings do not affect a test run (Fable F1, Astra A3). A failing
+  result is recorded for the Terminal Reason but never reused, so a flaky base run or a repaired environment clears on
+  the next Ticket or on `gg work resume --at baseline`. A reused pass does not prove the current environment is
+  healthy; that case takes the documented no-baseline path. Bazel likewise reruns failed tests by default, and about
+  two thirds of re-run GitHub Actions builds prove flaky (arXiv 2602.02307). The reuse table lands without a
+  `DB_SCHEMA_VERSION` bump (R7a) and #23 sets the first frozen value (Fable F5). Issues #114, #120, #23.
+- L14. A Pending cleanup hold resumes only after a fresh confirmation under its containment, never because the
+  recorded survivors are gone (Astra A1): an unavailable containment already reports `survivors: []` with an error
+  (`lib/exec.mjs:86-91`), and a survivor can start a child and exit. The record keeps why cleanup was unconfirmed and
+  the containment identity: the Windows job helper's process id and creation time (gone means kill-on-close fired),
+  or the POSIX process group (empty means every inheriting child is gone). No containment stays held for a human,
+  even with no survivors listed. Issues #118, #119, #23.
+- L15. Resuming a cleanup hold returns to the suspended call's validation: every fixed Integrity Assertion, Test
+  Immutability included, runs against the call's original baseline before any Check, commit or routing; only
+  permitted changes lead to the Visit's Checks re-running (Astra A2). A tree comparison misses HEAD, the index and
+  untracked or ignored Protected Files (`lib/integrity.mjs:163-175`). Issue #119.
+- L16. `gg work resume --at <vertex>` refuses a Vertex with a required input no Visit in the record produced, naming
+  it, since #107's per-path guarantee does not cover a human-chosen entry (Fable F2). Issue #133.
+- M2 is a correction path, not the safeguard: ImpossibleBench's abort effect is much weaker for Claude models, whose
+  cheating is mostly test edits, which Test Immutability (R3a) blocks (Fable F3).
+- Noted for the Claude Harness slice: a pre-write deny hook over Protected Files and frozen `testPaths` would save a
+  wasted Attempt; Integrity Assertions stay the authority, since a hook is harness-specific and shell-bypassable
+  (Fable F6).
+
+## Review round 13 (2026-10-23)
+
+Round 13 (fresh Astra and Fable) found the architecture sound. The owner decided that tests are deterministic
+(J1-J3) and accepted all five review findings (J4-J8).
+
+- J1. Tests are deterministic: the same tree and command give the same result. A failure on a tree that already
+  passed is the environment, or a test or code that is not deterministic, and a re-run that passes would hide the
+  second. The example's `publish` no longer re-runs: its `failed` falls to `"*"` and ends at `needs-human`,
+  naming `publish.test` (owner; restores P5c, replaces N4's self-edge). Issues #120, #107.
+- J2. L13's mechanism stands and its reason changes: a failing result is not reused because the environment may have
+  failed and may since be repaired, not because tests flake. Reusing a pass relies on determinism, as Bazel's cache
+  does (owner). Issues #114 and #120 are unchanged.
+- J3. Red's proof assumes its test is deterministic: a test that fails only sometimes can pass the red and the green
+  Check by chance. `review.md` asks the reviewer to flag a source of nondeterminism in a new or changed test (sleep,
+  wall-clock time, randomness, network, test order or shared state) as a finding. gg does not re-run red's test: it
+  costs suite time, and the review already reads the test (owner). Issue #120.
+- J4. A cleanup hold resumes the suspended Action's own completion from its recorded result, as if it had just
+  returned (Astra A1; amends L11 and L15's "next Action"). After a fresh containment confirmation and every fixed
+  Integrity Assertion against the original baseline, an agent call's response validation and the resolver's harness,
+  parse and retry rows run before any Check, a retry spent once, so a timeout or a malformed response held for
+  cleanup still retries or ends `harness-*`. A Check's result stands on an unchanged tree; a changed tree re-runs the
+  Visit's Checks (T1). The record keeps the Action's returned result in place of the next Action, and #23 freezes it.
+  Issues #119, #23.
+- J5. Option 1 does not cover use case a (an agent that may commit only test changes): nothing restricts non-test
+  files, and `changes` is deferred (Y6). Until it lands, a `tests: write` Vertex may also change other files, which
+  red's test commit includes, and the reviewer's diff is the guard (Fable F1; amends D4 and R3b). The Epic's Out of
+  scope says so. Issue #101.
+- J6. Pending also covers a cleanup hold (L11), and #119's glossary note says so (Fable F2). Issue #119.
+- J7. #133 is blocked by #23, whose reserved shapes it uses (Fable F3). Issue #133.
+- J8. A `tests-fail` pass found only by a name match, with no statuses the runner printed (`heuristic: true`,
+  `lib/checks.mjs:44`), carries `heuristic: true` in its evidence, and `review.md` shows it, so the reviewer can
+  judge whether red's test fails for the right reason (Fable F4). Structured results stay grey-goo-ri issue #126.
+  #23 freezes the flag. Issues #114, #120, #23.
+
+## Review round 14 (2026-10-23)
+
+Round 14 ran Fable alone: Astra hit its usage limit, and the owner chose not to wait. It found the architecture sound,
+and the owner accepted all four findings as recommended.
+
+- J9. A Pending Ticket's age is already recorded: every Event carries `ts`, the Await Label is a write-ahead Action
+  with its own Event, and the timeline gives the request time. No shape changes before the freeze. `gg doctor`
+  listing Pending Tickets with their age, and an optional `maxAge` on `await-approval`, are backlogged as
+  grey-goo-ri issue #134 (Fable F1): Step Functions, Argo and GitHub deployment approvals all expire.
+- J10. Grey-goo-ri issue #126 (structured results) targets the tests failing at red minus those failing at
+  `baseline`, the FAIL_TO_PASS set SWE-bench computes, with the agent's names as a cross-check (Fable F2). L8
+  stands. Issue #126.
+- J11. `gg init`'s output states that gg assumes `test` is deterministic: a test that fails on a tree it passed on
+  ends the Ticket at `needs-human` (Fable F3, J1). Issue #120.
+- J12. The slices doc counts six `golden:` cases, as #110 does (Fable F4).
+
+## Owner decision: cost and quota reporting (2026-10-23)
+
+- J13. gg reports what its activity costs: per Ticket and Epic, harness usage (tokens), cost, the percentage of each
+  subscription quota window used and left, and credits spent, and over time per Flow configuration so owners can
+  compare configurations. The reports are backlogged as grey-goo-ri issue #135; the freeze (#23) reserves their
+  shapes so they land without a version bump: Usage's `costBasis` (`reported`, `priced` or null) beside
+  `costUsd`, since Claude's figure on a subscription is an API-equivalent estimate and Codex reports none; the
+  Harness Result's and agent Action Event's `quota`, null or `{ plan, windows: [{ limit, windowMinutes, resetsAt,
+  usedPercent: { first, last } }], credits }`, the snapshots the Harness saw during the Attempt; and the Capability
+  `quota` (`reported`, `partial`, `none`). Codex's rollout reports 5-hour and weekly windows and credits; Claude
+  Code reports quota only partly and undocumented in headless output, so its Harness declares `partial`. A quota
+  share is an estimate (quota is account-wide); tokens and cost are exact. The Execution Record's `owner`, `flow`
+  and `configHash`, the Event `ts` and the `configs` table already key every total. Issues #23, #135.
 
 ## Open
 
