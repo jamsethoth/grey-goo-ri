@@ -68,6 +68,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | L8: any result is reused, keyed with the Config Hash | L13: passing results only, keyed on tree and command line |
 | L11: resume once the recorded survivors are gone | L14, L15: fresh containment check; integrity first |
 | M3: the example's `actionCap: 160` | L7: 180 |
+| Request 3.7: Usage is tokens and cost | J13: plus `costBasis`, and a reserved per-Attempt `quota` snapshot |
 | N4: `publish`'s failed test re-runs once | J1: ends at `needs-human` again (P5c); tests are deterministic |
 | L13: a failing result is not reused, so a flake clears | J2: so a repaired environment clears |
 | D4: option 1 covers use cases a, d, e and g | J5: use case a waits for the `changes` Check |
@@ -1028,6 +1029,20 @@ and the owner accepted all four findings as recommended.
 - J11. `gg init`'s output states that gg assumes `test` is deterministic: a test that fails on a tree it passed on
   ends the Ticket at `needs-human` (Fable F3, J1). Issue #120.
 - J12. The slices doc counts six `golden:` cases, as #110 does (Fable F4).
+
+## Owner decision: cost and quota reporting (2026-10-23)
+
+- J13. gg reports what its activity costs: per Ticket and Epic, harness usage (tokens), cost, the percentage of each
+  subscription quota window used and left, and credits spent, and over time per Flow configuration so owners can
+  compare configurations. The reports are backlogged as grey-goo-ri issue #135; the freeze (#23) reserves their
+  shapes so they land without a version bump: Usage's `costBasis` (`reported`, `priced` or null) beside
+  `costUsd`, since Claude's figure on a subscription is an API-equivalent estimate and Codex reports none; the
+  Harness Result's and agent Action Event's `quota`, null or `{ plan, windows: [{ limit, windowMinutes, resetsAt,
+  usedPercent: { first, last } }], credits }`, the snapshots the Harness saw during the Attempt; and the Capability
+  `quota` (`reported`, `partial`, `none`). Codex's rollout reports 5-hour and weekly windows and credits; Claude
+  Code reports quota only partly and undocumented in headless output, so its Harness declares `partial`. A quota
+  share is an estimate (quota is account-wide); tokens and cost are exact. The Execution Record's `owner`, `flow`
+  and `configHash`, the Event `ts` and the `configs` table already key every total. Issues #23, #135.
 
 ## Open
 

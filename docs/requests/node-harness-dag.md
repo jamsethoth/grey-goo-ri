@@ -495,7 +495,9 @@ Token rules, the same for both harnesses: `input` is uncached input tokens only;
 `cacheWrite` is cache creation; `output` is output tokens from the result; `reasoning` where the harness reports it,
 else absent. Peak context is the maximum over the session's requests of `input + cached + cacheWrite` for that
 request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
-harness reports none, or null. Fixtures cover a resumed Claude session and a resumed Codex thread.
+harness reports none, or null, and carries its basis (`reported`, `priced` or null); an Attempt also records the
+subscription quota and credit snapshots its harness saw, or null (decision J13; reports in grey-goo-ri issue #135).
+Fixtures cover a resumed Claude session and a resumed Codex thread.
 
 Stats: every action event carries the vertex id, visit, action id and recovery; lifecycle events carry only the run or execution they describe; aggregation defaults to procedure and action, with vertex,
 harness and model as further dimensions, so two reviewers on the same procedure stay distinguishable and renaming
