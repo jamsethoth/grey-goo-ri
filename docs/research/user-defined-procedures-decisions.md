@@ -65,6 +65,8 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | R3a, V6: a wrong red test reaches a human through green's failures | M2: green stops with `bad-test`; red rewrites once |
 | L1: the example starts at `baseline` | L7: red's `others-pass` detects a red base; `base-check` is optional |
 | L7: `others-pass` | L8: `baseline` at entry again, cached per base tree; no `others-pass` |
+| L8: any result is reused, keyed with the Config Hash | L13: passing results only, keyed on tree and command line |
+| L11: resume once the recorded survivors are gone | L14, L15: fresh containment check; integrity first |
 | M3: the example's `actionCap: 160` | L7: 180 |
 
 ## Step 1: use cases and users (2026-10-21)
@@ -942,6 +944,36 @@ inference unsound. The owner's decisions:
   commits become the baseline, keeping every bound's count (a `ticket_resumed` Event). `done` extends R11b's fixed
   end set as a human-only end: no Flow routes to it and no Vertex is named after it. #23 reserves the shapes now; the
   commands are slice 6's, grey-goo-ri issue #133.
+
+## Review round 12 (2026-10-23)
+
+Round 12 (fresh Astra and Fable) found the architecture sound; its findings fell on L8, L11 and L12. The owner
+accepted all of them, with Fable's version of the cache fix.
+
+- L13. `reuse: tree` reuses passing results only, keyed on the tree and the resolved command line, not the whole
+  Config Hash, whose per-person harness and model settings do not affect a test run (Fable F1, Astra A3). A failing
+  result is recorded for the Terminal Reason but never reused, so a flaky base run or a repaired environment clears on
+  the next Ticket or on `gg work resume --at baseline`. A reused pass does not prove the current environment is
+  healthy; that case takes the documented no-baseline path. Bazel likewise reruns failed tests by default, and about
+  two thirds of re-run GitHub Actions builds prove flaky (arXiv 2602.02307). The reuse table lands without a
+  `DB_SCHEMA_VERSION` bump (R7a) and #23 sets the first frozen value (Fable F5). Issues #114, #120, #23.
+- L14. A Pending cleanup hold resumes only after a fresh confirmation under its containment, never because the
+  recorded survivors are gone (Astra A1): an unavailable containment already reports `survivors: []` with an error
+  (`lib/exec.mjs:86-91`), and a survivor can start a child and exit. The record keeps why cleanup was unconfirmed and
+  the containment identity: the Windows job helper's process id and creation time (gone means kill-on-close fired),
+  or the POSIX process group (empty means every inheriting child is gone). No containment stays held for a human,
+  even with no survivors listed. Issues #118, #119, #23.
+- L15. Resuming a cleanup hold returns to the suspended call's validation: every fixed Integrity Assertion, Test
+  Immutability included, runs against the call's original baseline before any Check, commit or routing; only
+  permitted changes lead to the Visit's Checks re-running (Astra A2). A tree comparison misses HEAD, the index and
+  untracked or ignored Protected Files (`lib/integrity.mjs:163-175`). Issue #119.
+- L16. `gg work resume --at <vertex>` refuses a Vertex with a required input no Visit in the record produced, naming
+  it, since #107's per-path guarantee does not cover a human-chosen entry (Fable F2). Issue #133.
+- M2 is a correction path, not the safeguard: ImpossibleBench's abort effect is much weaker for Claude models, whose
+  cheating is mostly test edits, which Test Immutability (R3a) blocks (Fable F3).
+- Noted for the Claude Harness slice: a pre-write deny hook over Protected Files and frozen `testPaths` would save a
+  wasted Attempt; Integrity Assertions stay the authority, since a hook is harness-specific and shell-bypassable
+  (Fable F6).
 
 ## Open
 

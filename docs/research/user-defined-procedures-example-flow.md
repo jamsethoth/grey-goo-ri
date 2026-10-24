@@ -56,14 +56,16 @@ No agent step, so its implicit Claim `ok` requires its Check (R11f); a Check lea
 ```yaml
 base-check:
   actions:
-    - { id: test, do: check, kind: command, command: test, reuse: tree }   # L8: one run per base tree
+    - { id: test, do: check, kind: command, command: test, reuse: tree }   # L8, L13: passing runs reused per tree
   passed: []
   failed: []
 ```
 
 - Outcomes: `ok`, `failed`.
-- `reuse: tree` reuses a result this repository recorded for the same tree and command, so Tickets on one base
-  share a single run; a failing result stands until the base changes (L8). A red base ends at `needs-human` with the
+- `reuse: tree` reuses a passing result this repository recorded for the same tree and resolved command line, so
+  Tickets on a green base share one run; a failing result is never reused, so a flake or a repaired environment clears
+  on the next run (L8, L13). A reused pass does not prove this worktree's environment is still healthy; if it is not,
+  the Ticket takes the no-baseline path below. A red base ends at `needs-human` with the
   failing tests in the Terminal Reason, before any agent runs, and only an observed base run says so. With a green
   base, every test failing at red is new or broken by red: a named one is red's failing test, and a test red broke
   through a shared fixture fails green, which can stop with `bad-test` (M2) to send it back to red.
