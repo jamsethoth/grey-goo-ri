@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "properties": {
+    "claim": { "type": "string", "enum": ["ok", "changes", "blocked"] },
+    "reason": { "type": "string", "enum": ["none", "misscoped", "needs-input", "environment"] },
+    "summary": { "type": "string" },
+    "dodMet": { "type": "boolean" },
+    "tddEvidenceOk": { "type": "boolean" },
+    "needsTest": { "type": "boolean" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor"] },
+          "file": { "type": "string" },
+          "issue": { "type": "string" },
+          "fix": { "type": "string" }
+        },
+        "required": ["severity", "file", "issue", "fix"],
+        "additionalProperties": false
+      }
+    },
+    "diagnosis": { "type": "string" }
+  },
+  "required": ["claim", "reason", "summary", "dodMet", "tddEvidenceOk", "needsTest", "findings", "diagnosis"],
+  "additionalProperties": false
+}

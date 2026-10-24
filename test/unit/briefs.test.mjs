@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.mjs';
 import * as checks from '../../lib/checks.mjs';
 import { homedir } from 'node:os';
+import { readFileSync } from 'node:fs';
 
 const ticket = { number: 7, title: 'Add widgets', body: '## Definition of done\n- [ ] widgets', branch: 'ticket/7-add-widgets' };
 const commands = { test: 'npm test', lint: 'npm run lint' };
@@ -71,6 +72,72 @@ test('assertStrict rejects a property missing from required', () => {
 test('assertStrict rejects a nested object without additionalProperties', () => {
   const nested = { type: 'object', properties: { list: { type: 'array', items: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] } } }, required: ['list'], additionalProperties: false };
   assert.throws(() => briefs.assertStrict(nested), /additionalProperties/);
+});
+
+const example = (name) => JSON.parse(readFileSync(new URL(`./fixtures/example/${name}.schema.json`, import.meta.url), 'utf8'));
+
+test('a schema keyword outside the strict subset is rejected with its path', () => {
+  for (const name of ['red', 'implement', 'review']) {
+    assert.doesNotThrow(() => briefs.assertStrict(example(name), `${name}.schema.json`), name);
+  }
+  const withCount = { type: 'object', properties: { count: { type: 'integer' } }, required: ['count'], additionalProperties: false };
+  assert.doesNotThrow(() => briefs.assertStrict(withCount));
+  assert.deepEqual(briefs.validateResponse(withCount, { count: 3 }), { valid: true, claim: undefined });
+  assert.match(briefs.validateResponse(withCount, { count: 1.5 }).reason, /count must be an integer/);
+  assert.match(briefs.validateResponse(withCount, { count: '3' }).reason, /count must be an integer/);
+  const bad = example('implement');
+  bad.properties.qa.properties.steps.items.properties.action.pattern = '^x';
+  assert.throws(() => briefs.assertStrict(bad, 'bad.schema.json'), (e) => /bad\.schema\.json/.test(e.message) && /qa\.steps\[\]\.action/.test(e.message) && /pattern/.test(e.message));
+  const cases = [
+    [{ type: 'array', items: { type: 'string' }, minItems: 1 }, /minItems/],
+    [{ type: 'number' }, /number/],
+    [{ oneOf: [{ type: 'string' }] }, /oneOf/],
+    [{ type: 'string', format: 'date' }, /format/],
+    [{ type: 'array' }, /items/],
+  ];
+  for (const [field, keyword] of cases) {
+    const schema = { type: 'object', properties: { field }, required: ['field'], additionalProperties: false };
+    assert.throws(() => briefs.assertStrict(schema, 'x.schema.json'), (e) => /x\.schema\.json/.test(e.message) && /field/.test(e.message) && keyword.test(e.message), JSON.stringify(field));
+  }
+});
+
+test('the claim enum must equal the declared tokens', () => {
+  assert.doesNotThrow(() => briefs.assertClaimEnum(example('review'), ['ok', 'changes', 'blocked']));
+  assert.doesNotThrow(() => briefs.assertClaimEnum(example('red'), ['blocked', 'ok']));
+  assert.throws(() => briefs.assertClaimEnum(example('red'), ['ok', 'blocked', 'misscoped']), /misscoped/);
+  assert.throws(() => briefs.assertClaimEnum(example('review'), ['ok', 'blocked']), /changes/);
+  assert.throws(() => briefs.assertClaimEnum(example('red'), ['OK', 'blocked']), /case/);
+  const caseTwins = example('red');
+  caseTwins.properties.claim.enum = ['ok', 'Ok', 'blocked'];
+  assert.throws(() => briefs.assertClaimEnum(caseTwins, ['ok', 'Ok', 'blocked']), /case/);
+  const noClaim = example('red');
+  delete noClaim.properties.claim;
+  noClaim.required = noClaim.required.filter((k) => k !== 'claim');
+  assert.throws(() => briefs.assertClaimEnum(noClaim, ['ok', 'blocked']), /claim/);
+});
+
+test('fieldType types nested objects and arrays of objects', () => {
+  const review = example('review');
+  const implement = example('implement');
+  assert.deepEqual(briefs.fieldType(review, 'claim'), { kind: 'enum', values: ['ok', 'changes', 'blocked'] });
+  assert.deepEqual(briefs.fieldType(review, 'needsTest'), { kind: 'boolean' });
+  assert.deepEqual(briefs.fieldType(review, 'summary'), { kind: 'string' });
+  assert.deepEqual(briefs.fieldType(review, 'findings'), { kind: 'list', of: { kind: 'object' } });
+  assert.deepEqual(briefs.fieldType(review, 'findings.severity'), { kind: 'list', of: { kind: 'enum', values: ['blocker', 'major', 'minor'] } });
+  assert.deepEqual(briefs.fieldType(review, 'findings.file'), { kind: 'list', of: { kind: 'string' } });
+  assert.deepEqual(briefs.fieldType(implement, 'qa'), { kind: 'object' });
+  assert.deepEqual(briefs.fieldType(implement, 'qa.setup'), { kind: 'string' });
+  assert.deepEqual(briefs.fieldType(implement, 'qa.steps.expected'), { kind: 'list', of: { kind: 'string' } });
+  assert.deepEqual(briefs.fieldType(implement, 'qa.edgeCases'), { kind: 'list', of: { kind: 'string' } });
+  assert.deepEqual(briefs.fieldType(implement, 'dod.met'), { kind: 'list', of: { kind: 'boolean' } });
+  const counts = { type: 'object', properties: { n: { type: 'integer' } }, required: ['n'], additionalProperties: false };
+  assert.deepEqual(briefs.fieldType(counts, 'n'), { kind: 'integer' });
+  for (const path of ['missing', 'findings.missing', 'summary.length', 'qa.steps.action.x', '']) {
+    const out = briefs.fieldType(review, path);
+    assert.equal(typeof out.error, 'string', path);
+    assert.equal(out.kind, undefined, path);
+  }
+  assert.match(briefs.fieldType(review, 'findings.missing').error, /findings\.missing/);
 });
 
 test('validateResponse accepts exactly one lowercase enum token as the claim', () => {
