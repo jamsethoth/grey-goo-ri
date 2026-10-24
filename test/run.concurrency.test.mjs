@@ -183,12 +183,12 @@ const worktreeOf = (f, n) => gitModule.worktreePath(f.options.config.worktreeRoo
 const addsLabel = (args, n, label) => args[0] === 'issue' && args[1] === 'edit' && args[2] === String(n)
   && args.some((a, i) => a === label && args[i - 1] === '--add-label');
 
-// Opened once; a wait gives up after a bound, so a broken interleaving fails its case instead of hanging the file.
+// Opened once. A broken interleaving fails at its case's timeout; a shorter bound of its own failed correct
+// interleavings whenever the machine was loaded enough that the other Ticket's whole Execution outlasted it.
 function gate() {
   let open;
   const opened = new Promise((resolve) => { open = resolve; });
-  const wait = () => Promise.race([opened, sleep(30_000, null, { ref: false }).then(() => { throw new Error('a gate stayed shut'); })]);
-  return { open, wait };
+  return { open, wait: () => opened };
 }
 
 // One fake Harness per Ticket behind the name `fake`, chosen by the worktree each call runs in; `before` runs first.
