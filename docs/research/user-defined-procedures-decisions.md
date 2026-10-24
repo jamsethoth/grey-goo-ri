@@ -1013,6 +1013,22 @@ Round 13 (fresh Astra and Fable) found the architecture sound. The owner decided
   judge whether red's test fails for the right reason (Fable F4). Structured results stay grey-goo-ri issue #126.
   #23 freezes the flag. Issues #114, #120, #23.
 
+## Review round 14 (2026-10-23)
+
+Round 14 ran Fable alone: Astra hit its usage limit, and the owner chose not to wait. It found the architecture sound,
+and the owner accepted all four findings as recommended.
+
+- J9. A Pending Ticket's age is already recorded: every Event carries `ts`, the Await Label is a write-ahead Action
+  with its own Event, and the timeline gives the request time. No shape changes before the freeze. `gg doctor`
+  listing Pending Tickets with their age, and an optional `maxAge` on `await-approval`, are backlogged as
+  grey-goo-ri issue #134 (Fable F1): Step Functions, Argo and GitHub deployment approvals all expire.
+- J10. Grey-goo-ri issue #126 (structured results) targets the tests failing at red minus those failing at
+  `baseline`, the FAIL_TO_PASS set SWE-bench computes, with the agent's names as a cross-check (Fable F2). L8
+  stands. Issue #126.
+- J11. `gg init`'s output states that gg assumes `test` is deterministic: a test that fails on a tree it passed on
+  ends the Ticket at `needs-human` (Fable F3, J1). Issue #120.
+- J12. The slices doc counts six `golden:` cases, as #110 does (Fable F4).
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).
