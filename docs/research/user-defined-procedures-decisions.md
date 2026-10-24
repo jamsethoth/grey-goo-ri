@@ -935,6 +935,13 @@ inference unsound. The owner's decisions:
   cleanup hold (`gg:await:cleanup`, reusing #119's Pending): the Ticket resumes by itself once the survivors are gone,
   continuing with the next Action on an unchanged tree or re-running the Visit's Checks on a changed one; a human can
   kill the listed processes or abandon it. Issues #118, #119, #23.
+- L12. A person can resolve or hand back a `needs-human` Ticket (owner requirement). `gg work done <ticket>` records a
+  human end `done` (`decidedBy: { human: <login> }`, a `ticket_resolved` Event, `gg:state:done`) and closes the issue
+  once its PR is merged, or with `--close` when no change was needed, so dependents become ready. `gg work resume
+  <ticket> --at <vertex>` re-enters the Execution at a Vertex of the pinned Flow on a clean worktree whose pushed
+  commits become the baseline, keeping every bound's count (a `ticket_resumed` Event). `done` extends R11b's fixed
+  end set as a human-only end: no Flow routes to it and no Vertex is named after it. #23 reserves the shapes now; the
+  commands are slice 6's, grey-goo-ri issue #133.
 
 ## Open
 
