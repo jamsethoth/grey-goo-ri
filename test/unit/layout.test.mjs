@@ -43,7 +43,7 @@ for (const file of unitFiles) {
 }
 const modules = [
   'lib/opts.mjs', 'lib/config.mjs', 'lib/flow.mjs', 'lib/run.mjs', 'lib/interpreter.mjs', 'lib/effects.mjs', 'lib/terminal.mjs',
-  'lib/procedures.mjs', 'lib/briefs.mjs', 'lib/outcome.mjs', 'lib/checks.mjs', 'lib/integrity.mjs',
+  'lib/procedures.mjs', 'lib/briefs.mjs', 'lib/outcome.mjs', 'lib/rules.mjs', 'lib/checks.mjs', 'lib/integrity.mjs',
   'lib/record.mjs', 'lib/marker.mjs', 'lib/reconcile.mjs', 'lib/events.mjs', 'lib/labels.mjs',
   'lib/approval.mjs', 'lib/locks.mjs', 'lib/harnesses/contract.mjs', 'lib/harnesses/claude.mjs',
   'lib/harnesses/codex.mjs', 'lib/exec.mjs', 'lib/git.mjs', 'lib/paths.mjs', 'lib/github.mjs', 'lib/render.mjs',
