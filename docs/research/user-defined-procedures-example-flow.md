@@ -63,8 +63,8 @@ base-check:
 
 - Outcomes: `ok`, `failed`.
 - `reuse: tree` reuses a passing result this repository recorded for the same tree and resolved command line, so
-  Tickets on a green base share one run; a failing result is never reused, so a flake or a repaired environment clears
-  on the next run (L8, L13). A reused pass does not prove this worktree's environment is still healthy; if it is not,
+  Tickets on a green base share one run; a failing result is never reused, so a repaired environment clears on the next
+  run (L8, L13, J2). A reused pass does not prove this worktree's environment is still healthy; if it is not,
   the Ticket takes the no-baseline path below. A red base ends at `needs-human` with the
   failing tests in the Terminal Reason, before any agent runs, and only an observed base run says so. With a green
   base, every test failing at red is new or broken by red: a named one is red's failing test, and a test red broke
@@ -205,8 +205,8 @@ No agent step, so its implicit Claim `ok` requires every Check (R11f).
 ```yaml
 publish:
   actions:
-    - { id: test,     do: check, kind: command, command: test }   # no agent to recover with; failed re-runs
-                                             # once through the Flow (N4), then needs-human (P5c)
+    - { id: test,     do: check, kind: command, command: test }   # no agent to recover with; failed falls
+                                             # to "*": needs-human, naming publish.test (P5c, J1)
     - { id: pr,       do: pr-upsert, body: pr-body.md,            # re-renders the body (T2)
         with: { report: inputs.report, red: inputs.red, green: inputs.green, redReport: inputs.redReport } }
     - { id: pr-ready, do: pr-ready }         # publishing: test's tree = the published commit's, clean worktree (T1a)
@@ -331,18 +331,19 @@ flows:
           procedure: publish                 # no Agent
           inputs: *impl                      # U1
           route:
-            ok:     { end: ready-for-qa }
-            failed: { to: publish, max: 1, exhausted: { end: needs-human } }   # N4: a flaky suite re-runs once
+            ok:     { end: ready-for-qa }   # failed falls to "*" (J1)
 ```
 
 ## What admission sees
 
-- **Every Outcome is routed** (R12b, T3). The Flow's `"*"` catches `blocked`, `failed` (except `green`'s,
-  `implementer-fix`'s and `publish`'s), `harness-*`, and every unlisted Outcome; `bad-test` goes back to `red`;
+- **Every Outcome is routed** (R12b, T3). The Flow's `"*"` catches `blocked`, `failed` (except `green`'s
+  and `implementer-fix`'s), `harness-*`, and every unlisted Outcome; `bad-test` goes back to `red`;
   `misscoped` goes to the planner from any Vertex.
 - **Every path to `end: ready-for-qa` runs `pr-ready`** (R11e): only `publish` reaches it.
 - **Entry** (L1): `baseline` has no Agent; its `failed` falls to `"*"`, naming `baseline.test`.
-- **Publishing** (R11d, T1a): `publish` requires `test` and runs `pr-ready` only on that Check's tree.
+- **Publishing** (R11d, T1a): `publish` requires `test` and runs `pr-ready` only on that Check's tree. Its `failed`
+  falls to `"*"`, naming `publish.test`: the tree already passed, so the failure is the environment or a test that
+  is not deterministic, and a re-run would hide the second (J1).
 - **Commits** (S2, T1c): every passing path of `red`, `senior-red`, `green`, `senior-green`, `implementer-fix` and
   `senior-dev` commits, and each committing token requires a Check.
 - **Inputs** (Q7, S4, T6, T9, U1, N6): `tests` and `red` of `green` and `senior-green`, and every `red` evidence, are
@@ -356,7 +357,7 @@ flows:
   red`, M2).
 - **Bounds** (I3, T5, V3): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`;
   `reviewer → implementer-fix → reviewer` by `changes`' `max: 2`; every path into `senior-red`, `senior-green` and
-  `senior-dev` by their `maxVisits: 1`; `publish`'s self-edge by its `max: 1` (N4); each cycle back to `red` through
+  `senior-dev` by their `maxVisits: 1`; each cycle back to `red` through
   a `bad-test` edge by that edge's `max: 1` (M2); the Ticket's Action Cap over all of them. The cap covers the longest
   bounded path: three passes of red, green and review (13 Attempts each, two `retest` loops), then `senior-red`,
   `green`, `senior-green`, review, two `changes` loops, `senior-dev`, review and `publish`, about 90 Attempts; the two
@@ -380,7 +381,6 @@ flows:
   (U14). A failed `red` ending at `needs-human` leaves its work in place instead of discarding it (R5b, U10).
 - A failed `green` escalates once to `senior-green` instead of ending at `needs-human` (V6).
 - `red`'s `no-test` goes to `green`, and the reviewer judges the claim, instead of ending at `needs-human` (N6).
-- A failed `publish` re-runs its suite once before `needs-human` (N4).
 - A green that finds the test wrong stops with `bad-test`, and red rewrites it once (M2).
 - The review's `misscoped` token becomes `blocked` with `reason: misscoped`, and the reviewer may now stop (R9c). The
   review declares `access: read-only` itself (U12).

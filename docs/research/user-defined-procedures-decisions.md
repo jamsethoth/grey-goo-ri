@@ -68,6 +68,10 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | L8: any result is reused, keyed with the Config Hash | L13: passing results only, keyed on tree and command line |
 | L11: resume once the recorded survivors are gone | L14, L15: fresh containment check; integrity first |
 | M3: the example's `actionCap: 160` | L7: 180 |
+| N4: `publish`'s failed test re-runs once | J1: ends at `needs-human` again (P5c); tests are deterministic |
+| L13: a failing result is not reused, so a flake clears | J2: so a repaired environment clears |
+| D4: option 1 covers use cases a, d, e and g | J5: use case a waits for the `changes` Check |
+| L11, L15: a cleanup hold continues with the recorded next Action | J4: the suspended Action's completion resumes from its recorded result |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -974,6 +978,40 @@ accepted all of them, with Fable's version of the cache fix.
 - Noted for the Claude Harness slice: a pre-write deny hook over Protected Files and frozen `testPaths` would save a
   wasted Attempt; Integrity Assertions stay the authority, since a hook is harness-specific and shell-bypassable
   (Fable F6).
+
+## Review round 13 (2026-10-23)
+
+Round 13 (fresh Astra and Fable) found the architecture sound. The owner decided that tests are deterministic
+(J1-J3) and accepted all five review findings (J4-J8).
+
+- J1. Tests are deterministic: the same tree and command give the same result. A failure on a tree that already
+  passed is the environment, or a test or code that is not deterministic, and a re-run that passes would hide the
+  second. The example's `publish` no longer re-runs: its `failed` falls to `"*"` and ends at `needs-human`,
+  naming `publish.test` (owner; restores P5c, replaces N4's self-edge). Issues #120, #107.
+- J2. L13's mechanism stands and its reason changes: a failing result is not reused because the environment may have
+  failed and may since be repaired, not because tests flake. Reusing a pass relies on determinism, as Bazel's cache
+  does (owner). Issues #114 and #120 are unchanged.
+- J3. Red's proof assumes its test is deterministic: a test that fails only sometimes can pass the red and the green
+  Check by chance. `review.md` asks the reviewer to flag a source of nondeterminism in a new or changed test (sleep,
+  wall-clock time, randomness, network, test order or shared state) as a finding. gg does not re-run red's test: it
+  costs suite time, and the review already reads the test (owner). Issue #120.
+- J4. A cleanup hold resumes the suspended Action's own completion from its recorded result, as if it had just
+  returned (Astra A1; amends L11 and L15's "next Action"). After a fresh containment confirmation and every fixed
+  Integrity Assertion against the original baseline, an agent call's response validation and the resolver's harness,
+  parse and retry rows run before any Check, a retry spent once, so a timeout or a malformed response held for
+  cleanup still retries or ends `harness-*`. A Check's result stands on an unchanged tree; a changed tree re-runs the
+  Visit's Checks (T1). The record keeps the Action's returned result in place of the next Action, and #23 freezes it.
+  Issues #119, #23.
+- J5. Option 1 does not cover use case a (an agent that may commit only test changes): nothing restricts non-test
+  files, and `changes` is deferred (Y6). Until it lands, a `tests: write` Vertex may also change other files, which
+  red's test commit includes, and the reviewer's diff is the guard (Fable F1; amends D4 and R3b). The Epic's Out of
+  scope says so. Issue #101.
+- J6. Pending also covers a cleanup hold (L11), and #119's glossary note says so (Fable F2). Issue #119.
+- J7. #133 is blocked by #23, whose reserved shapes it uses (Fable F3). Issue #133.
+- J8. A `tests-fail` pass found only by a name match, with no statuses the runner printed (`heuristic: true`,
+  `lib/checks.mjs:44`), carries `heuristic: true` in its evidence, and `review.md` shows it, so the reviewer can
+  judge whether red's test fails for the right reason (Fable F4). Structured results stay grey-goo-ri issue #126.
+  Issues #114, #120.
 
 ## Open
 
