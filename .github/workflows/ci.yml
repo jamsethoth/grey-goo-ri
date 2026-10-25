@@ -59,6 +59,16 @@ jobs:
           done
           echo "$dir" >> "$GITHUB_PATH"
 
+      # The suite's temp repos default to C:, which writes several times slower than RUNNER_TEMP's D: on windows-2025
+      # (add+commit 75-167 ms against 34-53 ms; suite step 392-819 s against 218-315 s, runs 40229132489, 40229320904).
+      - name: Temp on the fast drive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP tmp
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          "TEMP=$dir", "TMP=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       # Exactly the local command (ADR 0010). Git Bash on Windows so tee keeps the bytes;
       # shell: bash runs with pipefail, so the suite's exit code decides the step.
       - name: Suite
