@@ -59,7 +59,9 @@ test('tryAcquire returns null while another process holds the lock', async (t) =
   await exited;
 });
 
-test('a holder that exits without release frees the lock', async (t) => {
+// Windows unlocks a terminated process's locks after a delay that depends on system resources, so these wait for the
+// lock itself; a lock that is never freed fails at the case timeout.
+test('a holder that exits without release frees the lock', { timeout: 120_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 const handle = await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo');
@@ -68,20 +70,19 @@ process.stdout.write(JSON.stringify({ handle }), () => process.exit(0));`;
   assert.ok(report.handle, 'the child held the lock');
   assert.equal(report.handle.path, join(commonDir, 'gg', 'locks', 'repo.db'));
   await exited;
-  // Windows unlocks a terminated process's locks after a delay that depends on system resources.
-  const handle = await locks.acquire(commonDir, 'repo', { timeoutMs: 2_000, pollMs: 20 });
+  const handle = await locks.acquire(commonDir, 'repo', { timeoutMs: Infinity, pollMs: 20 });
   assert.ok(handle);
   await locks.release(handle);
 });
 
-test('a killed holder frees the lock', async (t) => {
+test('a killed holder frees the lock', { timeout: 120_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const { child, exited, report } = await startHolder(t, [contender, commonDir, 'repo', '60000']);
   assert.ok(report.handle, 'the child holds the lock');
   assert.equal(report.handle.path, join(commonDir, 'gg', 'locks', 'repo.db'));
   child.kill();
   await exited;
-  const handle = await locks.acquire(commonDir, 'repo', { timeoutMs: 2_000, pollMs: 20 });
+  const handle = await locks.acquire(commonDir, 'repo', { timeoutMs: Infinity, pollMs: 20 });
   assert.ok(handle);
   await locks.release(handle);
 });

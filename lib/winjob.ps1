@@ -1,8 +1,7 @@
 # Windows helper for lib/exec.mjs runShell: runs $env:FF_CMD in a job object so every descendant, including
 # orphans, is killed together. Control: a byte on stdin (or stdin EOF) terminates the job. Exit code: the command's.
 # Diagnostics go to stderr as lines prefixed with \x01FFJOB so exec.mjs can strip and parse them.
-if ($env:FF_TEST_STALL -eq '1') { Start-Sleep 30 } # test seam: a helper that never gets as far as starting the command
-if ($env:FF_TEST_SLOWSTART) { Start-Sleep -Milliseconds ([int]$env:FF_TEST_SLOWSTART) } # test seam: a slow helper start-up
+if ($env:FF_TEST_STALL -eq '1') { Start-Sleep 600 } # test seam: a helper that never gets as far as starting the command, longer than any test case
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -117,19 +116,23 @@ public static class FFJob {
       uint code; GetExitCodeProcess(pi.hp, out code); return (int)code;
     }
 
+    bool ended = false;
     if (!deny) {
       // without a job leave the root alive: ff's taskkill /T needs its pid to find the children it still links to,
       // and list those children now, while the links exist, so they can be named if the kill is refused
       if (!jobOk) { int le; var kids = Linked(pi.pid, out le); Note(kids == null ? "linkedfail " + le : "linked " + string.Join(",", kids)); }
       if (jobOk && !TerminateJobObject(job, 1)) Note("termfail " + Marshal.GetLastWin32Error());
+      else ended = jobOk;
     }
     var left = new List<int>();
-    for (int i = 0; i < 20; i++) {
+    // A terminated job empties as its processes finish exiting, which takes as long as a loaded machine takes: wait
+    // for that rather than for a fixed time. A job that was not terminated is reported as it stands.
+    for (;;) {
       if (jobOk) {
         int err; left = Members(job, out err);
         if (left == null) { Note("unknown " + err); return 98; } // cannot tell what is still running
       } else { left = WaitForSingleObject(pi.hp, 0) == 0 ? new List<int>() : new List<int> { pi.pid }; break; }
-      if (left.Count == 0) break;
+      if (left.Count == 0 || !ended) break;
       Thread.Sleep(50);
     }
     Note("survivors " + string.Join(",", left));

@@ -10,12 +10,10 @@ import {
   ticketComments, loadTicket, ticketRow, attemptMarker,
 } from './support/interpreter.mjs';
 
-// A bounded wait for state a timer writes: there is no barrier to await on a heartbeat save.
-async function until(check, ms = 5000) {
-  for (const end = Date.now() + ms; !check();) {
-    if (Date.now() > end) assert.fail(`not reached within ${ms} ms`);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
+// A wait for state a timer writes: there is no barrier to await on a heartbeat save. A save that never comes fails at
+// the case timeout.
+async function until(check) {
+  while (!check()) await new Promise((resolve) => setTimeout(resolve, 5));
 }
 
 test('a completed call is not rerun after a crash before the next action', async (t) => {
@@ -155,7 +153,7 @@ test('attempt numbering continues after resume', async (t) => {
   assert.deepEqual((await loadTicket(g)).retries['implementer/1/red/1'], { timeout: 1 }, 'one retry consumed');
 });
 
-test('the record carries the last heartbeat of a running call', async (t) => {
+test('the record carries the last heartbeat of a running call', { timeout: 120_000 }, async (t) => {
   const red = golden.firstVisitResponses['implementer/1/red/1'];
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
     'implementer/1/red/1': { ...red, hang: true }, 'implementer/1/red/2': red } });
