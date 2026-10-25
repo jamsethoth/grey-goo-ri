@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import * as gitModule from '../lib/git.mjs';
 import * as integrity from '../lib/integrity.mjs';
 import { pathKey } from '../lib/paths.mjs';
 import * as record from '../lib/record.mjs';
@@ -16,7 +15,7 @@ import {
 
 test('a resumed execution on another Ticket branch or another branch of its Ticket is held before recovery', async (t) => {
   for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-attempt`]) {
-    const f = fixture(t, { labels: [IN_PROGRESS] });
+    const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
     const seeded = await crashBeforeCommit(f);
     sh(f.worktree, 'checkout', '-q', '-b', branch);
     const head = sh(f.worktree, 'rev-parse', 'HEAD');
@@ -48,8 +47,8 @@ test('a resumed execution on another Ticket branch or another branch of its Tick
 test('fresh admission refuses another Ticket\'s branch without changing it', async (t) => {
   // ticket/150-* shares ticket 15's digits, so the prefix must end at the number.
   for (const branch of ['ticket/99-other', 'ticket/150-other', 'detached HEAD']) {
-    const f = fixture(t);
-    await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    const f = fixture(t, { git: 'real', git: 'real' });
+    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     if (branch === 'detached HEAD') sh(f.worktree, 'checkout', '-q', '--detach');
     else sh(f.worktree, 'checkout', '-q', '-b', branch);
     const head = sh(f.worktree, 'rev-parse', 'HEAD');
@@ -78,8 +77,8 @@ test('fresh admission refuses another Ticket\'s branch without changing it', asy
 
 test('fresh admission reuses its Ticket branch after a title change', async (t) => {
   const branch = `ticket/${TICKET}-old-title`;
-  const f = fixture(t, { branch, issue: { title: 'A new title' } });
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
+  const f = fixture(t, { git: 'real', branch, issue: { title: 'A new title' } });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
@@ -91,8 +90,8 @@ test('fresh admission reuses its Ticket branch after a title change', async (t) 
 test('resume refuses a recorded branch belonging to another Ticket', async (t) => {
   const branch = 'ticket/99-other';
   for (const existing of [true, false]) {
-    const f = fixture(t, { labels: [IN_PROGRESS] });
-    if (existing) await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
+    const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+    if (existing) await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
     const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch, base: 'main' });
     await record.intent(rec, 'seed-intent', 'commit', { message: 'red' });
@@ -138,7 +137,7 @@ test('admission detects an agent overwrite of an idle sibling as an Integrity Vi
         configHash: 'x', run: '20261016T000000Z-seed00', worktree: sibling, branch: other, base: 'main' }));
     }
     if (seeded) {
-      await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+      await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
       await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
         configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
     }
@@ -167,7 +166,8 @@ test('admission excludes non-ticket worktrees and its own, however cased, from s
   conflict(scratch);
   // Windows paths are case-insensitive: the own worktree, listed in another case, would see its agent's writes as violations.
   if (process.platform === 'win32') {
-    f.options.git = { ...gitModule, listWorktrees: async (root) => (await gitModule.listWorktrees(root)).map((w) => ({ ...w, path: w.path.toUpperCase() })) };
+    const git = f.options.git;
+    f.options.git = { ...git, listWorktrees: async (root) => (await git.listWorktrees(root)).map((w) => ({ ...w, path: w.path.toUpperCase() })) };
   }
 
   const results = await run.runTarget(f.options);
@@ -179,11 +179,11 @@ test('sibling discovery failure prevents agent execution', async (t) => {
   for (const seeded of [false, true]) {
     const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [] });
     if (seeded) {
-      await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+      await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
       await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
         configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
     }
-    f.options.git = { ...gitModule, listWorktrees: async () => { throw new Error('fatal: cannot list worktrees'); } };
+    f.options.git = { ...f.options.git, listWorktrees: async () => { throw new Error('fatal: cannot list worktrees'); } };
 
     const results = await run.runTarget(f.options);
     assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
@@ -195,7 +195,7 @@ test('sibling discovery failure prevents agent execution', async (t) => {
 });
 
 test('a resumed execution detached at the recorded SHA is held before recovery', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   const seeded = await crashBeforeCommit(f);
   const head = sh(f.worktree, 'rev-parse', 'HEAD');
   sh(f.worktree, 'checkout', '-q', '--detach', head);
@@ -219,7 +219,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
 });
 
 test('a resumed execution stopped mid-rebase is held without changing the rebase', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'red', 3), point: 'after-completion' }) });
   const rebase = spawnSync('git', ['rebase', '--exec', 'exit 1', 'main'], { cwd: f.worktree, encoding: 'utf8' });
   assert.equal(rebase.status, 1, rebase.stderr);
@@ -240,10 +240,10 @@ test('a resumed execution stopped mid-rebase is held without changing the rebase
 });
 
 test('an unexpected branch query failure faults before recovery', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   const seeded = await crashBeforeCommit(f);
   const before = await integrity.snapshot(f.worktree);
-  f.options.git = { ...gitModule, currentBranch: async () => { throw new Error('fatal: cannot read HEAD'); } };
+  f.options.git = { ...f.options.git, currentBranch: async () => { throw new Error('fatal: cannot read HEAD'); } };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
@@ -260,7 +260,7 @@ test('a fault before the first visit still records its action events', async (t)
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
     configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(rec);
-  f.options.git = { ...gitModule, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
+  f.options.git = { ...f.options.git, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1);

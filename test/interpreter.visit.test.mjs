@@ -18,7 +18,7 @@ test('a persona file name is read from the shipped personas directory', async (t
 });
 
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
-  const g = await firstVisit(t);
+  const g = await firstVisit(t, { git: 'real' });
   const all = g.rec.log.filter((e) => e.step === 'intent');
   assert.ok(all.length > 0);
   for (const i of all) assert.deepEqual(steps(g.rec, i.marker), ['intent', 'evidence', 'complete'], `${i.action} ${i.marker}`);
@@ -62,7 +62,7 @@ test('every side-effect action leaves intent, evidence and completion with the f
 });
 
 test('commits match the recorded intent tree', async (t) => {
-  const g = await firstVisit(t);
+  const g = await firstVisit(t, { git: 'real' });
   const commits = intents(g.rec, 'commit');
   assert.equal(commits.length, 2);
   for (const c of commits) {
@@ -92,7 +92,7 @@ test('activity brackets every launched process', async (t) => {
 });
 
 test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const vertex = g.flow.ticket.vertices.implementer;
   const run = g.harness.run;
   const seen = {};
@@ -262,7 +262,7 @@ test('an assume-unchanged edit before red is held too, so a failed red cannot re
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, git: 'real' });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -355,7 +355,7 @@ async function redGate(t, { tests, run }) {
     files: { 'test/fail.test.mjs': "import assert from 'node:assert';\nassert.fail('rejects bad input');\n" },
     response: { ...golden.redResponse, tests },
   };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, git: 'real' });
   g.options.exec = {
     runShell: async (command, opts) => existsSync(join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs'))
       ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }

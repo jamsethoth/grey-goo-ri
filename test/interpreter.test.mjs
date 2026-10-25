@@ -114,7 +114,7 @@ test('each public field is redacted once and sent exactly as its intent saved it
     qa: { setup: 'TOKEN setup', steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
       edgeCases: ['TOKEN edge'], automated: ['TOKEN automated'], manual: ['TOKEN manual'] },
   });
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, git: 'real' });
   g.options.ticket.title = 'Add TOKEN';
   g.options.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
@@ -235,7 +235,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
 });
 
 test('runExecution uses an injected integrity and Test Immutability', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const calls = [];
   const spy = (name, fn) => async (...args) => {
     calls.push(name);

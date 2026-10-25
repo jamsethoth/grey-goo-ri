@@ -13,8 +13,8 @@ import {
 const ok = (files) => ({ files, response: golden.greenResponse });
 
 // The suite passes only once lib/add.mjs really adds, so a wrong green fails the Green Check.
-async function greenSetup(t, responses, integrity) {
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity });
+async function greenSetup(t, responses, integrity, git) {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
   g.options.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
@@ -37,7 +37,7 @@ function stopReason(g, { phase, ordinal, outcome, rule, comment }) {
 }
 
 test('golden: an invalid structured response is retried once with a nudge then stops', async (t) => {
-  const g = await golden.setup(t, { responses: {
+  const g = await golden.setup(t, { git: 'real', responses: {
     ...structuredClone(golden.firstVisitResponses),
     'implementer/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
     'implementer/1/green/2': { files: {}, response: { ...golden.greenResponse, claim: 'ok blocked' } },
@@ -442,7 +442,7 @@ test('blocked after test-fix stops', async (t) => {
 });
 
 test('requireTestPass false is recorded on every event and does not block advance', async (t) => {
-  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) }, 'fake', 'real');
   g.flow.ticket.vertices.implementer.options = { requireTestPass: false };
   const { outcome } = await interpreter.runExecution(g.options);
 

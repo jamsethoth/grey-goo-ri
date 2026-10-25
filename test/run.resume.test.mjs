@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import * as gitModule from '../lib/git.mjs';
 import * as marker from '../lib/marker.mjs';
 import { canonical, pathKey } from '../lib/paths.mjs';
 import * as record from '../lib/record.mjs';
@@ -32,7 +31,7 @@ test('a flow mixing harnesses runs each vertex on its own harness', async (t) =>
 });
 
 test('an in-progress ticket with a recoverable record is resumed', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   // The push of the green commit was intended but never made.
   const rec = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
   assert.equal(rec.state, 'active');
@@ -67,7 +66,7 @@ test('an in-progress ticket without a record is skipped', async (t) => {
 
 test('a finished record with open intents is not resumed', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
     configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
   rec.visits = { implementer: 1 };
@@ -110,7 +109,7 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
 // A corrupt row stands for a Ticket whose worktree and in-progress label an earlier Run left behind.
 async function corruptTicket(t) {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{ "schemaVersion": 1, "log": [');
   return f;
@@ -147,7 +146,7 @@ test('a corrupt-record hold whose comment failed is posted once on the next run'
 
 test('a corrupt record found at admission is held through reconcile', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const corrupt = '{ "schemaVersion": 1, "log": [';
   record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, corrupt);
@@ -160,7 +159,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
     `a comment names the record: ${JSON.stringify(f.comments())}`);
   assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal(pathKey((await gitModule.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir));
+  assert.equal(pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir));
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.ok(f.comments().every((b) => !b.includes(f.root)), 'no comment exposes a local path');
   // From the worktree git names the common dir canonically, so the log may carry either spelling.
@@ -202,7 +201,7 @@ for (const kind of ['Check', 'long Check', 'fault']) {
 
 test('local paths in captured Check output and agent text do not reach PR bodies', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  const f = fixture(t, { responses });
+  const f = fixture(t, { git: 'real', responses });
   responses['implementer/1/green/1'].response.summary = `Updated ${f.worktree}/lib/add.mjs`;
   responses['implementer/1/red/1'].response.summary = `Tested ${f.worktree}/test/add.test.mjs`;
   f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
@@ -222,7 +221,7 @@ for (const kind of ['done', 'fault']) {
   test(`encoded and JSON-escaped local paths reach no ${kind} publication`, async (t) => {
     const responses = structuredClone(golden.firstVisitResponses);
     const issue = {};
-    const f = fixture(t, { responses, issue, rootName: 'gg run é-', branch: 'ticket/15-add-two-numbers-local' });
+    const f = fixture(t, { git: 'real', responses, issue, rootName: 'gg run é-', branch: 'ticket/15-add-two-numbers-local' });
     const forms = (path) => `${pathToFileURL(path).href} ${JSON.stringify(path)}`;
     issue.title = `Add two numbers ${pathToFileURL(f.worktree).href}`;
     responses['implementer/1/red/1'].response.summary = `Tested ${forms(join(f.worktree, 'test', 'add.test.mjs'))}`;
@@ -250,7 +249,7 @@ for (const kind of ['done', 'fault']) {
 test('Ticket branch names use the public title before slugifying', async (t) => {
   const issue = {};
   const branch = 'ticket/15-add-two-numbers-local';
-  const f = fixture(t, { issue, branch });
+  const f = fixture(t, { git: 'real', issue, branch });
   issue.title = `Add two numbers ${f.worktree}`;
   const results = await run.runTarget(f.options);
   assert.equal(sh(join(f.root, 'origin.git'), 'for-each-ref', '--format=%(refname:short)', 'refs/heads/ticket/'), branch);

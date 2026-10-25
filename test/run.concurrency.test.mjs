@@ -49,7 +49,7 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
 });
 
 test('an integrity snapshot waits for the repo lock', async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, { git: 'real', git: 'real' });
   const holder = await holdLock(t, f.commonDir, 'repo');
   let settled = false;
   const pending = integrity.snapshot(f.mainRoot).finally(() => { settled = true; });
@@ -62,7 +62,7 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
 // A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
 // wait longer, so contention does not become a fault.
 test('snapshot and orchestrator writes wait beyond the default lock timeout', { timeout: 180_000 }, async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, { git: 'real', git: 'real' });
   // The holder outlasts the test and is released only after the default waiter times out, however slow the setup.
   const holder = await holdLock(t, f.commonDir, 'repo', 180_000);
   const lockDir = join(f.commonDir, 'gg', 'locks');
@@ -105,13 +105,14 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
   f.options.harnesses.fake = { ...f.harness, run: async (c) => { holder ??= await holdLock(t, f.commonDir, 'repo'); return call(c); } };
   // The snapshot after the call waits on the holder too, so each commit-path write must itself run inside the repo lock.
   const unlocked = [];
-  f.options.git = { ...gitModule, ...Object.fromEntries(['stageAll', 'writeTree', 'commitStaged', 'push', 'remoteSha'].map((v) => [v, async (...args) => {
+  const git = f.options.git;
+  f.options.git = { ...git, ...Object.fromEntries(['stageAll', 'writeTree', 'commitStaged', 'push', 'remoteSha'].map((v) => [v, async (...args) => {
     const probe = await locks.tryAcquire(f.commonDir, 'repo');
     if (probe) {
       unlocked.push(v);
       await locks.release(probe);
     }
-    return gitModule[v](...args);
+    return git[v](...args);
   }])) };
   const commits = () => {
     const r = spawnSync('git', ['rev-list', '--count', `main..refs/heads/${BRANCH}`], { cwd: f.mainRoot, encoding: 'utf8' });
@@ -329,7 +330,7 @@ test('a busy worktree is never attributed to another ticket\'s action', { timeou
 });
 
 test('two processes serialise orchestrator git writes on the repo lock', { timeout: 120_000 }, async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, { git: 'real', git: 'real' });
   const log = events.eventLog(f.commonDir, { run: 'parent' });
   log('run_start');
   writeFileSync(join(f.mainRoot, 'parent.txt'), 'parent\n');
@@ -345,7 +346,7 @@ test('two processes serialise orchestrator git writes on the repo lock', { timeo
   const { sha: childSha } = await message();
   // The child holds the repo lock now; the parent's commit is called while it does.
   let started = null;
-  const git = run.lockedGit({ ...gitModule, commitStaged: (...args) => { started = Date.now(); return gitModule.commitStaged(...args); } }, f.commonDir);
+  const git = run.lockedGit({ ...f.options.git, commitStaged: (...args) => { started = Date.now(); return f.options.git.commitStaged(...args); } }, f.commonDir);
   const committing = git.commitStaged(f.mainRoot, 'parent commit');
   const released = message();
   child.send('release');

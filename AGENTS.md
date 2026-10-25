@@ -19,7 +19,11 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   run on stock Node on native Windows. npm dependencies are allowed when they earn their place; prefer node
   built-ins. Never adopt an agentic workflow framework (ADR 0001).
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
-- Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub; use the fake harness and temp repos.
+- Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
+  git (`test/support/fake-git.mjs`); real git in temp repositories only for the `lib/git.mjs` contract suite, tests whose
+  subject is git behaviour (integrity snapshots and violations, rollback of real files, Test Immutability, dirty state,
+  admission's dirty, conflict and branch checks, Reconciliation against git state, the repo lock), and a few end-to-end
+  runs.
 - Codex output schemas are strict: every property required, `additionalProperties: false`.
 - Comments only for the non-obvious why.
 
@@ -51,7 +55,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/harnesses/claude.mjs` | the Claude Code Harness |
 | `lib/harnesses/codex.mjs` | the Codex Harness |
 | `lib/exec.mjs` | process spawn and job-object runner (ported) |
-| `lib/git.mjs` | git verbs and worktrees (ported) |
+| `lib/git.mjs` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.mjs` | canonical local paths and the path key every path comparison uses |
 | `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
 | `lib/render.mjs` | commit messages, PR body, comments, provenance, ticket and epic bodies |
@@ -73,6 +77,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   missing export fails inside the case.
 - A test for a module that does not exist yet uses `await import()` inside the case.
 - Ported test files keep their case names and assertions but rewrite static named imports to namespace imports.
+- A fake's contract suite lives under `test/contract/<boundary>/` and runs its cases against the real module and the fake;
+  `lib/git.mjs`'s is `test/contract/git/`.
 - Fixtures live under `test/fixtures/` as JSON or text.
 - Shared helpers live under `test/support/`; the runner lists them as passing empty files.
 - Spawn `process.execPath` directly, never a shell.

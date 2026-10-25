@@ -69,7 +69,7 @@ for (const [kind, c] of Object.entries(CLASSIFIED)) {
 }
 
 test('a needs-human label overrides a mid-action record', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real', git: 'real' });
   await crashed(g, EFFECTS.commit.at, 'before-effect');
   g.gh.labels.add(NEEDS_HUMAN);
   const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
@@ -104,7 +104,7 @@ test('dirtyState and humanOverride return decisions without finalizing the recor
 });
 
 test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real', git: 'real' });
   golden.sh(g.worktree, 'config', 'core.quotePath', 'true');
   writeFileSync(join(g.worktree, 'café notes.txt'), 'mine\n');
   const { stat } = await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree });
@@ -115,7 +115,7 @@ test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
 // older commit, which a hold only reports.
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of a hold comment resumes its reporting Actions without replaying an older commit`, async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.setup(t, { git: 'real', git: 'real' });
     await crashed(g, EFFECTS.commit.at, 'before-effect');
     golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
     const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
@@ -142,7 +142,7 @@ for (const point of Object.keys(POINTS)) {
 }
 
 test('a hold report never looks up an older open PR-comment intent', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real', git: 'real' });
   await crashed(g, EFFECTS.commit.at, 'before-effect');
   // An earlier review comment on the PR crashed before its completion.
   const older = markerOf(g.rec, 'reviewer', 1, 'review', 4);

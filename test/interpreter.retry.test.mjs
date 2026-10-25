@@ -102,7 +102,7 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.ok(neededHuman(g));
   });
   await t.test('a non-fast-forward push', async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.setup(t, { git: 'real' });
     // origin has the Ticket branch at a commit the worktree's branch does not contain.
     golden.sh(g.mainRoot, 'commit', '-q', '--allow-empty', '-m', 'someone else');
     golden.sh(g.mainRoot, 'push', '-q', 'origin', `HEAD:refs/heads/${golden.BRANCH}`);
