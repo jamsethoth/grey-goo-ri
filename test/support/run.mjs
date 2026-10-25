@@ -116,8 +116,9 @@ export async function seedExecution(f, { git = gitModule, crashAt, exec = f.exec
 export const markerOf = (rec, vertex, visit, phase, ordinal) =>
   marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
 
-// Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock.
-export function holdLock(t, commonDir, name, holdMs = 60_000) {
+// Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock. By
+// default it holds longer than any case, so only the case releases it.
+export function holdLock(t, commonDir, name, holdMs = 600_000) {
   const child = spawn(process.execPath, [contender, commonDir, name, String(holdMs)], { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => child.kill());
   const exited = new Promise((resolve) => child.on('exit', resolve));

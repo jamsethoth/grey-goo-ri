@@ -119,19 +119,27 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
   };
   let settled = false;
   const running = run.runTarget(f.options).finally(() => { settled = true; });
-  // The case timeout bounds this wait: a 10 s bound of its own ran out before the red call on a loaded machine.
-  while (!holder && !settled) await sleep(50);
-  assert.ok(holder, 'the red call ran, so the worktree exists');
-  await sleep(1000);
-  assert.equal(settled, false, 'the run waits while another process holds the repo lock');
-  assert.equal(commits(), 0, 'no commit lands while the repo lock is held');
-  assert.equal(f.harness.calls.length, 1, 'the run is waiting at the red commit');
+  // Ended before the case ends, pass or fail, so it never writes through the next case's fakes.
+  try {
+    // The case timeout bounds this wait, and ends it so the finally below runs: a 10 s bound of its own ran out before
+    // the red call on a loaded machine.
+    while (!holder && !settled) await sleep(50, undefined, { signal: t.signal });
+    assert.ok(holder, 'the red call ran, so the worktree exists');
+    // shortcut: an absence check, so on a loaded machine the run may not yet have reached the lock; it never fails falsely
+    await sleep(1000);
+    assert.equal(settled, false, 'the run waits while another process holds the repo lock');
+    assert.equal(commits(), 0, 'no commit lands while the repo lock is held');
+    assert.equal(f.harness.calls.length, 1, 'the run is waiting at the red commit');
 
-  await holder.release();
-  const results = await running;
-  assert.equal(run.runExitCode(results), 0);
-  assert.ok(commits() >= 2, 'the commits land after release');
-  assert.deepEqual(unlocked, [], 'every commit-path git write ran inside the repo lock');
+    await holder.release();
+    const results = await running;
+    assert.equal(run.runExitCode(results), 0);
+    assert.ok(commits() >= 2, 'the commits land after release');
+    assert.deepEqual(unlocked, [], 'every commit-path git write ran inside the repo lock');
+  } finally {
+    await holder?.release();
+    await running.catch(() => {});
+  }
 });
 
 test('in-progress is set only after the worktree exists', async (t) => {

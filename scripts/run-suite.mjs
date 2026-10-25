@@ -12,9 +12,10 @@ export function suiteCommand(env) {
     const k = key.toUpperCase(); // Windows environment keys are case-insensitive
     return k !== 'NODE_OPTIONS' && k !== 'NODE_PATH' && !k.startsWith('NPM_CONFIG_');
   });
-  // More files at once only queue on Windows process creation: on a 20-core machine 4 ran the suite in 532 s against
-  // 652 s at the default 19 (grey-goo-ri PR #141). Small CI runners keep their default of one fewer than their cores.
-  const concurrency = Math.min(4, Math.max(1, availableParallelism() - 1));
+  // Saturating the machine slows every test: on a 20-core machine the suite took 680 s at 2 files at once, 440 s at 4,
+  // 345 s at 8 and 339 s at 12 (grey-goo-ri issue #143), against 652 s at the default 19 (grey-goo-ri PR #141). Small CI
+  // runners keep their default of one fewer than their cores.
+  const concurrency = Math.min(12, Math.max(1, availableParallelism() - 1));
   return { command: process.execPath, args: ['--test', `--test-concurrency=${concurrency}`], cwd: root, env: Object.fromEntries(kept) };
 }
 

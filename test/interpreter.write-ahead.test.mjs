@@ -10,10 +10,11 @@ import {
   ticketComments, loadTicket, ticketRow, attemptMarker,
 } from './support/interpreter.mjs';
 
-// A bounded wait for state a timer writes: there is no barrier to await on a heartbeat save.
-async function until(check, ms = 5000) {
-  for (const end = Date.now() + ms; !check();) {
-    if (Date.now() > end) assert.fail(`not reached within ${ms} ms`);
+// A wait for state a timer writes: there is no barrier to await on a heartbeat save. A save that never comes fails at
+// the case timeout, which aborts signal and ends the wait, so the case's cleanup runs.
+async function until(check, signal) {
+  while (!check()) {
+    signal.throwIfAborted();
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
@@ -155,7 +156,7 @@ test('attempt numbering continues after resume', async (t) => {
   assert.deepEqual((await loadTicket(g)).retries['implementer/1/red/1'], { timeout: 1 }, 'one retry consumed');
 });
 
-test('the record carries the last heartbeat of a running call', async (t) => {
+test('the record carries the last heartbeat of a running call', { timeout: 120_000 }, async (t) => {
   const red = golden.firstVisitResponses['implementer/1/red/1'];
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
     'implementer/1/red/1': { ...red, hang: true }, 'implementer/1/red/2': red } });
@@ -173,7 +174,7 @@ test('the record carries the last heartbeat of a running call', async (t) => {
     const first = ticketRow(g).heartbeat;
     assert.match(String(first), /^2026-10-15T/, 'the heartbeat is saved with the Attempt intent');
     await g.options.clock.sleep(60_000);
-    await until(() => ticketRow(g).heartbeat !== first);
+    await until(() => ticketRow(g).heartbeat !== first, t.signal);
     assert.ok(Date.parse(ticketRow(g).heartbeat) > Date.parse(first), 'updated while the call runs');
     assert.equal(ticketRow(g).activity.busy, true, 'a heartbeat leaves the activity as it is');
   } finally {
