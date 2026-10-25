@@ -9,19 +9,34 @@ import * as render from '../lib/render.mjs';
 const tmp = mkdtempSync(join(tmpdir(), 'ff-exec-'));
 const script = (name, body) => { const p = join(tmp, name); writeFileSync(p, body); return p; };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-const waitFor = async (fn, ms = 5000) => { const end = Date.now() + ms; while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 50)); return fn(); };
+// Waits for fn() to hold; a case that waits for an event that never comes fails at its own timeout.
+const waitFor = async (fn, ms = Infinity) => { const end = Date.now() + ms; while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 50)); return fn(); };
 
 // Only a restricted sandbox may refuse cleanup; there survivors need only be reported.
 const sandboxed = process.env.FF_TEST_SANDBOXED === '1';
+// Cases that wait for a process event: a broken runShell fails at this bound instead of hanging the file.
+const CASE = { timeout: 120_000 };
 
 // Parent spawns a detached grandchild through an intermediate that lingers ~2 s (so the watcher sees the chain) and
-// then exits, leaving the grandchild orphaned while the parent outlives the timeout.
-function orphanScripts(name) {
+// then exits, leaving the grandchild orphaned while the parent outlives the timeout. delayMs holds the spawn back.
+function orphanScripts(name, { delayMs = 0 } = {}) {
   const pidFile = join(tmp, `${name}.pid`);
   const grandchild = script(`${name}-gc.mjs`, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
-  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(grandchild)}], { detached: true, stdio: 'ignore' }).unref(); setTimeout(() => {}, 2000);`);
+  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; setTimeout(() => spawn(process.execPath, [${JSON.stringify(grandchild)}], { detached: true, stdio: 'ignore' }).unref(), ${delayMs}); setTimeout(() => {}, ${delayMs} + 2000);`);
   const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(middle)}], { stdio: 'ignore' }); setTimeout(() => {}, 60000);`);
   return { pidFile, cmd: `"${process.execPath}" "${top}"` };
+}
+
+// Runs commandLine with its timeout clock held until ready() holds, so the processes a case checks exist before the
+// timeout fires however slowly they start. ready is false when the command ended first.
+async function timeOutWhen(commandLine, options, ready) {
+  const clock = new AbortController();
+  let settled = false;
+  const running = exec.runShell(commandLine, { ...options, signal: clock.signal }).finally(() => { settled = true; });
+  while (!settled && !ready()) await new Promise((r) => setTimeout(r, 50));
+  const wasReady = ready();
+  clock.abort();
+  return { res: await running, ready: wasReady };
 }
 
 test('run: child that exits early while 5 MB of stdin is written resolves/rejects with its exit code', async () => {
@@ -96,6 +111,23 @@ test('runShell timeout kills descendants by PID, including one whose parent alre
     } else {
       assert.deepEqual(res.survivors, []);
       assert.ok(dead, 'descendant still running');
+    }
+  } finally {
+    try { process.kill(pid); } catch {}
+  }
+});
+
+test('runShell timeout kills a descendant that starts later than the timeout would have fired', CASE, async () => {
+  const { pidFile, cmd } = orphanScripts('orphan-late', { delayMs: 4000 });
+  const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 3500 }, () => existsSync(pidFile));
+  assert.ok(ready, 'grandchild never started');
+  assert.equal(res.timedOut, true);
+  const pid = Number(readFileSync(pidFile, 'utf8'));
+  try {
+    // cleanup may be refused in a sandbox, but a descendant that is still running must be named with an error
+    if (!(sandboxed && res.survivors.some((s) => s.pid === pid && s.error))) {
+      if (!sandboxed) assert.deepEqual(res.survivors, []);
+      await waitFor(() => !alive(pid)); // a descendant that is never killed fails at the case timeout
     }
   } finally {
     try { process.kill(pid); } catch {}
@@ -238,6 +270,24 @@ test('runShell: when the job cannot be set up and taskkill is refused, the child
   } finally {
     for (const s of res.survivors) try { process.kill(s.pid); } catch {}
     if (pid) try { process.kill(pid); } catch {}
+  }
+});
+
+test('runShell: when the job cannot be set up and taskkill is refused, a child that starts later than the timeout would have fired is named', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
+  const pidFile = join(tmp, 'nojob-late.pid');
+  const child = script('nojob-late-child.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
+  const top = script('nojob-late-top.mjs', `import { spawn } from 'node:child_process'; setTimeout(() => spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }), 4500); setTimeout(() => {}, 60000);`);
+  const { res } = await withEnv({ FF_TEST_NOJOB: '1' }, () => timeOutWhen(`"${process.execPath}" "${top}"`, { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] }, () => existsSync(pidFile)));
+  // taskkill is refused, so the top process lives on and starts the child even when the timeout came first
+  await waitFor(() => existsSync(pidFile));
+  const pid = Number(readFileSync(pidFile, 'utf8'));
+  try {
+    assert.equal(res.timedOut, true);
+    assert.ok(res.survivors.some((s) => s.pid === pid), `linked child ${pid} missing from ${JSON.stringify(res.survivors)}`);
+    assert.ok(res.cleanupErrors.some((e) => /taskkill/.test(e)), JSON.stringify(res.cleanupErrors));
+  } finally {
+    for (const s of res.survivors) try { process.kill(s.pid); } catch {}
+    try { process.kill(pid); } catch {}
   }
 });
 
