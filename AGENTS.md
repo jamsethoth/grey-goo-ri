@@ -66,6 +66,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 ## Tests
 
+Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`; the conventions below cover files.
+
 - One `test/<module>.test.mjs` per module. A large module may also have area files `test/<module>.<area>.test.mjs`;
   new tests for it still go in `test/<module>.test.mjs`. node runs files in parallel but a file's tests serially, so
   once a file's serial time passes about 3 minutes, move tests out of it to an area file.
