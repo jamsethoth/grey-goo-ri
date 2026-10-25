@@ -47,7 +47,7 @@ test('a resumed execution on another Ticket branch or another branch of its Tick
 test('fresh admission refuses another Ticket\'s branch without changing it', async (t) => {
   // ticket/150-* shares ticket 15's digits, so the prefix must end at the number.
   for (const branch of ['ticket/99-other', 'ticket/150-other', 'detached HEAD']) {
-    const f = fixture(t, { git: 'real', git: 'real' });
+    const f = fixture(t, { git: 'real' });
     await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     if (branch === 'detached HEAD') sh(f.worktree, 'checkout', '-q', '--detach');
     else sh(f.worktree, 'checkout', '-q', '-b', branch);

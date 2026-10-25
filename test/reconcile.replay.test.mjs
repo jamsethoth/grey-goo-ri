@@ -11,7 +11,7 @@ import {
 } from './support/reconcile.mjs';
 
 test('an amended commit with the marker holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real', git: 'real' });
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'after-effect');
   // A human amends the gg commit between the crash and the resume: same marker and parent, different tree.
   writeFileSync(join(g.worktree, 'lib', 'extra.mjs'), 'export const extra = 1;\n');
@@ -37,7 +37,7 @@ test('an amended commit with the marker holds the ticket', async (t) => {
 });
 
 test('a commit amended after its completion was saved holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real', git: 'real' });
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'after-completion');
   // The commit is complete in the record, so no open intent points at it; the amend keeps its marker.
   writeFileSync(join(g.worktree, 'lib', 'extra.mjs'), 'export const extra = 1;\n');
@@ -57,7 +57,7 @@ test('a commit amended after its completion was saved holds the ticket', async (
 });
 
 test('a crash before the commit replays the intended tree, not a human edit', async (t) => {
-  const g = await golden.setup(t, { git: 'real', git: 'real' });
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
   writeFileSync(join(g.worktree, 'notes.txt'), 'a human note\n');
 
@@ -73,7 +73,7 @@ test('a crash before the commit replays the intended tree, not a human edit', as
 });
 
 test('a branch moved before the commit replay holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real', git: 'real' });
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
   golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
   const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
@@ -89,7 +89,7 @@ test('a branch moved before the commit replay holds the ticket', async (t) => {
 });
 
 test('a branch moved before the push replay holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real', git: 'real' });
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.push.at, 'before-effect');
   golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
 

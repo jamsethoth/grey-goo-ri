@@ -49,7 +49,7 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
 });
 
 test('an integrity snapshot waits for the repo lock', async (t) => {
-  const f = fixture(t, { git: 'real', git: 'real' });
+  const f = fixture(t, { git: 'real' });
   const holder = await holdLock(t, f.commonDir, 'repo');
   let settled = false;
   const pending = integrity.snapshot(f.mainRoot).finally(() => { settled = true; });
@@ -62,7 +62,7 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
 // A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
 // wait longer, so contention does not become a fault.
 test('snapshot and orchestrator writes wait beyond the default lock timeout', { timeout: 180_000 }, async (t) => {
-  const f = fixture(t, { git: 'real', git: 'real' });
+  const f = fixture(t, { git: 'real' });
   // The holder outlasts the test and is released only after the default waiter times out, however slow the setup.
   const holder = await holdLock(t, f.commonDir, 'repo', 180_000);
   const lockDir = join(f.commonDir, 'gg', 'locks');
@@ -330,7 +330,7 @@ test('a busy worktree is never attributed to another ticket\'s action', { timeou
 });
 
 test('two processes serialise orchestrator git writes on the repo lock', { timeout: 120_000 }, async (t) => {
-  const f = fixture(t, { git: 'real', git: 'real' });
+  const f = fixture(t, { git: 'real' });
   const log = events.eventLog(f.commonDir, { run: 'parent' });
   log('run_start');
   writeFileSync(join(f.mainRoot, 'parent.txt'), 'parent\n');

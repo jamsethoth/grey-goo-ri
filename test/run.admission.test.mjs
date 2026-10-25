@@ -163,7 +163,7 @@ function assertConflictHeld(f, results, before) {
 }
 
 test('a merge conflict at ticket start is held with the diff stat', async (t) => {
-  const f = fixture(t, { git: 'real', git: 'real' });
+  const f = fixture(t, { git: 'real' });
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const before = conflict(f.worktree);
 
