@@ -14,7 +14,8 @@ only an execpolicy rule can let a command run outside the sandbox.
 We commit one rule, `.codex/rules/test.rules`, that allows exactly `node scripts/run-suite.mjs`. The launcher spawns
 `process.execPath` with `['--test']` in the repo root, resolved from its own location. It never forwards its
 arguments and drops `NODE_OPTIONS`, `NODE_PATH` and every `npm_config_*` key, so the allowed prefix cannot be steered
-into loading other code. Every other command, `npm test` included, stays sandboxed.
+into loading other code. Every other command, `npm test` included, stays sandboxed. Superseded in part by ADR 0016: the
+launcher accepts a stage and boundary names from a closed set, and still forwards nothing.
 
 ## Considered options
 
