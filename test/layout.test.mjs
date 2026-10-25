@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const modules = [
-  'lib/opts.mjs', 'lib/config.mjs', 'lib/flow.mjs', 'lib/run.mjs', 'lib/interpreter.mjs',
+  'lib/opts.mjs', 'lib/config.mjs', 'lib/flow.mjs', 'lib/run.mjs', 'lib/interpreter.mjs', 'lib/effects.mjs', 'lib/terminal.mjs',
   'lib/procedures.mjs', 'lib/briefs.mjs', 'lib/outcome.mjs', 'lib/checks.mjs', 'lib/integrity.mjs',
   'lib/record.mjs', 'lib/marker.mjs', 'lib/reconcile.mjs', 'lib/events.mjs', 'lib/labels.mjs',
   'lib/approval.mjs', 'lib/locks.mjs', 'lib/harnesses/contract.mjs', 'lib/harnesses/claude.mjs',

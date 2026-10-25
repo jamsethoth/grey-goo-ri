@@ -7,7 +7,9 @@ import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
 import * as render from '../lib/render.mjs';
 import * as golden from './support/golden.mjs';
-import { TDD_PHASES, FIRST_VISIT, firstVisit, intents, actionMarker } from './support/interpreter.mjs';
+import {
+  TDD_PHASES, FIRST_VISIT, firstVisit, intents, actionMarker, loadTicket, ticketComments, contendRepoLock, lockedSetup,
+} from './support/interpreter.mjs';
 
 test('golden: first-visit pass runs the tdd actions in order to done', async (t) => {
   const g = await firstVisit(t);
@@ -171,3 +173,61 @@ for (const [kind, [directory, output]] of Object.entries(longLines)) {
     for (const leak of ['alice', 'lice/']) assert.ok(!sent.includes(leak), `${kind}: ${leak} published`);
   });
 }
+
+test('a failed busy or idle save saves nothing more of that record', async (t) => {
+  // The first flip each way: red's clean check is the first bracket, busy at generation 1 and idle at 2. A save that
+  // carries a Terminal passes, so a fault reported after the failure would land.
+  for (const [name, from, to, generation] of [['busy', 0, 1, 1], ['idle', 1, 0, 2]]) {
+    await t.test(name, async (t) => {
+      const g = await golden.setup(t);
+      record.openDb(g.commonDir).exec(`CREATE TRIGGER fail_flip BEFORE UPDATE ON records
+        WHEN json_extract(OLD.json, '$.activity.busy') = ${from} AND json_extract(NEW.json, '$.activity.busy') = ${to}
+          AND json_extract(NEW.json, '$.activity.generation') = ${generation} AND json_extract(NEW.json, '$.terminalStop') IS NULL
+        BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+      const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
+
+      assert.equal(err?.name, 'RecordSaveError', String(err));
+      const saved = await loadTicket(g);
+      assert.equal(saved.state, 'active', 'no fault is saved');
+      assert.equal(saved.terminalStop ?? null, null, 'nor its Terminal');
+      assert.deepEqual(saved.activity, { busy: !!from, generation: generation - 1 }, 'the failed flip is not saved by a cleanup');
+      assert.equal(g.gh.comments.length, 0, 'no fault report');
+      assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
+    });
+  }
+});
+
+// A gh call that changes GitHub: a comment, a label, a label definition or a pull request.
+const ghWrite = (args) => golden.isCommentPost(args) || (args[0] === 'issue' && args[1] === 'edit')
+  || (args[0] === 'label' && args[1] === 'create') || (args[0] === 'pr' && ['create', 'edit', 'ready'].includes(args[1]));
+
+test('a run stop during a repo-lock wait skips the queued effect and only needs-human reporting follows', async (t) => {
+  const g = await golden.setup(t);
+  const runState = { stop: null, remoteNotBefore: 0 };
+  let before;
+  let written;
+  // Another Ticket stops the run while this one's push waits for the repo lock.
+  const lock = contendRepoLock(t, g.commonDir, () => {
+    runState.stop = { failureClass: 'auth', ticket: 21 };
+    before = g.gh.calls.length;
+    written = { ...counts };
+  });
+  const counts = lockedSetup(g, (verb, n) => { if (verb === 'commitStaged' && n === 2) lock.arm(); });
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(lock.state(), 'released', 'the push waited for the lock');
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.equal(counts.push ?? 0, 0, 'nothing was pushed');
+  assert.deepEqual(counts, written, 'no git write follows the stop');
+  assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'needs-human');
+  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
+    + 'Execution stopped before green 4.');
+  const writes = g.gh.calls.slice(before).filter((c) => ghWrite(c.args));
+  assert.equal(writes.length, 2, JSON.stringify(writes.map((c) => c.args)));
+  assert.ok(golden.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');
+  assert.ok(ticketComments(g).at(-1).body.startsWith('### gg: needs-human'));
+  assert.ok(writes[1].args.join(' ').includes('--add-label gg:state:needs-human'), 'the needs-human label');
+});
