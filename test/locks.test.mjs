@@ -60,7 +60,15 @@ test('tryAcquire returns null while another process holds the lock', async (t) =
 });
 
 // Windows unlocks a terminated process's locks after a delay that depends on system resources, so these wait for the
-// lock itself; a lock that is never freed fails at the case timeout.
+// lock itself. A lock that is never freed fails at the case timeout, which aborts t.signal and ends the wait.
+async function acquireWhenFreed(t, commonDir) {
+  for (;;) {
+    const handle = await locks.tryAcquire(commonDir, 'repo');
+    if (handle) return handle;
+    await sleep(20, undefined, { signal: t.signal });
+  }
+}
+
 test('a holder that exits without release frees the lock', { timeout: 120_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
@@ -70,7 +78,7 @@ process.stdout.write(JSON.stringify({ handle }), () => process.exit(0));`;
   assert.ok(report.handle, 'the child held the lock');
   assert.equal(report.handle.path, join(commonDir, 'gg', 'locks', 'repo.db'));
   await exited;
-  const handle = await locks.acquire(commonDir, 'repo', { timeoutMs: Infinity, pollMs: 20 });
+  const handle = await acquireWhenFreed(t, commonDir);
   assert.ok(handle);
   await locks.release(handle);
 });
@@ -82,7 +90,7 @@ test('a killed holder frees the lock', { timeout: 120_000 }, async (t) => {
   assert.equal(report.handle.path, join(commonDir, 'gg', 'locks', 'repo.db'));
   child.kill();
   await exited;
-  const handle = await locks.acquire(commonDir, 'repo', { timeoutMs: Infinity, pollMs: 20 });
+  const handle = await acquireWhenFreed(t, commonDir);
   assert.ok(handle);
   await locks.release(handle);
 });

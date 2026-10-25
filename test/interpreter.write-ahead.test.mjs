@@ -11,9 +11,12 @@ import {
 } from './support/interpreter.mjs';
 
 // A wait for state a timer writes: there is no barrier to await on a heartbeat save. A save that never comes fails at
-// the case timeout.
-async function until(check) {
-  while (!check()) await new Promise((resolve) => setTimeout(resolve, 5));
+// the case timeout, which aborts signal and ends the wait, so the case's cleanup runs.
+async function until(check, signal) {
+  while (!check()) {
+    signal.throwIfAborted();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 test('a completed call is not rerun after a crash before the next action', async (t) => {
@@ -171,7 +174,7 @@ test('the record carries the last heartbeat of a running call', { timeout: 120_0
     const first = ticketRow(g).heartbeat;
     assert.match(String(first), /^2026-10-15T/, 'the heartbeat is saved with the Attempt intent');
     await g.options.clock.sleep(60_000);
-    await until(() => ticketRow(g).heartbeat !== first);
+    await until(() => ticketRow(g).heartbeat !== first, t.signal);
     assert.ok(Date.parse(ticketRow(g).heartbeat) > Date.parse(first), 'updated while the call runs');
     assert.equal(ticketRow(g).activity.busy, true, 'a heartbeat leaves the activity as it is');
   } finally {

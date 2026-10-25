@@ -380,15 +380,15 @@ test('an opener of a new database proceeds when the process holding the open loc
   assert.equal(journalMode(commonDir), 'wal');
 });
 
-// The opener times its own open, so its start-up is not counted; under 60 s rules out the database's busy timeout.
+// The opener names the statement that gave up: the open lock's BEGIN EXCLUSIVE, which waits under its 5 s busy timeout,
+// not a statement on gg.db, which would wait 60 s. How long it took depends on the machine's load, so it is not checked.
 test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released', CASE, async (t) => {
   const commonDir = await tempCommonDir(t);
   const openLock = await locks.tryAcquire(commonDir, 'open');
   const { code, out, err } = await openInChild(commonDir).exit.finally(() => locks.release(openLock));
   assert.notEqual(code, 0);
   assert.match(err, /errcode: 5/);
-  const ms = Number(out.match(/opened in (\d+) ms/)?.[1]);
-  assert.ok(ms >= 5000 && ms < 60000, `gave up after ${ms} ms`);
+  assert.match(out, /^failed: BEGIN EXCLUSIVE$/m, `the open lock's wait gave up: ${out}`);
 });
 
 test('an opener of an existing WAL database does not wait for the open lock', async (t) => {

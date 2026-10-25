@@ -52,6 +52,13 @@ public static class FFJob {
 
   static void Note(string s) { Console.Error.Write("\n\u0001FFJOB " + s + "\n"); Console.Error.Flush(); }
 
+  // The last thing the helper writes, on both streams: exec.mjs has every note, and all of the command's output written
+  // before it finished, once it has read this from each, however late a loaded machine delivers them.
+  public static void Done() {
+    Console.Out.Write("\n\u0001FFJOB done\n"); Console.Out.Flush();
+    Console.Error.Write("\n\u0001FFJOB done\n"); Console.Error.Flush();
+  }
+
   // PIDs in the job, or null (with err set) when the query fails: an unknown membership must not read as an empty job.
   // Grows the buffer on ERROR_MORE_DATA. FF_TEST_BUF (entries) and FF_TEST_QUERYFAIL are test seams.
   static List<int> Members(IntPtr job, out int err) {
@@ -140,4 +147,6 @@ public static class FFJob {
   }
 }
 '@
-exit [FFJob]::Run($env:FF_CMD, $(if ($env:FF_CWD) { $env:FF_CWD }), $env:FF_DENY -eq '1')
+$code = [FFJob]::Run($env:FF_CMD, $(if ($env:FF_CWD) { $env:FF_CWD }), $env:FF_DENY -eq '1')
+[FFJob]::Done()
+exit $code
