@@ -168,7 +168,7 @@ test('done removes in-progress and adds ready-for-qa', async (t) => {
 test('golden: a failed red retries still-green once then stops at needs-human with history', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, integrity: 'real' });
   // The new test passes before any implementation exists, both times.
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);

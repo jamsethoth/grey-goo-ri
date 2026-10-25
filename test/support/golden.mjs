@@ -13,7 +13,7 @@ import * as events from '../../lib/events.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as labelModule from '../../lib/labels.mjs';
 import { fakeHarness } from './fake-harness.mjs';
-import { fakeIntegrity } from './fake-integrity.mjs';
+import * as fakeIntegrityModule from './fake-integrity.mjs';
 
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -108,7 +108,7 @@ export function seedRepos(dir) {
 }
 
 // The fake integrity, or null for the real one, and the options that inject it into runExecution or gg run.
-export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrity({ head }));
+export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head }));
 export const injected = (fake) => (fake ? { integrity: fake.integrity, testImmutability: fake.testImmutability } : {});
 
 // Integrity is the fake unless `integrity` is 'real', for a test whose subject is git behaviour.

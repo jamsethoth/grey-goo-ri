@@ -108,6 +108,7 @@ export async function seedExecution(f, { git = gitModule, crashAt, exec = f.exec
     flow, record: rec, harness: f.harness, gh: github, git, exec, events: events.eventLog(f.commonDir), log: () => {}, cwd: f.mainRoot,
     commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock: f.clock, crashAt: crashAt?.(rec),
+    integrity: f.options.integrity, testImmutability: f.options.testImmutability,
   }), (err) => err instanceof interpreter.CrashError);
   return record.load(f.commonDir, 'ticket', TICKET);
 }

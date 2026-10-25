@@ -56,7 +56,7 @@ test('changes made after an interrupted reset are held, not discarded', async (t
 
 test('an ignored test added after an interrupted reset is held, not deleted', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   await seedExecution(f, { git, exec });
@@ -74,7 +74,7 @@ test('an ignored test added after an interrupted reset is held, not deleted', as
 
 test('a human change staged after an interrupted reset is held, not discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   await seedExecution(f, { git, exec });
@@ -95,7 +95,7 @@ test('a human change staged after an interrupted reset is held, not discarded', 
 
 test('an interrupted reset whose intent predates the index fingerprint is held', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   const seeded = await seedExecution(f, { git, exec });
