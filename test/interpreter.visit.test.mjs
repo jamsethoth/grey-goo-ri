@@ -78,7 +78,7 @@ test('commits match the recorded intent tree', async (t) => {
 });
 
 test('activity brackets every launched process', async (t) => {
-  const g = await firstVisit(t);
+  const g = await firstVisit(t, { integrity: 'real' });
   const kinds = new Set(g.activity.map((a) => a.what.split(/[ .]/)[0]));
   for (const k of ['harness', 'test', 'git', 'gh']) assert.ok(kinds.has(k), `${k} calls observed`);
   for (const a of g.activity) assert.equal(a.busy, true, `${a.what} ran while the worktree was busy`);
@@ -139,7 +139,7 @@ test('the red commit records a non-ASCII test path unquoted', async (t) => {
 test('a green call that changes the committed test is an integrity violation', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/green/1'].files['test/add.test.mjs'] = "import { add } from '../lib/add.mjs';\n// weakened\n";
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, integrity: 'real' });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'needs-human');
   const greenCheck = g.readEvents().find((e) => e.type === 'action' && e.phase === 'green' && e.ordinal === 2);
@@ -168,7 +168,7 @@ test('done removes in-progress and adds ready-for-qa', async (t) => {
 test('golden: a failed red retries still-green once then stops at needs-human with history', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, integrity: 'real' });
   // The new test passes before any implementation exists, both times.
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
@@ -212,7 +212,7 @@ test('a failed red rollback removes an ignored test file the red call added', as
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/red/1'].files['test/extra.test.mjs'] = 'extra';
   responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, integrity: 'real' });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/extra.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -223,7 +223,7 @@ test('a failed red rollback removes an ignored test file the red call added', as
 });
 
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
   writeFileSync(join(g.worktree, tracked), 'a human edit\n');
   writeFileSync(join(g.worktree, 'notes.txt'), 'untracked human work\n');
@@ -246,7 +246,7 @@ test('uncommitted changes before red are held at needs-human and nothing is dele
 test('an assume-unchanged edit before red is held too, so a failed red cannot reset it away', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, integrity: 'real' });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
   golden.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);

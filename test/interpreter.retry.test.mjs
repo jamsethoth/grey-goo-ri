@@ -251,7 +251,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
 
 test('a git write queued behind another holder of the repo lock checks the human override first', async (t) => {
   await t.test('a queued push', async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.setup(t, { integrity: 'real' });
     const lock = contendRepoLock(t, g.commonDir, () => { g.gh.labels.add('gg:state:needs-human'); });
     // The green commit's write is the last before the push, whose lock attempt then waits.
     const counts = lockedSetup(g, (verb, n) => { if (verb === 'commitStaged' && n === 2) lock.arm(); });
@@ -264,7 +264,7 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal((await loadTicket(g)).state, 'abandoned');
   });
   await t.test('a queued push whose commit origin already has', async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.setup(t, { integrity: 'real' });
     const lock = contendRepoLock(t, g.commonDir, () => golden.sh(g.worktree, 'push', '-q', 'origin', `HEAD:refs/heads/${golden.BRANCH}`));
     const counts = lockedSetup(g, (verb, n) => { if (verb === 'commitStaged' && n === 2) lock.arm(); });
     const result = await interpreter.runExecution(g.options);
@@ -275,7 +275,7 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'));
   });
   await t.test('a queued commit', async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.setup(t, { integrity: 'real' });
     const lock = contendRepoLock(t, g.commonDir, () => { g.gh.labels.add('gg:state:needs-human'); });
     // The green commit's tree is written; its commit is the next locked write.
     const counts = lockedSetup(g, (verb, n) => { if (verb === 'writeTree' && n === 2) lock.arm(); });

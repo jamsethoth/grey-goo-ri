@@ -25,7 +25,7 @@ const RESTORE_CRASHES = {
 };
 
 async function crashedRestore(t, crash) {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   for (const [p, text] of Object.entries(RESTORED)) {
     mkdirSync(join(g.worktree, p, '..'), { recursive: true });
     writeFileSync(join(g.worktree, p), text);

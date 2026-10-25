@@ -18,8 +18,8 @@ export const FIRST_VISIT = [
   ['red', 1], ['red', 2], ['red', 3], ['green', 1], ['green', 2], ['green', 3], ['green', 4], ['green', 5],
 ].map(([phase, ordinal]) => ({ phase, ordinal, attempt: 1, outcome: 'ok' }));
 
-export async function firstVisit(t) {
-  const g = await golden.setup(t);
+export async function firstVisit(t, opts) {
+  const g = await golden.setup(t, opts);
   g.result = await interpreter.runExecution(g.options);
   g.events = g.readEvents();
   return g;
@@ -79,8 +79,8 @@ export async function reviewSetup(t, responses, opts) {
   return g;
 }
 
-export async function reviewFlow(t, responses, { exec } = {}) {
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses } });
+export async function reviewFlow(t, responses, { exec, integrity } = {}) {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity });
   const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
   writeFileSync(reviewerPersona, REVIEWER_PERSONA);
   const implementer = g.flow.ticket.vertices.implementer;

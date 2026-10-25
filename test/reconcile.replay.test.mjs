@@ -128,12 +128,14 @@ for (const point of Object.keys(POINTS)) {
 }
 
 // The red call writes a Protected File, an Integrity Violation: the worktree is rolled back and the ticket goes to needs-human.
-async function violating(t) {
-  const g = await golden.setup(t);
+// On the fake integrity the write is only scripted, for a test whose subject is what follows the violation.
+async function violating(t, integrity = 'real') {
+  const g = await golden.setup(t, { integrity });
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
-    if (call.phase === 'red') writeFileSync(join(g.worktree, 'CLAUDE.md'), 'an agent edit\n');
+    if (call.phase === 'red' && g.fake) g.fake.write(g.worktree, 'CLAUDE.md');
+    else if (call.phase === 'red') writeFileSync(join(g.worktree, 'CLAUDE.md'), 'an agent edit\n');
     return out;
   };
   return g;
@@ -160,7 +162,7 @@ for (const point of ['before-effect', 'after-effect', 'after-completion']) {
 
 for (const point of ['after-effect', 'after-completion']) {
   test(`a crash ${point} of gg's own needs-human label finishes the Terminal`, async (t) => {
-    const g = await violating(t);
+    const g = await violating(t, 'fake');
     await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
     assert.ok(g.gh.labels.has(NEEDS_HUMAN), 'gg applied the label before the crash');
 
@@ -176,7 +178,7 @@ for (const point of ['after-effect', 'after-completion']) {
 // GitHub keeps the repository's spelling of a label gg adds, and the prefix's case may change between Runs.
 for (const point of ['after-effect', 'after-completion']) {
   test(`gg-owned mixed-case needs-human completes without abandonment or replay, crash ${point}`, async (t) => {
-    const g = await violating(t);
+    const g = await violating(t, 'fake');
     const spelled = 'Gg:state:needs-human';
     g.gh = golden.fakeGh({ branch: golden.BRANCH, repoLabels: [spelled] });
     g.options.gh.setGh(g.gh.gh);
@@ -196,7 +198,7 @@ for (const point of ['after-effect', 'after-completion']) {
 }
 
 test('label reconciliation requires case-insensitive additions and removals', async (t) => {
-  const g = await violating(t);
+  const g = await violating(t, 'fake');
   const { m } = await crashed(g, ['needs-human', 1, 'needs-human', 2], 'after-effect');
   const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
   const before = edits();
