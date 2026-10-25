@@ -60,6 +60,21 @@ function beforeRunShell(t, onHelper) {
   syncBuiltinESMExports();
 }
 
+// Holds back what a stream emits between hold() and release(), as a pipe read late on a loaded machine delivers it:
+// listeners see the same events in the same order, only later.
+function delayed(stream) {
+  const emit = stream.emit;
+  let held = null;
+  stream.emit = function (event, ...args) {
+    if (held && ['data', 'end', 'close'].includes(event)) { held.push([event, args]); return true; }
+    return emit.call(this, event, ...args);
+  };
+  return {
+    hold: () => { held ??= []; },
+    release: () => { const events = held ?? []; held = null; for (const [event, args] of events) emit.call(stream, event, ...args); },
+  };
+}
+
 test('run: child that exits early while 5 MB of stdin is written resolves/rejects with its exit code', async () => {
   const input = 'x'.repeat(5 * 1024 * 1024);
   const args = ['-e', 'process.exit(3)'];
@@ -254,10 +269,11 @@ test('runShell: when the job cannot be set up, the timeout still takes down the 
 });
 
 // A loaded machine can take seconds over taskkill /T. Stopped partway it may have killed the shell but not the children
-// it can then no longer find, so a slow taskkill must be let finish. The seam gets the pid to kill as its last argument.
+// it can then no longer find, so a slow taskkill must be let finish, however slow: this one takes longer than the 30 s
+// ceiling runShell once had. The seam gets the pid to kill as its last argument.
 test('runShell: when the job cannot be set up, a slow taskkill still takes down the process tree', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
   const { pidFile, cmd } = linkedChild('nojob-slow');
-  const slow = script('slow-taskkill.mjs', `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 2500);`);
+  const slow = script('slow-taskkill.mjs', `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 31000);`);
   const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () => timeOutWhen(cmd, { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] }, () => existsSync(pidFile)));
   const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
   try {
@@ -341,6 +357,54 @@ test('runShell: the timeout counts from when the command starts, not from the jo
 });
 
 // The stalled helper outlives the case, so it is still running when runShell returns unless runShell waited for it.
+// The helper's last notes can reach runShell after its exit event, as on a loaded machine: here they are held back
+// until 10 ms after it. Its answer must still be read, never taken as a clean cleanup.
+test('runShell: a helper answer that arrives after the helper has exited is still read', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const pidFile = join(tmp, 'late-answer.pid');
+  const p = script('late-answer.mjs', writesPid(pidFile));
+  beforeRunShell(t, (helper) => {
+    const late = delayed(helper.stderr);
+    let notes = '';
+    helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) late.hold(); });
+    helper.on('exit', () => setTimeout(late.release, 10));
+  });
+  const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 1 }, () => existsSync(pidFile)));
+  assert.ok(res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)), JSON.stringify(res.cleanupErrors));
+  assert.ok(res.survivors.length > 0 && res.survivors.every((s) => /not verified gone/.test(s.error)), JSON.stringify(res.survivors));
+});
+
+// The helper's notes held back until 400 ms after it exits, past the 300 ms runShell once waited for them: a command
+// that ran must not be taken for one the helper never started, and run a second time.
+test('runShell: a finished command whose notes arrive after the helper has exited runs once', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const runs = join(tmp, 'once.runs');
+  const p = script('once.mjs', `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(runs)}, 'ran\n');`);
+  beforeRunShell(t, (helper) => {
+    const late = delayed(helper.stderr);
+    late.hold();
+    helper.on('exit', () => setTimeout(late.release, 400));
+  });
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, signal: noClock() });
+  assert.equal(readFileSync(runs, 'utf8'), 'ran\n', 'the command ran more than once');
+  assert.equal(res.code, 0);
+});
+
+// With a signal aborted before the call, the clock counts from the call, as from any abort: the command's start does not
+// restart it. The case moves runShell's clock itself.
+test('runShell: a signal aborted before the call starts the timeout clock at the call', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const p = script('aborted-early.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
+  let seen;
+  const started = new Promise((r) => (seen = r));
+  let notes = '';
+  beforeRunShell(t, (helper) => helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) seen(); }));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000, signal: AbortSignal.abort() });
+  t.mock.timers.tick(6999);
+  await started; // runShell's own listener ran right after this case's
+  t.mock.timers.tick(2); // 7001 ms after the call
+  const res = await running; // a clock restarted by the start never fires here: the case times out instead
+  assert.equal(res.timedOut, true);
+});
+
 test('runShell: a helper that never starts and cannot be killed is reported, and does not keep ff waiting', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
   const res = await withEnv({ FF_TEST_STALL: '1' }, () => exec.runShell(`"${process.execPath}" -e "1"`, { timeoutMs: 800, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] }));
   try {
