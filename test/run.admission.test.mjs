@@ -127,7 +127,7 @@ test('a Ticket in a repository reached through a linked directory reaches done a
 });
 
 test('unknown dirty state is held with the diff stat', async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, { integrity: 'real' });
   await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const edited = '{ "scripts": { "test": "node --test" }, "human": true }\n';
   writeFileSync(join(f.worktree, 'package.json'), edited);
@@ -178,7 +178,7 @@ test('a merge conflict at ticket start is held with the diff stat', async (t) =>
 });
 
 test('dirty hold advice explains how a held Execution Record can be inspected and restarted', async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, { integrity: 'real' });
   await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
@@ -213,7 +213,7 @@ test('a merge conflict in the worktree of a resumed execution is held, not fault
 });
 
 test('a commit interrupted before it landed is admitted and replayed', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
   const seeded = await crashBeforeCommit(f);
   assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['commit'], 'the record holds the intended commit');
   assert.notEqual(sh(f.worktree, 'status', '--porcelain'), '', 'the staged implementation waits for its commit');
@@ -227,7 +227,7 @@ test('a commit interrupted before it landed is admitted and replayed', async (t)
 });
 
 test('a commit interrupted before it landed is held once a human changed the worktree', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
   await crashBeforeCommit(f);
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
   const staged = sh(f.worktree, 'diff', '--cached', '--name-only');

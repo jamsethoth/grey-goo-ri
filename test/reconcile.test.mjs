@@ -12,7 +12,7 @@ import { resetEntries } from './support/reconcile.mjs';
 async function crashedFailedRed(t, when) {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, integrity: 'real' });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = g.options.git;
   g.options.git = { ...git, resetTo: async (...args) => {
@@ -119,7 +119,7 @@ test('a failed HEAD read after the reset of a failed red leaves the History item
 });
 
 test('a crash between the reset and the Protected File restore of an integrity violation is finished by Reconciliation', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   mkdirSync(join(g.worktree, '.claude'), { recursive: true });
   writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
   const local = join(g.worktree, '.claude', 'settings.local.json');

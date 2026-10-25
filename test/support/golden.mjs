@@ -13,6 +13,7 @@ import * as events from '../../lib/events.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as labelModule from '../../lib/labels.mjs';
 import { fakeHarness } from './fake-harness.mjs';
+import { fakeIntegrity } from './fake-integrity.mjs';
 
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -106,7 +107,12 @@ export function seedRepos(dir) {
   return template.base;
 }
 
-export async function setup(t, { responses = firstVisitResponses } = {}) {
+// The fake integrity, or null for the real one, and the options that inject it into runExecution or gg run.
+export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrity({ head }));
+export const injected = (fake) => (fake ? { integrity: fake.integrity, testImmutability: fake.testImmutability } : {});
+
+// Integrity is the fake unless `integrity` is 'real', for a test whose subject is git behaviour.
+export async function setup(t, { responses = firstVisitResponses, integrity = 'fake' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'gg-golden-'));
   if (process.env.GG_KEEP_TEMP) t.diagnostic(`golden temp repo: ${root}`);
   else t.after(() => {
@@ -115,6 +121,7 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
   });
 
   const base = seedRepos(root);
+  const fake = fakeOf(integrity, base);
   const mainRoot = join(root, 'main');
   const worktree = join(root, 'wt', 'ticket-15');
   sh(mainRoot, 'worktree', 'add', '-q', '-b', BRANCH, worktree, 'main');
@@ -169,10 +176,10 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
   const options = {
     flow, record: rec, harness, gh: github, git: gitModule, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
     commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
-    base: 'main', labelPrefix: 'gg', others: [], clock,
+    base: 'main', labelPrefix: 'gg', others: [], clock, ...injected(fake),
   };
   return {
-    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath, clock, sleeps,
+    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath, clock, sleeps, fake,
     readEvents: () => events.readEvents(commonDir),
   };
 }

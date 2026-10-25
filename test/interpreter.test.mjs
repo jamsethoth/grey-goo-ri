@@ -14,7 +14,7 @@ import {
 } from './support/interpreter.mjs';
 
 test('golden: first-visit pass runs the tdd actions in order to done', async (t) => {
-  const g = await firstVisit(t);
+  const g = await firstVisit(t, { integrity: 'real' });
 
   assert.deepEqual(golden.trace(g.events).filter((e) => TDD_PHASES.includes(e.phase)), FIRST_VISIT);
   const end = g.events.at(-1);
@@ -204,7 +204,7 @@ const ghWrite = (args) => golden.isCommentPost(args) || (args[0] === 'issue' && 
   || (args[0] === 'label' && args[1] === 'create') || (args[0] === 'pr' && ['create', 'edit', 'ready'].includes(args[1]));
 
 test('a run stop during a repo-lock wait skips the queued effect and only needs-human reporting follows', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   const runState = { stop: null, remoteNotBefore: 0 };
   let before;
   let written;

@@ -360,9 +360,10 @@ const SCENARIOS = [
     real: ({ other }) => writeFileSync(join(other, 'stray.txt'), 'stray\n'), fake: (f, { other }) => f.write(other, 'stray.txt') },
 ];
 
-// What routing reads: the worktree, the surface and that it changed; a protected violation's paths are compared whole.
+// What routing reads: the worktree, the surface and that it changed between two object names; a protected violation's paths
+// are compared whole.
 const shapeOf = (violations, names) => violations.map(({ worktree, surface, before, after }) => ({ worktree: names[worktree], surface,
-  ...(surface === 'protected' ? { before, after } : { changed: typeof before === 'string' && typeof after === 'string' && before !== after }) }));
+  ...(surface === 'protected' ? { before, after } : { changed: [before, after].every((sha) => /^[0-9a-f]{40}$/.test(sha)) && before !== after }) }));
 
 test('the fake integrity reports what the real one reports for each scenario', async (t) => {
   const { fakeIntegrity } = await import('./support/fake-integrity.mjs');
@@ -374,11 +375,12 @@ test('the fake integrity reports what the real one reports for each scenario', a
         const args = { record: w.ownRecord, others: [w.other], access: s.access, protectedPaths: PROTECTED, testPathspecs: [] };
         const baseline = await impl.begin(args);
         await act();
-        return shapeOf((await impl.end({ ...args, baseline })).violations, names);
+        // The baseline is saved in the call intent, so its fields are part of the shape.
+        return { fields: Object.keys(baseline).sort(), violations: shapeOf((await impl.end({ ...args, baseline })).violations, names) };
       };
       const real = await attempt(integrity, () => s.real(w));
       const fake = fakeIntegrity();
-      assert.deepEqual(real.map((v) => [v.worktree, v.surface]), s.expected);
+      assert.deepEqual(real.violations.map((v) => [v.worktree, v.surface]), s.expected);
       assert.deepEqual(await attempt(fake.integrity, () => s.fake(fake, w)), real);
     });
   }

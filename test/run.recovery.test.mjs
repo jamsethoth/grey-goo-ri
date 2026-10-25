@@ -16,7 +16,7 @@ import {
 
 test('agent-made dirty state proven by the record is discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   // The red test passes before implementation, so the red Phase fails; the crash comes before its reset.
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
@@ -37,7 +37,7 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
 
 test('changes made after an interrupted reset are held, not discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   await seedExecution(f, { git, exec });
@@ -113,7 +113,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   const responses = structuredClone(golden.firstVisitResponses);
   // The agent changes an ignored Protected File and adds another: an Integrity Violation, whose rollback restores both.
   Object.assign(responses['implementer/1/red/1'].files, { '.claude/settings.local.json': '{"agent":true}\n', '.claude/agent.json': '{}\n' });
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   mkdirSync(join(f.worktree, '.claude'));
   writeFileSync(join(f.worktree, '.claude', '.gitignore'), '*\n');
@@ -305,7 +305,7 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason', 
     ['branch-mismatch', async (f) => record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null,
       flow: { name: 'default', entry: 'implementer' }, configHash: 'x', run: 'seed', worktree: f.worktree, branch: 'ticket/99-other', base: 'main' }))],
   ]) {
-    const f = fixture(t);
+    const f = fixture(t, { integrity: 'real' });
     await arrange(f);
 
     const results = await run.runTarget(f.options);

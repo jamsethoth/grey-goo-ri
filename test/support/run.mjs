@@ -37,7 +37,7 @@ export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 // A temp origin and clone, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view, and `issues`
 // those of one issue number.
-export function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, issues = {}, rootName = 'gg-run-', linked = false } = {}) {
+export function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, issues = {}, rootName = 'gg-run-', linked = false, integrity } = {}) {
   // linked: every path gg is given goes through a junction, as through a symlinked TMPDIR or a Windows 8.3 name.
   const real = mkdtempSync(join(tmpdir(), rootName));
   const root = linked ? `${real}-link` : real;
@@ -50,6 +50,7 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
     rmSync(real, { recursive: true, force: true });
   });
   const base = golden.seedRepos(real);
+  const fakeIntegrity = golden.fakeOf(integrity, base);
 
   const fake = golden.fakeGh({ branch, repoLabels });
   for (const l of labels) fake.labels.add(l);
@@ -84,7 +85,7 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
   const cfg = testConfig(root, { harness: harnessName, fullFlow });
   const worktree = gitModule.worktreePath(cfg.worktreeRoot, 'main', TICKET);
   const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git: gitModule, exec, cwd: mainRoot,
-    log: (m) => logs.push(m), clock };
+    log: (m) => logs.push(m), clock, ...golden.injected(fakeIntegrity) };
   return {
     root, real, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
     readEvents: () => events.readEvents(commonDir),
@@ -169,7 +170,7 @@ export const loadTicket = (f) => record.load(f.commonDir, 'ticket', TICKET);
 
 // A worktree with a human file: fresh, or the worktree of an Execution whose commit was interrupted (with its Visits).
 export async function dirtyTicket(t, seeded) {
-  const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [] });
+  const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [], integrity: 'real' });
   const seededRec = seeded ? await crashBeforeCommit(f) : null;
   if (!seeded) await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
