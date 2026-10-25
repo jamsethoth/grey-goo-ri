@@ -243,8 +243,7 @@ test('an unexpected branch query failure faults before recovery', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
   const seeded = await crashBeforeCommit(f);
   const before = await integrity.snapshot(f.worktree);
-  f.options.git = { ...gitModule, runGit: (args, opts) => args[0] === 'symbolic-ref'
-    ? Promise.resolve({ code: 128, stdout: '', stderr: 'fatal: cannot read HEAD' }) : gitModule.runGit(args, opts) };
+  f.options.git = { ...gitModule, currentBranch: async () => { throw new Error('fatal: cannot read HEAD'); } };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1, JSON.stringify(results));

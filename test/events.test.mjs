@@ -219,6 +219,9 @@ test('readEvents on a fresh directory returns nothing', (t) => {
 });
 
 test('diffStats splits test and non-test insertions', () => {
-  const s = events.diffStats('3\t1\tsrc/cart.mjs\n10\t0\ttest/cart.test.mjs\n2\t2\tsrc/util.spec.ts\n-\t-\timg.png\n');
+  const s = events.diffStats([
+    { path: 'src/cart.mjs', insertions: 3, deletions: 1 }, { path: 'test/cart.test.mjs', insertions: 10, deletions: 0 },
+    { path: 'src/util.spec.ts', insertions: 2, deletions: 2 }, { path: 'img.png', insertions: null, deletions: null },
+  ]);
   assert.deepEqual(s, { files: 4, insertions: 15, deletions: 3, testFiles: 2, testInsertions: 12 });
 });
