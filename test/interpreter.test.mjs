@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as checks from '../lib/checks.mjs';
+import * as integrity from '../lib/integrity.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
@@ -230,4 +232,19 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.ok(golden.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');
   assert.ok(ticketComments(g).at(-1).body.startsWith('### gg: needs-human'));
   assert.ok(writes[1].args.join(' ').includes('--add-label gg:state:needs-human'), 'the needs-human label');
+});
+
+test('runExecution uses an injected integrity and Test Immutability', async (t) => {
+  const g = await golden.setup(t);
+  const calls = [];
+  const spy = (name, fn) => async (...args) => {
+    calls.push(name);
+    return fn(...args);
+  };
+  const injected = Object.fromEntries(['snapshot', 'isCleanAt', 'untrackedFiles', 'ignoredFiles', 'restoreUntracked', 'begin', 'end']
+    .map((name) => [name, spy(name, integrity[name])]));
+  const result = await interpreter.runExecution({ ...g.options, integrity: injected, testImmutability: spy('testImmutability', checks.testImmutability) });
+  assert.equal(result.outcome, 'done');
+  // Clean before red, then each agent call between its begin and end, then Test Immutability with the Green Check.
+  assert.deepEqual(calls, ['isCleanAt', 'begin', 'end', 'begin', 'end', 'testImmutability']);
 });

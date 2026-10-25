@@ -144,3 +144,13 @@ test('a crash between the reset and the Protected File restore of an integrity v
   assert.equal(loaded.history[0].kind, 'integrity violation');
   assert.deepEqual(record.openIntents(loaded), []);
 });
+
+test('Reconciliation uses an injected integrity', async (t) => {
+  const g = await crashedFailedRed(t, 'after reset');
+  // The real worktree is clean at the reset's baseline, so only the injected integrity can make it look a human's.
+  const elsewhere = { head: 'elsewhere', index: 'elsewhere', tree: 'elsewhere' };
+  const integrity = { snapshot: async () => elsewhere, isCleanAt: async () => false, untrackedFiles: async () => ({}), ignoredFiles: async () => ({}) };
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git, integrity }), 'held');
+  assert.deepEqual(await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree, integrity }), { conflicts: [], stat: '' });
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'continue');
+});

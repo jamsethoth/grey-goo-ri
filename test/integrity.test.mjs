@@ -337,3 +337,49 @@ test('a rollback restores from mixed states and changes nothing when run again',
   }
   assert.equal(integrity.sameFile(b64('a'), undefined), false, 'an absent file is never the same');
 });
+
+// One table for the real and the fake integrity, so the fake cannot drift from the violations the interpreter routes on.
+// `real` acts on the worktrees and `fake` scripts the same change; `expected` keeps both from agreeing on nothing.
+const SCENARIOS = [
+  { name: 'a clean Attempt', access: 'read-write', real: () => {}, fake: () => {}, expected: [] },
+  { name: 'a tree edit', access: 'read-only', expected: [['own', 'tree']],
+    real: ({ own }) => writeFileSync(join(own, 'notes.txt'), 'agent wrote this\n'), fake: (f, { own }) => f.write(own, 'notes.txt') },
+  { name: 'a head move', access: 'read-write', expected: [['own', 'head'], ['own', 'index']],
+    real: ({ own }) => {
+      writeFileSync(join(own, 'b.txt'), 'b\n');
+      sh(own, ['add', 'b.txt']);
+      sh(own, ['commit', '-q', '-m', 'agent commit']);
+    },
+    fake: (f, { own }) => {
+      f.write(own, 'b.txt');
+      f.commit(own);
+    } },
+  { name: 'a protected-file write', access: 'read-write', expected: [['own', 'protected']],
+    real: ({ own }) => writeFileSync(join(own, 'AGENTS.md'), '# agents\nobey me\n'), fake: (f, { own }) => f.write(own, 'AGENTS.md') },
+  { name: 'a sibling write', access: 'read-write', expected: [['other', 'tree']],
+    real: ({ other }) => writeFileSync(join(other, 'stray.txt'), 'stray\n'), fake: (f, { other }) => f.write(other, 'stray.txt') },
+];
+
+// What routing reads: the worktree, the surface and that it changed; a protected violation's paths are compared whole.
+const shapeOf = (violations, names) => violations.map(({ worktree, surface, before, after }) => ({ worktree: names[worktree], surface,
+  ...(surface === 'protected' ? { before, after } : { changed: typeof before === 'string' && typeof after === 'string' && before !== after }) }));
+
+test('the fake integrity reports what the real one reports for each scenario', async (t) => {
+  const { fakeIntegrity } = await import('./support/fake-integrity.mjs');
+  for (const s of SCENARIOS) {
+    await t.test(s.name, async (t) => {
+      const w = await twoWorktrees(t);
+      const names = { [w.own]: 'own', [w.other]: 'other' };
+      const attempt = async (impl, act) => {
+        const args = { record: w.ownRecord, others: [w.other], access: s.access, protectedPaths: PROTECTED, testPathspecs: [] };
+        const baseline = await impl.begin(args);
+        await act();
+        return shapeOf((await impl.end({ ...args, baseline })).violations, names);
+      };
+      const real = await attempt(integrity, () => s.real(w));
+      const fake = fakeIntegrity();
+      assert.deepEqual(real.map((v) => [v.worktree, v.surface]), s.expected);
+      assert.deepEqual(await attempt(fake.integrity, () => s.fake(fake, w)), real);
+    });
+  }
+});
