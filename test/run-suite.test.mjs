@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const launcherUrl = new URL('../scripts/run-suite.mjs', import.meta.url);
 
-test('suiteCommand ignores arguments and runs node --test in the repo root', async () => {
+test('suiteCommand ignores arguments and runs node --test in the repo root, at most four files at once', async () => {
   const runSuite = await import(launcherUrl);
   const argv = process.argv;
   const cwd = process.cwd();
@@ -17,7 +17,10 @@ test('suiteCommand ignores arguments and runs node --test in the repo root', asy
   try {
     const cmd = runSuite.suiteCommand({});
     assert.equal(cmd.command, process.execPath);
-    assert.deepEqual(cmd.args, ['--test']);
+    assert.equal(cmd.args[0], '--test');
+    assert.equal(cmd.args.length, 2);
+    const n = Number(/^--test-concurrency=(\d+)$/.exec(cmd.args[1])?.[1]);
+    assert.ok(n >= 1 && n <= 4, `concurrency ${cmd.args[1]}`);
     assert.equal(resolve(cmd.cwd), resolve(root));
   } finally {
     process.argv = argv;
