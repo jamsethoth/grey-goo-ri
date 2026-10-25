@@ -129,7 +129,7 @@ test('admission detects an agent overwrite of an idle sibling as an Integrity Vi
   for (const [seeded, siblingRecord, siblingBranch = other] of [[false, false], [false, true], [true, false], [true, true],
     [false, false, `ticket/${TICKET}-other-suffix`]]) {
     const responses = structuredClone(golden.firstVisitResponses);
-    const f = fixture(t, { responses, labels: seeded ? [IN_PROGRESS] : [] });
+    const f = fixture(t, { responses, labels: seeded ? [IN_PROGRESS] : [], integrity: 'real' });
     // Outside the configured worktree root, so only git's worktree list can find it.
     const sibling = join(f.root, 'elsewhere', 'ticket-99');
     sh(f.mainRoot, 'worktree', 'add', '-q', '-b', siblingBranch, sibling, 'main');
@@ -160,7 +160,7 @@ test('admission detects an agent overwrite of an idle sibling as an Integrity Vi
 });
 
 test('admission excludes non-ticket worktrees and its own, however cased, from sibling assertions', async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, { integrity: 'real' });
   // git write-tree refuses an unmerged index, so a snapshot of this worktree would fault.
   const scratch = join(f.root, 'scratch');
   sh(f.mainRoot, 'worktree', 'add', '-q', '-b', 'scratch', scratch, 'main');

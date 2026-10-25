@@ -44,7 +44,7 @@ test('a fix that changes an unnamed test is an integrity violation', async (t) =
   const g = await reviewSetup(t, {
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n', 'test/add.test.mjs': '// weakened\n' }),
-  });
+  }, { integrity: 'real' });
 
   assert.equal(g.result.outcome, 'needs-human');
   const check = g.at('implementer-fix', 1, 'fix', 2)[0];
@@ -67,7 +67,7 @@ test('a fix that changes a named test moves the immutability baseline', async (t
     // Leaves the test as fix 1 committed it: only a moved baseline lets this pass Test Immutability.
     'implementer-fix/2/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/3/review/1': reviewed(review('ok')),
-  });
+  }, { integrity: 'real' });
 
   assert.equal(g.result.outcome, 'done');
   for (const visit of [1, 2]) {
@@ -95,7 +95,7 @@ test('a fix with no edits keeps the moved immutability baseline', async (t) => {
     'reviewer/3/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/3/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/4/review/1': reviewed(review('ok')),
-  });
+  }, { integrity: 'real' });
   g.flow.ticket.vertices.reviewer.route.changes.max = 3;
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -135,7 +135,7 @@ test('misscoped lands in replan with the diagnosis on ticket and epic', async (t
 test('a review that changes the tree is an integrity violation', async (t) => {
   const g = await reviewSetup(t, {
     'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
-  });
+  }, { integrity: 'real' });
 
   assert.equal(g.result.outcome, 'needs-human');
   const call = g.at('reviewer', 1, 'review', 1)[0];
@@ -154,7 +154,7 @@ test('a review that changes the tree is an integrity violation', async (t) => {
 test('a review on a workspace-write agent is still read-only', async (t) => {
   const g = await reviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
-  });
+  }, { integrity: 'real' });
   g.flow.ticket.vertices.reviewer.agent.access = 'workspace-write';
   g.result = await interpreter.runExecution(g.options);
   const events = g.readEvents();

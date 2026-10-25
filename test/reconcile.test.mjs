@@ -12,7 +12,7 @@ import { resetEntries } from './support/reconcile.mjs';
 async function crashedFailedRed(t, when) {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, integrity: 'real' });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = g.options.git;
   g.options.git = { ...git, resetTo: async (...args) => {
@@ -119,7 +119,7 @@ test('a failed HEAD read after the reset of a failed red leaves the History item
 });
 
 test('a crash between the reset and the Protected File restore of an integrity violation is finished by Reconciliation', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   mkdirSync(join(g.worktree, '.claude'), { recursive: true });
   writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
   const local = join(g.worktree, '.claude', 'settings.local.json');
@@ -143,4 +143,14 @@ test('a crash between the reset and the Protected File restore of an integrity v
   assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', "the owner's bytes come back from the saved intent");
   assert.equal(loaded.history[0].kind, 'integrity violation');
   assert.deepEqual(record.openIntents(loaded), []);
+});
+
+test('Reconciliation uses an injected integrity', async (t) => {
+  const g = await crashedFailedRed(t, 'after reset');
+  // The real worktree is clean at the reset's baseline, so only the injected integrity can make it look a human's.
+  const elsewhere = { head: 'elsewhere', index: 'elsewhere', tree: 'elsewhere' };
+  const integrity = { snapshot: async () => elsewhere, isCleanAt: async () => false, untrackedFiles: async () => ({}), ignoredFiles: async () => ({}) };
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git, integrity }), 'held');
+  assert.deepEqual(await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree, integrity }), { conflicts: [], stat: '' });
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'continue');
 });

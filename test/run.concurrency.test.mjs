@@ -98,7 +98,7 @@ test('snapshot and orchestrator writes wait beyond the default lock timeout', { 
 });
 
 test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, { integrity: 'real' });
   // The competing lock is taken during the red call, after the worktree exists.
   let holder = null;
   const { run: call } = f.harness;
@@ -254,7 +254,7 @@ test('pool never exceeds its limit and keeps result order', async () => {
 });
 
 test('a stray write into an idle worktree is attributed to the running action', { timeout: 120_000 }, async (t) => {
-  const f = fixture(t, { issues: epicOf([21, 22]) });
+  const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real' });
   f.options.target = EPIC;
   const aAdmitted = gate();
   const bIdle = gate();
@@ -291,7 +291,7 @@ test('a stray write into an idle worktree is attributed to the running action', 
 });
 
 test('a busy worktree is never attributed to another ticket\'s action', { timeout: 120_000 }, async (t) => {
-  const f = fixture(t, { issues: epicOf([21, 22]) });
+  const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real' });
   f.options.target = EPIC;
   const bBusy = gate();
   const aEnded = gate();

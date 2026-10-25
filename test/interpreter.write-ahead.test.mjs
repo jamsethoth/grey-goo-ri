@@ -186,7 +186,7 @@ test('the record carries the last heartbeat of a running call', async (t) => {
 });
 
 test('a completed call with an integrity violation still rolls back under its own marker', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
