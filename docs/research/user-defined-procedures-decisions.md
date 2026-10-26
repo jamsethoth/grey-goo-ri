@@ -1045,7 +1045,7 @@ and the owner accepted all four findings as recommended.
   share is an estimate (quota is account-wide); tokens and cost are exact. The Execution Record's `owner`, `flow`
   and `configHash`, the Event `ts` and the `configs` table already key every total. Issues #23, #135.
 
-## Owner decision: rule-table overlap warnings (2026-10-26)
+## Owner decisions: rule-table fields and overlap warnings (2026-10-26)
 
 - J14. A partial-overlap warning (R8d) is per row, not per pair of rows. Earlier rows take part of a row where it
   matches but an earlier row matches first. Each row that earlier rows partly take gets one warning, naming each
@@ -1056,6 +1056,11 @@ and the owner accepted all four findings as recommended.
   which N2's work limit bounds (points × rows bits); N2's formula is unchanged. So the example review `passed`
   table's three intended overlaps (U4) are two warnings: row 2 partly taken by row 1, and row 3 by rows 1 and 2.
   Issue #103.
+- J15. Rule fields use #104's `fieldType` kinds as the analyser's domain: `{ kind: 'enum', values }`,
+  `{ kind: 'boolean' }` and `{ kind: 'integer', min?, max? }`, with `absent: true` from an input's `optional`
+  declaration (T10). An integer's bounds come only from gg's own facts, such as `pass` and Check `runs`, because
+  #104's strict subset has no `minimum` or `maximum`. #106 merges `fieldType`'s result with those facts, with no
+  translation layer (R13e), and still builds the single path resolver (R14e). Issues #103, #106.
 
 ## Open
 
