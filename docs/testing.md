@@ -72,7 +72,7 @@ The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in
 | Seam | What a test does with it |
 | --- | --- |
 | the injected clock's `every` (`golden.setup`'s `clock.beat()`) | fires a heartbeat |
-| `locks.acquire`'s `clock` option | times a lock wait |
+| `locks.setClock` | times every lock wait, the 60 s default and the 600 s repo-lock waits included |
 | `git.setSleep` | records runGit's index.lock waits |
 | `locks.setAttemptWrapper` | sees a lock attempt, or contends it (`contendRepoLock`) |
 | `record.setSaveHook`, `events.setAppendHook` (`golden.failSaves`, `golden.failAppends`) | fails a chosen save or Event insert |

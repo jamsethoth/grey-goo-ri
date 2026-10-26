@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as integrity from '../../lib/integrity.mjs';
 import * as locks from '../../lib/locks.mjs';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
@@ -249,4 +250,32 @@ test('a rate limit on one Ticket delays the next GitHub write of the other', { t
   assert.equal(sleeps[1].bCalls, 0, 'before any GitHub write of B');
   assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args, 21)).length, 2);
   assert.equal(f.gh.comments.filter((c) => c.number === 21).length, 1);
+});
+
+// A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
+// wait longer, so contention does not become a fault. Each lock poll here takes a minute, as an overrunning sleep may.
+test('snapshot and orchestrator writes wait beyond the default lock timeout', async (t) => {
+  const f = fixture(t);
+  let now = 0;
+  const previous = locks.setClock({ now: () => now, sleep: async () => { now += 60_000; } });
+  t.after(() => locks.setClock(previous));
+  const called = [];
+  const verbs = ['ensureWorktree', 'stageAll', 'writeTree', 'commitStaged', 'commitTree', 'push', 'remoteSha', 'resetTo'];
+  const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
+  // Another connection holds the lock, as another gg process would. Released before the fixture's cleanup, which
+  // Windows refuses while the holder keeps the lock file open.
+  const holder = await locks.tryAcquire(f.commonDir, 'repo');
+  let byDefault, snapshot, writes;
+  try {
+    byDefault = await locks.acquire(f.commonDir, 'repo').then(() => null, (err) => ({ message: err.message, at: now }));
+    snapshot = await integrity.snapshot(f.mainRoot, f.options.git).then(() => null, (err) => ({ message: err.message, at: now }));
+    writes = await Promise.allSettled(verbs.map((v) => git[v]()));
+  } finally {
+    await locks.release(holder);
+  }
+
+  assert.deepEqual(byDefault, { message: 'lock repo still held after 60000ms', at: 60_000 }, 'the default wait gives up after a minute');
+  assert.deepEqual(snapshot, { message: 'lock repo still held after 600000ms', at: 660_000 }, 'the snapshot waits ten minutes more');
+  assert.deepEqual([...new Set(writes.map((w) => w.reason?.message))], ['lock repo still held after 600000ms'], 'every write waits as long');
+  assert.deepEqual(called, [], 'no write runs while another holder has the repo lock');
 });

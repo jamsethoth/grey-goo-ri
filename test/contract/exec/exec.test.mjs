@@ -55,19 +55,23 @@ async function timeOutWhen(commandLine, options, ready, signal) {
 const noClock = () => new AbortController().signal;
 
 // runShell's timeout timer, moved by the case: tick(ms) moves the time on and fires the armed timer once it is due.
+// fired() counts the timeouts that fired.
 function manualTimers() {
   let now = 0;
   let armed = null;
+  let fired = 0;
   return {
     setTimeout: (fn, ms) => (armed = { fn, at: now + ms }),
     clearTimeout: (timer) => { if (armed === timer) armed = null; },
     tick: (ms) => {
       now += ms;
-      if (armed?.at > now) return;
-      const fired = armed;
+      if (!armed || armed.at > now) return;
+      const { fn } = armed;
       armed = null;
-      fired?.fn();
+      fired++;
+      fn();
     },
+    fired: () => fired,
   };
 }
 
@@ -81,6 +85,7 @@ function delayed(stream) {
     return emit.call(this, event, ...args);
   };
   return {
+    holding: () => held !== null,
     hold: () => { held ??= []; },
     release: () => { const events = held ?? []; held = null; for (const [event, args] of events) emit.call(stream, event, ...args); },
   };
@@ -362,29 +367,29 @@ test('runShell: when the job cannot be set up and taskkill is refused, a child t
   }
 });
 
-// The clock starts as the helper exits, just before runShell sees that exit, and fires 1 ms later, while runShell still
-// waits for the helper's notes (held back until 10 ms after the exit), unless the exit stops it. A timeout then would
-// taskkill the helper's pid, which may by then be another process's. The leftover holds the output pipes, so they never
-// close.
+// The timeout comes due just after runShell has seen the helper exit, while it still waits for the helper's notes (held
+// back until then), and fires unless the exit stopped it. A timeout then would taskkill the helper's pid, which may by
+// then be another process's. The leftover holds the output pipes, so they never close.
 test('runShell: a command that finishes is not reported as timed out while its leftover process still holds the output pipes', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const sleeper = script('drain-sleeper.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
   const quit = script('drain-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(sleeper)}], { detached: true, stdio: 'inherit' }).unref();`);
-  const clock = new AbortController();
+  const timers = manualTimers();
   const onHelper = (helper) => {
     const late = [delayed(helper.stdout), delayed(helper.stderr)];
     for (const l of late) l.hold();
-    helper.on('exit', () => {
-      clock.abort();
-      setTimeout(() => { for (const l of late) l.release(); }, 10);
-    });
+    // A microtask runs once every exit listener has, runShell's included.
+    helper.on('exit', () => queueMicrotask(() => {
+      timers.tick(1);
+      for (const l of late) l.release();
+    }));
   };
-  const killed = join(tmp, 'drain-taskkill.ran');
-  const seam = [process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(killed)}, '')`]];
-  const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 1, signal: clock.signal, taskkillCommand: seam, onHelper });
+  // A timeout's kill of the helper's pid goes to a process that does nothing.
+  const seam = [process.execPath, ['-e', '']];
+  const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 1, timers, taskkillCommand: seam, onHelper });
   try {
     assert.equal(res.timedOut, undefined, 'a finished command was reported as timed out');
     assert.equal(res.code, 0);
-    assert.equal(existsSync(killed), false, 'a timeout ran after the command finished');
+    assert.equal(timers.fired(), 0, 'a timeout ran after the command finished');
   } finally {
     for (const p of res.leftovers ?? []) try { process.kill(p); } catch {}
   }
@@ -412,19 +417,25 @@ test('runShell: the timeout counts from when the command starts, not from the jo
   assert.match(res.output, /done/);
 });
 
-// The stalled helper outlives the case, so it is still running when runShell returns unless runShell waited for it.
 // The helper's last notes can reach runShell after its exit event, as on a loaded machine: here they are held back
-// until 10 ms after it. Its answer must still be read, never taken as a clean cleanup.
+// until every exit listener has run. Its answer must still be read, never taken as a clean cleanup. The timeout fires
+// as soon as runShell has seen the command start.
 test('runShell: a helper answer that arrives after the helper has exited is still read', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
-  const pidFile = join(tmp, 'late-answer.pid');
-  const p = script('late-answer.mjs', writesPid(pidFile));
+  const p = script('late-answer.mjs', writesPid(join(tmp, 'late-answer.pid')));
+  const timers = manualTimers();
   const onHelper = (helper) => {
     const late = delayed(helper.stderr);
     let notes = '';
-    helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) late.hold(); });
-    helper.on('exit', () => setTimeout(late.release, 10));
+    helper.stderr.on('data', (d) => {
+      notes += d;
+      if (!notes.includes('\u0001FFJOB started') || late.holding()) return;
+      late.hold();
+      // A microtask runs once runShell's own listener has seen the start.
+      queueMicrotask(() => timers.tick(1));
+    });
+    helper.on('exit', () => queueMicrotask(late.release));
   };
-  const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 1, onHelper }, () => existsSync(pidFile), t.signal));
+  const res = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, timers, onHelper }));
   assert.ok(res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)), JSON.stringify(res.cleanupErrors));
   assert.ok(res.survivors.length > 0 && res.survivors.every((s) => /not verified gone/.test(s.error)), JSON.stringify(res.survivors));
 });

@@ -129,33 +129,36 @@ await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo')
   assert.deepEqual({ code, err }, { code: 0, err: '' }, 'taking a lock in a flagless node prints no ExperimentalWarning');
 });
 
-// A clock whose sleeps pass at once, moving its time on and running `during` first.
-const clockOf = (during = () => {}) => {
+// Times the case's lock waits on a clock whose sleeps pass at once, moving its time on and running `during` first.
+// Returns the sleeps.
+const useClock = (t, during = () => {}) => {
   let now = 0;
   const sleeps = [];
-  return { sleeps, now: () => now, sleep: async (ms) => { sleeps.push(ms); await during(); now += ms; } };
+  const previous = locks.setClock({ now: () => now, sleep: async (ms) => { sleeps.push(ms); await during(); now += ms; } });
+  t.after(() => locks.setClock(previous));
+  return sleeps;
 };
 
 // The lock-timing cases are bounded: an acquire that stops sleeping on the injected clock never reaches its deadline.
 test('acquire waits for release', { timeout: 10_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
-  const clock = clockOf(() => locks.release(first));
-  const second = await locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20, clock });
+  const sleeps = useClock(t, () => locks.release(first));
+  const second = await locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20 });
   assert.equal(second.waited, true, 'waited for the holder');
-  assert.deepEqual(clock.sleeps, [20], 'one poll, after which the holder had released');
+  assert.deepEqual(sleeps, [20], 'one poll, after which the holder had released');
   await locks.release(second);
 });
 
 test('acquire times out', { timeout: 10_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
-  const clock = clockOf();
-  await assert.rejects(locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 50, clock }), (err) => {
+  const sleeps = useClock(t);
+  await assert.rejects(locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 50 }), (err) => {
     assert.ok(err instanceof locks.LockTimeoutError);
     return true;
   });
-  assert.deepEqual(clock.sleeps, [50, 50, 50], 'polled until the deadline');
+  assert.deepEqual(sleeps, [50, 50, 50], 'polled until the deadline');
   await locks.release(first);
 });
 
@@ -163,7 +166,8 @@ test('withLock forwards its acquisition timeout without invoking the callback', 
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
   let ran = false;
-  await assert.rejects(locks.withLock(commonDir, 'repo', async () => { ran = true; }, { timeoutMs: 150, pollMs: 20, clock: clockOf() }),
+  useClock(t);
+  await assert.rejects(locks.withLock(commonDir, 'repo', async () => { ran = true; }, { timeoutMs: 150, pollMs: 20 }),
     (err) => err instanceof locks.LockTimeoutError && err.message.includes('150ms'));
   assert.equal(ran, false, 'the callback never runs without the lock');
   await locks.release(first);

@@ -55,36 +55,6 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   assert.equal((await pending).head, f.base, 'the snapshot runs after release');
 });
 
-// A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
-// wait longer, so contention does not become a fault.
-test('snapshot and orchestrator writes wait beyond the default lock timeout', { timeout: 180_000 }, async (t) => {
-  const f = fixture(t, { git: 'real' });
-  // The holder outlasts the test and is released only after the default waiter times out, however slow the setup.
-  const holder = await holdLock(t, f.commonDir, 'repo', 180_000);
-  try {
-    // The snapshot's first attempt is refused before the default waiter starts, so its own deadline would pass first.
-    const attempted = refusedFirstAttempts(t, 1);
-    const settled = new Set();
-    const track = (name, p) => p.then((v) => { settled.add(name); return v; }, (e) => { settled.add(name); throw e; });
-    const snapshot = track('snapshot', integrity.snapshot(f.mainRoot, f.options.git));
-    await attempted;
-    const called = [];
-    const verbs = ['ensureWorktree', 'stageAll', 'writeTree', 'commitStaged', 'commitTree', 'push', 'remoteSha', 'resetTo'];
-    const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
-    const writes = verbs.map((v) => track(v, git[v]()));
-
-    await assert.rejects(locks.acquire(f.commonDir, 'repo'), (err) => err instanceof locks.LockTimeoutError && err.message.includes('60000ms'));
-    assert.deepEqual([...settled], [], 'the snapshot and every write still wait');
-    assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
-    await holder.release();
-    assert.equal((await snapshot).head, f.base, 'the snapshot runs after release');
-    await Promise.all(writes);
-    assert.deepEqual(called.sort(), [...verbs].sort(), 'every write runs after release');
-  } finally {
-    await holder.release();
-  }
-});
-
 test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { integrity: 'real' });
   // The competing lock is taken during the red call, after the worktree exists.
