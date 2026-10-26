@@ -100,6 +100,11 @@ test('validateResponse rejects a numeric string where an integer is declared', (
   assert.deepEqual(briefs.validateResponse(withCount, { count: '3' }), { valid: false, reason: 'count must be an integer' });
 });
 
+test('validateResponse rejects an extra property where the object declares no properties', () => {
+  const empty = { type: 'object', required: [], additionalProperties: false };
+  assert.deepEqual(briefs.validateResponse(empty, { extra: 1 }), { valid: false, reason: 'extra is not in the schema' });
+});
+
 test('a schema keyword outside the strict subset is rejected with its path (in an example schema)', () => {
   const bad = example('implement');
   bad.properties.qa.properties.steps.items.properties.action.pattern = '^x';
