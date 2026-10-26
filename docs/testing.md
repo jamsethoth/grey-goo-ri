@@ -5,9 +5,8 @@ it lives and runs. AGENTS.md's Tests section holds the file conventions; this do
 that adds or changes tests follows both.
 
 Owner decisions of 2026-10-24 and 2026-10-25, from the suite-speed work behind grey-goo-ri PR #141 and the research
-under [Sources](#sources), and the #145 audit's decisions D1-D5 (grey-goo-ri issue #145). Test seams in `lib/` for
-the clock, failure injection and fs are grey-goo-ri issue #153; until it lands, the tests that need them keep their
-fixed waits and module patching, outside `test/unit/`.
+under [Sources](#sources), and the #145 audit's decisions D1-D5 (grey-goo-ri issue #145). The test seams in `lib/`
+for the clock, failure injection and fs are grey-goo-ri issue #153.
 
 ## Rules for a test
 
@@ -30,7 +29,8 @@ fixed waits and module patching, outside `test/unit/`.
 7. **Tests change only when behaviour does.** A test edited by a refactor is a sign it tested implementation
    detail; fix the test's coupling, not just its expectation.
 8. **Each case cleans up after itself.** It ends every run it started, removes its temp directories, and restores
-   any transport it swapped (`github.setGh`), so a failed case cannot reach the next case's fakes.
+   any transport or hook it swapped (`github.setGh` and the seams below), so a failed case cannot reach the next
+   case's fakes.
 9. **No duplicated coverage.** A behaviour is asserted at the lowest size that can show it. A larger test covers
    what only it can show (the wiring, the real system), not the same branch again.
 
@@ -66,6 +66,18 @@ gg's doubles:
 | fake git (#144), `test/support/fake-git.mjs` | `lib/git.mjs` | `test/contract/git/` (#144) |
 
 #144 keeps one of the fake integrity and the real integrity over the fake git, measured, and deletes the other.
+
+The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers:
+
+| Seam | What a test does with it |
+| --- | --- |
+| the injected clock's `every` (`golden.setup`'s `clock.beat()`) | fires a heartbeat |
+| `locks.setClock` | times every lock wait, the 60 s default and the 600 s repo-lock waits included |
+| `git.setSleep` | records runGit's index.lock waits |
+| `locks.setAttemptWrapper` | sees a lock attempt, or contends it (`contendRepoLock`) |
+| `record.setSaveHook`, `events.setAppendHook` (`golden.failSaves`, `golden.failAppends`) | fails a chosen save or Event insert |
+| `integrity.withGit(git, fs)` (`golden.crashFs`) | crashes a restore's write |
+| `exec.runShell`'s `timers` and `onHelper` options | moves the timeout clock; listens to the job helper first |
 
 ## Test sizes
 

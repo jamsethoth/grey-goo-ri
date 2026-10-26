@@ -2,11 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
-import fsPromises from 'node:fs/promises';
-import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setTimeout as sleep } from 'node:timers/promises';
 import * as events from '../../lib/events.mjs';
 import * as integrity from '../../lib/integrity.mjs';
 import * as locks from '../../lib/locks.mjs';
@@ -17,16 +14,38 @@ import {
   BRANCH, IN_PROGRESS, NEEDS_HUMAN, sh, fixture, holdLock, epicOf, EPIC, worktreeOf, addsLabel, gate, ticketHarnesses, hookGh,
 } from '../support/run.mjs';
 
+// Resolves once `n` first attempts at the repo lock have found it taken: each of `n` waiters is then waiting.
+function refusedFirstAttempts(t, n) {
+  let refused = 0;
+  let all;
+  const allRefused = new Promise((resolve) => { all = resolve; });
+  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
+    const handle = await attempt();
+    if (lock.name === 'repo' && !lock.waited && !handle && ++refused === n) all();
+    return handle;
+  });
+  t.after(() => locks.setAttemptWrapper(previous));
+  return allRefused;
+}
+
 test('every orchestrator git write waits for the repo lock', async (t) => {
   const f = fixture(t);
   const holder = await holdLock(t, f.commonDir, 'repo');
   const called = [];
   const verbs = ['ensureWorktree', 'stageAll', 'writeTree', 'commitStaged', 'commitTree', 'push', 'remoteSha', 'resetTo'];
+  const waiting = refusedFirstAttempts(t, verbs.length);
   const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
   const pending = verbs.map((v) => git[v]());
-  await sleep(500);
-  assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
-  await holder.release();
+  // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
+  // And every write ends before that cleanup, so a late one cannot recreate the lock directory it removed.
+  try {
+    await Promise.race([waiting, ...pending]);
+    // A copy: the writes that run after release must not change what a failure reports.
+    assert.deepEqual([...called], [], 'no write runs while another process holds the repo lock');
+  } finally {
+    await holder.release();
+    await Promise.allSettled(pending);
+  }
   await Promise.all(pending);
   assert.deepEqual(called.sort(), [...verbs].sort(), 'every write runs after release');
 });
@@ -35,57 +54,41 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   const f = fixture(t, { git: 'real' });
   const holder = await holdLock(t, f.commonDir, 'repo');
   let settled = false;
+  const waiting = refusedFirstAttempts(t, 1);
   const pending = integrity.snapshot(f.mainRoot, f.options.git).finally(() => { settled = true; });
-  await sleep(500);
-  assert.equal(settled, false, 'the snapshot writes no object while another process holds the repo lock');
-  await holder.release();
-  assert.equal((await pending).head, f.base, 'the snapshot runs after release');
-});
-
-// A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes
-// wait longer, so contention does not become a fault.
-test('snapshot and orchestrator writes wait beyond the default lock timeout', { timeout: 180_000 }, async (t) => {
-  const f = fixture(t, { git: 'real' });
-  // The holder outlasts the test and is released only after the default waiter times out, however slow the setup.
-  const holder = await holdLock(t, f.commonDir, 'repo', 180_000);
-  const lockDir = join(f.commonDir, 'gg', 'locks');
-  const mkdir = fsPromises.mkdir;
-  const unobserve = () => { fsPromises.mkdir = mkdir; syncBuiltinESMExports(); };
-  t.after(unobserve);
+  // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
   try {
-    // The snapshot's first attempt is seen before the default waiter starts, so its own deadline would pass first.
-    let tried;
-    const attempted = new Promise((resolve) => { tried = resolve; });
-    fsPromises.mkdir = (path, ...rest) => { if (pathKey(String(path)) === pathKey(lockDir)) tried(); return mkdir(path, ...rest); };
-    syncBuiltinESMExports();
-    const settled = new Set();
-    const track = (name, p) => p.then((v) => { settled.add(name); return v; }, (e) => { settled.add(name); throw e; });
-    const snapshot = track('snapshot', integrity.snapshot(f.mainRoot, f.options.git));
-    await attempted;
-    unobserve();
-    const called = [];
-    const verbs = ['ensureWorktree', 'stageAll', 'writeTree', 'commitStaged', 'commitTree', 'push', 'remoteSha', 'resetTo'];
-    const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
-    const writes = verbs.map((v) => track(v, git[v]()));
-
-    await assert.rejects(locks.acquire(f.commonDir, 'repo'), (err) => err instanceof locks.LockTimeoutError && err.message.includes('60000ms'));
-    assert.deepEqual([...settled], [], 'the snapshot and every write still wait');
-    assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
-    await holder.release();
-    assert.equal((await snapshot).head, f.base, 'the snapshot runs after release');
-    await Promise.all(writes);
-    assert.deepEqual(called.sort(), [...verbs].sort(), 'every write runs after release');
+    await Promise.race([waiting, pending.catch(() => {})]);
+    assert.equal(settled, false, 'the snapshot writes no object while another process holds the repo lock');
   } finally {
     await holder.release();
   }
+  assert.equal((await pending).head, f.base, 'the snapshot runs after release');
 });
 
 test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { integrity: 'real' });
   // The competing lock is taken during the red call, after the worktree exists.
   let holder = null;
+  let held;
+  const holding = new Promise((resolve) => { held = resolve; });
   const { run: call } = f.harness;
-  f.options.harnesses.fake = { ...f.harness, run: async (c) => { holder ??= await holdLock(t, f.commonDir, 'repo'); return call(c); } };
+  f.options.harnesses.fake = { ...f.harness, run: async (c) => {
+    if (!holder) {
+      holder = await holdLock(t, f.commonDir, 'repo');
+      held();
+    }
+    return call(c);
+  } };
+  // While the holder has the lock no locked write runs, so the probe below never attempts it: a refusal is the run's.
+  let refused;
+  const waiting = new Promise((resolve) => { refused = resolve; });
+  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
+    const handle = await attempt();
+    if (holder && lock.name === 'repo' && !handle) refused();
+    return handle;
+  });
+  t.after(() => locks.setAttemptWrapper(previous));
   // The snapshot after the call waits on the holder too, so each commit-path write must itself run inside the repo lock.
   const unlocked = [];
   const git = f.options.git;
@@ -105,12 +108,9 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
   const running = run.runTarget(f.options).finally(() => { settled = true; });
   // Ended before the case ends, pass or fail, so it never writes through the next case's fakes.
   try {
-    // The case timeout bounds this wait, and ends it so the finally below runs: a 10 s bound of its own ran out before
-    // the red call on a loaded machine.
-    while (!holder && !settled) await sleep(50, undefined, { signal: t.signal });
+    await Promise.race([holding, running.catch(() => {})]);
     assert.ok(holder, 'the red call ran, so the worktree exists');
-    // shortcut: an absence check, so on a loaded machine the run may not yet have reached the lock; it never fails falsely
-    await sleep(1000);
+    await Promise.race([waiting, running.catch(() => {})]);
     assert.equal(settled, false, 'the run waits while another process holds the repo lock');
     assert.equal(commits(), 0, 'no commit lands while the repo lock is held');
     assert.equal(f.harness.calls.length, 1, 'the run is waiting at the red commit');
@@ -132,17 +132,13 @@ test('a stray write into an idle worktree is attributed to the running action', 
   const aAdmitted = gate();
   const bIdle = gate();
   const aEnded = gate();
-  // B starts only after A's admission has read the worktree list: the pool takes A's ticket lock first, and B's waits
-  // at the second lock-directory mkdir. So only a worktree list read per Attempt can see B.
-  const lockDir = join(f.commonDir, 'gg', 'locks');
-  const mkdir = fsPromises.mkdir;
-  let lockDirs = 0;
-  fsPromises.mkdir = async (path, ...rest) => {
-    if (pathKey(String(path)) === pathKey(lockDir) && ++lockDirs === 2) await aAdmitted.wait();
-    return mkdir(path, ...rest);
-  };
-  syncBuiltinESMExports();
-  t.after(() => { fsPromises.mkdir = mkdir; syncBuiltinESMExports(); });
+  // B starts only after A's admission has read the worktree list: B's ticket lock attempt waits for it. So only a
+  // worktree list read per Attempt can see B.
+  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
+    if (lock.name === 'ticket-22') await aAdmitted.wait();
+    return attempt();
+  });
+  t.after(() => locks.setAttemptWrapper(previous));
   // A runs its Execution while B is admitted and idle, and B goes on only once A has ended.
   hookGh(f, async (args) => {
     if (addsLabel(args, 21, IN_PROGRESS)) { aAdmitted.open(); await bIdle.wait(); }

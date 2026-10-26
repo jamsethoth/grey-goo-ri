@@ -400,15 +400,13 @@ test('a run stop during a resume lookup backoff ends at needs-human', async (t) 
 async function failActivitySave(t, from, to) {
   const g = await reviewFlow(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
-  record.openDb(g.commonDir).exec(`CREATE TRIGGER fail_activity BEFORE UPDATE ON records
-    WHEN json_extract(OLD.json, '$.activity.busy') = ${from} AND json_extract(NEW.json, '$.activity.busy') = ${to}
-      AND json_extract(NEW.json, '$.retries."${REVIEW_COMMENT}".remote.count') = 1
-    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  golden.failSaves(t, (saved, next) => saved?.activity.busy === from && next.activity.busy === to
+    && next.retries[REVIEW_COMMENT]?.remote?.count === 1);
   return g;
 }
 
 test('a failed idle save before a backoff allows no later save or effect', async (t) => {
-  const g = await failActivitySave(t, 1, 0);
+  const g = await failActivitySave(t, true, false);
   const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
@@ -425,7 +423,7 @@ test('a failed idle save before a backoff allows no later save or effect', async
 });
 
 test('a failed busy save after a backoff allows no later save or effect', async (t) => {
-  const g = await failActivitySave(t, 0, 1);
+  const g = await failActivitySave(t, false, true);
   let before;
   g.clock.onSleep = () => { before = g.gh.calls.length; };
   const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as integrity from '../../lib/integrity.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
@@ -117,9 +118,8 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   let reset = false;
   const git = { ...f.options.git, resetTo: async (...args) => { await f.options.git.resetTo(...args); reset = true; } };
   // Crashed after the extra is removed and the changed file deleted, before its rewrite.
-  const restore = golden.crashFs(t, f.worktree, () => reset, { op: 'rm', n: 2, after: true });
-  const seeded = await seedExecution(f, { git });
-  restore();
+  const crashing = integrity.withGit(git, golden.crashFs(f.worktree, () => reset, { op: 'rm', n: 2, after: true }));
+  const seeded = await seedExecution(f, { git, integrity: crashing });
   assert.ok(!existsSync(join(f.worktree, '.claude', 'settings.local.json')), 'the crash came mid-restore');
   assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['reset']);
 
