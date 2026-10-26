@@ -73,7 +73,8 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
     }
     return inner(args, cwd, input);
   };
-  github.setGh(fake.gh);
+  const previousGh = github.setGh(fake.gh);
+  t.after(() => github.setGh(previousGh));
 
   const harness = fakeHarness({ transcriptDir: join(root, 'transcripts'), responses, capabilities: { cost: false, reasoningTokens: false } });
   const exec = {

@@ -5,9 +5,9 @@ it lives and runs. AGENTS.md's Tests section holds the file conventions; this do
 that adds or changes tests follows both.
 
 Owner decisions of 2026-10-24 and 2026-10-25, from the suite-speed work behind grey-goo-ri PR #141 and the research
-under [Sources](#sources). Parts of it are targets that land in order: the integrity seam (grey-goo-ri issue #140),
-deterministic waits (#143), the git interface and its fake (#144), then the audit and layout (#145). Until #145
-lands, tests keep the current `test/<module>.test.mjs` layout.
+under [Sources](#sources), and the #145 audit's decisions D1-D5 (grey-goo-ri issue #145). Test seams in `lib/` for
+the clock, failure injection and fs are grey-goo-ri issue #153; until it lands, the tests that need them keep their
+fixed waits and module patching, outside `test/unit/`.
 
 ## Rules for a test
 
@@ -58,9 +58,9 @@ gg's doubles:
 
 | Double | Replaces | Contract |
 | --- | --- | --- |
-| `test/support/fake-harness.mjs` | the Claude Code and Codex harnesses | `test/harnesses-contract.test.mjs` |
-| `fakeGh` (`test/support/golden.mjs`), installed with `github.setGh` | the `gh` transport | none yet (#145) |
-| the `runShell` in `golden.setup` (`test/support/golden.mjs`), returning red or green output | running the suite | none yet (#145) |
+| `test/support/fake-harness.mjs` | the Claude Code and Codex harnesses | `test/contract/harness/` |
+| `fakeGh` (`test/support/golden.mjs`), installed with `github.setGh` | the `gh` transport | none: gh is never run in tests |
+| the `runShell` in `golden.setup` (`test/support/golden.mjs`), returning red or green output | running the suite | none: `test/contract/exec/` covers the real `runShell` |
 | the injected clock and `crashAt` points | time and crashes | not needed: no external system |
 | fake integrity (#140) | integrity snapshots and Test Immutability | real/fake scenario table (#140) |
 | fake git (#144), `test/support/fake-git.mjs` | `lib/git.mjs` | `test/contract/git/` (#144) |
@@ -73,30 +73,38 @@ A test's size is set by what it touches, not by what it is called (Google's test
 
 | Size | May | gg examples |
 | --- | --- | --- |
-| **Small** (unit) | run in one process; no child processes, no real disk outside `test/fixtures/`, no sleeping | Flow validation, rule tables, routing, retries, bounds, records over fakes |
-| **Medium** (contract, integration) | spawn processes and use the local disk and localhost | real git in temp repositories, `gg.db` on disk, `runShell` process trees, lock contention between processes |
+| **Small** (unit) | run in one process; no child processes, no real git, no sleeping or wall-clock timers; read checked-in repository files; write only in a temp directory the case creates and removes, the State Database included | Flow validation, rule tables, routing, retries, bounds, records over fakes, a Run over the fake git |
+| **Medium** (contract, integration) | spawn processes and use the local disk and localhost | real git in temp repositories, `runShell` process trees, lock contention between processes |
 | **Large** (end-to-end) | the whole of gg against real systems | a full `gg run` over real git and the fakes of remote services |
+
+A small test may use the disk because gg's State Database and worktrees live there and an in-memory replacement would be
+new `lib/` code for no change in what the test shows (#145, D1). What makes a test slow or flaky is a child process,
+real git or a timer, and those are what small excludes.
 
 Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub (AGENTS.md Conventions), so gg has no test
 that leaves the machine. Aim for most tests small; a medium test exists to show a boundary or the wiring, not logic.
 
 ## Layout and stages
 
-Target layout (#145):
-
 | Directory | Holds | Size |
 | --- | --- | --- |
 | `test/unit/` | logic over fakes | small |
-| `test/contract/<boundary>/` | one narrow suite per external boundary (`git`, `github`, `harness`, `sqlite`, `exec`), run against the real module and its fake | medium |
-| `test/e2e/` | a few full runs: the golden traces and the wiring | medium or large |
-| `test/support/`, `test/fixtures/` | helpers, fakes and data, as today | |
+| `test/contract/<boundary>/` | one narrow suite per external boundary (`git`, `harness`, `sqlite`, `exec`), run against the real module and its fake, or against the real system where there is no fake | medium |
+| `test/e2e/` | the full runs and the git-behaviour wiring: the golden traces, and the interpreter, Run and Reconciliation cases whose subject is real git (integrity rollback, admission's dirty, conflict and branch checks, crash and resume, the repo lock), and the `gg` CLI | medium or large |
+| `test/support/`, `test/fixtures/` | helpers, fakes and data | |
+
+A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`
+as before. A module whose cases have different sizes has a file in each directory under the same name: the small cases
+of `run` are in `test/unit/run.test.mjs` and its real-git cases in `test/e2e/run.test.mjs`. `test/unit/layout.test.mjs`
+checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.mjs` or `lib/git.mjs`, asks for real
+git, uses a timer, or calls a support helper that spawns.
 
 Two stages, ordered by speed:
 
 | Stage | Runs | When |
 | --- | --- | --- |
-| **Fast** | `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed | every change: the inner loop for people and agents' fix rounds |
-| **Full** | everything | before a PR is marked ready, and in CI on every PR |
+| **Fast** | `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.mjs fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
+| **Full** | everything: `node scripts/run-suite.mjs` | before a PR is marked ready, and in CI on every PR |
 
 The full stage always runs every contract suite, even when no boundary file changed. A contract also depends on
 things outside the repository, such as the installed git, Node, Windows behaviour or the CI image, and the

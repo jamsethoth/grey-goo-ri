@@ -102,7 +102,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Tells contention from regression for the timing-sensitive cases (exec.test.mjs:80, :228).
+      # Tells contention from regression for the timing-sensitive cases (test/contract/exec/exec.test.mjs).
       # continue-on-error: this step never changes the job's result; the Suite step already failed it.
       - name: Re-run exec.test.mjs alone (diagnostic)
         if: failure() && steps.suite.outcome == 'failure'
@@ -110,7 +110,7 @@ jobs:
         shell: bash
         run: |
           grep -aqE 'exec\.test\.mjs:[0-9]+' "$RUNNER_TEMP/suite.log" || { echo 'no exec.test.mjs failure in this run'; exit 0; }
-          node --test test/exec.test.mjs
+          node --test test/contract/exec/exec.test.mjs
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

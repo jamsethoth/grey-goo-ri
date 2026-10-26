@@ -10,7 +10,7 @@ export const passed = (code, signal, out) =>
 // node --test runs support files too; it sets NODE_TEST_CONTEXT, so the loop stays out of npm test.
 if (!process.env.NODE_TEST_CONTEXT) {
   const [copies = 4, rounds = 25] = process.argv.slice(2).map(Number);
-  const suite = fileURLToPath(new URL('../locks.test.mjs', import.meta.url));
+  const suite = fileURLToPath(new URL('../contract/sqlite/locks.test.mjs', import.meta.url));
   const runOnce = () => new Promise((resolve) => {
     const child = spawn(process.execPath, ['--test', '--test-reporter=tap', suite], { stdio: ['ignore', 'pipe', 'inherit'] });
     let out = '';

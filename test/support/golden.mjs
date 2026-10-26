@@ -175,7 +175,8 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   t.after(() => { childProcess.spawn = spawn; syncBuiltinESMExports(); });
 
   const gh = fakeGh({ branch: BRANCH, observe });
-  github.setGh(gh.gh);
+  const previousGh = github.setGh(gh.gh);
+  t.after(() => github.setGh(previousGh));
 
   const logs = [];
   const ev = events.eventLog(commonDir);
@@ -248,7 +249,7 @@ export function fakeGh({ branch, ticket = TICKET, observe = () => {}, repoLabels
     if (noun === 'pr' && verb === 'list') return JSON.stringify(prs.has(head) ? [prs.get(head)] : []);
     if (noun === 'pr' && verb === 'create') {
       const number = 7 + prs.size;
-      prs.set(head, { number, state: 'OPEN', isDraft: true, url: `https://github.com/o/r/pull/${number}`, body: input, headRefName: head });
+      prs.set(head, { number, state: 'OPEN', isDraft: args.includes('--draft'), url: `https://github.com/o/r/pull/${number}`, body: input, headRefName: head });
       return `${prs.get(head).url}\n`;
     }
     if (noun === 'pr' && verb === 'edit') { prOf(Number(args[2])).body = input; return ''; }
