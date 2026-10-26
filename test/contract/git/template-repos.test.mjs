@@ -8,6 +8,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
+// Equal refs do not show a copy owns its objects: a store shared through a link would pass a ref check.
+const assertNoObject = (repos, sha) => {
+  for (const cwd of repos) assert.equal(spawnSync('git', ['cat-file', '-e', sha], { cwd }).status, 1, `${sha} reached ${cwd}`);
+};
 
 const tempRoot = (t) => {
   const root = mkdtempSync(join(tmpdir(), 'gg-git-'));
@@ -33,6 +37,9 @@ test('a copied fixture repository is independent of its template', async (t) => 
   assert.equal(sh(join(later, 'main'), 'rev-parse', 'main'), base);
   assert.equal(sh(join(later, 'origin.git'), 'rev-parse', 'main'), base);
   assert.equal(sh(join(later, 'main'), 'status', '--porcelain'), '');
+  // `later` is copied after the commit, so it also stands for the template's object stores.
+  assertNoObject([join(untouched, 'main'), join(untouched, 'origin.git'), join(later, 'main'), join(later, 'origin.git')],
+    sh(join(changed, 'main'), 'rev-parse', 'HEAD'));
 });
 
 test('a copied clone pushes to its own origin, not the template\'s', async (t) => {
@@ -47,4 +54,5 @@ test('a copied clone pushes to its own origin, not the template\'s', async (t) =
 
   assert.equal(sh(join(pushed, 'origin.git'), 'rev-parse', 'ticket/9-thing'), sh(join(pushed, 'main'), 'rev-parse', 'HEAD'));
   assert.equal(spawnSync('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/ticket/9-thing'], { cwd: join(later, 'origin.git') }).status, 1);
+  assertNoObject([join(later, 'main'), join(later, 'origin.git')], sh(join(pushed, 'main'), 'rev-parse', 'HEAD'));
 });
