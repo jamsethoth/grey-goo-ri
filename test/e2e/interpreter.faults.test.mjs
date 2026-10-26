@@ -95,6 +95,20 @@ test('a test-fix that adds an ignored test file has it removed by the rollback',
   assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
 });
 
+test('a test-fix that adds an ignored file under a declared test path outside the default globs has it removed by the rollback', async (t) => {
+  const g = await greenSetup(t, {
+    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'spec/injected.mjs': 'injected' }),
+  }, 'real');
+  g.options.testPaths = ['test/**', 'spec/**'];
+  excludeTests(g, 'spec/injected.mjs');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(actionEvent(g, 'test-fix', 2).violations, ['spec/injected.mjs']);
+  assert.ok(!existsSync(join(g.worktree, 'spec', 'injected.mjs')), 'the ignored test the agent added is removed');
+});
+
 test('an ignored test file that was there before the call gets its bytes back from the rollback', async (t) => {
   const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) }, 'real');
   excludeTests(g, 'test/owner.test.mjs');

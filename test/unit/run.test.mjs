@@ -152,6 +152,20 @@ test('preflight names every failing vertex in one error, before any gh call, wor
   assert.equal(f.harness.calls.length, 0, 'no agent started');
 });
 
+test('preflight rejects a repository Layer without testPaths', async (t) => {
+  const f = fixture(t);
+  delete f.options.config.testPaths;
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const file = config.layerPath(f.mainRoot);
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    `${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it`,
+  ]);
+  assert.equal(err.exitCode, 1);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+});
+
 test('preflight lists every unset Vertex and Agent before one merge advice line', async (t) => {
   const f = fixture(t, { fullFlow: true });
   f.options.config.agents.implementer.harness = null;

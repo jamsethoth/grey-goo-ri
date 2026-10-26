@@ -5,6 +5,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import * as checks from '../../lib/checks.mjs';
 import * as config from '../../lib/config.mjs';
 import * as flow from '../../lib/flow.mjs';
 
@@ -41,11 +42,11 @@ test('loadConfig reads the Layer identified by layerPath', (t) => {
   assert.equal(config.loadConfig(dir, join(dir, 'no-user-layer')).baseBranch, 'layer-base');
 });
 
-test('configHash changes with persona, vertex and command changes and ignores key order', () => {
+test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
   const defaults = config.loadDefaults();
   const base = {
     flow: flow.resolveFlow(defaults), personas: defaults.personas, harnesses: { claude: {} }, launchProfile: null,
-    commands: { test: 'npm test' },
+    commands: { test: 'npm test' }, testPaths: ['test/**'],
   };
   const hash = config.configHash(base);
   assert.match(hash, /^[0-9a-f]{64}$/);
@@ -64,6 +65,10 @@ test('configHash changes with persona, vertex and command changes and ignores ke
   const command = structuredClone(base);
   command.commands.test = 'npm run test:all';
   assert.notEqual(config.configHash(command), hash, 'a Declared Command changes the hash');
+
+  const testPaths = structuredClone(base);
+  testPaths.testPaths.push('spec/**');
+  assert.notEqual(config.configHash(testPaths), hash, 'a test path changes the hash');
 });
 
 // A copy of gg's lib and defaults installed under its own root, and the Config Hash input and hash it gives the defaults.
@@ -122,6 +127,22 @@ test('a commands key in the user Layer is a load error naming the file', (t) => 
   });
 });
 
+test('a testPaths key in the user Layer is a load error naming the file', (t) => {
+  const { repo, home } = layers(t, { repo: '{"testPaths":["test/**"]}', home: '{"testPaths":["spec/**"]}' });
+  assert.throws(() => config.loadConfig(repo, home), { message: `${config.layerPath(home)}: testPaths may be set only in a repository Layer` });
+});
+
+test('a testPaths key in the defaults Layer is a load error naming the file', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-install-defaults-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  cpSync(join(repoRoot, 'lib'), join(root, 'lib'), { recursive: true });
+  cpSync(join(repoRoot, 'defaults'), join(root, 'defaults'), { recursive: true });
+  const file = join(root, 'defaults', 'gg.json');
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testPaths: ['test/**'] }));
+  const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
+  assert.throws(() => c.loadDefaults(), { message: `${file}: testPaths may be set only in a repository Layer` });
+});
+
 test('a Layer with a duplicate key in one object is a load error naming the file and key', (t) => {
   const repoDup = layers(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
   assert.throws(() => config.loadConfig(repoDup.repo, repoDup.home),
@@ -154,6 +175,23 @@ for (const bad of [['npm test'], 'npm test', null]) {
     assert.deepEqual(config.commandProblems(bad, layerFile), [`${layerFile}: commands must be an object from name to command line`]);
   });
 }
+
+test('testPathsProblems names a missing, empty or malformed testPaths', () => {
+  const notAList = `${layerFile}: testPaths must be a non-empty list of glob strings`;
+  const entry = (shown) => `${layerFile}: testPaths entry ${shown} must be a non-empty single-line glob string`;
+  assert.deepEqual(config.testPathsProblems(['test/**', '**/*.spec.*'], layerFile), []);
+  assert.deepEqual(config.testPathsProblems(undefined, layerFile), [`${layerFile} declares no testPaths; merge {"testPaths":["<glob>"]} into it`]);
+  assert.deepEqual(config.testPathsProblems([], layerFile), [notAList]);
+  assert.deepEqual(config.testPathsProblems('test/**', layerFile), [notAList]);
+  assert.deepEqual(config.testPathsProblems({ globs: ['test/**'] }, layerFile), [notAList]);
+  assert.deepEqual(config.testPathsProblems(['test/**', 1, '', ' ', 'a\nb', null], layerFile),
+    [entry('1'), entry('""'), entry('" "'), entry('"a\\nb"'), entry('null')]);
+});
+
+test('this repository Layer declares the default test globs as its testPaths', (t) => {
+  const { home } = layers(t);
+  assert.deepEqual(config.loadConfig(repoRoot, home).testPaths, checks.DEFAULT_TEST_GLOBS);
+});
 
 // Until the cutover (grey-goo-ri issue #97): feature-flow builds this repository and reads its AGENTS.md line.
 test('this repository AGENTS.md Commands line matches its repository Layer', (t) => {

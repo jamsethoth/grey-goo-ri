@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import * as checks from '../../lib/checks.mjs';
 import * as events from '../../lib/events.mjs';
 import * as record from '../../lib/record.mjs';
+import { fakeGit } from '../support/fake-git.mjs';
 
 // The State Database is closed before the directory is removed, as Windows requires.
 function tempDir(t) {
@@ -215,6 +217,34 @@ test('diffStats splits test and non-test insertions', () => {
   const s = events.diffStats([
     { path: 'src/cart.mjs', insertions: 3, deletions: 1 }, { path: 'test/cart.test.mjs', insertions: 10, deletions: 0 },
     { path: 'src/util.spec.ts', insertions: 2, deletions: 2 }, { path: 'img.png', insertions: null, deletions: null },
-  ]);
+  ], checks.DEFAULT_TEST_GLOBS);
   assert.deepEqual(s, { files: 4, insertions: 15, deletions: 3, testFiles: 2, testInsertions: 12 });
+});
+
+// Each path is one that either the old stats regex or the default globs took for a test, and the other did not, or a
+// control; case differs only in the directory or extension, so a case-insensitive disk keeps every path apart.
+test('diffStats counts exactly the files Test Immutability treats as tests', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-events-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fake = fakeGit();
+  const { mainRoot, base } = fake.init(root);
+  const add = (p) => {
+    mkdirSync(dirname(join(mainRoot, p)), { recursive: true });
+    writeFileSync(join(mainRoot, p), 'x\n');
+  };
+  add('test/b.mjs'); add('Tests/a.mjs'); add('src/a.TEST.mjs'); add('spec/c.mjs'); add('fixtures/x.json'); add('lib/x.mjs');
+  const immutability = await checks.testImmutability(mainRoot, base, { globs: checks.DEFAULT_TEST_GLOBS, git: fake.git });
+  const stats = events.diffStats([
+    { path: 'test/b.mjs', insertions: 1, deletions: 0 }, { path: 'Tests/a.mjs', insertions: 2, deletions: 0 },
+    { path: 'src/a.TEST.mjs', insertions: 4, deletions: 0 }, { path: 'spec/c.mjs', insertions: 8, deletions: 0 },
+    { path: 'fixtures/x.json', insertions: 16, deletions: 0 }, { path: 'lib/x.mjs', insertions: 32, deletions: 0 },
+  ], checks.DEFAULT_TEST_GLOBS);
+
+  assert.deepEqual(immutability.changed, ['fixtures/x.json', 'test/b.mjs']);
+  assert.deepEqual(stats, { files: 6, insertions: 63, deletions: 0, testFiles: 2, testInsertions: 17 });
+});
+
+test('diffStats counts a declared test path outside the default globs', () => {
+  const s = events.diffStats([{ path: 'e2e/cart.mjs', insertions: 5, deletions: 0 }, { path: 'lib/cart.mjs', insertions: 1, deletions: 0 }], ['e2e/**']);
+  assert.deepEqual(s, { files: 2, insertions: 6, deletions: 0, testFiles: 1, testInsertions: 5 });
 });

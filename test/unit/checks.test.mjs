@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
+import { fakeGit } from '../support/fake-git.mjs';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
 
@@ -214,3 +216,15 @@ for (const [name, output, expected] of OVERLONG) {
     assert.equal(checks.evidence('npm test', { output }).output, expected);
   });
 }
+
+test('test immutability covers a declared test path outside the default globs', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fake = fakeGit();
+  const { mainRoot, base } = fake.init(root, { files: { 'spec/cart.mjs': 'a\n', 'lib/cart.mjs': 'x\n' } });
+  writeFileSync(join(mainRoot, 'spec', 'cart.mjs'), 'a weakened\n');
+  writeFileSync(join(mainRoot, 'lib', 'cart.mjs'), 'x changed\n');
+
+  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: ['spec/**'], git: fake.git }), { ok: false, changed: ['spec/cart.mjs'] });
+  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: checks.DEFAULT_TEST_GLOBS, git: fake.git }), { ok: true, changed: [] });
+});
