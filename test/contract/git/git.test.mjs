@@ -366,6 +366,23 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
     ]);
   });
 
+  contract('diffStats gives a non-ASCII path unquoted and a rename as its removed and added paths', async ({ git, mainRoot: dir, branch, commit }) => {
+    mkdirSync(join(dir, 'test'));
+    writeFileSync(join(dir, 'test', 'café.mjs'), 'a\n');
+    writeFileSync(join(dir, 'test', 'old.mjs'), 'one\ntwo\nthree\n');
+    commit(dir, 'tests');
+    branch(dir, 'ticket/9-thing');
+    writeFileSync(join(dir, 'test', 'café.mjs'), 'a\nb\n');
+    rmSync(join(dir, 'test', 'old.mjs'));
+    writeFileSync(join(dir, 'test', 'new.mjs'), 'one\ntwo\nthree\n');
+    commit(dir, 'rename');
+    assert.deepEqual(await git.diffStats(dir, 'main'), [
+      { path: 'test/café.mjs', insertions: 1, deletions: 0 },
+      { path: 'test/new.mjs', insertions: 3, deletions: 0 },
+      { path: 'test/old.mjs', insertions: 0, deletions: 3 },
+    ]);
+  });
+
   contract('fingerprint reads the head, the index and a tree of every file that is not ignored', async ({ git, mainRoot: dir, commit }) => {
     writeFileSync(join(dir, '.gitignore'), 'secret.txt\n');
     const head = commit(dir, 'ignore');
