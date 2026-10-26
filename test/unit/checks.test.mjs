@@ -244,3 +244,21 @@ test('a test path glob without a wildcard matches that path and what is under it
   assert.equal(isTest('specs/b.mjs'), false);
   assert.equal(isTest('scripts/run-suite.mjs.bak'), false);
 });
+
+test('a test path glob matches a path holding a newline, as git does', () => {
+  assert.equal(checks.testPathMatcher(['spec/**'])('spec/a\nb.mjs'), true);
+  assert.equal(checks.testPathMatcher(['**/*.test.*'])('x\ny/c.test.mjs'), true);
+  assert.equal(checks.testPathMatcher(['**/f/**'])('d\ne/f/g.mjs'), true);
+  assert.equal(checks.testPathMatcher(['spec'])('spec/a\nb.mjs'), true);
+});
+
+test('the fake git reads a ? in a glob as the test path matcher does, literally', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fake = fakeGit();
+  const { mainRoot } = fake.init(root);
+  writeFileSync(join(mainRoot, 'abc.mjs'), 'x\n');
+
+  assert.equal(checks.testPathMatcher(['a?c.mjs'])('abc.mjs'), false);
+  assert.deepEqual(await fake.git.untrackedPaths(mainRoot, { include: 'all', within: { globs: ['a?c.mjs'] } }), []);
+});

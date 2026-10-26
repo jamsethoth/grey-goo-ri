@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import * as checks from '../../lib/checks.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import { canonical, pathKey } from '../../lib/paths.mjs';
 
@@ -39,19 +40,13 @@ function withinMatcher(within) {
   if (Array.isArray(within)) return pathspecMatcher(within);
   const fold = process.platform === 'win32' ? (s) => s.toLowerCase() : (s) => s;
   const under = (within.paths ?? []).map((p) => fold(p.replace(/\/+$/, '')));
-  // Globs fold ASCII case only, and a glob without a wildcard matches what is under it too, as git's :(glob,icase)
-  // pathspecs do.
-  const ascii = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
-  const pathspecRe = (g) => {
-    const re = globRe(ascii(g));
-    const under = /[*?]/.test(g) ? re : new RegExp(`${re.source.slice(0, -1)}(?:/.*)?$`);
-    return { test: (p) => under.test(ascii(p)) };
-  };
-  const globs = (within.globs ?? []).map(pathspecRe);
-  const exclude = (within.exclude ?? []).map(pathspecRe);
-  const included = (p) => (!under.length && !globs.length)
-    || under.some((b) => fold(p) === b || fold(p).startsWith(`${b}/`)) || globs.some((re) => re.test(p));
-  return (p) => included(p) && !exclude.some((re) => re.test(p));
+  // git reads a glob preflight accepts as its :(glob,icase) pathspec the way the test path matcher does
+  // (test/e2e/checks.test.mjs shows it), so the fake reads every glob with that matcher.
+  const globbed = checks.testPathMatcher(within.globs ?? []);
+  const excluded = checks.testPathMatcher(within.exclude ?? []);
+  const included = (p) => (!under.length && !within.globs?.length)
+    || under.some((b) => fold(p) === b || fold(p).startsWith(`${b}/`)) || globbed(p);
+  return (p) => included(p) && !excluded(p);
 }
 
 // A saved pathspec: a literal path matches itself and what is under it, `icase` folds case, `glob` is a glob and
