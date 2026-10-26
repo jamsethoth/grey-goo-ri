@@ -240,8 +240,8 @@ test('diffStats counts exactly the files Test Immutability treats as tests', asy
     { path: 'fixtures/x.json', insertions: 16, deletions: 0 }, { path: 'lib/x.mjs', insertions: 32, deletions: 0 },
   ], checks.DEFAULT_TEST_GLOBS);
 
-  assert.deepEqual(immutability.changed, ['fixtures/x.json', 'test/b.mjs']);
-  assert.deepEqual(stats, { files: 6, insertions: 63, deletions: 0, testFiles: 2, testInsertions: 17 });
+  assert.deepEqual(immutability.changed, ['Tests/a.mjs', 'fixtures/x.json', 'src/a.TEST.mjs', 'test/b.mjs']);
+  assert.deepEqual(stats, { files: 6, insertions: 63, deletions: 0, testFiles: 4, testInsertions: 23 });
 });
 
 test('diffStats counts a declared test path outside the default globs', () => {

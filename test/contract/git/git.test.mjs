@@ -294,6 +294,14 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
     assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['docs'], globs: ['**/*.js'], exclude: ['build/**'] } }), ['docs/n.md']);
   });
 
+  // A plain :(glob) pathspec ignores case on Windows and reports the pathspec's spelling; :(glob,icase) ignores it everywhere.
+  contract('untrackedPaths within globs ignores case and reports each path as it is on disk', async ({ git, mainRoot: dir }) => {
+    mkdirSync(join(dir, 'Spec')); mkdirSync(join(dir, 'deep')); mkdirSync(join(dir, 'node_modules'));
+    writeFileSync(join(dir, 'Spec', 'a.mjs'), 'a'); writeFileSync(join(dir, 'deep', 'B.TEST.mjs'), 'b'); writeFileSync(join(dir, 'node_modules', 'c.test.mjs'), 'c');
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { globs: ['spec/**', '**/*.test.*'], exclude: ['**/NODE_MODULES/**'] } }),
+      ['Spec/a.mjs', 'deep/B.TEST.mjs']);
+  });
+
   contract('untrackedPaths within a glob without a wildcard lists that path and what is under it', async ({ git, mainRoot: dir }) => {
     mkdirSync(join(dir, 'spec', 'unit'), { recursive: true }); mkdirSync(join(dir, 'specs'));
     writeFileSync(join(dir, 'spec', 'unit', 'a.mjs'), 'a'); writeFileSync(join(dir, 'specs', 'b.mjs'), 'b'); writeFileSync(join(dir, 'run.mjs'), 'r');

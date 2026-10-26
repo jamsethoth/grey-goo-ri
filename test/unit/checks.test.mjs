@@ -229,13 +229,12 @@ test('test immutability covers a declared test path outside the default globs', 
   assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: checks.DEFAULT_TEST_GLOBS, git: fake.git }), { ok: true, changed: [] });
 });
 
-test('a test path glob matches case-sensitively, with ? as one character other than a slash, as git does', () => {
-  const isTest = checks.testPathMatcher(['**/test/**', 'spec/a?.mjs']);
+test('a test path glob ignores ASCII case only, as git icase pathspecs do', () => {
+  const isTest = checks.testPathMatcher(['**/test/**', 'spec/É*']);
   assert.equal(isTest('lib/test/x.mjs'), true);
-  assert.equal(isTest('lib/Test/x.mjs'), false);
-  assert.equal(isTest('spec/a1.mjs'), true);
-  assert.equal(isTest('spec/a12.mjs'), false);
-  assert.equal(isTest('spec/a/.mjs'), false);
+  assert.equal(isTest('lib/Test/x.mjs'), true);
+  assert.equal(isTest('SPEC/É.mjs'), true);
+  assert.equal(isTest('spec/é.mjs'), false);
 });
 
 test('a test path glob without a wildcard matches that path and what is under it, as a git pathspec does', () => {
