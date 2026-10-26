@@ -72,10 +72,13 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`; the conventions below cover files.
 
-- One `test/<module>.test.mjs` per module. A large module may also have area files `test/<module>.<area>.test.mjs`;
-  new tests for it still go in `test/<module>.test.mjs`. node runs files in parallel but a file's tests serially, so
-  once a file's serial time passes about 3 minutes, move tests out of it to an area file.
-- Tests import modules as namespaces (`import * as record from '../lib/record.mjs'`) and call `record.fn()`, so a
+- Every test lives in the layout of `docs/testing.md` for its size: `test/unit/` (small: one process, no child
+  process, no real git, no timers), `test/contract/<boundary>/` (one suite per external boundary) or `test/e2e/` (the
+  full runs and the real-git wiring). `test/unit/layout.test.mjs` checks `test/unit/`.
+- A module's tests of one size go in `<dir>/<module>.test.mjs`. A large module may also have area files
+  `<dir>/<module>.<area>.test.mjs`; new tests for it still go in `<dir>/<module>.test.mjs`. node runs files in parallel
+  but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an area file.
+- Tests import modules as namespaces (`import * as record from '../../lib/record.mjs'`) and call `record.fn()`, so a
   missing export fails inside the case.
 - A test for a module that does not exist yet uses `await import()` inside the case.
 - Ported test files keep their case names and assertions but rewrite static named imports to namespace imports.
@@ -88,6 +91,7 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 ## Commands
 
 - test: `node scripts/run-suite.mjs` (`npm test` is the same)
+- fast stage: `node scripts/run-suite.mjs fast [boundary ...]` runs `test/unit/` and the named `test/contract/` suites
 
 gg reads Declared Commands from `.agents/gg/gg.json` (ADR 0013). This section stays, equal to it, for feature-flow
 until the cutover (grey-goo-ri issue #97).

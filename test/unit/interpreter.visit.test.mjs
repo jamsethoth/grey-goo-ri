@@ -1,0 +1,265 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import * as interpreter from '../../lib/interpreter.mjs';
+import * as record from '../../lib/record.mjs';
+import * as golden from '../support/golden.mjs';
+import {
+  firstVisit, intents, steps, actionMarker, terminalReasonOf, actionEvent, loadTicket, branchMessages, subjects, headSha,
+} from '../support/interpreter.mjs';
+
+const DONE = ['intent', 'evidence', 'complete'];
+
+test('a persona file name is read from the shipped personas directory', async (t) => {
+  const g = await golden.setup(t);
+  g.flow.ticket.vertices.implementer.agent.persona = 'implementer.md';
+  await interpreter.runExecution(g.options);
+  const shipped = readFileSync(new URL('../../defaults/personas/implementer.md', import.meta.url), 'utf8');
+  assert.equal(g.harness.calls[0].personaBytes, shipped);
+});
+
+test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
+  const g = await firstVisit(t);
+  assert.deepEqual(g.rec.log.filter((e) => e.step === 'intent').map((i) => [i.action, steps(g.rec, i.marker)]), [
+    ['call', DONE], ['commit', DONE], ['call', DONE], ['commit', DONE], ['push', DONE], ['pr-upsert', DONE], ['pr-ready', DONE],
+    ['comment', DONE], ['label', DONE],
+  ]);
+  assert.deepEqual(record.openIntents(g.rec), []);
+
+  // Each agent Attempt is write-ahead too, its intent carrying the baseline the Integrity Assertion compares against,
+  // which a resume reads back from the State Database.
+  const calls = intents(g.rec, 'call');
+  assert.deepEqual(calls.map((c) => c.marker), [actionMarker(g, 'red', 1), actionMarker(g, 'green', 1)]);
+  const saved = intents(await loadTicket(g), 'call');
+  assert.deepEqual(saved.map((c) => c.payload.baseline), calls.map((c) => c.payload.baseline), 'each baseline reads back as it was taken');
+  assert.equal(saved[0].payload.baseline.head, g.base, 'red compares against the base');
+
+  const commits = intents(g.rec, 'commit');
+  assert.equal(commits.length, 2);
+  assert.deepEqual(Object.keys(commits[0].payload).sort(), ['message', 'parent', 'tree']);
+  assert.ok(commits[0].payload.message.includes(`Gg-Action: ${commits[0].marker}`), commits[0].payload.message);
+  assert.deepEqual(Object.keys(commits[1].payload).sort(), ['message', 'parent', 'tree']);
+  assert.ok(commits[1].payload.message.includes(`Gg-Action: ${commits[1].marker}`), commits[1].payload.message);
+  const head = await headSha(g);
+  const evidenceOf = (m) => g.rec.log.find((e) => e.marker === m && e.step === 'evidence').evidence;
+  assert.equal(evidenceOf(commits[1].marker).sha, head);
+
+  const [push] = intents(g.rec, 'push');
+  assert.deepEqual(push.payload, { branch: golden.BRANCH, sha: head });
+  assert.equal(evidenceOf(push.marker).remoteSha, head);
+
+  const [pr] = intents(g.rec, 'pr-upsert');
+  assert.equal(pr.payload.branch, golden.BRANCH);
+  assert.equal(pr.payload.base, 'main');
+  assert.equal(pr.payload.title, 'Add two numbers');
+  assert.equal(pr.payload.body, g.gh.pr().body, 'the PR intent holds the body itself');
+  assert.equal(typeof pr.payload.bodyHash, 'string');
+  assert.deepEqual(evidenceOf(pr.marker), { number: 7, url: 'https://github.com/o/r/pull/7' });
+
+  assert.deepEqual(intents(g.rec, 'label').map((l) => l.payload),
+    [{ ticket: golden.TICKET, add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }], 'the done label write goes through the log');
+});
+
+test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {
+  const g = await golden.setup(t);
+  const vertex = g.flow.ticket.vertices.implementer;
+  const run = g.harness.run;
+  const seen = {};
+  g.harness.run = async (call) => {
+    seen[call.phase] = structuredClone({ agent: call.agent, access: call.access, persona: call.persona });
+    if (call.phase === 'red') {
+      vertex.agent.model = 'model-y';
+      vertex.agent.access = 'read-only';
+      vertex.options.requireTestPass = false;
+      // Routing, Procedure and Declared Commands are pinned too: none of these may reach the rest of the Visit.
+      vertex.procedure = 'fix';
+      vertex.then = 'needs-human';
+      g.options.commands.test = 'npm run other';
+      call.agent.effort = 'low';
+      writeFileSync(g.personaPath, '# changed\n');
+    }
+    return run(call);
+  };
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.deepEqual(seen.green, seen.red);
+  assert.equal(seen.green.agent.model, 'model-x');
+  assert.equal(seen.green.access, 'workspace-write');
+  assert.equal(seen.green.persona.bytes, golden.PERSONA);
+  assert.equal(g.rec.snapshot.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
+  assert.deepEqual(g.rec.snapshot.options, {});
+  assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: implementer fake\/model-x\/high/);
+  assert.equal(outcome, 'done', 'routing follows the entry snapshot');
+  assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.procedure).map((e) => e.procedure))], ['tdd']);
+  assert.deepEqual(g.shells.map((s) => s.command), ['npm test', 'npm test'], 'checks ran the pinned command');
+  assert.equal(g.rec.snapshot.then, 'done');
+  assert.equal(g.rec.snapshot.commands.test, 'npm test');
+});
+
+test('the red commit records a non-ASCII test path unquoted', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  const red = responses['implementer/1/red/1'];
+  red.files = { 'test/añadir.test.mjs': red.files['test/add.test.mjs'] };
+  const g = await golden.setup(t, { responses });
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'done');
+  assert.deepEqual(g.rec.outputs.red.tests, ['test/añadir.test.mjs']);
+});
+
+test('done removes in-progress and adds ready-for-qa', async (t) => {
+  const g = await golden.setup(t);
+  g.gh.labels.add('gg:state:in-progress');
+  await interpreter.runExecution(g.options);
+
+  assert.equal(g.gh.pr().number, 7);
+  assert.equal(g.gh.pr().isDraft, false, 'PR 7 is ready');
+  assert.deepEqual([...g.gh.labels], ['gg:state:ready-for-qa']);
+  const end = g.readEvents().find((e) => e.type === 'ticket_end');
+  assert.equal(end.outcome, 'done');
+  assert.equal(end.execution, g.rec.execution);
+  assert.equal(end.run, g.rec.run);
+  assert.ok(end.diffStats, 'ticket_end carries diff stats');
+  assert.equal(end.diffStats.testFiles, 1);
+});
+
+test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
+  const g = await golden.setup(t, { responses });
+  g.gh.labels.add('gg:state:in-progress');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.gh.comments.length, 1, 'exactly one blocked comment');
+  const [comment] = g.gh.comments;
+  assert.equal(comment.target, 'issue');
+  assert.equal(comment.number, golden.TICKET);
+  assert.match(comment.body, /^<!-- gg-action gg:\S+ -->$/m);
+  assert.equal(intents(g.rec, 'comment').length, 1, 'the comment goes through the write-ahead log');
+  assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
+  assert.deepEqual([...g.gh.labels], ['gg:state:needs-human'], 'needs-human replaces in-progress');
+
+  const check = actionEvent(g, 'green', 2);
+  assert.ok(check, 'the Green Check runs and is recorded');
+  assert.equal(check.signals.claim.claim, 'blocked');
+  assert.equal(check.signals.checks.find((c) => c.name === 'test').passed, true);
+  assert.equal(check.rule, 'blocked');
+  assert.equal(check.outcome, 'blocked');
+
+  // The blocked comment carries the Terminal Reason, so there is still exactly one comment.
+  const reason = terminalReasonOf(g, { comment: false });
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 2 });
+  assert.equal(reason.outcome, 'blocked');
+  assert.equal(reason.rule, 'blocked');
+  assert.equal(reason.text, 'The agent made a blocked Claim at green; its notes in the blocked comment say why.');
+  assert.ok(!reason.text.includes('contradicts'), 'unfenced agent text stays out of the Terminal Reason');
+  assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
+});
+
+test('agent-reported test names stay out of a red-failed Terminal Reason and are fenced in its comment', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  const injected = 'missing\n\n## injected heading';
+  responses['implementer/1/red/1'] = { ...responses['implementer/1/red/1'], response: { ...golden.redResponse, tests: [injected] } };
+  responses['implementer/1/still-green/1'] = { files: {}, response: { ...golden.redResponse, tests: [injected] } };
+  const g = await golden.setup(t, { responses });
+  await interpreter.runExecution(g.options);
+
+  const reason = terminalReasonOf(g);
+  assert.equal(reason.outcome, 'red-failed');
+  assert.ok(!reason.text.includes('injected'), reason.text);
+  const [comment] = g.gh.comments;
+  assert.ok(!/^## injected heading$/m.test(comment.body), 'the diagnosis cannot render as markdown');
+  assert.ok(comment.body.includes('injected heading'), 'the diagnosis is still posted, fenced');
+});
+
+test('the Terminal Reason is saved before any Terminal side effect, so a crash marking the PR ready keeps it', async (t) => {
+  const g = await golden.setup(t);
+  // A CrashError, since any other throw is now an unexpected fault handled inside runExecution.
+  g.options.gh = { ...g.options.gh, markReady: async () => { throw new interpreter.CrashError('crash'); } };
+  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+
+  const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
+  assert.equal(saved.cursor.vertex, 'done');
+  assert.equal(saved.terminalReason?.outcome, 'ok');
+  assert.match(saved.terminalReason.text, new RegExp(`PR #${saved.pr} is ready for review\\.$`));
+});
+
+test('done carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
+  const g = await firstVisit(t);
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 5 });
+  assert.equal(reason.outcome, 'ok');
+  assert.equal(reason.rule, 'effect-completed');
+  assert.equal(reason.text,
+    `implementer visit 1 completed every tdd Action: the Red Check and the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+});
+
+// ff's red-gate e2e cases on the fake harness: red writes test/fail.test.mjs, the runner answers with `run`,
+// and green writes lib/add.mjs, after which the suite passes.
+async function redGate(t, { tests, run }) {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'] = {
+    files: { 'test/fail.test.mjs': "import assert from 'node:assert';\nassert.fail('rejects bad input');\n" },
+    response: { ...golden.redResponse, tests },
+  };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = {
+    runShell: async (command, opts) => existsSync(join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs'))
+      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
+      : { timedOut: false, ...run },
+  };
+  g.result = await interpreter.runExecution(g.options);
+  return g;
+}
+
+const FAIL_OUTPUT = 'not ok 1 - rejects bad input\n# fail 1';
+
+test('a red run whose runner cannot start is not committed; red-failed records the reason and the next attempt sees it', async (t) => {
+  const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 127, output: 'ff-no-such-runner-xyz: command not found' } });
+  assert.deepEqual(await subjects(g), [], 'no test: commit');
+  assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
+  assert.equal(actionEvent(g, 'red', 2).rule, 'check-exhausted');
+  assert.equal(g.rec.history[0]?.kind, 'red phase failed');
+  const reason = g.rec.history[0].text;
+  assert.match(reason, /could not start/);
+
+  // A second Execution of the same Ticket, its history carried over by the caller, shows the reason in its red Brief.
+  const next = record.createExecution({
+    commonDir: g.commonDir, ticket: golden.TICKET, epic: 1, flow: { name: g.flow.name, entry: g.flow.ticket.entry },
+    configHash: 'cfg-hash', run: '20261015T000100Z-def456', worktree: g.worktree, branch: golden.BRANCH, base: 'main',
+  });
+  next.history = structuredClone(g.rec.history);
+  await interpreter.runExecution({ ...g.options, record: next });
+  const red = g.harness.calls.at(-1);
+  assert.ok(red.brief.startsWith('RED PHASE'), 'the last call is the next red call');
+  assert.ok(red.brief.includes(reason), 'history carries the reason into the next red brief');
+});
+
+test('a red run whose output names none of the reported tests is not committed', async (t) => {
+  const g = await redGate(t, { tests: ['some other test'], run: { code: 1, output: FAIL_OUTPUT } });
+  assert.deepEqual(await subjects(g), [], 'no test: commit');
+  assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
+  assert.match(g.rec.history[0]?.text ?? '', /does not mention any reported failing test/);
+});
+
+test('a red Phase that leaves nothing to commit fails red with "No tests were written."', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['implementer/1/red/1'] = { files: {}, response: { ...golden.redResponse, tests: ['rejects bad input'] } };
+  const g = await golden.setup(t, { responses });
+  g.options.exec = { runShell: async () => ({ code: 1, output: FAIL_OUTPUT, timedOut: false }) };
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'needs-human');
+  const commit = actionEvent(g, 'red', 3);
+  assert.equal(commit.outcome, 'red-failed');
+  assert.equal(commit.rule, 'check-exhausted');
+  assert.deepEqual(intents(g.rec, 'commit'), [], 'no commit intent for an empty commit');
+  assert.deepEqual(g.rec.history, [{ kind: 'red phase failed', text: 'No tests were written.' }]);
+  assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 3));
+});
+
+test('a red run with a nonzero exit naming a reported test is committed as test:', async (t) => {
+  const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 1, output: FAIL_OUTPUT } });
+  assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)']);
+  assert.ok(!g.readEvents().some((e) => e.type === 'action' && e.outcome === 'red-failed'));
+  assert.deepEqual(g.rec.history, []);
+});

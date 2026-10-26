@@ -12,6 +12,7 @@ import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
+import { pathKey } from '../../lib/paths.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from './golden.mjs';
 import { fakeHarness } from './fake-harness.mjs';
@@ -73,7 +74,8 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
     }
     return inner(args, cwd, input);
   };
-  github.setGh(fake.gh);
+  const previousGh = github.setGh(fake.gh);
+  t.after(() => github.setGh(previousGh));
 
   const harness = fakeHarness({ transcriptDir: join(root, 'transcripts'), responses, capabilities: { cost: false, reasoningTokens: false } });
   const exec = {
@@ -172,8 +174,9 @@ export const lastRun = (f) => f.readEvents().findLast((e) => e.type === 'run_sta
 export const loadTicket = (f) => record.load(f.commonDir, 'ticket', TICKET);
 
 // A worktree with a human file: fresh, or the worktree of an Execution whose commit was interrupted (with its Visits).
+// The real integrity over the fake git sees the file on disk without running git.
 export async function dirtyTicket(t, seeded) {
-  const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [], integrity: 'real' });
+  const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [], integrity: 'real', git: 'fake' });
   const seededRec = seeded ? await crashBeforeCommit(f) : null;
   if (!seeded) await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
@@ -197,3 +200,37 @@ export const EPIC = 20;
 
 // The issue views of an epic whose sub-issues are `children`, with `extra` overriding single issues.
 export const epicOf = (children, extra = {}) => ({ [EPIC]: { title: 'An epic', subIssues: children.map((number) => ({ number })) }, ...extra });
+
+export const worktreeOf = (f, n) => gitModule.worktreePath(f.options.config.worktreeRoot, 'main', n);
+export const addsLabel = (args, n, label) => args[0] === 'issue' && args[1] === 'edit' && args[2] === String(n)
+  && args.some((a, i) => a === label && args[i - 1] === '--add-label');
+
+// Opened once. A broken interleaving fails at its case's timeout; a shorter bound of its own failed correct
+// interleavings whenever the machine was loaded enough that the other Ticket's whole Execution outlasted it.
+export function gate() {
+  let open;
+  const opened = new Promise((resolve) => { open = resolve; });
+  return { open, wait: () => opened };
+}
+
+// One fake Harness per Ticket behind the name `fake`, chosen by the worktree each call runs in; `before` runs first.
+export function ticketHarnesses(f, tickets, { responses = {}, before = async () => {} } = {}) {
+  const fakes = Object.fromEntries(tickets.map((n) => [n, fakeHarness({ transcriptDir: join(f.root, 'transcripts', String(n)),
+    responses: responses[n] ?? golden.firstVisitResponses, capabilities: { cost: false, reasoningTokens: false } })]));
+  const ticketOf = (cwd) => tickets.find((n) => pathKey(cwd) === pathKey(worktreeOf(f, n)));
+  f.options.harnesses.fake = { ...fakes[tickets[0]], run: async (call) => {
+    const n = ticketOf(call.cwd);
+    await before(n, call);
+    return fakes[n].run(call);
+  } };
+  return fakes;
+}
+
+// Every gh call passes through `hook` first.
+export function hookGh(f, hook) {
+  const inner = f.gh.gh;
+  github.setGh(async (args, cwd, input) => {
+    await hook(args);
+    return inner(args, cwd, input);
+  });
+}

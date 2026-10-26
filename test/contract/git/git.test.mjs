@@ -47,26 +47,44 @@ async function fakeRepo(t) {
 }
 
 for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
-  const contract = (title, fn) => test(`${title} (${name} git)`, async (t) => fn(await repo(t)));
+  const contract = (title, fn, options = {}) => test(`${title} (${name} git)`, options, async (t) => fn(await repo(t)));
 
-  contract('commitTree commits a recorded tree on its parent, leaves the index alone, and refuses a moved branch', async ({ git, mainRoot: dir, unstage }) => {
+  // Records the tree of a worktree that adds a.txt, as an intent would, and leaves the index at the parent's tree.
+  const recordTree = async ({ git, mainRoot: dir, unstage }) => {
     const parent = await git.headSha(dir);
     const parentTree = await git.treeOf(dir, parent);
     writeFileSync(join(dir, 'a.txt'), 'a');
     await git.stageAll(dir);
     const tree = await git.writeTree(dir);
     unstage(dir);
+    return { parent, parentTree, tree };
+  };
+
+  contract('commitTree commits a recorded tree on its parent, and nothing for the parent\'s own tree', async (repo) => {
+    const { git, mainRoot: dir } = repo;
+    const { parent, parentTree, tree } = await recordTree(repo);
     assert.equal(await git.commitTree(dir, { message: 'nothing', tree: parentTree, parent }), null);
     const sha = await git.commitTree(dir, { message: 'feat: a', tree, parent });
     assert.equal(await git.headSha(dir), sha);
     assert.equal(await git.treeOf(dir, sha), tree);
     assert.deepEqual((await git.commitLog(dir, 'main'))[0].parents, [parent]);
+  });
+
+  contract('commitTree leaves the index alone', async (repo) => {
+    const { git, mainRoot: dir } = repo;
+    const { parent, parentTree, tree } = await recordTree(repo);
+    await git.commitTree(dir, { message: 'feat: a', tree, parent });
     // The index still has the parent's tree, so against the new HEAD a.txt is untracked.
     assert.equal(await git.writeTree(dir), parentTree);
     assert.deepEqual(await git.untrackedPaths(dir), ['a.txt']);
-    // The branch moved since the intent was recorded: nothing is overwritten.
+  });
+
+  contract('commitTree refuses a branch that moved since the intent was recorded', async (repo) => {
+    const { git, mainRoot: dir } = repo;
+    const { parent, tree } = await recordTree(repo);
+    const sha = await git.commitTree(dir, { message: 'feat: a', tree, parent });
     await assert.rejects(git.commitTree(dir, { message: 'feat: again', tree, parent }));
-    assert.equal(await git.headSha(dir), sha);
+    assert.equal(await git.headSha(dir), sha, 'nothing is overwritten');
   });
 
   contract('ensureWorktree starts a new ticket branch from the base on origin', async ({ git, root, mainRoot }) => {
@@ -211,9 +229,12 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
     assert.equal(await git.currentBranch(dir), null);
   });
 
-  contract('branchHead reads a local branch and hasTree tells a stored tree from an unknown one', async ({ git, mainRoot: dir }) => {
+  contract('branchHead reads a local branch and rejects an unknown one', async ({ git, mainRoot: dir }) => {
     assert.equal(await git.branchHead(dir, 'main'), await git.headSha(dir));
     await assert.rejects(git.branchHead(dir, 'ticket/9-unknown'));
+  });
+
+  contract('hasTree tells a stored tree from an unknown one', async ({ git, mainRoot: dir }) => {
     assert.equal(await git.hasTree(dir, await git.treeOf(dir)), true);
     assert.equal(await git.hasTree(dir, 'e'.repeat(40)), false);
   });
@@ -274,12 +295,17 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
   });
 
   // Windows reads DOCS/ as docs/, so a protected path matches there whatever its case.
-  contract('given paths match case-insensitively on Windows only', async ({ git, mainRoot: dir }) => {
+  contract('given paths match case-insensitively on Windows', async ({ git, mainRoot: dir }) => {
     mkdirSync(join(dir, 'docs'));
     writeFileSync(join(dir, 'docs', 'n.md'), 'd');
-    const expected = process.platform === 'win32' ? ['docs/n.md'] : [];
-    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['DOCS'] } }), expected);
-  });
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['DOCS'] } }), ['docs/n.md']);
+  }, { skip: process.platform !== 'win32' && 'Windows only' });
+
+  contract('given paths match case-sensitively off Windows', async ({ git, mainRoot: dir }) => {
+    mkdirSync(join(dir, 'docs'));
+    writeFileSync(join(dir, 'docs', 'n.md'), 'd');
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['DOCS'] } }), []);
+  }, { skip: process.platform === 'win32' && 'not on Windows' });
 
   // A reset intent saved before #144 holds git pathspecs, and Reconciliation can still finish it after the upgrade.
   contract('untrackedPaths and changedPaths still take the pathspecs a reset intent saved before #144', async ({ git, mainRoot: dir, commit }) => {
@@ -344,7 +370,7 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
 
 // What the fake does not model: git's own files, locks and merges.
 
-test('push is called without -u, so no upstream is written to .git/config', async (t) => {
+test('a push writes no upstream into .git/config', async (t) => {
   const { mainRoot: dir, branch, commit } = realRepo(t);
   branch(dir, 'ticket/9-thing');
   commit(dir, 'work');

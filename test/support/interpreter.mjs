@@ -1,6 +1,6 @@
 // Helpers the interpreter test files share.
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
@@ -54,7 +54,41 @@ export const WRONG_ADD = 'export const add = () => 0;\n';
 export const GREEN_FAIL_OUTPUT = 'not ok 1 - adds two numbers\n# fail 1';
 export const attemptsOf = (g, phase, ordinal) => g.readEvents().filter((e) => e.type === 'action' && e.phase === phase && e.ordinal === ordinal);
 
-export const neededHuman = (g) => g.gh.calls.some((c) => c.args.join(' ').includes('--add-label gg:state:needs-human'));
+export const ok = (files) => ({ files, response: golden.greenResponse });
+
+// The suite passes only once lib/add.mjs really adds, so a wrong green fails the Green Check.
+export async function greenSetup(t, responses, integrity, git) {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
+  g.options.exec = {
+    runShell: async (command, opts) => {
+      const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
+      if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
+      return readFileSync(file, 'utf8').includes('a + b')
+        ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
+    },
+  };
+  return g;
+}
+
+// A stop's Terminal Reason names the deciding Action, that Action's Outcome and rule, and a sentence of its own.
+export function stopReason(g, { phase, ordinal, outcome, rule, comment }) {
+  const reason = terminalReasonOf(g, { comment });
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase, ordinal });
+  assert.equal(reason.outcome, outcome);
+  assert.equal(reason.rule, rule);
+  assert.doesNotMatch(reason.text, /ended with|cannot run yet/, `a sentence naming the failure: ${reason.text}`);
+  return reason;
+}
+
+// The Ticket branch as the injected git holds it: commit messages since the base, oldest first, and their subjects.
+export async function branchMessages(g) {
+  const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);
+  return log.filter((c) => c.sha !== g.base).map((c) => c.message).reverse();
+}
+export const subjects = async (g) => (await branchMessages(g)).map((m) => m.split('\n')[0]);
+export const headSha = (g) => g.options.git.headSha(g.worktree);
+// The Ticket branch's commit on origin, or null. A test that holds the repo lock passes the unlocked git.
+export const originSha = (g, git = g.options.git) => git.remoteSha(g.mainRoot, golden.BRANCH);
 
 // T17: the review and fix Procedures on an inline Flow matching request 3.3's illustration.
 export const REVIEWER_PERSONA = '# reviewer\nJudge the diff.\n';
@@ -74,7 +108,6 @@ export async function reviewSetup(t, responses, opts) {
   g.events = g.readEvents();
   g.actions = g.events.filter((e) => e.type === 'action' && e.procedure);
   g.at = (vertex, visit, phase, ordinal) => g.actions.filter((e) => e.vertex === vertex && e.visit === visit && e.phase === phase && e.ordinal === ordinal);
-  g.subjects = () => golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean).reverse();
   return g;
 }
 
@@ -112,6 +145,7 @@ export function reviewStopReason(g) {
 
 // #67: agent Attempts are write-ahead, and each record transition saves with its Event.
 export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKET);
+// The saved row read without awaiting, for a getter that cannot await.
 export const ticketRow = (g) => JSON.parse(record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET).json);
 export const attemptMarker = (g, vertex, visit, phase, ordinal, attempt = 1) =>
   marker.formatMarker({ execution: g.rec.execution, vertex, visit, phase, ordinal, run: g.rec.run, attempt });

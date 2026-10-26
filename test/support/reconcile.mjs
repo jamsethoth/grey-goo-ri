@@ -10,19 +10,23 @@ export const resetEntries = (rec) => rec.log.filter((e) => e.action === 'reset')
 export const markerOf = (rec, vertex, visit, phase, ordinal) =>
   marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
 export const stepsOf = (rec, m) => rec.log.filter((e) => e.marker === m).map((e) => e.step);
-export const commitMessages = (g) => golden.sh(g.worktree, 'log', '--format=%B%x00', `${g.base}..HEAD`).split('\0').map((m) => m.trim()).filter(Boolean);
-export const remoteSha = (g) => golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0] || null;
+// Read through the git the case runs on, real or fake. The messages are the branch's commits since base, newest first.
+export async function branchMessages(g) {
+  const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);
+  return log.slice(0, log.findIndex((c) => c.sha === g.base)).map((c) => c.message);
+}
+export const originSha = (g) => g.options.git.remoteSha(g.mainRoot, golden.BRANCH);
 export const withMarker = (bodies, m) => bodies.filter((b) => b.includes(marker.markerComment(m)));
 export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKET);
 
 export const EFFECTS = {
   commit: {
     at: ['implementer', 1, 'green', 3],
-    happened: (g, m) => commitMessages(g).some((b) => b.includes(marker.markerTrailer(m))),
+    happened: async (g, m) => (await branchMessages(g)).some((b) => b.includes(marker.markerTrailer(m))),
   },
   push: {
     at: ['implementer', 1, 'green', 4],
-    happened: (g) => remoteSha(g) === golden.sh(g.worktree, 'rev-parse', 'HEAD'),
+    happened: async (g) => (await originSha(g)) === (await g.options.git.headSha(g.worktree)),
   },
   'PR upsert': {
     at: ['implementer', 1, 'green', 5],
