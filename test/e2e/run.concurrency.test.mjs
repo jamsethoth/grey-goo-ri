@@ -36,9 +36,13 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
   const waiting = refusedFirstAttempts(t, verbs.length);
   const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
   const pending = verbs.map((v) => git[v]());
-  await Promise.race([waiting, ...pending]);
-  assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
-  await holder.release();
+  // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
+  try {
+    await Promise.race([waiting, ...pending]);
+    assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
+  } finally {
+    await holder.release();
+  }
   await Promise.all(pending);
   assert.deepEqual(called.sort(), [...verbs].sort(), 'every write runs after release');
 });
@@ -49,9 +53,13 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   let settled = false;
   const waiting = refusedFirstAttempts(t, 1);
   const pending = integrity.snapshot(f.mainRoot, f.options.git).finally(() => { settled = true; });
-  await Promise.race([waiting, pending.catch(() => {})]);
-  assert.equal(settled, false, 'the snapshot writes no object while another process holds the repo lock');
-  await holder.release();
+  // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
+  try {
+    await Promise.race([waiting, pending.catch(() => {})]);
+    assert.equal(settled, false, 'the snapshot writes no object while another process holds the repo lock');
+  } finally {
+    await holder.release();
+  }
   assert.equal((await pending).head, f.base, 'the snapshot runs after release');
 });
 

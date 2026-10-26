@@ -130,20 +130,27 @@ await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo')
 });
 
 // Times the case's lock waits on a clock whose sleeps pass at once, moving its time on and running `during` first.
-// Returns the sleeps.
+// Returns the sleeps. When the case ends the clock's time runs out, so an acquire it abandoned (one that stopped
+// sleeping on this clock never reaches its deadline) ends too. Called before the case's temp directory exists, so this
+// runs before that directory's removal, which throws on Windows while an abandoned lock is still open.
 const useClock = (t, during = () => {}) => {
   let now = 0;
+  let ended = false;
   const sleeps = [];
-  const previous = locks.setClock({ now: () => now, sleep: async (ms) => { sleeps.push(ms); await during(); now += ms; } });
-  t.after(() => locks.setClock(previous));
+  const previous = locks.setClock({ now: () => (ended ? Infinity : now), sleep: async (ms) => { sleeps.push(ms); await during(); now += ms; } });
+  t.after(() => {
+    ended = true;
+    locks.setClock(previous);
+  });
   return sleeps;
 };
 
 // The lock-timing cases are bounded: an acquire that stops sleeping on the injected clock never reaches its deadline.
 test('acquire waits for release', { timeout: 10_000 }, async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const first = await locks.acquire(commonDir, 'repo');
+  let first;
   const sleeps = useClock(t, () => locks.release(first));
+  const commonDir = await tempCommonDir(t);
+  first = await locks.acquire(commonDir, 'repo');
   const second = await locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20 });
   assert.equal(second.waited, true, 'waited for the holder');
   assert.deepEqual(sleeps, [20], 'one poll, after which the holder had released');
@@ -151,9 +158,9 @@ test('acquire waits for release', { timeout: 10_000 }, async (t) => {
 });
 
 test('acquire times out', { timeout: 10_000 }, async (t) => {
+  const sleeps = useClock(t);
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
-  const sleeps = useClock(t);
   await assert.rejects(locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 50 }), (err) => {
     assert.ok(err instanceof locks.LockTimeoutError);
     return true;
@@ -163,10 +170,10 @@ test('acquire times out', { timeout: 10_000 }, async (t) => {
 });
 
 test('withLock forwards its acquisition timeout without invoking the callback', { timeout: 10_000 }, async (t) => {
+  useClock(t);
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
   let ran = false;
-  useClock(t);
   await assert.rejects(locks.withLock(commonDir, 'repo', async () => { ran = true; }, { timeoutMs: 150, pollMs: 20 }),
     (err) => err instanceof locks.LockTimeoutError && err.message.includes('150ms'));
   assert.equal(ran, false, 'the callback never runs without the lock');
