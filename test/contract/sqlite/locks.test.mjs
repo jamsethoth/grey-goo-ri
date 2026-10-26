@@ -136,7 +136,8 @@ const clockOf = (during = () => {}) => {
   return { sleeps, now: () => now, sleep: async (ms) => { sleeps.push(ms); await during(); now += ms; } };
 };
 
-test('acquire waits for release', async (t) => {
+// The lock-timing cases are bounded: an acquire that stops sleeping on the injected clock never reaches its deadline.
+test('acquire waits for release', { timeout: 10_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
   const clock = clockOf(() => locks.release(first));
@@ -146,7 +147,7 @@ test('acquire waits for release', async (t) => {
   await locks.release(second);
 });
 
-test('acquire times out', async (t) => {
+test('acquire times out', { timeout: 10_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
   const clock = clockOf();

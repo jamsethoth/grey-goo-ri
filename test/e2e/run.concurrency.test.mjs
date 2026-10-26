@@ -36,7 +36,7 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
   const waiting = refusedFirstAttempts(t, verbs.length);
   const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
   const pending = verbs.map((v) => git[v]());
-  await Promise.race([waiting, Promise.all(pending)]);
+  await Promise.race([waiting, ...pending]);
   assert.deepEqual(called, [], 'no write runs while another process holds the repo lock');
   await holder.release();
   await Promise.all(pending);
