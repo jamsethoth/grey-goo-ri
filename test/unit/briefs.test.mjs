@@ -74,7 +74,7 @@ test('assertStrict rejects a nested object without additionalProperties', () => 
   assert.throws(() => briefs.assertStrict(nested), /additionalProperties/);
 });
 
-const example = (name) => JSON.parse(readFileSync(new URL(`./fixtures/example/${name}.schema.json`, import.meta.url), 'utf8'));
+const example = (name) => JSON.parse(readFileSync(new URL(`../fixtures/example/${name}.schema.json`, import.meta.url), 'utf8'));
 
 test('a schema keyword outside the strict subset is rejected with its path', () => {
   for (const name of ['red', 'implement', 'review']) {
