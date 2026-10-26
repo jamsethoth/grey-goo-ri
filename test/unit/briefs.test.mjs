@@ -101,6 +101,20 @@ test('a schema keyword outside the strict subset is rejected with its path', () 
   }
 });
 
+test('a keyword with a value outside the strict subset is rejected with its path', () => {
+  const cases = [
+    [{ type: ['string'] }, /type/],
+    [{ type: 'constructor' }, /type/],
+    [{ type: 'string', enum: null }, /enum/],
+    [{ type: 'string', enum: false }, /enum/],
+    [{ type: 'string', enum: [] }, /enum/],
+  ];
+  for (const [field, keyword] of cases) {
+    const schema = { type: 'object', properties: { list: { type: 'array', items: { type: 'object', properties: { field }, required: ['field'], additionalProperties: false } } }, required: ['list'], additionalProperties: false };
+    assert.throws(() => briefs.assertStrict(schema, 'x.schema.json'), (e) => /x\.schema\.json\.list\[\]\.field/.test(e.message) && keyword.test(e.message), JSON.stringify(field));
+  }
+});
+
 test('the claim enum must equal the declared tokens', () => {
   assert.doesNotThrow(() => briefs.assertClaimEnum(example('review'), ['ok', 'changes', 'blocked']));
   assert.doesNotThrow(() => briefs.assertClaimEnum(example('red'), ['blocked', 'ok']));
