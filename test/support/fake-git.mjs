@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import * as realGit from '../../lib/git.mjs';
+import * as gitModule from '../../lib/git.mjs';
 import { canonical, pathKey } from '../../lib/paths.mjs';
 
 const sha1 = (data) => createHash('sha1').update(data).digest('hex');
@@ -32,7 +32,21 @@ const globRe = (glob, flags = '') => new RegExp(`^${glob.split(/(\*\*\/|\*\*|\*|
   part === '**/' ? '(?:.*/)?' : part === '**' ? '.*' : part === '*' ? '[^/]*' : part === '?' ? '[^/]'
     : part.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('')}$`, flags);
 
-// lib/git.mjs's pathspecs: a literal path matches itself and what is under it, `icase` folds case, `glob` is a glob and
+// `within` as lib/git.mjs reads it: { paths, globs, exclude }, where a path matches itself and what is under it, folding
+// case on Windows, and with only exclusions everything else matches; or the pathspecs a reset intent saved before #144.
+function withinMatcher(within) {
+  if (!within) return () => true;
+  if (Array.isArray(within)) return pathspecMatcher(within);
+  const fold = process.platform === 'win32' ? (s) => s.toLowerCase() : (s) => s;
+  const under = (within.paths ?? []).map((p) => fold(p.replace(/\/+$/, '')));
+  const globs = (within.globs ?? []).map((g) => globRe(g));
+  const exclude = (within.exclude ?? []).map((g) => globRe(g));
+  const included = (p) => (!under.length && !globs.length)
+    || under.some((b) => fold(p) === b || fold(p).startsWith(`${b}/`)) || globs.some((re) => re.test(p));
+  return (p) => included(p) && !exclude.some((re) => re.test(p));
+}
+
+// A saved pathspec: a literal path matches itself and what is under it, `icase` folds case, `glob` is a glob and
 // `exclude` removes matches; with only exclusions everything else matches.
 function pathspecMatcher(specs) {
   const include = [], exclude = [];
@@ -176,9 +190,8 @@ export function fakeGit() {
       return { mainRoot: dirname(gitCommonDir), gitCommonDir, name: dirname(gitCommonDir).split(/[\\/]/).at(-1) };
     },
     commonDir: async (cwd) => canonical(at(cwd).repo.commonDir),
-    slugify: realGit.slugify,
-    worktreePath: realGit.worktreePath,
-    pathspecs: realGit.pathspecs,
+    slugify: gitModule.slugify,
+    worktreePath: gitModule.worktreePath,
 
     async ensureWorktree({ mainRoot, path, branch, base }) {
       const { repo } = at(mainRoot);
@@ -280,10 +293,10 @@ export function fakeGit() {
       return differing(a, b).map((path) => ({ path, change: !a.has(path) ? 'added' : !b.has(path) ? 'deleted' : 'modified' }));
     },
     // Renames as git detects them by default, but only exact ones: the deleted path of a moved file is not listed.
-    async changedPaths(cwd, from, to, within = []) {
+    async changedPaths(cwd, from, to, within) {
       const ctx = at(cwd);
       const [a, b] = [treeFiles(ctx, from), treeFiles(ctx, to)];
-      const match = pathspecMatcher(within);
+      const match = withinMatcher(within);
       const changed = differing(a, b).filter(match);
       const added = changed.filter((p) => !a.has(p)).map((p) => b.get(p));
       return changed.filter((p) => {
@@ -300,10 +313,10 @@ export function fakeGit() {
       const tracked = new Map([...ctx.wt.index.keys()].filter((p) => files.has(p)).map((p) => [p, files.get(p)]));
       return differing(treeFiles(ctx, commit), tracked);
     },
-    async untrackedPaths(cwd, { include = 'unignored', within = [] } = {}) {
+    async untrackedPaths(cwd, { include = 'unignored', within } = {}) {
       const { wt } = at(cwd);
       const rules = rulesOf(wt);
-      const match = pathspecMatcher(within);
+      const match = withinMatcher(within);
       const keep = { unignored: (p) => !isIgnored(rules, p), ignored: (p) => isIgnored(rules, p), all: () => true }[include];
       return sorted([...disk(wt).keys()].filter((p) => !wt.index.has(p) && keep(p) && match(p)));
     },

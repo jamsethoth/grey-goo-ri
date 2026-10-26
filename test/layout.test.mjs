@@ -34,6 +34,8 @@ test('no module outside lib/git.mjs passes git a command line', async () => {
     [/\b(?:run|spawn|spawnSync|execFile|execFileSync)\(\s*['"`]git['"`]/, 'a spawned git'],
     [/\^\{|\.\.\.HEAD|refs\/heads\/|['"`]HEAD['"`]/, 'git ref syntax'],
     [/['"`]:\([a-z,]+\)/, 'a git pathspec'],
+    // bin/gg.mjs passes lib/git.mjs in; a module that imported it could fall back to it instead of the git it was given.
+    [/from ['"`]\.\/git\.mjs['"`]/, 'an import of lib/git.mjs'],
   ];
   for (const path of [...modules.filter((m) => m !== 'lib/git.mjs'), 'bin/gg.mjs', 'scripts/run-suite.mjs']) {
     const text = await readFile(root + path, 'utf8');

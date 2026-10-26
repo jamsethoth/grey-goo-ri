@@ -241,9 +241,11 @@ test('runExecution uses an injected integrity and Test Immutability', async (t) 
     calls.push(name);
     return fn(...args);
   };
+  const bound = integrity.withGit(g.options.git);
   const injected = Object.fromEntries(['snapshot', 'isCleanAt', 'untrackedFiles', 'ignoredFiles', 'restoreUntracked', 'begin', 'end']
-    .map((name) => [name, spy(name, integrity[name])]));
-  const result = await interpreter.runExecution({ ...g.options, integrity: injected, testImmutability: spy('testImmutability', checks.testImmutability) });
+    .map((name) => [name, spy(name, bound[name])]));
+  const testImmutability = (cwd, baseline) => checks.testImmutability(cwd, baseline, { git: g.options.git });
+  const result = await interpreter.runExecution({ ...g.options, integrity: injected, testImmutability: spy('testImmutability', testImmutability) });
   assert.equal(result.outcome, 'done');
   // Clean before red, then each agent call between its begin and end, then Test Immutability with the Green Check.
   assert.deepEqual(calls, ['isCleanAt', 'begin', 'end', 'begin', 'end', 'testImmutability']);
