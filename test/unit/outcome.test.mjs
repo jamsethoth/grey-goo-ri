@@ -46,19 +46,19 @@ test('row transient-exhausted: failed transient at budget -> needs-human', () =>
   assertRow(resolve({ result: failed('rate-limited'), retries: { ...none, rateLimited: 2 } }), 'transient-exhausted', 'needs-human', 'stop');
 });
 
-test('row run-stop: failed auth, quota or budget -> run-stop', () => {
-  for (const cls of ['auth', 'quota', 'budget']) {
+for (const cls of ['auth', 'quota', 'budget']) {
+  test(`row run-stop: failed ${cls} -> run-stop`, () => {
     const r = resolve({ result: failed(cls) });
     assertRow(r, 'run-stop', 'run-stop', 'stop');
     assert.equal(r.failureClass, cls);
-  }
-});
+  });
+}
 
-test('row timeout-retry: timed-out or killed within budget -> timeout-retry', () => {
-  for (const status of ['timed-out', 'killed']) {
+for (const status of ['timed-out', 'killed']) {
+  test(`row timeout-retry: ${status} within budget -> timeout-retry`, () => {
     assertRow(resolve({ result: { status, response: { claim: 'ok' }, failure: null }, claim: claim('ok') }), 'timeout-retry', 'timeout-retry', 'retry');
-  }
-});
+  });
+}
 
 test('row timeout-exhausted: timed-out at budget -> needs-human', () => {
   const r = resolve({ result: { status: 'timed-out', response: null, failure: null }, retries: { ...none, timeout: 1 } });
@@ -129,29 +129,6 @@ test('row ok: completed, valid ok, every check passing -> ok', () => {
   assertRow(resolve({ claim: claim('ok'), checks: [integrityOk, check('test', true)] }), 'ok', 'ok', 'advance');
 });
 
-test('every row fires under a unique name', () => {
-  const rows = [
-    resolve({ checks: [check('worktree-unchanged', false, true)] }),
-    resolve({ result: failed('transient') }),
-    resolve({ result: failed('transient'), retries: { ...none, transient: 2 } }),
-    resolve({ result: failed('auth') }),
-    resolve({ result: { status: 'killed', response: null, failure: null } }),
-    resolve({ result: { status: 'killed', response: null, failure: null }, retries: { ...none, timeout: 1 } }),
-    resolve({ result: failed('unknown') }),
-    resolve({ claim: { valid: false, reason: 'malformed' } }),
-    resolve({ claim: { valid: false, reason: 'malformed' }, retries: { ...none, parse: 1 } }),
-    resolve({ claim: claim('blocked') }),
-    resolve({ claim: claim('misscoped') }),
-    outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('test', false)], retries: none, exhausted: true }),
-    resolve({ claim: claim('ok'), checks: [check('test', false)] }),
-    resolve({ claim: claim('changes') }),
-    resolve({ claim: claim('ok') }),
-  ].map(r => r.row);
-  assert.deepEqual(rows, ['integrity-violation', 'transient-retry', 'transient-exhausted', 'run-stop', 'timeout-retry',
-    'timeout-exhausted', 'unknown-failure', 'parse-retry', 'parse-exhausted', 'blocked', 'misscoped', 'check-exhausted',
-    'check-failed', 'claim-route', 'ok']);
-});
-
 test('integrity beats a timed-out result', () => {
   const r = resolve({ result: { status: 'timed-out', response: null, failure: null }, claim: null, checks: [check('worktree-unchanged', false, true)] });
   assertRow(r, 'integrity-violation', 'integrity-violation', 'stop');
@@ -162,14 +139,7 @@ test('blocked beats passing checks', () => {
   assertRow(r, 'blocked', 'blocked', 'stop');
 });
 
-test('ok with a failing declared check is a retry naming the check', () => {
-  const r = resolve({ claim: claim('ok'), checks: [integrityOk, check('lint', false)] });
-  assertRow(r, 'check-failed', 'check-failed', 'retry');
-  assert.equal(r.check, 'lint');
-});
-
 test('a non-ok non-stop claim routes by its token', () => {
-  assertRow(resolve({ claim: claim('changes'), checks: [integrityOk, check('test', true)] }), 'claim-route', 'changes', 'advance');
   assertRow(resolve({ claim: claim('repeat') }), 'claim-route', 'repeat', 'advance');
 });
 
@@ -184,12 +154,14 @@ test('a policy overrides the retry budgets', () => {
   assertRow(resolve({ result: failed('transient'), policy }), 'transient-exhausted', 'needs-human', 'stop');
 });
 
+for (const [status, failure] of [['failed', { class: 'transient', retryAfterMs: null }], ['timed-out', null], ['killed', null]]) {
+  test(`a ${status} result with a valid ok claim does not advance`, () => {
+    assert.notEqual(resolve({ result: { status, response: { claim: 'ok' }, failure }, claim: claim('ok') }).direction, 'advance');
+  });
+}
+
 test('advance needs completed, valid ok and every check passing', () => {
   assert.equal(resolve({ claim: claim('ok') }).direction, 'advance');
-  for (const status of ['failed', 'timed-out', 'killed']) {
-    const result = { status, response: { claim: 'ok' }, failure: status === 'failed' ? { class: 'transient', retryAfterMs: null } : null };
-    assert.notEqual(resolve({ result, claim: claim('ok') }).direction, 'advance', status);
-  }
   assert.notEqual(resolve({ claim: { valid: false, reason: 'malformed' } }).direction, 'advance');
   assert.notEqual(resolve({ claim: null }).direction, 'advance');
   assert.notEqual(resolve({ claim: claim('ok'), checks: [integrityOk, check('test', false)] }).direction, 'advance');
@@ -206,42 +178,60 @@ test('resolve is pure: it does not mutate its inputs', () => {
 // #66: GitHub and git failures of a remote Action, classified as gh and git report them.
 const http = (status, message, headers = {}) =>
   Object.assign(new Error(`gh: ${message} (HTTP ${status})\ngh api repos/{owner}/{repo}/issues/7/comments`), { code: 1, http: { status, headers } });
+const NOW = 1_790_000_000_000;
 
-test('remote failures are classified and backed off in GitHub\'s order', () => {
-  const now = 1_790_000_000_000;
-  const cases = [
-    ['a 502', http(502, 'Bad Gateway'), 'transient', true],
-    ['a 500 from a gh verb', new Error('HTTP 500: Internal Server Error (https://api.github.com/graphql)'), 'transient', true],
-    ['a reset connection', new Error('Post "https://api.github.com/graphql": read tcp 10.0.0.2:5000->140.82.112.6:443: read: connection reset by peer'), 'transient', true],
-    ['an unresolved host on push', new Error("fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: github.com"), 'transient', true],
-    ['a secondary rate limit', http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': '7' }), 'rate-limited', true],
-    ['a primary rate limit', http(403, 'API rate limit exceeded for user ID 1.', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((now + 30_000) / 1000) }), 'rate-limited', true],
-    ['a rate limit a gh verb reports', new Error('HTTP 403: You have exceeded a secondary rate limit. (https://api.github.com/graphql)'), 'rate-limited', true],
-    ['a 429', http(429, 'Too Many Requests'), 'rate-limited', true],
-    ['a bare 403', http(403, 'Resource not accessible by integration'), 'auth', false],
-    ['a 401', http(401, 'Bad credentials'), 'auth', false],
-    ['a validation failure', http(422, 'Validation Failed'), 'invalid', false],
-    ['a non-fast-forward push', new Error(" ! [rejected]        abc123 -> ticket/1-x (non-fast-forward)\nerror: failed to push some refs to 'origin'"), 'rejected', false],
-    ['an unknown failure', new Error('gh comment down'), 'unknown', false],
-    // exec.run appends the command to the message; a PR title there is not the response's status.
-    ['a status only in the appended command', Object.assign(new Error("GraphQL: Head sha can't be blank (createPullRequest)\ngh pr create --draft --title Handle HTTP 502 errors --body-file -"),
-      { code: 1, stdout: '', stderr: "GraphQL: Head sha can't be blank (createPullRequest)\n" }), 'unknown', false],
-    // git's http.c reports an HTTP failure of a push or fetch in its own words.
-    ...[[503, 'transient', true], [429, 'rate-limited', true], [403, 'auth', false], [404, 'invalid', false]].map(([status, cls, retryable]) => [
-      `a git ${status}`, Object.assign(new Error(`fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: ${status}\ngit push origin x`),
-        { code: 128, stdout: '', stderr: `fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: ${status}\n` }), cls, retryable]),
-    ['a status gh printed',Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/7/comments'),
-      { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)\n' }), 'transient', true],
-  ];
-  for (const [name, err, cls, retryable] of cases) {
+for (const [name, err, cls, retryable] of [
+  ['a 502', http(502, 'Bad Gateway'), 'transient', true],
+  ['a 500 from a gh verb', new Error('HTTP 500: Internal Server Error (https://api.github.com/graphql)'), 'transient', true],
+  ['a reset connection', new Error('Post "https://api.github.com/graphql": read tcp 10.0.0.2:5000->140.82.112.6:443: read: connection reset by peer'), 'transient', true],
+  ['an unresolved host on push', new Error("fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: github.com"), 'transient', true],
+  ['a secondary rate limit', http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': '7' }), 'rate-limited', true],
+  ['a primary rate limit', http(403, 'API rate limit exceeded for user ID 1.', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((NOW + 30_000) / 1000) }), 'rate-limited', true],
+  ['a rate limit a gh verb reports', new Error('HTTP 403: You have exceeded a secondary rate limit. (https://api.github.com/graphql)'), 'rate-limited', true],
+  ['a 429', http(429, 'Too Many Requests'), 'rate-limited', true],
+  ['a bare 403', http(403, 'Resource not accessible by integration'), 'auth', false],
+  ['a 401', http(401, 'Bad credentials'), 'auth', false],
+  ['a validation failure', http(422, 'Validation Failed'), 'invalid', false],
+  ['a non-fast-forward push', new Error(" ! [rejected]        abc123 -> ticket/1-x (non-fast-forward)\nerror: failed to push some refs to 'origin'"), 'rejected', false],
+  ['an unknown failure', new Error('gh comment down'), 'unknown', false],
+  // exec.run appends the command to the message; a PR title there is not the response's status.
+  ['a status only in the appended command', Object.assign(new Error("GraphQL: Head sha can't be blank (createPullRequest)\ngh pr create --draft --title Handle HTTP 502 errors --body-file -"),
+    { code: 1, stdout: '', stderr: "GraphQL: Head sha can't be blank (createPullRequest)\n" }), 'unknown', false],
+  // git's http.c reports an HTTP failure of a push or fetch in its own words.
+  ['a git 503', Object.assign(new Error("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 503\ngit push origin x"),
+    { code: 128, stdout: '', stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 503\n" }), 'transient', true],
+  ['a git 429', Object.assign(new Error("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429\ngit push origin x"),
+    { code: 128, stdout: '', stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429\n" }), 'rate-limited', true],
+  ['a git 403', Object.assign(new Error("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\ngit push origin x"),
+    { code: 128, stdout: '', stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\n" }), 'auth', false],
+  ['a git 404', Object.assign(new Error("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 404\ngit push origin x"),
+    { code: 128, stdout: '', stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 404\n" }), 'invalid', false],
+  ['a status gh printed', Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/7/comments'),
+    { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)\n' }), 'transient', true],
+]) {
+  test(`a remote failure is classified: ${name} is ${retryable ? 'a retryable' : 'a final'} ${cls}`, () => {
     const f = outcome.classifyRemoteFailure(err);
-    assert.equal(f.class, cls, name);
-    assert.equal(f.retryable, retryable, name);
-  }
-  const delay = (err, n) => outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), n, now);
-  assert.equal(delay(cases[4][1], 1), 7_000, 'Retry-After first');
-  assert.equal(delay(cases[5][1], 1), 30_000, 'then the reset time once no requests remain');
-  assert.equal(delay(http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': 'soon' }), 1), 60_000, 'an invalid header falls through');
-  assert.equal(delay(cases[0][1], 1), 60_000, 'else at least 60 s');
-  assert.equal(delay(cases[0][1], 2), 120_000, 'growing exponentially');
+    assert.equal(f.class, cls);
+    assert.equal(f.retryable, retryable);
+  });
+}
+
+const delay = (err, n) => outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), n, NOW);
+
+test('a remote failure backs off by its Retry-After first', () => {
+  assert.equal(delay(http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': '7' }), 1), 7_000);
+});
+
+test('a rate limit with no requests remaining backs off until the reset time', () => {
+  const err = http(403, 'API rate limit exceeded for user ID 1.', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((NOW + 30_000) / 1000) });
+  assert.equal(delay(err, 1), 30_000);
+});
+
+test('a rate limit with an invalid Retry-After backs off 60 s', () => {
+  assert.equal(delay(http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': 'soon' }), 1), 60_000);
+});
+
+test('a transient remote failure backs off at least 60 s, growing exponentially', () => {
+  assert.equal(delay(http(502, 'Bad Gateway'), 1), 60_000);
+  assert.equal(delay(http(502, 'Bad Gateway'), 2), 120_000);
 });

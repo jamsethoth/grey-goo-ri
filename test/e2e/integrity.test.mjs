@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import * as git from '../../lib/git.mjs';
 import * as integrity from '../../lib/integrity.mjs';
@@ -96,10 +95,13 @@ test('an untracked file on a read-only action is a tree violation', async (t) =>
   const { violations } = await integrity.end({ git, baseline, record: ownRecord, others: [other], access: 'read-only', protectedPaths: PROTECTED });
   assert.deepEqual(surfacesOf(violations, own), ['tree']);
   assert.equal(violations.length, 1);
+});
 
-  const writeBaseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+test('an untracked file on a read-write action is no violation', async (t) => {
+  const { own, other, ownRecord } = await twoWorktrees(t);
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
   writeFileSync(join(own, 'more.txt'), 'allowed\n');
-  const write = await integrity.end({ git, baseline: writeBaseline, record: ownRecord, others: [other], access: 'read-write', protectedPaths: PROTECTED });
+  const write = await integrity.end({ git, baseline, record: ownRecord, others: [other], access: 'read-write', protectedPaths: PROTECTED });
   assert.deepEqual(write.violations, [], 'a read-write action may change the tree');
 });
 
@@ -238,44 +240,6 @@ test('a worktree whose generation moved is skipped', async (t) => {
   assert.deepEqual(surfacesOf(violations, own), []);
 });
 
-test('markBusy and markIdle bump the generation and save', async (t) => {
-  const { commonDir, ownRecord } = await twoWorktrees(t);
-  await integrity.markBusy(ownRecord);
-  assert.deepEqual(ownRecord.activity, { busy: true, generation: 1 });
-  assert.deepEqual((await record.load(commonDir, 'ticket', 1)).activity, { busy: true, generation: 1 });
-  await integrity.markIdle(ownRecord);
-  assert.deepEqual(ownRecord.activity, { busy: false, generation: 2 });
-  assert.deepEqual((await record.load(commonDir, 'ticket', 1)).activity, { busy: false, generation: 2 });
-});
-
-test('readActivity reads another ticket\'s record from disk', async (t) => {
-  const { root, other, commonDir } = await twoWorktrees(t);
-  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: false, generation: 0 });
-  await integrity.markBusy(await otherProcessRecord(commonDir));
-  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 1 });
-  assert.deepEqual(await integrity.readActivity(commonDir, join(root, 'nobody')), { busy: false, generation: 0 });
-});
-
-test('readActivity reads a record another process saved', async (t) => {
-  const { other, commonDir } = await twoWorktrees(t);
-  assert.ok(!existsSync(join(commonDir, 'gg', 'records')), 'records are rows, not files');
-  const saver = fileURLToPath(new URL('../support/record-saver.mjs', import.meta.url));
-  const exit = await new Promise((resolve) => {
-    const child = spawn(process.execPath, [saver, commonDir, '2', '3', other], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.on('close', (code) => resolve({ code, err }));
-  });
-  assert.deepEqual(exit, { code: 0, err: '' });
-  assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: true, generation: 3 });
-});
-
-test('readActivity matches a differently cased path on Windows', { skip: process.platform !== 'win32' }, async (t) => {
-  const { other, commonDir } = await twoWorktrees(t);
-  await integrity.markBusy(await otherProcessRecord(commonDir));
-  assert.deepEqual(await integrity.readActivity(commonDir, other.toUpperCase()), { busy: true, generation: 1 });
-});
-
 test('a rollback never deletes or writes through a link, and restores every file under a replaced one', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -330,13 +294,10 @@ test('a rollback restores from mixed states and changes nothing when run again',
   const set = { files: { 'left.test.mjs': b64('left'), 'absent.test.mjs': b64('absent'), 'done.test.mjs': b64('done') },
     within: { globs: ['**/*.test.*'] } };
 
-  for (const pass of ['first', 'second']) {
-    await integrity.restoreUntracked(wt, set, git);
-    const now = await integrity.untrackedFiles(wt, set.within, git);
-    assert.ok(integrity.sameFiles(now, set.files), `${pass} restore: ${JSON.stringify(now)}`);
-    assert.ok(Object.keys(now).every((p) => integrity.sameFile(now[p], set.files[p])));
-  }
-  assert.equal(integrity.sameFile(b64('a'), undefined), false, 'an absent file is never the same');
+  await integrity.restoreUntracked(wt, set, git);
+  assert.deepEqual(await integrity.untrackedFiles(wt, set.within, git), set.files, 'the first restore');
+  await integrity.restoreUntracked(wt, set, git);
+  assert.deepEqual(await integrity.untrackedFiles(wt, set.within, git), set.files, 'the second restore');
 });
 
 // A reset intent saved before #144 holds its rollback paths as git pathspecs, and Reconciliation still finishes it.

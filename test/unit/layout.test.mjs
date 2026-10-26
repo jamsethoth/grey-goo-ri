@@ -9,11 +9,10 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 // What makes a test medium (docs/testing.md, "Test sizes"), as it shows in a test file's source.
 const MEDIUM = [
   [/['"](?:node:)?child_process['"]/, 'imports node:child_process'],
-  [/process\.execPath/, 'starts a node child'],
   [/['"](?:\.\.\/)+lib\/(?:exec|git)\.mjs['"]/, 'imports lib/exec.mjs or lib/git.mjs'],
   [/\b(?:git|integrity):\s*['"]real['"]/, 'asks for real git'],
   [/\bset(?:Timeout|Interval)\s*\(|['"]node:timers/, 'uses a timer'],
-  [/\b(?:golden|run|support)\.sh\(|\.subjects\(\)|\b(?:commitMessages|remoteSha|holdLock|conflict|seedRepos)\(/, 'calls a support helper that spawns'],
+  [/\b(?:golden|run|support)\.sh\(|\b(?:holdLock|conflict|seedRepos)\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true }).map((f) => f.split('\\').join('/'))

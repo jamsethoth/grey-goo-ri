@@ -10,158 +10,78 @@ import {
   markerOf, stepsOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
 } from '../support/reconcile.mjs';
 
-// Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a freshly loaded record with the same options.
-const CLASSIFIED = {
-  held: {
-    phase: 'hold',
-    async crash(g) {
-      await crashed(g, EFFECTS.commit.at, 'after-completion');
-      g.options.flow = structuredClone(g.flow);
-      g.options.flow.ticket.vertices = { builder: g.flow.ticket.vertices.implementer };
-      g.options.flow.ticket.entry = 'builder';
-      g.options.record = await loadTicket(g);
-    },
-    check(result, final, end) {
-      assert.equal(result.held, true);
-      assert.equal(final.state, 'held');
-      assert.match(end.reason.text, /implementer/);
-    },
-  },
-  fault: {
-    phase: 'fault',
-    async crash(g) {
-      const run = g.harness.run;
-      g.harness.run = async (call) => {
-        if (call.phase === 'red') throw new Error('the harness exploded');
-        return run(call);
-      };
-    },
-    check(result, final, end) {
-      assert.equal(result.fault, true);
-      assert.equal(final.state, 'fault');
-      assert.equal(end.error, 'the harness exploded');
-    },
-  },
-  'run stop': {
-    responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
-    async crash() {},
-    check(result, final) {
-      assert.equal(result.runStop?.failureClass, 'auth');
-      assert.equal(final.state, 'needs-human');
-    },
-  },
-};
-for (const [kind, c] of Object.entries(CLASSIFIED)) {
-  for (const point of Object.keys(POINTS)) {
-    test(`a crash ${point} of the ${kind} needs-human label keeps the ${kind} classification`, async (t) => {
-      const g = await golden.setup(t, c.responses && { responses: c.responses });
-      await c.crash(g);
-      await crashed(g, ['needs-human', 1, c.phase ?? 'needs-human', 2], point);
+// Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a
+// freshly loaded record with the same options.
+for (const point of Object.keys(POINTS)) {
+  test(`a crash ${point} of the held needs-human label keeps the held classification`, async (t) => {
+    const g = await golden.setup(t);
+    // The completed commit's Vertex is gone from the Flow, so Reconciliation holds the Ticket.
+    await crashed(g, EFFECTS.commit.at, 'after-completion');
+    g.options.flow = structuredClone(g.flow);
+    g.options.flow.ticket.vertices = { builder: g.flow.ticket.vertices.implementer };
+    g.options.flow.ticket.entry = 'builder';
+    g.options.record = await loadTicket(g);
+    await crashed(g, ['needs-human', 1, 'hold', 2], point);
 
-      const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
-      assert.equal(result.outcome, 'needs-human');
-      assert.ok(g.gh.labels.has(NEEDS_HUMAN));
-      const ends = g.readEvents().filter((e) => e.type === 'ticket_end');
-      assert.equal(ends.length, 1);
-      c.check(result, await loadTicket(g), ends[0]);
-    });
-  }
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.outcome, 'needs-human');
+    assert.equal(result.held, true);
+    assert.ok(g.gh.labels.has(NEEDS_HUMAN));
+    assert.equal((await loadTicket(g)).state, 'held');
+    const ends = g.readEvents().filter((e) => e.type === 'ticket_end');
+    assert.equal(ends.length, 1);
+    assert.match(ends[0].reason.text, /implementer/);
+  });
 }
 
-test('a needs-human label overrides a mid-action record', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  await crashed(g, EFFECTS.commit.at, 'before-effect');
-  g.gh.labels.add(NEEDS_HUMAN);
-  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
-  const status = golden.sh(g.worktree, 'status', '--porcelain');
+for (const point of Object.keys(POINTS)) {
+  test(`a crash ${point} of the fault needs-human label keeps the fault classification`, async (t) => {
+    const g = await golden.setup(t);
+    const run = g.harness.run;
+    g.harness.run = async (call) => {
+      if (call.phase === 'red') throw new Error('the harness exploded');
+      return run(call);
+    };
+    await crashed(g, ['needs-human', 1, 'fault', 2], point);
 
-  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
-  assert.equal(decided.next, 'abandon');
-  assert.equal((await loadTicket(g)).state, 'active', 'Reconciliation only decides the abandonment');
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.outcome, 'needs-human');
+    assert.equal(result.fault, true);
+    assert.ok(g.gh.labels.has(NEEDS_HUMAN));
+    assert.equal((await loadTicket(g)).state, 'fault');
+    const ends = g.readEvents().filter((e) => e.type === 'ticket_end');
+    assert.equal(ends.length, 1);
+    assert.equal(ends[0].error, 'the harness exploded');
+  });
+}
 
-  await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
-  assert.equal((await loadTicket(g)).state, 'abandoned');
-  assert.equal(g.harness.calls.length, 2, 'the Execution is not resumed');
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'the intended commit is not made');
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
-  assert.equal(g.gh.pr(), null);
-});
+for (const point of Object.keys(POINTS)) {
+  test(`a crash ${point} of the run stop needs-human label keeps the run stop classification`, async (t) => {
+    const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+    await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
+
+    const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+    assert.equal(result.outcome, 'needs-human');
+    assert.equal(result.runStop?.failureClass, 'auth');
+    assert.ok(g.gh.labels.has(NEEDS_HUMAN));
+    assert.equal((await loadTicket(g)).state, 'needs-human');
+    assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+  });
+}
 
 test('dirtyState and humanOverride return decisions without finalizing the record', async (t) => {
   const g = await golden.setup(t);
   await crashed(g, EFFECTS.commit.at, 'before-effect');
   writeFileSync(join(g.worktree, 'human.txt'), 'mine\n');
-  const row = () => record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET).json;
-  const before = row();
+  const before = await loadTicket(g);
   const rec = await loadTicket(g);
 
   assert.ok(await reconcile.dirtyState(rec, { git: g.options.git, worktree: g.worktree }), 'the human file is unknown dirty state');
   assert.equal(rec.state, 'active');
-  assert.equal(row(), before, 'the hold is only decided');
+  assert.deepEqual(await loadTicket(g), before, 'the hold is only decided');
   assert.equal((await reconcile.humanOverride(rec, [NEEDS_HUMAN], 'gg'))?.next, 'abandon');
   assert.equal(rec.state, 'active');
-  assert.equal(row(), before, 'the abandonment is only decided');
-});
-
-test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  golden.sh(g.worktree, 'config', 'core.quotePath', 'true');
-  writeFileSync(join(g.worktree, 'café notes.txt'), 'mine\n');
-  const { stat } = await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree });
-  assert.ok(stat.includes(' café notes.txt (untracked)\n'), stat);
-});
-
-// Reconciliation holds a moved branch; the hold's comment then crashes. Any git call on resume would replay or check the
-// older commit, which a hold only reports.
-for (const point of Object.keys(POINTS)) {
-  test(`a crash ${point} of a hold comment resumes its reporting Actions without replaying an older commit`, async (t) => {
-    const g = await golden.setup(t, { git: 'real' });
-    await crashed(g, EFFECTS.commit.at, 'before-effect');
-    golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
-    const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
-    const hold = markerOf(g.rec, 'needs-human', 1, 'hold', 1);
-    await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point } }),
-      (err) => err instanceof interpreter.CrashError);
-    const mid = await loadTicket(g);
-    const older = record.openIntents(mid).filter((e) => e.action === 'commit');
-    assert.equal(older.length, 1);
-    const git = new Proxy({}, { get: (_, verb) => () => { throw new Error(`git ${String(verb)} called`); } });
-
-    const result = await interpreter.runExecution({ ...g.options, git, record: mid });
-    assert.equal(result.outcome, 'needs-human');
-    assert.equal(result.held, true, JSON.stringify(result));
-    const final = await loadTicket(g);
-    assert.equal(final.state, 'held');
-    assert.deepEqual(record.openIntents(final), older, 'only the older commit intent stays open, untouched');
-    assert.equal(withMarker(g.gh.comments.map((c) => c.body), hold).length, 1, 'the hold comment is posted once');
-    assert.ok(g.gh.labels.has(NEEDS_HUMAN));
-    assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
-    assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
-    assert.equal(g.harness.calls.length, 2);
-  });
-}
-
-test('a hold report never looks up an older open PR-comment intent', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  await crashed(g, EFFECTS.commit.at, 'before-effect');
-  // An earlier review comment on the PR crashed before its completion.
-  const older = markerOf(g.rec, 'reviewer', 1, 'review', 4);
-  await record.intent(await loadTicket(g), older, 'comment', { target: { kind: 'pr', number: 7 }, body: 'x', bodyHash: 'h' });
-  golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
-  const hold = markerOf(g.rec, 'needs-human', 1, 'hold', 1);
-  await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point: 'before-effect' } }),
-    (err) => err instanceof interpreter.CrashError);
-  let looked = 0;
-  const gh = { ...g.options.gh, prComments: async () => { looked++; throw new Error('gh api exited 1\nHTTP 502: Bad Gateway'); } };
-
-  const result = await interpreter.runExecution({ ...g.options, gh, record: await loadTicket(g) });
-  assert.equal(looked, 0, "the older PR's comments are never read");
-  assert.equal(result.held, true, JSON.stringify(result));
-  const final = await loadTicket(g);
-  assert.equal(final.state, 'held');
-  assert.ok(record.openIntents(final).some((e) => e.marker === older), 'the older intent stays open, untouched');
-  assert.equal(withMarker(g.gh.comments.map((c) => c.body), hold).length, 1);
-  assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
+  assert.deepEqual(await loadTicket(g), before, 'the abandonment is only decided');
 });
 
 test('a vertex missing from the flow holds the ticket', async (t) => {
@@ -256,14 +176,15 @@ test('a corrupt record holds the ticket', async (t) => {
   assert.equal(row.json, corrupt, 'the corrupt record is never discarded');
 });
 
-// #66: a lookup that fails proves nothing either way.
+// #66: a lookup that fails proves nothing either way. The done comment landed before the crash, so only a working
+// lookup can tell.
+const badGateway = () => Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/15/comments'),
+  { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)' });
+
 test('a failed lookup is unknown, not absent', async (t) => {
   const g = await golden.setup(t);
-  // The done comment landed before the crash, so only a working lookup can tell.
   const { m, loaded } = await crashed(g, EFFECTS.comment.at, 'after-effect');
   const entry = record.openIntents(loaded).find((e) => e.marker === m);
-  const badGateway = () => Object.assign(new Error('gh: Bad Gateway (HTTP 502)\ngh api repos/{owner}/{repo}/issues/15/comments'),
-    { code: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)' });
   const down = { ...g.options.gh, issueComments: async () => { throw badGateway(); } };
 
   const found = await reconcile.findEffect(entry, { rec: loaded, gh: down, cwd: g.mainRoot });
@@ -271,18 +192,21 @@ test('a failed lookup is unknown, not absent', async (t) => {
   assert.match(found.error.message, /HTTP 502/);
   await assert.rejects(reconcile.reconcile({ ...reconcileArgs(g, loaded), gh: down }), /HTTP 502/, 'never taken for absence');
   assert.deepEqual(stepsOf(loaded, m), ['intent'], 'no evidence or completion');
-  const posted = () => withMarker(g.gh.comments.map((c) => c.body), m).length;
-  assert.equal(posted(), 1);
+  assert.equal(withMarker(g.gh.comments.map((c) => c.body), m).length, 1);
+});
 
-  // In a Run the failed lookup is retried on the Action's budget, and finds the landed comment.
+test('a failed lookup in a Run is retried on the Action budget and finds the landed effect', async (t) => {
+  const g = await golden.setup(t);
+  const { m } = await crashed(g, EFFECTS.comment.at, 'after-effect');
   let failures = 1;
   const once = { ...g.options.gh, issueComments: async (...args) => {
     if (failures-- > 0) throw badGateway();
     return g.options.gh.issueComments(...args);
   } };
+
   const result = await interpreter.runExecution({ ...g.options, gh: once, record: await loadTicket(g) });
   assert.equal(result.outcome, 'done', JSON.stringify(result));
-  assert.equal(posted(), 1, 'not posted again');
+  assert.equal(withMarker(g.gh.comments.map((c) => c.body), m).length, 1, 'not posted again');
   assert.deepEqual(g.sleeps, [60_000]);
   assert.deepEqual(stepsOf(await loadTicket(g), m), ['intent', 'evidence', 'complete']);
 });

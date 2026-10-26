@@ -11,8 +11,12 @@ test('the shipped personas use the lowercase claim vocabulary', async () => {
   const reviewer = await persona('reviewer');
   assert.ok(implementer.includes('claim: ok | blocked | misscoped'), implementer);
   assert.ok(reviewer.includes('ok | changes | misscoped'), reviewer);
-  for (const [name, text] of [['implementer', implementer], ['reviewer', reviewer]]) {
-    assert.doesNotMatch(text, UPPERCASE_CLAIMS, `${name} names no uppercase claim`);
-    assert.doesNotMatch(text, /return status/, `${name} asks for a claim, not a status`);
-  }
 });
+
+for (const name of ['implementer', 'reviewer']) {
+  test(`the shipped ${name} persona names no uppercase claim and asks for a claim, not a status`, async () => {
+    const text = await persona(name);
+    assert.doesNotMatch(text, UPPERCASE_CLAIMS);
+    assert.doesNotMatch(text, /return status/);
+  });
+}

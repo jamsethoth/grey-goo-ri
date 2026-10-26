@@ -38,12 +38,23 @@ test('gg with an unknown command prints usage to stderr and exits 1', () => {
   assertUsage(r.stderr);
 });
 
-test('every listed command exits 1 with a not-implemented message', () => {
-  for (const name of commands.filter((c) => c !== 'run')) {
+for (const [name, message] of [
+  ['init', 'gg init: not implemented'],
+  ['doctor', 'gg doctor: not implemented'],
+  ['plan', 'gg plan: not implemented'],
+  ['publish', 'gg publish: not implemented'],
+  ['work', 'gg work: not implemented'],
+  ['trace', 'gg trace: not implemented'],
+  ['stats', 'gg stats: not implemented'],
+]) {
+  test(`gg ${name} exits 1 with a not-implemented message`, () => {
     const r = gg(name, '1');
-    assert.equal(r.status, 1, `${name} exit code`);
-    assert.equal(r.stderr.trim(), `gg ${name}: not implemented`);
-  }
+    assert.equal(r.status, 1, r.stderr);
+    assert.equal(r.stderr.trim(), message);
+  });
+}
+
+test('gg work list exits 1 with a not-implemented message', () => {
   const r = gg('work', 'list');
   assert.equal(r.status, 1);
   assert.equal(r.stderr.trim(), 'gg work: not implemented');
@@ -57,14 +68,18 @@ test('gg run rejects an unknown option with a usage error', () => {
   assert.doesNotMatch(r.stderr, /not implemented/);
 });
 
-test('commands without boolean flags reject the legacy boolean flags', () => {
-  for (const [name, flag] of [['run', '--bg'], ['run', '--trust'], ['init', '--json']]) {
+for (const [name, flag, error] of [
+  ['run', '--bg', /unknown option --bg/],
+  ['run', '--trust', /unknown option --trust/],
+  ['init', '--json', /unknown option --json/],
+]) {
+  test(`gg ${name} rejects the legacy boolean flag ${flag}`, () => {
     const r = gg(name, flag, '1');
-    assert.equal(r.status, 1, `${name} ${flag} exit code`);
-    assert.match(r.stderr, new RegExp(`unknown option ${flag}`), `${name} ${flag}`);
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, error);
     assertUsage(r.stderr);
-  }
-});
+  });
+}
 
 // A temp repo and a temp home, so gg reads no real user Layer; `layer` becomes the user Layer when given.
 function tempRepo(t, layer) {

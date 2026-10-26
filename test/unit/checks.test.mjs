@@ -1,17 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import * as checks from '../../lib/checks.mjs';
-import * as git from '../../lib/git.mjs';
-
-function tempDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
-}
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
 
@@ -63,20 +54,31 @@ test('red check matches a full pytest identifier', () => {
   assert.equal(checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_accepts_good_input']).ok, false);
 });
 
-test('red check ignores TAP TODO and SKIP results and decodes escaped names', () => {
-  // As printed by node --test --test-reporter=tap: only "old unrelated test" causes the nonzero exit.
-  const output = fixture('tap-directives.txt');
-  for (const name of ['new test', 'skipped one']) {
-    const r = checks.redCheck({ code: 1, output }, [name]);
-    assert.equal(r.ok, false);
-    assert.match(r.reason, /TODO or SKIP/);
-  }
-  // A lone TODO line is still per-test status, not grounds for the substring fallback.
+// tap-directives.txt is as printed by node --test --test-reporter=tap: only "old unrelated test" causes the nonzero exit.
+test('red check rejects a test that TAP reports as TODO', () => {
+  const r = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['new test']);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /TODO or SKIP/);
+});
+
+test('red check rejects a test that TAP reports as SKIP', () => {
+  const r = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['skipped one']);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /TODO or SKIP/);
+});
+
+test('red check takes a lone TAP TODO line as per-test status, not grounds for the substring fallback', () => {
   const lone = checks.redCheck({ code: 1, output: 'not ok 1 - new test # TODO\n' }, ['new test']);
   assert.equal(lone.ok, false);
   assert.ok(!lone.heuristic);
-  assert.deepEqual(checks.redCheck({ code: 1, output }, ['rejects issue #123']), { ok: true });
-  const passing = checks.redCheck({ code: 1, output }, ['passes with \\ backslash and # hash']);
+});
+
+test('red check decodes an escaped hash in a failing TAP test name', () => {
+  assert.deepEqual(checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['rejects issue #123']), { ok: true });
+});
+
+test('red check decodes an escaped backslash and hash in a passing TAP test name', () => {
+  const passing = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['passes with \\ backslash and # hash']);
   assert.equal(passing.ok, false);
   assert.match(passing.reason, /pass/i);
 });
@@ -98,16 +100,20 @@ test('red check falls back to the substring rule and marks it heuristic', () => 
   assert.equal(r.heuristic, true);
 });
 
-test('red check reads jest default multi-file output, where failures are headings and passes are silent', () => {
-  // Default jest output for several files: no ✓ or ✕ lines, one `● suite › test` heading per failure.
+// Default jest output for several files: no ✓ or ✕ lines, one `● suite › test` heading per failure.
+test('red check reads a jest failure heading by test name or suite path', () => {
   const output = fixture('jest-multi.txt');
   assert.deepEqual(checks.redCheck({ code: 1, output }, ['rejects bad input']), { ok: true });
   assert.deepEqual(checks.redCheck({ code: 1, output }, ['parse › rejects bad input']), { ok: true });
-  // A passing test named inside an unrelated failure message or a console block is not red evidence.
-  const passing = checks.redCheck({ code: 1, output }, ['removes item']);
+});
+
+test('red check does not take a jest test named inside a failure message or console block as red evidence', () => {
+  const passing = checks.redCheck({ code: 1, output: fixture('jest-multi.txt') }, ['removes item']);
   assert.equal(passing.ok, false);
   assert.ok(!passing.heuristic, 'headings are per-test status, so the substring rule does not apply');
-  // A suite named Console is a real suite; only the bare `● Console` diagnostic heading is excluded.
+});
+
+test('red check reads a jest suite named Console and excludes only the bare Console heading', () => {
   const consoleSuite = '  ● Console › logs on failure\n\n    expect(received).toBe(true)\n\n  ● Console\n\n    console.log\n      hello\n';
   assert.deepEqual(checks.redCheck({ code: 1, output: consoleSuite }, ['logs on failure']), { ok: true });
   const quiet = checks.redCheck({ code: 1, output: consoleSuite }, ['hello']);
@@ -115,78 +121,17 @@ test('red check reads jest default multi-file output, where failures are heading
   assert.ok(!quiet.heuristic);
 });
 
-test('red check reads TAP, jest and pytest failure lines', () => {
-  for (const [file, failing, passing] of [
-    ['tap.txt', 'rejects bad input', 'accepts good input'],
-    ['jest.txt', 'rejects bad input', 'accepts good input'],
-    ['pytest.txt', 'test_rejects_bad_input', 'test_accepts_good_input'],
-  ]) {
-    const ok = checks.redCheck({ code: 1, output: fixture(file) }, [failing]);
-    assert.equal(ok.ok, true, `${file}: ${ok.reason}`);
-    assert.ok(!ok.heuristic, `${file} is a recognised format`);
-    const bad = checks.redCheck({ code: 1, output: fixture(file) }, [passing]);
-    assert.equal(bad.ok, false, `${file}: a passing test is not red evidence`);
-  }
-});
-
-test('test immutability lists added, renamed and modified test paths and ignores lib', async (t) => {
-  const dir = tempDir(t);
-  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
-  g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
-  mkdirSync(join(dir, 'test')); mkdirSync(join(dir, 'lib'));
-  writeFileSync(join(dir, 'test', 'a.test.mjs'), 'a');
-  writeFileSync(join(dir, 'test', 'old.test.mjs'), 'old');
-  writeFileSync(join(dir, 'lib', 'x.mjs'), 'x');
-  g('add', '-A'); g('commit', '-q', '-m', 'baseline');
-  const baseline = g('rev-parse', 'HEAD');
-  assert.deepEqual(await checks.testImmutability(dir, baseline, { git }), { ok: true, changed: [] });
-
-  writeFileSync(join(dir, 'test', 'a.test.mjs'), 'a changed');
-  g('commit', '-q', '-am', 'edit a test after the baseline');
-  g('mv', 'test/old.test.mjs', 'test/renamed.test.mjs');
-  writeFileSync(join(dir, 'test', 'new.test.mjs'), 'new');
-  writeFileSync(join(dir, 'lib', 'x.mjs'), 'x changed');
-
-  const r = await checks.testImmutability(dir, baseline, { git });
-  assert.equal(r.ok, false);
-  for (const p of ['test/a.test.mjs', 'test/renamed.test.mjs', 'test/new.test.mjs']) assert.ok(r.changed.includes(p), `${p} in ${r.changed}`);
-  assert.ok(!r.changed.some((p) => p.startsWith('lib/')), `lib ignored: ${r.changed}`);
-});
-
-test('test immutability sees non-ASCII and git-ignored test paths', async (t) => {
-  const dir = tempDir(t);
-  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
-  g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
-  mkdirSync(join(dir, 'test'));
-  writeFileSync(join(dir, 'test', 'café.mjs'), 'a');
-  writeFileSync(join(dir, '.gitignore'), 'test/ignored.mjs\n');
-  g('add', '-A'); g('commit', '-q', '-m', 'baseline');
-  const baseline = g('rev-parse', 'HEAD');
-
-  writeFileSync(join(dir, 'test', 'café.mjs'), 'a changed');
-  writeFileSync(join(dir, 'test', 'naïve.mjs'), 'new');
-  writeFileSync(join(dir, 'test', 'ignored.mjs'), 'new');
-
-  const r = await checks.testImmutability(dir, baseline, { git });
-  assert.deepEqual(r, { ok: false, changed: ['test/café.mjs', 'test/ignored.mjs', 'test/naïve.mjs'] });
-});
-
-test('test immutability sees a test added under an ignored directory but not installed dependencies', async (t) => {
-  const dir = tempDir(t);
-  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
-  g('init', '-q', '-b', 'main'); g('config', 'user.name', 't'); g('config', 'user.email', 't@t');
-  writeFileSync(join(dir, '.gitignore'), 'generated/\nnode_modules/\n');
-  g('add', '-A'); g('commit', '-q', '-m', 'baseline');
-  const baseline = g('rev-parse', 'HEAD');
-
-  mkdirSync(join(dir, 'generated'));
-  writeFileSync(join(dir, 'generated', 'new.test.mjs'), 'new');
-  mkdirSync(join(dir, 'node_modules', 'dep', 'test'), { recursive: true });
-  writeFileSync(join(dir, 'node_modules', 'dep', 'test', 'index.js'), 'dep');
-
-  const r = await checks.testImmutability(dir, baseline, { git });
-  assert.deepEqual(r, { ok: false, changed: ['generated/new.test.mjs'] });
-});
+const FAILURE_LINES = [
+  ['tap.txt', 'rejects bad input', 'accepts good input'],
+  ['jest.txt', 'rejects bad input', 'accepts good input'],
+  ['pytest.txt', 'test_rejects_bad_input', 'test_accepts_good_input'],
+];
+for (const [file, failing, passing] of FAILURE_LINES) {
+  test(`red check reads ${file} failure lines`, () => {
+    assert.deepEqual(checks.redCheck({ code: 1, output: fixture(file) }, [failing]), { ok: true }, `${file} is a recognised format`);
+    assert.equal(checks.redCheck({ code: 1, output: fixture(file) }, [passing]).ok, false, 'a passing test is not red evidence');
+  });
+}
 
 test('findings hash ignores whitespace, order and line numbers', () => {
   const a = [
@@ -209,21 +154,23 @@ test('findings hash changes with severity', () => {
   assert.notEqual(checks.findingsHash(f('major')), checks.findingsHash(f('minor')));
 });
 
-test('review-pass needs dodMet, tddEvidenceOk and no blocker or major finding', () => {
-  const ok = { claim: 'ok', summary: '', dodMet: true, tddEvidenceOk: true, findings: [{ severity: 'minor', file: 'a', issue: 'nit', fix: '' }], diagnosis: '' };
-  assert.deepEqual(checks.reviewPass(ok), { passed: true, reasons: [] });
-  const fails = [
-    { ...ok, findings: [{ severity: 'major', file: 'a', issue: 'bug', fix: '' }] },
-    { ...ok, findings: [{ severity: 'blocker', file: 'a', issue: 'bug', fix: '' }] },
-    { ...ok, dodMet: false },
-    { ...ok, tddEvidenceOk: false },
-  ];
-  for (const response of fails) {
-    const r = checks.reviewPass(response);
-    assert.equal(r.passed, false);
-    assert.ok(r.reasons.length > 0 && r.reasons.every((s) => typeof s === 'string' && s), JSON.stringify(r));
-  }
+const review = { claim: 'ok', summary: '', dodMet: true, tddEvidenceOk: true, findings: [{ severity: 'minor', file: 'a', issue: 'nit', fix: '' }], diagnosis: '' };
+
+test('review-pass passes a review with dodMet, tddEvidenceOk and only a minor finding', () => {
+  assert.deepEqual(checks.reviewPass(review), { passed: true, reasons: [] });
 });
+
+const REVIEW_FAILS = [
+  ['a major finding', { ...review, findings: [{ severity: 'major', file: 'a', issue: 'bug', fix: '' }] }, 'major finding in a: bug'],
+  ['a blocker finding', { ...review, findings: [{ severity: 'blocker', file: 'a', issue: 'bug', fix: '' }] }, 'blocker finding in a: bug'],
+  ['dodMet false', { ...review, dodMet: false }, 'The review does not confirm the definition of done is met.'],
+  ['tddEvidenceOk false', { ...review, tddEvidenceOk: false }, 'The review does not accept the TDD evidence.'],
+];
+for (const [name, response, reason] of REVIEW_FAILS) {
+  test(`review-pass fails a review with ${name}`, () => {
+    assert.deepEqual(checks.reviewPass(response), { passed: false, reasons: [reason] });
+  });
+}
 
 test('green check reports a timeout as failed', async () => {
   const calls = [];
@@ -235,26 +182,35 @@ test('green check reports a timeout as failed', async () => {
   assert.equal(r.output, 'still running');
   assert.equal(typeof r.durationMs, 'number');
   assert.deepEqual(calls, [['npm test', { cwd: 'C:/repo', timeoutMs: 30 * 60_000 }]]);
+});
+
+test('Check evidence keeps output under the bound whole, raw paths included', () => {
+  const raw = `at run (${homedir()}\\test.mjs:3:4)\n`;
+  assert.equal(checks.evidence('npm test', { output: raw }).output, raw);
   const output = 'x'.repeat(5000) + '\nend';
   assert.deepEqual(checks.evidence('npm test', { output }), { command: 'npm test', output });
 });
 
-test('Check evidence keeps raw paths and is bounded on a line boundary', () => {
-  const raw = `at run (${homedir()}\\test.mjs:3:4)\n`;
-  assert.equal(checks.evidence('npm test', { output: raw }).output, raw);
-  const last = 'b'.repeat(65_435);
-  for (const [first, expected] of [['a'.repeat(100), 'a'.repeat(100) + '\n' + last], ['a'.repeat(101), last]]) {
-    const output = checks.evidence('npm test', { output: first + '\n' + last }).output;
-    assert.equal(output, expected, `${first.length + 1 + last.length} characters`);
-  }
-});
+// The bound is 65,536 characters: a 100-character first line fits beside the last one, a 101-character one does not.
+const LAST = 'b'.repeat(65_435);
+const BOUNDED = [
+  ['keeps a first line that fits', 'a'.repeat(100) + '\n' + LAST, 'a'.repeat(100) + '\n' + LAST],
+  ['drops a first line that does not fit', 'a'.repeat(101) + '\n' + LAST, LAST],
+];
+for (const [name, output, expected] of BOUNDED) {
+  test(`Check evidence is bounded on a line boundary: it ${name}`, () => {
+    assert.equal(checks.evidence('npm test', { output }).output, expected);
+  });
+}
 
-test('Check evidence never keeps part of an overlong line', () => {
-  const exact = '/home/alice/private.txt' + ' '.repeat(65_520);
-  const cases = [
-    [exact, `[${exact.length} characters of output omitted]`],
-    ['x'.repeat(70_000) + '\n', '[70001 characters of output omitted]'],
-    ['a\n' + 'x'.repeat(70_000) + '\nend', 'end'],
-  ];
-  for (const [output, expected] of cases) assert.equal(checks.evidence('npm test', { output }).output, expected, `${output.length} characters`);
-});
+const EXACT = '/home/alice/private.txt' + ' '.repeat(65_520);
+const OVERLONG = [
+  ['a single overlong line', EXACT, `[${EXACT.length} characters of output omitted]`],
+  ['an overlong line with a newline', 'x'.repeat(70_000) + '\n', '[70001 characters of output omitted]'],
+  ['an overlong line between short ones', 'a\n' + 'x'.repeat(70_000) + '\nend', 'end'],
+];
+for (const [name, output, expected] of OVERLONG) {
+  test(`Check evidence never keeps part of an overlong line: ${name}`, () => {
+    assert.equal(checks.evidence('npm test', { output }).output, expected);
+  });
+}

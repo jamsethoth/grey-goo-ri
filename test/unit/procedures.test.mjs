@@ -29,12 +29,11 @@ test('tdd describes its actions, checks, lineage and outcome map in order', () =
   assert.equal(procedures.describe('tdd', { resumeGreen: true }).lineage.green, 'red');
 });
 
-test('review and fix describe their actions, checks, lineage and outcome maps', () => {
-  const { review, fix } = procedures.PROCEDURES;
+test('review describes its actions, checks, lineage and outcome map', () => {
+  const { review } = procedures.PROCEDURES;
   assert.ok(review, 'PROCEDURES.review exists');
-  assert.ok(fix, 'PROCEDURES.fix exists');
 
-  // review: one read-only call, the Findings Hash, the PR comment, the PR body re-render.
+  // One read-only call, the Findings Hash, the PR comment, the PR body re-render.
   assert.deepEqual(pairs(review.actions), [['review', 1], ['review', 2], ['review', 3], ['review', 4]]);
   assert.deepEqual(pairs(review.actions.filter((a) => a.kind === 'call')), [['review', 1]]);
   assert.ok(review.actions.every((a) => !a.when), 'every review Action runs');
@@ -47,8 +46,13 @@ test('review and fix describe their actions, checks, lineage and outcome maps', 
   const r = procedures.describe('review');
   assert.deepEqual(r.checks, [{ name: 'review-pass', relaxed: false }]);
   assert.deepEqual(r.lineage, { review: null });
+});
 
-  // fix: a fresh fix call, the Green Check with one test-fix that resumes fix, commit kind fix, push, PR upsert.
+test('fix describes its actions, checks, lineage and outcome map', () => {
+  const { fix } = procedures.PROCEDURES;
+  assert.ok(fix, 'PROCEDURES.fix exists');
+
+  // A fresh fix call, the Green Check with one test-fix that resumes fix, commit kind fix, push, PR upsert.
   assert.deepEqual(fix.actions.filter((a) => !a.when).map((a) => [a.phase, a.ordinal, a.kind]), [
     ['fix', 1, 'call'], ['fix', 2, 'check'], ['fix', 3, 'commit'], ['fix', 4, 'push'], ['fix', 5, 'pr-upsert'],
   ]);

@@ -12,27 +12,32 @@ import {
   TICKET, BRANCH, IN_PROGRESS, fixture, ticketResult, failComment, lastRun, EPIC, epicOf,
 } from '../support/run.mjs';
 
-test('a Run ensures missing State Labels once immediately before its first label edit', async (t) => {
-  for (const repoLabels of [[], ['gg:state:in-progress'], ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa']]) {
+const LABEL_SETUPS = [
+  { repoLabels: [], created: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'] },
+  { repoLabels: ['gg:state:in-progress'], created: ['gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'] },
+  { repoLabels: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'], created: [] },
+];
+for (const { repoLabels, created } of LABEL_SETUPS) {
+  test(`a Run ensures missing State Labels once immediately before its first label edit: ${repoLabels.length} of 4 present`, async (t) => {
     const f = fixture(t, { repoLabels });
     assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
     const reads = f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels'));
     assert.equal(reads.length, 1, 'one repository label read per Run');
     const creates = f.gh.calls.filter((c) => c.args[0] === 'label');
-    assert.deepEqual(creates.map((c) => c.args[2]).sort(),
-      ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'].filter((l) => !repoLabels.includes(l)).sort());
-    assert.ok(creates.every((c) => !c.args.includes('--force')));
+    assert.deepEqual(creates.map((c) => c.args[2]).sort(), created);
+    assert.deepEqual(creates.filter((c) => c.args.includes('--force')), [], 'no create forces');
     const firstEdit = f.gh.calls.findIndex((c) => c.args[0] === 'issue' && c.args[1] === 'edit');
-    assert.equal(f.gh.calls[firstEdit - 1], creates.at(-1) ?? reads[0], 'setup immediately precedes the first label edit');
-  }
-});
+    assert.deepEqual(f.gh.calls.slice(firstEdit - 1 - created.length, firstEdit), [reads[0], ...creates],
+      'the label read and its creates immediately precede the first label edit');
+  });
+}
 
 test('a State Label creation failure uses the label-failure log, Event and exit code', async (t) => {
   const f = fixture(t, { repoLabels: [], failCreate: true });
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1);
   assert.equal(ticketResult(results).labelFailed, true);
-  assert.ok(f.logs.some((l) => l.includes('label creation denied')));
+  assert.ok(f.logs.some((l) => l.includes('label creation denied')), JSON.stringify(f.logs));
   assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET && e.error.includes('label creation denied')));
   // Each failed create is confirmed by one more read before the setup fails, and the next label write repeats both.
   assert.equal(f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length, 4, 'a failed setup is retried at the next label write');
@@ -74,18 +79,19 @@ test('a transient State Label setup failure is retried by the later label write'
   assert.ok(f.gh.labels.has('gg:state:ready-for-qa'), 'the later label write succeeds');
 });
 
-test('not-ready skips name the reason and make only the discovery read', async (t) => {
-  for (const [issue, reason] of [
-    [{ state: 'CLOSED' }, 'closed'],
-    [{ blockedBy: [{ number: 3, state: 'OPEN' }, { number: 5, state: 'OPEN' }] }, 'blocked by #3, #5'],
-    [{ labels: [{ name: 'gg:state:ready-for-qa' }] }, 'carries State Label gg:state:ready-for-qa'],
-  ]) {
+const NOT_READY = [
+  [{ state: 'CLOSED' }, 'closed'],
+  [{ blockedBy: [{ number: 3, state: 'OPEN' }, { number: 5, state: 'OPEN' }] }, 'blocked by #3, #5'],
+  [{ labels: [{ name: 'gg:state:ready-for-qa' }] }, 'carries State Label gg:state:ready-for-qa'],
+];
+for (const [issue, reason] of NOT_READY) {
+  test(`not-ready skips name the reason and make only the discovery read: ${reason}`, async (t) => {
     const f = fixture(t, { issue });
     assert.equal(ticketResult(await run.runTarget(f.options)).outcome, 'skipped');
     assert.ok(f.logs.includes(`[main] #${TICKET} skipped: it is not ready: ${reason}`), JSON.stringify(f.logs));
     assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']]);
-  }
-});
+  });
+}
 
 test('every line a Run prints names its repository, in the terminal and in run.log', async (t) => {
   // A fault whose report gets HTTP 502 and whose label edit fails logs from run, the interpreter and github.
@@ -98,13 +104,13 @@ test('every line a Run prints names its repository, in the terminal and in run.l
 
   await run.runTarget(f.options);
   const prefix = `[${basename(f.mainRoot)}] `;
-  for (const line of [`${prefix}#${TICKET} ERROR worktree add failed`, `${prefix}#${TICKET} fault report failed:`, `${prefix}#${TICKET} ERROR label update`]) {
-    assert.ok(f.logs.some((l) => l.startsWith(line)), `${line}: ${JSON.stringify(f.logs)}`);
-  }
+  assert.ok(f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} ERROR worktree add failed`)), `the admission error: ${JSON.stringify(f.logs)}`);
+  assert.ok(f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} fault report failed:`)), `the report failure: ${JSON.stringify(f.logs)}`);
+  assert.ok(f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} ERROR label update`)), `the label failure: ${JSON.stringify(f.logs)}`);
   assert.ok(f.logs.some((l) => l.startsWith(prefix) && /failure, retry 1 of/.test(l)), `the retry line: ${JSON.stringify(f.logs)}`);
-  assert.ok(f.logs.every((l) => l.startsWith(prefix)), JSON.stringify(f.logs));
+  assert.deepEqual(f.logs.filter((l) => !l.startsWith(prefix)), [], 'every line names the repository');
   const runLog = readFileSync(join(f.commonDir, 'gg', 'runs', lastRun(f), 'run.log'), 'utf8');
-  for (const m of f.logs) assert.ok(runLog.includes(` ${m}\n`), `run.log holds ${m}`);
+  assert.equal(runLog.replace(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z /gm, ''), f.logs.map((m) => `${m}\n`).join(''), 'run.log holds every line, after its timestamp');
 });
 
 test('every error a Run throws names its repository', async (t) => {
@@ -129,21 +135,7 @@ test('every error a Run throws names its repository', async (t) => {
   assert.ok(standalone?.message.startsWith(`[main] #${TICKET} is a standalone Ticket`), standalone?.message);
 });
 
-test('runEpic preflight throws naming vertex and harness before any gh call or worktree', async (t) => {
-  const f = fixture(t, { fullFlow: true });
-  f.options.config.agents.implementer.harness = 'nope';
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
-  assert.ok(err, 'preflight rejects the run');
-  assert.match(err.message, /implementer/);
-  assert.match(err.message, /nope/);
-  assert.deepEqual(f.gh.calls, [], 'no gh call');
-  assert.equal(f.worktrees(), 1, 'no worktree');
-  assert.equal(existsSync(join(f.root, 'wt')), false);
-  assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
-  assert.equal(f.harness.calls.length, 0);
-});
-
-test('runEpic preflight names every failing vertex in one error', async (t) => {
+test('preflight names every failing vertex in one error, before any gh call, worktree or run directory', async (t) => {
   const f = fixture(t, { fullFlow: true });
   f.options.config.agents.implementer.harness = 'nope';
   f.options.config.agents.reviewer.harness = 'claude';
@@ -155,20 +147,9 @@ test('runEpic preflight names every failing vertex in one error', async (t) => {
   assert.equal(err.message.split('\n').find((l) => l.startsWith('vertex reviewer')), 'vertex reviewer: harness claude: not implemented');
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.worktrees(), 1, 'no worktree');
+  assert.equal(existsSync(join(f.root, 'wt')), false, 'no worktree root');
   assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
-});
-
-test('an agent without a harness fails admission naming the vertex and agent', async (t) => {
-  const f = fixture(t, { fullFlow: true });
-  f.options.config.agents.implementer.harness = null;
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
-  assert.ok(err, 'admission rejects the run');
-  const examples = fileURLToPath(new URL('../../examples/', import.meta.url));
-  assert.equal(err.message.split('\n')[1], 'vertex implementer: no harness configured for agent implementer');
-  assert.equal(err.message.split('\n').at(-1), `Merge ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`);
-  assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.equal(f.worktrees(), 1, 'no worktree');
 });
 
 test('preflight lists every unset Vertex and Agent before one merge advice line', async (t) => {
@@ -185,8 +166,9 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
     'vertex implementer-fix: no harness configured for agent implementer',
     `Merge ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,
   ]);
-  assert.deepEqual(f.gh.calls, []);
-  assert.equal(f.harness.calls.length, 0);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.harness.calls.length, 0, 'no agent started');
+  assert.equal(f.worktrees(), 1, 'no worktree');
 });
 
 test('preflight names an unset harness and an unknown harness in one error', async (t) => {

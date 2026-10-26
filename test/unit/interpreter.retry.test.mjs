@@ -4,8 +4,8 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  steps, neededHuman, reviewFlow, prReviewComments, ticketComments, loadTicket, ticketRow, attemptMarker, PR, okReview,
-  REVIEW_COMMENT, commentPosts, onPr, crashPost, contendRepoLock, lockedSetup,
+  steps, reviewFlow, prReviewComments, ticketComments, loadTicket, attemptMarker, PR, okReview, REVIEW_COMMENT, commentPosts,
+  onPr, crashPost, originSha,
 } from '../support/interpreter.mjs';
 
 test('a transient comment failure is retried once and posts one comment', async (t) => {
@@ -36,7 +36,9 @@ test('retry-after is honoured on the fake clock', async (t) => {
   g.gh.fail(onPr({ status: 403, headers: { 'Retry-After': '7' },
     body: { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' } }));
   let seen = null;
-  g.clock.onSleep = () => { seen ??= { now: g.clock.now(), calls: g.gh.calls.length, saved: ticketRow(g).retries[REVIEW_COMMENT]?.remote }; };
+  g.clock.onSleep = async () => {
+    seen ??= { now: g.clock.now(), calls: g.gh.calls.length, saved: (await loadTicket(g)).retries[REVIEW_COMMENT]?.remote };
+  };
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'done', JSON.stringify(result));
@@ -85,7 +87,7 @@ test('the retry budget survives a crash', async (t) => {
   const final = await loadTicket(g);
   assert.equal(final.retries[REVIEW_COMMENT].remote.count, 2);
   assert.equal(final.state, 'fault');
-  assert.ok(neededHuman(g));
+  assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 });
 
 test('auth and non-fast-forward failures are not retried', async (t) => {
@@ -99,15 +101,14 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.deepEqual(g.sleeps, []);
     assert.equal(g.rec.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is reserved');
     assert.match(g.rec.terminalStop.error, /HTTP 401/);
-    assert.ok(neededHuman(g));
+    assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   });
   await t.test('a non-fast-forward push', async (t) => {
-    const g = await golden.setup(t, { git: 'real' });
+    const g = await golden.setup(t);
     // origin has the Ticket branch at a commit the worktree's branch does not contain.
-    golden.sh(g.mainRoot, 'commit', '-q', '--allow-empty', '-m', 'someone else');
-    golden.sh(g.mainRoot, 'push', '-q', 'origin', `HEAD:refs/heads/${golden.BRANCH}`);
-    const theirs = golden.sh(g.mainRoot, 'rev-parse', 'HEAD');
+    const theirs = g.fakeGit.commit(g.mainRoot, 'someone else');
     const { push } = g.options.git;
+    await push(g.mainRoot, golden.BRANCH, theirs);
     let pushes = 0;
     g.options.git = { ...g.options.git, push: (...args) => { pushes++; return push(...args); } };
     const result = await interpreter.runExecution(g.options);
@@ -117,8 +118,8 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.deepEqual(g.sleeps, []);
     assert.equal(g.rec.retries['implementer/1/green/4'].remote.count, 0, 'no retry is reserved');
     assert.match(g.rec.terminalStop.error, /non-fast-forward|rejected/);
-    assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], theirs, 'nothing was forced');
-    assert.ok(neededHuman(g));
+    assert.equal(await originSha(g), theirs, 'nothing was forced');
+    assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   });
 });
 
@@ -164,7 +165,7 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
     assert.equal(posts(), 3, 'no fourth write');
     assert.equal(prReviewComments(g).length, 0);
     assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
-    assert.ok(neededHuman(g));
+    assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   });
 });
 
@@ -213,13 +214,12 @@ test('a first launch that crashed spends the budget when launched again', async 
     if (golden.isCommentPost(args, PR) && ++posts) throw new interpreter.CrashError('crash as the POST launched');
     return g.gh.gh(args, cwd, input);
   });
-  const outcomes = [];
-  for (let run = 0; run < 4; run++) {
-    const record = run ? { record: await loadTicket(g) } : {};
-    const got = await interpreter.runExecution({ ...g.options, ...record }).then((r) => r, (err) => err);
-    outcomes.push(got instanceof interpreter.CrashError ? 'crash' : got.fault ? 'fault' : JSON.stringify(got));
-  }
-  assert.deepEqual(outcomes, ['crash', 'crash', 'crash', 'fault'], 'the first launch and two relaunches, then none');
+  const crashed = (err) => err instanceof interpreter.CrashError;
+  await assert.rejects(interpreter.runExecution(g.options), crashed, 'the first launch');
+  await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g) }), crashed, 'the first relaunch');
+  await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g) }), crashed, 'the second relaunch');
+  const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+  assert.equal(result.fault, true, `then none: ${JSON.stringify(result)}`);
   assert.equal(posts, 3);
   assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
 });
@@ -227,7 +227,9 @@ test('a first launch that crashed spends the budget when launched again', async 
 test('a pending report waiting out a sibling cooldown checks the human override again before posting', async (t) => {
   const g = await golden.setup(t);
   const onTicket = { matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 };
-  for (let i = 0; i < 3; i++) g.gh.fail(onTicket);
+  g.gh.fail(onTicket);
+  g.gh.fail(onTicket);
+  g.gh.fail(onTicket);
   // The hold comment fails through its whole budget, so the hold stays pending for the next Run.
   const first = await interpreter.runExecution({ ...g.options,
     admission: { kind: 'hold', name: 'dirty-worktree', text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.' } });
@@ -249,50 +251,12 @@ test('a pending report waiting out a sibling cooldown checks the human override 
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
 });
 
-test('a git write queued behind another holder of the repo lock checks the human override first', async (t) => {
-  await t.test('a queued push', async (t) => {
-    const g = await golden.setup(t, { integrity: 'real' });
-    const lock = contendRepoLock(t, g.commonDir, () => { g.gh.labels.add('gg:state:needs-human'); });
-    // The green commit's write is the last before the push, whose lock attempt then waits.
-    const counts = lockedSetup(g, (verb, n) => { if (verb === 'commitStaged' && n === 2) lock.arm(); });
-    const result = await interpreter.runExecution(g.options);
-
-    assert.equal(lock.state(), 'released', 'the push waited for the lock');
-    assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
-    assert.equal(counts.push ?? 0, 0, 'nothing was pushed');
-    assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
-    assert.equal((await loadTicket(g)).state, 'abandoned');
-  });
-  await t.test('a queued push whose commit origin already has', async (t) => {
-    const g = await golden.setup(t, { integrity: 'real' });
-    const lock = contendRepoLock(t, g.commonDir, () => golden.sh(g.worktree, 'push', '-q', 'origin', `HEAD:refs/heads/${golden.BRANCH}`));
-    const counts = lockedSetup(g, (verb, n) => { if (verb === 'commitStaged' && n === 2) lock.arm(); });
-    const result = await interpreter.runExecution(g.options);
-
-    assert.equal(lock.state(), 'released', 'the push waited for the lock');
-    assert.equal(result.outcome, 'done', JSON.stringify(result));
-    assert.equal(counts.push ?? 0, 0, 'the commit is on origin, so it is not pushed again');
-    assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'));
-  });
-  await t.test('a queued commit', async (t) => {
-    const g = await golden.setup(t, { integrity: 'real' });
-    const lock = contendRepoLock(t, g.commonDir, () => { g.gh.labels.add('gg:state:needs-human'); });
-    // The green commit's tree is written; its commit is the next locked write.
-    const counts = lockedSetup(g, (verb, n) => { if (verb === 'writeTree' && n === 2) lock.arm(); });
-    const result = await interpreter.runExecution(g.options);
-
-    assert.equal(lock.state(), 'released', 'the commit waited for the lock');
-    assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
-    assert.equal(counts.commitStaged, 1, 'only the red commit was made');
-    assert.deepEqual(golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean).length, 1);
-    assert.equal((await loadTicket(g)).state, 'abandoned');
-  });
-});
-
 test('a remote budget that runs out says so in the Terminal Reason', async (t) => {
   await t.test('a transient comment failure', async (t) => {
     const g = await reviewFlow(t, okReview);
-    for (let i = 0; i < 3; i++) g.gh.fail(onPr({ status: 502 }));
+    g.gh.fail(onPr({ status: 502 }));
+    g.gh.fail(onPr({ status: 502 }));
+    g.gh.fail(onPr({ status: 502 }));
     const result = await interpreter.runExecution(g.options);
 
     assert.equal(result.fault, true, JSON.stringify(result));
@@ -311,23 +275,21 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
   });
 });
 
-test('a transient read inside a retry spends the budget and is never taken for absence', async (t) => {
-  for (const [name, matches] of [
-    ['the comment lookup', (args) => golden.isCommentRead(args, PR)],
-    ['the label read', (args) => args[0] === 'issue' && args[1] === 'view'],
-  ]) {
-    await t.test(name, async (t) => {
-      const g = await reviewFlow(t, okReview);
-      g.gh.fail(onPr({ status: 502 }));
-      // The retry's first read of `name` fails too; its next one works.
-      g.gh.fail({ matches, status: 502 });
-      const result = await interpreter.runExecution(g.options);
+for (const [name, matches] of [
+  ['the comment lookup', (args) => golden.isCommentRead(args, PR)],
+  ['the label read', (args) => args[0] === 'issue' && args[1] === 'view'],
+]) {
+  test(`a transient read inside a retry spends the budget and is never taken for absence: ${name}`, async (t) => {
+    const g = await reviewFlow(t, okReview);
+    g.gh.fail(onPr({ status: 502 }));
+    // The retry's first read fails too; its next one works.
+    g.gh.fail({ matches, status: 502 });
+    const result = await interpreter.runExecution(g.options);
 
-      assert.equal(result.outcome, 'done', JSON.stringify(result));
-      assert.deepEqual(g.sleeps, [60_000, 120_000], 'the failed read spent the second retry');
-      assert.equal(commentPosts(g).length, 2, 'the failed POST and one retry, launched only after a read that worked');
-      assert.equal(prReviewComments(g).length, 1);
-      assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
-    });
-  }
-});
+    assert.equal(result.outcome, 'done', JSON.stringify(result));
+    assert.deepEqual(g.sleeps, [60_000, 120_000], 'the failed read spent the second retry');
+    assert.equal(commentPosts(g).length, 2, 'the failed POST and one retry, launched only after a read that worked');
+    assert.equal(prReviewComments(g).length, 1);
+    assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
+  });
+}

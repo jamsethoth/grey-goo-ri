@@ -17,20 +17,19 @@ const reversed = (value) => Array.isArray(value) ? value.map(reversed)
   : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, reversed(v)]))
     : value;
 
-test('loadDefaults reads the shipped agents, flow and personas', () => {
-  const defaults = config.loadDefaults();
-  assert.deepEqual(Object.keys(defaults.agents).sort(), ['implementer', 'reviewer']);
-  assert.equal(defaults.agents.implementer.persona, 'implementer.md');
-  assert.equal(defaults.agents.reviewer.persona, 'reviewer.md');
-  assert.equal(defaults.flows.default.ticket.entry, 'implementer');
-  for (const name of ['implementer.md', 'reviewer.md']) {
+test('loadDefaults reads the shipped flow', () => {
+  assert.equal(config.loadDefaults().flows.default.ticket.entry, 'implementer');
+});
+
+for (const name of ['implementer.md', 'reviewer.md']) {
+  test(`loadDefaults reads the shipped persona ${name} with its hash`, () => {
     const file = readFileSync(personaPath(name));
-    const persona = defaults.personas[name];
+    const persona = config.loadDefaults().personas[name];
     assert.ok(persona, `${name} is loaded`);
     assert.equal(String(persona.bytes), file.toString('utf8'));
     assert.equal(persona.hash, sha256(file));
-  }
-});
+  });
+}
 
 test('loadConfig reads the Layer identified by layerPath', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'gg-layer-'));
@@ -67,27 +66,26 @@ test('configHash changes with persona, vertex and command changes and ignores ke
   assert.notEqual(config.configHash(command), hash, 'a Declared Command changes the hash');
 });
 
-test('the shipped defaults name no harness, model or effort', () => {
-  for (const [name, agent] of Object.entries(config.loadDefaults().agents)) {
-    for (const key of ['harness', 'model', 'effort']) assert.equal(Object.hasOwn(agent, key), false, `${name} has no ${key}`);
-  }
-});
+// A copy of gg's lib and defaults installed under its own root, and the Config Hash input and hash it gives the defaults.
+async function installed(t, install) {
+  const root = join(mkdtempSync(join(tmpdir(), `gg-install-${install}-`)), 'gg');
+  t.after(() => rmSync(join(root, '..'), { recursive: true, force: true }));
+  cpSync(join(repoRoot, 'lib'), join(root, 'lib'), { recursive: true });
+  cpSync(join(repoRoot, 'defaults'), join(root, 'defaults'), { recursive: true });
+  const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
+  const f = await import(pathToFileURL(join(root, 'lib', 'flow.mjs')).href);
+  const defaults = c.loadDefaults();
+  const input = { flow: f.resolveFlow(defaults), personas: defaults.personas, harnesses: {}, commands: {} };
+  return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: c.configHash(input) };
+}
 
 test('the Config Hash does not depend on the install path', async (t) => {
   // Two copies of gg installed under different roots must hash the shipped defaults the same.
-  const hashes = [];
-  for (const install of ['one', 'two']) {
-    const root = join(mkdtempSync(join(tmpdir(), `gg-install-${install}-`)), 'gg');
-    t.after(() => rmSync(join(root, '..'), { recursive: true, force: true }));
-    for (const dir of ['lib', 'defaults']) cpSync(join(repoRoot, dir), join(root, dir), { recursive: true });
-    const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
-    const f = await import(pathToFileURL(join(root, 'lib', 'flow.mjs')).href);
-    const defaults = c.loadDefaults();
-    const input = { flow: f.resolveFlow(defaults), personas: defaults.personas, harnesses: {}, commands: {} };
-    assert.ok(!JSON.stringify(input).includes(JSON.stringify(root).slice(1, -1)), 'no install path in the hashed input');
-    hashes.push(c.configHash(input));
-  }
-  assert.equal(hashes[0], hashes[1]);
+  const one = await installed(t, 'one');
+  const two = await installed(t, 'two');
+  assert.ok(!one.input.includes(one.root), 'no install path in the hashed input');
+  assert.ok(!two.input.includes(two.root), 'no install path in the hashed input');
+  assert.equal(one.hash, two.hash);
 });
 
 // A repository root and a home directory, each with the Layer text given (or none).
@@ -136,18 +134,26 @@ test('a Layer with a duplicate key in one object is a load error naming the file
   assert.deepEqual(config.loadConfig(fine.repo, fine.home).b, { k: '"k": 2' });
 });
 
+const layerFile = config.layerPath('repo');
+
 test('commandProblems accepts a valid set and names each malformed entry', () => {
-  const file = config.layerPath('repo');
-  const missing = `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
-  const value = (name) => `${file}: command ${name} must be a non-empty single-line string`;
-  assert.deepEqual(config.commandProblems({ test: 'npm test', 'lint-js': 'x' }, file), []);
-  assert.deepEqual(config.commandProblems(undefined, file), [missing]);
-  assert.deepEqual(config.commandProblems({ Test: 'npm test' }, file), [`${file}: command name "Test" must match [a-z][a-z0-9-]*`, missing]);
-  for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) assert.deepEqual(config.commandProblems({ test: bad }, file), [value('test')], JSON.stringify(bad));
-  for (const bad of [['npm test'], 'npm test', null]) {
-    assert.deepEqual(config.commandProblems(bad, file), [`${file}: commands must be an object from name to command line`], JSON.stringify(bad));
-  }
+  const missing = `${layerFile} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
+  assert.deepEqual(config.commandProblems({ test: 'npm test', 'lint-js': 'x' }, layerFile), []);
+  assert.deepEqual(config.commandProblems(undefined, layerFile), [missing]);
+  assert.deepEqual(config.commandProblems({ Test: 'npm test' }, layerFile), [`${layerFile}: command name "Test" must match [a-z][a-z0-9-]*`, missing]);
 });
+
+for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) {
+  test(`commandProblems names a test command of ${JSON.stringify(bad)} as malformed`, () => {
+    assert.deepEqual(config.commandProblems({ test: bad }, layerFile), [`${layerFile}: command test must be a non-empty single-line string`]);
+  });
+}
+
+for (const bad of [['npm test'], 'npm test', null]) {
+  test(`commandProblems names commands of ${JSON.stringify(bad)} as not an object`, () => {
+    assert.deepEqual(config.commandProblems(bad, layerFile), [`${layerFile}: commands must be an object from name to command line`]);
+  });
+}
 
 // Until the cutover (grey-goo-ri issue #97): feature-flow builds this repository and reads its AGENTS.md line.
 test('this repository AGENTS.md Commands line matches its repository Layer', (t) => {

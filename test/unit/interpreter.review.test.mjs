@@ -6,8 +6,8 @@ import * as marker from '../../lib/marker.mjs';
 import * as checks from '../../lib/checks.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  neededHuman, REVIEWER_PERSONA, finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, prReviewComments,
-  reviewStopReason,
+  REVIEWER_PERSONA, finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, prReviewComments,
+  reviewStopReason, branchMessages, originSha, headSha,
 } from '../support/interpreter.mjs';
 
 test('golden: a changes verdict routes into the fix vertex and back to review then done', async (t) => {
@@ -15,17 +15,17 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/2/review/1': reviewed(review('ok', [finding('minor', 'lib/add.mjs', 'name the parameters')])),
-  }, { git: 'real' });
+  });
 
   assert.equal(g.result.outcome, 'done');
-  const seq = (vertex, visit, phase, n) => Array.from({ length: n }, (_, i) => `${vertex}/${visit}/${phase}/${i + 1}`);
   assert.deepEqual(g.actions.map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}`), [
-    ...seq('implementer', 1, 'red', 3), ...seq('implementer', 1, 'green', 5),
-    ...seq('reviewer', 1, 'review', 4),
-    ...seq('implementer-fix', 1, 'fix', 5),
-    ...seq('reviewer', 2, 'review', 4),
+    'implementer/1/red/1', 'implementer/1/red/2', 'implementer/1/red/3',
+    'implementer/1/green/1', 'implementer/1/green/2', 'implementer/1/green/3', 'implementer/1/green/4', 'implementer/1/green/5',
+    'reviewer/1/review/1', 'reviewer/1/review/2', 'reviewer/1/review/3', 'reviewer/1/review/4',
+    'implementer-fix/1/fix/1', 'implementer-fix/1/fix/2', 'implementer-fix/1/fix/3', 'implementer-fix/1/fix/4', 'implementer-fix/1/fix/5',
+    'reviewer/2/review/1', 'reviewer/2/review/2', 'reviewer/2/review/3', 'reviewer/2/review/4',
   ]);
-  for (const e of g.actions) assert.equal(e.attempt, 1, `${e.vertex}/${e.phase}/${e.ordinal}`);
+  assert.deepEqual(g.actions.filter((e) => e.attempt !== 1), [], 'every Action is its first Attempt');
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure), Array(8).fill('review'));
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), Array(5).fill('fix'));
   assert.equal(g.at('reviewer', 1, 'review', 1)[0].outcome, 'changes');
@@ -46,13 +46,15 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
   assert.equal(g.at('implementer-fix', 1, 'fix', 1)[0].lineage, null);
   assert.equal(review2.access, 'read-only');
 
-  assert.deepEqual(g.subjects().map((s) => s.split(':')[0]), ['test', 'feat', 'fix']);
-  assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%B'), /Feature-Flow-Stage: implementer-fix fake\/model-x\/high/);
-  assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'), 'fix/4 pushed');
+  const messages = await branchMessages(g);
+  assert.deepEqual(messages.map((m) => m.split(':')[0]), ['test', 'feat', 'fix']);
+  assert.match(messages.at(-1), /Feature-Flow-Stage: implementer-fix fake\/model-x\/high/);
+  assert.equal(await originSha(g), await headSha(g), 'fix/4 pushed');
 
   const comments = prReviewComments(g);
   assert.equal(comments.length, 2, 'two review comments on the PR');
-  for (const c of comments) assert.match(c.body, /^<!-- gg-action gg:\S+ -->$/m);
+  assert.match(comments[0].body, /^<!-- gg-action gg:\S+ -->$/m);
+  assert.match(comments[1].body, /^<!-- gg-action gg:\S+ -->$/m);
   assert.match(g.gh.pr().body, /^\| reviewer \| fake \| model-r \| high \| /m, 'the PR body carries the reviewer provenance row');
   assert.equal(g.gh.pr().isDraft, false);
 
@@ -117,11 +119,10 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
   assert.equal(g.rec.visits['implementer-fix'], 2);
   assert.equal(g.rec.visits.reviewer, 3);
   assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX ROUND')).length, 2, 'no third fix call');
-  assert.ok(!g.actions.some((e) => e.vertex === 'implementer-fix' && e.visit === 3));
-  const third = g.actions.filter((e) => e.vertex === 'reviewer' && e.visit === 3);
-  assert.ok(third.some((e) => e.exhausted === true), 'the deciding Action Event records exhausted');
-  assert.ok(!g.actions.filter((e) => e.vertex === 'reviewer' && e.visit < 3).some((e) => e.exhausted), 'only the third review exhausts');
-  assert.ok(neededHuman(g));
+  assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix' && e.visit === 3), [], 'no third fix Visit');
+  assert.deepEqual(g.actions.filter((e) => e.exhausted === true).map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}`),
+    ['reviewer/3/review/1'], 'only the deciding Action Event of the third review records exhausted');
+  assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 
   const reason = reviewStopReason(g);
   assert.equal(reason.decidedBy.vertex, 'reviewer');

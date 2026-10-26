@@ -27,11 +27,20 @@ test('canonical keeps a missing tail on the canonical form of its nearest existi
   assert.equal(paths.canonical(join(link, 'wt', 'ticket-4')), join(real, 'wt', 'ticket-4'));
 });
 
-test('pathKey makes two spellings of one directory equal, folding case only on Windows', async (t) => {
+test('pathKey makes two spellings of one directory equal', async (t) => {
   const paths = await import('../../lib/paths.mjs');
   const { real, link } = linked(t);
   assert.equal(paths.pathKey(join(link, 'sub')), paths.pathKey(join(real, 'sub')));
-  const upper = join(real, 'SUB');
-  if (process.platform === 'win32') assert.equal(paths.pathKey(upper), paths.pathKey(join(real, 'sub')));
-  else assert.notEqual(paths.pathKey(upper), paths.pathKey(join(real, 'sub')));
+});
+
+test('pathKey folds case on Windows', { skip: process.platform !== 'win32' && 'Windows only' }, async (t) => {
+  const paths = await import('../../lib/paths.mjs');
+  const { real } = linked(t);
+  assert.equal(paths.pathKey(join(real, 'SUB')), paths.pathKey(join(real, 'sub')));
+});
+
+test('pathKey keeps case off Windows', { skip: process.platform === 'win32' && 'not on Windows' }, async (t) => {
+  const paths = await import('../../lib/paths.mjs');
+  const { real } = linked(t);
+  assert.notEqual(paths.pathKey(join(real, 'SUB')), paths.pathKey(join(real, 'sub')));
 });

@@ -1,64 +1,78 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.mjs';
 import * as flow from '../../lib/flow.mjs';
 
-test('resolveFlow expands use with overrides into the resolved flow shape', () => {
-  const defaults = config.loadDefaults();
-  const library = structuredClone(defaults.agents);
-  const resolved = flow.resolveFlow(defaults);
+const IMPLEMENTER = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false };
+const REVIEWER = { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false };
 
-  assert.equal(resolved.name, 'default');
-  assert.equal(resolved.plan, null);
-  assert.equal(resolved.ticket.entry, 'implementer');
-  const { vertices } = resolved.ticket;
-  assert.deepEqual(Object.keys(vertices).sort(), ['implementer', 'implementer-fix', 'reviewer']);
-  const uses = { implementer: 'implementer', reviewer: 'reviewer', 'implementer-fix': 'implementer' };
-  for (const [id, use] of Object.entries(uses)) {
-    const { agent } = vertices[id];
-    assert.deepEqual(agent, { ...library[use], harness: null, model: null, effort: null }, `${id} agent comes from ${use}`);
-    assert.equal(vertices[id].use, undefined, `${id} no longer carries use`);
-    assert.deepEqual(vertices[id].options, {});
-  }
-  assert.deepEqual(
-    Object.fromEntries(Object.entries(vertices).map(([id, v]) => [id, v.procedure])),
-    { implementer: 'tdd', reviewer: 'review', 'implementer-fix': 'fix' },
-  );
-  assert.equal(vertices.implementer.then, 'reviewer');
-  assert.equal(vertices['implementer-fix'].then, 'reviewer');
-  assert.deepEqual(vertices.reviewer.route, { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' } });
+test('resolveFlow expands use into the resolved flow shape', () => {
+  const resolvedImplementer = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: null, effort: null };
+  assert.deepEqual(flow.resolveFlow(config.loadDefaults()), {
+    name: 'default',
+    plan: null,
+    ticket: {
+      entry: 'implementer',
+      vertices: {
+        implementer: { agent: resolvedImplementer, options: {}, procedure: 'tdd', then: 'reviewer' },
+        reviewer: {
+          agent: { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false, harness: null, model: null, effort: null },
+          options: {}, procedure: 'review',
+          route: { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' } },
+        },
+        'implementer-fix': { agent: resolvedImplementer, options: {}, procedure: 'fix', then: 'reviewer' },
+      },
+    },
+  });
+});
 
-  const overridden = structuredClone(defaults);
+test('a Vertex field overrides the library Agent it uses, and the rest comes from that Agent', () => {
+  const overridden = config.loadDefaults();
   overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', then: 'reviewer' };
-  const fix = flow.resolveFlow(overridden).ticket.vertices['implementer-fix'];
-  assert.equal(fix.agent.model, 'model-z', 'a Vertex field overrides the library Agent');
-  assert.equal(fix.agent.persona, library.implementer.persona, 'the rest comes from the library Agent');
-  assert.equal(fix.agent.harness, null, 'a missing harness resolves to null');
-  assert.equal(fix.model, undefined, 'the override lives on the agent, not the Vertex');
-  assert.deepEqual(overridden.agents, library, 'the Agent Library is not mutated');
+  assert.deepEqual(flow.resolveFlow(overridden).ticket.vertices['implementer-fix'], {
+    agent: { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: 'model-z', effort: null },
+    options: {}, procedure: 'fix', then: 'reviewer',
+  });
+});
+
+test('resolveFlow does not mutate the Agent Library', () => {
+  const overridden = config.loadDefaults();
+  overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', then: 'reviewer' };
+  flow.resolveFlow(overridden);
+  assert.deepEqual(overridden.agents, { implementer: IMPLEMENTER, reviewer: REVIEWER });
 });
 
 test('the Resolved Flow carries the persona file name, not a path', () => {
   assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.implementer.agent.persona, 'implementer.md');
 });
 
-test('each example Layer merged over the defaults resolves with its harness', () => {
-  for (const harness of ['claude', 'codex']) {
-    const example = JSON.parse(readFileSync(fileURLToPath(new URL(`../../examples/${harness}.json`, import.meta.url)), 'utf8'));
-    const merged = config.loadDefaults();
-    assert.deepEqual(Object.keys(example.agents).sort(), Object.keys(merged.agents).sort(), `${harness} sets every shipped Agent`);
-    for (const [name, agent] of Object.entries(example.agents)) merged.agents[name] = { ...merged.agents[name], ...agent };
-    for (const [id, { agent }] of Object.entries(flow.resolveFlow(merged).ticket.vertices)) {
-      assert.equal(agent.harness, harness, `${harness} ${id} harness`);
-      assert.equal(typeof agent.model, 'string', `${harness} ${id} model`);
-      assert.equal(typeof agent.effort, 'string', `${harness} ${id} effort`);
-    }
-  }
-});
+for (const [harness, agents] of [
+  ['claude', {
+    implementer: { harness: 'claude', model: 'opus', effort: 'high' },
+    reviewer: { harness: 'claude', model: 'sonnet', effort: 'high' },
+    'implementer-fix': { harness: 'claude', model: 'opus', effort: 'high' },
+  }],
+  ['codex', {
+    implementer: { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    reviewer: { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    'implementer-fix': { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+  }],
+]) {
+  test(`the ${harness} example Layer over the defaults resolves every Vertex with its harness`, (t) => {
+    const repo = mkdtempSync(join(tmpdir(), 'gg-example-'));
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+    const example = fileURLToPath(new URL(`../../examples/${harness}.json`, import.meta.url));
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(example, 'utf8')).agents).sort(), ['implementer', 'reviewer'], 'it sets every shipped Agent');
+    mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
+    copyFileSync(example, config.layerPath(repo));
+    const { vertices } = flow.resolveFlow(config.loadConfig(repo, join(repo, 'no-user-layer'))).ticket;
+    assert.deepEqual(Object.fromEntries(Object.entries(vertices).map(([id, { agent }]) => [id, { harness: agent.harness, model: agent.model, effort: agent.effort }])), agents);
+  });
+}
 
 test('resolveFlow rejects an unknown agent or procedure naming the vertex', () => {
   const unknownAgent = config.loadDefaults();

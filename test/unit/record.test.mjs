@@ -2,18 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import * as events from '../../lib/events.mjs';
-import * as locks from '../../lib/locks.mjs';
 import * as record from '../../lib/record.mjs';
-
-const saver = fileURLToPath(new URL('../support/record-saver.mjs', import.meta.url));
-const contender = fileURLToPath(new URL('../support/lock-contender.mjs', import.meta.url));
-const opener = fileURLToPath(new URL('../support/db-opener.mjs', import.meta.url));
 
 // A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
 async function tempCommonDir(t) {
@@ -26,24 +19,6 @@ async function tempCommonDir(t) {
 }
 
 const dbPath = (commonDir) => join(commonDir, 'gg', 'gg.db');
-
-// Cases that wait for another process to reach a lock or exit: one that never does fails at this bound.
-const CASE = { timeout: 120_000 };
-
-// Another gg process opening the State Database (support/db-opener.mjs). said(text) resolves once it has printed text;
-// exit resolves with its code, output and error text.
-function openInChild(commonDir) {
-  const child = spawn(process.execPath, [opener, commonDir], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '', err = '';
-  child.stdout.setEncoding('utf8').on('data', (chunk) => { out += chunk; });
-  child.stderr.setEncoding('utf8').on('data', (chunk) => { err += chunk; });
-  const exit = new Promise((resolve) => child.on('close', (code) => resolve({ code, out, err })));
-  const said = (text) => new Promise((resolve) => {
-    const check = () => (out.includes(text) ? resolve() : child.stdout.once('data', check));
-    check();
-  });
-  return { child, said, exit };
-}
 
 // Reads and writes rows directly, as another SQLite client would.
 function withDb(commonDir, fn) {
@@ -96,7 +71,10 @@ test('createExecution mints an execution id and the documented fields', async (t
   assert.equal(r.heartbeat, null);
   assert.deepEqual(r.log, []);
   assert.notEqual(newExecution(commonDir).execution, r.execution);
+});
 
+test('createEpicRecord has the documented fields', async (t) => {
+  const commonDir = await tempCommonDir(t);
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
   assert.deepEqual(withoutCommonDir(epic), { schemaVersion: 1, epic: 1, approval: null, pending: null });
 });
@@ -148,15 +126,12 @@ test('the write-ahead log records intent, evidence and completion per marker', a
   await record.intent(r, 'm1', 'commit', { message: 'red' });
   await record.evidence(r, 'm1', { sha: 'deadbeef' });
   await record.complete(r, 'm1');
-  assert.equal(r.log.length, 3);
-  assert.deepEqual(r.log.map((e) => e.step), ['intent', 'evidence', 'complete']);
-  for (const e of r.log) {
-    assert.equal(e.marker, 'm1');
-    assert.equal(e.action, 'commit');
-    assert.equal(typeof e.ts, 'string');
-  }
-  assert.deepEqual(r.log[0].payload, { message: 'red' });
-  assert.deepEqual(r.log[1].evidence, { sha: 'deadbeef' });
+  assert.deepEqual(r.log.map(({ ts, ...e }) => e), [
+    { step: 'intent', marker: 'm1', action: 'commit', payload: { message: 'red' } },
+    { step: 'evidence', marker: 'm1', action: 'commit', evidence: { sha: 'deadbeef' } },
+    { step: 'complete', marker: 'm1', action: 'commit' },
+  ]);
+  assert.deepEqual(r.log.map((e) => typeof e.ts), ['string', 'string', 'string']);
   const loaded = await record.load(commonDir, 'ticket', 8);
   assert.deepEqual(loaded.log, r.log, 'each step saves');
 });
@@ -251,154 +226,11 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
   });
 });
 
-test('an open that finds no tables waits for the first opener, not for its saves', CASE, async (t) => {
-  // Plays the first opener: holds the open lock while it creates the tables, then saves until the second opener exits.
-  // A second opener that read the old version must not wait on the database write lock behind those saves: had it
-  // waited, the busy timeout would fail it, since the saves end only once it has exited.
-  const commonDir = await tempCommonDir(t);
-  mkdirSync(join(commonDir, 'gg', 'locks'), { recursive: true });
-  const db = new DatabaseSync(dbPath(commonDir));
-  const lock = new DatabaseSync(join(commonDir, 'gg', 'locks', 'open.db'));
-  try {
-    db.exec('PRAGMA journal_mode = WAL');
-    lock.exec('BEGIN EXCLUSIVE');
-    db.exec('BEGIN IMMEDIATE');
-    const { child, said, exit } = openInChild(commonDir);
-    t.after(() => { if (child.exitCode === null) child.kill(); });
-    await said('locking'); // it has read the empty version and waits for the open lock
-    db.exec(`CREATE TABLE records (kind TEXT NOT NULL, n INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (kind, n));
-      CREATE TABLE configs (hash TEXT PRIMARY KEY, json TEXT NOT NULL, firstSeen TEXT NOT NULL);
-      CREATE TABLE events (id INTEGER PRIMARY KEY, ts TEXT NOT NULL, type TEXT NOT NULL, run TEXT, execution TEXT,
-        ticket INTEGER, json TEXT NOT NULL);
-      PRAGMA user_version = ${record.DB_SCHEMA_VERSION};`);
-    db.exec('COMMIT');
-    lock.exec('COMMIT');
-    db.exec('BEGIN IMMEDIATE');
-    const { code, err } = await exit;
-    assert.equal(code, 0, `the second open waited behind the saves or failed: ${err}`);
-    db.exec('COMMIT');
-  } finally {
-    if (db.isTransaction) db.exec('ROLLBACK');
-    db.close();
-    lock.close();
-  }
-});
-
-test('two processes save different records concurrently without loss', async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const exits = await Promise.all([1, 2].map((ticket) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.on('close', (code) => resolve({ ticket, code, err }));
-  })));
-  assert.deepEqual(exits, [{ ticket: 1, code: 0, err: '' }, { ticket: 2, code: 0, err: '' }]);
-  withDb(commonDir, (db) => {
-    const rows = db.prepare('SELECT kind, n FROM records ORDER BY n').all().map((row) => ({ ...row }));
-    assert.deepEqual(rows, [{ kind: 'ticket', n: 1 }, { kind: 'ticket', n: 2 }]);
-  });
-  const all = (await record.loadAll(commonDir, 'ticket')).sort((a, b) => a.ticket - b.ticket);
-  assert.deepEqual(all.map((r) => [r.ticket, r.activity]), [
-    [1, { busy: false, generation: 200 }],
-    [2, { busy: false, generation: 200 }],
-  ]);
-});
-
 // SQLite's busy handler is not fair, so on a loaded Windows runner another process's burst of writes held a save off
 // past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136).
-test('a save waits out another process that holds the write lock for longer than 5 s', async (t) => {
+test('the State Database waits up to 60 s for another writer', async (t) => {
   const commonDir = await tempCommonDir(t);
-  record.openDb(commonDir);
-  await record.close(commonDir);
-  const writer = new DatabaseSync(dbPath(commonDir));
-  try {
-    writer.exec('BEGIN IMMEDIATE');
-    const pending = saveOnce(commonDir, 1);
-    await new Promise((resolve) => setTimeout(resolve, 6000));
-    writer.exec('COMMIT');
-    assert.deepEqual(exitsOf([await pending]), [{ ticket: 1, code: 0, err: '' }]);
-  } finally {
-    if (writer.isTransaction) writer.exec('ROLLBACK');
-    writer.close();
-  }
-});
-
-const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
-
-// Another gg process opening the State Database and saving one record, resolving with its exit and elapsed time.
-function saveOnce(commonDir, ticket) {
-  const started = Date.now();
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.on('close', (code) => resolve({ ticket, code, err, ms: Date.now() - started }));
-  });
-}
-
-const exitsOf = (results) => results.map(({ ticket, code, err }) => ({ ticket, code, err }));
-const allOk = tickets.map((ticket) => ({ ticket, code: 0, err: '' }));
-const journalMode = (commonDir) => withDb(commonDir, (db) => db.prepare('PRAGMA journal_mode').get().journal_mode);
-
-// Without the open lock about one open in 100-200 failed with SQLITE_BUSY here, so 240 opens usually catch it.
-test('eight processes creating one new database at once all open it in WAL mode', async (t) => {
-  const root = await tempCommonDir(t);
-  for (let round = 0; round < 30; round++) {
-    const commonDir = join(root, String(round));
-    const exits = exitsOf(await Promise.all(tickets.map((ticket) => saveOnce(commonDir, ticket))));
-    assert.deepEqual(exits, allOk, `round ${round}`);
-    assert.equal(journalMode(commonDir), 'wal');
-  }
-});
-
-test('openers of a new database queue while the open lock is held and all succeed once it is released', async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const openLock = await locks.tryAcquire(commonDir, 'open');
-  assert.ok(openLock);
-  const pending = tickets.map((ticket) => saveOnce(commonDir, ticket));
-  let finished = 0;
-  for (const p of pending) p.then(() => finished++);
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-  assert.equal(finished, 0, 'no opener gets past a held open lock');
-  await locks.release(openLock);
-  assert.deepEqual(exitsOf(await Promise.all(pending)), allOk);
-  assert.equal(journalMode(commonDir), 'wal');
-});
-
-test('an opener of a new database proceeds when the process holding the open lock dies', CASE, async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const holder = spawn(process.execPath, [contender, commonDir, 'open', '600000'], { stdio: ['ignore', 'pipe', 'inherit'] });
-  t.after(() => holder.kill());
-  const report = await new Promise((resolve) => holder.stdout.once('data', (chunk) => resolve(JSON.parse(chunk))));
-  assert.ok(report.handle, 'the child holds the open lock');
-  const { child, said, exit } = openInChild(commonDir);
-  t.after(() => { if (child.exitCode === null) child.kill(); });
-  await said('locking');
-  holder.kill();
-  const { code, err } = await exit;
-  assert.deepEqual({ code, err }, { code: 0, err: '' });
-  assert.equal(journalMode(commonDir), 'wal');
-});
-
-// The opener names the statement that gave up: the open lock's BEGIN EXCLUSIVE, which waits under its 5 s busy timeout,
-// not a statement on gg.db, which would wait 60 s. How long it took depends on the machine's load, so it is not checked.
-test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released', CASE, async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const openLock = await locks.tryAcquire(commonDir, 'open');
-  const { code, out, err } = await openInChild(commonDir).exit.finally(() => locks.release(openLock));
-  assert.notEqual(code, 0);
-  assert.match(err, /errcode: 5/);
-  assert.match(out, /^failed: BEGIN EXCLUSIVE$/m, `the open lock's wait gave up: ${out}`);
-});
-
-test('an opener of an existing WAL database does not wait for the open lock', async (t) => {
-  const commonDir = await tempCommonDir(t);
-  record.openDb(commonDir);
-  await record.close(commonDir);
-  const openLock = await locks.tryAcquire(commonDir, 'open');
-  // The open lock is held until the opener exits, so exit 0 proves it was skipped; waiting for it fails with errcode 5.
-  const { code, err } = await saveOnce(commonDir, 1).finally(() => locks.release(openLock));
-  assert.deepEqual({ code, err }, { code: 0, err: '' });
+  assert.deepEqual({ ...record.openDb(commonDir).prepare('PRAGMA busy_timeout').get() }, { timeout: 60_000 });
 });
 
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
@@ -408,9 +240,11 @@ test('saveConfig stores a pinned configuration once per hash and loadConfig read
   const firstSeen = () => withDb(commonDir, (db) => db.prepare("SELECT firstSeen FROM configs WHERE hash = 'hash-1'").get().firstSeen);
   const first = firstSeen();
   assert.ok(!Number.isNaN(Date.parse(first)) && new Date(first).toISOString() === first, `${first} is an ISO time`);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  // An older firstSeen than any save could write, so a second save that replaced it would show.
+  const older = '2020-01-01T00:00:00.000Z';
+  withDb(commonDir, (db) => db.prepare("UPDATE configs SET firstSeen = ? WHERE hash = 'hash-1'").run(older));
   await record.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
-  assert.equal(firstSeen(), first, 'the second save keeps the first firstSeen');
+  assert.equal(firstSeen(), older, 'the second save keeps the first firstSeen');
   withDb(commonDir, (db) => assert.equal(db.prepare('SELECT count(*) AS n FROM configs').get().n, 1));
   assert.deepEqual(await record.loadConfig(commonDir, 'hash-1'), pinned);
   assert.equal(await record.loadConfig(commonDir, 'hash-2'), null);

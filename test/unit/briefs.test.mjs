@@ -12,46 +12,41 @@ const redOutput = 'not ok 1 - widgets render\n  AssertionError: expected widget'
 const testFiles = ['test/widgets.test.mjs', 'test/support/widget-fixture.mjs'];
 const IMMUTABLE = /committed tests must not be changed/i;
 
-test('Brief output excerpts keep complete-line tails', () => {
-  for (const [name, limit] of [['greenBrief', 4000], ['testFixBrief', 6000], ['stillGreenBrief', 3000]]) {
+for (const [name, limit] of [['greenBrief', 4000], ['testFixBrief', 6000], ['stillGreenBrief', 3000]]) {
+  test(`${name} output excerpts keep complete-line tails`, () => {
     const tail = 'x'.repeat(limit - 20) + '\nlast line';
     const output = 'old diagnostic '.repeat(100) + '\n' + tail;
     const brief = briefs[name]({ ...base, testFiles, redOutput: output, output });
-    assert.ok(brief.includes('```\n' + tail + '\n```'), name);
-    assert.ok(!brief.includes('old diagnostic'), name);
-  }
-});
+    assert.ok(brief.includes('```\n' + tail + '\n```'), brief);
+    assert.doesNotMatch(brief, /old diagnostic/);
+  });
+}
 
-test('agent-facing Briefs preserve distinguishable path-case failures', () => {
-  const output = `expected '${homedir().toLowerCase()}\\a' to equal '${homedir().toUpperCase()}\\a'`;
-  for (const name of ['testFixBrief', 'stillGreenBrief']) {
+for (const name of ['testFixBrief', 'stillGreenBrief']) {
+  test(`agent-facing ${name} preserves distinguishable path-case failures`, () => {
+    const output = `expected '${homedir().toLowerCase()}\\a' to equal '${homedir().toUpperCase()}\\a'`;
     const brief = briefs[name]({ ...base, output });
-    assert.ok(brief.includes(output), name);
-    assert.ok(!brief.includes('[local]'), name);
-  }
+    assert.ok(brief.includes(output), brief);
+    assert.ok(!brief.includes('[local]'), brief);
+  });
+}
+
+const evidencePath = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.mjs`;
+const storedRed = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n` });
+
+test('stored Check evidence reaches the green Brief unredacted', () => {
+  const green = briefs.greenBrief({ ...base, testFiles, redOutput: storedRed.output });
+  assert.ok(green.includes(`${evidencePath}:3:4`), green);
+  assert.ok(!green.includes('[local]'), green);
 });
 
-test('stored Check evidence reaches the green and review Briefs unredacted', () => {
-  const path = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.mjs`;
-  const red = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${path}:3:4)\n` });
-  const green = briefs.greenBrief({ ...base, testFiles, redOutput: red.output });
-  const review = briefs.reviewBrief({ ...base, impl: { claim: 'ok', red, green: red }, diff: '', changedTestFiles: [] });
-  for (const [name, brief] of [['green', green], ['review', review]]) {
-    assert.ok(brief.includes(`${path}:3:4`), name);
-    assert.ok(!brief.includes('[local]'), name);
-  }
+test('stored Check evidence reaches the review Brief unredacted', () => {
+  const review = briefs.reviewBrief({ ...base, impl: { claim: 'ok', red: storedRed, green: storedRed }, diff: '', changedTestFiles: [] });
+  assert.ok(review.includes(`${evidencePath}:3:4`), review);
+  assert.ok(!review.includes('[local]'), review);
 });
 
 const validRed = { claim: 'ok', summary: 's', tests: ['widgets render'], notes: '', diagnosis: '' };
-
-const allBriefs = () => ({
-  red: briefs.redBrief(base),
-  green: briefs.greenBrief({ ...base, testFiles, redOutput }),
-  fix: briefs.fixBrief(base),
-  review: briefs.reviewBrief({ ...base, impl: { claim: 'ok' }, diff: 'diff --git a/x b/x', changedTestFiles: [] }),
-  testFix: briefs.testFixBrief({ ...base, output: 'not ok 3 - widgets render' }),
-  stillGreen: briefs.stillGreenBrief({ ...base, output: 'ok 1 - widgets render' }),
-});
 
 test('styleBlock: caveman only for agent-facing prose, human fields stay natural', () => {
   assert.doesNotMatch(briefs.styleBlock({ internal: 'none' }, 'RULES'), /RULES|caveman-style/);
@@ -62,12 +57,18 @@ test('styleBlock: caveman only for agent-facing prose, human fields stay natural
   assert.match(s, /never caveman/);
 });
 
-test('every schema is strict', () => {
-  for (const name of ['RED_SCHEMA', 'IMPLEMENT_SCHEMA', 'REVIEW_SCHEMA']) {
-    assert.equal(typeof briefs[name], 'object', name);
-    assert.doesNotThrow(() => briefs.assertStrict(briefs[name]), name);
-  }
+for (const name of ['RED_SCHEMA', 'IMPLEMENT_SCHEMA', 'REVIEW_SCHEMA']) {
+  test(`${name} is strict`, () => {
+    assert.equal(typeof briefs[name], 'object');
+    assert.doesNotThrow(() => briefs.assertStrict(briefs[name]));
+  });
+}
+
+test('assertStrict rejects a property missing from required', () => {
   assert.throws(() => briefs.assertStrict({ type: 'object', properties: { a: { type: 'string' } }, required: [], additionalProperties: false }), /required|a/);
+});
+
+test('assertStrict rejects a nested object without additionalProperties', () => {
   const nested = { type: 'object', properties: { list: { type: 'array', items: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] } } }, required: ['list'], additionalProperties: false };
   assert.throws(() => briefs.assertStrict(nested), /additionalProperties/);
 });
@@ -79,24 +80,41 @@ test('validateResponse accepts exactly one lowercase enum token as the claim', (
   assert.deepEqual(briefs.IMPLEMENT_SCHEMA.properties.claim.enum, ['ok', 'blocked', 'misscoped']);
   // Deliberate change: ff's verdict PASS | CHANGES becomes the lowercase claim ok | changes | misscoped.
   assert.deepEqual(briefs.REVIEW_SCHEMA.properties.claim.enum, ['ok', 'changes', 'misscoped']);
-  for (const schema of [briefs.RED_SCHEMA, briefs.IMPLEMENT_SCHEMA, briefs.REVIEW_SCHEMA]) {
-    assert.equal(schema.properties.status, undefined);
-    assert.equal(schema.properties.verdict, undefined);
-  }
 });
 
-test('validateResponse rejects a missing, uppercase, array, unknown or null claim', () => {
-  const { claim, ...noClaim } = validRed;
-  for (const response of [noClaim, { ...validRed, claim: 'OK' }, { ...validRed, claim: ['ok'] }, { ...validRed, claim: 'done' }]) {
+for (const name of ['RED_SCHEMA', 'IMPLEMENT_SCHEMA', 'REVIEW_SCHEMA']) {
+  test(`${name} asks for a claim, with no status or verdict`, () => {
+    assert.equal(briefs[name].properties.status, undefined);
+    assert.equal(briefs[name].properties.verdict, undefined);
+  });
+}
+
+const { claim: _claim, ...noClaim } = validRed;
+for (const [what, response] of [
+  ['a missing', noClaim],
+  ['an uppercase', { ...validRed, claim: 'OK' }],
+  ['an array', { ...validRed, claim: ['ok'] }],
+  ['an unknown', { ...validRed, claim: 'done' }],
+]) {
+  test(`validateResponse rejects ${what} claim, naming the claim`, () => {
     const out = briefs.validateResponse(briefs.RED_SCHEMA, response);
-    assert.equal(out.valid, false, JSON.stringify(response));
+    assert.equal(out.valid, false);
     assert.match(out.reason, /claim/);
-  }
+  });
+}
+
+test('validateResponse rejects a null response', () => {
   assert.deepEqual(briefs.validateResponse(briefs.RED_SCHEMA, null), { valid: false, reason: 'no structured response' });
+});
+
+test('validateResponse rejects a property of the wrong type, naming it', () => {
   const wrongType = briefs.validateResponse(briefs.RED_SCHEMA, { ...validRed, tests: 'widgets render' });
   assert.equal(wrongType.valid, false);
   assert.match(wrongType.reason, /tests/);
-  const { notes, ...noNotes } = validRed;
+});
+
+test('validateResponse rejects a missing required property, naming it', () => {
+  const { notes: _notes, ...noNotes } = validRed;
   assert.match(briefs.validateResponse(briefs.RED_SCHEMA, noNotes).reason, /notes/);
 });
 
@@ -117,40 +135,58 @@ test('the green brief is a full brief for a fresh session', () => {
   assert.match(g, /#7/);
   assert.ok(g.includes(ticket.body), 'ticket body');
   assert.ok(g.includes(ticket.branch), 'branch');
-  for (const f of testFiles) assert.ok(g.includes(f), `test file ${f}`);
+  assert.ok(g.includes('test/widgets.test.mjs'), 'test file test/widgets.test.mjs');
+  assert.ok(g.includes('test/support/widget-fixture.mjs'), 'test file test/support/widget-fixture.mjs');
   assert.ok(g.includes(redOutput), 'failing red output');
-  for (const c of Object.values(commands)) assert.ok(g.includes(c), `command ${c}`);
+  assert.ok(g.includes('npm test'), 'command npm test');
+  assert.ok(g.includes('npm run lint'), 'command npm run lint');
   assert.match(g, /Do not run git add/);
   assert.ok(!g.includes(worktree), 'no worktree path');
   assert.doesNotMatch(g, /fix it/i);
 });
 
-test('green and test-fix briefs forbid changing committed tests', () => {
+test('the green brief forbids changing committed tests', () => {
   const g = briefs.greenBrief({ ...base, testFiles, redOutput });
+  assert.match(g, IMMUTABLE);
+  assert.match(g, /notes/);
+  assert.match(g, /blocked/);
+});
+
+test('the test-fix brief forbids changing committed tests', () => {
   const t = briefs.testFixBrief({ ...base, output: 'not ok 3 - widgets render' });
-  for (const text of [g, t]) {
-    assert.match(text, IMMUTABLE);
-    assert.match(text, /notes/);
-    assert.match(text, /blocked/);
-  }
+  assert.match(t, IMMUTABLE);
+  assert.match(t, /notes/);
+  assert.match(t, /blocked/);
   assert.doesNotMatch(t, /fix it/i);
-  assert.ok(t.includes('not ok 3 - widgets render'));
+  assert.ok(t.includes('not ok 3 - widgets render'), t);
 });
 
-test('red and review schemas carry a diagnosis', () => {
-  for (const schema of [briefs.RED_SCHEMA, briefs.REVIEW_SCHEMA, briefs.IMPLEMENT_SCHEMA]) {
-    assert.deepEqual(schema.properties.diagnosis, { type: 'string' });
-    assert.ok(schema.required.includes('diagnosis'));
-  }
-});
+for (const name of ['RED_SCHEMA', 'REVIEW_SCHEMA', 'IMPLEMENT_SCHEMA']) {
+  test(`${name} carries a diagnosis`, () => {
+    assert.deepEqual(briefs[name].properties.diagnosis, { type: 'string' });
+    assert.ok(briefs[name].required.includes('diagnosis'), JSON.stringify(briefs[name].required));
+  });
+}
 
-test('briefs list declared commands and never the worktree path', () => {
-  for (const [name, text] of Object.entries(allBriefs())) {
-    for (const c of Object.values(commands)) assert.ok(text.includes(c), `${name} lists ${c}`);
-    assert.ok(text.includes(ticket.branch), `${name} names the branch`);
-    assert.ok(!text.includes(worktree), `${name} omits the worktree path`);
-    assert.doesNotMatch(text, /AGENTS\.md/, name);
-  }
+for (const [name, build] of [
+  ['red', () => briefs.redBrief(base)],
+  ['green', () => briefs.greenBrief({ ...base, testFiles, redOutput })],
+  ['fix', () => briefs.fixBrief(base)],
+  ['review', () => briefs.reviewBrief({ ...base, impl: { claim: 'ok' }, diff: 'diff --git a/x b/x', changedTestFiles: [] })],
+  ['test-fix', () => briefs.testFixBrief({ ...base, output: 'not ok 3 - widgets render' })],
+  ['still-green', () => briefs.stillGreenBrief({ ...base, output: 'ok 1 - widgets render' })],
+]) {
+  test(`the ${name} brief lists declared commands and never the worktree path`, () => {
+    const text = build();
+    assert.ok(text.includes('npm test'), 'lists npm test');
+    assert.ok(text.includes('npm run lint'), 'lists npm run lint');
+    assert.ok(text.includes(ticket.branch), 'names the branch');
+    assert.ok(!text.includes(worktree), 'omits the worktree path');
+    assert.doesNotMatch(text, /AGENTS\.md/);
+  });
+}
+
+test('a red brief with no declared commands does not point at AGENTS.md', () => {
   assert.doesNotMatch(briefs.redBrief({ ...base, commands: {} }), /AGENTS\.md/);
 });
 
@@ -161,5 +197,5 @@ test('the review brief lists test files changed since the red commit', () => {
   assert.ok(r.includes('test/widgets.test.mjs'), 'changed test file');
   assert.match(r, /red commit/i);
   const none = briefs.reviewBrief({ ...base, impl: { claim: 'ok' }, diff, changedTestFiles: [] });
-  assert.ok(none.includes(diff));
+  assert.ok(none.includes(diff), none);
 });

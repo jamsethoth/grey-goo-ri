@@ -1,13 +1,17 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+const dirs = [];
+after(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
 
 const setup = async (opts = {}) => {
   const fake = await import('../support/fake-harness.mjs');
   const transcriptDir = await mkdtemp(join(tmpdir(), 'gg-fake-transcripts-'));
   const cwd = await mkdtemp(join(tmpdir(), 'gg-fake-cwd-'));
+  dirs.push(transcriptDir, cwd);
   return { harness: fake.fakeHarness({ transcriptDir, ...opts }), cwd };
 };
 
@@ -31,9 +35,9 @@ const call = (cwd, overrides = {}) => ({
   ...overrides,
 });
 
-const pendingAfter = (promise, ms) => Promise.race([
+const pendingAfterTurn = (promise) => Promise.race([
   promise.then(() => 'settled', () => 'settled'),
-  new Promise((resolve) => setTimeout(() => resolve('pending'), ms)),
+  new Promise((resolve) => setImmediate(() => resolve('pending'))),
 ]);
 
 test('a scripted response is returned and files are written into cwd', async () => {
@@ -117,7 +121,7 @@ test('a scripted failure is a failed result, not a rejection', async () => {
 test('hang stays pending until cancel', async () => {
   const { harness, cwd } = await setup({ responses: { 'implement/1/red/1': { hang: true } } });
   const running = harness.run(call(cwd));
-  assert.equal(await pendingAfter(running, 50), 'pending');
+  assert.equal(await pendingAfterTurn(running), 'pending');
   harness.cancel();
   const { result } = await running;
   assert.equal(result.status, 'killed');
