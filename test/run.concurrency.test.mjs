@@ -52,7 +52,7 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   const f = fixture(t, { git: 'real' });
   const holder = await holdLock(t, f.commonDir, 'repo');
   let settled = false;
-  const pending = integrity.snapshot(f.mainRoot).finally(() => { settled = true; });
+  const pending = integrity.snapshot(f.mainRoot, f.options.git).finally(() => { settled = true; });
   await sleep(500);
   assert.equal(settled, false, 'the snapshot writes no object while another process holds the repo lock');
   await holder.release();
@@ -77,7 +77,7 @@ test('snapshot and orchestrator writes wait beyond the default lock timeout', { 
     syncBuiltinESMExports();
     const settled = new Set();
     const track = (name, p) => p.then((v) => { settled.add(name); return v; }, (e) => { settled.add(name); throw e; });
-    const snapshot = track('snapshot', integrity.snapshot(f.mainRoot));
+    const snapshot = track('snapshot', integrity.snapshot(f.mainRoot, f.options.git));
     await attempted;
     unobserve();
     const called = [];

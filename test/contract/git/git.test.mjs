@@ -239,13 +239,13 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
     assert.deepEqual(await git.treeDiff(dir, to, to), []);
   });
 
-  contract('changedPaths lists the paths that differ between two revisions, within pathspecs when given', async ({ git, mainRoot: dir, commit }) => {
+  contract('changedPaths lists the paths that differ between two revisions, within given paths when asked', async ({ git, mainRoot: dir, commit }) => {
     const from = await git.headSha(dir);
     mkdirSync(join(dir, 'docs'));
     writeFileSync(join(dir, 'docs', 'a.md'), 'a'); writeFileSync(join(dir, 'b.txt'), 'b');
     const to = commit(dir, 'two files');
     assert.deepEqual(await git.changedPaths(dir, from, to), ['b.txt', 'docs/a.md']);
-    assert.deepEqual(await git.changedPaths(dir, from, to, git.pathspecs({ paths: ['docs'] })), ['docs/a.md']);
+    assert.deepEqual(await git.changedPaths(dir, from, to, { paths: ['docs'] }), ['docs/a.md']);
     writeFileSync(join(dir, 'c.txt'), 'c');
     await git.stageAll(dir);
     assert.deepEqual(await git.changedPaths(dir, to, await git.writeTree(dir)), ['c.txt']);
@@ -258,7 +258,7 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
     assert.deepEqual(await git.changedSince(dir, rev), ['a.txt', 'b.txt']);
   });
 
-  contract('untrackedPaths lists untracked files, the ignored ones only when asked, within pathspecs when given', async ({ git, mainRoot: dir, commit }) => {
+  contract('untrackedPaths lists untracked files, the ignored ones only when asked, within given paths when asked', async ({ git, mainRoot: dir, commit }) => {
     writeFileSync(join(dir, '.gitignore'), 'secret.txt\nbuild/\n');
     commit(dir, 'ignore');
     mkdirSync(join(dir, 'build')); mkdirSync(join(dir, 'docs'));
@@ -267,17 +267,28 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
     assert.deepEqual(await git.untrackedPaths(dir), ['docs/n.md', 'new.txt']);
     assert.deepEqual(await git.untrackedPaths(dir, { include: 'ignored' }), ['build/out.js', 'secret.txt']);
     assert.deepEqual(await git.untrackedPaths(dir, { include: 'all' }), ['build/out.js', 'docs/n.md', 'new.txt', 'secret.txt']);
-    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: git.pathspecs({ paths: ['docs'] }) }), ['docs/n.md']);
-    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: git.pathspecs({ globs: ['**/*.js'] }) }), ['build/out.js']);
-    assert.deepEqual(await git.untrackedPaths(dir, { include: 'ignored', within: git.pathspecs({ exclude: ['build/**'] }) }), ['secret.txt']);
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['docs'] } }), ['docs/n.md']);
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { globs: ['**/*.js'] } }), ['build/out.js']);
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'ignored', within: { exclude: ['build/**'] } }), ['secret.txt']);
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['docs'], globs: ['**/*.js'], exclude: ['build/**'] } }), ['docs/n.md']);
   });
 
   // Windows reads DOCS/ as docs/, so a protected path matches there whatever its case.
-  contract('pathspecs match paths case-insensitively on Windows only', async ({ git, mainRoot: dir }) => {
+  contract('given paths match case-insensitively on Windows only', async ({ git, mainRoot: dir }) => {
     mkdirSync(join(dir, 'docs'));
     writeFileSync(join(dir, 'docs', 'n.md'), 'd');
     const expected = process.platform === 'win32' ? ['docs/n.md'] : [];
-    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: git.pathspecs({ paths: ['DOCS'] }) }), expected);
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['DOCS'] } }), expected);
+  });
+
+  // A reset intent saved before #144 holds git pathspecs, and Reconciliation can still finish it after the upgrade.
+  contract('untrackedPaths and changedPaths still take the pathspecs a reset intent saved before #144', async ({ git, mainRoot: dir, commit }) => {
+    const from = await git.headSha(dir);
+    mkdirSync(join(dir, 'build')); mkdirSync(join(dir, 'docs'));
+    writeFileSync(join(dir, 'build', 'out.js'), 'o'); writeFileSync(join(dir, 'docs', 'n.md'), 'd');
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: [':(glob)**/*.js'] }), ['build/out.js']);
+    const to = commit(dir, 'two files');
+    assert.deepEqual(await git.changedPaths(dir, from, to, ['docs']), ['docs/n.md']);
   });
 
   contract('conflictedPaths is empty with no merge in progress', async ({ git, mainRoot: dir }) => {

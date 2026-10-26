@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import * as checks from '../lib/checks.mjs';
+import * as git from '../lib/git.mjs';
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
@@ -138,7 +139,7 @@ test('test immutability lists added, renamed and modified test paths and ignores
   writeFileSync(join(dir, 'lib', 'x.mjs'), 'x');
   g('add', '-A'); g('commit', '-q', '-m', 'baseline');
   const baseline = g('rev-parse', 'HEAD');
-  assert.deepEqual(await checks.testImmutability(dir, baseline), { ok: true, changed: [] });
+  assert.deepEqual(await checks.testImmutability(dir, baseline, { git }), { ok: true, changed: [] });
 
   writeFileSync(join(dir, 'test', 'a.test.mjs'), 'a changed');
   g('commit', '-q', '-am', 'edit a test after the baseline');
@@ -146,7 +147,7 @@ test('test immutability lists added, renamed and modified test paths and ignores
   writeFileSync(join(dir, 'test', 'new.test.mjs'), 'new');
   writeFileSync(join(dir, 'lib', 'x.mjs'), 'x changed');
 
-  const r = await checks.testImmutability(dir, baseline);
+  const r = await checks.testImmutability(dir, baseline, { git });
   assert.equal(r.ok, false);
   for (const p of ['test/a.test.mjs', 'test/renamed.test.mjs', 'test/new.test.mjs']) assert.ok(r.changed.includes(p), `${p} in ${r.changed}`);
   assert.ok(!r.changed.some((p) => p.startsWith('lib/')), `lib ignored: ${r.changed}`);
@@ -166,7 +167,7 @@ test('test immutability sees non-ASCII and git-ignored test paths', async (t) =>
   writeFileSync(join(dir, 'test', 'naïve.mjs'), 'new');
   writeFileSync(join(dir, 'test', 'ignored.mjs'), 'new');
 
-  const r = await checks.testImmutability(dir, baseline);
+  const r = await checks.testImmutability(dir, baseline, { git });
   assert.deepEqual(r, { ok: false, changed: ['test/café.mjs', 'test/ignored.mjs', 'test/naïve.mjs'] });
 });
 
@@ -183,7 +184,7 @@ test('test immutability sees a test added under an ignored directory but not ins
   mkdirSync(join(dir, 'node_modules', 'dep', 'test'), { recursive: true });
   writeFileSync(join(dir, 'node_modules', 'dep', 'test', 'index.js'), 'dep');
 
-  const r = await checks.testImmutability(dir, baseline);
+  const r = await checks.testImmutability(dir, baseline, { git });
   assert.deepEqual(r, { ok: false, changed: ['generated/new.test.mjs'] });
 });
 
