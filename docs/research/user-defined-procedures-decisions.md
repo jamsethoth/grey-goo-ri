@@ -73,6 +73,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | L13: a failing result is not reused, so a flake clears | J2: so a repaired environment clears |
 | D4: option 1 covers use cases a, d, e and g | J5: use case a waits for the `changes` Check |
 | L11, L15: a cleanup hold continues with the recorded next Action | J4: the suspended Action's completion resumes from its recorded result |
+| R8d, U4: a partial-overlap warning per pair of rows; U4's three warnings | J14: one warning per partly taken row; U4's three overlaps in two |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -1043,6 +1044,18 @@ and the owner accepted all four findings as recommended.
   Code reports quota only partly and undocumented in headless output, so its Harness declares `partial`. A quota
   share is an estimate (quota is account-wide); tokens and cost are exact. The Execution Record's `owner`, `flow`
   and `configHash`, the Event `ts` and the `configs` table already key every total. Issues #23, #135.
+
+## Owner decision: rule-table overlap warnings (2026-10-26)
+
+- J14. A partial-overlap warning (R8d) is per row, not per pair of rows. Earlier rows take part of a row where it
+  matches but an earlier row matches first. Each row that earlier rows partly take gets one warning, naming each
+  earlier row that takes part of it, the conditions of both rows, which together define the shared region, and one
+  example input. Adjacent rows taken the same way (by every earlier row, or by the same rows) on the same fields share
+  one warning: a ladder of `pass >= k` rows reports "rows 2-400 are each partly taken by every earlier row, all on
+  `pass`". The warnings are bounded by the row count, and the analysis keeps one bit per firing row and earlier row,
+  which N2's work limit bounds (points × rows bits); N2's formula is unchanged. So the example review `passed`
+  table's three intended overlaps (U4) are two warnings: row 2 partly taken by row 1, and row 3 by rows 1 and 2.
+  Issue #103.
 
 ## Open
 

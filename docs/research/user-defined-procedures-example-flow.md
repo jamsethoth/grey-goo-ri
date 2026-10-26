@@ -362,8 +362,8 @@ flows:
   bounded path: three passes of red, green and review (13 Attempts each, two `retest` loops), then `senior-red`,
   `green`, `senior-green`, review, two `changes` loops, `senior-dev`, review and `publish`, about 90 Attempts; the two
   `bad-test` detours add about 20, one recovery per agent Visit about 45 and `baseline` 1, so about 156 (V2, M3, L1).
-- **Rules** (R8, U4): no unreachable or never-firing row. Three partial-overlap warnings in the review's `passed`
-  table, all intended: a clean `ok` whose findings repeat earlier ones stays `ok` (row 1 over row 2); a clean `ok` that
+- **Rules** (R8, U4, J14): no unreachable or never-firing row. Three partial overlaps in the review's `passed` table,
+  reported as two row warnings (row 2, and row 3), all intended: a clean `ok` whose findings repeat earlier ones stays `ok` (row 1 over row 2); a clean `ok` that
   also has `needsTest: true` stays `ok` (row 1 over row 3); a repeat that also has `needsTest: true` goes to `repeat`
   (row 2 over row 3).
 - **Rescue** (R5, U5): decided on the effective target. `red`'s `no-test` rescues any partial test work and resets
