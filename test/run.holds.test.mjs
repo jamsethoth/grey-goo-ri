@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as gitModule from '../lib/git.mjs';
 import * as github from '../lib/github.mjs';
 import * as integrity from '../lib/integrity.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
@@ -53,7 +52,7 @@ test('a pending hold is not marked held', async (t) => {
 test('human override abandons a pending hold before any label cleanup', async (t) => {
   for (const cleanupFails of [false, true]) {
     const { f, seededRec } = await dirtyTicket(t, true);
-    const before = await integrity.snapshot(f.worktree);
+    const before = await integrity.snapshot(f.worktree, f.options.git);
     const failing = failComment(f);
     assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
     const mid = await loadTicket(f);
@@ -101,14 +100,14 @@ test('human override abandons a pending hold before any label cleanup', async (t
     assert.deepEqual(record.openIntents(final).filter((e) => e.action === 'commit'), record.openIntents(seededRec), 'the older intent is kept');
     assert.deepEqual(final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
       [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }], 'the cleanup is one write-ahead label Action');
-    assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the worktree is untouched');
+    assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
     assert.equal(f.harness.calls.length, 2, 'no agent ran');
   }
 });
 
 test('a pending fault report whose comment lookup fails stays pending and posts no second comment', async (t) => {
   const f = fixture(t);
-  f.options.git = { ...gitModule, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
+  f.options.git = { ...f.options.git, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
   const inner = f.gh.gh;
   let mode = 'crash';
   github.setGh(async (args, cwd, input) => {
@@ -223,13 +222,13 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
 
 test('a human needs-human label before the first Visit prevents admission effects', async (t) => {
   for (const dirty of [false, true]) {
-    const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });
-    await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    const f = fixture(t, { git: 'real', labels: [IN_PROGRESS, NEEDS_HUMAN] });
+    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
     await record.save(rec);
     if (dirty) writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
-    const before = await integrity.snapshot(f.worktree);
+    const before = await integrity.snapshot(f.worktree, f.options.git);
 
     const results = await run.runTarget(f.options);
     assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
@@ -237,7 +236,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     assert.equal(f.harness.calls.length, 0, 'no agent started');
     assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view'], ['issue', 'edit']], 'only the in-progress label is removed');
     assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
-    assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the worktree is untouched');
+    assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
     if (dirty) assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n');
     const final = await record.load(f.commonDir, 'ticket', TICKET);
     assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
@@ -273,7 +272,7 @@ const SHOUTED_IN_PROGRESS = 'GG:STATE:IN-PROGRESS';
 test('mixed-case human needs-human wins before any label write', async (t) => {
   for (const inProgress of [SHOUTED_IN_PROGRESS, IN_PROGRESS, null]) {
     const f = fixture(t, { labels: [HUMAN_NEEDS_HUMAN, ...(inProgress ? [inProgress] : [])] });
-    await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
     const inner = f.gh.gh;
@@ -340,7 +339,7 @@ test('an interrupted reset under a human needs-human label is abandoned before a
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
   const f = fixture(t, { responses, labels: [NEEDS_HUMAN] });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   await seedExecution(f, { git, exec });
   f.options.exec = exec;
 
