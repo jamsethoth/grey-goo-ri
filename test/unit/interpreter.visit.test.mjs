@@ -63,6 +63,7 @@ test('every side-effect action leaves intent, evidence and completion with the f
 
 test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {
   const g = await golden.setup(t);
+  g.options.testPaths = ['test/**'];
   const vertex = g.flow.ticket.vertices.implementer;
   const run = g.harness.run;
   const seen = {};
@@ -76,6 +77,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
       vertex.procedure = 'fix';
       vertex.then = 'needs-human';
       g.options.commands.test = 'npm run other';
+      g.options.testPaths.push('lib/**');
       call.agent.effort = 'low';
       writeFileSync(g.personaPath, '# changed\n');
     }
@@ -94,6 +96,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   assert.deepEqual(g.shells.map((s) => s.command), ['npm test', 'npm test'], 'checks ran the pinned command');
   assert.equal(g.rec.snapshot.then, 'done');
   assert.equal(g.rec.snapshot.commands.test, 'npm test');
+  assert.deepEqual(g.rec.snapshot.testPaths, ['test/**']);
 });
 
 test('the red commit records a non-ASCII test path unquoted', async (t) => {
@@ -120,6 +123,17 @@ test('done removes in-progress and adds ready-for-qa', async (t) => {
   assert.equal(end.run, g.rec.run);
   assert.ok(end.diffStats, 'ticket_end carries diff stats');
   assert.equal(end.diffStats.testFiles, 1);
+});
+
+test('done counts the files under the pinned testPaths as tests in its diff stats', async (t) => {
+  const g = await golden.setup(t);
+  g.options.testPaths = ['test/**', 'lib/**'];
+  await interpreter.runExecution(g.options);
+
+  const end = g.readEvents().find((e) => e.type === 'ticket_end');
+  assert.equal(end.outcome, 'done');
+  assert.equal(end.diffStats.files, 2);
+  assert.equal(end.diffStats.testFiles, 2, 'lib/add.mjs counts as a test because the pinned testPaths name lib/');
 });
 
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {

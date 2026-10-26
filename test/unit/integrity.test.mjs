@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as integrity from '../../lib/integrity.mjs';
+import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
+import { fakeGit } from '../support/fake-git.mjs';
 
 function newExecution(commonDir, ticket, worktree) {
   return record.createExecution({
@@ -57,4 +59,24 @@ test('readActivity matches a differently cased path on Windows', { skip: process
 
 test('sameFile never takes an absent file for the same', () => {
   assert.equal(integrity.sameFile({ base64: Buffer.from('a').toString('base64') }, undefined), false);
+});
+
+test('a workflow file change is an integrity violation', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
+  const fake = fakeGit();
+  const { mainRoot, commonDir } = fake.init(root, { files: { '.github/workflows/ci.yml': 'on: push\n' } });
+  t.after(() => {
+    record.close(commonDir);
+    rmSync(root, { recursive: true, force: true });
+  });
+  const real = integrity.withGit(fake.git);
+  const rec = newExecution(commonDir, 1, mainRoot);
+  const baseline = await real.begin({ record: rec, others: [], protectedPaths: interpreter.PROTECTED_PATHS });
+  writeFileSync(join(mainRoot, '.github', 'workflows', 'ci.yml'), 'on: push\njobs: {}\n');
+  mkdirSync(join(mainRoot, '.github', 'actions', 'setup'), { recursive: true });
+  writeFileSync(join(mainRoot, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
+
+  const { violations } = await real.end({ baseline, record: rec, others: [], access: 'read-write', protectedPaths: interpreter.PROTECTED_PATHS });
+  assert.deepEqual(violations, [{ worktree: mainRoot, surface: 'protected', before: null,
+    after: ['.github/actions/setup/action.yml', '.github/workflows/ci.yml'] }]);
 });

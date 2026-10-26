@@ -169,3 +169,21 @@ test('a repeated findings hash is flagged', async (t) => {
   assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 2);
   assert.equal(g.result.outcome, 'done');
 });
+
+test('the review lists the test files changed since red under the testPaths pinned at its Visit entry', async (t) => {
+  const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
+  g.options.testPaths = ['test/**', 'lib/**'];
+  // Test Immutability always passes here, and classifies what the Execution changed by the globs it is given.
+  g.options.testImmutability = async (cwd, baseline, globs) =>
+    ({ ok: true, changed: ['lib/add.mjs', 'test/add.test.mjs'].filter(checks.testPathMatcher(globs)) });
+  // The live testPaths drop lib/** after the reviewer's Visit pinned them, just before its changed-test list is read.
+  const { branchDiff } = g.options.git;
+  g.options.git = { ...g.options.git, branchDiff: (...args) => { g.options.testPaths.splice(1); return branchDiff(...args); } };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'done');
+  assert.deepEqual(g.rec.snapshot.testPaths, ['test/**', 'lib/**']);
+  const [, , reviewCall] = g.harness.calls;
+  assert.equal(reviewCall.access, 'read-only');
+  assert.match(reviewCall.brief, /## Test files changed since the red commit\n- lib\/add\.mjs\n- test\/add\.test\.mjs\n/);
+});

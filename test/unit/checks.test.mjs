@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
+import { fakeGit } from '../support/fake-git.mjs';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
 
@@ -214,3 +216,49 @@ for (const [name, output, expected] of OVERLONG) {
     assert.equal(checks.evidence('npm test', { output }).output, expected);
   });
 }
+
+test('test immutability covers a declared test path outside the default globs', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fake = fakeGit();
+  const { mainRoot, base } = fake.init(root, { files: { 'spec/cart.mjs': 'a\n', 'lib/cart.mjs': 'x\n' } });
+  writeFileSync(join(mainRoot, 'spec', 'cart.mjs'), 'a weakened\n');
+  writeFileSync(join(mainRoot, 'lib', 'cart.mjs'), 'x changed\n');
+
+  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: ['spec/**'], git: fake.git }), { ok: false, changed: ['spec/cart.mjs'] });
+  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: checks.DEFAULT_TEST_GLOBS, git: fake.git }), { ok: true, changed: [] });
+});
+
+test('a test path glob ignores ASCII case only, as git icase pathspecs do', () => {
+  const isTest = checks.testPathMatcher(['**/test/**', 'spec/É*']);
+  assert.equal(isTest('lib/test/x.mjs'), true);
+  assert.equal(isTest('lib/Test/x.mjs'), true);
+  assert.equal(isTest('SPEC/É.mjs'), true);
+  assert.equal(isTest('spec/é.mjs'), false);
+});
+
+test('a test path glob without a wildcard matches that path and what is under it, as a git pathspec does', () => {
+  const isTest = checks.testPathMatcher(['spec', 'scripts/run-suite.mjs']);
+  assert.equal(isTest('spec/unit/a.mjs'), true);
+  assert.equal(isTest('scripts/run-suite.mjs'), true);
+  assert.equal(isTest('specs/b.mjs'), false);
+  assert.equal(isTest('scripts/run-suite.mjs.bak'), false);
+});
+
+test('a test path glob matches a path holding a newline, as git does', () => {
+  assert.equal(checks.testPathMatcher(['spec/**'])('spec/a\nb.mjs'), true);
+  assert.equal(checks.testPathMatcher(['**/*.test.*'])('x\ny/c.test.mjs'), true);
+  assert.equal(checks.testPathMatcher(['**/f/**'])('d\ne/f/g.mjs'), true);
+  assert.equal(checks.testPathMatcher(['spec'])('spec/a\nb.mjs'), true);
+});
+
+test('the fake git reads a ? in a glob as the test path matcher does, literally', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'gg-checks-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fake = fakeGit();
+  const { mainRoot } = fake.init(root);
+  writeFileSync(join(mainRoot, 'abc.mjs'), 'x\n');
+
+  assert.equal(checks.testPathMatcher(['a?c.mjs'])('abc.mjs'), false);
+  assert.deepEqual(await fake.git.untrackedPaths(mainRoot, { include: 'all', within: { globs: ['a?c.mjs'] } }), []);
+});
