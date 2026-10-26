@@ -64,6 +64,8 @@ before grey-goo-ri issue #23.
 
 ## Order
 
+The table is the plan as filed. Since then E0b–E0e have run between E0 and A1 (see Since filing).
+
 | Id | Ticket | Interpreter | Depends on |
 |---|---|---|---|
 | A1 | `testPaths` is required and feeds every consumer | yes, small | E0 |
@@ -352,7 +354,7 @@ rewrite much of the cited code. No behaviour change.
 - `admit()`'s corrupt-record branch becomes its own function, and `runTicket` reuses `admit`'s skipped-but-needs-human
   logic (17).
 - One exec timeout-note helper; `[ff: …]`, `FF_CMD` and `FF_TEST_*` become `gg` names (18). `Feature-Flow-Stage:`
-  stays (request doc line 479).
+  stays (request section 3.7).
 - `record.proof` takes a glossary name; the JSON-key sorter in `config.mjs` stops sharing `canonical` with
   `paths.canonical` (19).
 - Fixtures in `test/contract/git/git.test.mjs`, `test/unit/fake-harness.test.mjs` and
