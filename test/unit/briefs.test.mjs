@@ -135,6 +135,8 @@ for (const [what, field, message] of [
   ['enum false', { type: 'string', enum: false }, 'x.schema.json.list[].field: enum must be a non-empty list of strings'],
   ['an empty enum', { type: 'string', enum: [] }, 'x.schema.json.list[].field: enum must be a non-empty list of strings'],
   ['an enum with a number', { type: 'string', enum: ['ok', 1] }, 'x.schema.json.list[].field: enum must be a non-empty list of strings'],
+  ['a repeated enum value', { type: 'string', enum: ['ok', 'ok'] }, 'x.schema.json.list[].field: enum repeats "ok"'],
+  ['a repeated required entry', { type: 'object', properties: { a: { type: 'string' } }, required: ['a', 'a'], additionalProperties: false }, 'x.schema.json.list[].field: required repeats "a"'],
   ['required as a string', { type: 'object', properties: { a: { type: 'string' } }, required: 'a', additionalProperties: false }, 'x.schema.json.list[].field: required must be a list'],
   ['required naming no property', { type: 'object', properties: {}, required: ['ghost'], additionalProperties: false }, 'x.schema.json.list[].field: required names "ghost", which is not a property'],
   ['properties as a number', { type: 'object', properties: 5, required: [], additionalProperties: false }, 'x.schema.json.list[].field: properties must be an object'],
