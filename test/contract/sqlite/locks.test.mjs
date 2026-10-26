@@ -129,24 +129,32 @@ await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo')
   assert.deepEqual({ code, err }, { code: 0, err: '' }, 'taking a lock in a flagless node prints no ExperimentalWarning');
 });
 
+// A clock whose sleeps pass at once, moving its time on and running `during` first.
+const clockOf = (during = () => {}) => {
+  let now = 0;
+  const sleeps = [];
+  return { sleeps, now: () => now, sleep: async (ms) => { sleeps.push(ms); await during(); now += ms; } };
+};
+
 test('acquire waits for release', async (t) => {
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
-  setTimeout(() => locks.release(first), 150);
-  const started = Date.now();
-  const second = await locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20 });
-  assert.ok(second);
-  assert.ok(Date.now() - started >= 100, 'waited for the holder');
+  const clock = clockOf(() => locks.release(first));
+  const second = await locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20, clock });
+  assert.equal(second.waited, true, 'waited for the holder');
+  assert.deepEqual(clock.sleeps, [20], 'one poll, after which the holder had released');
   await locks.release(second);
 });
 
 test('acquire times out', async (t) => {
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
-  await assert.rejects(locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 20 }), (err) => {
+  const clock = clockOf();
+  await assert.rejects(locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 50, clock }), (err) => {
     assert.ok(err instanceof locks.LockTimeoutError);
     return true;
   });
+  assert.deepEqual(clock.sleeps, [50, 50, 50], 'polled until the deadline');
   await locks.release(first);
 });
 
@@ -154,7 +162,7 @@ test('withLock forwards its acquisition timeout without invoking the callback', 
   const commonDir = await tempCommonDir(t);
   const first = await locks.acquire(commonDir, 'repo');
   let ran = false;
-  await assert.rejects(locks.withLock(commonDir, 'repo', async () => { ran = true; }, { timeoutMs: 150, pollMs: 20 }),
+  await assert.rejects(locks.withLock(commonDir, 'repo', async () => { ran = true; }, { timeoutMs: 150, pollMs: 20, clock: clockOf() }),
     (err) => err instanceof locks.LockTimeoutError && err.message.includes('150ms'));
   assert.equal(ran, false, 'the callback never runs without the lock');
   await locks.release(first);

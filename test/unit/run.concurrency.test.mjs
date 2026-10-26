@@ -229,7 +229,7 @@ test('a rate limit on one Ticket delays the next GitHub write of the other', { t
   const woken = new Promise((resolve) => { wake = resolve; });
   const bCalls = () => f.gh.calls.filter((c) => c.args.some((a) => a.startsWith('ticket/22-')) || golden.isCommentPost(c.args, 22)).length;
   // A backs off first; B's wait moves the shared clock once, to A's deadline, and wakes both.
-  f.options.clock = { now: f.clock.now, sleep: async (ms) => {
+  f.options.clock = { ...f.clock, sleep: async (ms) => {
     sleeps.push({ ms, bCalls: bCalls() });
     if (sleeps.length === 1) aWaiting.open();
     else {

@@ -193,15 +193,14 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
 
 test('a Terminal saved before ticket_end resumes finalization exactly once', async (t) => {
   const { f } = await dirtyTicket(t, false);
-  const db = record.openDb(f.commonDir);
-  db.exec("CREATE TRIGGER fail_end BEFORE INSERT ON events WHEN NEW.type = 'ticket_end' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END");
+  const restore = golden.failAppends(t, (event) => event.type === 'ticket_end');
   const first = await run.runTarget(f.options);
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
   const mid = await loadTicket(f);
   assert.equal(mid?.state, 'active', 'the final state rolled back with its ticket_end');
   assert.equal(mid.terminalStop?.held, true, 'the decided hold waits for the next Run');
   assert.equal(endsOf(f, mid.execution).length, 0);
-  db.exec('DROP TRIGGER fail_end');
+  restore();
   const effects = () => f.gh.calls.filter((c) => golden.isCommentPost(c.args) || (c.args[0] === 'issue' && c.args[1] === 'edit')).length;
   const done = effects();
 
@@ -215,12 +214,10 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
 
 test('a crash between admission and its hold keeps the decision and its one ticket_start', async (t) => {
   const { f } = await dirtyTicket(t, false);
-  const db = record.openDb(f.commonDir);
-  // Every save carrying a Terminal stop fails, as if gg died once admission had saved the new record.
-  db.exec(`CREATE TRIGGER fail_stop BEFORE UPDATE ON records WHEN NEW.json LIKE '%"terminalStop"%'
-    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  // Every update carrying a Terminal stop fails, as if gg died once admission had saved the new record.
+  const restore = golden.failSaves(t, (saved, next) => saved !== undefined && next.terminalStop !== undefined);
   const first = await run.runTarget(f.options);
-  db.exec('DROP TRIGGER fail_stop');
+  restore();
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
   const mid = await loadTicket(f);
   assert.ok(mid, 'admission saved the record');

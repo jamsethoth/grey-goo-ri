@@ -84,7 +84,8 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
   };
   const logs = [];
   let now = Date.parse('2026-10-17T00:00:00Z');
-  const clock = { now: () => now, sleep: async (ms) => { now += ms; } };
+  // No heartbeat fires: a Run's tests do not look at one.
+  const clock = { now: () => now, sleep: async (ms) => { now += ms; }, every: () => () => {} };
   const cfg = testConfig(root, { harness: harnessName, fullFlow });
   const worktree = gitModule.worktreePath(cfg.worktreeRoot, 'main', TICKET);
   const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git, exec, cwd: mainRoot,
@@ -101,7 +102,7 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
 }
 
 // An Execution of the fixture's Ticket run straight through the interpreter, as an earlier Run left it.
-export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.exec } = {}) {
+export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.exec, integrity = f.options.integrity } = {}) {
   await git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const flow = flowModule.resolveFlow(f.options.config);
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: flow.name, entry: flow.ticket.entry },
@@ -111,7 +112,7 @@ export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.
     flow, record: rec, harness: f.harness, gh: github, git, exec, events: events.eventLog(f.commonDir), log: () => {}, cwd: f.mainRoot,
     commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock: f.clock, crashAt: crashAt?.(rec),
-    integrity: f.options.integrity, testImmutability: f.options.testImmutability,
+    integrity, testImmutability: f.options.testImmutability,
   }), (err) => err instanceof interpreter.CrashError);
   return record.load(f.commonDir, 'ticket', TICKET);
 }

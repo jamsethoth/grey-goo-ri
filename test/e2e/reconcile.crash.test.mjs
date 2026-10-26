@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as integrity from '../../lib/integrity.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
 import * as record from '../../lib/record.mjs';
@@ -44,9 +45,8 @@ async function crashedRestore(t, crash) {
   const git = g.options.git;
   let reset = false;
   g.options.git = { ...git, resetTo: async (...args) => { await git.resetTo(...args); reset = true; } };
-  const restore = golden.crashFs(t, g.worktree, () => reset, crash);
+  g.options.integrity = integrity.withGit(g.options.git, golden.crashFs(g.worktree, () => reset, crash));
   await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
-  restore();
   g.git = git;
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
   return g;
@@ -82,9 +82,8 @@ for (const [name, crash] of Object.entries(RESTORE_CRASHES)) {
 
 test('a second crash during restore replay remains resumable', async (t) => {
   const g = await crashedRestore(t, RESTORE_CRASHES['after deleting an extra']);
-  const restore = golden.crashFs(t, g.worktree, () => true, { op: 'writeFile', n: 1, after: true });
-  await assert.rejects(reconcile.resets(g.loaded, { git: g.git }), (err) => err instanceof interpreter.CrashError);
-  restore();
+  const crashing = integrity.withGit(g.git, golden.crashFs(g.worktree, () => true, { op: 'writeFile', n: 1, after: true }));
+  await assert.rejects(reconcile.resets(g.loaded, { git: g.git, integrity: crashing }), (err) => err instanceof interpreter.CrashError);
   const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(resetEntries(loaded), ['intent']);
   assert.equal(await reconcile.resets(loaded, { git: g.git }), 'continue');

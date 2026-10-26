@@ -80,7 +80,7 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
   } });
   const sleeps = [];
   const { clock } = g.options;
-  g.options.clock = { now: clock.now, sleep: async (ms) => { sleeps.push(ms); return clock.sleep(ms); } };
+  g.options.clock = { ...clock, sleep: async (ms) => { sleeps.push(ms); return clock.sleep(ms); } };
   const start = clock.now();
   const { outcome } = await interpreter.runExecution(g.options);
 

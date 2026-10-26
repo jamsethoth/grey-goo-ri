@@ -125,15 +125,13 @@ for (const [kind, [directory, output]] of Object.entries(longLines)) {
 // The first flip each way: red's clean check is the first bracket, busy at generation 1 and idle at 2. A save that
 // carries a Terminal passes, so a fault reported after the failure would land.
 for (const [name, from, to, generation, activity] of [
-  ['busy', 0, 1, 1, { busy: false, generation: 0 }],
-  ['idle', 1, 0, 2, { busy: true, generation: 1 }],
+  ['busy', false, true, 1, { busy: false, generation: 0 }],
+  ['idle', true, false, 2, { busy: true, generation: 1 }],
 ]) {
   test(`a failed ${name} save saves nothing more of that record`, async (t) => {
     const g = await golden.setup(t);
-    record.openDb(g.commonDir).exec(`CREATE TRIGGER fail_flip BEFORE UPDATE ON records
-      WHEN json_extract(OLD.json, '$.activity.busy') = ${from} AND json_extract(NEW.json, '$.activity.busy') = ${to}
-        AND json_extract(NEW.json, '$.activity.generation') = ${generation} AND json_extract(NEW.json, '$.terminalStop') IS NULL
-      BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+    golden.failSaves(t, (saved, next) => saved?.activity.busy === from && next.activity.busy === to
+      && next.activity.generation === generation && next.terminalStop == null);
     const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
 
     assert.equal(err?.name, 'RecordSaveError', String(err));

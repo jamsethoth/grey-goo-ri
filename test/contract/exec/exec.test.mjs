@@ -1,8 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import childProcess from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
-import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as exec from '../../../lib/exec.mjs';
@@ -56,20 +54,21 @@ async function timeOutWhen(commandLine, options, ready, signal) {
 // A clock that never starts: the command runs in the job, and only its own end ends it.
 const noClock = () => new AbortController().signal;
 
-// Calls onHelper with the job helper of the next runShell as it is spawned, so listeners it adds run before runShell's.
-// Returns the arguments of every spawn until the case ends.
-function beforeRunShell(t, onHelper) {
-  const spawn = childProcess.spawn;
-  t.after(() => { childProcess.spawn = spawn; syncBuiltinESMExports(); });
-  const spawned = [];
-  childProcess.spawn = (...args) => {
-    const child = spawn(...args);
-    if (args[0] === 'powershell.exe' && !spawned.some(([c]) => c === 'powershell.exe')) onHelper(child);
-    spawned.push(args);
-    return child;
+// runShell's timeout timer, moved by the case: tick(ms) moves the time on and fires the armed timer once it is due.
+function manualTimers() {
+  let now = 0;
+  let armed = null;
+  return {
+    setTimeout: (fn, ms) => (armed = { fn, at: now + ms }),
+    clearTimeout: (timer) => { if (armed === timer) armed = null; },
+    tick: (ms) => {
+      now += ms;
+      if (armed?.at > now) return;
+      const fired = armed;
+      armed = null;
+      fired?.fn();
+    },
   };
-  syncBuiltinESMExports();
-  return spawned;
 }
 
 // Holds back what a stream emits between hold() and release(), as a pipe read late on a loaded machine delivers it:
@@ -371,20 +370,21 @@ test('runShell: a command that finishes is not reported as timed out while its l
   const sleeper = script('drain-sleeper.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
   const quit = script('drain-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(sleeper)}], { detached: true, stdio: 'inherit' }).unref();`);
   const clock = new AbortController();
-  const spawned = beforeRunShell(t, (helper) => {
+  const onHelper = (helper) => {
     const late = [delayed(helper.stdout), delayed(helper.stderr)];
     for (const l of late) l.hold();
     helper.on('exit', () => {
       clock.abort();
       setTimeout(() => { for (const l of late) l.release(); }, 10);
     });
-  });
-  const seam = [process.execPath, ['-e', '', 'drain-taskkill']];
-  const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 1, signal: clock.signal, taskkillCommand: seam });
+  };
+  const killed = join(tmp, 'drain-taskkill.ran');
+  const seam = [process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(killed)}, '')`]];
+  const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 1, signal: clock.signal, taskkillCommand: seam, onHelper });
   try {
     assert.equal(res.timedOut, undefined, 'a finished command was reported as timed out');
     assert.equal(res.code, 0);
-    assert.deepEqual(spawned.filter(([, args]) => args.includes('drain-taskkill')), [], 'a timeout ran after the command finished');
+    assert.equal(existsSync(killed), false, 'a timeout ran after the command finished');
   } finally {
     for (const p of res.leftovers ?? []) try { process.kill(p); } catch {}
   }
@@ -399,12 +399,12 @@ test('runShell: the timeout counts from when the command starts, not from the jo
   let seen;
   const started = new Promise((r) => (seen = r));
   let notes = '';
-  beforeRunShell(t, (helper) => helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) seen(); }));
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000 });
-  t.mock.timers.tick(6999);
+  const onHelper = (helper) => helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) seen(); });
+  const timers = manualTimers();
+  const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000, timers, onHelper });
+  timers.tick(6999);
   await started; // runShell's own listener ran right after this case's
-  t.mock.timers.tick(2);
+  timers.tick(2);
   writeFileSync(go, '');
   const res = await running;
   assert.equal(res.timedOut, undefined, `the command timed out on the helper's start-up: ${res.output}`);
@@ -418,13 +418,13 @@ test('runShell: the timeout counts from when the command starts, not from the jo
 test('runShell: a helper answer that arrives after the helper has exited is still read', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const pidFile = join(tmp, 'late-answer.pid');
   const p = script('late-answer.mjs', writesPid(pidFile));
-  beforeRunShell(t, (helper) => {
+  const onHelper = (helper) => {
     const late = delayed(helper.stderr);
     let notes = '';
     helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) late.hold(); });
     helper.on('exit', () => setTimeout(late.release, 10));
-  });
-  const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 1 }, () => existsSync(pidFile), t.signal));
+  };
+  const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 1, onHelper }, () => existsSync(pidFile), t.signal));
   assert.ok(res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)), JSON.stringify(res.cleanupErrors));
   assert.ok(res.survivors.length > 0 && res.survivors.every((s) => /not verified gone/.test(s.error)), JSON.stringify(res.survivors));
 });
@@ -434,12 +434,12 @@ test('runShell: a helper answer that arrives after the helper has exited is stil
 test('runShell: a finished command whose notes arrive after the helper has exited runs once', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const runs = join(tmp, 'once.runs');
   const p = script('once.mjs', `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(runs)}, 'ran\\n');`);
-  beforeRunShell(t, (helper) => {
+  const onHelper = (helper) => {
     const late = delayed(helper.stderr);
     late.hold();
     helper.on('exit', () => setTimeout(late.release, 400));
-  });
-  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, signal: noClock() });
+  };
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, signal: noClock(), onHelper });
   assert.equal(readFileSync(runs, 'utf8'), 'ran\n', 'the command ran more than once');
   assert.equal(res.code, 0);
 });
@@ -451,12 +451,12 @@ test('runShell: a signal aborted before the call starts the timeout clock at the
   let seen;
   const started = new Promise((r) => (seen = r));
   let notes = '';
-  beforeRunShell(t, (helper) => helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) seen(); }));
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000, signal: AbortSignal.abort() });
-  t.mock.timers.tick(6999);
+  const onHelper = (helper) => helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) seen(); });
+  const timers = manualTimers();
+  const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000, signal: AbortSignal.abort(), timers, onHelper });
+  timers.tick(6999);
   await started; // runShell's own listener ran right after this case's
-  t.mock.timers.tick(2); // 7001 ms after the call
+  timers.tick(2); // 7001 ms after the call
   const res = await running; // a clock restarted by the start never fires here: the case times out instead
   assert.equal(res.timedOut, true);
 });

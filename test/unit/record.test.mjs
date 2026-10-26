@@ -140,25 +140,26 @@ test('a record transition and its event commit together', async (t) => {
   const commonDir = await tempCommonDir(t);
   const ev = events.eventLog(commonDir, { run: 'run-1', ticket: 8 });
   const r = newExecution(commonDir);
-  const db = record.openDb(commonDir);
-  const failEvents = () => db.exec("CREATE TRIGGER fail_event BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END");
+  // Every Event insert fails while `failing` is the append hook, as a disk error would.
+  const failing = () => { throw new Error('disk I/O error'); };
+  const passing = events.setAppendHook(failing);
+  t.after(() => events.setAppendHook(passing));
   const eventTypes = () => events.readEvents(commonDir).map((e) => e.type);
   const start = () => ev('ticket_start', { execution: r.execution });
 
-  failEvents();
   await assert.rejects(record.save(r, start), (err) => err.name === 'RecordSaveError', 'a failed Event fails the save');
   assert.equal(await record.load(commonDir, 'ticket', 8), null, 'no record is created without its Event');
-  db.exec('DROP TRIGGER fail_event');
+  events.setAppendHook(passing);
   await record.save(r, start);
   assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active');
   assert.deepEqual(eventTypes(), ['ticket_start']);
 
-  failEvents();
+  events.setAppendHook(failing);
   r.state = 'held';
   await assert.rejects(record.save(r, () => ev('ticket_end', { execution: r.execution })), (err) => err.name === 'RecordSaveError');
   assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active', 'the previous row stays');
   assert.deepEqual(eventTypes(), ['ticket_start'], 'and no Event lands');
-  db.exec('DROP TRIGGER fail_event');
+  events.setAppendHook(passing);
   await record.save(r, () => ev('ticket_end', { execution: r.execution }));
   assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'held');
   assert.deepEqual(eventTypes(), ['ticket_start', 'ticket_end']);

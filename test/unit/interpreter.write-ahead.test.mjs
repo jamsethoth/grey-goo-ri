@@ -110,12 +110,10 @@ test('the terminal stop survives a crash before the first terminal action', asyn
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'NOTES-7f3: the ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
-  const db = record.openDb(g.commonDir);
   // Every save carrying a Terminal stop fails, as if gg died once the Terminal cursor was saved.
-  db.exec(`CREATE TRIGGER fail_stop BEFORE UPDATE ON records WHEN NEW.json LIKE '%"terminalStop"%'
-    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  const restore = golden.failSaves(t, (saved, next) => next.terminalStop !== undefined);
   await assert.rejects(interpreter.runExecution(g.options));
-  db.exec('DROP TRIGGER fail_stop');
+  restore();
   assert.equal(ticketComments(g).length, 0);
   const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
 
@@ -150,9 +148,7 @@ test('attempt numbering continues after resume', async (t) => {
 
 test('a failed Event insert at an Action completion saves nothing more of that record', async (t) => {
   const g = await golden.setup(t);
-  record.openDb(g.commonDir).exec(`CREATE TRIGGER fail_red BEFORE INSERT ON events
-    WHEN NEW.type = 'action' AND json_extract(NEW.json, '$.phase') = 'red' AND json_extract(NEW.json, '$.ordinal') = 1
-    BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`);
+  golden.failAppends(t, (event) => event.type === 'action' && event.phase === 'red' && event.ordinal === 1);
   const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
@@ -230,17 +226,47 @@ for (const [kind, opts, state] of [
 ]) {
   test(`a ${kind} whose ticket_end fails is not saved as finished`, async (t) => {
     const g = await golden.setup(t);
-    const db = record.openDb(g.commonDir);
-    db.exec("CREATE TRIGGER fail_end BEFORE INSERT ON events WHEN NEW.type = 'ticket_end' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END");
+    const restore = golden.failAppends(t, (event) => event.type === 'ticket_end');
     const err = await interpreter.runExecution({ ...g.options, ...opts }).then(() => null, (e) => e);
     assert.equal(err?.name, 'RecordSaveError', String(err));
     const mid = await loadTicket(g);
     assert.equal(mid.state, 'active', 'no finished state without its ticket_end');
     assert.ok(interpreter.pendingReport(mid), 'the decided report waits for the next Run');
 
-    db.exec('DROP TRIGGER fail_end');
+    restore();
     await interpreter.runExecution({ ...g.options, record: mid });
     assert.equal((await loadTicket(g)).state, state);
     assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
   });
 }
+
+test('the record carries the last heartbeat of a running call', async (t) => {
+  const red = golden.firstVisitResponses['implementer/1/red/1'];
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
+    'implementer/1/red/1': { ...red, hang: true }, 'implementer/1/red/2': red } });
+  let started;
+  const running = new Promise((resolve) => { started = resolve; });
+  const run = g.harness.run;
+  g.harness.run = (call) => {
+    const out = run(call);
+    if (call.attempt === 1) started();
+    return out;
+  };
+  const execution = interpreter.runExecution(g.options);
+  try {
+    await running;
+    const first = (await loadTicket(g)).heartbeat;
+    assert.match(String(first), /^2026-10-15T/, 'the heartbeat is saved with the Attempt intent');
+    await g.clock.sleep(60_000);
+    g.clock.beat();
+    const beating = await loadTicket(g);
+    assert.ok(Date.parse(beating.heartbeat) > Date.parse(first), 'updated while the call runs');
+    assert.equal(beating.activity.busy, true, 'a heartbeat leaves the activity as it is');
+  } finally {
+    // Settled before the case ends either way, so no Execution outlives its temp repo.
+    g.harness.cancel();
+    await execution.catch(() => {});
+  }
+  assert.equal((await execution).outcome, 'done');
+  assert.equal((await loadTicket(g)).heartbeat, null, 'cleared once the call ends');
+});

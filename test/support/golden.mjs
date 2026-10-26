@@ -1,9 +1,8 @@
 // Golden-trace fixture: a temp bare origin and clone with a ticket worktree, a fake gh at lib/github.mjs's seam,
-// a fake test runner, the fake harness, and every process call tagged with the activity it observed.
-import childProcess, { execFileSync } from 'node:child_process';
+// a fake test runner, the fake harness, and every harness, test, git and gh call tagged with the activity it observed.
+import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
-import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import * as gitModule from '../../lib/git.mjs';
@@ -168,11 +167,9 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
     },
   };
 
-  // Every real process spawn is observed, including the ones lib modules launch on their own (integrity snapshots).
-  const spawn = childProcess.spawn;
-  childProcess.spawn = (cmd, args, ...rest) => { observe(`${basename(cmd).replace(/\.exe$/i, '')} ${args?.[0]}`); return spawn(cmd, args, ...rest); };
-  syncBuiltinESMExports();
-  t.after(() => { childProcess.spawn = spawn; syncBuiltinESMExports(); });
+  // Every git verb is observed, including the ones lib modules call on their own (integrity snapshots).
+  const observedGit = Object.fromEntries(Object.entries(git).map(([verb, fn]) =>
+    [verb, typeof fn === 'function' ? (...args) => { observe(`git ${verb}`); return fn(...args); } : fn]));
 
   const gh = fakeGh({ branch: BRANCH, observe });
   const previousGh = github.setGh(gh.gh);
@@ -183,10 +180,16 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   let now = Date.parse('2026-10-15T00:00:00Z');
   // Every sleep is recorded; `onSleep`, when a test sets it, runs before the clock moves on.
   const sleeps = [];
-  const clock = { now: () => now, sleep: async (ms) => { sleeps.push(ms); await clock.onSleep?.(ms); now += ms; } };
+  // `beat()` runs what is due on `every`, as a heartbeat timer firing.
+  const beats = new Set();
+  const clock = {
+    now: () => now, sleep: async (ms) => { sleeps.push(ms); await clock.onSleep?.(ms); now += ms; },
+    every: (ms, fn) => { beats.add(fn); return () => beats.delete(fn); },
+    beat: () => { for (const fn of beats) fn(); },
+  };
 
   const options = {
-    flow, record: rec, harness, gh: github, git, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
+    flow, record: rec, harness, gh: github, git: observedGit, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
     commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock, ...injected(fake),
   };
@@ -290,19 +293,35 @@ export function fakeGh({ branch, ticket = TICKET, observe = () => {}, repoLabels
   return { gh, calls, comments, labels: labelsOf(ticket), labelsOf, repoLabels: available, pr: () => prs.get(branch) ?? null, fail: (f) => failures.push({ ...f }) };
 }
 
-// Crashes the `n`th `op` (rm or writeFile) on a path under `root` once `active()` holds, after the call has run when
-// `after` is set. lib modules see it through their node:fs/promises imports; it is undone by the returned function or
-// when the test ends.
-export function crashFs(t, root, active, { op, n, after = false }) {
-  const original = fsPromises[op];
+// The fs a restore uses (integrity.withGit's), crashing the `n`th `op` (rm or writeFile) on a path under `root` once
+// `active()` holds, after the call has run when `after` is set.
+export function crashFs(root, active, { op, n, after = false }) {
   let calls = 0;
-  fsPromises[op] = async (path, ...rest) => {
-    if (!active() || !String(path).startsWith(root) || ++calls !== n) return original(path, ...rest);
-    if (after) await original(path, ...rest);
+  return { ...fsPromises, [op]: async (path, ...rest) => {
+    if (!active() || !String(path).startsWith(root) || ++calls !== n) return fsPromises[op](path, ...rest);
+    if (after) await fsPromises[op](path, ...rest);
     throw new interpreter.CrashError(`crash at ${op} ${n}`);
-  };
-  syncBuiltinESMExports();
-  const restore = () => { fsPromises[op] = original; syncBuiltinESMExports(); };
+  } };
+}
+
+// Fails each save whose record, and the row saved for it so far (or undefined), match `when(saved, next)`, as a disk
+// error would. Undone by the returned function or when the test ends.
+export function failSaves(t, when) {
+  const previous = record.setSaveHook((next) => {
+    const [kind, n] = 'execution' in next ? ['ticket', next.ticket] : ['epic', next.epic];
+    const row = record.openDb(next.commonDir).prepare('SELECT json FROM records WHERE kind = ? AND n = ?').get(kind, n);
+    if (when(row && JSON.parse(row.json), next)) throw new Error('disk I/O error');
+  });
+  const restore = () => record.setSaveHook(previous);
+  t.after(restore);
+  return restore;
+}
+
+// Fails each Event insert that matches `when(event)`, as a disk error would. Undone by the returned function or when
+// the test ends.
+export function failAppends(t, when) {
+  const previous = events.setAppendHook((event) => { if (when(event)) throw new Error('disk I/O error'); });
+  const restore = () => events.setAppendHook(previous);
   t.after(restore);
   return restore;
 }

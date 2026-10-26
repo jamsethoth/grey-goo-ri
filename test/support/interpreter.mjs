@@ -6,8 +6,6 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from './golden.mjs';
-import fsPromises from 'node:fs/promises';
-import { syncBuiltinESMExports } from 'node:module';
 import * as locks from '../../lib/locks.mjs';
 import * as run from '../../lib/run.mjs';
 
@@ -169,29 +167,24 @@ export function crashPost(g, n) {
 
 // Another holder takes the repo lock at the first lock attempt after `arm()`, so that attempt fails and waits; at the
 // next attempt `during()` runs and the lock is released, and the waiting git write goes ahead behind a contended lock.
-// The lock attempts are seen through locks.tryAcquire's mkdir of the lock directory.
 export function contendRepoLock(t, commonDir, during) {
-  const original = fsPromises.mkdir;
   let state = 'idle';
   let held = null;
-  let own = false;
-  fsPromises.mkdir = async (path, ...rest) => {
-    if (!own && String(path) === join(commonDir, 'gg', 'locks')) {
-      if (state === 'armed') {
-        state = 'holding';
-        own = true;
-        held = await locks.tryAcquire(commonDir, 'repo');
-        own = false;
-      } else if (state === 'holding') {
-        state = 'released';
-        await during();
-        await locks.release(held);
-      }
+  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
+    if (lock.commonDir !== commonDir || lock.name !== 'repo') return attempt();
+    if (state === 'armed') {
+      state = 'holding';
+      held = await attempt();
+      return null;
     }
-    return original(path, ...rest);
-  };
-  syncBuiltinESMExports();
-  t.after(() => { fsPromises.mkdir = original; syncBuiltinESMExports(); });
+    if (state === 'holding') {
+      state = 'released';
+      await during();
+      await locks.release(held);
+    }
+    return attempt();
+  });
+  t.after(() => locks.setAttemptWrapper(previous));
   return { arm: () => { state = 'armed'; }, state: () => state };
 }
 
