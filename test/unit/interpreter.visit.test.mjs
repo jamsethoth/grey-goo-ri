@@ -125,6 +125,17 @@ test('done removes in-progress and adds ready-for-qa', async (t) => {
   assert.equal(end.diffStats.testFiles, 1);
 });
 
+test('done counts the files under the pinned testPaths as tests in its diff stats', async (t) => {
+  const g = await golden.setup(t);
+  g.options.testPaths = ['test/**', 'lib/**'];
+  await interpreter.runExecution(g.options);
+
+  const end = g.readEvents().find((e) => e.type === 'ticket_end');
+  assert.equal(end.outcome, 'done');
+  assert.equal(end.diffStats.files, 2);
+  assert.equal(end.diffStats.testFiles, 2, 'lib/add.mjs counts as a test because the pinned testPaths name lib/');
+});
+
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
