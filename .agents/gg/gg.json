@@ -1,5 +1,6 @@
 {
   "commands": {
     "test": "node scripts/run-suite.mjs"
-  }
+  },
+  "testPaths": ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/fixtures/**"]
 }

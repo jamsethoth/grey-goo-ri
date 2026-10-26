@@ -23,7 +23,7 @@ test('test immutability lists added, renamed and modified test paths and ignores
   writeFileSync(join(dir, 'lib', 'x.mjs'), 'x');
   g('add', '-A'); g('commit', '-q', '-m', 'baseline');
   const baseline = g('rev-parse', 'HEAD');
-  assert.deepEqual(await checks.testImmutability(dir, baseline, { git }), { ok: true, changed: [] });
+  assert.deepEqual(await checks.testImmutability(dir, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git }), { ok: true, changed: [] });
 
   writeFileSync(join(dir, 'test', 'a.test.mjs'), 'a changed');
   g('commit', '-q', '-am', 'edit a test after the baseline');
@@ -32,7 +32,7 @@ test('test immutability lists added, renamed and modified test paths and ignores
   writeFileSync(join(dir, 'lib', 'x.mjs'), 'x changed');
 
   // A rename lists both its paths.
-  assert.deepEqual(await checks.testImmutability(dir, baseline, { git }),
+  assert.deepEqual(await checks.testImmutability(dir, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git }),
     { ok: false, changed: ['test/a.test.mjs', 'test/new.test.mjs', 'test/old.test.mjs', 'test/renamed.test.mjs'] });
 });
 
@@ -50,7 +50,7 @@ test('test immutability sees non-ASCII and git-ignored test paths', async (t) =>
   writeFileSync(join(dir, 'test', 'naïve.mjs'), 'new');
   writeFileSync(join(dir, 'test', 'ignored.mjs'), 'new');
 
-  const r = await checks.testImmutability(dir, baseline, { git });
+  const r = await checks.testImmutability(dir, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git });
   assert.deepEqual(r, { ok: false, changed: ['test/café.mjs', 'test/ignored.mjs', 'test/naïve.mjs'] });
 });
 
@@ -67,6 +67,6 @@ test('test immutability sees a test added under an ignored directory but not ins
   mkdirSync(join(dir, 'node_modules', 'dep', 'test'), { recursive: true });
   writeFileSync(join(dir, 'node_modules', 'dep', 'test', 'index.js'), 'dep');
 
-  const r = await checks.testImmutability(dir, baseline, { git });
+  const r = await checks.testImmutability(dir, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git });
   assert.deepEqual(r, { ok: false, changed: ['generated/new.test.mjs'] });
 });

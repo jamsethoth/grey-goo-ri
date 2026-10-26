@@ -70,12 +70,12 @@ test('following standalone Ticket advice in the repo Layer allows the Ticket to 
   const f = fixture(t);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
   const home = join(f.root, 'home');
-  const { commands, ...user } = f.options.config;
+  const { commands, testPaths, ...user } = f.options.config;
   mkdirSync(join(home, '.agents', 'gg'), { recursive: true });
   writeFileSync(join(home, '.agents', 'gg', 'gg.json'), JSON.stringify(user));
   const repoLayer = join(f.mainRoot, '.agents', 'gg', 'gg.json');
   mkdirSync(join(f.mainRoot, '.agents', 'gg'), { recursive: true });
-  writeFileSync(repoLayer, JSON.stringify({ commands }));
+  writeFileSync(repoLayer, JSON.stringify({ commands, testPaths }));
   f.options.config = config.loadConfig(f.mainRoot, home);
 
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
@@ -83,7 +83,7 @@ test('following standalone Ticket advice in the repo Layer allows the Ticket to 
   assert.ok(err.message.includes(repoLayer), 'the advice names the path loadConfig reads');
   const advice = JSON.parse(err.message.split('\n').at(-1));
   assert.deepEqual(advice, { flows: { default: { plan: null } } });
-  writeFileSync(repoLayer, JSON.stringify({ ...advice, commands }));
+  writeFileSync(repoLayer, JSON.stringify({ ...advice, commands, testPaths }));
   f.options.config = config.loadConfig(f.mainRoot, home);
 
   const results = await run.runTarget(f.options);

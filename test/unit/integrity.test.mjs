@@ -78,5 +78,5 @@ test('a workflow file change is an integrity violation', async (t) => {
 
   const { violations } = await real.end({ baseline, record: rec, others: [], access: 'read-write', protectedPaths: interpreter.PROTECTED_PATHS });
   assert.deepEqual(violations, [{ worktree: mainRoot, surface: 'protected', before: null,
-    after: ['.github/workflows/ci.yml', '.github/actions/setup/action.yml'] }]);
+    after: ['.github/actions/setup/action.yml', '.github/workflows/ci.yml'] }]);
 });

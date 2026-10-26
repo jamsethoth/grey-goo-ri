@@ -228,3 +228,12 @@ test('test immutability covers a declared test path outside the default globs', 
   assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: ['spec/**'], git: fake.git }), { ok: false, changed: ['spec/cart.mjs'] });
   assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: checks.DEFAULT_TEST_GLOBS, git: fake.git }), { ok: true, changed: [] });
 });
+
+test('a test path glob matches case-sensitively, with ? as one character other than a slash, as git does', () => {
+  const isTest = checks.testPathMatcher(['**/test/**', 'spec/a?.mjs']);
+  assert.equal(isTest('lib/test/x.mjs'), true);
+  assert.equal(isTest('lib/Test/x.mjs'), false);
+  assert.equal(isTest('spec/a1.mjs'), true);
+  assert.equal(isTest('spec/a12.mjs'), false);
+  assert.equal(isTest('spec/a/.mjs'), false);
+});
