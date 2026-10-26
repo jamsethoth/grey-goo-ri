@@ -1050,10 +1050,11 @@ and the owner accepted all four findings as recommended.
 - J14. A partial-overlap warning (R8d) is per row, not per pair of rows. Earlier rows take part of a row where it
   matches but an earlier row matches first. Each row that earlier rows partly take gets one warning, naming each
   earlier row that takes part of it, the conditions of both rows, which together define the shared region, and one
-  example input. Adjacent rows taken the same way (by every earlier row, or by the same rows) on the same fields share
-  one warning: a ladder of `pass >= k` rows reports "rows 2-400 are each partly taken by every earlier row, all on
-  `pass`". The warnings are bounded by the row count, and the analysis keeps one bit per firing row and earlier row,
-  which N2's work limit bounds (points × rows bits); N2's formula is unchanged. So the example review `passed`
+  example input. Adjacent rows taken the same way on the same fields share one warning: each by every earlier firing
+  row from the same row on, or all by the same rows. A ladder of `pass >= k` rows reports "rows 2-400 are each partly
+  taken by every earlier firing row, all on `pass`". There is at most one warning per row, and a run keeps only its
+  first row's takers, as ranges of rows; the analysis keeps one bit per firing row and earlier row, which N2's work
+  limit bounds (points × rows bits). N2's formula is unchanged. So the example review `passed`
   table's three intended overlaps (U4) are two warnings: row 2 partly taken by row 1, and row 3 by rows 1 and 2.
   Issue #103.
 - J15. Rule fields use #104's `fieldType` kinds as the analyser's domain: `{ kind: 'enum', values }`,

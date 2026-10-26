@@ -10,11 +10,12 @@ const [testsFailStopped, implementStopped, fixStopped, reviewPassed, reviewStopp
 
 const states = { kind: 'enum', values: ['passed', 'failed', 'not-run'] };
 
-// A ladder of `pass >= k` rows, from `pass >= n` down to `pass >= 1`: each row is partly taken by every earlier row.
-const ladder = (name, n) => ({
+// A ladder of `pass >= k` rows, from `pass >= n` down to `pass >= 1`, each also on `when`: each row is partly taken by
+// every earlier row.
+const ladder = (name, n, when = {}) => ({
   name,
   fields: { pass: { kind: 'integer', min: 1, max: n + 1 } },
-  rows: Array.from({ length: n }, (_, k) => ({ when: { pass: { '>=': n - k } }, outcome: `o${k}` })),
+  rows: Array.from({ length: n }, (_, k) => ({ when: { ...when, pass: { '>=': n - k } }, outcome: `o${k}` })),
 });
 
 // n booleans, all mentioned by row 0 (every one true); row k > 0 matches b(k) true, so it is partly taken by every
@@ -97,7 +98,8 @@ test("a partial overlap is a warning naming both rows' conditions and an example
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings, [{
     rows: [1, 1],
-    earlier: [0],
+    earlier: [[0, 0]],
+    from: null,
     fields: ['claim', 'response.needsTest'],
     example: { claim: 'ok', response: { needsTest: true } },
     message: 'rule table review.passed: row 2 (response.needsTest = true) is partly taken by ' +
@@ -122,11 +124,73 @@ test('a run of rows taken the same way is one warning', async () => {
   assert.deepEqual(result.errors, []);
   assert.equal(result.warnings.length, 1);
   const [w] = result.warnings;
-  assert.deepEqual([w.rows, w.earlier, w.fields], [[1, 3], 'every', ['pass']]);
-  assert.match(w.message, /^rule table fix\.failed: rows 2-4 are each partly taken by every earlier row, all on pass, for example \{"pass":\d\}$/);
+  assert.deepEqual([w.rows, w.earlier, w.from, w.fields], [[1, 3], [[0, 0]], 0, ['pass']]);
+  assert.match(w.message, /^rule table fix\.failed: rows 2-4 are each partly taken by every earlier firing row, all on pass, for example \{"pass":\d\}$/);
   assert.equal(rules.evaluate(table, w.example), 0);
   assert.equal(rules.evaluate({ ...table, rows: [table.rows[1]] }, w.example), 0);
   assert.equal(result.defaultExample, null);
+});
+
+test('rows taken by the same earlier rows are one warning', async () => {
+  const rules = await load();
+  const table = {
+    name: 'review.passed',
+    fields: { x: { kind: 'boolean' }, y: { kind: 'boolean' } },
+    rows: [
+      { when: { x: true }, outcome: 'x' },
+      { when: { y: true }, outcome: 'y' },
+      { when: { y: false }, outcome: 'not-y' },
+    ],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.from]), [[[1, 2], [[0, 0]], null]]);
+  assert.match(result.warnings[0].message, /: rows 2-3 are each partly taken by row 1, all on x, y, for example/);
+});
+
+test('a run names only the earlier rows that fire', async () => {
+  const rules = await load();
+  const table = {
+    name: 'fix.failed',
+    fields: { n: { kind: 'integer' } },
+    rows: [
+      { when: { n: { '>=': 4 } }, outcome: 'four' },
+      { when: { n: { '>=': 4 } }, outcome: 'again' },
+      { when: { n: { '>=': 3 } }, outcome: 'three' },
+      { when: { n: { '>=': 2 } }, outcome: 'two' },
+    ],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors.map(e => e.row), [1]);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.from]), [[[2, 3], [[0, 0]], 0]]);
+  assert.match(result.warnings[0].message, /: rows 3-4 are each partly taken by every earlier firing row, all on n, for example/);
+});
+
+test('a ladder after an unrelated row is one warning', async () => {
+  const rules = await load();
+  // Row 1 takes no part of the ladder, so the ladder's rows are each taken by every earlier firing row from row 2.
+  const table = {
+    name: 'fix.failed',
+    fields: { mode: { kind: 'boolean' }, pass: { kind: 'integer', min: 1, max: 1_001 } },
+    rows: [{ when: { mode: false }, outcome: 'off' }, ...ladder('', 1_000, { mode: true }).rows],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.from]), [[[2, 1_000], [[1, 1]], 1]]);
+  assert.match(result.warnings[0].message, /: rows 3-1001 are each partly taken by every earlier firing row from row 2, all on mode, pass, for example/);
+});
+
+test("analysis leaves the fields' value lists unchanged", async () => {
+  const rules = await load();
+  const values = Object.freeze(['ok', 'changes']);
+  const table = {
+    name: 'fix.passed',
+    fields: { 'inputs.prior.verdict': { kind: 'enum', values, absent: true } },
+    rows: [{ when: { 'inputs.prior.verdict': 'changes' }, outcome: 'changes' }],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(values, ['ok', 'changes']);
 });
 
 test("integer intervals are cut at the table's constants", async () => {
@@ -145,9 +209,10 @@ test("integer intervals are cut at the table's constants", async () => {
   };
   const result = rules.analyse(ranges);
   assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier]), [[[2, 2], [0, 1]]]);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier]), [[[2, 2], [[0, 1]]]]);
   assert.match(result.warnings[0].message, /row 3 \(response\.count >= 0 and response\.count <= 10\) is partly taken by row 1 \(response\.count = 0\), row 2 \(response\.count = 10\)/);
   assert.equal(rules.evaluate(ranges, { response: { count: 1 } }), 2);
+  assert.notEqual(result.defaultExample, null);
   assert.equal(rules.evaluate(ranges, result.defaultExample), null);
 
   const covered = {
@@ -183,6 +248,7 @@ test('integer intervals stay exact beyond the safe integers', async () => {
   assert.equal(rules.evaluate(table, { n: -(2 ** 54) - 4 }), 1);
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
+  assert.notEqual(result.defaultExample, null);
   assert.equal(rules.evaluate(table, result.defaultExample), null);
 });
 
@@ -214,7 +280,7 @@ test('the example review table reports three overlaps in two row warnings', asyn
   const rules = await load();
   const result = rules.analyse(reviewPassed);
   assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier]), [[[1, 1], [0]], [[2, 2], [0, 1]]]);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier]), [[[1, 1], [[0, 0]]], [[2, 2], [[0, 1]]]]);
   assert.match(result.warnings[0].message, /row 2 \(check\.repeat = failed\) is partly taken by row 1 \(claim = ok and check\.review-pass = passed\), for example/);
   assert.match(result.warnings[1].message, /row 3 \(response\.needsTest = true\) is partly taken by row 1 \(claim = ok and check\.review-pass = passed\), row 2 \(check\.repeat = failed\), for example/);
   assert.equal(rules.evaluate(reviewPassed, result.warnings[1].example), 0);
@@ -240,7 +306,7 @@ test('a long run of overlapping rows is one warning and costs no memory per pair
   const result = rules.analyse(table);
   const grown = process.memoryUsage().heapUsed - before;
   assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier]), [[[1, 2_999], 'every']]);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.from]), [[[1, 2_999], 0]]);
   assert.ok(grown < 32 * 2 ** 20, `the heap grew by ${grown} bytes`);
 });
 
@@ -250,7 +316,7 @@ test('a table just under the work limit is analysed', async () => {
   // 2**20 points times 9 rows is 9,437,184 row checks.
   const result = rules.analyse(booleanTable('wide.passed', 20, 9));
   assert.deepEqual(result.errors, []);
-  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier]), [[[1, 8], 'every']]);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.from]), [[[1, 8], 0]]);
 });
 
 test('a table just over it (many booleans) is an error naming the table', async () => {
