@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
 // What makes a test medium (docs/testing.md, "Test sizes"), as it shows in a test file's source.
+// shortcut: a text check misses a bare `sh(` or an unlisted spawning helper; a runtime guard if the fast stage slows (docs/testing.md, "Considered and deferred").
 const MEDIUM = [
   [/['"](?:node:)?child_process['"]/, 'imports node:child_process'],
   [/['"](?:\.\.\/)+lib\/(?:exec|git)\.mjs['"]/, 'imports lib/exec.mjs or lib/git.mjs'],

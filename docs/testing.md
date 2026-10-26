@@ -95,9 +95,14 @@ that leaves the machine. Aim for most tests small; a medium test exists to show 
 
 A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`
 as before. A module whose cases have different sizes has a file in each directory under the same name: the small cases
-of `run` are in `test/unit/run.test.mjs` and its real-git cases in `test/e2e/run.test.mjs`. `test/unit/layout.test.mjs`
-checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.mjs` or `lib/git.mjs`, asks for real
-git, uses a timer, or calls a support helper that spawns.
+of `run.branches` are in `test/unit/run.branches.test.mjs` and its real-git cases in `test/e2e/run.branches.test.mjs`.
+`test/unit/layout.test.mjs` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.mjs` or
+`lib/git.mjs`, asks for real git, uses a timer, or calls a support helper that spawns.
+
+That check reads source text, so it misses a spawn it has no pattern for: a support helper imported and called bare
+(`sh(...)` rather than `golden.sh(...)`), a new support helper that spawns, or a lib function reached without its fake.
+A slip costs speed, not coverage: the full stage still runs the case, and the fast stage's wall time shows the
+regression. A new support helper that spawns is added to the check's list in the same change.
 
 Two stages, ordered by speed:
 
@@ -118,6 +123,10 @@ runner image), run the full stage.
   Deferred: Google and Meta select tests because they have millions; gg has under 50 files, and after #140 and
   #144 the full stage is expected to take minutes. Revisit if the full stage stays slow after #145; CI still runs
   everything.
+- **A runtime guard for `test/unit/`**: the launcher would `--import` a checked-in guard that makes every
+  `node:child_process` function throw when the test file is under `test/unit/` (prototyped for PR #154). It would close
+  the text check's gap above, but it adds launcher surface, an ADR 0016 amendment and a rules change for a gap that
+  costs only fast-stage speed. Revisit if the fast stage slows down because a medium case got into `test/unit/`.
 - **A naming rule alone** (`*.int.test.mjs` beside unit files) for an early fast stage. Folded into #145, so files
   move once into the target layout instead of being renamed and then moved.
 - **An npm git library** instead of the git CLI. Rejected (#144): no speed gain, or a second implementation of git
