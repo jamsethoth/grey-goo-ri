@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 
 const load = () => import('../lib/rules.mjs');
 
@@ -130,6 +132,51 @@ test("integer intervals are cut at the table's constants", async () => {
   assert.equal(second.defaultExample, null);
 });
 
+test('integer intervals stay exact beyond the safe integers', async () => {
+  const rules = await load();
+  const c = 2 ** 54;
+  const table = {
+    name: 'plan.passed',
+    fields: { n: { type: 'integer' } },
+    rows: [
+      { when: { n: { '>': c } }, outcome: 'above' },
+      { when: { n: { '<': -c } }, outcome: 'below' },
+    ],
+  };
+  assert.equal(rules.evaluate(table, { n: c + 4 }), 0);
+  assert.equal(rules.evaluate(table, { n: -c - 4 }), 1);
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.equal(rules.evaluate(table, result.defaultExample), null);
+});
+
+test('a witness for a __proto__ path is an own property and leaves prototypes alone', async () => {
+  const rules = await load();
+  const table = {
+    name: 'review.passed',
+    fields: { 'response.__proto__.rulesProbe': { type: 'boolean' } },
+    rows: [{ when: { 'response.__proto__.rulesProbe': true }, outcome: 'ok' }],
+  };
+  const result = rules.analyse(table);
+  assert.equal(Object.hasOwn(Object.prototype, 'rulesProbe'), false);
+  assert.deepEqual(result.errors, []);
+  assert.equal(rules.evaluate(table, result.defaultExample), null);
+  assert.ok(Object.hasOwn(result.defaultExample.response, '__proto__'));
+  assert.equal(Object.getPrototypeOf(result.defaultExample.response), Object.prototype);
+});
+
+test('rows that never fire do not cost quadratic memory', async () => {
+  // 10,000 unconditional rows: the work is 10,000 row checks, so a 64 MB heap must be enough.
+  const url = new URL('../lib/rules.mjs', import.meta.url).href;
+  const code = `const rules = await import(${JSON.stringify(url)});
+    const rows = Array.from({ length: 10000 }, (_, i) => ({ when: {}, outcome: 'o' + i }));
+    const r = rules.analyse({ name: 'heavy.passed', fields: {}, rows });
+    process.stdout.write(JSON.stringify([r.errors.length, r.warnings.length]));`;
+  const run = spawnSync(process.execPath, ['--max-old-space-size=64', '--input-type=module', '-e', code], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr.slice(-500));
+  assert.deepEqual(JSON.parse(run.stdout), [9999, 0]);
+});
+
 test('the example review table warns three times', async () => {
   const rules = await load();
   const result = rules.analyse(reviewPassed);
@@ -160,6 +207,30 @@ function limitShape(limit) {
   const under = Math.floor(limit / 2 ** n);
   return { n, under, over: under + 1 };
 }
+
+// The example Flow's tables plus synthetic ones near the limit, analysed as one admission; the timings set WORK_LIMIT.
+test('a complex fixture Flow is analysed as one admission', async t => {
+  const rules = await load();
+  const flow = JSON.parse(await readFile(new URL('./fixtures/rules-flow.json', import.meta.url), 'utf8'));
+  const grid = { name: 'grid.passed', fields: {}, rows: [] };
+  for (let f = 0; f < 4; f++) grid.fields[`response.e${f}`] = { enum: Array.from({ length: 10 }, (_, v) => `v${v}`) };
+  // The first group leaves e1 = v9 uncovered, so the second group fires there and overlaps every row of the first.
+  for (const [x, y] of [[0, 1], [2, 3]]) {
+    for (let a = 0; a < 10; a++) for (let b = 0; b < (x ? 10 : 9); b++) grid.rows.push({ when: { [`response.e${x}`]: `v${a}`, [`response.e${y}`]: `v${b}` }, outcome: `o${grid.rows.length}` });
+  }
+  const stairs = { name: 'stairs.passed', fields: { 'response.count': { type: 'integer' } }, rows: [] };
+  for (let k = 0; k < 400; k++) stairs.rows.push({ when: { 'response.count': { '<=': k } }, outcome: `o${k}` });
+  const tables = [...flow.tables, booleanTable('wide.passed', 20, 9), grid, stairs];
+
+  const start = performance.now();
+  for (const table of tables) {
+    const at = performance.now();
+    const result = rules.analyse(table);
+    t.diagnostic(`${table.name}: ${(performance.now() - at).toFixed(1)} ms, ${result.warnings.length} warnings`);
+    assert.deepEqual(result.errors, [], table.name);
+  }
+  t.diagnostic(`admission of ${tables.length} tables: ${(performance.now() - start).toFixed(1)} ms`);
+});
 
 test('a table just under the work limit is analysed', async () => {
   const rules = await load();

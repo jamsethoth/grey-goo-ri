@@ -1,0 +1,45 @@
+{
+  "source": "docs/research/user-defined-procedures-example-flow.md: every Rule Table of the example Flow",
+  "tables": [
+    {
+      "name": "red.stopped",
+      "fields": { "response.reason": { "enum": ["none", "misscoped", "no-test-needed"] } },
+      "rows": [
+        { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" },
+        { "when": { "response.reason": "no-test-needed" }, "outcome": "no-test" }
+      ]
+    },
+    {
+      "name": "green.stopped",
+      "fields": { "response.reason": { "enum": ["none", "misscoped", "bad-test"] } },
+      "rows": [
+        { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" },
+        { "when": { "response.reason": "bad-test" }, "outcome": "bad-test" }
+      ]
+    },
+    {
+      "name": "fix.stopped",
+      "fields": { "response.reason": { "enum": ["none", "misscoped"] } },
+      "rows": [{ "when": { "response.reason": "misscoped" }, "outcome": "misscoped" }]
+    },
+    {
+      "name": "review.passed",
+      "fields": {
+        "claim": { "enum": ["ok", "changes"] },
+        "check.review-pass": { "enum": ["passed", "failed", "not-run"] },
+        "check.repeat": { "enum": ["passed", "failed", "not-run"] },
+        "response.needsTest": { "type": "boolean" }
+      },
+      "rows": [
+        { "when": { "claim": "ok", "check.review-pass": "passed" }, "outcome": "ok" },
+        { "when": { "check.repeat": "failed" }, "outcome": "repeat" },
+        { "when": { "response.needsTest": true }, "outcome": "retest" }
+      ]
+    },
+    {
+      "name": "review.stopped",
+      "fields": { "response.reason": { "enum": ["none", "misscoped"] } },
+      "rows": [{ "when": { "response.reason": "misscoped" }, "outcome": "misscoped" }]
+    }
+  ]
+}
