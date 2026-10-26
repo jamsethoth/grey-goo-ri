@@ -178,7 +178,7 @@ for (const bad of [['npm test'], 'npm test', null]) {
 
 test('testPathsProblems names a missing, empty or malformed testPaths', () => {
   const notAList = `${layerFile}: testPaths must be a non-empty list of glob strings`;
-  const entry = (shown) => `${layerFile}: testPaths entry ${shown} must be a non-empty single-line glob string`;
+  const entry = (shown) => `${layerFile}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] \\ : or control character`;
   assert.deepEqual(config.testPathsProblems(['test/**', '**/*.spec.*'], layerFile), []);
   assert.deepEqual(config.testPathsProblems(undefined, layerFile), [`${layerFile} declares no testPaths; merge {"testPaths":["<glob>"]} into it`]);
   assert.deepEqual(config.testPathsProblems([], layerFile), [notAList]);
@@ -186,6 +186,17 @@ test('testPathsProblems names a missing, empty or malformed testPaths', () => {
   assert.deepEqual(config.testPathsProblems({ globs: ['test/**'] }, layerFile), [notAList]);
   assert.deepEqual(config.testPathsProblems(['test/**', 1, '', ' ', 'a\nb', null], layerFile),
     [entry('1'), entry('""'), entry('" "'), entry('"a\\nb"'), entry('null')]);
+});
+
+// Git rejects a pathspec outside the repository only when the first Attempt lists its tests, after admission's effects,
+// and reads brackets, backslashes and a partial "**" differently from Test Immutability, so preflight refuses them.
+test('testPathsProblems names a testPaths entry git would reject or read differently from Test Immutability', () => {
+  const entry = (shown) => `${layerFile}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] \\ : or control character`;
+  assert.deepEqual(config.testPathsProblems(['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/a?.mjs', 'scripts/run-suite.mjs'], layerFile), []);
+  assert.deepEqual(config.testPathsProblems(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], layerFile),
+    [entry('"../tests/**"'), entry('"/abs/**"'), entry('"C:/x/**"'), entry('"./test/**"'), entry('"test//x"'), entry('"test/"')]);
+  assert.deepEqual(config.testPathsProblems(['spec/[ab].mjs', 'spec\\a.mjs', '**.test.mjs', 'deep**', 'a/***/b', 'a\u0000b'], layerFile),
+    [entry('"spec/[ab].mjs"'), entry('"spec\\\\a.mjs"'), entry('"**.test.mjs"'), entry('"deep**"'), entry('"a/***/b"'), entry('"a\\u0000b"')]);
 });
 
 test('this repository Layer declares the default test globs as its testPaths', (t) => {

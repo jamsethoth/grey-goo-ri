@@ -237,3 +237,11 @@ test('a test path glob matches case-sensitively, with ? as one character other t
   assert.equal(isTest('spec/a12.mjs'), false);
   assert.equal(isTest('spec/a/.mjs'), false);
 });
+
+test('a test path glob without a wildcard matches that path and what is under it, as a git pathspec does', () => {
+  const isTest = checks.testPathMatcher(['spec', 'scripts/run-suite.mjs']);
+  assert.equal(isTest('spec/unit/a.mjs'), true);
+  assert.equal(isTest('scripts/run-suite.mjs'), true);
+  assert.equal(isTest('specs/b.mjs'), false);
+  assert.equal(isTest('scripts/run-suite.mjs.bak'), false);
+});

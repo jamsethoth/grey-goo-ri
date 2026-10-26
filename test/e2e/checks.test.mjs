@@ -70,3 +70,20 @@ test('test immutability sees a test added under an ignored directory but not ins
   const r = await checks.testImmutability(dir, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git });
   assert.deepEqual(r, { ok: false, changed: ['generated/new.test.mjs'] });
 });
+
+// Rollback lists untracked tests through git's :(glob) pathspecs and Test Immutability classifies with its own matcher,
+// so every glob preflight accepts must select the same paths in both.
+test('git and the test path matcher select the same paths for every kind of glob preflight accepts', async (t) => {
+  const dir = tempDir(t);
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  const paths = ['spec/unit/a.mjs', 'specs/b.mjs', 'spec2/a1.mjs', 'spec2/a12.mjs', 'deep/x/z.mjs', 'deep/x.mjs',
+    'top.test.mjs', 'a.test.d/x.mjs', 'scripts/run-suite.mjs'];
+  for (const p of paths) {
+    mkdirSync(join(dir, p, '..'), { recursive: true });
+    writeFileSync(join(dir, p), 'x');
+  }
+  const globs = ['spec', 'spec2/a?.mjs', '**/x/**', '*.test.*', 'de*/**/z.mjs', 'scripts/run-suite.mjs'];
+  const selected = ['deep/x/z.mjs', 'scripts/run-suite.mjs', 'spec/unit/a.mjs', 'spec2/a1.mjs', 'top.test.mjs'];
+  assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { globs } }), selected);
+  assert.deepEqual(paths.filter(checks.testPathMatcher(globs)).sort(), selected);
+});

@@ -294,6 +294,12 @@ for (const [name, repo] of [['real', realRepo], ['fake', fakeRepo]]) {
     assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['docs'], globs: ['**/*.js'], exclude: ['build/**'] } }), ['docs/n.md']);
   });
 
+  contract('untrackedPaths within a glob without a wildcard lists that path and what is under it', async ({ git, mainRoot: dir }) => {
+    mkdirSync(join(dir, 'spec', 'unit'), { recursive: true }); mkdirSync(join(dir, 'specs'));
+    writeFileSync(join(dir, 'spec', 'unit', 'a.mjs'), 'a'); writeFileSync(join(dir, 'specs', 'b.mjs'), 'b'); writeFileSync(join(dir, 'run.mjs'), 'r');
+    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { globs: ['spec', 'run.mjs'] } }), ['run.mjs', 'spec/unit/a.mjs']);
+  });
+
   // Windows reads DOCS/ as docs/, so a protected path matches there whatever its case.
   contract('given paths match case-insensitively on Windows', async ({ git, mainRoot: dir }) => {
     mkdirSync(join(dir, 'docs'));

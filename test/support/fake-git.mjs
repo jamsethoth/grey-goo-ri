@@ -39,8 +39,10 @@ function withinMatcher(within) {
   if (Array.isArray(within)) return pathspecMatcher(within);
   const fold = process.platform === 'win32' ? (s) => s.toLowerCase() : (s) => s;
   const under = (within.paths ?? []).map((p) => fold(p.replace(/\/+$/, '')));
-  const globs = (within.globs ?? []).map((g) => globRe(g));
-  const exclude = (within.exclude ?? []).map((g) => globRe(g));
+  // A glob without a wildcard matches what is under it too, as git's pathspecs do.
+  const pathspecRe = (g) => (/[*?]/.test(g) ? globRe(g) : { test: (p) => p === g || p.startsWith(`${g}/`) });
+  const globs = (within.globs ?? []).map(pathspecRe);
+  const exclude = (within.exclude ?? []).map(pathspecRe);
   const included = (p) => (!under.length && !globs.length)
     || under.some((b) => fold(p) === b || fold(p).startsWith(`${b}/`)) || globs.some((re) => re.test(p));
   return (p) => included(p) && !exclude.some((re) => re.test(p));
