@@ -52,7 +52,7 @@ test('a pending hold is not marked held', async (t) => {
 test('human override abandons a pending hold before any label cleanup', async (t) => {
   for (const cleanupFails of [false, true]) {
     const { f, seededRec } = await dirtyTicket(t, true);
-    const before = await integrity.snapshot(f.worktree);
+    const before = await integrity.snapshot(f.worktree, f.options.git);
     const failing = failComment(f);
     assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
     const mid = await loadTicket(f);
@@ -100,7 +100,7 @@ test('human override abandons a pending hold before any label cleanup', async (t
     assert.deepEqual(record.openIntents(final).filter((e) => e.action === 'commit'), record.openIntents(seededRec), 'the older intent is kept');
     assert.deepEqual(final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
       [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }], 'the cleanup is one write-ahead label Action');
-    assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the worktree is untouched');
+    assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
     assert.equal(f.harness.calls.length, 2, 'no agent ran');
   }
 });
@@ -228,7 +228,7 @@ test('a human needs-human label before the first Visit prevents admission effect
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
     await record.save(rec);
     if (dirty) writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
-    const before = await integrity.snapshot(f.worktree);
+    const before = await integrity.snapshot(f.worktree, f.options.git);
 
     const results = await run.runTarget(f.options);
     assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
@@ -236,7 +236,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     assert.equal(f.harness.calls.length, 0, 'no agent started');
     assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view'], ['issue', 'edit']], 'only the in-progress label is removed');
     assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
-    assert.deepEqual(await integrity.snapshot(f.worktree), before, 'the worktree is untouched');
+    assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
     if (dirty) assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n');
     const final = await record.load(f.commonDir, 'ticket', TICKET);
     assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
