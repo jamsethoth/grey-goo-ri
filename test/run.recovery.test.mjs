@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as gitModule from '../lib/git.mjs';
 import * as github from '../lib/github.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as marker from '../lib/marker.mjs';
@@ -16,10 +15,10 @@ import {
 
 test('agent-made dirty state proven by the record is discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   // The red test passes before implementation, so the red Phase fails; the crash comes before its reset.
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   const seeded = await seedExecution(f, { git, exec });
   assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['reset'], 'the record holds the decided reset');
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), "the agent's test is still in the worktree");
@@ -37,9 +36,9 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
 
 test('changes made after an interrupted reset are held, not discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   await seedExecution(f, { git, exec });
   // A human works in the worktree after the crash, on top of what the agent left.
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
@@ -56,9 +55,9 @@ test('changes made after an interrupted reset are held, not discarded', async (t
 
 test('an ignored test added after an interrupted reset is held, not deleted', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   await seedExecution(f, { git, exec });
   // An ignored file leaves HEAD and the tree as the agent left them, so only the saved ignored files can tell it apart.
   writeFileSync(join(f.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
@@ -74,9 +73,9 @@ test('an ignored test added after an interrupted reset is held, not deleted', as
 
 test('a human change staged after an interrupted reset is held, not discarded', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   await seedExecution(f, { git, exec });
   // Staged, then the working-tree bytes put back: HEAD and the worktree match what the agent left, only the index differs.
   const pkg = join(f.worktree, 'package.json');
@@ -95,9 +94,9 @@ test('a human change staged after an interrupted reset is held, not discarded', 
 
 test('an interrupted reset whose intent predates the index fingerprint is held', async (t) => {
   const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const git = { ...gitModule, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
   const seeded = await seedExecution(f, { git, exec });
   delete record.openIntents(seeded)[0].payload.left.index;
   await record.save(seeded);
@@ -113,13 +112,13 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   const responses = structuredClone(golden.firstVisitResponses);
   // The agent changes an ignored Protected File and adds another: an Integrity Violation, whose rollback restores both.
   Object.assign(responses['implementer/1/red/1'].files, { '.claude/settings.local.json': '{"agent":true}\n', '.claude/agent.json': '{}\n' });
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   mkdirSync(join(f.worktree, '.claude'));
   writeFileSync(join(f.worktree, '.claude', '.gitignore'), '*\n');
   writeFileSync(join(f.worktree, '.claude', 'settings.local.json'), '{"owner":true}\n');
   let reset = false;
-  const git = { ...gitModule, resetTo: async (...args) => { await gitModule.resetTo(...args); reset = true; } };
+  const git = { ...f.options.git, resetTo: async (...args) => { await f.options.git.resetTo(...args); reset = true; } };
   // Crashed after the extra is removed and the changed file deleted, before its rewrite.
   const restore = golden.crashFs(t, f.worktree, () => reset, { op: 'rm', n: 2, after: true });
   const seeded = await seedExecution(f, { git });
@@ -143,7 +142,7 @@ test('an admission failure on an active execution is reported as a fault', async
   const f = fixture(t, { labels: [IN_PROGRESS] });
   const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
   let adds = 0;
-  f.options.git = { ...gitModule, ensureWorktree: async () => { adds++; throw new Error('worktree add failed\nfatal: disk full') } };
+  f.options.git = { ...f.options.git, ensureWorktree: async () => { adds++; throw new Error('worktree add failed\nfatal: disk full') } };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1, 'a fault exits 1');
@@ -272,7 +271,7 @@ test('a landed hold comment with a lost response is not posted twice', async (t)
 test('an ensureWorktree failure without a record is marked and never retried', async (t) => {
   const f = fixture(t);
   let adds = 0;
-  f.options.git = { ...gitModule, ensureWorktree: async () => { adds++; throw new Error('worktree add failed\nfatal: disk full'); } };
+  f.options.git = { ...f.options.git, ensureWorktree: async () => { adds++; throw new Error('worktree add failed\nfatal: disk full'); } };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1);
@@ -297,7 +296,7 @@ test('an ensureWorktree failure without a record is marked and never retried', a
 });
 
 test('admission holds emit ticket lifecycle events with their Terminal Reason', async (t) => {
-  const ensure = (f) => gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const ensure = (f) => f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   for (const [hold, arrange] of [
     ['dirty-worktree', async (f) => { await ensure(f); writeFileSync(join(f.worktree, 'notes.txt'), 'mine\n'); }],
     ['merge-conflict', async (f) => { await ensure(f); conflict(f.worktree); }],
@@ -305,7 +304,7 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason', 
     ['branch-mismatch', async (f) => record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null,
       flow: { name: 'default', entry: 'implementer' }, configHash: 'x', run: 'seed', worktree: f.worktree, branch: 'ticket/99-other', base: 'main' }))],
   ]) {
-    const f = fixture(t);
+    const f = fixture(t, { integrity: 'real' });
     await arrange(f);
 
     const results = await run.runTarget(f.options);

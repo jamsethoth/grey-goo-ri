@@ -11,7 +11,7 @@ import {
 } from './support/reconcile.mjs';
 
 test('an amended commit with the marker holds the ticket', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'after-effect');
   // A human amends the gg commit between the crash and the resume: same marker and parent, different tree.
   writeFileSync(join(g.worktree, 'lib', 'extra.mjs'), 'export const extra = 1;\n');
@@ -37,7 +37,7 @@ test('an amended commit with the marker holds the ticket', async (t) => {
 });
 
 test('a commit amended after its completion was saved holds the ticket', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'after-completion');
   // The commit is complete in the record, so no open intent points at it; the amend keeps its marker.
   writeFileSync(join(g.worktree, 'lib', 'extra.mjs'), 'export const extra = 1;\n');
@@ -57,7 +57,7 @@ test('a commit amended after its completion was saved holds the ticket', async (
 });
 
 test('a crash before the commit replays the intended tree, not a human edit', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
   writeFileSync(join(g.worktree, 'notes.txt'), 'a human note\n');
 
@@ -73,7 +73,7 @@ test('a crash before the commit replays the intended tree, not a human edit', as
 });
 
 test('a branch moved before the commit replay holds the ticket', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
   golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
   const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
@@ -89,7 +89,7 @@ test('a branch moved before the commit replay holds the ticket', async (t) => {
 });
 
 test('a branch moved before the push replay holds the ticket', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const { m } = await crashed(g, EFFECTS.push.at, 'before-effect');
   golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
 
@@ -128,12 +128,14 @@ for (const point of Object.keys(POINTS)) {
 }
 
 // The red call writes a Protected File, an Integrity Violation: the worktree is rolled back and the ticket goes to needs-human.
-async function violating(t) {
-  const g = await golden.setup(t);
+// On the fake integrity the write is only scripted, for a test whose subject is what follows the violation.
+async function violating(t, integrity = 'real') {
+  const g = await golden.setup(t, { integrity });
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
-    if (call.phase === 'red') writeFileSync(join(g.worktree, 'CLAUDE.md'), 'an agent edit\n');
+    if (call.phase === 'red' && g.fake) g.fake.write(g.worktree, 'CLAUDE.md');
+    else if (call.phase === 'red') writeFileSync(join(g.worktree, 'CLAUDE.md'), 'an agent edit\n');
     return out;
   };
   return g;
@@ -160,7 +162,7 @@ for (const point of ['before-effect', 'after-effect', 'after-completion']) {
 
 for (const point of ['after-effect', 'after-completion']) {
   test(`a crash ${point} of gg's own needs-human label finishes the Terminal`, async (t) => {
-    const g = await violating(t);
+    const g = await violating(t, 'fake');
     await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
     assert.ok(g.gh.labels.has(NEEDS_HUMAN), 'gg applied the label before the crash');
 
@@ -176,7 +178,7 @@ for (const point of ['after-effect', 'after-completion']) {
 // GitHub keeps the repository's spelling of a label gg adds, and the prefix's case may change between Runs.
 for (const point of ['after-effect', 'after-completion']) {
   test(`gg-owned mixed-case needs-human completes without abandonment or replay, crash ${point}`, async (t) => {
-    const g = await violating(t);
+    const g = await violating(t, 'fake');
     const spelled = 'Gg:state:needs-human';
     g.gh = golden.fakeGh({ branch: golden.BRANCH, repoLabels: [spelled] });
     g.options.gh.setGh(g.gh.gh);
@@ -196,7 +198,7 @@ for (const point of ['after-effect', 'after-completion']) {
 }
 
 test('label reconciliation requires case-insensitive additions and removals', async (t) => {
-  const g = await violating(t);
+  const g = await violating(t, 'fake');
   const { m } = await crashed(g, ['needs-human', 1, 'needs-human', 2], 'after-effect');
   const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
   const before = edits();

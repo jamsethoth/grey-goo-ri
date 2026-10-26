@@ -13,6 +13,8 @@ import * as events from '../../lib/events.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as labelModule from '../../lib/labels.mjs';
 import { fakeHarness } from './fake-harness.mjs';
+import * as fakeIntegrityModule from './fake-integrity.mjs';
+import * as fakeGitModule from './fake-git.mjs';
 
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -76,6 +78,7 @@ export const trace = (evs) => evs.filter((e) => e.type === 'action')
 // The bare origin.git and its clone main that every test repo starts from, built once per test process: building them
 // costs a test seven git processes. Auto maintenance and gc are off, so no git call spawns another.
 let template;
+const TEMPLATE_PACKAGE = '{ "scripts": { "test": "node --test" } }\n';
 function buildTemplate() {
   const root = mkdtempSync(join(tmpdir(), 'gg-template-'));
   process.on('exit', () => rmSync(root, { recursive: true, force: true }));
@@ -86,7 +89,7 @@ function buildTemplate() {
   const mainRoot = join(root, 'main');
   sh(mainRoot, 'config', 'maintenance.auto', 'false'); sh(mainRoot, 'config', 'gc.auto', '0');
   sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
-  writeFileSync(join(mainRoot, 'package.json'), '{ "scripts": { "test": "node --test" } }\n');
+  writeFileSync(join(mainRoot, 'package.json'), TEMPLATE_PACKAGE);
   sh(mainRoot, 'add', '-A');
   sh(mainRoot, 'commit', '-q', '-m', 'init');
   sh(mainRoot, 'push', '-q', 'origin', 'main');
@@ -106,7 +109,20 @@ export function seedRepos(dir) {
   return template.base;
 }
 
-export async function setup(t, { responses = firstVisitResponses } = {}) {
+// The fake integrity, or null for the real one, and the options that inject it into runExecution or gg run.
+export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head }));
+export const injected = (fake) => (fake ? { integrity: fake.integrity, testImmutability: fake.testImmutability } : {});
+
+// The template's repos, in real git or in a fake git, and the git module to inject. Returns main's SHA.
+export function seedGit(root, which) {
+  if (which === 'real') return { base: seedRepos(root), git: gitModule, fakeGit: null };
+  const fake = fakeGitModule.fakeGit();
+  return { base: fake.init(root, { files: { 'package.json': TEMPLATE_PACKAGE } }).base, git: fake.git, fakeGit: fake };
+}
+
+// git and integrity are fakes unless `git` or `integrity` is 'real', for a test whose subject is git behaviour; real
+// integrity runs over real git unless `git` says otherwise.
+export async function setup(t, { responses = firstVisitResponses, integrity = 'fake', git: which = integrity === 'real' ? 'real' : 'fake' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'gg-golden-'));
   if (process.env.GG_KEEP_TEMP) t.diagnostic(`golden temp repo: ${root}`);
   else t.after(() => {
@@ -114,10 +130,12 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const base = seedRepos(root);
+  const { base, git, fakeGit } = seedGit(root, which);
+  const fake = fakeOf(integrity, base);
   const mainRoot = join(root, 'main');
   const worktree = join(root, 'wt', 'ticket-15');
-  sh(mainRoot, 'worktree', 'add', '-q', '-b', BRANCH, worktree, 'main');
+  if (which === 'real') sh(mainRoot, 'worktree', 'add', '-q', '-b', BRANCH, worktree, 'main');
+  else await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const commonDir = join(mainRoot, '.git');
 
   mkdirSync(join(root, 'personas'));
@@ -167,12 +185,12 @@ export async function setup(t, { responses = firstVisitResponses } = {}) {
   const clock = { now: () => now, sleep: async (ms) => { sleeps.push(ms); await clock.onSleep?.(ms); now += ms; } };
 
   const options = {
-    flow, record: rec, harness, gh: github, git: gitModule, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
+    flow, record: rec, harness, gh: github, git, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
     commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
-    base: 'main', labelPrefix: 'gg', others: [], clock,
+    base: 'main', labelPrefix: 'gg', others: [], clock, ...injected(fake),
   };
   return {
-    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath, clock, sleeps,
+    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath, clock, sleeps, fake, fakeGit,
     readEvents: () => events.readEvents(commonDir),
   };
 }

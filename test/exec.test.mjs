@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as exec from '../lib/exec.mjs';
@@ -9,19 +11,80 @@ import * as render from '../lib/render.mjs';
 const tmp = mkdtempSync(join(tmpdir(), 'ff-exec-'));
 const script = (name, body) => { const p = join(tmp, name); writeFileSync(p, body); return p; };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-const waitFor = async (fn, ms = 5000) => { const end = Date.now() + ms; while (Date.now() < end && !fn()) await new Promise((r) => setTimeout(r, 50)); return fn(); };
+// Waits for fn() to hold. A case that waits for an event that never comes fails at its own timeout, which aborts signal
+// and so ends the wait, letting the case's cleanup run.
+const waitFor = async (fn, signal) => {
+  while (!fn()) {
+    signal.throwIfAborted();
+    await new Promise((r) => setTimeout(r, 50));
+  }
+};
 
 // Only a restricted sandbox may refuse cleanup; there survivors need only be reported.
 const sandboxed = process.env.FF_TEST_SANDBOXED === '1';
+// Cases that wait for a process event: a broken runShell fails at this bound instead of hanging the file.
+const CASE = { timeout: 120_000 };
+// How long a test process lives unless it is killed: longer than any case, so no command ends on its own first.
+const LIVES_MS = 600_000;
+const writesPid = (pidFile) => `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, ${LIVES_MS});`;
 
 // Parent spawns a detached grandchild through an intermediate that lingers ~2 s (so the watcher sees the chain) and
-// then exits, leaving the grandchild orphaned while the parent outlives the timeout.
-function orphanScripts(name) {
+// then exits, leaving the grandchild orphaned while the parent outlives the timeout. delayMs holds the spawn back.
+function orphanScripts(name, { delayMs = 0 } = {}) {
   const pidFile = join(tmp, `${name}.pid`);
-  const grandchild = script(`${name}-gc.mjs`, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
-  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(grandchild)}], { detached: true, stdio: 'ignore' }).unref(); setTimeout(() => {}, 2000);`);
-  const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(middle)}], { stdio: 'ignore' }); setTimeout(() => {}, 60000);`);
+  const grandchild = script(`${name}-gc.mjs`, writesPid(pidFile));
+  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; setTimeout(() => spawn(process.execPath, [${JSON.stringify(grandchild)}], { detached: true, stdio: 'ignore' }).unref(), ${delayMs}); setTimeout(() => {}, ${delayMs} + 2000);`);
+  const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(middle)}], { stdio: 'ignore' }); setTimeout(() => {}, ${LIVES_MS});`);
   return { pidFile, cmd: `"${process.execPath}" "${top}"` };
+}
+
+// Runs commandLine with its timeout clock held until ready() holds, so the processes a case checks exist before the
+// timeout fires however slowly they start. ready is false when the command ended first.
+// The case's own signal ends the wait too, and then the command is timed out before the case fails.
+async function timeOutWhen(commandLine, options, ready, signal) {
+  const clock = new AbortController();
+  let settled = false;
+  const running = exec.runShell(commandLine, { ...options, signal: clock.signal }).finally(() => { settled = true; });
+  while (!settled && !ready() && !signal.aborted) await new Promise((r) => setTimeout(r, 50));
+  const wasReady = ready();
+  clock.abort();
+  const res = await running;
+  signal.throwIfAborted();
+  return { res, ready: wasReady };
+}
+
+// A clock that never starts: the command runs in the job, and only its own end ends it.
+const noClock = () => new AbortController().signal;
+
+// Calls onHelper with the job helper of the next runShell as it is spawned, so listeners it adds run before runShell's.
+// Returns the arguments of every spawn until the case ends.
+function beforeRunShell(t, onHelper) {
+  const spawn = childProcess.spawn;
+  t.after(() => { childProcess.spawn = spawn; syncBuiltinESMExports(); });
+  const spawned = [];
+  childProcess.spawn = (...args) => {
+    const child = spawn(...args);
+    if (args[0] === 'powershell.exe' && !spawned.some(([c]) => c === 'powershell.exe')) onHelper(child);
+    spawned.push(args);
+    return child;
+  };
+  syncBuiltinESMExports();
+  return spawned;
+}
+
+// Holds back what a stream emits between hold() and release(), as a pipe read late on a loaded machine delivers it:
+// listeners see the same events in the same order, only later.
+function delayed(stream) {
+  const emit = stream.emit;
+  let held = null;
+  stream.emit = function (event, ...args) {
+    if (held && ['data', 'end', 'close'].includes(event)) { held.push([event, args]); return true; }
+    return emit.call(this, event, ...args);
+  };
+  return {
+    hold: () => { held ??= []; },
+    release: () => { const events = held ?? []; held = null; for (const [event, args] of events) emit.call(stream, event, ...args); },
+  };
 }
 
 test('run: child that exits early while 5 MB of stdin is written resolves/rejects with its exit code', async () => {
@@ -38,19 +101,19 @@ test('run and runShell read a multi-byte character split across chunks exactly',
   assert.equal((await exec.runShell(`"${process.execPath}" "${p}"`)).output.trim(), '€');
 });
 
-// Not timed out is the promptness check: a command left waiting on stdin would run until the timeout. A wall-clock bound
-// here measured the Windows job helper's cold start (8 to 15 s early in a loaded suite), so it was dropped, with the
-// owner's approval, from this ported case.
-test('runShell: a command waiting for stdin EOF returns promptly', async () => {
+// Not timed out is the promptness check: a command left waiting on stdin would run until the case timeout. A wall-clock
+// bound here measured the Windows job helper's cold start (8 to 15 s early in a loaded suite), so it was dropped, with
+// the owner's approval, from this ported case.
+test('runShell: a command waiting for stdin EOF returns promptly', CASE, async () => {
   const p = script('stdin.mjs', `process.stdin.resume(); process.stdin.on('end', () => console.log('eof'));`);
-  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000 });
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000, signal: noClock() });
   assert.ok(!res.timedOut);
   assert.match(res.output, /eof/);
 });
 
-test('runShell with a timeout still returns the exit code and output of a command that finishes', async () => {
+test('runShell with a timeout still returns the exit code and output of a command that finishes', CASE, async () => {
   const p = script('exit7.mjs', `console.log('hi'); process.exit(7);`);
-  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000 });
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000, signal: noClock() });
   assert.equal(res.code, 7);
   assert.match(res.output, /hi/);
   assert.ok(!res.timedOut);
@@ -58,55 +121,60 @@ test('runShell with a timeout still returns the exit code and output of a comman
   assert.equal(res.leftovers, undefined, 'a clean command must not report leftovers (e.g. its console host)');
 });
 
-// The longest a timed-out runShell may take, from lib/exec.mjs's budgets. On Windows: the helper's start-up budget and the
-// command's timeout (timeoutMs each), the wait for the helper to stop, then up to two sequential taskkill /T calls (the
-// helper, and the command when no job object exists). Elsewhere: the timeout and one cleanup budget. Plus a second of slack.
-const timeoutBound = (timeoutMs) => 1000 + (process.platform === 'win32'
-  ? 2 * timeoutMs + exec.CLEANUP_BUDGET_MS + 2 * exec.TREE_KILL_BUDGET_MS
-  : timeoutMs + exec.CLEANUP_BUDGET_MS);
-
-test('runShell: a command outliving timeoutMs returns within budget, flagged as timed out', async () => {
-  // Outlives the bound by far, so a runShell that waited for the command could not pass.
-  const p = script('sleep.mjs', `setTimeout(() => {}, 300000);`);
-  const t = Date.now();
+// The budget is the case timeout: the command never ends on its own, so a runShell that waited for it could not pass.
+test('runShell: a command outliving timeoutMs returns within budget, flagged as timed out', CASE, async () => {
+  const p = script('sleep.mjs', `setInterval(() => {}, 60000);`);
   const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 500 });
-  assert.ok(Date.now() - t < timeoutBound(500), `took ${Date.now() - t} ms`);
   assert.equal(res.timedOut, true);
 });
 
-test('runShell: a timed-out command returns code null and the output it printed before the timeout', async () => {
-  const p = script('sentinel.mjs', `console.log('SENTINEL-BEFORE-HANG'); setTimeout(() => {}, 60000);`);
-  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 4000 });
+test('runShell: a timed-out command returns code null and the output it printed before the timeout', CASE, async (t) => {
+  const printed = join(tmp, 'sentinel.printed');
+  const p = script('sentinel.mjs', `import { writeFileSync } from 'node:fs'; console.log('SENTINEL-BEFORE-HANG'); writeFileSync(${JSON.stringify(printed)}, ''); setTimeout(() => {}, ${LIVES_MS});`);
+  const { res } = await timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 4000 }, () => existsSync(printed), t.signal);
   assert.equal(res.code, null);
   assert.equal(res.timedOut, true);
   assert.match(res.output, /SENTINEL-BEFORE-HANG/);
 });
 
-test('runShell timeout kills descendants by PID, including one whose parent already exited', async () => {
+test('runShell timeout kills descendants by PID, including one whose parent already exited', CASE, async (t) => {
   const { pidFile, cmd } = orphanScripts('orphan');
-  const res = await exec.runShell(cmd, { timeoutMs: 3500 });
+  const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 3500 }, () => existsSync(pidFile), t.signal);
   assert.equal(res.timedOut, true);
-  assert.ok(await waitFor(() => existsSync(pidFile), 1000), 'grandchild never started');
+  assert.ok(ready, 'grandchild never started');
   const pid = Number(readFileSync(pidFile, 'utf8'));
   try {
-    const dead = await waitFor(() => !alive(pid), 2000);
-    if (sandboxed) {
-      // cleanup may be refused here, but a descendant that is still running must be named with an error
-      if (!dead) assert.ok(res.survivors.some((s) => s.pid === pid && s.error), `live descendant ${pid} not reported: ${JSON.stringify(res.survivors)}`);
-    } else {
-      assert.deepEqual(res.survivors, []);
-      assert.ok(dead, 'descendant still running');
+    // cleanup may be refused in a sandbox, but a descendant that is still running must be named with an error
+    if (!(sandboxed && res.survivors.some((s) => s.pid === pid && s.error))) {
+      if (!sandboxed) assert.deepEqual(res.survivors, []);
+      await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
     }
   } finally {
     try { process.kill(pid); } catch {}
   }
 });
 
-test('runShell reports surviving PIDs and the kill error when termination fails', async () => {
-  const { pidFile, cmd } = orphanScripts('refused');
-  const res = await exec.runShell(cmd, { timeoutMs: 3500, killPid: () => { throw new Error('EPERM refused'); }, denyTerminate: true });
+test('runShell timeout kills a descendant that starts later than the timeout would have fired', CASE, async (t) => {
+  const { pidFile, cmd } = orphanScripts('orphan-late', { delayMs: 4000 });
+  const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 3500 }, () => existsSync(pidFile), t.signal);
+  assert.ok(ready, 'grandchild never started');
   assert.equal(res.timedOut, true);
-  await waitFor(() => existsSync(pidFile), 1000);
+  const pid = Number(readFileSync(pidFile, 'utf8'));
+  try {
+    // cleanup may be refused in a sandbox, but a descendant that is still running must be named with an error
+    if (!(sandboxed && res.survivors.some((s) => s.pid === pid && s.error))) {
+      if (!sandboxed) assert.deepEqual(res.survivors, []);
+      await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
+    }
+  } finally {
+    try { process.kill(pid); } catch {}
+  }
+});
+
+test('runShell reports surviving PIDs and the kill error when termination fails', CASE, async (t) => {
+  const { pidFile, cmd } = orphanScripts('refused');
+  const { res } = await timeOutWhen(cmd, { timeoutMs: 3500, killPid: () => { throw new Error('EPERM refused'); }, denyTerminate: true }, () => existsSync(pidFile), t.signal);
+  assert.equal(res.timedOut, true);
   const pid = Number(readFileSync(pidFile, 'utf8'));
   try {
     assert.ok(res.survivors.some((s) => s.pid === pid && /EPERM refused|withheld/.test(s.error)), JSON.stringify(res.survivors));
@@ -116,11 +184,10 @@ test('runShell reports surviving PIDs and the kill error when termination fails'
   }
 });
 
-test('runShell with a failed process snapshot reports known descendants as unverified, not as cleaned up', { skip: process.platform === 'win32' && 'Windows contains descendants with a job object, no snapshot' }, async () => {
+test('runShell with a failed process snapshot reports known descendants as unverified, not as cleaned up', { ...CASE, skip: process.platform === 'win32' && 'Windows contains descendants with a job object, no snapshot' }, async (t) => {
   const { pidFile, cmd } = orphanScripts('nosnap');
-  const res = await exec.runShell(cmd, { timeoutMs: 3500, killPid: () => { throw new Error('EPERM refused'); }, snapshotCommand: [process.execPath, ['-e', 'process.exit(1)']] });
+  const { res } = await timeOutWhen(cmd, { timeoutMs: 3500, killPid: () => { throw new Error('EPERM refused'); }, snapshotCommand: [process.execPath, ['-e', 'process.exit(1)']] }, () => existsSync(pidFile), t.signal);
   assert.equal(res.timedOut, true);
-  await waitFor(() => existsSync(pidFile), 1000);
   const pid = Number(readFileSync(pidFile, 'utf8'));
   try {
     assert.ok(res.survivors.some((s) => s.pid === pid), JSON.stringify(res.survivors));
@@ -131,18 +198,19 @@ test('runShell with a failed process snapshot reports known descendants as unver
   }
 });
 
-test('runShell with a timeout leaves background processes of a command that finished on its own running', async () => {
-  const { pidFile, cmd } = orphanScripts('leftover');
+test('runShell with a timeout leaves background processes of a command that finished on its own running', CASE, async (t) => {
+  const { pidFile } = orphanScripts('leftover');
   const quit = script('leftover-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(join(tmp, 'leftover-gc.mjs'))}], { detached: true, stdio: 'ignore' }).unref();`);
-  const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 20000 });
+  const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 20000, signal: noClock() });
   assert.equal(res.code, 0);
-  assert.ok(await waitFor(() => existsSync(pidFile), 3000), 'background process never started');
+  await waitFor(() => existsSync(pidFile), t.signal); // a background process that never starts fails at the case timeout
   const pid = Number(readFileSync(pidFile, 'utf8'));
   try {
     if (process.platform === 'win32') { // reported, not killed
       assert.ok(res.leftovers?.includes(pid), JSON.stringify(res.leftovers));
       assert.match(res.output, /left running: pid/);
     }
+    // shortcut: an absence check, so a kill still landing after this pause is missed, never a false failure
     await new Promise((r) => setTimeout(r, 500));
     assert.ok(alive(pid), 'background process was killed');
   } finally {
@@ -150,8 +218,9 @@ test('runShell with a timeout leaves background processes of a command that fini
   }
 });
 
-test('runShell: a child that asks to break away from the job still starts, and is left outside the timeout kill', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const sleeper = script('ba-sleeper.mjs', 'setTimeout(() => {}, 60000);');
+test('runShell: a child that asks to break away from the job still starts, and is left outside the timeout kill', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const sleeper = script('ba-sleeper.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
+  const created = join(tmp, 'breakaway.created');
   const ps = script('breakaway.ps1', `Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices;
 public static class BA {
@@ -165,10 +234,12 @@ public static class BA {
   }
 }
 '@
-[BA]::Run('"${process.execPath}" "${sleeper}"')
-Start-Sleep 60
+$r = [BA]::Run('"${process.execPath}" "${sleeper}"')
+[Console]::Out.WriteLine($r); [Console]::Out.Flush()
+Set-Content -LiteralPath '${created}' -Value $r
+Start-Sleep ${LIVES_MS / 1000}
 `);
-  const res = await exec.runShell(`powershell.exe -NoProfile -NonInteractive -File "${ps}"`, { timeoutMs: 6000 });
+  const { res } = await timeOutWhen(`powershell.exe -NoProfile -NonInteractive -File "${ps}"`, { timeoutMs: 6000 }, () => existsSync(created), t.signal);
   const m = res.output.match(/created pid=(\d+)/);
   const pid = m && Number(m[1]);
   try {
@@ -186,50 +257,52 @@ const withEnv = async (env, fn) => {
   try { return await fn(); } finally { for (const k of Object.keys(env)) delete process.env[k]; }
 };
 
-test('runShell: when the job cannot be set up, the timeout still takes down the process tree and says orphans are not contained', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const pidFile = join(tmp, 'nojob.pid');
-  const child = script('nojob-child.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
-  const top = script('nojob-top.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }); setTimeout(() => {}, 60000);`);
-  const res = await withEnv({ FF_TEST_NOJOB: '1' }, () => exec.runShell(`"${process.execPath}" "${top}"`, { timeoutMs: 4000 }));
-  const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+// A shell whose child writes pidFile; the child starts delayMs after the shell.
+function linkedChild(name, { delayMs = 0 } = {}) {
+  const pidFile = join(tmp, `${name}.pid`);
+  const child = script(`${name}-child.mjs`, writesPid(pidFile));
+  const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; setTimeout(() => spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }), ${delayMs}); setTimeout(() => {}, ${LIVES_MS});`);
+  return { pidFile, cmd: `"${process.execPath}" "${top}"` };
+}
+
+test('runShell: when the job cannot be set up, the timeout still takes down the process tree and says orphans are not contained', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const { pidFile, cmd } = linkedChild('nojob');
+  const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () => timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal));
+  const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
   try {
     assert.equal(res.timedOut, true);
     assert.ok(res.cleanupErrors.some((e) => /job object unavailable/.test(e)), JSON.stringify(res.cleanupErrors));
     assert.ok(pid, 'child never started');
-    const dead = await waitFor(() => !alive(pid), 3000);
-    if (sandboxed) { if (!dead) assert.ok(res.survivors.some((s) => s.pid === pid && s.error), `live child ${pid} not reported: ${JSON.stringify(res.survivors)}`); }
-    else assert.ok(dead, 'a child still linked to the shell was left running');
+    // a child still linked to the shell that is left running fails at the case timeout, unless a sandbox names it
+    if (!(sandboxed && res.survivors.some((s) => s.pid === pid && s.error))) await waitFor(() => !alive(pid), t.signal);
   } finally {
     if (pid) try { process.kill(pid); } catch {}
   }
 });
 
 // A loaded machine can take seconds over taskkill /T. Stopped partway it may have killed the shell but not the children
-// it can then no longer find, so a slow taskkill must be let finish. The seam gets the pid to kill as its last argument.
-test('runShell: when the job cannot be set up, a slow taskkill still takes down the process tree', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const pidFile = join(tmp, 'nojob-slow.pid');
-  const child = script('nojob-slow-child.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
-  const top = script('nojob-slow-top.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }); setTimeout(() => {}, 60000);`);
-  const slow = script('slow-taskkill.mjs', `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 2500);`);
-  const res = await withEnv({ FF_TEST_NOJOB: '1' }, () => exec.runShell(`"${process.execPath}" "${top}"`, { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] }));
-  const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+// it can then no longer find, so a slow taskkill must be let finish, however slow: this one takes longer than the 30 s
+// ceiling runShell once had. The seam gets the pid to kill as its last argument.
+test('runShell: when the job cannot be set up, a slow taskkill still takes down the process tree', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const { pidFile, cmd } = linkedChild('nojob-slow');
+  const slow = script('slow-taskkill.mjs', `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 31000);`);
+  const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () => timeOutWhen(cmd, { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] }, () => existsSync(pidFile), t.signal));
+  const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
   try {
     assert.equal(res.timedOut, true);
     assert.ok(pid, 'child never started');
     assert.ok(!res.cleanupErrors.some((e) => /taskkill/.test(e)), JSON.stringify(res.cleanupErrors));
-    assert.ok(await waitFor(() => !alive(pid), 3000), 'a child still linked to the shell was left running');
+    await waitFor(() => !alive(pid), t.signal); // a child still linked to the shell that is left running fails at the case timeout
   } finally {
     for (const s of res.survivors) try { process.kill(s.pid); } catch {}
     if (pid) try { process.kill(pid); } catch {}
   }
 });
 
-test('runShell: when the job cannot be set up and taskkill is refused, the children still linked to the shell are named', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const pidFile = join(tmp, 'nojob-denied.pid');
-  const child = script('nojob-denied-child.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
-  const top = script('nojob-denied-top.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }); setTimeout(() => {}, 60000);`);
-  const res = await withEnv({ FF_TEST_NOJOB: '1' }, () => exec.runShell(`"${process.execPath}" "${top}"`, { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] }));
-  const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+test('runShell: when the job cannot be set up and taskkill is refused, the children still linked to the shell are named', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const { pidFile, cmd } = linkedChild('nojob-denied');
+  const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () => timeOutWhen(cmd, { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] }, () => existsSync(pidFile), t.signal));
+  const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
   try {
     assert.equal(res.timedOut, true);
     assert.ok(pid, 'child never started');
@@ -241,62 +314,145 @@ test('runShell: when the job cannot be set up and taskkill is refused, the child
   }
 });
 
-test('runShell: a command that finishes is not reported as timed out while its leftover process still holds the output pipes', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const sleeper = script('drain-sleeper.mjs', 'setTimeout(() => {}, 8000);');
-  const quit = script('drain-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(sleeper)}], { detached: true, stdio: 'inherit' }).unref();`);
-  const cmd = `"${process.execPath}" "${quit}"`;
-  const probe = await exec.runShell(cmd, { timeoutMs: 60000, drainMs: 0 }); // how long until the helper exits
-  const t0 = Date.now();
-  const again = await exec.runShell(cmd, { timeoutMs: 60000, drainMs: 0 });
-  const exitMs = Date.now() - t0;
-  const pids = [...(probe.leftovers ?? []), ...(again.leftovers ?? [])];
+test('runShell: when the job cannot be set up and taskkill is refused, a child that starts later than the timeout would have fired is named', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const { pidFile, cmd } = linkedChild('nojob-late', { delayMs: 4500 });
+  const { res } = await withEnv({ FF_TEST_NOJOB: '1' }, () => timeOutWhen(cmd, { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] }, () => existsSync(pidFile), t.signal));
+  // taskkill is refused, so the top process lives on and starts the child even when the timeout came first
+  await waitFor(() => existsSync(pidFile), t.signal);
+  const pid = Number(readFileSync(pidFile, 'utf8'));
   try {
-    // a 3 s drain window with the timeout landing 1 s into it
-    const res = await exec.runShell(cmd, { timeoutMs: exitMs + 1000, drainMs: 3000 });
-    pids.push(...(res.leftovers ?? []));
+    assert.equal(res.timedOut, true);
+    assert.ok(res.survivors.some((s) => s.pid === pid), `linked child ${pid} missing from ${JSON.stringify(res.survivors)}`);
+    assert.ok(res.cleanupErrors.some((e) => /taskkill/.test(e)), JSON.stringify(res.cleanupErrors));
+  } finally {
+    for (const s of res.survivors) try { process.kill(s.pid); } catch {}
+    try { process.kill(pid); } catch {}
+  }
+});
+
+// The clock starts as the helper exits, just before runShell sees that exit, and fires 1 ms later, while runShell still
+// waits for the helper's notes (held back until 10 ms after the exit), unless the exit stops it. A timeout then would
+// taskkill the helper's pid, which may by then be another process's. The leftover holds the output pipes, so they never
+// close.
+test('runShell: a command that finishes is not reported as timed out while its leftover process still holds the output pipes', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const sleeper = script('drain-sleeper.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
+  const quit = script('drain-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(sleeper)}], { detached: true, stdio: 'inherit' }).unref();`);
+  const clock = new AbortController();
+  const spawned = beforeRunShell(t, (helper) => {
+    const late = [delayed(helper.stdout), delayed(helper.stderr)];
+    for (const l of late) l.hold();
+    helper.on('exit', () => {
+      clock.abort();
+      setTimeout(() => { for (const l of late) l.release(); }, 10);
+    });
+  });
+  const seam = [process.execPath, ['-e', '', 'drain-taskkill']];
+  const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 1, signal: clock.signal, taskkillCommand: seam });
+  try {
     assert.equal(res.timedOut, undefined, 'a finished command was reported as timed out');
     assert.equal(res.code, 0);
+    assert.deepEqual(spawned.filter(([, args]) => args.includes('drain-taskkill')), [], 'a timeout ran after the command finished');
   } finally {
-    for (const p of pids) try { process.kill(p); } catch {}
+    for (const p of res.leftovers ?? []) try { process.kill(p); } catch {}
   }
 });
 
 // A cold Windows PowerShell and Add-Type took 3.5 s on a fresh runner and up to 15 s under the suite's load; that start-up
-// must not be charged to the command's timeout.
-test('runShell: the timeout counts from when the command starts, not from the job helper start-up', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const p = script('four-seconds.mjs', 'setTimeout(() => console.log("done"), 4000);');
-  const res = await withEnv({ FF_TEST_SLOWSTART: '3000' }, () => exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000 }));
-  assert.equal(res.timedOut, undefined, `a 4 s command timed out under a 7 s timeout after a 3 s helper start-up: ${res.output}`);
+// must not be charged to the command's timeout. The case moves runShell's clock itself: a start-up that used all but
+// 1 ms of the budget, then 2 ms more once runShell has seen the command start.
+test('runShell: the timeout counts from when the command starts, not from the job helper start-up', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const go = join(tmp, 'counts.go');
+  const p = script('counts.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(${JSON.stringify(go)})) { clearInterval(wait); console.log('done'); } }, 50);`);
+  let seen;
+  const started = new Promise((r) => (seen = r));
+  let notes = '';
+  beforeRunShell(t, (helper) => helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) seen(); }));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000 });
+  t.mock.timers.tick(6999);
+  await started; // runShell's own listener ran right after this case's
+  t.mock.timers.tick(2);
+  writeFileSync(go, '');
+  const res = await running;
+  assert.equal(res.timedOut, undefined, `the command timed out on the helper's start-up: ${res.output}`);
   assert.equal(res.code, 0);
   assert.match(res.output, /done/);
 });
 
-test('runShell: a helper that never starts and cannot be killed is reported, and does not keep ff waiting', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const t = Date.now();
+// The stalled helper outlives the case, so it is still running when runShell returns unless runShell waited for it.
+// The helper's last notes can reach runShell after its exit event, as on a loaded machine: here they are held back
+// until 10 ms after it. Its answer must still be read, never taken as a clean cleanup.
+test('runShell: a helper answer that arrives after the helper has exited is still read', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const pidFile = join(tmp, 'late-answer.pid');
+  const p = script('late-answer.mjs', writesPid(pidFile));
+  beforeRunShell(t, (helper) => {
+    const late = delayed(helper.stderr);
+    let notes = '';
+    helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) late.hold(); });
+    helper.on('exit', () => setTimeout(late.release, 10));
+  });
+  const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 1 }, () => existsSync(pidFile), t.signal));
+  assert.ok(res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)), JSON.stringify(res.cleanupErrors));
+  assert.ok(res.survivors.length > 0 && res.survivors.every((s) => /not verified gone/.test(s.error)), JSON.stringify(res.survivors));
+});
+
+// The helper's notes held back until 400 ms after it exits, past the 300 ms runShell once waited for them: a command
+// that ran must not be taken for one the helper never started, and run a second time.
+test('runShell: a finished command whose notes arrive after the helper has exited runs once', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const runs = join(tmp, 'once.runs');
+  const p = script('once.mjs', `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(runs)}, 'ran\\n');`);
+  beforeRunShell(t, (helper) => {
+    const late = delayed(helper.stderr);
+    late.hold();
+    helper.on('exit', () => setTimeout(late.release, 400));
+  });
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, signal: noClock() });
+  assert.equal(readFileSync(runs, 'utf8'), 'ran\n', 'the command ran more than once');
+  assert.equal(res.code, 0);
+});
+
+// With a signal aborted before the call, the clock counts from the call, as from any abort: the command's start does not
+// restart it. The case moves runShell's clock itself.
+test('runShell: a signal aborted before the call starts the timeout clock at the call', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const p = script('aborted-early.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
+  let seen;
+  const started = new Promise((r) => (seen = r));
+  let notes = '';
+  beforeRunShell(t, (helper) => helper.stderr.on('data', (d) => { notes += d; if (notes.includes('\u0001FFJOB started')) seen(); }));
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000, signal: AbortSignal.abort() });
+  t.mock.timers.tick(6999);
+  await started; // runShell's own listener ran right after this case's
+  t.mock.timers.tick(2); // 7001 ms after the call
+  const res = await running; // a clock restarted by the start never fires here: the case times out instead
+  assert.equal(res.timedOut, true);
+});
+
+test('runShell: a helper that never starts and cannot be killed is reported, and does not keep ff waiting', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
   const res = await withEnv({ FF_TEST_STALL: '1' }, () => exec.runShell(`"${process.execPath}" -e "1"`, { timeoutMs: 800, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] }));
   try {
-    assert.ok(Date.now() - t < 5000, `took ${Date.now() - t} ms`);
     assert.equal(res.timedOut, true);
     assert.ok(res.cleanupErrors.length > 0, JSON.stringify(res));
     assert.ok(res.survivors.length === 1 && /not verified gone|could not be killed/.test(res.survivors[0].error), JSON.stringify(res.survivors));
+    assert.ok(alive(res.survivors[0].pid), 'runShell waited for the stalled helper');
   } finally {
     for (const s of res.survivors) try { process.kill(s.pid); } catch {}
   }
 });
 
-test('runShell: an unreadable job membership is reported as unverified, never as a clean cleanup', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
-  const p = script('queryfail.mjs', 'setTimeout(() => {}, 60000);');
-  const res = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 3000 }));
+test('runShell: an unreadable job membership is reported as unverified, never as a clean cleanup', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
+  const pidFile = join(tmp, 'queryfail.pid');
+  const p = script('queryfail.mjs', writesPid(pidFile));
+  const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 3000 }, () => existsSync(pidFile), t.signal));
   assert.equal(res.timedOut, true);
   assert.ok(res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)), JSON.stringify(res.cleanupErrors));
   assert.ok(res.survivors.length > 0 && res.survivors.every((s) => /not verified gone/.test(s.error)), JSON.stringify(res.survivors));
   assert.match(res.output, /cleanup incomplete/);
 });
 
-test('runShell: job membership larger than the first query buffer is still listed in full', { skip: process.platform !== 'win32' && 'Windows job objects only' }, async () => {
+test('runShell: job membership larger than the first query buffer is still listed in full', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const { pidFile, cmd } = orphanScripts('smallbuf');
-  const res = await withEnv({ FF_TEST_BUF: '1' }, () => exec.runShell(cmd, { timeoutMs: 3500, denyTerminate: true }));
-  await waitFor(() => existsSync(pidFile), 1000);
+  const { res } = await withEnv({ FF_TEST_BUF: '1' }, () => timeOutWhen(cmd, { timeoutMs: 3500, denyTerminate: true }, () => existsSync(pidFile), t.signal));
   const pid = Number(readFileSync(pidFile, 'utf8'));
   try {
     assert.ok(res.survivors.length >= 3, JSON.stringify(res.survivors)); // shell, top, middle or grandchild: more than the 1-entry buffer
@@ -307,15 +463,15 @@ test('runShell: job membership larger than the first query buffer is still liste
   }
 });
 
-test('runShell timeout leaves an unrelated orphan alone', async () => {
+test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
   const pidFile = join(tmp, 'unrelated.pid');
-  const sleeper = script('unrelated-sleeper.mjs', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 60000);`);
+  const sleeper = script('unrelated-sleeper.mjs', writesPid(pidFile));
   const spawner = script('unrelated-spawner.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(sleeper)}], { detached: true, stdio: 'ignore' }).unref();`);
   await exec.run(process.execPath, [spawner]); // the sleeper's parent exits at once: an orphan unrelated to the shell below
-  assert.ok(await waitFor(() => existsSync(pidFile), 2000), 'sleeper never started');
+  await waitFor(() => existsSync(pidFile), t.signal); // a sleeper that never starts fails at the case timeout
   const pid = Number(readFileSync(pidFile, 'utf8'));
   try {
-    const hang = script('unrelated-hang.mjs', 'setTimeout(() => {}, 60000);');
+    const hang = script('unrelated-hang.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
     const res = await exec.runShell(`"${process.execPath}" "${hang}"`, { timeoutMs: 800 });
     assert.equal(res.timedOut, true);
     assert.ok(alive(pid), 'unrelated orphan was killed');

@@ -8,7 +8,6 @@ import * as marker from '../../lib/marker.mjs';
 import * as golden from './golden.mjs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-import * as gitModule from '../../lib/git.mjs';
 import * as locks from '../../lib/locks.mjs';
 import * as run from '../../lib/run.mjs';
 
@@ -18,8 +17,8 @@ export const FIRST_VISIT = [
   ['red', 1], ['red', 2], ['red', 3], ['green', 1], ['green', 2], ['green', 3], ['green', 4], ['green', 5],
 ].map(([phase, ordinal]) => ({ phase, ordinal, attempt: 1, outcome: 'ok' }));
 
-export async function firstVisit(t) {
-  const g = await golden.setup(t);
+export async function firstVisit(t, opts) {
+  const g = await golden.setup(t, opts);
   g.result = await interpreter.runExecution(g.options);
   g.events = g.readEvents();
   return g;
@@ -79,8 +78,8 @@ export async function reviewSetup(t, responses, opts) {
   return g;
 }
 
-export async function reviewFlow(t, responses, { exec } = {}) {
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses } });
+export async function reviewFlow(t, responses, { exec, integrity, git } = {}) {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
   const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
   writeFileSync(reviewerPersona, REVIEWER_PERSONA);
   const implementer = g.flow.ticket.vertices.implementer;
@@ -166,11 +165,12 @@ export function contendRepoLock(t, commonDir, during) {
 export function lockedSetup(g, after) {
   const counts = {};
   const raw = Object.fromEntries(['writeTree', 'commitStaged', 'push'].map((verb) => [verb, async (...args) => {
-    const out = await gitModule[verb](...args);
+    const out = await git[verb](...args);
     counts[verb] = (counts[verb] ?? 0) + 1;
     after(verb, counts[verb]);
     return out;
   }]));
-  g.options.git = run.lockedGit({ ...gitModule, ...raw }, g.commonDir);
+  const git = g.options.git;
+  g.options.git = run.lockedGit({ ...git, ...raw }, g.commonDir);
   return counts;
 }

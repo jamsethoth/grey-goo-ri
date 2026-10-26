@@ -15,7 +15,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/2/review/1': reviewed(review('ok', [finding('minor', 'lib/add.mjs', 'name the parameters')])),
-  });
+  }, { git: 'real' });
 
   assert.equal(g.result.outcome, 'done');
   const seq = (vertex, visit, phase, n) => Array.from({ length: n }, (_, i) => `${vertex}/${visit}/${phase}/${i + 1}`);

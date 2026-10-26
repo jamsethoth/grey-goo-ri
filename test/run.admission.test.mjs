@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import * as config from '../lib/config.mjs';
-import * as gitModule from '../lib/git.mjs';
 import { pathKey } from '../lib/paths.mjs';
 import * as record from '../lib/record.mjs';
 import * as run from '../lib/run.mjs';
@@ -127,8 +126,8 @@ test('a Ticket in a repository reached through a linked directory reaches done a
 });
 
 test('unknown dirty state is held with the diff stat', async (t) => {
-  const f = fixture(t);
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const f = fixture(t, { integrity: 'real' });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const edited = '{ "scripts": { "test": "node --test" }, "human": true }\n';
   writeFileSync(join(f.worktree, 'package.json'), edited);
   writeFileSync(join(f.worktree, 'notes.txt'), 'my notes\n');
@@ -164,8 +163,8 @@ function assertConflictHeld(f, results, before) {
 }
 
 test('a merge conflict at ticket start is held with the diff stat', async (t) => {
-  const f = fixture(t);
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const f = fixture(t, { git: 'real' });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const before = conflict(f.worktree);
 
   assertConflictHeld(f, await run.runTarget(f.options), before);
@@ -178,8 +177,8 @@ test('a merge conflict at ticket start is held with the diff stat', async (t) =>
 });
 
 test('dirty hold advice explains how a held Execution Record can be inspected and restarted', async (t) => {
-  const f = fixture(t);
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  const f = fixture(t, { integrity: 'real' });
+  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
     configHash: 'x', run: 'seed', worktree: f.worktree, branch: BRANCH, base: 'main' });
@@ -189,7 +188,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   assert.ok(f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET} is held`) && b.includes('SQLite client')));
   assert.ok(f.comments().some((b) => b.includes('Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.')));
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal(pathKey((await gitModule.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir), 'the linked worktree uses the main checkout State Database');
+  assert.equal(pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir), 'the linked worktree uses the main checkout State Database');
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   const held = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(held.state, 'held');
@@ -203,7 +202,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
 });
 
 test('a merge conflict in the worktree of a resumed execution is held, not faulted', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
   const before = conflict(f.worktree);
 
@@ -213,7 +212,7 @@ test('a merge conflict in the worktree of a resumed execution is held, not fault
 });
 
 test('a commit interrupted before it landed is admitted and replayed', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
   const seeded = await crashBeforeCommit(f);
   assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['commit'], 'the record holds the intended commit');
   assert.notEqual(sh(f.worktree, 'status', '--porcelain'), '', 'the staged implementation waits for its commit');
@@ -227,7 +226,7 @@ test('a commit interrupted before it landed is admitted and replayed', async (t)
 });
 
 test('a commit interrupted before it landed is held once a human changed the worktree', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
   await crashBeforeCommit(f);
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
   const staged = sh(f.worktree, 'diff', '--cached', '--name-only');

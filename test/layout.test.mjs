@@ -24,3 +24,21 @@ test('every module in the AGENTS.md layout imports', async () => {
     assert.equal(typeof mod, 'object', path);
   }
 });
+
+// lib/git.mjs is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
+test('no module outside lib/git.mjs passes git a command line', async () => {
+  const git = await import(pathToFileURL(`${root}lib/git.mjs`));
+  assert.equal(git.runGit, undefined, 'runGit is not exported');
+  const raw = [
+    [/\brunGit\b/, 'runGit'],
+    [/\b(?:run|spawn|spawnSync|execFile|execFileSync)\(\s*['"`]git['"`]/, 'a spawned git'],
+    [/\^\{|\.\.\.HEAD|refs\/heads\/|['"`]HEAD['"`]/, 'git ref syntax'],
+    [/['"`]:\([a-z,]+\)/, 'a git pathspec'],
+    // bin/gg.mjs passes lib/git.mjs in; a module that imported it could fall back to it instead of the git it was given.
+    [/from ['"`]\.\/git\.mjs['"`]/, 'an import of lib/git.mjs'],
+  ];
+  for (const path of [...modules.filter((m) => m !== 'lib/git.mjs'), 'bin/gg.mjs', 'scripts/run-suite.mjs']) {
+    const text = await readFile(root + path, 'utf8');
+    for (const [re, what] of raw) assert.doesNotMatch(text, re, `${path} builds ${what}`);
+  }
+});

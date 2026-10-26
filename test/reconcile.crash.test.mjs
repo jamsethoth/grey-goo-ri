@@ -25,7 +25,7 @@ const RESTORE_CRASHES = {
 };
 
 async function crashedRestore(t, crash) {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   for (const [p, text] of Object.entries(RESTORED)) {
     mkdirSync(join(g.worktree, p, '..'), { recursive: true });
     writeFileSync(join(g.worktree, p), text);
@@ -121,7 +121,7 @@ const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 for (const [action, effect] of Object.entries(EFFECTS)) {
   for (const [point, expect] of Object.entries(POINTS)) {
     test(expect.name(action), async (t) => {
-      const g = await golden.setup(t);
+      const g = await golden.setup(t, { git: 'real' });
       const { m, loaded } = await crashed(g, effect.at, point);
       assert.equal(effect.happened(g, m), expect.happened, `the crash came ${point}`);
       assert.deepEqual(stepsOf(loaded, m), expect.steps, `the log as the crash ${point} left it`);

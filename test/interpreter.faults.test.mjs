@@ -13,8 +13,8 @@ import {
 const ok = (files) => ({ files, response: golden.greenResponse });
 
 // The suite passes only once lib/add.mjs really adds, so a wrong green fails the Green Check.
-async function greenSetup(t, responses) {
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses } });
+async function greenSetup(t, responses, integrity, git) {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
   g.options.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
@@ -37,7 +37,7 @@ function stopReason(g, { phase, ordinal, outcome, rule, comment }) {
 }
 
 test('golden: an invalid structured response is retried once with a nudge then stops', async (t) => {
-  const g = await golden.setup(t, { responses: {
+  const g = await golden.setup(t, { git: 'real', responses: {
     ...structuredClone(golden.firstVisitResponses),
     'implementer/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
     'implementer/1/green/2': { files: {}, response: { ...golden.greenResponse, claim: 'ok blocked' } },
@@ -61,7 +61,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
 });
 
 test('golden: an integrity violation restores the baseline and stops at needs-human', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
@@ -91,7 +91,7 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
 });
 
 test('an integrity violation removes an injected ignored Protected File and restores a pre-existing one', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   mkdirSync(join(g.worktree, '.claude', 'skills', 'injected'), { recursive: true });
   writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
   const local = join(g.worktree, '.claude', 'settings.local.json');
@@ -143,7 +143,7 @@ test('a test-fix that changes the committed test is rolled back to its baseline 
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
     'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
-  });
+  }, 'real');
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -164,7 +164,7 @@ test('a test-fix that adds an ignored test file has it removed by the rollback',
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
     'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
-  });
+  }, 'real');
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -174,7 +174,7 @@ test('a test-fix that adds an ignored test file has it removed by the rollback',
 });
 
 test('an ignored test file that was there before the call gets its bytes back from the rollback', async (t) => {
-  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) });
+  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) }, 'real');
   excludeTests(g, 'test/owner.test.mjs');
   mkdirSync(join(g.worktree, 'test'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'owner');
@@ -189,7 +189,7 @@ test('an integrity violation on a Protected File also removes an ignored test fi
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
     'implementer/1/test-fix/1': ok({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
-  });
+  }, 'real');
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -442,7 +442,7 @@ test('blocked after test-fix stops', async (t) => {
 });
 
 test('requireTestPass false is recorded on every event and does not block advance', async (t) => {
-  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) }, 'fake', 'real');
   g.flow.ticket.vertices.implementer.options = { requireTestPass: false };
   const { outcome } = await interpreter.runExecution(g.options);
 

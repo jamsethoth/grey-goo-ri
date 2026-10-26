@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as checks from '../lib/checks.mjs';
+import * as integrity from '../lib/integrity.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as record from '../lib/record.mjs';
 import * as marker from '../lib/marker.mjs';
@@ -12,7 +14,7 @@ import {
 } from './support/interpreter.mjs';
 
 test('golden: first-visit pass runs the tdd actions in order to done', async (t) => {
-  const g = await firstVisit(t);
+  const g = await firstVisit(t, { integrity: 'real' });
 
   assert.deepEqual(golden.trace(g.events).filter((e) => TDD_PHASES.includes(e.phase)), FIRST_VISIT);
   const end = g.events.at(-1);
@@ -112,7 +114,7 @@ test('each public field is redacted once and sent exactly as its intent saved it
     qa: { setup: 'TOKEN setup', steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
       edgeCases: ['TOKEN edge'], automated: ['TOKEN automated'], manual: ['TOKEN manual'] },
   });
-  const g = await golden.setup(t, { responses });
+  const g = await golden.setup(t, { responses, git: 'real' });
   g.options.ticket.title = 'Add TOKEN';
   g.options.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
@@ -202,7 +204,7 @@ const ghWrite = (args) => golden.isCommentPost(args) || (args[0] === 'issue' && 
   || (args[0] === 'label' && args[1] === 'create') || (args[0] === 'pr' && ['create', 'edit', 'ready'].includes(args[1]));
 
 test('a run stop during a repo-lock wait skips the queued effect and only needs-human reporting follows', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { integrity: 'real' });
   const runState = { stop: null, remoteNotBefore: 0 };
   let before;
   let written;
@@ -230,4 +232,21 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.ok(golden.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');
   assert.ok(ticketComments(g).at(-1).body.startsWith('### gg: needs-human'));
   assert.ok(writes[1].args.join(' ').includes('--add-label gg:state:needs-human'), 'the needs-human label');
+});
+
+test('runExecution uses an injected integrity and Test Immutability', async (t) => {
+  const g = await golden.setup(t, { git: 'real' });
+  const calls = [];
+  const spy = (name, fn) => async (...args) => {
+    calls.push(name);
+    return fn(...args);
+  };
+  const bound = integrity.withGit(g.options.git);
+  const injected = Object.fromEntries(['snapshot', 'isCleanAt', 'untrackedFiles', 'ignoredFiles', 'restoreUntracked', 'begin', 'end']
+    .map((name) => [name, spy(name, bound[name])]));
+  const testImmutability = (cwd, baseline) => checks.testImmutability(cwd, baseline, { git: g.options.git });
+  const result = await interpreter.runExecution({ ...g.options, integrity: injected, testImmutability: spy('testImmutability', testImmutability) });
+  assert.equal(result.outcome, 'done');
+  // Clean before red, then each agent call between its begin and end, then Test Immutability with the Green Check.
+  assert.deepEqual(calls, ['isCleanAt', 'begin', 'end', 'begin', 'end', 'testImmutability']);
 });

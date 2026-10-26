@@ -5,7 +5,6 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as config from '../lib/config.mjs';
-import * as gitModule from '../lib/git.mjs';
 import * as github from '../lib/github.mjs';
 import * as record from '../lib/record.mjs';
 import * as run from '../lib/run.mjs';
@@ -94,7 +93,7 @@ test('every line a Run prints names its repository, in the terminal and in run.l
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
     configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(rec);
-  f.options.git = { ...gitModule, ensureWorktree: async () => { throw new Error('worktree add failed'); } };
+  f.options.git = { ...f.options.git, ensureWorktree: async () => { throw new Error('worktree add failed'); } };
   failComment(f);
 
   await run.runTarget(f.options);

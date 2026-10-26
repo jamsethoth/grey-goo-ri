@@ -37,7 +37,8 @@ export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
 // A temp origin and clone, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view, and `issues`
 // those of one issue number.
-export function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, issues = {}, rootName = 'gg-run-', linked = false } = {}) {
+// git is the fake unless `git` or `integrity` is 'real'.
+export function fixture(t, { responses = golden.firstVisitResponses, failEdit = false, failCreate = false, repoLabels, labels = [], branch = BRANCH, harness: harnessName, fullFlow, issue = {}, issues = {}, rootName = 'gg-run-', linked = false, integrity, git: which = integrity === 'real' ? 'real' : 'fake' } = {}) {
   // linked: every path gg is given goes through a junction, as through a symlinked TMPDIR or a Windows 8.3 name.
   const real = mkdtempSync(join(tmpdir(), rootName));
   const root = linked ? `${real}-link` : real;
@@ -49,7 +50,8 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
     if (linked) rmSync(root, { recursive: true, force: true }); // removes the link, not its target
     rmSync(real, { recursive: true, force: true });
   });
-  const base = golden.seedRepos(real);
+  const { base, git, fakeGit } = golden.seedGit(real, which);
+  const fakeIntegrity = golden.fakeOf(integrity, base);
 
   const fake = golden.fakeGh({ branch, repoLabels });
   for (const l of labels) fake.labels.add(l);
@@ -83,12 +85,12 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
   const clock = { now: () => now, sleep: async (ms) => { now += ms; } };
   const cfg = testConfig(root, { harness: harnessName, fullFlow });
   const worktree = gitModule.worktreePath(cfg.worktreeRoot, 'main', TICKET);
-  const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git: gitModule, exec, cwd: mainRoot,
-    log: (m) => logs.push(m), clock };
+  const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git, exec, cwd: mainRoot,
+    log: (m) => logs.push(m), clock, ...golden.injected(fakeIntegrity) };
   return {
-    root, real, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options,
+    root, real, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options, fakeGit,
     readEvents: () => events.readEvents(commonDir),
-    worktrees: () => sh(mainRoot, 'worktree', 'list').split('\n').length,
+    worktrees: () => (fakeGit ? fakeGit.worktreeCount(mainRoot) : sh(mainRoot, 'worktree', 'list').split('\n').length),
     loadRow: () => record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(TICKET)?.json,
     comments: () => fake.comments.filter((c) => c.number === TICKET).map((c) => c.body),
     labelAdds: () => fake.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit')
@@ -97,8 +99,8 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
 }
 
 // An Execution of the fixture's Ticket run straight through the interpreter, as an earlier Run left it.
-export async function seedExecution(f, { git = gitModule, crashAt, exec = f.exec } = {}) {
-  await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.exec } = {}) {
+  await git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const flow = flowModule.resolveFlow(f.options.config);
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: flow.name, entry: flow.ticket.entry },
     configHash: 'cfg-hash', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
@@ -107,6 +109,7 @@ export async function seedExecution(f, { git = gitModule, crashAt, exec = f.exec
     flow, record: rec, harness: f.harness, gh: github, git, exec, events: events.eventLog(f.commonDir), log: () => {}, cwd: f.mainRoot,
     commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock: f.clock, crashAt: crashAt?.(rec),
+    integrity: f.options.integrity, testImmutability: f.options.testImmutability,
   }), (err) => err instanceof interpreter.CrashError);
   return record.load(f.commonDir, 'ticket', TICKET);
 }
@@ -114,8 +117,9 @@ export async function seedExecution(f, { git = gitModule, crashAt, exec = f.exec
 export const markerOf = (rec, vertex, visit, phase, ordinal) =>
   marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
 
-// Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock.
-export function holdLock(t, commonDir, name, holdMs = 60_000) {
+// Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock. By
+// default it holds longer than any case, so only the case releases it.
+export function holdLock(t, commonDir, name, holdMs = 600_000) {
   const child = spawn(process.execPath, [contender, commonDir, name, String(holdMs)], { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => child.kill());
   const exited = new Promise((resolve) => child.on('exit', resolve));
@@ -169,9 +173,9 @@ export const loadTicket = (f) => record.load(f.commonDir, 'ticket', TICKET);
 
 // A worktree with a human file: fresh, or the worktree of an Execution whose commit was interrupted (with its Visits).
 export async function dirtyTicket(t, seeded) {
-  const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [] });
+  const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [], integrity: 'real' });
   const seededRec = seeded ? await crashBeforeCommit(f) : null;
-  if (!seeded) await gitModule.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  if (!seeded) await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
   return { f, seededRec };
 }

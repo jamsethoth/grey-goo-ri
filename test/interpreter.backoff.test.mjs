@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as gitModule from '../lib/git.mjs';
 import * as integrity from '../lib/integrity.mjs';
 import * as run from '../lib/run.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
@@ -27,7 +26,8 @@ const pushError = () => Object.assign(new Error('git push exited 128'),
 // The golden Execution on the orchestrator's locked git, whose nth raw push runs `push(n, real)`; returns the count.
 function pushThrough(g, push) {
   let n = 0;
-  g.options.git = run.lockedGit({ ...gitModule, push: (...args) => push(++n, () => gitModule.push(...args)) }, g.commonDir);
+  const git = g.options.git;
+  g.options.git = run.lockedGit({ ...git, push: (...args) => push(++n, () => git.push(...args)) }, g.commonDir);
   return () => n;
 }
 
@@ -109,7 +109,7 @@ test('an accepted pr-ready whose call errored is repeated with one state change'
 });
 
 test('a transient push failure is retried and pushes once', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const pushes = pushThrough(g, (n, push) => (n === 1 ? Promise.reject(pushError()) : push()));
   const result = await interpreter.runExecution(g.options);
 
@@ -119,7 +119,7 @@ test('a transient push failure is retried and pushes once', async (t) => {
 });
 
 test('a push that landed but whose call errored is found on origin, not pushed again', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.setup(t, { git: 'real' });
   const pushes = pushThrough(g, async (n, push) => {
     await push();
     if (n === 1) throw pushError();
@@ -310,11 +310,11 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
 });
 
 test("a worktree backing off is idle to other Tickets' integrity checks", async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFlow(t, okReview, { git: 'real' });
   g.gh.fail(onPr({ status: 502 }));
   // Another Ticket's Action, in the main checkout, writes into this worktree while it backs off.
   const other = { worktree: g.mainRoot, commonDir: g.commonDir };
-  const check = { others: [g.worktree], protectedPaths: interpreter.PROTECTED_PATHS };
+  const check = { others: [g.worktree], protectedPaths: interpreter.PROTECTED_PATHS, git: g.options.git };
   const stray = join(g.worktree, 'stray.txt');
   let violations;
   g.clock.onSleep = async () => {

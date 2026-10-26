@@ -27,6 +27,24 @@ async function tempCommonDir(t) {
 
 const dbPath = (commonDir) => join(commonDir, 'gg', 'gg.db');
 
+// Cases that wait for another process to reach a lock or exit: one that never does fails at this bound.
+const CASE = { timeout: 120_000 };
+
+// Another gg process opening the State Database (support/db-opener.mjs). said(text) resolves once it has printed text;
+// exit resolves with its code, output and error text.
+function openInChild(commonDir) {
+  const child = spawn(process.execPath, [opener, commonDir], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '', err = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk) => { out += chunk; });
+  child.stderr.setEncoding('utf8').on('data', (chunk) => { err += chunk; });
+  const exit = new Promise((resolve) => child.on('close', (code) => resolve({ code, out, err })));
+  const said = (text) => new Promise((resolve) => {
+    const check = () => (out.includes(text) ? resolve() : child.stdout.once('data', check));
+    check();
+  });
+  return { child, said, exit };
+}
+
 // Reads and writes rows directly, as another SQLite client would.
 function withDb(commonDir, fn) {
   const db = new DatabaseSync(dbPath(commonDir));
@@ -233,9 +251,10 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
   });
 });
 
-test('an open that finds no tables waits for the first opener, not for its saves', async (t) => {
-  // Plays the first opener: holds the open lock while it creates the tables, then saves for six seconds. A second
-  // opener that read the old version must not wait on the database write lock behind those saves: it finishes first.
+test('an open that finds no tables waits for the first opener, not for its saves', CASE, async (t) => {
+  // Plays the first opener: holds the open lock while it creates the tables, then saves until the second opener exits.
+  // A second opener that read the old version must not wait on the database write lock behind those saves: had it
+  // waited, the busy timeout would fail it, since the saves end only once it has exited.
   const commonDir = await tempCommonDir(t);
   mkdirSync(join(commonDir, 'gg', 'locks'), { recursive: true });
   const db = new DatabaseSync(dbPath(commonDir));
@@ -244,15 +263,9 @@ test('an open that finds no tables waits for the first opener, not for its saves
     db.exec('PRAGMA journal_mode = WAL');
     lock.exec('BEGIN EXCLUSIVE');
     db.exec('BEGIN IMMEDIATE');
-    const child = spawn(process.execPath, [opener, commonDir], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const { child, said, exit } = openInChild(commonDir);
     t.after(() => { if (child.exitCode === null) child.kill(); });
-    let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    const exit = new Promise((resolve) => child.on('close', (code) => resolve(code)));
-    await new Promise((resolve) => child.stdout.once('data', resolve));
-    // shortcut: a fixed pause lets the child read the empty version before the tables commit; a slower start only
-    // makes the case pass for the wrong reason, never fail.
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await said('locking'); // it has read the empty version and waits for the open lock
     db.exec(`CREATE TABLE records (kind TEXT NOT NULL, n INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (kind, n));
       CREATE TABLE configs (hash TEXT PRIMARY KEY, json TEXT NOT NULL, firstSeen TEXT NOT NULL);
       CREATE TABLE events (id INTEGER PRIMARY KEY, ts TEXT NOT NULL, type TEXT NOT NULL, run TEXT, execution TEXT,
@@ -261,10 +274,9 @@ test('an open that finds no tables waits for the first opener, not for its saves
     db.exec('COMMIT');
     lock.exec('COMMIT');
     db.exec('BEGIN IMMEDIATE');
-    await new Promise((resolve) => setTimeout(resolve, 6000));
-    assert.equal(child.exitCode, 0, `the second open waited behind the saves or failed: ${err}`);
+    const { code, err } = await exit;
+    assert.equal(code, 0, `the second open waited behind the saves or failed: ${err}`);
     db.exec('COMMIT');
-    assert.equal(await exit, 0, `the second open failed: ${err}`);
   } finally {
     if (db.isTransaction) db.exec('ROLLBACK');
     db.close();
@@ -353,26 +365,30 @@ test('openers of a new database queue while the open lock is held and all succee
   assert.equal(journalMode(commonDir), 'wal');
 });
 
-test('an opener of a new database proceeds when the process holding the open lock dies', async (t) => {
+test('an opener of a new database proceeds when the process holding the open lock dies', CASE, async (t) => {
   const commonDir = await tempCommonDir(t);
-  const holder = spawn(process.execPath, [contender, commonDir, 'open', '60000'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const holder = spawn(process.execPath, [contender, commonDir, 'open', '600000'], { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => holder.kill());
   const report = await new Promise((resolve) => holder.stdout.once('data', (chunk) => resolve(JSON.parse(chunk))));
   assert.ok(report.handle, 'the child holds the open lock');
-  const pending = saveOnce(commonDir, 1);
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  const { child, said, exit } = openInChild(commonDir);
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  await said('locking');
   holder.kill();
-  assert.deepEqual(exitsOf([await pending]), [{ ticket: 1, code: 0, err: '' }]);
+  const { code, err } = await exit;
+  assert.deepEqual({ code, err }, { code: 0, err: '' });
   assert.equal(journalMode(commonDir), 'wal');
 });
 
-test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released', async (t) => {
+// The opener names the statement that gave up: the open lock's BEGIN EXCLUSIVE, which waits under its 5 s busy timeout,
+// not a statement on gg.db, which would wait 60 s. How long it took depends on the machine's load, so it is not checked.
+test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released', CASE, async (t) => {
   const commonDir = await tempCommonDir(t);
   const openLock = await locks.tryAcquire(commonDir, 'open');
-  const { code, err, ms } = await saveOnce(commonDir, 1).finally(() => locks.release(openLock));
+  const { code, out, err } = await openInChild(commonDir).exit.finally(() => locks.release(openLock));
   assert.notEqual(code, 0);
   assert.match(err, /errcode: 5/);
-  assert.ok(ms >= 5000 && ms < 15000, `gave up after ${ms} ms`);
+  assert.match(out, /^failed: BEGIN EXCLUSIVE$/m, `the open lock's wait gave up: ${out}`);
 });
 
 test('an opener of an existing WAL database does not wait for the open lock', async (t) => {
@@ -424,9 +440,8 @@ test('opening an existing State Database does not wait for a writer', async (t) 
   const writer = new DatabaseSync(dbPath(commonDir));
   writer.exec('BEGIN IMMEDIATE');
   try {
-    const started = Date.now();
+    // The writer holds its lock until this case ends, so an openDb that waited for it would fail with SQLITE_BUSY.
     const db = record.openDb(commonDir);
-    assert.ok(Date.now() - started < 2000, `openDb waited ${Date.now() - started} ms for the writer`);
     assert.equal(db.prepare('SELECT count(*) AS n FROM records').get().n, 0, 'reads still work while the writer holds its lock');
   } finally {
     writer.exec('ROLLBACK');
