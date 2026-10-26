@@ -1,10 +1,10 @@
 // Golden-trace fixture: a temp bare origin and clone with a ticket worktree, a fake gh at lib/github.mjs's seam,
 // a fake test runner, the fake harness, and every harness, test, git and gh call tagged with the activity it observed.
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
@@ -15,6 +15,9 @@ import * as labelModule from '../../lib/labels.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 import * as fakeIntegrityModule from './fake-integrity.mjs';
 import * as fakeGitModule from './fake-git.mjs';
+import * as templateRepos from './template-repos.mjs';
+
+export { seedRepos } from './template-repos.mjs';
 
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
@@ -75,49 +78,15 @@ export const oneVertexFlow = (persona) => ({
 export const trace = (evs) => evs.filter((e) => e.type === 'action')
   .map(({ phase, ordinal, attempt, outcome }) => ({ phase, ordinal, attempt, outcome }));
 
-// The bare origin.git and its clone main that every test repo starts from, built once per test process: building them
-// costs a test seven git processes. Auto maintenance and gc are off, so no git call spawns another.
-let template;
-const TEMPLATE_PACKAGE = '{ "scripts": { "test": "node --test" } }\n';
-function buildTemplate() {
-  const root = mkdtempSync(join(tmpdir(), 'gg-template-'));
-  process.on('exit', () => rmSync(root, { recursive: true, force: true }));
-  sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
-  const origin = join(root, 'origin.git');
-  sh(origin, 'config', 'maintenance.auto', 'false'); sh(origin, 'config', 'gc.auto', '0');
-  sh(root, 'clone', '-q', 'origin.git', 'main');
-  const mainRoot = join(root, 'main');
-  sh(mainRoot, 'config', 'maintenance.auto', 'false'); sh(mainRoot, 'config', 'gc.auto', '0');
-  sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
-  writeFileSync(join(mainRoot, 'package.json'), TEMPLATE_PACKAGE);
-  sh(mainRoot, 'add', '-A');
-  sh(mainRoot, 'commit', '-q', '-m', 'init');
-  sh(mainRoot, 'push', '-q', 'origin', 'main');
-  return { root, url: sh(mainRoot, 'config', 'remote.origin.url'), base: sh(mainRoot, 'rev-parse', 'main') };
-}
-
-// Copies the template's origin.git and main into `dir`, a fresh mkdtemp directory, and returns main's SHA. git records
-// a clone's origin by its real path with forward slashes, so `dir` is the real directory, never a link to it.
-export function seedRepos(dir) {
-  template ??= buildTemplate();
-  cpSync(template.root, dir, { recursive: true });
-  const config = join(dir, 'main', '.git', 'config');
-  const text = readFileSync(config, 'utf8');
-  const url = `${template.url.slice(0, -`${basename(template.root)}/origin.git`.length)}${basename(dir)}/origin.git`;
-  if (dirname(dir) !== dirname(template.root) || text.split(template.url).length !== 2) throw new Error(`cannot point ${config} at ${url}`);
-  writeFileSync(config, text.replace(template.url, url));
-  return template.base;
-}
-
 // The fake integrity, or null for the real one, and the options that inject it into runExecution or gg run.
 export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head }));
 export const injected = (fake) => (fake ? { integrity: fake.integrity, testImmutability: fake.testImmutability } : {});
 
 // The template's repos, in real git or in a fake git, and the git module to inject. Returns main's SHA.
 export function seedGit(root, which) {
-  if (which === 'real') return { base: seedRepos(root), git: gitModule, fakeGit: null };
+  if (which === 'real') return { base: templateRepos.seedRepos(root), git: gitModule, fakeGit: null };
   const fake = fakeGitModule.fakeGit();
-  return { base: fake.init(root, { files: { 'package.json': TEMPLATE_PACKAGE } }).base, git: fake.git, fakeGit: fake };
+  return { base: fake.init(root, { files: { 'package.json': templateRepos.TEMPLATE_PACKAGE } }).base, git: fake.git, fakeGit: fake };
 }
 
 // git and integrity are fakes unless `git` or `integrity` is 'real', for a test whose subject is git behaviour; real

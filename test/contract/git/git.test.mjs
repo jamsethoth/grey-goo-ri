@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as gitModule from '../../../lib/git.mjs';
 import { pathKey } from '../../../lib/paths.mjs';
+import * as templateRepos from '../../support/template-repos.mjs';
 
 const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
 
@@ -17,15 +18,12 @@ const tempRoot = (t) => {
   return root;
 };
 
-// A clone of a bare origin with one empty commit on main, and the steps a case takes outside gg, in real git.
+// A copy of the template's bare origin and its clone, with one commit on main, and the steps a case takes outside gg, in
+// real git.
 function realRepo(t) {
   const root = tempRoot(t);
-  sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
-  sh(root, 'clone', '-q', 'origin.git', 'main');
+  templateRepos.seedRepos(root);
   const mainRoot = join(root, 'main');
-  sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
-  sh(mainRoot, 'commit', '-q', '--allow-empty', '-m', 'init');
-  sh(mainRoot, 'push', '-q', 'origin', 'main');
   return {
     git: gitModule, root, mainRoot,
     commit: (dir, message) => { sh(dir, 'add', '-A'); sh(dir, 'commit', '-q', '--allow-empty', '-m', message); return sh(dir, 'rev-parse', 'HEAD'); },
