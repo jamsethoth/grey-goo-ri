@@ -32,6 +32,15 @@ function booleanTable(name, n, rowCount) {
   return { name, fields, rows };
 }
 
+// Five 10-value enums, all mentioned by row 0; row k matches one distinct (e0, e1) pair, so no two rows overlap.
+function enumGrid(name, rowCount) {
+  const fields = {};
+  for (let f = 0; f < 5; f++) fields[`response.e${f}`] = { kind: 'enum', values: Array.from({ length: 10 }, (_, v) => `v${v}`) };
+  const rows = [{ when: { 'response.e0': 'v0', 'response.e1': 'v0', 'response.e2': 'v0', 'response.e3': 'v0', 'response.e4': 'v0' }, outcome: 'o0' }];
+  for (let k = 1; k < rowCount; k++) rows.push({ when: { 'response.e0': `v${k % 10}`, 'response.e1': `v${Math.floor(k / 10)}` }, outcome: `o${k}` });
+  return { name, fields, rows };
+}
+
 test('first match picks the earliest matching row', async () => {
   const rules = await load();
   const input = { claim: 'ok', check: { 'review-pass': 'passed', repeat: 'failed' }, response: { needsTest: true } };
@@ -317,6 +326,15 @@ test('a table just under the work limit is analysed', async () => {
   const result = rules.analyse(booleanTable('wide.passed', 20, 9));
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings.map(w => [w.rows, w.from]), [[[1, 8], 0]]);
+});
+
+test('a table exactly at the work limit is analysed', async () => {
+  const rules = await load();
+  assert.equal(rules.WORK_LIMIT, 10_000_000);
+  // 10**5 points times 100 rows is exactly 10,000,000 row checks.
+  const result = rules.analyse(enumGrid('grid.passed', 100));
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, []);
 });
 
 test('a table just over it (many booleans) is an error naming the table', async () => {
