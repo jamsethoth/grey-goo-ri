@@ -2,16 +2,20 @@
   "source": "docs/research/user-defined-procedures-example-flow.md: every Rule Table of the example Flow",
   "tables": [
     {
-      "name": "red.stopped",
-      "fields": { "response.reason": { "enum": ["none", "misscoped", "no-test-needed"] } },
+      "name": "tests-fail.stopped",
+      "fields": {
+        "response.reason": { "kind": "enum", "values": ["none", "misscoped", "needs-input", "environment", "no-test-needed"] }
+      },
       "rows": [
         { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" },
         { "when": { "response.reason": "no-test-needed" }, "outcome": "no-test" }
       ]
     },
     {
-      "name": "green.stopped",
-      "fields": { "response.reason": { "enum": ["none", "misscoped", "bad-test"] } },
+      "name": "implement.stopped",
+      "fields": {
+        "response.reason": { "kind": "enum", "values": ["none", "misscoped", "needs-input", "environment", "bad-test"] }
+      },
       "rows": [
         { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" },
         { "when": { "response.reason": "bad-test" }, "outcome": "bad-test" }
@@ -19,16 +23,18 @@
     },
     {
       "name": "fix.stopped",
-      "fields": { "response.reason": { "enum": ["none", "misscoped"] } },
+      "fields": {
+        "response.reason": { "kind": "enum", "values": ["none", "misscoped", "needs-input", "environment", "bad-test"] }
+      },
       "rows": [{ "when": { "response.reason": "misscoped" }, "outcome": "misscoped" }]
     },
     {
       "name": "review.passed",
       "fields": {
-        "claim": { "enum": ["ok", "changes"] },
-        "check.review-pass": { "enum": ["passed", "failed", "not-run"] },
-        "check.repeat": { "enum": ["passed", "failed", "not-run"] },
-        "response.needsTest": { "type": "boolean" }
+        "claim": { "kind": "enum", "values": ["ok", "changes"] },
+        "check.review-pass": { "kind": "enum", "values": ["passed", "failed", "not-run"] },
+        "check.repeat": { "kind": "enum", "values": ["passed", "failed", "not-run"] },
+        "response.needsTest": { "kind": "boolean" }
       },
       "rows": [
         { "when": { "claim": "ok", "check.review-pass": "passed" }, "outcome": "ok" },
@@ -38,7 +44,9 @@
     },
     {
       "name": "review.stopped",
-      "fields": { "response.reason": { "enum": ["none", "misscoped"] } },
+      "fields": {
+        "response.reason": { "kind": "enum", "values": ["none", "misscoped", "needs-input", "environment"] }
+      },
       "rows": [{ "when": { "response.reason": "misscoped" }, "outcome": "misscoped" }]
     }
   ]
