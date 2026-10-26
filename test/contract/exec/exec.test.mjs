@@ -418,8 +418,8 @@ test('runShell: the timeout counts from when the command starts, not from the jo
 });
 
 // The helper's last notes can reach runShell after its exit event, as on a loaded machine: here they are held back
-// until every exit listener has run. Its answer must still be read, never taken as a clean cleanup. The timeout fires
-// as soon as runShell has seen the command start.
+// until the next turn of the event loop, after everything the exit set going has run. Its answer must still be read,
+// never taken as a clean cleanup. The timeout fires as soon as runShell has seen the command start.
 test('runShell: a helper answer that arrives after the helper has exited is still read', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const p = script('late-answer.mjs', writesPid(join(tmp, 'late-answer.pid')));
   const timers = manualTimers();
@@ -433,7 +433,7 @@ test('runShell: a helper answer that arrives after the helper has exited is stil
       // A microtask runs once runShell's own listener has seen the start.
       queueMicrotask(() => timers.tick(1));
     });
-    helper.on('exit', () => queueMicrotask(late.release));
+    helper.on('exit', () => setImmediate(late.release));
   };
   const res = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, timers, onHelper }));
   assert.ok(res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)), JSON.stringify(res.cleanupErrors));
