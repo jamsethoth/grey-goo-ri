@@ -73,18 +73,26 @@ test('test immutability sees a test added under an ignored directory but not ins
 
 // Rollback lists untracked tests through git's :(glob) pathspecs and Test Immutability classifies with its own matcher,
 // so every glob preflight accepts must select the same paths in both.
+// Each glob is asserted alone, so one that breaks cannot hide behind another that selects the same path.
 test('git and the test path matcher select the same paths for every kind of glob preflight accepts', async (t) => {
   const dir = tempDir(t);
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
-  const paths = ['spec/unit/a.mjs', 'specs/b.mjs', 'deep/x/z.mjs', 'deep/x.mjs', 'top.test.mjs', 'a.test.d/x.mjs', 'scripts/run-suite.mjs'];
-  for (const p of paths) {
-    mkdirSync(join(dir, p, '..'), { recursive: true });
-    writeFileSync(join(dir, p), 'x');
-  }
-  const globs = ['spec', '**/x/**', '*.test.*', 'de*/**/z.mjs', 'scripts/run-suite.mjs'];
-  const selected = ['deep/x/z.mjs', 'scripts/run-suite.mjs', 'spec/unit/a.mjs', 'top.test.mjs'];
-  assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { globs } }), selected);
-  assert.deepEqual(paths.filter(checks.testPathMatcher(globs)).sort(), selected);
+  mkdirSync(join(dir, 'spec', 'unit'), { recursive: true }); mkdirSync(join(dir, 'specs'));
+  mkdirSync(join(dir, 'deep', 'x'), { recursive: true }); mkdirSync(join(dir, 'a.test.d')); mkdirSync(join(dir, 'scripts'));
+  writeFileSync(join(dir, 'spec', 'unit', 'a.mjs'), 'x'); writeFileSync(join(dir, 'specs', 'b.mjs'), 'x');
+  writeFileSync(join(dir, 'deep', 'x', 'z.mjs'), 'x'); writeFileSync(join(dir, 'deep', 'x.mjs'), 'x'); writeFileSync(join(dir, 'deep', 'z.mjs'), 'x');
+  writeFileSync(join(dir, 'top.test.mjs'), 'x'); writeFileSync(join(dir, 'a.test.d', 'x.mjs'), 'x');
+  writeFileSync(join(dir, 'scripts', 'run-suite.mjs'), 'x'); writeFileSync(join(dir, 'scripts', 'run-suite.mjs.bak'), 'x');
+  const paths = ['a.test.d/x.mjs', 'deep/x.mjs', 'deep/x/z.mjs', 'deep/z.mjs', 'scripts/run-suite.mjs', 'scripts/run-suite.mjs.bak',
+    'spec/unit/a.mjs', 'specs/b.mjs', 'top.test.mjs'];
+  const selects = async (glob) => ({ git: await git.untrackedPaths(dir, { include: 'all', within: { globs: [glob] } }),
+    matcher: paths.filter(checks.testPathMatcher([glob])) });
+
+  assert.deepEqual(await selects('spec'), { git: ['spec/unit/a.mjs'], matcher: ['spec/unit/a.mjs'] });
+  assert.deepEqual(await selects('**/x/**'), { git: ['deep/x/z.mjs'], matcher: ['deep/x/z.mjs'] });
+  assert.deepEqual(await selects('*.test.*'), { git: ['top.test.mjs'], matcher: ['top.test.mjs'] });
+  assert.deepEqual(await selects('de*/**/z.mjs'), { git: ['deep/x/z.mjs', 'deep/z.mjs'], matcher: ['deep/x/z.mjs', 'deep/z.mjs'] });
+  assert.deepEqual(await selects('scripts/run-suite.mjs'), { git: ['scripts/run-suite.mjs'], matcher: ['scripts/run-suite.mjs'] });
 });
 
 test('git and the test path matcher both ignore case', async (t) => {
