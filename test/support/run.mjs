@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as checks from '../../lib/checks.mjs';
 import * as config from '../../lib/config.mjs';
 import * as events from '../../lib/events.mjs';
 import * as flowModule from '../../lib/flow.mjs';
@@ -29,6 +30,7 @@ export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: '
 export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   const c = config.loadDefaults();
   c.commands = { test: 'npm test' };
+  c.testPaths = [...checks.DEFAULT_TEST_GLOBS];
   for (const agent of Object.values(c.agents)) Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   c.worktreeRoot = join(root, 'wt');
   if (!fullFlow) c.flows.default.ticket = { entry: 'implementer', vertices: { implementer: { use: 'implementer', procedure: 'tdd', then: 'done' } } };
@@ -110,7 +112,7 @@ export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.
   await record.save(rec);
   await assert.rejects(interpreter.runExecution({
     flow, record: rec, harness: f.harness, gh: github, git, exec, events: events.eventLog(f.commonDir), log: () => {}, cwd: f.mainRoot,
-    commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
+    commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS], ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock: f.clock, crashAt: crashAt?.(rec),
     integrity, testImmutability: f.options.testImmutability,
   }), (err) => err instanceof interpreter.CrashError);

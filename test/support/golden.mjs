@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as checks from '../../lib/checks.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
@@ -159,7 +160,7 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
 
   const options = {
     flow, record: rec, harness, gh: github, git: observedGit, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
-    commands: { test: 'npm test' }, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
+    commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS], ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock, ...injected(fake),
   };
   return {
