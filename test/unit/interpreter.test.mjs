@@ -166,3 +166,23 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   assert.equal(check.outcome, 'integrity-violation');
   assert.deepEqual(check.violations, ['test/add.test.mjs']);
 });
+
+test("the Protected Files are gg's paths plus every shipped Harness's paths", async () => {
+  const { HARNESSES } = await import('../../lib/harnesses/shipped.mjs');
+  assert.deepEqual(interpreter.protectedFiles([]), ['.agents/', '.github/actions/', '.github/workflows/']);
+  assert.deepEqual(interpreter.protectedFiles(Object.values(HARNESSES)),
+    ['.agents/', '.claude/', '.codex/', '.github/actions/', '.github/workflows/', '.mcp.json', 'AGENTS.md', 'CLAUDE.md']);
+  assert.deepEqual(interpreter.protectedFiles([{ protectedPaths: ['.agents/', 'Z.md'] }, { protectedPaths: ['.b/'] }]),
+    ['.agents/', '.b/', '.github/actions/', '.github/workflows/', 'Z.md']);
+});
+
+test('runExecution asserts the Protected Files it is given', async (t) => {
+  const g = await golden.setup(t);
+  const seen = [];
+  const injected = { ...g.options.integrity,
+    begin: (args) => { seen.push(['begin', args.protectedPaths]); return g.options.integrity.begin(args); },
+    end: (args) => { seen.push(['end', args.protectedPaths]); return g.options.integrity.end(args); } };
+  await interpreter.runExecution({ ...g.options, integrity: injected, protectedPaths: ['.x/'] });
+  assert.deepEqual(seen.slice(0, 2), [['begin', ['.x/']], ['end', ['.x/']]]);
+  await assert.rejects(interpreter.runExecution({ ...g.options, protectedPaths: undefined }), { message: 'runExecution needs protectedPaths' });
+});
