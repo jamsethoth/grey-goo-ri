@@ -881,3 +881,49 @@ test('on a failed Claim a later required Check may still pass and leave evidence
   };
   assert.deepEqual((await check(config)).errors, []);
 });
+
+test('a stopped row on a passed Check leaves that Check\'s evidence', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: ['test'] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'test', do: 'check', kind: 'command', command: 'test' },
+    ],
+    stopped: [{ when: { 'check.test': 'passed' }, outcome: 'has-evidence' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { 'has-evidence': 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.test.evidence' } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('a stopped row on a failed Check leaves no evidence of it', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: ['test'] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'test', do: 'check', kind: 'command', command: 'test' },
+    ],
+    stopped: [{ when: { 'check.test': 'failed' }, outcome: 'no-evidence' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { 'no-evidence': 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.test.evidence', optional: true } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'flows.default.ticket.vertices.consumer.inputs.evidence', message: 'input evidence is optional, but no path to consumer produces any of its sources' },
+  ]);
+});
