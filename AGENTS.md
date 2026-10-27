@@ -42,6 +42,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/procedures.mjs` | tdd, fix, review, plan as data (Actions, declared Checks, options, Outcome enum) |
 | `lib/briefs.mjs` | Brief builders, Structured Response schemas and validation |
 | `lib/outcome.mjs` | the transition table and Resolution Policy |
+| `lib/rules.mjs` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
 | `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, review-pass |
 | `lib/integrity.mjs` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) |
 | `lib/record.mjs` | Execution Record, Epic Record and Pinned Configuration persistence in the State Database, and the write-ahead log |
