@@ -1,4 +1,4 @@
-### gg: {{claim}}
+### gg: {{outcome}}
 
 {{summary}}
 
