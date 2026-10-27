@@ -927,3 +927,40 @@ test('a stopped row on a failed Check leaves no evidence of it', async () => {
     { at: 'flows.default.ticket.vertices.consumer.inputs.evidence', message: 'input evidence is optional, but no path to consumer produces any of its sources' },
   ]);
 });
+
+test('a Check named after an Object property is analysed, never a throw', async () => {
+  const config = example();
+  config.procedures.gate = {
+    actions: [{ id: 'constructor', do: 'check', kind: 'command', command: 'test' }],
+    passed: [{ when: { 'check.constructor': 'passed' }, outcome: 'ok' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'gate',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: { gate: { procedure: 'gate' } },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('rows that each need a different Check passed meet a required input listing both', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'a', do: 'check', kind: 'command', command: 'test' },
+      { id: 'b', do: 'check', kind: 'command', command: 'test' },
+    ],
+    stopped: [{ when: { 'check.a': 'passed' }, outcome: 'go' }, { when: { 'check.b': 'passed' }, outcome: 'go' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: ['judge.a.evidence', 'judge.b.evidence'] } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
