@@ -443,6 +443,8 @@ for (const [what, mutate, errors] of [
     [{ at: `${V}.red.inputs`, message: 'inputs must be an object from name to { from, optional?, pick? }' }]],
   ['an Agent that is a string', (c) => { c.agents.reviewer = 'reviewer.md'; },
     [{ at: `${V}.reviewer`, message: 'agent reviewer must be an object' }]],
+  ['flows given as a list', (c) => { c.flows = []; },
+    [{ at: 'flows', message: 'flows must be an object from name to Flow' }]],
   ['an Action kind given as a list', (c) => { c.procedures.publish.actions[2] = { id: 'ready', do: ['pr-ready'] }; },
     [{ at: 'procedures.publish.actions[2]', message: 'do ["pr-ready"] is not one of agent, check, commit, push, pr-upsert, pr-ready, comment, await-approval' }]],
   ['a Check kind given as a list', (c) => { c.procedures['base-check'].actions[0].kind = ['command']; },
