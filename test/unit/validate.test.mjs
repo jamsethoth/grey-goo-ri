@@ -406,3 +406,92 @@ test('a rule on an input is typed at each Vertex using the Procedure', async () 
     message: '"inputs.needsTest" is not defined',
   }]);
 });
+
+for (const [what, mutate, errors] of [
+  ['a Procedure that is null', (c) => { c.procedures.publish = null; },
+    [{ at: 'procedures.publish', message: 'a Procedure must be an object' }]],
+  ['actions that are a number', (c) => { c.procedures.publish.actions = 3; },
+    [{ at: 'procedures.publish', message: 'actions must be a non-empty list' }]],
+  ['requires that is a number', (c) => { c.procedures.implement.claims.ok.requires = 3; },
+    [{ at: 'procedures.implement.claims.ok', message: 'a Claim token is { requires: [<check ids>] } or { stop: true, comment?: <file> }' }]],
+  ['repeat fields that are a boolean', (c) => { c.procedures.review.actions[2].fields = true; },
+    [{ at: 'procedures.review.actions[2]', message: 'fields must be a non-empty list of field names' }]],
+  ['a table row that is null', (c) => { c.procedures.review.passed[0] = null; },
+    [{ at: 'procedures.review.passed[0]', message: 'a row is { when: { <field>: <condition> }, outcome: <name> }' }]],
+  ['routes that are a list', (c) => { c.flows.default.ticket.routes = []; },
+    [{ at: 'flows.default.ticket.routes', message: 'routes must be an object from Outcome to target' }]],
+  ['inputs that are a number', (c) => { c.flows.default.ticket.vertices.red.inputs = 12; },
+    [{ at: `${V}.red.inputs`, message: 'inputs must be an object from name to { from, optional?, pick? }' }]],
+  ['an Agent that is a string', (c) => { c.agents.reviewer = 'reviewer.md'; },
+    [{ at: `${V}.reviewer`, message: 'agent reviewer must be an object' }]],
+]) {
+  test(`malformed configuration is an error, never a throw: ${what}`, async () => {
+    const config = example();
+    mutate(config);
+    assert.deepEqual((await check(config)).errors, errors);
+  });
+}
+
+test('a passed row on a Check its token requires failing is unreachable even when another token requires nothing', async () => {
+  const config = example();
+  config.procedures.implement.claims.partial = { requires: [] };
+  config.procedures.implement.passed = [{ when: { claim: 'ok', 'check.test': 'failed' }, outcome: 'odd' }];
+  const files = schemas();
+  files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
+  config.procedures.fix.claims.partial = { requires: [] };
+  assert.deepEqual((await check(config, files)).errors, [{
+    at: 'procedures.implement.passed',
+    message: 'rule table implement.passed: row 1 (odd) is unreachable: it matches no input',
+  }]);
+});
+
+test('a failed row on its token\'s only required Check passing is unreachable', async () => {
+  const config = example();
+  config.procedures.implement.failed = [{ when: { 'check.test': 'passed' }, outcome: 'odd' }];
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'procedures.implement.failed',
+    message: 'rule table implement.failed: row 1 (odd) is unreachable: it matches no input',
+  }]);
+});
+
+test('a token whose every passing case a row maps away is not an Outcome', async () => {
+  const config = example();
+  config.procedures.implement.claims.partial = { requires: [] };
+  config.procedures.implement.passed = [{ when: { claim: 'ok' }, outcome: 'done-ish' }];
+  const files = schemas();
+  files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
+  config.procedures.fix.claims.partial = { requires: [] };
+  const { errors, flows } = await check(config, files);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(flows.default.ticket.vertices.green.outcomes,
+    ['done-ish', 'partial', 'failed', 'misscoped', 'bad-test', 'blocked', 'harness-timeout', 'harness-transient', 'harness-unparsed']);
+});
+
+test('engine outputs have their fields: rescue, evidence and cleanup', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.green.inputs.previous.from = 'green.rescue.ref';
+  config.flows.default.ticket.vertices.green.inputs.red.from = ['red.red-check.evidence.output', 'senior-red.red-check.cleanup.confirmed'];
+  assert.deepEqual((await check(config)).errors, [{
+    at: `${V}.green.inputs.red`,
+    message: 'sources "red.red-check.evidence.output" and "senior-red.red-check.cleanup.confirmed" have different types',
+  }]);
+});
+
+test('a rescue and a Check\'s evidence are different types', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.green.inputs.previous.from = ['green.rescue', 'green.test.evidence'];
+  assert.deepEqual((await check(config)).errors, [{
+    at: `${V}.green.inputs.previous`,
+    message: 'sources "green.rescue" and "green.test.evidence" have different types',
+  }]);
+});
+
+test('schemas that differ only in the order of required or enum are one type', async () => {
+  const config = example();
+  config.procedures.fix.actions[0].schema = 'fix.schema.json';
+  const files = schemas();
+  files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
+  files['fix.schema.json'].required.reverse();
+  files['fix.schema.json'].properties.reason.enum.reverse();
+  assert.deepEqual((await check(config, files)).errors, []);
+});

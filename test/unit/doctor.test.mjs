@@ -18,6 +18,15 @@ test('gg doctor prints each Vertex\'s Procedure, Checks, tables and Outcomes', (
   assert.equal(exitCode, 0);
 });
 
+test('gg doctor reports a malformed table row rather than throwing', () => {
+  const config = example();
+  config.procedures.review.passed[0] = null;
+  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} }, readSchema });
+  assert.equal(exitCode, 1);
+  assert.ok(text.includes('\n  passed:\n    1. no conditions -> undefined\n'), text);
+  assert.ok(text.includes('\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> }\n'), text);
+});
+
 test('gg doctor exits non-zero on an error', () => {
   const config = example();
   config.flows.default.ticket.vertices.red.procedure = 'red';
