@@ -13,3 +13,4 @@ The orchestrator ran the test command on branch {{ticket.branch}} after your red
 {{/commands}}
 
 Write tests that fail until the ticket is implemented. Do not implement anything.
+If no test can fail first, claim blocked and say why in "diagnosis".

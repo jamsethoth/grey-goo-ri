@@ -30,8 +30,8 @@ The orchestrator committed these failing tests; the test command failed as expec
 ```
 
 Write the smallest implementation that makes them pass and meets every definition-of-done item.
-Committed tests must not be changed. If one is genuinely wrong, say why in notes: claim ok only if
-the implementation still passes it as written, otherwise claim blocked.
+Committed tests must not be changed. If one is genuinely wrong, claim ok only if the implementation
+still passes it as written, and say why in notes; otherwise claim blocked and say why in "diagnosis".
 Finish with the test command passing.
 Return the structured result: claim ok, blocked or misscoped; every definition-of-done item with evidence,
 QA instructions, and notes. "diagnosis" is empty unless your claim is blocked or misscoped, or your persona asks for one.
