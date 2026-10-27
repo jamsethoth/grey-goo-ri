@@ -100,3 +100,18 @@ test('a mixed-case decide label gives a lowercase outcome', () => {
     decision: { event: 300, actor: 'owner', time: '2026-10-27T11:00:00Z', outcome: 'approved' },
   });
 });
+
+test('a removed Await Label is missing', () => {
+  const read = approval.read({ pending: pending(), timeline: timeline('removed-request'), digest: approval.digest(approved), permissions });
+  assert.deepEqual(read, { kind: 'missing' });
+});
+
+test('an actor\'s permission is found whatever the case of its login', () => {
+  const read = approval.read({
+    pending: pending(), timeline: timeline('one-decision'), digest: approval.digest(approved), permissions: { OWNER: 'admin' },
+  });
+  assert.deepEqual(read, {
+    kind: 'consume',
+    decision: { event: 300, actor: 'owner', time: '2026-10-27T11:00:00Z', outcome: 'approved' },
+  });
+});
