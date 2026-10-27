@@ -13,7 +13,7 @@ const emptyInit = () => ({ plugins: [], pluginErrors: [], mcpServers: [], mcpSer
 
 // Scripted stand-in for a Harness. Never spawns anything; tests drive it through `responses`.
 export function fakeHarness({
-  name = 'fake', capabilities, responses = {}, transcriptDir,
+  name = 'fake', capabilities, protectedPaths = [], responses = {}, transcriptDir,
   validate = () => ({ ok: true, errors: [] }), resolveTools = (agent) => agent?.tools ?? {},
 } = {}) {
   const caps = { ...DEFAULT_CAPABILITIES, ...capabilities };
@@ -88,6 +88,7 @@ export function fakeHarness({
   return {
     name,
     capabilities: caps,
+    protectedPaths,
     validate,
     resolveTools,
     run,

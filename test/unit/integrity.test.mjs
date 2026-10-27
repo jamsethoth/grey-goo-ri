@@ -71,12 +71,12 @@ test('a workflow file change is an integrity violation', async (t) => {
   });
   const real = integrity.withGit(fake.git);
   const rec = newExecution(commonDir, 1, mainRoot);
-  const baseline = await real.begin({ record: rec, others: [], protectedPaths: interpreter.PROTECTED_PATHS });
+  const baseline = await real.begin({ record: rec, others: [], protectedPaths: interpreter.protectedFiles([]) });
   writeFileSync(join(mainRoot, '.github', 'workflows', 'ci.yml'), 'on: push\njobs: {}\n');
   mkdirSync(join(mainRoot, '.github', 'actions', 'setup'), { recursive: true });
   writeFileSync(join(mainRoot, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
 
-  const { violations } = await real.end({ baseline, record: rec, others: [], access: 'read-write', protectedPaths: interpreter.PROTECTED_PATHS });
+  const { violations } = await real.end({ baseline, record: rec, others: [], access: 'read-write', protectedPaths: interpreter.protectedFiles([]) });
   assert.deepEqual(violations, [{ worktree: mainRoot, surface: 'protected', before: null,
     after: ['.github/actions/setup/action.yml', '.github/workflows/ci.yml'] }]);
 });

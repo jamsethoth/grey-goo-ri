@@ -90,7 +90,7 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
   const clock = { now: () => now, sleep: async (ms) => { now += ms; }, every: () => () => {} };
   const cfg = testConfig(root, { harness: harnessName, fullFlow });
   const worktree = gitModule.worktreePath(cfg.worktreeRoot, 'main', TICKET);
-  const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, gh: github, git, exec, cwd: mainRoot,
+  const options = { target: TICKET, config: cfg, harnesses: { fake: harness }, protectedPaths: golden.PROTECTED_PATHS, gh: github, git, exec, cwd: mainRoot,
     log: (m) => logs.push(m), clock, ...golden.injected(fakeIntegrity) };
   return {
     root, real, mainRoot, commonDir, base, worktree, gh: fake, harness, exec, logs, clock, options, fakeGit,
@@ -114,7 +114,7 @@ export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.
     flow, record: rec, harness: f.harness, gh: github, git, exec, events: events.eventLog(f.commonDir), log: () => {}, cwd: f.mainRoot,
     commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS], ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock: f.clock, crashAt: crashAt?.(rec),
-    integrity, testImmutability: f.options.testImmutability,
+    integrity, testImmutability: f.options.testImmutability, protectedPaths: f.options.protectedPaths,
   }), (err) => err instanceof interpreter.CrashError);
   return record.load(f.commonDir, 'ticket', TICKET);
 }

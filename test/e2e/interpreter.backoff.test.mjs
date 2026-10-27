@@ -11,7 +11,7 @@ test("a worktree backing off is idle to other Tickets' integrity checks", async 
   g.gh.fail(onPr({ status: 502 }));
   // Another Ticket's Action, in the main checkout, writes into this worktree while it backs off.
   const other = { worktree: g.mainRoot, commonDir: g.commonDir };
-  const check = { others: [g.worktree], protectedPaths: interpreter.PROTECTED_PATHS, git: g.options.git };
+  const check = { others: [g.worktree], protectedPaths: g.options.protectedPaths, git: g.options.git };
   const stray = join(g.worktree, 'stray.txt');
   let violations;
   g.clock.onSleep = async () => {

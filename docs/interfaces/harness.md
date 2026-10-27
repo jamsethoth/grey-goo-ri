@@ -11,6 +11,7 @@ decided by request section 3.2; Usage token rules by section 3.7.
 | --- | --- |
 | `name` | string, the Harness name an Agent selects |
 | `capabilities` | the Capability matrix below |
+| `protectedPaths` | the paths that configure the Harness, each a directory with a trailing `/` or a file |
 | `validate(agent)` | checks an Agent against the matrix; returns a typed result, never throws |
 | `resolveTools(agent, ctx)` | the tools the Harness will pass for this Agent, hint fields marked |
 | `run(call)` | runs one Attempt; resolves `{ response, result, failure }` |
@@ -19,6 +20,11 @@ decided by request section 3.2; Usage token rules by section 3.7.
 | `doctor(cfg)` | behaviour probes for `gg doctor` |
 
 `HARNESS_METHODS` lists these names in this order.
+
+`lib/harnesses/shipped.mjs` lists every shipped Harness by name. The Protected Files (request 3.6) are gg's own paths
+plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents use; `bin/gg.mjs` builds that union with
+`protectedFiles` (`lib/interpreter.mjs`) and passes it to the Run, so the interpreter imports no Harness module. No
+module outside `lib/harnesses/` names a Harness (`test/unit/harness-boundary.test.mjs`).
 
 ## Capability matrix
 

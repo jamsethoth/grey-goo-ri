@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
+import * as shipped from '../../lib/harnesses/shipped.mjs';
 import * as record from '../../lib/record.mjs';
 import * as events from '../../lib/events.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
@@ -77,6 +78,9 @@ export const oneVertexFlow = (persona) => ({
 // Reduces Action Events to what a golden trace asserts.
 export const trace = (evs) => evs.filter((e) => e.type === 'action')
   .map(({ phase, ordinal, attempt, outcome }) => ({ phase, ordinal, attempt, outcome }));
+
+// The Protected Files gg run passes: gg's own paths and every shipped Harness's.
+export const PROTECTED_PATHS = interpreter.protectedFiles(Object.values(shipped.HARNESSES));
 
 // The fake integrity, or null for the real one, and the options that inject it into runExecution or gg run.
 export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head }));
@@ -161,7 +165,7 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   const options = {
     flow, record: rec, harness, gh: github, git: observedGit, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
     commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS], ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
-    base: 'main', labelPrefix: 'gg', others: [], clock, ...injected(fake),
+    base: 'main', labelPrefix: 'gg', others: [], clock, protectedPaths: PROTECTED_PATHS, ...injected(fake),
   };
   return {
     root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath, clock, sleeps, fake, fakeGit,
