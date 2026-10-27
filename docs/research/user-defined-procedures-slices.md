@@ -44,8 +44,8 @@ test references below were updated to match main.
     `test/fixtures/example/`, which A5, A6 and C1 use.
 - **C3 re-scoped (owner, 2026-10-27).** #144 deleted the git verbs of finding 13; #145 did 15 and 20 and, with #156,
   moved 16's bare-origin and clone setup to `test/support/template-repos.mjs`. #123 keeps the rest, re-checked on main
-  at `d571534`, plus three owner choices: `addWorktree's` local `q` folds into the `git` wrapper (8); the two integrity
-  copies of `newExecution` become one `worktreeRecord`, while `record.test.mjs's` copy is renamed `knownRecord` and
+  at `d571534`, plus three owner choices: `addWorktree`'s local `q` folds into the `git` wrapper (8); the two integrity
+  copies of `newExecution` become one `worktreeRecord`, while `record.test.mjs`'s copy is renamed `knownRecord` and
   stays local, since its case asserts the values it passes in (16); the transport test for 15 goes.
 
 ## Shape
