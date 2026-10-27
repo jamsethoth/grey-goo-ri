@@ -18,7 +18,7 @@ test references below were updated to match main.
   clock, failure injection and fs, listed in `docs/testing.md`; 2026-10-25). #156 (the git contract's real-git cases
   start from template repos) landed beside them, outside the Epic.
 - **Done.** E0 (#109, PR #142), E0b (#140, PR #147), E0c (#144, PR #152), E0d (#145, PR #154), E0e (#153, PR #155)
-  and A1 (#102, PR #157).
+  and A1 (#102, PR #157); A2 (#103, PR #139) on 2026-10-27.
 - **The module split (E0).** `lib/effects.mjs` holds the activity bracket (`bracket`), crash points, the remote retry
   engine (through `sideEffect`), the Action completion helpers (`finish`, `effectDone`) and `TERMINALS`;
   `lib/terminal.mjs` holds `hold`, `abandon`, `fault`, `decide`, the Terminal functions (`terminal`, `terminalAt`)
@@ -37,7 +37,8 @@ test references below were updated to match main.
     rows taken the same way collapses into one warning, so the output is bounded by the number of rows. R8d and U4
     are amended in the decisions file with that PR. The analyser's field domain uses A3's `fieldType` kinds (enum
     with its values, boolean, and integer with bounds from gg's own facts, each optionally `absent`), so A5 needs no
-    translation layer. The module is `lib/rules.mjs`. The single path resolver (R14e) is left to A5.
+    translation layer. The module is `lib/rules.mjs`. The single path resolver (R14e) is left to A5,
+    which builds it (J15; owner, 2026-10-27).
   - A3's `assertStrict` also checks keyword values (`type`, `enum`, `required`); `fieldType` returns enum (with its
     values), boolean, integer, string, list of a kind, and object. The example's three schemas become fixtures in
     `test/fixtures/example/`, which A5, A6 and C1 use.
@@ -158,7 +159,8 @@ with Action ids, `do:` kinds, Check kinds and parameters, Claim tokens, `tests`,
 and `otherwise`; Flows with `plan` (required, and `null` until Epic planning lands; X2b, X2d), `entry`, `routes`, Vertices, `inputs`, `route`, `maxVisits`, `exhausted`) and produces the
 Resolved Flow. Named commands must be declared (U13). Every reference is typed through A3; tables are analysed
 through A2. `gg doctor` prints each Vertex's effective Procedure, access, `tests`, Checks, tables, reachable Outcomes
-and inputs with their sources, and exits non-zero on any error. Not yet called by admission (E7).
+and inputs with their sources, and exits non-zero on any error. Not yet called by admission (E7). One resolver
+parses every reference path (R14e), and `lib/rules.mjs` and `fieldType` use it in place of their own path splitting.
 - Tests: fixture Flows for each error; the example Flow from the docs passes.
 - Goldens: none. Glossary: Resolved Flow updated. Doctor: the output above, pinned for the example.
 
