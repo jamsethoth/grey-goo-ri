@@ -80,7 +80,7 @@ export const trace = (evs) => evs.filter((e) => e.type === 'action')
   .map(({ phase, ordinal, attempt, outcome }) => ({ phase, ordinal, attempt, outcome }));
 
 // The Protected Files gg run passes: gg's own paths and every shipped Harness's.
-export const PROTECTED_PATHS = interpreter.protectedFiles(Object.values(shipped.HARNESSES));
+export const PROTECTED_PATHS = interpreter.protectedFiles(shipped.HARNESSES);
 
 // The fake integrity, or null for the real one, and the options that inject it into runExecution or gg run.
 export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head }));
