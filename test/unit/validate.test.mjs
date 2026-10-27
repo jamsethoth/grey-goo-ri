@@ -361,6 +361,15 @@ test('a malformed rule condition is an error', async () => {
   }]);
 });
 
+test('a condition that does not fit its field is an error', async () => {
+  const config = example();
+  config.procedures.implement.passed = [{ when: { pass: 'two' }, outcome: 'ok' }];
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'procedures.implement.passed[0]',
+    message: 'condition "two" on "pass" does not fit its field, which is {"kind":"integer","min":1,"max":2}',
+  }]);
+});
+
 test('a row that never fires is an error from the rule table analysis', async () => {
   const config = example();
   config.procedures['tests-fail'].stopped.push({ when: { 'response.reason': 'misscoped' }, outcome: 'again' });
@@ -393,7 +402,7 @@ test('a rule on an input is typed at each Vertex using the Procedure', async () 
   config.flows.default.ticket.vertices['implementer-fix'].inputs.needsTest = { from: 'reviewer.review.response.needsTest', optional: true };
   config.procedures.fix.passed = [{ when: { 'inputs.needsTest': true }, outcome: 'ok' }];
   assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.senior-dev (procedure fix).passed`,
+    at: `${V}.senior-dev (procedure fix).passed[0]`,
     message: '"inputs.needsTest" is not defined',
   }]);
 });

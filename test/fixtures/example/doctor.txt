@@ -1,0 +1,177 @@
+flow default
+  plan: null
+  actionCap: 180
+  entry: baseline
+  routes: misscoped -> end needs-replan, * -> end needs-human
+
+vertex baseline
+  procedure: base-check
+  agent: none
+  access: none
+  tests: frozen
+  checks: test (command test)
+  claims: ok requires test
+  passed: none
+  failed: none
+  stopped: none
+  outcomes: ok, failed
+  inputs: none
+
+vertex red
+  procedure: tests-fail
+  agent: implementer (harness fake)
+  access: workspace-write
+  tests: write
+  checks: red-check (tests-fail test)
+  claims: ok requires red-check, blocked stops
+  passed: none
+  failed: none
+  stopped:
+    1. response.reason = misscoped -> misscoped
+    2. response.reason = no-test-needed -> no-test
+  outcomes: ok, failed, misscoped, no-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  inputs:
+    findings <- reviewer.review.response.findings (optional)
+    previous <- green.green.response | senior-green.green.response (optional)
+
+vertex green
+  procedure: implement
+  agent: implementer (harness fake)
+  access: workspace-write
+  tests: frozen
+  checks: test (command test)
+  claims: ok requires test, blocked stops
+  passed: none
+  failed: none
+  stopped:
+    1. response.reason = misscoped -> misscoped
+    2. response.reason = bad-test -> bad-test
+  outcomes: ok, failed, misscoped, bad-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  inputs:
+    tests <- red.commit.files | senior-red.commit.files (optional)
+    red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
+    findings <- reviewer.review.response.findings (optional)
+    previous <- green.rescue (optional)
+    redReport <- red.red.response | senior-red.red.response
+
+vertex senior-green
+  procedure: implement
+  agent: senior (harness fake)
+  access: workspace-write
+  tests: frozen
+  checks: test (command test)
+  claims: ok requires test, blocked stops
+  passed: none
+  failed: none
+  stopped:
+    1. response.reason = misscoped -> misscoped
+    2. response.reason = bad-test -> bad-test
+  outcomes: ok, failed, misscoped, bad-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  inputs:
+    tests <- red.commit.files | senior-red.commit.files (optional)
+    red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
+    findings <- reviewer.review.response.findings (optional)
+    previous <- green.rescue (optional)
+    redReport <- red.red.response | senior-red.red.response
+
+vertex reviewer
+  procedure: review
+  agent: reviewer (harness fake)
+  access: read-only (capped by the Procedure)
+  tests: frozen
+  checks: review-pass (response), repeat (repeat)
+  claims: ok requires none, changes requires none, blocked stops
+  passed:
+    1. claim = ok and check.review-pass = passed -> ok
+    2. check.repeat = failed -> repeat
+    3. response.needsTest = true -> retest
+  failed: none
+  stopped:
+    1. response.reason = misscoped -> misscoped
+  otherwise: changes
+  outcomes: ok, repeat, retest, changes, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed
+  inputs:
+    report <- green.green.response | senior-green.green.response | implementer-fix.fix.response | senior-dev.fix.response
+    red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
+    redReport <- red.red.response | senior-red.red.response
+    green <- green.test.evidence | senior-green.test.evidence | implementer-fix.test.evidence | senior-dev.test.evidence
+
+vertex senior-red
+  procedure: tests-fail
+  agent: senior (harness fake)
+  access: workspace-write
+  tests: write
+  checks: red-check (tests-fail test)
+  claims: ok requires red-check, blocked stops
+  passed: none
+  failed: none
+  stopped:
+    1. response.reason = misscoped -> misscoped
+    2. response.reason = no-test-needed -> no-test
+  outcomes: ok, failed, misscoped, no-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  inputs:
+    findings <- reviewer.review.response.findings
+    previous <- green.green.response | senior-green.green.response (optional)
+
+vertex implementer-fix
+  procedure: fix
+  agent: implementer (harness fake)
+  access: workspace-write
+  tests: named inputs.testFiles
+  checks: test (command test)
+  claims: ok requires test, blocked stops
+  passed: none
+  failed: none
+  stopped:
+    1. response.reason = misscoped -> misscoped
+  outcomes: ok, failed, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed
+  inputs:
+    report <- green.green.response | senior-green.green.response | implementer-fix.fix.response | senior-dev.fix.response
+    red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
+    redReport <- red.red.response | senior-red.red.response
+    green <- green.test.evidence | senior-green.test.evidence | implementer-fix.test.evidence | senior-dev.test.evidence
+    findings <- reviewer.review.response.findings
+    testFiles <- reviewer.review.response.findings, pick file
+    previous <- implementer-fix.rescue | senior-red.rescue (optional)
+
+vertex senior-dev
+  procedure: fix
+  agent: senior (harness fake)
+  access: workspace-write
+  tests: named inputs.testFiles
+  checks: test (command test)
+  claims: ok requires test, blocked stops
+  passed: none
+  failed: none
+  stopped:
+    1. response.reason = misscoped -> misscoped
+  outcomes: ok, failed, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed
+  inputs:
+    report <- green.green.response | senior-green.green.response | implementer-fix.fix.response | senior-dev.fix.response
+    red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
+    redReport <- red.red.response | senior-red.red.response
+    green <- green.test.evidence | senior-green.test.evidence | implementer-fix.test.evidence | senior-dev.test.evidence
+    findings <- reviewer.review.response.findings
+    testFiles <- reviewer.review.response.findings, pick file
+    previous <- implementer-fix.rescue | senior-red.rescue (optional)
+
+vertex publish
+  procedure: publish
+  agent: none
+  access: none
+  tests: frozen
+  checks: test (command test)
+  claims: ok requires test
+  passed: none
+  failed: none
+  stopped: none
+  outcomes: ok, failed
+  inputs:
+    report <- green.green.response | senior-green.green.response | implementer-fix.fix.response | senior-dev.fix.response
+    red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
+    redReport <- red.red.response | senior-red.red.response
+    green <- green.test.evidence | senior-green.test.evidence | implementer-fix.test.evidence | senior-dev.test.evidence
+
+warning: procedures.review.passed: rule table review.passed: row 2 (check.repeat = failed) is partly taken by row 1 (claim = ok and check.review-pass = passed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"},"response":{"needsTest":true}}
+warning: procedures.review.passed: rule table review.passed: row 3 (response.needsTest = true) is partly taken by row 1 (claim = ok and check.review-pass = passed), row 2 (check.repeat = failed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"passed"},"response":{"needsTest":true}}
+0 errors, 2 warnings
