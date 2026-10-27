@@ -115,3 +115,11 @@ test('an actor\'s permission is found whatever the case of its login', () => {
     decision: { event: 300, actor: 'owner', time: '2026-10-27T11:00:00Z', outcome: 'approved' },
   });
 });
+
+test('a mixed-case actor login finds its permission', () => {
+  const read = approval.read({ pending: pending(), timeline: timeline('mixed-case-actor'), digest: approval.digest(approved), permissions });
+  assert.deepEqual(read, {
+    kind: 'consume',
+    decision: { event: 300, actor: 'Owner', time: '2026-10-27T11:00:00Z', outcome: 'approved' },
+  });
+});
