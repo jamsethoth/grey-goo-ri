@@ -780,6 +780,23 @@ test('an edge\'s exhausted target is reached only after the edge was taken', asy
   assert.deepEqual((await check(config)).errors, []);
 });
 
+test('a Flow whose paths reach too many states is a warning, not a hang', async () => {
+  const config = example();
+  // 17 Vertices in a row, each passing or failing, each reading the one before: 2^17 path states.
+  const vertices = Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`v${i}`, {
+    procedure: 'base-check',
+    route: i === 16 ? { ok: { end: 'needs-human' } } : { ok: `v${i + 1}`, failed: `v${i + 1}` },
+    ...(i > 0 && { inputs: { before: { from: `v${i - 1}.test.evidence`, optional: true } } }),
+  }]));
+  config.flows.default.ticket = { entry: 'v0', vertices };
+  const { errors, warnings } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(warnings.at(-1), {
+    at: 'flows.default.ticket',
+    message: 'the paths reach more than 100000 states, so inputs, pr-ready and reachability are not checked',
+  });
+});
+
 test('a failed Check leaves no evidence, so an optional input reading only it is produced on no path', async () => {
   const config = example();
   config.flows.default.ticket = {
