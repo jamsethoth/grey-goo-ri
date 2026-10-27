@@ -148,6 +148,21 @@ test('an Action id with a colon is an error', async () => {
   }]);
 });
 
+test('an Action id with whitespace is an error', async () => {
+  const config = example();
+  config.procedures['base-check'].actions[0].id = 'te st';
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'procedures.base-check.actions[0]',
+    message: 'Action id "te st" must be non-empty with no ":", "." or whitespace',
+  }]);
+});
+
+test('a configuration with no Flow is an error naming gg init', async () => {
+  const config = example();
+  delete config.flows;
+  assert.deepEqual((await check(config)).errors, [{ at: 'flows', message: 'no Flow is declared; gg init writes an example' }]);
+});
+
 test('a repeated Action id is an error', async () => {
   const config = example();
   config.procedures.publish.actions[1].id = 'test';
@@ -248,10 +263,14 @@ test('a Vertex named after an end, cleanup or done is an error', async () => {
   config.flows.default.ticket.vertices.cleanup = { procedure: 'base-check' };
   config.flows.default.ticket.vertices.done = { procedure: 'base-check' };
   config.flows.default.ticket.vertices['needs-human'] = { procedure: 'base-check' };
+  config.flows.default.ticket.vertices['ready-for-qa'] = { procedure: 'base-check' };
+  config.flows.default.ticket.vertices['needs-replan'] = { procedure: 'base-check' };
   assert.deepEqual((await check(config)).errors, [
     { at: `${V}.cleanup`, message: 'Vertex id "cleanup" is reserved: an end name, cleanup or done' },
     { at: `${V}.done`, message: 'Vertex id "done" is reserved: an end name, cleanup or done' },
     { at: `${V}.needs-human`, message: 'Vertex id "needs-human" is reserved: an end name, cleanup or done' },
+    { at: `${V}.ready-for-qa`, message: 'Vertex id "ready-for-qa" is reserved: an end name, cleanup or done' },
+    { at: `${V}.needs-replan`, message: 'Vertex id "needs-replan" is reserved: an end name, cleanup or done' },
   ]);
 });
 
