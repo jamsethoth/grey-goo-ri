@@ -1,4 +1,4 @@
-### gg: {{end}}
+### gg: {{claim}}
 
 {{summary}}
 
