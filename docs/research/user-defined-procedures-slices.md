@@ -18,7 +18,8 @@ test references below were updated to match main.
   clock, failure injection and fs, listed in `docs/testing.md`; 2026-10-25). #156 (the git contract's real-git cases
   start from template repos) landed beside them, outside the Epic.
 - **Done.** E0 (#109, PR #142), E0b (#140, PR #147), E0c (#144, PR #152), E0d (#145, PR #154), E0e (#153, PR #155)
-  and A1 (#102, PR #157); A2 (#103, PR #139) on 2026-10-27.
+  and A1 (#102, PR #157); A2 (#103, PR #139) and A3 (#104, PR #138) on
+  2026-10-27.
 - **The module split (E0).** `lib/effects.mjs` holds the activity bracket (`bracket`), crash points, the remote retry
   engine (through `sideEffect`), the Action completion helpers (`finish`, `effectDone`) and `TERMINALS`;
   `lib/terminal.mjs` holds `hold`, `abandon`, `fault`, `decide`, the Terminal functions (`terminal`, `terminalAt`)
