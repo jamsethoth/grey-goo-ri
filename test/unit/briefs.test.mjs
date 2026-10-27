@@ -141,6 +141,8 @@ for (const [what, field, message] of [
   ['required as a string', { type: 'object', properties: { a: { type: 'string' } }, required: 'a', additionalProperties: false }, 'x.schema.json.list[].field: required must be a list'],
   ['required naming no property', { type: 'object', properties: {}, required: ['ghost'], additionalProperties: false }, 'x.schema.json.list[].field: required names "ghost", which is not a property'],
   ['an empty-named property missing from required', { type: 'object', properties: { '': { type: 'string' } }, required: [], additionalProperties: false }, 'x.schema.json.list[].field: required lacks property ""'],
+  ['an empty property name', { type: 'object', properties: { '': { type: 'string' } }, required: [''], additionalProperties: false }, 'x.schema.json.list[].field: property name "" cannot be reached by a dotted path'],
+  ['a property name with a dot', { type: 'object', properties: { 'a.b': { type: 'string' } }, required: ['a.b'], additionalProperties: false }, 'x.schema.json.list[].field: property name "a.b" cannot be reached by a dotted path'],
   ['properties as a number', { type: 'object', properties: 5, required: [], additionalProperties: false }, 'x.schema.json.list[].field: properties must be an object'],
   ['a null schema', null, 'x.schema.json.list[].field: schema must be an object'],
   ['null items', { type: 'array', items: null }, 'x.schema.json.list[].field[]: schema must be an object'],
@@ -174,6 +176,10 @@ test('the claim enum must equal the declared tokens: a case-only difference is n
   assert.throws(() => briefs.assertClaimEnum(example('red'), ['OK', 'blocked']), {
     message: 'claim: enum "ok" | "blocked" does not equal the declared tokens "OK" | "blocked" (they differ in case)',
   });
+});
+
+test('the claim enum must equal the declared tokens: an empty token list shows (none)', () => {
+  assert.throws(() => briefs.assertClaimEnum(example('red'), []), { message: 'claim: enum "ok" | "blocked" does not equal the declared tokens (none)' });
 });
 
 test('the claim enum must equal the declared tokens: an empty enum value is shown quoted', () => {
@@ -235,11 +241,12 @@ test('fieldType types an integer', () => {
 });
 
 for (const [name, path, error] of [
-  ['review', 'missing', '"missing": "missing" is not a field of the schema'],
-  ['review', 'findings.missing', '"findings.missing": "findings.missing" is not a field of the schema'],
-  ['review', 'summary.length', '"summary.length": "summary.length" is not a field of the schema'],
-  ['implement', 'qa.steps.action.x', '"qa.steps.action.x": "qa.steps.action.x" is not a field of the schema'],
-  ['review', '', '"": "" is not a field of the schema'],
+  ['review', 'missing', '"missing" is not a field of the schema'],
+  ['review', 'findings.missing', '"findings.missing" is not a field of the schema'],
+  ['review', 'summary.length', '"summary.length" is not a field of the schema'],
+  ['implement', 'qa.steps.action.x', '"qa.steps.action.x" is not a field of the schema'],
+  ['review', 'qa.steps.action.x', '"qa.steps.action.x": "qa" is not a field of the schema'],
+  ['review', '', '"" is not a field of the schema'],
 ]) {
   test(`fieldType returns an error for a path outside the schema (${name} ${JSON.stringify(path)})`, () => {
     assert.deepEqual(briefs.fieldType(example(name), path), { error });
