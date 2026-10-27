@@ -9,3 +9,4 @@ ok 1 - widgets render
 - lint: `npm run lint`
 
 Write tests that fail until the ticket is implemented. Do not implement anything.
+If no test can fail first, claim blocked and say why in "diagnosis".

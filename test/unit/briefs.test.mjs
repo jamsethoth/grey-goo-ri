@@ -21,6 +21,13 @@ for (const [name, { template, opts }] of Object.entries(JSON.parse(fixture('brie
   });
 }
 
+// The stop comment shows diagnosis, not notes (W6), so a Brief that offers a blocked Claim says where its reason goes.
+for (const name of ['green.md', 'test-fix.md', 'still-green.md']) {
+  test(`the ${name} Brief tells a blocked agent to explain in diagnosis`, async () => {
+    assert.match(await briefs.brief(name, { ...base, testFiles, redOutput, output: 'not ok 1' }), /claim blocked and say why in "diagnosis"/);
+  });
+}
+
 test('a Brief that does not name the diff never computes it', async () => {
   const diff = () => { throw new Error('the diff was computed'); };
   assert.match(await briefs.brief('red.md', { ...base, diff, changedTestFiles: diff }), /^RED PHASE/);
