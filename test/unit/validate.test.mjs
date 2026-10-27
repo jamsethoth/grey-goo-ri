@@ -780,7 +780,7 @@ test('an edge\'s exhausted target is reached only after the edge was taken', asy
   assert.deepEqual((await check(config)).errors, []);
 });
 
-test('a Flow whose paths reach too many states is a warning, not a hang', async () => {
+test('a Flow whose paths reach too many states is an error, not a hang', async () => {
   const config = example();
   // 17 Vertices in a row, each passing or failing, each reading the one before: 2^17 path states.
   const vertices = Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`v${i}`, {
@@ -789,12 +789,10 @@ test('a Flow whose paths reach too many states is a warning, not a hang', async 
     ...(i > 0 && { inputs: { before: { from: `v${i - 1}.test.evidence`, optional: true } } }),
   }]));
   config.flows.default.ticket = { entry: 'v0', vertices };
-  const { errors, warnings } = await check(config);
-  assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), {
+  assert.deepEqual((await check(config)).errors, [{
     at: 'flows.default.ticket',
-    message: 'the paths reach more than 100000 states, so inputs, pr-ready and reachability are not checked',
-  });
+    message: 'the paths reach more than 100000 states, so inputs and pr-ready cannot be checked; bound fewer edges and Vertices',
+  }]);
 });
 
 test('a failed Check leaves no evidence, so an optional input reading only it is produced on no path', async () => {
@@ -810,4 +808,76 @@ test('a failed Check leaves no evidence, so an optional input reading only it is
   assert.deepEqual((await check(config)).errors, [
     { at: 'flows.default.ticket.vertices.consumer.inputs.evidence', message: 'input evidence is optional, but no path to consumer produces any of its sources' },
   ]);
+});
+
+test('when an edge and its target Vertex are both exhausted, the Vertex\'s exhausted target wins', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'q',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      q: { procedure: 'base-check', route: { ok: { to: 'p', max: 1, exhausted: { end: 'needs-human' } } } },
+      p: { procedure: 'base-check', maxVisits: 1, exhausted: { end: 'ready-for-qa' }, route: { ok: 'q' } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'flows.default.ticket.vertices.q', message: 'Outcome ok reaches end ready-for-qa on a path that runs no pr-ready' },
+  ]);
+});
+
+test('a maxVisits above 1 is exhausted only after that many Visits', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'a',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      a: { procedure: 'base-check', maxVisits: 2, exhausted: 'consumer', route: { ok: 'b' } },
+      b: { procedure: 'base-check', maxVisits: 1, exhausted: 'c', route: { ok: 'a' } },
+      c: { procedure: 'base-check', route: { ok: 'a' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'c.test.evidence' } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('a row taken by an earlier row for one token does not produce its Outcome for that token', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: ['a'] }, changes: { requires: ['b'] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'a', do: 'check', kind: 'command', command: 'test' },
+      { id: 'b', do: 'check', kind: 'command', command: 'test' },
+    ],
+    passed: [{ when: { claim: 'ok' }, outcome: 'a-go' }, { when: {}, outcome: 'b-go' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { 'b-go': 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.b.evidence' } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('on a failed Claim a later required Check may still pass and leave evidence', async () => {
+  const config = example();
+  config.procedures.both = {
+    actions: [
+      { id: 'a', do: 'check', kind: 'command', command: 'test' },
+      { id: 'b', do: 'check', kind: 'command', command: 'test' },
+    ],
+  };
+  config.flows.default.ticket = {
+    entry: 'producer',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      producer: { procedure: 'both', route: { failed: 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.b.evidence', optional: true } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
 });
