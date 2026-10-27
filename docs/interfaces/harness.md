@@ -60,6 +60,13 @@ The Harness receives the Persona bytes, never a path.
 
 A Harness never throws or rejects for an expected failure; a rejection is an unexpected fault.
 
+`schema` is a Structured Response schema inside gg's strict subset (`assertStrict`, `lib/briefs.mjs`): `object` with
+every property required and `additionalProperties: false`, `array` with `items`, `string`, `boolean`, `integer`, and
+an `enum` of strings. Every Harness accepts every schema in the subset, so one schema serves an Agent on any Harness.
+The subset is the common ground of the Harnesses' structured-output modes: Codex's `--output-schema` requires every
+property and no extras. It is also narrow enough for gg's own validation and path typing (`validateResponse`,
+`fieldType`). Whatever `structuredOutput` says, the orchestrator validates every `response` against the schema.
+
 ## Usage
 
 `USAGE_FIELDS`: `{ input, cached, cacheWrite, output, reasoning, costUsd, peakContext, turns, toolCalls, compactions }`.

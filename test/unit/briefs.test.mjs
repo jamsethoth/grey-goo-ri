@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.mjs';
 import * as checks from '../../lib/checks.mjs';
 import { homedir } from 'node:os';
+import { readFileSync } from 'node:fs';
 
 const ticket = { number: 7, title: 'Add widgets', body: '## Definition of done\n- [ ] widgets', branch: 'ticket/7-add-widgets' };
 const commands = { test: 'npm test', lint: 'npm run lint' };
@@ -72,6 +73,200 @@ test('assertStrict rejects a nested object without additionalProperties', () => 
   const nested = { type: 'object', properties: { list: { type: 'array', items: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] } } }, required: ['list'], additionalProperties: false };
   assert.throws(() => briefs.assertStrict(nested), /additionalProperties/);
 });
+
+const example = (name) => JSON.parse(readFileSync(new URL(`../fixtures/example/${name}.schema.json`, import.meta.url), 'utf8'));
+
+for (const name of ['red', 'implement', 'review']) {
+  test(`the example's ${name}.schema.json is inside the strict subset`, () => {
+    assert.doesNotThrow(() => briefs.assertStrict(example(name), `${name}.schema.json`));
+  });
+}
+
+const withCount = { type: 'object', properties: { count: { type: 'integer' } }, required: ['count'], additionalProperties: false };
+
+test('an integer property is inside the strict subset', () => {
+  assert.doesNotThrow(() => briefs.assertStrict(withCount));
+});
+
+test('validateResponse accepts an integer where an integer is declared', () => {
+  assert.deepEqual(briefs.validateResponse(withCount, { count: 3 }), { valid: true, claim: undefined });
+});
+
+test('validateResponse rejects a fraction where an integer is declared', () => {
+  assert.deepEqual(briefs.validateResponse(withCount, { count: 1.5 }), { valid: false, reason: 'count must be an integer' });
+});
+
+test('validateResponse rejects a numeric string where an integer is declared', () => {
+  assert.deepEqual(briefs.validateResponse(withCount, { count: '3' }), { valid: false, reason: 'count must be an integer' });
+});
+
+test('validateResponse rejects an extra property where the object declares no properties', () => {
+  const empty = { type: 'object', required: [], additionalProperties: false };
+  assert.deepEqual(briefs.validateResponse(empty, { extra: 1 }), { valid: false, reason: 'extra is not in the schema' });
+});
+
+test('a schema keyword outside the strict subset is rejected with its path (in an example schema)', () => {
+  const bad = example('implement');
+  bad.properties.qa.properties.steps.items.properties.action.pattern = '^x';
+  assert.throws(() => briefs.assertStrict(bad, 'bad.schema.json'), { message: 'bad.schema.json.qa.steps[].action: keyword "pattern" is outside the strict subset' });
+});
+
+const inField = (field) => ({ type: 'object', properties: { field }, required: ['field'], additionalProperties: false });
+
+for (const [what, field, message] of [
+  ['minItems', { type: 'array', items: { type: 'string' }, minItems: 1 }, 'x.schema.json.field: keyword "minItems" is outside the strict subset'],
+  ['type number', { type: 'number' }, 'x.schema.json.field: type "number" is outside the strict subset'],
+  ['oneOf', { oneOf: [{ type: 'string' }] }, 'x.schema.json.field: keyword "oneOf" is outside the strict subset'],
+  ['format', { type: 'string', format: 'date' }, 'x.schema.json.field: keyword "format" is outside the strict subset'],
+  ['an array without items', { type: 'array' }, 'x.schema.json.field: array lacks items'],
+  ['a keyword with an empty name', { type: 'string', '': 1 }, 'x.schema.json.field: keyword "" is outside the strict subset'],
+]) {
+  test(`a schema keyword outside the strict subset is rejected with its path (${what})`, () => {
+    assert.throws(() => briefs.assertStrict(inField(field), 'x.schema.json'), { message });
+  });
+}
+
+// Nested under an array of objects, so the path shows every step (PR #138 review).
+const inList = (field) => ({ type: 'object', properties: { list: { type: 'array', items: inField(field) } }, required: ['list'], additionalProperties: false });
+
+for (const [what, field, message] of [
+  ['type as a list', { type: ['string'] }, 'x.schema.json.list[].field: type ["string"] is outside the strict subset'],
+  ['type naming an Object.prototype key', { type: 'constructor' }, 'x.schema.json.list[].field: type "constructor" is outside the strict subset'],
+  ['enum null', { type: 'string', enum: null }, 'x.schema.json.list[].field: enum must be a non-empty list of strings'],
+  ['enum false', { type: 'string', enum: false }, 'x.schema.json.list[].field: enum must be a non-empty list of strings'],
+  ['an empty enum', { type: 'string', enum: [] }, 'x.schema.json.list[].field: enum must be a non-empty list of strings'],
+  ['an enum with a number', { type: 'string', enum: ['ok', 1] }, 'x.schema.json.list[].field: enum must be a non-empty list of strings'],
+  ['a repeated enum value', { type: 'string', enum: ['ok', 'ok'] }, 'x.schema.json.list[].field: enum repeats "ok"'],
+  ['a repeated required entry', { type: 'object', properties: { a: { type: 'string' } }, required: ['a', 'a'], additionalProperties: false }, 'x.schema.json.list[].field: required repeats "a"'],
+  ['required as a string', { type: 'object', properties: { a: { type: 'string' } }, required: 'a', additionalProperties: false }, 'x.schema.json.list[].field: required must be a list'],
+  ['required naming no property', { type: 'object', properties: {}, required: ['ghost'], additionalProperties: false }, 'x.schema.json.list[].field: required names "ghost", which is not a property'],
+  ['an empty-named property missing from required', { type: 'object', properties: { '': { type: 'string' } }, required: [], additionalProperties: false }, 'x.schema.json.list[].field: required lacks property ""'],
+  ['an empty property name', { type: 'object', properties: { '': { type: 'string' } }, required: [''], additionalProperties: false }, 'x.schema.json.list[].field: property name "" cannot be reached by a dotted path'],
+  ['a property name with a dot', { type: 'object', properties: { 'a.b': { type: 'string' } }, required: ['a.b'], additionalProperties: false }, 'x.schema.json.list[].field: property name "a.b" cannot be reached by a dotted path'],
+  ['properties as a number', { type: 'object', properties: 5, required: [], additionalProperties: false }, 'x.schema.json.list[].field: properties must be an object'],
+  ['a null schema', null, 'x.schema.json.list[].field: schema must be an object'],
+  ['null items', { type: 'array', items: null }, 'x.schema.json.list[].field[]: schema must be an object'],
+]) {
+  test(`a keyword with a value outside the strict subset is rejected with its path (${what})`, () => {
+    assert.throws(() => briefs.assertStrict(inList(field), 'x.schema.json'), { message });
+  });
+}
+
+test('the claim enum must equal the declared tokens', () => {
+  assert.doesNotThrow(() => briefs.assertClaimEnum(example('review'), ['ok', 'changes', 'blocked']));
+});
+
+test('the claim enum must equal the declared tokens, in any order', () => {
+  assert.doesNotThrow(() => briefs.assertClaimEnum(example('red'), ['blocked', 'ok']));
+});
+
+test('the claim enum must equal the declared tokens: a token missing from the enum is rejected', () => {
+  assert.throws(() => briefs.assertClaimEnum(example('red'), ['ok', 'blocked', 'misscoped']), {
+    message: 'claim: enum "ok" | "blocked" does not equal the declared tokens "ok" | "blocked" | "misscoped"',
+  });
+});
+
+test('the claim enum must equal the declared tokens: an enum value with no token is rejected', () => {
+  assert.throws(() => briefs.assertClaimEnum(example('review'), ['ok', 'blocked']), {
+    message: 'claim: enum "ok" | "changes" | "blocked" does not equal the declared tokens "ok" | "blocked"',
+  });
+});
+
+test('the claim enum must equal the declared tokens: a case-only difference is named', () => {
+  assert.throws(() => briefs.assertClaimEnum(example('red'), ['OK', 'blocked']), {
+    message: 'claim: enum "ok" | "blocked" does not equal the declared tokens "OK" | "blocked" (they differ in case)',
+  });
+});
+
+test('the claim enum must equal the declared tokens: an empty token list shows (none)', () => {
+  assert.throws(() => briefs.assertClaimEnum(example('red'), []), { message: 'claim: enum "ok" | "blocked" does not equal the declared tokens (none)' });
+});
+
+test('the claim enum must equal the declared tokens: an empty enum value is shown quoted', () => {
+  const emptyValue = example('red');
+  emptyValue.properties.claim.enum = ['ok', ''];
+  assert.throws(() => briefs.assertClaimEnum(emptyValue, ['ok']), { message: 'claim: enum "ok" | "" does not equal the declared tokens "ok"' });
+});
+
+test('the claim enum must equal the declared tokens: case twins in the enum are rejected', () => {
+  const caseTwins = example('red');
+  caseTwins.properties.claim.enum = ['ok', 'Ok', 'blocked'];
+  assert.throws(() => briefs.assertClaimEnum(caseTwins, ['ok', 'Ok', 'blocked']), { message: 'claim: "ok" | "Ok" | "blocked" repeats a value or differs only in case' });
+});
+
+test('the claim enum must equal the declared tokens: a schema with no claim is rejected', () => {
+  const noClaim = example('red');
+  delete noClaim.properties.claim;
+  noClaim.required = ['summary', 'tests', 'notes', 'diagnosis', 'reason'];
+  assert.throws(() => briefs.assertClaimEnum(noClaim, ['ok', 'blocked']), { message: 'claim: the schema has no claim enum' });
+});
+
+// The validator collects every error, so these inputs can arrive from a schema or Flow that already failed (#106).
+const selfList = ['ok'];
+selfList.push(selfList);
+const numericClaim = { type: 'object', properties: { claim: { type: 'string', enum: [1] } }, required: ['claim'], additionalProperties: false };
+
+for (const [what, schema, tokens, message] of [
+  ['a null schema', null, ['ok'], 'claim: the schema has no claim enum'],
+  ['a claim enum of numbers', numericClaim, ['ok'], 'claim: enum must be a non-empty list of strings'],
+  ['a token that is not a string', example('red'), ['ok', true], 'claim: the declared tokens must be a list of strings'],
+  ['a token list given as a string', example('red'), 'ok', 'claim: the declared tokens must be a list of strings'],
+  ['a token list that contains itself', example('red'), selfList, 'claim: the declared tokens must be a list of strings'],
+]) {
+  test(`the claim enum must equal the declared tokens: ${what} is an error, not a TypeError`, () => {
+    assert.throws(() => briefs.assertClaimEnum(schema, tokens), { name: 'Error', message });
+  });
+}
+
+for (const [name, path, kind] of [
+  ['review', 'claim', { kind: 'enum', values: ['ok', 'changes', 'blocked'] }],
+  ['review', 'needsTest', { kind: 'boolean' }],
+  ['review', 'summary', { kind: 'string' }],
+  ['review', 'findings', { kind: 'list', of: { kind: 'object' } }],
+  ['review', 'findings.severity', { kind: 'list', of: { kind: 'enum', values: ['blocker', 'major', 'minor'] } }],
+  ['review', 'findings.file', { kind: 'list', of: { kind: 'string' } }],
+  ['implement', 'qa', { kind: 'object' }],
+  ['implement', 'qa.setup', { kind: 'string' }],
+  ['implement', 'qa.steps.expected', { kind: 'list', of: { kind: 'string' } }],
+  ['implement', 'qa.edgeCases', { kind: 'list', of: { kind: 'string' } }],
+  ['implement', 'dod.met', { kind: 'list', of: { kind: 'boolean' } }],
+]) {
+  test(`fieldType types nested objects and arrays of objects (${name} ${path})`, () => {
+    assert.deepEqual(briefs.fieldType(example(name), path), kind);
+  });
+}
+
+test('fieldType types an integer', () => {
+  assert.deepEqual(briefs.fieldType(withCount, 'count'), { kind: 'integer' });
+});
+
+for (const [name, path, error] of [
+  ['review', 'missing', '"missing" is not a field of the schema'],
+  ['review', 'findings.missing', '"findings.missing" is not a field of the schema'],
+  ['review', 'summary.length', '"summary.length" is not a field of the schema'],
+  ['implement', 'qa.steps.action.x', '"qa.steps.action.x" is not a field of the schema'],
+  ['review', 'qa.steps.action.x', '"qa.steps.action.x": "qa" is not a field of the schema'],
+  ['review', '', 'the field path is empty'],
+  ['review', '.claim', '".claim" has an empty segment'],
+  ['review', 'findings..file', '"findings..file" has an empty segment'],
+  ['review', 'claim.', '"claim." has an empty segment'],
+]) {
+  test(`fieldType returns an error for a path outside the schema (${name} ${JSON.stringify(path)})`, () => {
+    assert.deepEqual(briefs.fieldType(example(name), path), { error });
+  });
+}
+
+for (const [what, schema, path, error] of [
+  ['a null schema', null, 'claim', '"claim": the schema is outside the strict subset ((root): schema must be an object)'],
+  ['an array without items', inField({ type: 'array' }), 'field', '"field": the schema is outside the strict subset ((root).field: array lacks items)'],
+  ['a number path', withCount, 3, 'the field path must be a string, not number'],
+  ['a null path', withCount, null, 'the field path must be a string, not null'],
+  ['an object path whose toString is null', withCount, { toString: null }, 'the field path must be a string, not object'],
+]) {
+  test(`fieldType returns an error, not a TypeError, for ${what}`, () => {
+    assert.deepEqual(briefs.fieldType(schema, path), { error });
+  });
+}
 
 test('validateResponse accepts exactly one lowercase enum token as the claim', () => {
   assert.deepEqual(briefs.validateResponse(briefs.RED_SCHEMA, validRed), { valid: true, claim: 'ok' });
