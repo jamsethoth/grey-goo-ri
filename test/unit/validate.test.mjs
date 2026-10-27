@@ -706,3 +706,91 @@ test('malformed routing is an error, never a throw, in the graph checks', async 
     { at: `${V}.senior-dev.maxVisits`, message: 'maxVisits must be a positive integer' },
   ]);
 });
+
+test('a required list input is met when each passing token produces a different source', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: ['a'] }, changes: { requires: ['b'] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'a', do: 'check', kind: 'command', command: 'test' },
+      { id: 'b', do: 'check', kind: 'command', command: 'test' },
+    ],
+    passed: [{ when: { claim: 'ok' }, outcome: 'go' }, { when: { claim: 'changes' }, outcome: 'go' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: ['judge.a.evidence', 'judge.b.evidence'] } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('a row keyed to one Claim token does not produce its Outcome for another', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: ['a'] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'a', do: 'check', kind: 'command', command: 'test' },
+    ],
+    passed: [{ when: { claim: 'ok' }, outcome: 'go' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.a.evidence' } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('a Vertex\'s exhausted target is reached only after the Vertex ran', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'start',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      start: { procedure: 'base-check', route: { ok: 'producer' } },
+      producer: { procedure: 'base-check', maxVisits: 1, exhausted: 'consumer', route: { ok: 'producer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence' } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('an edge\'s exhausted target is reached only after the edge was taken', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'start',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      start: { procedure: 'base-check', route: { ok: { to: 'producer', max: 1, exhausted: 'consumer' } } },
+      producer: { procedure: 'base-check', route: { ok: 'start' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence' } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('a failed Check leaves no evidence, so an optional input reading only it is produced on no path', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'producer',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      producer: { procedure: 'base-check', route: { failed: 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence', optional: true } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'flows.default.ticket.vertices.consumer.inputs.evidence', message: 'input evidence is optional, but no path to consumer produces any of its sources' },
+  ]);
+});
