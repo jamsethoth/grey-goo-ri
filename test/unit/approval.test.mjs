@@ -92,3 +92,11 @@ test('a pending instance without its Await Label event is missing', () => {
   const read = approval.read({ pending: pending(), timeline: timeline('no-request'), digest: approval.digest(approved), permissions });
   assert.deepEqual(read, { kind: 'missing' });
 });
+
+test('a mixed-case decide label gives a lowercase outcome', () => {
+  const read = approval.read({ pending: pending(), timeline: timeline('mixed-case-decision'), digest: approval.digest(approved), permissions });
+  assert.deepEqual(read, {
+    kind: 'consume',
+    decision: { event: 300, actor: 'owner', time: '2026-10-27T11:00:00Z', outcome: 'approved' },
+  });
+});
