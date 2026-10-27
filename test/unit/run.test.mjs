@@ -178,7 +178,7 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
     'vertex implementer: no harness configured for agent implementer',
     'vertex reviewer: no harness configured for agent reviewer',
     'vertex implementer-fix: no harness configured for agent implementer',
-    `Merge ${join(examples, 'claude.json')} or ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,
+    `Merge one of ${join(examples, 'claude.json')}, ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,
   ]);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.harness.calls.length, 0, 'no agent started');

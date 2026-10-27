@@ -4,6 +4,7 @@ import * as doctor from '../lib/doctor.mjs';
 import * as exec from '../lib/exec.mjs';
 import * as git from '../lib/git.mjs';
 import * as gh from '../lib/github.mjs';
+import * as interpreter from '../lib/interpreter.mjs';
 import { parseOpts, positiveInt, UsageError } from '../lib/opts.mjs';
 import * as run from '../lib/run.mjs';
 
@@ -35,8 +36,9 @@ const command = process.argv[2];
 async function runCommand(opts) {
   const target = positiveInt(opts._[0], 'ticket');
   const { mainRoot } = await git.repoInfo(process.cwd());
-  const harnesses = { claude: await import('../lib/harnesses/claude.mjs'), codex: await import('../lib/harnesses/codex.mjs') };
-  const results = await run.runTarget({ target, config: loadConfig(mainRoot), harnesses, gh, git, exec, cwd: mainRoot,
+  const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.mjs');
+  const results = await run.runTarget({ target, config: loadConfig(mainRoot), harnesses,
+    protectedPaths: interpreter.protectedFiles(harnesses), gh, git, exec, cwd: mainRoot,
     log: (m) => process.stdout.write(`${m}\n`) });
   process.exitCode = run.runExitCode(results);
 }

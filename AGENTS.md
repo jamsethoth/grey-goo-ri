@@ -55,6 +55,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/approval.mjs` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.mjs` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.mjs` | the Harness contract check and shared Usage shape |
+| `lib/harnesses/shipped.mjs` | the shipped Harnesses by name; the only module outside a Harness that names one |
 | `lib/harnesses/claude.mjs` | the Claude Code Harness |
 | `lib/harnesses/codex.mjs` | the Codex Harness |
 | `lib/exec.mjs` | process spawn and job-object runner (ported) |

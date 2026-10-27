@@ -241,7 +241,7 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
   const responses = { ...golden.firstVisitResponses, 'implementer/1/red/1': { throw: new interpreter.CrashError('gg died during the call') } };
   const f = fixture(t, { responses, labels: [IN_PROGRESS] });
   await seedExecution(f);
-  const warning = /ignored Protected Files such as \.claude\/settings\.local\.json[^]*before deleting the record/;
+  const warning = /including ignored Protected Files\. Check them[^]*before deleting the record/;
 
   const first = await run.runTarget(f.options);
   assert.equal(run.runExitCode(first), 2, JSON.stringify(first));
