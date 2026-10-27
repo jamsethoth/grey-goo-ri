@@ -278,7 +278,7 @@ test('a Flow without plan: null or a positive actionCap is an error', async () =
   const config = example();
   delete config.flows.default.plan;
   config.flows.default.actionCap = 0;
-  config.flows.light = { plan: 'epic', actionCap: 20, ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check', route: { ok: { end: 'needs-human' } } } } } };
+  config.flows.light = { plan: 'epic', actionCap: 20, ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check' } } } };
   assert.deepEqual((await check(config)).errors, [
     { at: 'flows.default', message: 'plan is required: null when the Flow has no Epic-level planning' },
     { at: 'flows.default.actionCap', message: 'actionCap must be a positive integer' },
@@ -470,9 +470,6 @@ test('a passed row on a Check its token requires failing is unreachable even whe
   const files = schemas();
   files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
   config.procedures.fix.claims.partial = { requires: [] };
-  // Read-only, so no Vertex commits on partial's passing path (S2).
-  config.procedures.implement.access = 'read-only';
-  config.procedures.fix.access = 'read-only';
   assert.deepEqual((await check(config, files)).errors, [{
     at: 'procedures.implement.passed',
     message: 'rule table implement.passed: row 1 (odd) is unreachable: it matches no input',
@@ -490,13 +487,12 @@ test('a failed row on its token\'s only required Check passing is unreachable', 
 
 test('a token whose every passing case a row maps away is not an Outcome', async () => {
   const config = example();
-  config.procedures.implement.claims.partial = { requires: [] };
+  config.procedures.implement.claims.partial = { requires: ['test'] };
   config.procedures.implement.passed = [{ when: { claim: 'ok' }, outcome: 'done-ish' }];
   const files = schemas();
   files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
-  config.procedures.fix.claims.partial = { requires: [] };
-  config.procedures.implement.access = 'read-only';
-  config.procedures.fix.access = 'read-only';
+  config.procedures.fix.claims.partial = { requires: ['test'] };
+  config.flows.default.ticket.routes['done-ish'] = 'reviewer';
   const { errors, flows } = await check(config, files);
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.green.outcomes,
@@ -688,6 +684,17 @@ test('the example\'s routing reproduces its admission summary', async () => {
   assert.deepEqual(v.publish.routing.failed, { target: { end: 'needs-human' }, by: 'Flow "*"', work: null });
 });
 
+test('the graph checks wait until no other check fails', async () => {
+  const config = example();
+  config.procedures.implement.actions[1].command = 'lint';
+  config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
+  const { errors, flows } = await check(config);
+  assert.deepEqual(errors, [
+    { at: 'procedures.implement.actions[1]', message: 'Check test names command "lint", which the repository Layer does not declare' },
+  ]);
+  assert.deepEqual(flows.default.ticket.vertices.reviewer.routing.changes, { target: 'implementer-fix', by: 'Vertex route', work: null });
+});
+
 test('malformed routing is an error, never a throw, in the graph checks', async () => {
   const config = example();
   config.flows.default.ticket.vertices['senior-green'].exhausted = ['nowhere'];
@@ -697,9 +704,5 @@ test('malformed routing is an error, never a throw, in the graph checks', async 
     { at: `${V}.senior-green.exhausted`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
     { at: `${V}.reviewer.route.retest`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
     { at: `${V}.senior-dev.maxVisits`, message: 'maxVisits must be a positive integer' },
-    {
-      at: 'flows.default.ticket',
-      message: 'the cycle through reviewer, senior-dev has no edge with max and no Vertex with maxVisits; the Action Cap does not bound a cycle',
-    },
   ]);
 });
