@@ -42,7 +42,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/effects.mjs` | write-ahead side effects, the activity bracket, remote retries and backoff, the repo-lock guard |
 | `lib/terminal.mjs` | Terminals: hold, abandonment, fault, run-stopped and their reports, Terminal Reason texts |
 | `lib/procedures.mjs` | tdd, fix, review, plan as data (Actions, declared Checks, options, Outcome enum) |
-| `lib/briefs.mjs` | Brief builders, Structured Response schemas and validation |
+| `lib/briefs.mjs` | Brief context and rendering, Structured Response schemas and validation |
 | `lib/outcome.mjs` | the transition table and Resolution Policy |
 | `lib/rules.mjs` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
 | `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, review-pass |
@@ -62,7 +62,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/git.mjs` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.mjs` | canonical local paths and the path key every path comparison uses |
 | `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
-| `lib/render.mjs` | commit messages, PR body, comments, provenance, ticket and epic bodies |
+| `lib/render.mjs` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
+| `lib/templates/` | gg's own comment templates: the Terminal Reason comment |
+| `defaults/templates/` | the shipped Briefs, PR body, review comment and stop comment, beside the shipped Personas |
 | `lib/work.mjs` | `gg work` and the Registry |
 | `lib/trace.mjs` | Trajectory export and `gg trace` |
 | `lib/stats.mjs` | `gg stats` |
