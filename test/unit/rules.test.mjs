@@ -242,7 +242,7 @@ test('rows that share their first ten earlier rows but not the rest are separate
   };
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
-  // Row 13 is taken by rows 1-12, row 14 by rows 1-11 and 13: the same first ten, different sets.
+  // Row 13 is taken by rows 1-12 and row 14 by rows 1-11: the same first ten, different sets.
   assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.more]), [[[12, 12], [[0, 9]], 2], [[13, 13], [[0, 9]], 1]]);
   assert.match(result.warnings[1].message, /, row 10 \(n = 9\), and 1 more row, for example/);
 });
