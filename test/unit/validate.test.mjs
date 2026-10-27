@@ -278,7 +278,7 @@ test('a Flow without plan: null or a positive actionCap is an error', async () =
   const config = example();
   delete config.flows.default.plan;
   config.flows.default.actionCap = 0;
-  config.flows.light = { plan: 'epic', actionCap: 20, ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check' } } } };
+  config.flows.light = { plan: 'epic', actionCap: 20, ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check', route: { ok: { end: 'needs-human' } } } } } };
   assert.deepEqual((await check(config)).errors, [
     { at: 'flows.default', message: 'plan is required: null when the Flow has no Epic-level planning' },
     { at: 'flows.default.actionCap', message: 'actionCap must be a positive integer' },
@@ -470,6 +470,9 @@ test('a passed row on a Check its token requires failing is unreachable even whe
   const files = schemas();
   files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
   config.procedures.fix.claims.partial = { requires: [] };
+  // Read-only, so no Vertex commits on partial's passing path (S2).
+  config.procedures.implement.access = 'read-only';
+  config.procedures.fix.access = 'read-only';
   assert.deepEqual((await check(config, files)).errors, [{
     at: 'procedures.implement.passed',
     message: 'rule table implement.passed: row 1 (odd) is unreachable: it matches no input',
@@ -492,6 +495,8 @@ test('a token whose every passing case a row maps away is not an Outcome', async
   const files = schemas();
   files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
   config.procedures.fix.claims.partial = { requires: [] };
+  config.procedures.implement.access = 'read-only';
+  config.procedures.fix.access = 'read-only';
   const { errors, flows } = await check(config, files);
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.green.outcomes,
@@ -551,4 +556,150 @@ test('a Check\'s evidence and a response object of the same fields are one type'
   config.flows.default.ticket.vertices['senior-dev'].inputs.report.from = ['green.green.response'];
   config.flows.default.ticket.vertices.publish.inputs.report.from = ['green.green.response'];
   assert.deepEqual((await check(config, files)).errors, []);
+});
+
+test('an unrouted Outcome is an error', async () => {
+  const config = example();
+  delete config.flows.default.ticket.routes['*'];
+  config.flows.default.ticket.routes.blocked = { end: 'needs-human' };
+  delete config.flows.default.ticket.vertices.reviewer.route.repeat;
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.reviewer`, message: 'Outcome repeat is not routed by the Vertex or the Flow\'s routes' },
+  ]);
+});
+
+test('the engine Outcomes default to end: needs-human', async () => {
+  const config = example();
+  delete config.flows.default.ticket.routes['*'];
+  config.flows.default.ticket.routes.blocked = { end: 'needs-human' };
+  const { errors, flows } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(flows.default.ticket.vertices.red.routing.failed,
+    { target: { end: 'needs-human' }, by: 'engine default', work: 'left in place' });
+  assert.deepEqual(flows.default.ticket.vertices.reviewer.routing['harness-timeout'],
+    { target: { end: 'needs-human' }, by: 'engine default', work: null });
+});
+
+test('a cycle bounded only by the Action Cap is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'flows.default.ticket',
+    message: 'the cycle through reviewer, implementer-fix has no edge with max and no Vertex with maxVisits; the Action Cap does not bound a cycle',
+  }]);
+});
+
+test('a cycle through an edge\'s exhausted target is not bounded by that edge\'s max', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.reviewer.route.changes = { to: 'implementer-fix', max: 2, exhausted: 'implementer-fix' };
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'flows.default.ticket',
+    message: 'the cycle through reviewer, implementer-fix has no edge with max and no Vertex with maxVisits; the Action Cap does not bound a cycle',
+  }]);
+});
+
+test('a self-edge with max is a bounded cycle', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.baseline.route.failed = { to: 'baseline', max: 2, exhausted: { end: 'needs-human' } };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('an agentless Vertex may be the entry', async () => {
+  const { errors, flows } = await check(example());
+  assert.deepEqual(errors, []);
+  assert.equal(flows.default.ticket.entry, 'baseline');
+  assert.equal(flows.default.ticket.vertices.baseline.agent, null);
+});
+
+test('a path to ready-for-qa without pr-ready is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.reviewer.route.ok = { end: 'ready-for-qa' };
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.reviewer`, message: 'Outcome ok reaches end ready-for-qa on a path that runs no pr-ready' },
+  ]);
+});
+
+test('pr-ready in a Procedure whose token requires no Check is an error', async () => {
+  const config = example();
+  config.procedures.publish.actions.shift();
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'procedures.publish.actions[1]', message: 'pr-ready publishes only after passing Checks, but Claim token ok requires none' },
+  ]);
+});
+
+test('a passing write path without a commit is an error', async () => {
+  const config = example();
+  config.procedures.implement.actions.splice(2, 1);
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.green`, message: 'Vertex green writes, so it must commit on every passing path, but procedure implement has no commit Action' },
+    { at: `${V}.senior-green`, message: 'Vertex senior-green writes, so it must commit on every passing path, but procedure implement has no commit Action' },
+  ]);
+});
+
+test('a write Vertex whose committing token requires no Check is an error', async () => {
+  const config = example();
+  config.procedures.fix.claims.ok.requires = [];
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.implementer-fix`, message: 'Vertex implementer-fix writes, so its committing Claim token ok must require a Check' },
+    { at: `${V}.senior-dev`, message: 'Vertex senior-dev writes, so its committing Claim token ok must require a Check' },
+  ]);
+});
+
+test('a required input missing on one path is an error', async () => {
+  const config = example();
+  delete config.flows.default.ticket.vertices.green.inputs.tests.optional;
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.green.inputs.tests`, message: 'input tests is required, but some path to green produces none of its sources' },
+  ]);
+});
+
+test('an optional input produced on no path is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.previous = { from: 'publish.rescue', optional: true };
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.implementer-fix.inputs.previous`, message: 'input previous is optional, but no path to implementer-fix produces any of its sources' },
+  ]);
+});
+
+test('an unreachable Vertex is a warning', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.orphan = { procedure: 'base-check', route: { ok: 'red' } };
+  const { errors, warnings } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(warnings.at(-1), { at: `${V}.orphan`, message: 'Vertex orphan is not reachable from the entry' });
+});
+
+test('the example\'s routing reproduces its admission summary', async () => {
+  const { errors, warnings, flows } = await check(example());
+  const v = flows.default.ticket.vertices;
+  assert.deepEqual(errors, []);
+  assert.equal(warnings.length, 2);
+  assert.deepEqual(v.baseline.routing.failed, { target: { end: 'needs-human' }, by: 'Flow "*"', work: null });
+  assert.deepEqual(v.red.routing.blocked, { target: { end: 'needs-human' }, by: 'Flow "*"', work: 'left in place' });
+  assert.deepEqual(v.red.routing['no-test'], { target: 'green', by: 'Vertex route', work: 'rescued' });
+  assert.deepEqual(v.green.routing.failed, { target: 'senior-green', by: 'Vertex route', work: 'rescued, or left in place once exhausted' });
+  assert.deepEqual(v.green.routing['bad-test'], {
+    target: { to: 'red', max: 1, exhausted: { end: 'needs-human' } }, by: 'Vertex route', work: 'rescued, or left in place once exhausted',
+  });
+  assert.deepEqual(v['implementer-fix'].routing.failed, { target: 'senior-dev', by: 'Vertex route', work: 'rescued, or left in place once exhausted' });
+  assert.deepEqual(v['senior-red'].routing['no-test'], { target: 'senior-dev', by: 'Vertex route', work: 'rescued, or left in place once exhausted' });
+  assert.deepEqual(v.reviewer.routing.misscoped, { target: { end: 'needs-replan' }, by: 'Flow routes', work: null });
+  assert.deepEqual(v.publish.routing.ok, { target: { end: 'ready-for-qa' }, by: 'Vertex route', work: null });
+  assert.deepEqual(v.publish.routing.failed, { target: { end: 'needs-human' }, by: 'Flow "*"', work: null });
+});
+
+test('malformed routing is an error, never a throw, in the graph checks', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices['senior-green'].exhausted = ['nowhere'];
+  config.flows.default.ticket.vertices.reviewer.route.retest = { to: 'red', max: 2, exhausted: 7 };
+  config.flows.default.ticket.vertices['senior-dev'].maxVisits = 'one';
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.senior-green.exhausted`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
+    { at: `${V}.reviewer.route.retest`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
+    { at: `${V}.senior-dev.maxVisits`, message: 'maxVisits must be a positive integer' },
+    {
+      at: 'flows.default.ticket',
+      message: 'the cycle through reviewer, senior-dev has no edge with max and no Vertex with maxVisits; the Action Cap does not bound a cycle',
+    },
+  ]);
 });
