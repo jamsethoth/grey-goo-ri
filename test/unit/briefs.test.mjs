@@ -187,6 +187,20 @@ test('the claim enum must equal the declared tokens: a schema with no claim is r
   assert.throws(() => briefs.assertClaimEnum(noClaim, ['ok', 'blocked']), { message: 'claim: the schema has no claim enum' });
 });
 
+// The validator collects every error, so these inputs can arrive from a schema or Flow that already failed (#106).
+const numericClaim = { type: 'object', properties: { claim: { type: 'string', enum: [1] } }, required: ['claim'], additionalProperties: false };
+
+for (const [what, schema, tokens, message] of [
+  ['a null schema', null, ['ok'], 'claim: the schema has no claim enum'],
+  ['a claim enum of numbers', numericClaim, ['ok'], 'claim: enum must be a non-empty list of strings'],
+  ['a token that is not a string', example('red'), ['ok', true], 'claim: the declared tokens must be a list of strings, not ["ok",true]'],
+  ['a token list given as a string', example('red'), 'ok', 'claim: the declared tokens must be a list of strings, not "ok"'],
+]) {
+  test(`the claim enum must equal the declared tokens: ${what} is an error, not a TypeError`, () => {
+    assert.throws(() => briefs.assertClaimEnum(schema, tokens), { name: 'Error', message });
+  });
+}
+
 for (const [name, path, kind] of [
   ['review', 'claim', { kind: 'enum', values: ['ok', 'changes', 'blocked'] }],
   ['review', 'needsTest', { kind: 'boolean' }],
@@ -218,6 +232,17 @@ for (const [name, path, error] of [
 ]) {
   test(`fieldType returns an error for a path outside the schema (${name} ${JSON.stringify(path)})`, () => {
     assert.deepEqual(briefs.fieldType(example(name), path), { error });
+  });
+}
+
+for (const [what, schema, path, error] of [
+  ['a null schema', null, 'claim', 'claim: the schema is outside the strict subset ((root): schema must be an object)'],
+  ['an array without items', inField({ type: 'array' }), 'field', 'field: the schema is outside the strict subset ((root).field: array lacks items)'],
+  ['a number path', withCount, 3, '3: a field path must be a string'],
+  ['a null path', withCount, null, 'null: a field path must be a string'],
+]) {
+  test(`fieldType returns an error, not a TypeError, for ${what}`, () => {
+    assert.deepEqual(briefs.fieldType(schema, path), { error });
   });
 }
 
