@@ -424,6 +424,16 @@ for (const [what, mutate, errors] of [
     [{ at: `${V}.red.inputs`, message: 'inputs must be an object from name to { from, optional?, pick? }' }]],
   ['an Agent that is a string', (c) => { c.agents.reviewer = 'reviewer.md'; },
     [{ at: `${V}.reviewer`, message: 'agent reviewer must be an object' }]],
+  ['an Action kind given as a list', (c) => { c.procedures.publish.actions[2] = { id: 'ready', do: ['pr-ready'] }; },
+    [{ at: 'procedures.publish.actions[2]', message: 'do ["pr-ready"] is not one of agent, check, commit, push, pr-upsert, pr-ready, comment, await-approval' }]],
+  ['a Check kind given as a list', (c) => { c.procedures['base-check'].actions[0].kind = ['command']; },
+    [{ at: 'procedures.base-check.actions[0]', message: 'Check kind ["command"] is not one of command, tests-fail, response, repeat' }]],
+  ['a command given as a list', (c) => { c.procedures['base-check'].actions[0].command = ['test']; },
+    [{ at: 'procedures.base-check.actions[0]', message: 'Check test names command ["test"], which the repository Layer does not declare' }]],
+  ['a Procedure name given as a list', (c) => { c.flows.default.ticket.vertices.publish.procedure = ['publish']; },
+    [{ at: `${V}.publish`, message: 'procedure ["publish"] is not declared' }]],
+  ['a harness given as a list', (c) => { c.agents.reviewer.harness = ['fake']; },
+    [{ at: `${V}.reviewer`, message: 'agent reviewer names harness ["fake"], which is not registered' }]],
 ]) {
   test(`malformed configuration is an error, never a throw: ${what}`, async () => {
     const config = example();
@@ -493,5 +503,31 @@ test('schemas that differ only in the order of required or enum are one type', a
   files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
   files['fix.schema.json'].required.reverse();
   files['fix.schema.json'].properties.reason.enum.reverse();
+  assert.deepEqual((await check(config, files)).errors, []);
+});
+
+test('a configuration that is not an object is one error, not a throw', async () => {
+  const validate = await import('../../lib/validate.mjs');
+  assert.deepEqual(validate.validate(null, { harnesses: {}, readSchema: () => ({}) }),
+    { flows: {}, errors: [{ at: '(root)', message: 'the configuration must be an object' }], warnings: [] });
+});
+
+test('a Check\'s evidence and a response object of the same fields are one type', async () => {
+  const config = example();
+  config.procedures.fix.actions[0].schema = 'fix.schema.json';
+  const files = schemas();
+  files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
+  files['fix.schema.json'].properties.output = {
+    type: 'object',
+    properties: { command: { type: 'string' }, output: { type: 'string' } },
+    required: ['command', 'output'],
+    additionalProperties: false,
+  };
+  files['fix.schema.json'].required.push('output');
+  config.flows.default.ticket.vertices.green.inputs.red.from = ['red.red-check.evidence', 'implementer-fix.fix.response.output'];
+  config.flows.default.ticket.vertices.reviewer.inputs.report.from = ['green.green.response', 'senior-green.green.response'];
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.report.from = ['green.green.response'];
+  config.flows.default.ticket.vertices['senior-dev'].inputs.report.from = ['green.green.response'];
+  config.flows.default.ticket.vertices.publish.inputs.report.from = ['green.green.response'];
   assert.deepEqual((await check(config, files)).errors, []);
 });
