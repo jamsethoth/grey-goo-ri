@@ -45,7 +45,7 @@ async function runCommand(opts) {
 
 async function doctorCommand() {
   const { mainRoot } = await git.repoInfo(process.cwd());
-  const harnesses = { claude: await import('../lib/harnesses/claude.mjs'), codex: await import('../lib/harnesses/codex.mjs') };
+  const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.mjs');
   const { text, exitCode } = doctor.doctor({ config: loadConfig(mainRoot), harnesses, readSchema: doctor.layerReader(mainRoot) });
   process.stdout.write(text);
   process.exitCode = exitCode;
