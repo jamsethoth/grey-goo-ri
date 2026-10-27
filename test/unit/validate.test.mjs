@@ -552,3 +552,15 @@ test('a Check\'s evidence and a response object of the same fields are one type'
   config.flows.default.ticket.vertices.publish.inputs.report.from = ['green.green.response'];
   assert.deepEqual((await check(config, files)).errors, []);
 });
+
+test('a row partly taken only across Claim tokens is warned once', async () => {
+  const config = example();
+  // In token ok's inputs row 1 takes all of row 2; in token changes' row 2 is free. Together it is partly taken.
+  config.procedures.review.passed = [{ when: { claim: 'ok' }, outcome: 'ok' }, { when: {}, outcome: 'other' }];
+  const { errors, warnings } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(warnings, [{
+    at: 'procedures.review.passed',
+    message: 'rule table review.passed: row 2 (no conditions) is partly taken by row 1 (claim = ok), for example {"claim":"ok"}',
+  }]);
+});

@@ -1078,9 +1078,9 @@ and the owner accepted all four findings as recommended.
   - A table falls through to its default for exactly the tokens with a legal input that no row matches. In the `passed`
     and `stopped` tables only those tokens, or `otherwise` for `passed`, are among the Vertex's Outcomes (R12b); the
     `failed` table's default stays `otherwise`, else the engine Outcome `failed` (T7), for any token that falls.
-  #106 analyses each token's inputs separately and combines them, which gives exact errors and Outcomes. Its warnings
-  are merged per row range, so a row partly taken only across tokens can go unwarned until issue #165 aggregates the
-  analysis across tokens before warning. Issues #106, #165.
+  The analyser takes the union as a list of boxes, one per token (one per required Check in the `failed` table), and
+  gathers what each row matches and who takes it across them before warning; N2's work limit sums the boxes. Issues
+  #106, #165.
 
 ## Open
 
