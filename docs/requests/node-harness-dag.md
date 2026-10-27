@@ -323,7 +323,7 @@ Resolution. Fixed, not configurable: an Outcome from the `passed` table needs a 
 claim and every Check the claimed token requires passing on the current tree; an integrity violation always stops;
 publishing runs only on the tree its Vertex's required Checks passed. Which Outcome a Visit takes among the
 legitimate ones is the Procedure's rule tables, first match, analysed at admission for unreachable rows and overlaps
-(ADR 0014). Configurable per agent through `resolution`, with a shipped default: per-class retry budgets. Every
+over the inputs of every Claim token that reaches each table (ADR 0014). Configurable per agent through `resolution`, with a shipped default: per-class retry budgets. Every
 signal received and the rule that decided (`{ table, row }`) are recorded on the action event.
 
 ### 3.5 Execution record, approvals and work management

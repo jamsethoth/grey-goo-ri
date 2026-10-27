@@ -1,0 +1,249 @@
+{
+  "testPaths": ["**/test/**", "**/*.test.*"],
+  "commands": { "test": "npm test" },
+  "agents": {
+    "implementer": { "persona": "implementer.md", "access": "workspace-write" },
+    "reviewer": { "persona": "reviewer.md", "access": "read-only" },
+    "senior": { "persona": "implementer.md", "access": "workspace-write" }
+  },
+  "procedures": {
+    "base-check": {
+      "actions": [
+        { "id": "test", "do": "check", "kind": "command", "command": "test", "reuse": "tree" }
+      ],
+      "passed": [],
+      "failed": []
+    },
+    "tests-fail": {
+      "tests": "write",
+      "claims": {
+        "ok": { "requires": ["red-check"] },
+        "blocked": { "stop": true, "comment": "blocked.md" }
+      },
+      "actions": [
+        { "id": "red", "do": "agent", "brief": "red.md", "schema": "red.schema.json" },
+        { "id": "red-check", "do": "check", "kind": "tests-fail", "command": "test", "names": "response.tests",
+          "recoverBrief": "still-green.md" },
+        { "id": "commit", "do": "commit", "type": "test" }
+      ],
+      "recover": { "max": 1, "brief": "recover.md" },
+      "passed": [],
+      "failed": [],
+      "stopped": [
+        { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" },
+        { "when": { "response.reason": "no-test-needed" }, "outcome": "no-test" }
+      ]
+    },
+    "implement": {
+      "tests": "frozen",
+      "claims": {
+        "ok": { "requires": ["test"] },
+        "blocked": { "stop": true, "comment": "blocked.md" }
+      },
+      "actions": [
+        { "id": "green", "do": "agent", "brief": "green.md", "schema": "implement.schema.json" },
+        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "test-fix.md" },
+        { "id": "commit", "do": "commit", "type": "feat" },
+        { "id": "push", "do": "push" },
+        { "id": "pr", "do": "pr-upsert", "body": "pr-body.md",
+          "with": { "report": "green.response", "red": "inputs.red", "green": "test.evidence", "redReport": "inputs.redReport" } }
+      ],
+      "recover": { "max": 1, "brief": "recover.md" },
+      "passed": [],
+      "failed": [],
+      "stopped": [
+        { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" },
+        { "when": { "response.reason": "bad-test" }, "outcome": "bad-test" }
+      ]
+    },
+    "fix": {
+      "tests": { "named": "inputs.testFiles" },
+      "claims": {
+        "ok": { "requires": ["test"] },
+        "blocked": { "stop": true, "comment": "blocked.md" }
+      },
+      "actions": [
+        { "id": "fix", "do": "agent", "brief": "fix.md", "schema": "implement.schema.json" },
+        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "test-fix.md" },
+        { "id": "commit", "do": "commit", "type": "fix" },
+        { "id": "push", "do": "push" },
+        { "id": "pr", "do": "pr-upsert", "body": "pr-body.md",
+          "with": { "report": "fix.response", "red": "inputs.red", "green": "test.evidence", "redReport": "inputs.redReport" } }
+      ],
+      "recover": { "max": 1, "brief": "recover.md" },
+      "passed": [],
+      "failed": [],
+      "stopped": [
+        { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" }
+      ]
+    },
+    "review": {
+      "access": "read-only",
+      "claims": {
+        "ok": { "requires": [] },
+        "changes": { "requires": [] },
+        "blocked": { "stop": true, "comment": "blocked.md" }
+      },
+      "actions": [
+        { "id": "review", "do": "agent", "brief": "review.md", "schema": "review.schema.json" },
+        { "id": "review-pass", "do": "check", "kind": "response",
+          "all-of": [
+            { "field": "dodMet", "is": true },
+            { "field": "tddEvidenceOk", "is": true },
+            { "none": "findings", "where": { "severity": ["blocker", "major"] } }
+          ] },
+        { "id": "repeat", "do": "check", "kind": "repeat", "list": "response.findings", "fields": ["file", "severity", "issue"] },
+        { "id": "comment", "do": "comment", "target": "pr", "body": "review-comment.md" },
+        { "id": "pr", "do": "pr-upsert", "body": "pr-body.md",
+          "with": { "report": "inputs.report", "red": "inputs.red", "green": "inputs.green", "redReport": "inputs.redReport" } }
+      ],
+      "passed": [
+        { "when": { "claim": "ok", "check.review-pass": "passed" }, "outcome": "ok" },
+        { "when": { "check.repeat": "failed" }, "outcome": "repeat" },
+        { "when": { "response.needsTest": true }, "outcome": "retest" }
+      ],
+      "otherwise": "changes",
+      "stopped": [
+        { "when": { "response.reason": "misscoped" }, "outcome": "misscoped" }
+      ]
+    },
+    "publish": {
+      "actions": [
+        { "id": "test", "do": "check", "kind": "command", "command": "test" },
+        { "id": "pr", "do": "pr-upsert", "body": "pr-body.md",
+          "with": { "report": "inputs.report", "red": "inputs.red", "green": "inputs.green", "redReport": "inputs.redReport" } },
+        { "id": "pr-ready", "do": "pr-ready" }
+      ],
+      "passed": [],
+      "failed": []
+    }
+  },
+  "flows": {
+    "default": {
+      "plan": null,
+      "actionCap": 180,
+      "ticket": {
+        "entry": "baseline",
+        "routes": {
+          "misscoped": { "end": "needs-replan" },
+          "*": { "end": "needs-human" }
+        },
+        "vertices": {
+          "baseline": {
+            "procedure": "base-check",
+            "route": { "ok": "red" }
+          },
+          "red": {
+            "use": "implementer",
+            "procedure": "tests-fail",
+            "inputs": {
+              "findings": { "from": "reviewer.review.response.findings", "optional": true },
+              "previous": { "from": ["green.green.response", "senior-green.green.response"], "optional": true }
+            },
+            "route": { "ok": "green", "no-test": "green" }
+          },
+          "green": {
+            "use": "implementer",
+            "procedure": "implement",
+            "inputs": {
+              "tests": { "from": ["red.commit.files", "senior-red.commit.files"], "optional": true },
+              "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
+              "findings": { "from": "reviewer.review.response.findings", "optional": true },
+              "previous": { "from": "green.rescue", "optional": true },
+              "redReport": { "from": ["red.red.response", "senior-red.red.response"] }
+            },
+            "route": {
+              "ok": "reviewer",
+              "failed": "senior-green",
+              "bad-test": { "to": "red", "max": 1, "exhausted": { "end": "needs-human" } }
+            }
+          },
+          "senior-green": {
+            "use": "senior",
+            "procedure": "implement",
+            "maxVisits": 1,
+            "exhausted": { "end": "needs-human" },
+            "inputs": {
+              "tests": { "from": ["red.commit.files", "senior-red.commit.files"], "optional": true },
+              "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
+              "findings": { "from": "reviewer.review.response.findings", "optional": true },
+              "previous": { "from": "green.rescue", "optional": true },
+              "redReport": { "from": ["red.red.response", "senior-red.red.response"] }
+            },
+            "route": {
+              "ok": "reviewer",
+              "bad-test": { "to": "red", "max": 1, "exhausted": { "end": "needs-human" } }
+            }
+          },
+          "reviewer": {
+            "use": "reviewer",
+            "procedure": "review",
+            "inputs": {
+              "report": { "from": ["green.green.response", "senior-green.green.response", "implementer-fix.fix.response", "senior-dev.fix.response"] },
+              "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
+              "redReport": { "from": ["red.red.response", "senior-red.red.response"] },
+              "green": { "from": ["green.test.evidence", "senior-green.test.evidence", "implementer-fix.test.evidence", "senior-dev.test.evidence"] }
+            },
+            "route": {
+              "ok": "publish",
+              "retest": { "to": "red", "max": 2, "exhausted": "senior-red" },
+              "changes": { "to": "implementer-fix", "max": 2, "exhausted": "senior-dev" },
+              "repeat": { "to": "senior-dev", "max": 1, "exhausted": { "end": "needs-human" } }
+            }
+          },
+          "senior-red": {
+            "use": "senior",
+            "procedure": "tests-fail",
+            "maxVisits": 1,
+            "exhausted": { "end": "needs-human" },
+            "inputs": {
+              "findings": { "from": "reviewer.review.response.findings" },
+              "previous": { "from": ["green.green.response", "senior-green.green.response"], "optional": true }
+            },
+            "route": { "ok": "green", "no-test": "senior-dev" }
+          },
+          "implementer-fix": {
+            "use": "implementer",
+            "procedure": "fix",
+            "inputs": {
+              "report": { "from": ["green.green.response", "senior-green.green.response", "implementer-fix.fix.response", "senior-dev.fix.response"] },
+              "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
+              "redReport": { "from": ["red.red.response", "senior-red.red.response"] },
+              "green": { "from": ["green.test.evidence", "senior-green.test.evidence", "implementer-fix.test.evidence", "senior-dev.test.evidence"] },
+              "findings": { "from": "reviewer.review.response.findings" },
+              "testFiles": { "from": "reviewer.review.response.findings", "pick": "file" },
+              "previous": { "from": ["implementer-fix.rescue", "senior-red.rescue"], "optional": true }
+            },
+            "route": { "ok": "reviewer", "failed": "senior-dev" }
+          },
+          "senior-dev": {
+            "use": "senior",
+            "procedure": "fix",
+            "maxVisits": 1,
+            "exhausted": { "end": "needs-human" },
+            "inputs": {
+              "report": { "from": ["green.green.response", "senior-green.green.response", "implementer-fix.fix.response", "senior-dev.fix.response"] },
+              "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
+              "redReport": { "from": ["red.red.response", "senior-red.red.response"] },
+              "green": { "from": ["green.test.evidence", "senior-green.test.evidence", "implementer-fix.test.evidence", "senior-dev.test.evidence"] },
+              "findings": { "from": "reviewer.review.response.findings" },
+              "testFiles": { "from": "reviewer.review.response.findings", "pick": "file" },
+              "previous": { "from": ["implementer-fix.rescue", "senior-red.rescue"], "optional": true }
+            },
+            "route": { "ok": "reviewer" }
+          },
+          "publish": {
+            "procedure": "publish",
+            "inputs": {
+              "report": { "from": ["green.green.response", "senior-green.green.response", "implementer-fix.fix.response", "senior-dev.fix.response"] },
+              "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
+              "redReport": { "from": ["red.red.response", "senior-red.red.response"] },
+              "green": { "from": ["green.test.evidence", "senior-green.test.evidence", "implementer-fix.test.evidence", "senior-dev.test.evidence"] }
+            },
+            "route": { "ok": { "end": "ready-for-qa" } }
+          }
+        }
+      }
+    }
+  }
+}

@@ -40,7 +40,6 @@ test('gg with an unknown command prints usage to stderr and exits 1', () => {
 
 for (const [name, message] of [
   ['init', 'gg init: not implemented'],
-  ['doctor', 'gg doctor: not implemented'],
   ['plan', 'gg plan: not implemented'],
   ['publish', 'gg publish: not implemented'],
   ['work', 'gg work: not implemented'],
@@ -115,6 +114,21 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   assert.ok(r.stderr.includes('into the user Layer at '), r.stderr);
   assert.equal((r.stderr.match(/Merge /g) ?? []).length, 1);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
+});
+
+test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {
+  const agents = { implementer: { harness: 'claude' }, reviewer: { harness: 'claude' }, senior: { harness: 'claude' } };
+  const { repo, ggIn } = tempRepo(t, JSON.stringify({ agents }));
+  const layer = join(repo, '.agents', 'gg');
+  mkdirSync(layer, { recursive: true });
+  for (const name of ['gg.json', 'red.schema.json', 'implement.schema.json', 'review.schema.json']) {
+    writeFileSync(join(layer, name), readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url)));
+  }
+  const r = ggIn('doctor');
+  assert.ok(r.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'), r.stdout + r.stderr);
+  // The defaults Layer still ships the old Flow's Vertices until #121, so they merge in and fail validation.
+  assert.ok(r.stdout.includes('\nerror: flows.default.ticket.vertices.implementer: procedure "tdd" is not declared\n'), r.stdout);
+  assert.equal(r.status, 1);
 });
 
 test('gg run rejects a ticket that is not a positive integer', (t) => {

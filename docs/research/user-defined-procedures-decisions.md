@@ -74,6 +74,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | D4: option 1 covers use cases a, d, e and g | J5: use case a waits for the `changes` Check |
 | L11, L15: a cleanup hold continues with the recorded next Action | J4: the suspended Action's completion resumes from its recorded result |
 | R8d, U4: a partial-overlap warning per pair of rows; U4's three warnings | J14: one warning per partly taken row; U4's three overlaps in two |
+| R8b, J14: errors and warnings within each Claim token's split | J16: decided over the union of every token's legal inputs |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -1064,6 +1065,22 @@ and the owner accepted all four findings as recommended.
   declaration (T10). An integer's bounds come only from gg's own facts, such as `pass` and Check `runs`, because
   #104's strict subset has no `minimum` or `maximum`. #106 merges `fieldType`'s result with those facts, with no
   translation layer (R13e), and still builds the single path resolver (R14e). Issues #103, #106.
+
+## Owner decisions: rule tables across Claim tokens (2026-10-27)
+
+- J16. A rule table's domain is the union of the legal inputs of every Claim token that reaches it (R8b). For each such
+  token, `claim` is that token and the token's required Checks are `passed` in the `passed` table and not all
+  `passed` in the `failed` table; every other field keeps its whole domain. Everything the analysis decides is
+  decided over that union:
+  - A row is an error (unreachable, or never fires) only when it fires for no token.
+  - A row is partly taken (J14) when an earlier row matches first at some legal input the row matches, for any token.
+    It gets one warning naming every earlier row that takes part of it, whichever token's inputs show it.
+  - A table falls through to its default for exactly the tokens with a legal input that no row matches. In the `passed`
+    and `stopped` tables only those tokens, or `otherwise` for `passed`, are among the Vertex's Outcomes (R12b); the
+    `failed` table's default stays `otherwise`, else the engine Outcome `failed` (T7), for any token that falls.
+  #106 analyses each token's inputs separately and combines them, which gives exact errors and Outcomes. Its warnings
+  are merged per row range, so a row partly taken only across tokens can go unwarned until issue #165 aggregates the
+  analysis across tokens before warning. Issues #106, #165.
 
 ## Open
 

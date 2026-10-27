@@ -384,7 +384,8 @@ harness-neutral: its Agents name no Harness, model or effort, so a user or repos
 _Avoid_: tier, override file
 
 **Resolved Flow**:
-A Flow after layering and Agent expansion, as a Run actually uses it.
+A Flow after layering, Agent expansion and validation, as a Run actually uses it: each Vertex's Agent, effective
+Procedure, access, `tests`, Outcomes and inputs.
 _Avoid_: compiled flow, effective flow
 
 **Configuration Snapshot**:

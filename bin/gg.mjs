@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { loadConfig } from '../lib/config.mjs';
+import * as doctor from '../lib/doctor.mjs';
 import * as exec from '../lib/exec.mjs';
 import * as git from '../lib/git.mjs';
 import * as gh from '../lib/github.mjs';
@@ -42,6 +43,14 @@ async function runCommand(opts) {
   process.exitCode = run.runExitCode(results);
 }
 
+async function doctorCommand() {
+  const { mainRoot } = await git.repoInfo(process.cwd());
+  const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.mjs');
+  const { text, exitCode } = doctor.doctor({ config: loadConfig(mainRoot), harnesses, readSchema: doctor.layerReader(mainRoot) });
+  process.stdout.write(text);
+  process.exitCode = exitCode;
+}
+
 function notImplemented(name, opts) {
   process.stderr.write(`gg ${name}: not implemented\n`);
   process.exitCode = 1;
@@ -53,6 +62,7 @@ if (command === undefined || command === '--help') {
   try {
     const opts = parseOpts(process.argv.slice(3), SPECS[command]);
     if (command === 'run') await runCommand(opts);
+    else if (command === 'doctor') await doctorCommand();
     else notImplemented(command, opts);
   } catch (e) {
     if (e instanceof UsageError) {
