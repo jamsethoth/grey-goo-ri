@@ -218,6 +218,35 @@ test('a warning names at most ten earlier rows and counts the rest', async () =>
   assert.doesNotMatch(result.warnings[0].message, /row 11 \(/);
 });
 
+test('rows that share their first ten earlier rows but not the rest are separate warnings', async () => {
+  const rules = await load();
+  const table = {
+    name: 'plan.passed',
+    fields: { n: { kind: 'integer' } },
+    rows: [
+      { when: { n: { '=': 0 } }, outcome: 'o0' },
+      { when: { n: { '=': 1 } }, outcome: 'o1' },
+      { when: { n: { '=': 2 } }, outcome: 'o2' },
+      { when: { n: { '=': 3 } }, outcome: 'o3' },
+      { when: { n: { '=': 4 } }, outcome: 'o4' },
+      { when: { n: { '=': 5 } }, outcome: 'o5' },
+      { when: { n: { '=': 6 } }, outcome: 'o6' },
+      { when: { n: { '=': 7 } }, outcome: 'o7' },
+      { when: { n: { '=': 8 } }, outcome: 'o8' },
+      { when: { n: { '=': 9 } }, outcome: 'o9' },
+      { when: { n: { '=': 10 } }, outcome: 'o10' },
+      { when: { n: { '=': 11 } }, outcome: 'o11' },
+      { when: { n: { '>=': 0 } }, outcome: 'rest' },
+      { when: { n: { '<=': 10 } }, outcome: 'low' },
+    ],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  // Row 13 is taken by rows 1-12, row 14 by rows 1-11 and 13: the same first ten, different sets.
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.more]), [[[12, 12], [[0, 9]], 2], [[13, 13], [[0, 9]], 1]]);
+  assert.match(result.warnings[1].message, /, row 10 \(n = 9\), and 1 more row, for example/);
+});
+
 test("analysis leaves the fields' value lists unchanged", async () => {
   const rules = await load();
   const values = Object.freeze(['ok', 'changes']);
