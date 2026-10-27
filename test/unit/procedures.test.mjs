@@ -8,7 +8,7 @@ test('tdd describes its actions, checks, lineage and outcome map in order', () =
   const tdd = procedures.PROCEDURES.tdd;
   assert.deepEqual(tdd.options, { stillGreen: 1, testFix: 1, resumeGreen: false, requireTestPass: true });
   assert.deepEqual(tdd.checks, ['red', 'immutability', 'green']);
-  assert.deepEqual(tdd.briefs, { red: 'redBrief', green: 'greenBrief', 'still-green': 'stillGreenBrief', 'test-fix': 'testFixBrief' });
+  assert.deepEqual(tdd.briefs, { red: 'red.md', green: 'green.md', 'still-green': 'still-green.md', 'test-fix': 'test-fix.md' });
   assert.deepEqual(tdd.claims, ['ok', 'blocked', 'misscoped']);
   assert.deepEqual(tdd.outcomes, ['ok', 'blocked', 'misscoped', 'red-failed', 'gate-failed(test)']);
   assert.equal(tdd.checkOutcome.red, 'red-failed');
@@ -42,7 +42,7 @@ test('review describes its actions, checks, lineage and outcome map', () => {
   assert.deepEqual(review.claims, ['ok', 'changes', 'misscoped']);
   assert.deepEqual(review.outcomes, ['ok', 'changes', 'repeat', 'misscoped']);
   assert.deepEqual(review.checkOutcome, { 'review-pass': 'changes' });
-  assert.deepEqual(review.briefs, { review: 'reviewBrief' });
+  assert.deepEqual(review.briefs, { review: 'review.md' });
   const r = procedures.describe('review');
   assert.deepEqual(r.checks, [{ name: 'review-pass', relaxed: false }]);
   assert.deepEqual(r.lineage, { review: null });
@@ -62,7 +62,7 @@ test('fix describes its actions, checks, lineage and outcome map', () => {
   assert.deepEqual(fix.outcomes, ['ok', 'blocked', 'misscoped', 'gate-failed(test)']);
   assert.equal(fix.checkOutcome.test, 'gate-failed(test)');
   assert.deepEqual(fix.commitKinds, { fix: 'fix' });
-  assert.deepEqual(fix.briefs, { fix: 'fixBrief', 'test-fix': 'testFixBrief' });
+  assert.deepEqual(fix.briefs, { fix: 'fix.md', 'test-fix': 'test-fix.md' });
   const f = procedures.describe('fix');
   assert.deepEqual(f.lineage, { fix: null, 'test-fix': 'fix' });
   assert.ok(f.checks.some((c) => c.name === 'green' && c.relaxed === false), JSON.stringify(f.checks));

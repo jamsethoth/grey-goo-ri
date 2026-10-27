@@ -1,0 +1,5 @@
+### gg: done
+
+**Terminal Reason:** Every Vertex passed. PR #3 is ready for review.
+
+<!-- gg-action gg:e1:implement:1:green:3:r1:1 -->

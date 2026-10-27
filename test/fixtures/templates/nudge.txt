@@ -1,0 +1,1 @@
+Your last turn did not return a valid structured result (claim is missing). Return the structured result now, in the required schema, with exactly one claim token.

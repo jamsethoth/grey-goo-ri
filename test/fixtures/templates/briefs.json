@@ -1,0 +1,209 @@
+{
+  "red": {
+    "template": "red.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "history": [
+        {
+          "kind": "red-failed",
+          "text": "The Red Check failed: no new test failed."
+        },
+        {
+          "kind": "review findings from reviewer visit 1",
+          "text": "- major in lib/a.mjs: off by one\n  Fix: use <="
+        }
+      ]
+    }
+  },
+  "red-no-history": {
+    "template": "red.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "history": []
+    }
+  },
+  "green": {
+    "template": "green.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "testFiles": [
+        "test/widgets.test.mjs",
+        "test/support/widget-fixture.mjs"
+      ],
+      "redOutput": "not ok 1 - widgets render\n  AssertionError: expected widget"
+    }
+  },
+  "still-green": {
+    "template": "still-green.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "output": "ok 1 - widgets render"
+    }
+  },
+  "still-green-no-commands": {
+    "template": "still-green.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {},
+      "output": "ok 1 - widgets render"
+    }
+  },
+  "test-fix": {
+    "template": "test-fix.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "output": "not ok 2 - widgets total"
+    }
+  },
+  "fix": {
+    "template": "fix.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "history": [
+        {
+          "kind": "red-failed",
+          "text": "The Red Check failed: no new test failed."
+        },
+        {
+          "kind": "review findings from reviewer visit 1",
+          "text": "- major in lib/a.mjs: off by one\n  Fix: use <="
+        }
+      ]
+    }
+  },
+  "review": {
+    "template": "review.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "impl": {
+        "claim": "ok",
+        "summary": "Adds widgets.",
+        "red": {
+          "command": "npm test",
+          "output": "not ok 1 - widgets render"
+        },
+        "green": {
+          "command": "npm test",
+          "output": "ok 1 - widgets render"
+        }
+      },
+      "diff": "diff --git a/lib/w.mjs b/lib/w.mjs\n+export const w = 1;",
+      "changedTestFiles": [
+        "test/widgets.test.mjs",
+        "test/total.test.mjs"
+      ]
+    }
+  },
+  "review-no-changed-tests": {
+    "template": "review.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "impl": {
+        "claim": "ok",
+        "summary": "Adds widgets.",
+        "red": {
+          "command": "npm test",
+          "output": "not ok 1 - widgets render"
+        },
+        "green": {
+          "command": "npm test",
+          "output": "ok 1 - widgets render"
+        }
+      },
+      "diff": "diff --git a/lib/w.mjs b/lib/w.mjs\n+export const w = 1;",
+      "changedTestFiles": []
+    }
+  },
+  "nudge": {
+    "template": "nudge.md",
+    "opts": {
+      "reason": "claim is missing"
+    }
+  }
+}

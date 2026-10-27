@@ -60,5 +60,5 @@ test('misscoped lands in replan with the diagnosis on ticket and epic', async (t
   assert.equal(reason.decidedBy.vertex, 'reviewer');
   assert.equal(reason.outcome, 'misscoped');
   assert.ok(!reason.text.includes(diagnosis), 'agent text stays fenced, out of the Terminal Reason');
-  assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX ROUND')).length, 0);
+  assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX VISIT')).length, 0);
 });

@@ -147,7 +147,7 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
 
 test('a hold over an interrupted blocked terminal posts its own comment', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
   const blocked = terminalMarker(g, 'needs-human', 1);
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: blocked, point: 'before-effect' } }),
@@ -165,7 +165,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
   assert.match(posted.body, /uncommitted changes gg did not make/);
   assert.match(posted.body, /Commit, stash or remove/);
   assert.match(posted.body, /human\.txt \(untracked\)/);
-  assert.doesNotMatch(posted.body, /### gg: blocked|contradicts/, 'the interrupted blocked comment is not replayed');
+  assert.doesNotMatch(posted.body, /contradicts/, 'the interrupted blocked comment is not replayed');
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(rec.state, 'held');
@@ -272,7 +272,7 @@ test('a CrashError propagates untouched', async (t) => {
 test('blocked after still-green stops', async (t) => {
   const g = await golden.setup(t, { responses: {
     ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/still-green/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', notes: 'The tests cannot fail first.' } },
+    'implementer/1/still-green/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'The tests cannot fail first.' } },
   } });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
@@ -280,21 +280,21 @@ test('blocked after still-green stops', async (t) => {
   assert.equal(outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.gh.comments.length, 1);
-  assert.match(g.gh.comments[0].body, /### gg: blocked/);
+  assert.match(g.gh.comments[0].body, /### gg: needs-human/);
   stopReason(g, { phase: 'still-green', ordinal: 2, outcome: 'blocked', rule: 'blocked', comment: false });
 });
 
 test('blocked after test-fix stops', async (t) => {
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', notes: 'The test is wrong.' } },
+    'implementer/1/test-fix/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' } },
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 3, 'red, green and test-fix');
   assert.equal(g.gh.comments.length, 1);
-  assert.match(g.gh.comments[0].body, /### gg: blocked/);
+  assert.match(g.gh.comments[0].body, /### gg: needs-human/);
   assert.equal(actionEvent(g, 'test-fix', 2)?.rule, 'blocked', 'the Green Check after test-fix still runs');
   stopReason(g, { phase: 'test-fix', ordinal: 2, outcome: 'blocked', rule: 'blocked', comment: false });
 });

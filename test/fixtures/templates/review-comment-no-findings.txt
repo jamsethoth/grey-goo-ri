@@ -1,0 +1,15 @@
+### gg review: **ok**
+_fake null (null), persona reviewer@def456_
+
+```
+Two bugs.
+```
+
+- Definition of done met: yes
+- TDD evidence OK: no
+
+_No findings._
+
+VERDICT: ok
+
+<!-- gg-action gg:e1:implement:1:green:3:r1:1 -->
