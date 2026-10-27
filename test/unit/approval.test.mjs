@@ -160,3 +160,8 @@ test('a decide label removed and applied again is one decision', () => {
     decision: { event: 302, actor: 'owner', time: '2026-10-27T12:00:00Z', outcome: 'approved' },
   });
 });
+
+test('an Await Label removal is never the request', () => {
+  const read = approval.read({ issueLabels: awaitingApproved, pending: pending(), timeline: timeline('only-removed-request'), digest: approval.digest(approved), permissions });
+  assert.deepEqual(read, { kind: 'missing' });
+});
