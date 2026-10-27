@@ -82,9 +82,13 @@ matrix follow Archon's provider contract for comparability
 guidance, not a requirement.
 
 ```
-name, capabilities, validate(agent), resolveTools(agent, ctx), run(call), interactiveArgs(agent, opening, opts),
-metrics(session), doctor(cfg)
+name, capabilities, protectedPaths, validate(agent), resolveTools(agent, ctx), run(call),
+interactiveArgs(agent, opening, opts), metrics(session), doctor(cfg)
 ```
+
+`protectedPaths` lists the paths that configure the Harness, which 3.6 adds to the Protected Files. Harness knowledge
+lives only in the Harness modules: no other module names a Harness, so a new Harness is one new module and one entry
+in the list of shipped Harnesses.
 
 Capability semantics, per field per harness: `exact` means the harness enforces the field; `hint` means the field
 is passed as prompt text or a best-effort setting and the action is logged as hinted so eval can tell variants apart;
@@ -164,6 +168,8 @@ Codex specifics: every harness-owned key as a `-c` override, since CLI overrides
 error and only with equivalent isolation declared; usage delta from the cumulative `turn.completed`; rollout lookup by
 session id across the sessions tree; tail `$CODEX_HOME/logs` on non-zero exit; verify expected filesystem changes and
 checks rather than command counts. Installed: codex-cli 0.162.1, which accepts `exec resume --output-schema`.
+
+Claude `protectedPaths`: `.claude/`, `.mcp.json`, `CLAUDE.md`. Codex `protectedPaths`: `.codex/`, `AGENTS.md`.
 
 Plugin hook injection (Codex without hooks): `harnesses.codex.injectHooks` lists plugin names; a generic hook runner
 reads the plugin's hook manifest, runs its session-start command through the shell runner, and injects the output.
@@ -467,8 +473,10 @@ branches and PRs finish under ff; cutover (section 6) archives ff after a real-h
   ticket. These assertions observe the checked surfaces only: worktree HEAD, index, tree and
   protected files. Writes elsewhere on the machine and network effects of commands are not observed, which is the
   stated weakness of the trusted-command mode in 3.2.
-- Protected files: agent diffs touching `.agents/`, `.claude/`, `.codex/`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`,
-  `.github/workflows/` or `.github/actions/` are rejected (the last two added by decision L3). Under the Claude launch
+- Protected files: agent diffs touching gg's own paths, `.agents/`, `.github/workflows/` or `.github/actions/` (the
+  last two added by decision L3), or any path a shipped Harness declares in its `protectedPaths` (3.2) are rejected.
+  The union covers every shipped Harness, not only those the Agents use: an agent on one Harness must not change the
+  configuration a later Vertex on another would load. Under the Claude launch
   profile, settings, hooks, `.mcp.json`, CLAUDE.md and memory are not consumed; `.claude/skills`, `.claude/commands` and
   `.claude/agents` are potentially discoverable, as 3.2 states. Codex trust level is set explicitly so project config is
   not consumed.

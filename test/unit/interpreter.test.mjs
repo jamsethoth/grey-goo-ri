@@ -166,3 +166,30 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   assert.equal(check.outcome, 'integrity-violation');
   assert.deepEqual(check.violations, ['test/add.test.mjs']);
 });
+
+test("the Protected Files are gg's paths plus every shipped Harness's paths", async () => {
+  const { HARNESSES } = await import('../../lib/harnesses/shipped.mjs');
+  assert.deepEqual(interpreter.protectedFiles({}), ['.agents/', '.github/actions/', '.github/workflows/']);
+  assert.deepEqual(interpreter.protectedFiles(HARNESSES),
+    ['.agents/', '.claude/', '.codex/', '.github/actions/', '.github/workflows/', '.mcp.json', 'AGENTS.md', 'CLAUDE.md']);
+  assert.deepEqual(interpreter.protectedFiles({ a: { protectedPaths: ['.agents/', 'Z.md'] }, b: { protectedPaths: ['.b/'] } }),
+    ['.agents/', '.b/', '.github/actions/', '.github/workflows/', 'Z.md']);
+});
+
+for (const [what, protectedPaths] of [['no paths', undefined], ['a string', '.x/'], ['an empty path', ['.x/', '']], ['a non-string path', [1]]]) {
+  test(`the Protected Files refuse a Harness that declares ${what}`, () => {
+    assert.throws(() => interpreter.protectedFiles({ ok: { protectedPaths: [] }, broken: { protectedPaths } }),
+      { message: 'harness broken must declare protectedPaths as an array of paths' });
+  });
+}
+
+test('runExecution asserts the Protected Files it is given', async (t) => {
+  const g = await golden.setup(t);
+  const seen = [];
+  const injected = { ...g.options.integrity,
+    begin: (args) => { seen.push(['begin', args.protectedPaths]); return g.options.integrity.begin(args); },
+    end: (args) => { seen.push(['end', args.protectedPaths]); return g.options.integrity.end(args); } };
+  await interpreter.runExecution({ ...g.options, integrity: injected, protectedPaths: ['.x/'] });
+  assert.deepEqual(seen.slice(0, 2), [['begin', ['.x/']], ['end', ['.x/']]]);
+  await assert.rejects(interpreter.runExecution({ ...g.options, protectedPaths: undefined }), { message: 'runExecution needs protectedPaths' });
+});

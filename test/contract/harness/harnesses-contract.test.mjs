@@ -1,5 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,6 +27,7 @@ test('assertHarness names the first missing method', () => {
 for (const [method, message] of [
   ['name', 'harness is missing name'],
   ['capabilities', 'harness is missing capabilities'],
+  ['protectedPaths', 'harness is missing protectedPaths'],
   ['validate', 'harness is missing validate'],
   ['resolveTools', 'harness is missing resolveTools'],
   ['run', 'harness is missing run'],
@@ -67,6 +69,19 @@ for (const [field, message] of [
     assert.throws(() => contract.assertHarness(harness), { message });
   });
 }
+
+test('every Harness declares the paths that configure it', async () => {
+  const { HARNESSES } = await import('../../../lib/harnesses/shipped.mjs');
+  const modules = readdirSync(new URL('../../../lib/harnesses/', import.meta.url))
+    .filter((f) => !['contract.mjs', 'shipped.mjs'].includes(f)).map((f) => f.replace(/\.mjs$/, ''));
+  assert.deepEqual(Object.keys(HARNESSES).sort(), modules.sort(), 'every Harness module is shipped');
+  assert.deepEqual(Object.fromEntries(Object.entries(HARNESSES).map(([name, h]) => [name, h.protectedPaths])), {
+    claude: ['.claude/', '.mcp.json', 'CLAUDE.md'],
+    codex: ['.codex/', 'AGENTS.md'],
+  });
+  assert.deepEqual((await fakeHarness()).protectedPaths, []);
+  assert.deepEqual((await fakeHarness({ protectedPaths: ['.fake/'] })).protectedPaths, ['.fake/']);
+});
 
 test('USAGE_FIELDS lists the Usage fields', () => {
   assert.deepEqual(contract.USAGE_FIELDS, [
