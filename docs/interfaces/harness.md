@@ -23,8 +23,9 @@ decided by request section 3.2; Usage token rules by section 3.7.
 
 `lib/harnesses/shipped.mjs` lists every shipped Harness by name. The Protected Files (request 3.6) are gg's own paths
 plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents use; `bin/gg.mjs` builds that union with
-`protectedFiles` (`lib/interpreter.mjs`) and passes it to the Run, so the interpreter imports no Harness module. No
-module outside `lib/harnesses/` names a Harness (`test/unit/harness-boundary.test.mjs`).
+`protectedFiles` (`lib/interpreter.mjs`) and passes it to the Run, so the interpreter imports no Harness module.
+`protectedFiles` fails, naming the Harness, when a `protectedPaths` is not an array of paths. No module outside
+`lib/harnesses/` names a Harness (`test/unit/harness-boundary.test.mjs`).
 
 ## Capability matrix
 
