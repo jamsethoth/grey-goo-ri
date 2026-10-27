@@ -1,0 +1,4 @@
+[
+  { "id": 300, "event": "labeled", "actor": { "login": "owner" }, "created_at": "2026-10-27T11:00:00Z", "label": { "name": "gg:decide:qa-approval:approved" } },
+  { "id": 200, "event": "labeled", "actor": { "login": "gg-bot" }, "created_at": "2026-10-27T10:00:00Z", "label": { "name": "gg:await:qa-approval" } }
+]
