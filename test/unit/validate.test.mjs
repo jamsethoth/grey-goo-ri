@@ -1009,3 +1009,17 @@ test('a table too large to analyse is its error, never a joint split', { timeout
   };
   assert.deepEqual((await check(config)).errors.map((e) => e.at), ['procedures.judge.stopped']);
 });
+
+test('a row partly taken only across Claim tokens is warned once', async () => {
+  const config = example();
+  // In token ok's inputs row 1 takes all of row 2; in token changes' row 2 is free. Together it is partly taken.
+  config.procedures.review.passed = [{ when: { claim: 'ok' }, outcome: 'ok' }, { when: {}, outcome: 'other' }];
+  // The reviewer still loops back, so the Flow's inputs keep a producing path; with no changes, implementer-fix is cut off.
+  config.flows.default.ticket.vertices.reviewer.route.other = { to: 'red', max: 2, exhausted: 'senior-red' };
+  const { errors, warnings } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(warnings, [{
+    at: 'procedures.review.passed',
+    message: 'rule table review.passed: row 2 (no conditions) is partly taken by row 1 (claim = ok), for example {"claim":"ok"}',
+  }, { at: `${V}.implementer-fix`, message: 'Vertex implementer-fix is not reachable from the entry' }]);
+});
