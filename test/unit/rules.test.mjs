@@ -108,6 +108,7 @@ test("a partial overlap is a warning naming both rows' conditions and an example
   assert.deepEqual(result.warnings, [{
     rows: [1, 1],
     earlier: [[0, 0]],
+    more: 0,
     from: null,
     fields: ['claim', 'response.needsTest'],
     example: { claim: 'ok', response: { needsTest: true } },
@@ -187,6 +188,34 @@ test('a ladder after an unrelated row is one warning', async () => {
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.from]), [[[2, 1_000], [[1, 1]], 1]]);
   assert.match(result.warnings[0].message, /: rows 3-1001 are each partly taken by every earlier firing row from row 2, all on mode, pass, for example/);
+});
+
+test('a warning names at most ten earlier rows and counts the rest', async () => {
+  const rules = await load();
+  const table = {
+    name: 'plan.passed',
+    fields: { n: { kind: 'integer' } },
+    rows: [
+      { when: { n: { '=': 0 } }, outcome: 'o0' },
+      { when: { n: { '=': 1 } }, outcome: 'o1' },
+      { when: { n: { '=': 2 } }, outcome: 'o2' },
+      { when: { n: { '=': 3 } }, outcome: 'o3' },
+      { when: { n: { '=': 4 } }, outcome: 'o4' },
+      { when: { n: { '=': 5 } }, outcome: 'o5' },
+      { when: { n: { '=': 6 } }, outcome: 'o6' },
+      { when: { n: { '=': 7 } }, outcome: 'o7' },
+      { when: { n: { '=': 8 } }, outcome: 'o8' },
+      { when: { n: { '=': 9 } }, outcome: 'o9' },
+      { when: { n: { '=': 10 } }, outcome: 'o10' },
+      { when: { n: { '=': 11 } }, outcome: 'o11' },
+      { when: { n: { '>=': 0 } }, outcome: 'rest' },
+    ],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.more]), [[[12, 12], [[0, 9]], 2]]);
+  assert.match(result.warnings[0].message, /: row 13 \(n >= 0\) is partly taken by row 1 \(n = 0\), row 2 \(n = 1\), .*, row 10 \(n = 9\), and 2 more rows, for example/);
+  assert.doesNotMatch(result.warnings[0].message, /row 11 \(/);
 });
 
 test("analysis leaves the fields' value lists unchanged", async () => {

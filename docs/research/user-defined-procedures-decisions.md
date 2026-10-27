@@ -1052,9 +1052,11 @@ and the owner accepted all four findings as recommended.
   earlier row that takes part of it, the conditions of both rows, which together define the shared region, and one
   example input. Adjacent rows taken the same way on the same fields share one warning: each by every earlier firing
   row from the same row on, or all by the same rows. A ladder of `pass >= k` rows reports "rows 2-400 are each partly
-  taken by every earlier firing row, all on `pass`". There is at most one warning per row, and a run keeps only its
-  first row's takers, as ranges of rows; the analysis keeps one bit per firing row and earlier row, which N2's work
-  limit bounds (points × rows bits). N2's formula is unchanged. So the example review `passed`
+  taken by every earlier firing row, all on `pass`". There is at most one warning per row, and a warning names at most
+  ten earlier rows and counts the rest ("and 31 more rows"), so the output is bounded by the row count. The analysis
+  keeps one bit per firing row and earlier row, which N2's work limit bounds (points × rows bits) rather than the row
+  count, since counting a row's distinct takers needs that set. N2's formula and its 10 million limit are unchanged,
+  although two tables near the limit take about 1.2 s together. So the example review `passed`
   table's three intended overlaps (U4) are two warnings: row 2 partly taken by row 1, and row 3 by rows 1 and 2.
   Issue #103.
 - J15. Rule fields use #104's `fieldType` kinds as the analyser's domain: `{ kind: 'enum', values }`,
