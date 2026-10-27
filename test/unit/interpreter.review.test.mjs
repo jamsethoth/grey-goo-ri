@@ -187,3 +187,19 @@ test('the review lists the test files changed since red under the testPaths pinn
   assert.equal(reviewCall.access, 'read-only');
   assert.match(reviewCall.brief, /## Test files changed since the red commit\n- lib\/add\.mjs\n- test\/add\.test\.mjs\n/);
 });
+
+test('the branch diff and changed test files are read for the review Brief and not again for its nudge', async (t) => {
+  const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(null), 'reviewer/1/review/2': reviewed(review('ok')) });
+  // Each read is tagged with how many harness calls came before it: 2 is the review Brief, 3 would be its nudge.
+  const reads = [];
+  const { branchDiff } = g.options.git;
+  g.options.git = { ...g.options.git, branchDiff: (...args) => { reads.push(`diff ${g.harness.calls.length}`); return branchDiff(...args); } };
+  const { testImmutability } = g.options;
+  g.options.testImmutability = (...args) => { reads.push(`changed tests ${g.harness.calls.length}`); return testImmutability(...args); };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'done');
+  assert.equal(g.harness.calls.length, 4, 'red, green, the review and its nudge');
+  assert.deepEqual(reads.filter((r) => r.startsWith('diff')), ['diff 2'], 'the diff is read once, for the review Brief');
+  assert.deepEqual(reads.filter((r) => r.endsWith(' 3')), [], 'nothing is read for the nudge');
+});

@@ -165,7 +165,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
   assert.match(posted.body, /uncommitted changes gg did not make/);
   assert.match(posted.body, /Commit, stash or remove/);
   assert.match(posted.body, /human\.txt \(untracked\)/);
-  assert.doesNotMatch(posted.body, /contradicts/, 'the interrupted blocked comment is not replayed');
+  assert.doesNotMatch(posted.body, /### gg: blocked|contradicts/, 'the interrupted blocked comment is not replayed');
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(rec.state, 'held');
@@ -280,7 +280,7 @@ test('blocked after still-green stops', async (t) => {
   assert.equal(outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.gh.comments.length, 1);
-  assert.match(g.gh.comments[0].body, /### gg: needs-human/);
+  assert.match(g.gh.comments[0].body, /### gg: blocked/);
   stopReason(g, { phase: 'still-green', ordinal: 2, outcome: 'blocked', rule: 'blocked', comment: false });
 });
 
@@ -294,7 +294,7 @@ test('blocked after test-fix stops', async (t) => {
   assert.equal(outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 3, 'red, green and test-fix');
   assert.equal(g.gh.comments.length, 1);
-  assert.match(g.gh.comments[0].body, /### gg: needs-human/);
+  assert.match(g.gh.comments[0].body, /### gg: blocked/);
   assert.equal(actionEvent(g, 'test-fix', 2)?.rule, 'blocked', 'the Green Check after test-fix still runs');
   stopReason(g, { phase: 'test-fix', ordinal: 2, outcome: 'blocked', rule: 'blocked', comment: false });
 });

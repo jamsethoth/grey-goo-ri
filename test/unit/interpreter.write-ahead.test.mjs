@@ -120,7 +120,7 @@ test('the terminal stop survives a crash before the first terminal action', asyn
   assert.equal(result.outcome, 'needs-human');
   const posted = ticketComments(g);
   assert.equal(posted.length, 1);
-  assert.match(posted[0].body, /### gg: needs-human/);
+  assert.match(posted[0].body, /### gg: blocked/);
   assert.ok(posted[0].body.includes('NOTES-7f3'), 'the blocked response is in the blocked comment');
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
 });

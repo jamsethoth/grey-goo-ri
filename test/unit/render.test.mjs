@@ -281,7 +281,7 @@ test('the stop comment renders the blocked and replan cases', async () => {
   const m = marker.formatMarker(parts);
   const response = { claim: 'blocked', summary: 'Cannot reach the API.', notes: 'NOTES stay out.', diagnosis: 'The ticket needs a token.' };
   const blocked = await render.stopComment('needs-human', response, m, { text: 'The agent made a blocked Claim at green.' });
-  assert.equal(blocked, `### gg: needs-human
+  assert.equal(blocked, `### gg: blocked
 
 ${fenced('Cannot reach the API.')}
 
@@ -292,7 +292,7 @@ ${fenced('The ticket needs a token.')}
 <!-- gg-action ${m} -->
 `);
   const replan = await render.stopComment('replan', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
-  assert.equal(replan, `### gg: replan
+  assert.equal(replan, `### gg: misscoped
 
 ${fenced('Cannot reach the API.')}
 
