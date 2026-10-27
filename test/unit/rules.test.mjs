@@ -405,3 +405,56 @@ test('a table just over it (many booleans) is an error naming the table', async 
   assert.match(result.errors[0].message, /^rule table wide\.failed needs 10485760 row checks, above the limit of 10000000; its largest fields: response\.b0 \(2 values\)/);
   assert.deepEqual(result.warnings, []);
 });
+
+// Two Claim tokens' boxes (J16): each box is a whole field map, and the table's domain is their union.
+const tokenBoxes = (fields, ...tokens) => tokens.map(token => ({ ...fields, claim: { kind: 'enum', values: [token] } }));
+
+test('a row taken in one box and free in another is partly taken', async () => {
+  const rules = await load();
+  const table = {
+    name: 'review.passed',
+    boxes: tokenBoxes({}, 'a', 'b'),
+    rows: [
+      { when: { claim: 'a' }, outcome: 'x' },
+      { when: {}, outcome: 'z' },
+    ],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.example]), [[[1, 1], [[0, 0]], { claim: 'a' }]]);
+  assert.equal(result.warnings[0].message,
+    'rule table review.passed: row 2 (no conditions) is partly taken by row 1 (claim = a), for example {"claim":"a"}');
+  assert.equal(result.defaultExample, null);
+  assert.deepEqual(result.falls, []);
+});
+
+test('a row taken in two boxes by different rows gets one warning naming both', async () => {
+  const rules = await load();
+  const table = {
+    name: 'review.passed',
+    boxes: tokenBoxes({ 'response.flag': { kind: 'boolean' } }, 'a', 'b', 'c'),
+    rows: [
+      { when: { claim: 'a', 'response.flag': true }, outcome: 'x' },
+      { when: { claim: 'b', 'response.flag': true }, outcome: 'y' },
+      { when: { 'response.flag': true }, outcome: 'z' },
+    ],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings.map(w => [w.rows, w.earlier, w.more]), [[[2, 2], [[0, 1]], 0]]);
+  assert.match(result.warnings[0].message, /^rule table review\.passed: row 3 \(response\.flag = true\) is partly taken by row 1 \(claim = a and response\.flag = true\), row 2 \(claim = b and response\.flag = true\), for example /);
+  // Every box has a false flag that no row matches.
+  assert.deepEqual(result.falls, [0, 1, 2]);
+  assert.equal(rules.evaluate(table, result.defaultExample), null);
+});
+
+test('the work limit counts every box', async () => {
+  const rules = await load();
+  // Each box is 2**20 points times 5 rows, 5,242,880 row checks; the two together are 10,485,760.
+  const { fields, rows } = booleanTable('wide.passed', 20, 5);
+  const result = rules.analyse({ name: 'wide.passed', boxes: tokenBoxes(fields, 'a', 'b'), rows });
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].row, null);
+  assert.match(result.errors[0].message, /^rule table wide\.passed needs 10485760 row checks, above the limit of 10000000; /);
+  assert.deepEqual(result.warnings, []);
+});
