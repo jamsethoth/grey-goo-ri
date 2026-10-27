@@ -1,0 +1,10 @@
+[
+  { "id": 100, "event": "labeled", "actor": { "login": "gg-bot" }, "created_at": "2026-10-26T10:00:00Z", "label": { "name": "gg:await:qa-approval" } },
+  { "id": 101, "event": "labeled", "actor": { "login": "owner" }, "created_at": "2026-10-26T11:00:00Z", "label": { "name": "gg:decide:qa-approval:rejected" } },
+  { "id": 102, "event": "unlabeled", "actor": { "login": "gg-bot" }, "created_at": "2026-10-26T12:00:00Z", "label": { "name": "gg:decide:qa-approval:rejected" } },
+  { "id": 103, "event": "unlabeled", "actor": { "login": "gg-bot" }, "created_at": "2026-10-27T09:59:00Z", "label": { "name": "gg:await:qa-approval" } },
+  { "id": 200, "event": "labeled", "actor": { "login": "gg-bot" }, "created_at": "2026-10-27T10:00:00Z", "label": { "name": "gg:await:qa-approval" } },
+  { "id": 250, "event": "labeled", "actor": { "login": "owner" }, "created_at": "2026-10-27T10:30:00Z", "label": { "name": "bug" } },
+  { "id": 260, "event": "commented", "actor": { "login": "owner" }, "created_at": "2026-10-27T10:40:00Z" },
+  { "id": 300, "event": "labeled", "actor": { "login": "owner" }, "created_at": "2026-10-27T11:00:00Z", "label": { "name": "gg:decide:qa-approval:approved" } }
+]
