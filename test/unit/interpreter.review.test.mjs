@@ -190,7 +190,8 @@ test('the review lists the test files changed since red under the testPaths pinn
 
 test('the branch diff and changed test files are read for the review Brief and not again for its nudge', async (t) => {
   const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(null), 'reviewer/1/review/2': reviewed(review('ok')) });
-  // Each read is tagged with how many harness calls came before it: 2 is the review Brief, 3 would be its nudge.
+  // Each read is tagged with how many harness calls came before it: 2 is the Green Check and the review Brief, 3 would
+  // be the nudge.
   const reads = [];
   const { branchDiff } = g.options.git;
   g.options.git = { ...g.options.git, branchDiff: (...args) => { reads.push(`diff ${g.harness.calls.length}`); return branchDiff(...args); } };
@@ -200,6 +201,6 @@ test('the branch diff and changed test files are read for the review Brief and n
 
   assert.equal(outcome, 'done');
   assert.equal(g.harness.calls.length, 4, 'red, green, the review and its nudge');
-  assert.deepEqual(reads.filter((r) => r.startsWith('diff')), ['diff 2'], 'the diff is read once, for the review Brief');
-  assert.deepEqual(reads.filter((r) => r.endsWith(' 3')), [], 'nothing is read for the nudge');
+  assert.deepEqual(reads, ['changed tests 2', 'diff 2', 'changed tests 2'],
+    'the Green Check reads changed tests; the review Brief reads the diff and changed tests; the nudge reads nothing');
 });

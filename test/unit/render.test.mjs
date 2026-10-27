@@ -280,7 +280,7 @@ test(`the Terminal Reason comment template matches its builder's output`, async 
 test('the stop comment renders the blocked and replan cases', async () => {
   const m = marker.formatMarker(parts);
   const response = { claim: 'blocked', summary: 'Cannot reach the API.', notes: 'NOTES stay out.', diagnosis: 'The ticket needs a token.' };
-  const blocked = await render.stopComment('needs-human', response, m, { text: 'The agent made a blocked Claim at green.' });
+  const blocked = await render.stopComment('needs-human', 'blocked', response, m, { text: 'The agent made a blocked Claim at green.' });
   assert.equal(blocked, `### gg: blocked
 
 ${fenced('Cannot reach the API.')}
@@ -291,7 +291,7 @@ ${fenced('The ticket needs a token.')}
 
 <!-- gg-action ${m} -->
 `);
-  const replan = await render.stopComment('replan', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
+  const replan = await render.stopComment('replan', 'misscoped', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
   assert.equal(replan, `### gg: misscoped
 
 ${fenced('Cannot reach the API.')}
@@ -351,7 +351,7 @@ for (const [name, build] of [
     harness: 'TOKEN claude', model: 'TOKEN opus', effort: 'TOKEN high', marker: m }, redact)],
   ['prBody', (m) => render.prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance: tokenProvenance, marker: m }, redact)],
   ['reviewComment', (m) => render.reviewComment(tokenReview, tokenProvenance[1], m, redact)],
-  ['stopComment', (m) => render.stopComment('TOKEN needs-human', tokenResponse, m, reason, redact)],
+  ['stopComment', (m) => render.stopComment('TOKEN needs-human', 'TOKEN blocked', tokenResponse, m, reason, redact)],
   ['terminalComment', (m) => render.terminalComment('TOKEN needs-human', reason, m, 'TOKEN detail', { terminal: 'TOKEN done', reason: { text: 'TOKEN earlier' } }, redact)],
 ]) {
   test(`${name} redacts each public field exactly once`, async () => {
@@ -371,6 +371,6 @@ test('marker-shaped agent text does not displace the rendered marker', async () 
   assert.deepEqual(asText(marker.parseMarker(message)), asText(parts));
   const body = await render.prBody({ ticket: { number: 7 }, impl: { ...impl, summary: fake }, provenance, marker: m });
   assert.deepEqual(asText(marker.parseMarker(body)), asText(parts));
-  const comment = await render.stopComment('needs-human', { claim: 'blocked', summary: fake, notes: fake, diagnosis: fake }, m, null);
+  const comment = await render.stopComment('needs-human', 'blocked', { claim: 'blocked', summary: fake, notes: fake, diagnosis: fake }, m, null);
   assert.deepEqual(asText(marker.parseMarker(comment)), asText(parts));
 });

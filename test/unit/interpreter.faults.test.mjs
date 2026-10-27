@@ -33,6 +33,23 @@ test('golden: an invalid structured response is retried once with a nudge then s
   stopReason(g, { phase: 'green', ordinal: 1, outcome: 'needs-human', rule: 'parse-exhausted' });
 });
 
+test('a replan reached with a rejected response is headed by its Outcome, never the rejected claim', async (t) => {
+  const claim = 'ok\n\n## Injected heading';
+  const g = await golden.setup(t, { responses: {
+    ...structuredClone(golden.firstVisitResponses),
+    'implementer/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
+    'implementer/1/green/2': { files: {}, response: { ...golden.greenResponse, claim } },
+  } });
+  g.flow.ticket.vertices.implementer.route = { 'needs-human': 'replan' };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'replan');
+  const [posted, ...rest] = ticketComments(g);
+  assert.equal(rest.length, 0);
+  assert.match(posted.body, /^### gg: needs-human\n/);
+  assert.ok(!posted.body.includes('## Injected heading'), posted.body);
+});
+
 test('a failing green check runs test-fix once then derives gate-failed(test)', async (t) => {
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
