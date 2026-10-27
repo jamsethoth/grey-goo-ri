@@ -246,7 +246,10 @@ for (const [name, path, error] of [
   ['review', 'summary.length', '"summary.length" is not a field of the schema'],
   ['implement', 'qa.steps.action.x', '"qa.steps.action.x" is not a field of the schema'],
   ['review', 'qa.steps.action.x', '"qa.steps.action.x": "qa" is not a field of the schema'],
-  ['review', '', '"" is not a field of the schema'],
+  ['review', '', 'the field path is empty'],
+  ['review', '.claim', '".claim" has an empty segment'],
+  ['review', 'findings..file', '"findings..file" has an empty segment'],
+  ['review', 'claim.', '"claim." has an empty segment'],
 ]) {
   test(`fieldType returns an error for a path outside the schema (${name} ${JSON.stringify(path)})`, () => {
     assert.deepEqual(briefs.fieldType(example(name), path), { error });
