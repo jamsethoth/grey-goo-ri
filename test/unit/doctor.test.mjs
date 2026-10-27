@@ -34,3 +34,16 @@ test('gg doctor exits non-zero on an error', () => {
   assert.equal(exitCode, 1);
   assert.ok(text.endsWith('\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared\n1 error, 2 warnings\n'), text);
 });
+
+test('gg doctor prints an unrouted Outcome named after an Object property as unrouted', () => {
+  const config = example();
+  config.procedures['tests-fail'].stopped[0].outcome = 'toString';
+  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} }, readSchema });
+  assert.equal(exitCode, 0);
+  assert.ok(text.includes('\n    toString -> end needs-human (Flow "*"); work left in place\n'), text);
+  delete config.flows.default.ticket.routes['*'];
+  config.flows.default.ticket.routes.blocked = { end: 'needs-human' };
+  const unrouted = doctor.doctor({ config, harnesses: { fake: {} }, readSchema });
+  assert.equal(unrouted.exitCode, 1);
+  assert.ok(unrouted.text.includes('\n    toString -> unrouted\n'), unrouted.text);
+});

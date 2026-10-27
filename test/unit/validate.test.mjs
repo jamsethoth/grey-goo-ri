@@ -964,3 +964,48 @@ test('rows that each need a different Check passed meet a required input listing
   };
   assert.deepEqual((await check(config)).errors, []);
 });
+
+test('a table naming more Checks than the joint split takes still gives each Check its states', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      ...['c0', 'c1', 'c2', 'c3', 'c4'].map((id) => ({ id, do: 'check', kind: 'command', command: 'test' })),
+    ],
+    stopped: [{
+      when: { 'check.c0': 'passed', 'check.c1': 'passed', 'check.c2': 'passed', 'check.c3': 'passed', 'check.c4': 'passed' },
+      outcome: 'go',
+    }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.c0.evidence', optional: true } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('a table too large to analyse is its error, never a joint split', { timeout: 60_000 }, async () => {
+  const config = example();
+  const ids = Array.from({ length: 16 }, (_, i) => `c${i}`);
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      ...ids.map((id) => ({ id, do: 'check', kind: 'command', command: 'test' })),
+    ],
+    stopped: [{ when: Object.fromEntries(ids.map((id) => [`check.${id}`, 'passed'])), outcome: 'go' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: { judge: { use: 'reviewer', procedure: 'judge' } },
+  };
+  assert.deepEqual((await check(config)).errors.map((e) => e.at), ['procedures.judge.stopped']);
+});
