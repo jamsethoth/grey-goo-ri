@@ -73,6 +73,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | L13: a failing result is not reused, so a flake clears | J2: so a repaired environment clears |
 | D4: option 1 covers use cases a, d, e and g | J5: use case a waits for the `changes` Check |
 | L11, L15: a cleanup hold continues with the recorded next Action | J4: the suspended Action's completion resumes from its recorded result |
+| R8d, U4: a partial-overlap warning per pair of rows; U4's three warnings | J14: one warning per partly taken row; U4's three overlaps in two |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -1043,6 +1044,26 @@ and the owner accepted all four findings as recommended.
   Code reports quota only partly and undocumented in headless output, so its Harness declares `partial`. A quota
   share is an estimate (quota is account-wide); tokens and cost are exact. The Execution Record's `owner`, `flow`
   and `configHash`, the Event `ts` and the `configs` table already key every total. Issues #23, #135.
+
+## Owner decisions: rule-table fields and overlap warnings (2026-10-26)
+
+- J14. A partial-overlap warning (R8d) is per row, not per pair of rows. Earlier rows take part of a row where it
+  matches but an earlier row matches first. Each row that earlier rows partly take gets one warning, naming each
+  earlier row that takes part of it, the conditions of both rows, which together define the shared region, and one
+  example input. Adjacent rows taken the same way on the same fields share one warning: each by every earlier firing
+  row from the same row on, or all by the same rows. A ladder of `pass >= k` rows reports "rows 2-400 are each partly
+  taken by every earlier firing row, all on `pass`". There is at most one warning per row, and a warning names at most
+  ten earlier rows and counts the rest ("and 31 more rows"), so the output is bounded by the row count. The analysis
+  keeps one bit per firing row and earlier row, which N2's work limit bounds (points × rows bits) rather than the row
+  count, since counting a row's distinct takers needs that set. N2's formula and its 10 million limit are unchanged,
+  although two tables near the limit take about 1.2 s together. So the example review `passed`
+  table's three intended overlaps (U4) are two warnings: row 2 partly taken by row 1, and row 3 by rows 1 and 2.
+  Issue #103.
+- J15. Rule fields use #104's `fieldType` kinds as the analyser's domain: `{ kind: 'enum', values }`,
+  `{ kind: 'boolean' }` and `{ kind: 'integer', min?, max? }`, with `absent: true` from an input's `optional`
+  declaration (T10). An integer's bounds come only from gg's own facts, such as `pass` and Check `runs`, because
+  #104's strict subset has no `minimum` or `maximum`. #106 merges `fieldType`'s result with those facts, with no
+  translation layer (R13e), and still builds the single path resolver (R14e). Issues #103, #106.
 
 ## Open
 

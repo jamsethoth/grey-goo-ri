@@ -247,6 +247,11 @@ _Avoid_: result, status, decision (reserved for humans), verdict (reserved for r
 The kind of an Outcome: advance, retry or stop.
 _Avoid_: category, severity
 
+**Rule Table**:
+A Procedure's ordered rows, each a condition on enum, boolean and integer fields and an Outcome; the first matching
+row decides. Admission rejects a row that can never fire and warns where an earlier row overlaps a later one.
+_Avoid_: decision table, rule set, hit policy (for the table itself)
+
 **Resolution Policy**:
 An Agent's rules for deriving one Outcome when its Signals disagree: ordering among non-advance Outcomes, the weight
 of the Claim without deterministic evidence, and retry budgets by Failure Class.
