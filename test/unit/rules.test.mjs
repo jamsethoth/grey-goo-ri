@@ -458,3 +458,19 @@ test('the work limit counts every box', async () => {
   assert.match(result.errors[0].message, /^rule table wide\.passed needs 10485760 row checks, above the limit of 10000000; /);
   assert.deepEqual(result.warnings, []);
 });
+
+test('only the boxes with an input no row matches fall', async () => {
+  const rules = await load();
+  const table = {
+    name: 'review.passed',
+    boxes: tokenBoxes({ 'response.flag': { kind: 'boolean' } }, 'a', 'b', 'c'),
+    rows: [
+      { when: { claim: 'a' }, outcome: 'x' },
+      { when: { claim: 'b', 'response.flag': true }, outcome: 'y' },
+    ],
+  };
+  const result = rules.analyse(table);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.falls, [1, 2]);
+  assert.deepEqual(result.defaultExample, { claim: 'b', response: { flag: false } });
+});
