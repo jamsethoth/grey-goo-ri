@@ -6,6 +6,49 @@ Draft, 2026-10-22; the owner accepted its approach and the audit folds the same 
 proposal. Slice ids here (A1, E1, C1) are local to this file. Filed 2026-10-22 as the Epic grey-goo-ri issue #101:
 A1–A7 are grey-goo-ri issues #102–#108, E0 is #109, E1–E10 are #110–#119, C1 is #120, C2 is #121, C4 is #122 and C3 is #123.
 
+## Since filing
+
+Recorded 2026-10-26 against main at `1cc36d8`. It changes no decision, and no slice's scope or order; the code and
+test references below were updated to match main.
+
+- **Inserted tickets.** The owner put four tickets into the serial chain between E0 and A1: E0b is grey-goo-ri issue
+  #140 (integrity is injectable, so logic tests run without real git snapshots; 2026-10-24), E0c is #144
+  (`lib/git.mjs` is the only git interface, with a contract-tested fake, `test/support/fake-git.mjs`; 2026-10-24),
+  E0d is #145 (the test audit and the layout below; 2026-10-25) and E0e is #153 (the test seams in `lib/` for the
+  clock, failure injection and fs, listed in `docs/testing.md`; 2026-10-25). #156 (the git contract's real-git cases
+  start from template repos) landed beside them, outside the Epic.
+- **Done.** E0 (#109, PR #142), E0b (#140, PR #147), E0c (#144, PR #152), E0d (#145, PR #154), E0e (#153, PR #155)
+  and A1 (#102, PR #157); A2 (#103, PR #139) and A3 (#104, PR #138) on
+  2026-10-27.
+- **The module split (E0).** `lib/effects.mjs` holds the activity bracket (`bracket`), crash points, the remote retry
+  engine (through `sideEffect`), the Action completion helpers (`finish`, `effectDone`) and `TERMINALS`;
+  `lib/terminal.mjs` holds `hold`, `abandon`, `fault`, `decide`, the Terminal functions (`terminal`, `terminalAt`)
+  and the Terminal Reason texts (`terminalReason`, `stopText`). `lib/interpreter.mjs` went from 967 lines to 557.
+- **The test layout (E0d, ADR 0016).** Tests live by size, as `docs/testing.md` says: `test/unit/` (small),
+  `test/contract/<boundary>/` (`git`, `exec`, `harness`, `sqlite`) and `test/e2e/`, with a fast stage,
+  `node scripts/run-suite.mjs fast [boundary ...]`. Large files were split into area files (`interpreter.visit`,
+  `reconcile.crash`), and a file whose cases differ in size has one in each directory under the same name. The six
+  `golden:` cases are split too: three run small over the fakes (`test/unit/interpreter.faults`, `.review` and
+  `.visit`) and three on real git (`test/e2e/interpreter`, `.faults` and `.visit`). The tickets' "Tests to write
+  first" name a file by size; where the size depends on the implementation, the ticket says so.
+- **A2 and A3 re-scoped (owner, 2026-10-26)**, continuing on their draft PRs, grey-goo-ri PR #139 (#103) and PR #138
+  (#104):
+  - A2's overlap warnings follow option B: one warning per row that earlier rows partly take, naming each such
+    earlier row and the conditions of both rows that define the shared region, with one example input; a run of
+    rows taken the same way collapses into one warning, so the output is bounded by the number of rows. R8d and U4
+    are amended in the decisions file with that PR. The analyser's field domain uses A3's `fieldType` kinds (enum
+    with its values, boolean, and integer with bounds from gg's own facts, each optionally `absent`), so A5 needs no
+    translation layer. The module is `lib/rules.mjs`. The single path resolver (R14e) is left to A5,
+    which builds it (J15; owner, 2026-10-27).
+  - A3's `assertStrict` also checks keyword values (`type`, `enum`, `required`); `fieldType` returns enum (with its
+    values), boolean, integer, string, list of a kind, and object. The example's three schemas become fixtures in
+    `test/fixtures/example/`, which A5, A6 and C1 use.
+- **C3 re-scoped (owner, 2026-10-27).** #144 deleted the git verbs of finding 13; #145 did 15 and 20 and, with #156,
+  moved 16's bare-origin and clone setup to `test/support/template-repos.mjs`. #123 keeps the rest, re-checked on main
+  at `d571534`, plus three owner choices: `addWorktree`'s local `q` folds into the `git` wrapper (8); the two integrity
+  copies of `newExecution` become one `worktreeRecord`, while `record.test.mjs`'s copy is renamed `knownRecord` and
+  stays local, since its case asserts the values it passes in (16); the transport test for 15 goes.
+
 ## Shape
 
 Twenty-two tickets, sub-issues of one Epic, in three tracks:
@@ -27,6 +70,8 @@ first, QA hints, Notes). The Epic notes R7c: delete any real `.git/gg/gg.db` bet
 before grey-goo-ri issue #23.
 
 ## Order
+
+The table is the plan as filed. Since then E0b–E0e have run between E0 and A1 (see Since filing).
 
 | Id | Ticket | Interpreter | Depends on |
 |---|---|---|---|
@@ -53,17 +98,20 @@ before grey-goo-ri issue #23.
 | C4 | `gg run --flow` selects a declared Flow | no | C2 |
 | C3 | Audit cleanup: copies, dead code, names and test hygiene | yes | C4 |
 
-Serial chain: E0 → A1 → A4 → E1 → … → E10, encoded as dependencies. A2, A3, A5, A6 and A7 run beside it. grey-goo-ri
+Serial chain: E0 → E0b–E0e (inserted since filing) → A1 → A4 → E1 → … → E10, encoded as dependencies. A2, A3, A5, A6 and A7 run beside it. grey-goo-ri
 issue #23 is marked blocked by C2. C4 and C3 change no record or Event shape, so they do not block #23; but it touches the
 interpreter and so does not run while #23 is in flight.
 
 ## Tickets
 
 Each entry lists the decisions it builds, then what it names under S7: golden traces regenerated, glossary entries,
-and `gg doctor` output. "Goldens" means the `golden:` cases in `test/interpreter.test.mjs` and the crash-and-resume
-traces in `test/reconcile.test.mjs`.
+and `gg doctor` output. "Goldens" means the six `golden:` cases in `test/unit/interpreter*.test.mjs` and
+`test/e2e/interpreter*.test.mjs`, and the crash-and-resume traces in `test/unit/reconcile*.test.mjs` and
+`test/e2e/reconcile*.test.mjs`.
 
 ### A1. `testPaths` is required and feeds every consumer
+
+Done: grey-goo-ri issue #102, PR #157.
 
 P4, U9, U15, T12, R3e. The repository Layer must declare `testPaths` (non-empty list of glob strings); preflight
 rejects a missing, empty or non-glob value naming the file, as `commandProblems` does for `test`. `testPaths` in the
@@ -117,7 +165,8 @@ with Action ids, `do:` kinds, Check kinds and parameters, Claim tokens, `tests`,
 and `otherwise`; Flows with `plan` (required, and `null` until Epic planning lands; X2b, X2d), `entry`, `routes`, Vertices, `inputs`, `route`, `maxVisits`, `exhausted`) and produces the
 Resolved Flow. Named commands must be declared (U13). Every reference is typed through A3; tables are analysed
 through A2. `gg doctor` prints each Vertex's effective Procedure, access, `tests`, Checks, tables, reachable Outcomes
-and inputs with their sources, and exits non-zero on any error. Not yet called by admission (E7).
+and inputs with their sources, and exits non-zero on any error. Not yet called by admission (E7). One resolver
+parses every reference path (R14e), and `lib/rules.mjs` and `fieldType` use it in place of their own path splitting.
 - Tests: fixture Flows for each error; the example Flow from the docs passes.
 - Goldens: none. Glossary: Resolved Flow updated. Doctor: the output above, pinned for the example.
 
@@ -145,14 +194,17 @@ of: consume (exactly one authorised Decision, matching digest), stale, ambiguous
 
 ### E0. Audit fixes, then the interpreter split
 
-Audit findings 1, 2, 14 and 5, all checked on main. (1) The plain `record.save` path (`lib/record.mjs:139`) wraps its
+Done: grey-goo-ri issue #109, PR #142.
+
+Audit findings 1, 2, 14 and 5, all checked on main. (1) The plain `record.save` path (`lib/record.mjs`) wraps its
 error in `RecordSaveError`, so a failed busy or idle save is fatal and never saved again; `saveRetry` goes. (2)
 `lockGuard` checks `runState.stop` as `cooldown` already does (#85), so a remote write waiting for the repo lock does
 not write after a run stop. (14) The test GitHub fake keys labels by issue, so a sibling's needs-human no longer looks
 like a human override. (5) Then, with no behaviour change, the retry engine (`reserveRetry` through `sideEffect`)
 moves to `lib/effects.mjs` and `hold`, `abandon`, `fault`, `decide` and the Terminal functions to `lib/terminal.mjs`,
 both added to the AGENTS.md Layout table.
-- Tests: a failed busy or idle save stops saving (beside `test/interpreter.test.mjs:1670`); a sibling's run stop during
+- Tests: a failed busy or idle save stops saving (beside the failed-save cases, now in
+  `test/unit/interpreter.backoff.test.mjs`); a sibling's run stop during
   a lock wait ends the Ticket at needs-human with no GitHub write.
 - Goldens: unchanged. Glossary: none. Doctor: none.
 
@@ -172,7 +224,8 @@ R6, S1. The marker becomes `gg:<execution>:<vertex>:<visit>:<action>:<recovery>:
 agent Action. The recovery Phases count as Recovery Numbers until E6 removes them. Reconciliation parses the new
 marker. From the audit: one `actionKeyOf(at)` replaces the three ways the retry key is built and `outcome.resolve`
 returns the retry kind (6); the PR's provenance table counts one call per Attempt from each Attempt's `usage.delta`,
-so a resumed Session is not counted twice (3); the copied `markerOf` test helper moves to `test/support/` (16).
+so a resumed Session is not counted twice (3); the copied `markerOf` test helper, now in both
+`test/support/reconcile.mjs` and `test/support/run.mjs`, becomes one in `test/support/` (16).
 - Goldens: every trace (markers). Glossary: Action id, Action identity, Recovery Number. Doctor: none.
 
 ### E3. Ends, Flow routes and the `publish` Vertex
@@ -183,8 +236,8 @@ Terminals; `then` goes; the Flow's default `routes` and `"*"`; `harness-timeout`
 comment and goes to the Epic too at `needs-replan`; `misscoped` reaches the planner through the Flow's default route.
 A `publish` Vertex (code Procedure: the test Check, `pr-upsert`, `pr-ready`) replaces `done`; `pr-ready` runs only if
 the Check's tree equals the published commit's and the worktree is clean, with the target kept through retries and
-Reconciliation. `comment` takes `target`. The `TERMINALS` copies in `interpreter.mjs` and `reconcile.mjs` become
-one definition of the end states (audit 8).
+Reconciliation. `comment` takes `target`. The `TERMINALS` copies in `effects.mjs` (which the interpreter imports since
+E0) and `reconcile.mjs` become one definition of the end states (audit 8).
 - Goldens: every case ending at `done` (now `publish` then `ready-for-qa`), the blocked and replan cases. Glossary:
   end state, publishing Action. Doctor: none until E7.
 
@@ -309,11 +362,11 @@ rewrite much of the cited code. No behaviour change.
 - `admit()`'s corrupt-record branch becomes its own function, and `runTicket` reuses `admit`'s skipped-but-needs-human
   logic (17).
 - One exec timeout-note helper; `[ff: …]`, `FF_CMD` and `FF_TEST_*` become `gg` names (18). `Feature-Flow-Stage:`
-  stays (request doc line 479).
+  stays (request section 3.7).
 - `record.proof` takes a glossary name; the JSON-key sorter in `config.mjs` stops sharing `canonical` with
   `paths.canonical` (19).
-- Fixtures in `git.test.mjs`, `fake-harness.test.mjs` and `harnesses-contract.test.mjs` remove their temp directories
-  (20).
+- Fixtures in `test/contract/git/git.test.mjs`, `test/unit/fake-harness.test.mjs` and
+  `test/contract/harness/harnesses-contract.test.mjs` remove their temp directories (20).
 - The left-out items: `record.load`, `record.save` and `reconcile.humanOverride` lose `async` if still synchronous;
   one rule for an error with an empty message; one reader for the GitHub `?.nodes` shape.
 - Tests: the existing suite, plus one case for `addWorktree` on a case-sensitive platform and one that a second
