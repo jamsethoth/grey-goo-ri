@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as exec from '../../../lib/exec.mjs';
 import * as render from '../../../lib/render.mjs';
@@ -635,6 +636,103 @@ test('runShell: job membership larger than the first query buffer is still liste
   } finally {
     for (const s of res.survivors) try { process.kill(s.pid); } catch {}
   }
+});
+
+// The job helper's notes as [kind, value] pairs, from what it wrote.
+const helperNotes = (raw) => [...raw.matchAll(/\n\u0001FFJOB (\w+) ?([^\n]*)\n/g)].map((m) => [m[1], m[2]]);
+// How the helper got its job-object code: the loaded and compiled notes, in order.
+const howLoaded = (raw) => helperNotes(raw).filter(([k]) => k === 'loaded' || k === 'compiled');
+const WIN_CASE = { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' };
+
+// runShell with a timeout on a command that exits at once; raw is everything the helper wrote, notes included.
+async function helperCall(opts = {}) {
+  let raw = '';
+  const onHelper = (helper) => { for (const s of [helper.stdout, helper.stderr]) s.on('data', (d) => (raw += d)); };
+  const res = await exec.runShell(`"${process.execPath}" -e "1"`, { timeoutMs: 60_000, onHelper, ...opts });
+  return { res, raw };
+}
+
+// A copy of the job helper in its own directory, so a case can damage the cache beside it without touching the suite's.
+function helperCopy() {
+  const dir = mkdtempSync(join(tmp, 'winjob-'));
+  copyFileSync(new URL('../../../lib/winjob.ps1', import.meta.url), join(dir, 'winjob.ps1'));
+  return dir;
+}
+
+// Runs the helper in dir as runShell does, on a command that prints "ran". Its stdin stays open: EOF stops the job.
+async function runHelper(dir) {
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(dir, 'winjob.ps1')],
+    { windowsHide: true, env: { ...process.env, FF_CMD: `"${process.execPath}" -e "console.log('ran')"` } });
+  let raw = '';
+  for (const s of [child.stdout, child.stderr]) s.setEncoding('utf8').on('data', (d) => (raw += d));
+  const [code] = await once(child, 'close');
+  return { code, raw };
+}
+
+test('the job helper reuses its compiled assembly on a second call', WIN_CASE, async () => {
+  await helperCall();
+  const second = await helperCall();
+  assert.equal(second.res.code, 0);
+  assert.deepEqual(howLoaded(second.raw).map(([k]) => k), ['loaded'], second.raw);
+});
+
+test('a damaged helper assembly falls back to compiling', WIN_CASE, async () => {
+  const dir = helperCopy();
+  const first = await runHelper(dir); // nothing cached yet: compiles, and caches what it compiled
+  assert.deepEqual(howLoaded(first.raw).map(([k]) => k), ['compiled'], first.raw);
+  const [[, cached]] = howLoaded(first.raw);
+  assert.ok(existsSync(cached), `no cached assembly at ${cached}`);
+  writeFileSync(cached, readFileSync(cached).subarray(0, 1024));
+  const second = await runHelper(dir);
+  assert.equal(second.code, 0);
+  assert.match(second.raw, /ran/);
+  assert.deepEqual(howLoaded(second.raw).map(([k]) => k), ['compiled'], second.raw);
+});
+
+test('a helper assembly compiled from another version of the helper is not loaded', WIN_CASE, async () => {
+  const dir = helperCopy();
+  const first = await runHelper(dir); // caches this version's assembly
+  assert.deepEqual(howLoaded(first.raw).map(([k]) => k), ['compiled'], first.raw);
+  const ps1 = join(dir, 'winjob.ps1');
+  writeFileSync(ps1, readFileSync(ps1, 'utf8').replace('using System;', 'using System; // another version'));
+  const next = await runHelper(dir);
+  assert.equal(next.code, 0);
+  assert.match(next.raw, /ran/);
+  assert.deepEqual(howLoaded(next.raw).map(([k]) => k), ['compiled'], next.raw);
+});
+
+// A Node that may write its worktree and %TEMP% plants an assembly there under the very name the helper's cache gives
+// this source's assembly (its content's hash included). Loaded, it would run outside the Node's sandbox.
+test('a helper assembly in an agent-writable directory is not loaded', WIN_CASE, async (t) => {
+  const { raw } = await helperCall();
+  assert.equal(howLoaded(raw).length, 1, raw);
+  const [[, cachedPath]] = howLoaded(raw);
+  assert.ok(cachedPath, `the suite's helper cached nothing: ${raw}`);
+  const cacheDir = basename(dirname(cachedPath));
+  const sourceKey = basename(cachedPath).split('-')[0];
+  const planted = join(tmp, 'planted.dll');
+  const build = script('plant.ps1', `Add-Type -OutputAssembly $env:FF_TEST_PLANTED -OutputType Library -TypeDefinition @'
+public static class FFJob {
+  public static int Run(string cmd, string cwd, bool deny) { System.Console.Out.WriteLine("PLANTED"); return 0; }
+  public static void Done() { System.Console.Out.Write("\n\u0001FFJOB done\n"); System.Console.Error.Write("\n\u0001FFJOB done\n"); }
+}
+'@
+`);
+  const built = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', build], { windowsHide: true, encoding: 'utf8', env: { ...process.env, FF_TEST_PLANTED: planted } });
+  assert.ok(existsSync(planted), built.stderr);
+  const name = `${sourceKey}-${createHash('sha256').update(readFileSync(planted)).digest('hex')}.dll`;
+  const worktree = mkdtempSync(join(tmp, 'agent-worktree-'));
+  const agentTemp = mkdtempSync(join(tmp, 'agent-temp-'));
+  for (const d of [worktree, join(worktree, cacheDir), agentTemp, join(agentTemp, cacheDir)]) {
+    mkdirSync(d, { recursive: true });
+    copyFileSync(planted, join(d, name));
+  }
+  caseEnv(t, { TEMP: agentTemp, TMP: agentTemp });
+  const call = await helperCall({ cwd: worktree });
+  assert.equal(call.res.code, 0);
+  assert.doesNotMatch(call.raw, /PLANTED/);
+  const [[, from]] = howLoaded(call.raw);
+  assert.ok(!from.startsWith(worktree) && !from.startsWith(agentTemp), `loaded from ${from}`);
 });
 
 test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
