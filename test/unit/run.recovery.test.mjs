@@ -8,13 +8,13 @@ import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, fixture, seedExecution, markerOf, ticketResult, failComment,
+  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, fixture, seedExecution, ticketResult, failComment,
   endsOf, lastRun, loadTicket, dirtyTicket,
 } from '../support/run.mjs';
 
 test('an admission failure on an active execution is reported as a fault', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
+  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }) });
   let adds = 0;
   f.options.git = { ...f.options.git, ensureWorktree: async () => { adds++; throw new Error('worktree add failed\nfatal: disk full') } };
 
@@ -211,7 +211,7 @@ test('an ensureWorktree failure without a record is marked and never retried', a
   assert.ok(f.gh.labels.has(NEEDS_HUMAN));
   assert.ok(!f.labelAdds().includes(IN_PROGRESS), 'in-progress is never set');
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
-  assert.deepEqual(evs.map((e) => (e.type === 'action' ? `${e.phase} ${e.ordinal}` : e.type)), ['ticket_start', 'fault 1', 'fault 2', 'ticket_end']);
+  assert.deepEqual(evs.map((e) => (e.type === 'action' ? `${e.action} ${e.recovery}` : e.type)), ['ticket_start', 'fault-comment 0', 'fault-label 0', 'ticket_end']);
   assert.ok(evs.every((e) => e.execution === rec.execution));
   assert.match(evs.at(-1).error, /disk full/);
   assert.equal(f.harness.calls.length, 0);
@@ -233,8 +233,8 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason: a
   assert.equal(rec?.terminalReason?.decidedBy.hold, 'branch-mismatch');
   assert.equal(rec.state, 'held');
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
-  assert.deepEqual(evs.map((e) => (e.type === 'action' ? `${e.vertex} ${e.phase} ${e.ordinal}` : e.type)),
-    ['ticket_start', 'needs-human hold 1', 'needs-human hold 2', 'ticket_end']);
+  assert.deepEqual(evs.map((e) => (e.type === 'action' ? `${e.vertex} ${e.action} ${e.recovery}` : e.type)),
+    ['ticket_start', 'needs-human hold-comment 0', 'needs-human hold-label 0', 'ticket_end']);
   assert.ok(evs.every((e) => e.execution === rec.execution && e.run === lastRun(f)), 'one Execution and Run throughout');
   assert.equal(evs.at(-1).outcome, 'needs-human');
   assert.deepEqual(evs.at(-1).reason, rec.terminalReason);

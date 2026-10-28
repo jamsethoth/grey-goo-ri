@@ -53,7 +53,7 @@ test('createExecution mints an execution id and the documented fields', async (t
   assert.equal(r.configHash, 'abc123');
   assert.equal(r.run, 'run-1');
   assert.equal(r.state, 'active');
-  assert.deepEqual(Object.keys(r.cursor).sort(), ['attempt', 'ordinal', 'phase', 'vertex', 'visit']);
+  assert.deepEqual(Object.keys(r.cursor).sort(), ['action', 'attempt', 'recovery', 'vertex', 'visit']);
   assert.equal(r.cursor.vertex, 'implement');
   assert.equal(r.cursor.visit, 1);
   assert.deepEqual(r.visits, {});

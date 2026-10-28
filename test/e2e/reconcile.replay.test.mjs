@@ -113,8 +113,8 @@ for (const point of ['before-effect', 'after-effect', 'after-completion']) {
       if (call.phase === 'red') writeFileSync(join(g.worktree, 'CLAUDE.md'), 'an agent edit\n');
       return out;
     };
-    // The rollback's own marker: the ordinal after red's three declared Actions.
-    await crashed(g, ['red', 1, 'red', 4], point);
+    // The rollback's own marker.
+    await crashed(g, ['red', 1, 'reset', 0], point);
     assert.equal(g.harness.calls.length, 1);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });

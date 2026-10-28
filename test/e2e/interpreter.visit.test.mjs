@@ -43,7 +43,7 @@ test('a green call that changes the committed test is an integrity violation', a
   const g = await golden.setup(t, { responses, integrity: 'real' });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'needs-human');
-  const greenCheck = g.readEvents().find((e) => e.type === 'action' && e.phase === 'green' && e.ordinal === 2);
+  const greenCheck = g.readEvents().find((e) => e.type === 'action' && e.vertex === 'green' && e.action === 'test');
   assert.equal(greenCheck.outcome, 'integrity-violation');
   assert.equal(greenCheck.direction, 'stop');
   assert.deepEqual(greenCheck.violations, ['test/add.test.mjs']);
@@ -59,14 +59,14 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(tddTrace(g).map((e) => `${e.phase}/${e.ordinal}`), ['red/1', 'red/2', 'still-green/1', 'still-green/2']);
+  assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery}`), ['red/0', 'red-check/0', 'red/1', 'red-check/1']);
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'still-green resumes the red session');
-  const exhausted = actionEvent(g, 'still-green', 2);
+  const exhausted = actionEvent(g, 'red', 'red-check', 1);
   assert.equal(exhausted.outcome, 'red-failed');
   assert.equal(exhausted.rule, 'check-exhausted', 'the transition table derives red-failed');
   assert.equal(exhausted.direction, 'stop');
-  assert.equal(actionEvent(g, 'red', 2).rule, 'check-failed', 'the first failing run retries through still-green');
+  assert.equal(actionEvent(g, 'red', 'red-check').rule, 'check-failed', 'the first failing run retries through still-green');
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', `${g.base}..HEAD`), '0', 'no commit on the branch');
   assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the worktree is clean at the baseline head');
@@ -76,7 +76,7 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
 
   // The reset is a write-ahead side effect whose intent carries the baseline and the History item.
   const [reset] = intents(g.rec, 'reset');
-  assert.equal(reset.marker, actionMarker(g, 'still-green', 2));
+  assert.equal(reset.marker, actionMarker(g, 'red', 'red-check', 1));
   assert.deepEqual(Object.keys(reset.payload).sort(), ['baseline', 'history', 'left', 'untracked']);
   assert.equal(reset.payload.baseline, g.base);
   assert.deepEqual(reset.payload.history, g.rec.history[0]);
@@ -88,7 +88,7 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
 
   const reason = terminalReasonOf(g);
-  assert.deepEqual(reason.decidedBy, { vertex: 'red', visit: 1, phase: 'still-green', ordinal: 2 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'red', visit: 1, action: 'red-check', recovery: 1 });
   assert.equal(reason.outcome, 'red-failed');
   assert.equal(reason.rule, 'check-exhausted');
   assert.equal(reason.text, "The red phase failed the Red Check (rule check-exhausted) and the agent's changes were discarded.");
@@ -105,7 +105,7 @@ test('a failed red rollback removes an ignored test file the red call added', as
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.equal(actionEvent(g, 'still-green', 2).outcome, 'red-failed');
+  assert.equal(actionEvent(g, 'red', 'red-check', 1).outcome, 'red-failed');
   assert.ok(!existsSync(join(g.worktree, 'test', 'extra.test.mjs')), 'the ignored test the red call added is removed');
 });
 

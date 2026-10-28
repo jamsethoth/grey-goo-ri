@@ -18,19 +18,19 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
   });
 
   assert.equal(g.result.outcome, 'done');
-  assert.deepEqual(g.actions.map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}`), [
-    'red/1/red/1', 'red/1/red/2', 'red/1/red/3',
-    'green/1/green/1', 'green/1/green/2', 'green/1/green/3', 'green/1/green/4', 'green/1/green/5',
-    'reviewer/1/review/1', 'reviewer/1/review/2', 'reviewer/1/review/3', 'reviewer/1/review/4',
-    'implementer-fix/1/fix/1', 'implementer-fix/1/fix/2', 'implementer-fix/1/fix/3', 'implementer-fix/1/fix/4', 'implementer-fix/1/fix/5',
-    'reviewer/2/review/1', 'reviewer/2/review/2', 'reviewer/2/review/3', 'reviewer/2/review/4',
+  assert.deepEqual(g.actions.map((e) => `${e.vertex}/${e.visit}/${e.action}/${e.recovery}`), [
+    'red/1/red/0', 'red/1/red-check/0', 'red/1/commit/0',
+    'green/1/green/0', 'green/1/test/0', 'green/1/commit/0', 'green/1/push/0', 'green/1/pr/0',
+    'reviewer/1/review/0', 'reviewer/1/repeat/0', 'reviewer/1/comment/0', 'reviewer/1/pr/0',
+    'implementer-fix/1/fix/0', 'implementer-fix/1/test/0', 'implementer-fix/1/commit/0', 'implementer-fix/1/push/0', 'implementer-fix/1/pr/0',
+    'reviewer/2/review/0', 'reviewer/2/repeat/0', 'reviewer/2/comment/0', 'reviewer/2/pr/0',
   ]);
   assert.deepEqual(g.actions.filter((e) => e.attempt !== 1), [], 'every Action is its first Attempt');
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure), Array(8).fill('review'));
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), Array(5).fill('fix'));
-  assert.equal(g.at('reviewer', 1, 'review', 1)[0].outcome, 'changes');
-  assert.equal(g.at('reviewer', 1, 'review', 1)[0].rule, 'claim-route', 'a changes claim routes through claim-route');
-  assert.equal(g.at('reviewer', 2, 'review', 1)[0].outcome, 'ok');
+  assert.equal(g.at('reviewer', 1, 'review', 0)[0].outcome, 'changes');
+  assert.equal(g.at('reviewer', 1, 'review', 0)[0].rule, 'claim-route', 'a changes claim routes through claim-route');
+  assert.equal(g.at('reviewer', 2, 'review', 0)[0].outcome, 'ok');
 
   // The review is a read-only call with the diff and the captured Red and Green Evidence in its Brief.
   const [review1, fix, review2] = g.harness.calls.slice(2);
@@ -43,7 +43,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
   assert.equal(fix.resume, null, 'fix never resumes');
   assert.ok(fix.brief.includes(MAJOR.issue), 'the Findings are in the fix Brief');
   assert.equal(fix.access, 'workspace-write');
-  assert.equal(g.at('implementer-fix', 1, 'fix', 1)[0].lineage, null);
+  assert.equal(g.at('implementer-fix', 1, 'fix', 0)[0].lineage, null);
   assert.equal(review2.access, 'read-only');
 
   const messages = await branchMessages(g);
@@ -73,7 +73,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
   });
   g.flow.ticket.vertices.reviewer.route.changes.max = 1;
   // Before the fix Attempt's intent: one interrupted after it would be held instead.
-  const fix = marker.formatMarker({ execution: g.rec.execution, vertex: 'implementer-fix', visit: 1, phase: 'fix', ordinal: 1, run: g.rec.run, attempt: 1 });
+  const fix = golden.markerOf(g.rec, 'implementer-fix', 1, 'fix');
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: fix, point: 'before-intent' } }), /crash/);
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
@@ -120,8 +120,8 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
   assert.equal(g.rec.visits.reviewer, 3);
   assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX VISIT')).length, 2, 'no third fix call');
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix' && e.visit === 3), [], 'no third fix Visit');
-  assert.deepEqual(g.actions.filter((e) => e.exhausted === true).map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}`),
-    ['reviewer/3/review/1'], 'only the deciding Action Event of the third review records exhausted');
+  assert.deepEqual(g.actions.filter((e) => e.exhausted === true).map((e) => `${e.vertex}/${e.visit}/${e.action}/${e.recovery}`),
+    ['reviewer/3/review/0'], 'only the deciding Action Event of the third review records exhausted');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 
   const reason = reviewStopReason(g);
@@ -162,7 +162,7 @@ test('a repeated findings hash is flagged', async (t) => {
   assert.deepEqual([first.vertex, first.visit, second.vertex, second.visit], ['reviewer', 1, 'reviewer', 2]);
   assert.equal(first.findingsHash, checks.findingsHash(same));
   assert.equal(second.findingsHash, first.findingsHash, 'normalised Findings hash the same');
-  const hashed = (visit) => g.at('reviewer', visit, 'review', 2)[0];
+  const hashed = (visit) => g.at('reviewer', visit, 'repeat', 0)[0];
   assert.notEqual(hashed(1).repeat, true, 'the first review is not a repeat');
   assert.equal(hashed(2).repeat, true, 'the second review is flagged as a repeat');
   assert.equal(hashed(2).outcome, 'changes', 'repeat is not routed in this slice');

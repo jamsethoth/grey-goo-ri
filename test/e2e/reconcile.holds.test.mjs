@@ -7,7 +7,7 @@ import * as reconcile from '../../lib/reconcile.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  markerOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
+  withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
 } from '../support/reconcile.mjs';
 
 test('a needs-human label overrides a mid-action record', async (t) => {
@@ -45,7 +45,7 @@ for (const point of Object.keys(POINTS)) {
     await crashed(g, EFFECTS.commit.at, 'before-effect');
     golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
     const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
-    const hold = markerOf(g.rec, 'needs-human', 1, 'hold', 1);
+    const hold = golden.markerOf(g.rec, 'needs-human', 1, 'hold-comment', 0);
     await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point } }),
       (err) => err instanceof interpreter.CrashError);
     const mid = await loadTicket(g);
@@ -71,10 +71,10 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   const g = await golden.setup(t, { git: 'real' });
   await crashed(g, EFFECTS.commit.at, 'before-effect');
   // An earlier review comment on the PR crashed before its completion.
-  const older = markerOf(g.rec, 'reviewer', 1, 'review', 4);
+  const older = golden.markerOf(g.rec, 'reviewer', 1, 'pr', 0);
   await record.intent(await loadTicket(g), older, 'comment', { target: { kind: 'pr', number: 7 }, body: 'x', bodyHash: 'h' });
   golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
-  const hold = markerOf(g.rec, 'needs-human', 1, 'hold', 1);
+  const hold = golden.markerOf(g.rec, 'needs-human', 1, 'hold-comment', 0);
   await assert.rejects(interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point: 'before-effect' } }),
     (err) => err instanceof interpreter.CrashError);
   let looked = 0;

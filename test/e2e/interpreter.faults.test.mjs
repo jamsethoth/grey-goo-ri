@@ -21,7 +21,7 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  const red = actionEvent(g, 'red', 1);
+  const red = actionEvent(g, 'red', 'red');
   assert.equal(red.outcome, 'integrity-violation');
   assert.equal(red.direction, 'stop');
   assert.ok(red.violations.some((v) => v.surface === 'head'), JSON.stringify(red.violations));
@@ -30,7 +30,7 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
   assert.equal(golden.sh(g.worktree, 'branch', '--contains', g.agentCommit), '', 'the agent commit is gone from the branch');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '');
   assert.equal(g.harness.calls.length, 1, 'no retry after a violation');
-  const reason = stopReason(g, { phase: 'red', ordinal: 1, outcome: 'integrity-violation', rule: 'integrity-violation' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'integrity-violation', rule: 'integrity-violation' });
   assert.match(reason.text, /integrity/i);
   assert.match(g.gh.comments[0].body, /\bhead\b/, 'the comment names the surface');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human'], 'the ticket is at needs-human');
@@ -54,7 +54,7 @@ test('an integrity violation removes an injected ignored Protected File and rest
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  const red = actionEvent(g, 'red', 1);
+  const red = actionEvent(g, 'red', 'red');
   assert.equal(red.outcome, 'integrity-violation');
   assert.deepEqual(red.violations.find((v) => v.surface === 'protected').after.sort(),
     ['.claude/settings.local.json', '.claude/skills/injected/SKILL.md']);
@@ -69,7 +69,7 @@ test('a test-fix that changes the committed test is rolled back to its baseline 
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  const check = actionEvent(g, 'test-fix', 2);
+  const check = actionEvent(g, 'green', 'test', 1);
   assert.equal(check.outcome, 'integrity-violation');
   assert.deepEqual(check.violations, ['test/add.test.mjs']);
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'no forbidden edit or implementation file survives');
@@ -91,7 +91,7 @@ test('a test-fix that adds an ignored test file has it removed by the rollback',
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(actionEvent(g, 'test-fix', 2).violations, ['test/injected.test.mjs']);
+  assert.deepEqual(actionEvent(g, 'green', 'test', 1).violations, ['test/injected.test.mjs']);
   assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
 });
 
@@ -105,7 +105,7 @@ test('a test-fix that adds an ignored file under a declared test path outside th
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(actionEvent(g, 'test-fix', 2).violations, ['spec/injected.mjs']);
+  assert.deepEqual(actionEvent(g, 'green', 'test', 1).violations, ['spec/injected.mjs']);
   assert.ok(!existsSync(join(g.worktree, 'spec', 'injected.mjs')), 'the ignored test the agent added is removed');
 });
 
@@ -117,7 +117,7 @@ test('an ignored test file that was there before the call gets its bytes back fr
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(actionEvent(g, 'green', 2).violations, ['test/owner.test.mjs']);
+  assert.deepEqual(actionEvent(g, 'green', 'test').violations, ['test/owner.test.mjs']);
   assert.equal(readFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'utf8'), 'owner');
 });
 
@@ -130,6 +130,6 @@ test('an integrity violation on a Protected File also removes an ignored test fi
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.equal(actionEvent(g, 'test-fix', 1).outcome, 'integrity-violation');
+  assert.equal(actionEvent(g, 'green', 'green', 1).outcome, 'integrity-violation');
   assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
 });

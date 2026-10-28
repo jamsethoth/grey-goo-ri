@@ -4,16 +4,15 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
-import * as marker from '../../lib/marker.mjs';
 import * as golden from './golden.mjs';
 import * as locks from '../../lib/locks.mjs';
 import * as run from '../../lib/run.mjs';
 
-export const TDD_PHASES = ['red', 'still-green', 'green', 'test-fix'];
+export const TDD_VERTICES = ['red', 'green'];
 
 export const FIRST_VISIT = [
-  ['red', 1], ['red', 2], ['red', 3], ['green', 1], ['green', 2], ['green', 3], ['green', 4], ['green', 5],
-].map(([phase, ordinal]) => ({ phase, ordinal, attempt: 1, outcome: 'ok' }));
+  ['red', 'red'], ['red', 'red-check'], ['red', 'commit'], ['green', 'green'], ['green', 'test'], ['green', 'commit'], ['green', 'push'], ['green', 'pr'],
+].map(([vertex, action]) => ({ vertex, action, recovery: 0, attempt: 1, outcome: 'ok' }));
 
 export async function firstVisit(t, opts) {
   const g = await golden.setup(t, opts);
@@ -24,11 +23,7 @@ export async function firstVisit(t, opts) {
 
 export const intents = (rec, action) => rec.log.filter((e) => e.step === 'intent' && e.action === action);
 export const steps = (rec, m) => rec.log.filter((e) => e.marker === m).map((e) => e.step);
-// The golden Flow's Vertex of each tests-fail and implement Phase.
-export const vertexOf = (phase) => (['red', 'still-green'].includes(phase) ? 'red' : 'green');
-export const actionMarker = (g, phase, ordinal) => marker.formatMarker({
-  execution: g.rec.execution, vertex: vertexOf(phase), visit: 1, phase, ordinal, run: g.rec.run, attempt: 1,
-});
+export const actionMarker = (g, vertex, action, recovery = 0) => golden.markerOf(g.rec, vertex, 1, action, recovery);
 
 // The Terminal Reason must agree in the record and on ticket_end, and (unless the caller checks its own comment) be
 // posted once on the ticket, write-ahead, with the comment's Action Marker.
@@ -46,13 +41,14 @@ export function terminalReasonOf(g, { comment = true } = {}) {
   return reason;
 }
 
-export const tddTrace = (g) => golden.trace(g.readEvents()).filter((e) => TDD_PHASES.includes(e.phase));
-export const actionEvent = (g, phase, ordinal) => g.readEvents().find((e) => e.type === 'action' && e.phase === phase && e.ordinal === ordinal);
+export const tddTrace = (g) => golden.trace(g.readEvents()).filter((e) => TDD_VERTICES.includes(e.vertex));
+const isAction = (e, vertex, action, recovery) => e.type === 'action' && e.vertex === vertex && e.action === action && e.recovery === recovery;
+export const actionEvent = (g, vertex, action, recovery = 0) => g.readEvents().find((e) => isAction(e, vertex, action, recovery));
 
 // T17's error paths: every non-advance row of the transition table, reached through the interpreter.
 export const WRONG_ADD = 'export const add = () => 0;\n';
 export const GREEN_FAIL_OUTPUT = 'not ok 1 - adds two numbers\n# fail 1';
-export const attemptsOf = (g, phase, ordinal) => g.readEvents().filter((e) => e.type === 'action' && e.phase === phase && e.ordinal === ordinal);
+export const attemptsOf = (g, vertex, action, recovery = 0) => g.readEvents().filter((e) => isAction(e, vertex, action, recovery));
 
 export const ok = (files) => ({ files, response: golden.greenResponse });
 
@@ -71,9 +67,9 @@ export async function greenSetup(t, responses, integrity, git) {
 }
 
 // A stop's Terminal Reason names the deciding Action, that Action's Outcome and rule, and a sentence of its own.
-export function stopReason(g, { phase, ordinal, outcome, rule, comment }) {
+export function stopReason(g, { vertex, action, recovery = 0, outcome, rule, comment }) {
   const reason = terminalReasonOf(g, { comment });
-  assert.deepEqual(reason.decidedBy, { vertex: vertexOf(phase), visit: 1, phase, ordinal });
+  assert.deepEqual(reason.decidedBy, { vertex, visit: 1, action, recovery });
   assert.equal(reason.outcome, outcome);
   assert.equal(reason.rule, rule);
   assert.doesNotMatch(reason.text, /ended with|cannot run yet/, `a sentence naming the failure: ${reason.text}`);
@@ -108,7 +104,7 @@ export async function reviewSetup(t, responses, opts) {
   g.result = await interpreter.runExecution(g.options);
   g.events = g.readEvents();
   g.actions = g.events.filter((e) => e.type === 'action' && e.procedure);
-  g.at = (vertex, visit, phase, ordinal) => g.actions.filter((e) => e.vertex === vertex && e.visit === visit && e.phase === phase && e.ordinal === ordinal);
+  g.at = (vertex, visit, action, recovery = 0) => g.actions.filter((e) => e.visit === visit && isAction(e, vertex, action, recovery));
   return g;
 }
 
@@ -149,13 +145,12 @@ export function reviewStopReason(g) {
 export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKET);
 // The saved row read without awaiting, for a getter that cannot await.
 export const ticketRow = (g) => JSON.parse(record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET).json);
-export const attemptMarker = (g, vertex, visit, phase, ordinal, attempt = 1) =>
-  marker.formatMarker({ execution: g.rec.execution, vertex, visit, phase, ordinal, run: g.rec.run, attempt });
+export const attemptMarker = (g, ...at) => golden.markerOf(g.rec, ...at);
 
 // #66: GitHub writes and push retry recognised transient failures inside the Action, through the marker lookup.
 export const PR = 7;
 export const okReview = { 'reviewer/1/review/1': reviewed(review('ok')) };
-export const REVIEW_COMMENT = 'reviewer/1/review/3';
+export const REVIEW_COMMENT = 'reviewer/1/comment/0';
 export const commentPosts = (g, n = PR) => g.gh.calls.filter((c) => golden.isCommentPost(c.args, n));
 export const onPr = (fields) => ({ matches: (args) => golden.isCommentPost(args, PR), ...fields });
 

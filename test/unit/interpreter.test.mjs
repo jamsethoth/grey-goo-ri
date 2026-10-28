@@ -7,7 +7,7 @@ import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
-import { firstVisit, intents, actionEvent, loadTicket, branchMessages } from '../support/interpreter.mjs';
+import { firstVisit, intents, actionEvent, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD } from '../support/interpreter.mjs';
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const g = await firstVisit(t);
@@ -153,7 +153,7 @@ test('runExecution asks the injected integrity whether an Attempt kept to its ac
   const result = await interpreter.runExecution({ ...g.options, integrity: injected });
 
   assert.equal(result.outcome, 'needs-human');
-  const red = actionEvent(g, 'red', 1);
+  const red = actionEvent(g, 'red', 'red');
   assert.equal(red.outcome, 'integrity-violation');
   assert.deepEqual(red.violations, [violation]);
 });
@@ -164,7 +164,7 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   const result = await interpreter.runExecution({ ...g.options, testImmutability });
 
   assert.equal(result.outcome, 'needs-human');
-  const check = actionEvent(g, 'green', 2);
+  const check = actionEvent(g, 'green', 'test');
   assert.equal(check.outcome, 'integrity-violation');
   assert.deepEqual(check.violations, ['test/add.test.mjs']);
 });
@@ -232,4 +232,23 @@ test("a fault during an end does not replay the end's open reporting Action", as
   assert.ok(posted.body.includes(marker.markerComment(reportMarker(g, 'needs-human', 'fault-comment'))), 'the fault reports under its own marker');
   assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'needs-human', 'fault-label')));
   assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'done', 'end-pr-ready')), "the end's pr-ready completed first");
+});
+
+test("the PR's provenance counts a retried Attempt and a resumed Session once each", async (t) => {
+  const usage = (input, output) => ({ usage: { delta: { input, output } } });
+  const red = golden.firstVisitResponses['red/1/red/1'];
+  const g = await greenSetup(t, {
+    // A parse retry: two Attempts of red, each one call.
+    'red/1/red/1': { ...red, response: null, result: usage(10, 2) },
+    'red/1/red/2': { ...red, result: usage(100, 20) },
+    // test-fix resumes green's Session, whose cumulative usage then holds green's tokens too.
+    'green/1/green/1': { ...ok({ 'lib/add.mjs': WRONG_ADD }), result: usage(200, 40) },
+    'green/1/test-fix/1': { ...ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }), result: usage(50, 5) },
+  });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  const body = g.gh.pr().body;
+  assert.match(body, /^\| red \| .* \| 2 \| 110 \(0\) \/ 22 \|$/m, body);
+  assert.match(body, /^\| green \| .* \| 2 \| 250 \(0\) \/ 45 \|$/m, body);
 });

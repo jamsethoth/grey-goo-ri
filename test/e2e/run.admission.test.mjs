@@ -6,9 +6,10 @@ import { pathKey } from '../../lib/paths.mjs';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, sh, fixture, seedExecution, markerOf, ticketResult, conflict,
+  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, sh, fixture, seedExecution, ticketResult, conflict,
   crashBeforeCommit,
 } from '../support/run.mjs';
+import * as golden from '../support/golden.mjs';
 
 test('unknown dirty state is held with the diff stat', async (t) => {
   const f = fixture(t, { integrity: 'real' });
@@ -88,7 +89,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
 
 test('a merge conflict in the worktree of a resumed execution is held, not faulted', async (t) => {
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
-  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
+  await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }) });
   const before = conflict(f.worktree);
 
   assertConflictHeld(f, await run.runTarget(f.options), before);

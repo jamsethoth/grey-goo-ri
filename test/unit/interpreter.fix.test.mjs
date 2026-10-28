@@ -25,12 +25,12 @@ test('test-fix after fix resumes the fix session', async (t) => {
     },
   });
 
-  assert.equal(g.at('implementer-fix', 1, 'fix', 2)[0]?.rule, 'check-failed');
-  const fixCall = g.at('implementer-fix', 1, 'fix', 1)[0];
-  const testFix = g.at('implementer-fix', 1, 'test-fix', 1)[0];
+  assert.equal(g.at('implementer-fix', 1, 'test', 0)[0]?.rule, 'check-failed');
+  const fixCall = g.at('implementer-fix', 1, 'fix', 0)[0];
+  const testFix = g.at('implementer-fix', 1, 'fix', 1)[0];
   assert.ok(testFix, 'test-fix/1 runs after the failing Green Check');
   assert.equal(testFix.lineage, 'fix', 'test-fix descends from the fix Phase');
-  const call = g.harness.calls.find((c) => c.marker.includes(':test-fix:'));
+  const call = g.harness.calls.find((c) => c.marker === golden.markerOf(g.rec, 'implementer-fix', 1, 'fix', 1));
   assert.equal(call.resume, fixCall.sessionId, 'test-fix resumes the fix session');
   assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT));
   assert.equal(g.result.outcome, 'done');

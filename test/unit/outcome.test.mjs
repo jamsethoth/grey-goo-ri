@@ -33,12 +33,14 @@ test('row transient-retry: failed transient within budget -> transient-retry', (
   const r = resolve({ result: failed('transient', 1500) });
   assertRow(r, 'transient-retry', 'transient-retry', 'retry');
   assert.equal(r.retryAfterMs, 1500);
+  assert.equal(r.retryKind, 'transient', 'the budget the retry spends');
 });
 
 test('row transient-retry: failed rate-limited within budget -> transient-retry', () => {
   const r = resolve({ result: failed('rate-limited', 60000), retries: { ...none, rateLimited: 1 } });
   assertRow(r, 'transient-retry', 'transient-retry', 'retry');
   assert.equal(r.retryAfterMs, 60000);
+  assert.equal(r.retryKind, 'rateLimited');
 });
 
 test('row transient-exhausted: failed transient at budget -> needs-human', () => {
@@ -56,7 +58,9 @@ for (const cls of ['auth', 'quota', 'budget']) {
 
 for (const status of ['timed-out', 'killed']) {
   test(`row timeout-retry: ${status} within budget -> timeout-retry`, () => {
-    assertRow(resolve({ result: { status, response: { claim: 'ok' }, failure: null }, claim: claim('ok') }), 'timeout-retry', 'timeout-retry', 'retry');
+    const r = resolve({ result: { status, response: { claim: 'ok' }, failure: null }, claim: claim('ok') });
+    assertRow(r, 'timeout-retry', 'timeout-retry', 'retry');
+    assert.equal(r.retryKind, 'timeout');
   });
 }
 
@@ -72,6 +76,7 @@ test('row unknown-failure: failed unknown -> needs-human', () => {
 test('row parse-retry: completed, invalid claim within budget -> parse-retry', () => {
   const r = resolve({ claim: { valid: false, reason: 'more than one token' } });
   assertRow(r, 'parse-retry', 'parse-retry', 'retry');
+  assert.equal(r.retryKind, 'parse');
 });
 
 test('row parse-exhausted: completed, invalid claim at budget -> needs-human', () => {
@@ -91,6 +96,7 @@ test('row check-failed: completed, valid ok, declared check fails -> check-faile
   const r = resolve({ claim: claim('ok'), checks: [integrityOk, check('red', true), check('test', false), check('lint', false)] });
   assertRow(r, 'check-failed', 'check-failed', 'retry');
   assert.equal(r.check, 'test');
+  assert.equal(r.retryKind, null, 'a recovery Phase spends no Attempt budget');
 });
 
 test('row check-exhausted: a failing check with the procedure\'s recovery exhausted -> its failure outcome, stop', () => {

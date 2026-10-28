@@ -154,7 +154,7 @@ test('a stray write into an idle worktree is attributed to the running action', 
 
   const results = await run.runTarget(f.options);
   assert.deepEqual(bActivity, { busy: false, generation: 0 }, 'B was admitted and idle during the red call of A');
-  const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === 21 && e.phase === 'red' && e.agent);
+  const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === 21 && e.action === 'red' && e.agent);
   assert.equal(red?.outcome, 'integrity-violation', JSON.stringify(results));
   assert.ok(red.violations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'), JSON.stringify(red.violations));
 });

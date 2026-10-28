@@ -18,14 +18,14 @@ test('a fix that changes an unnamed test is an integrity violation', async (t) =
   }, { integrity: 'real' });
 
   assert.equal(g.result.outcome, 'needs-human');
-  const check = g.at('implementer-fix', 1, 'fix', 2)[0];
+  const check = g.at('implementer-fix', 1, 'test', 0)[0];
   assert.equal(check?.outcome, 'integrity-violation');
   assert.deepEqual(check.violations, ['test/add.test.mjs']);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)'], 'no fix commit');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the fix edit is rolled back');
   assert.ok(!readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'));
   const reason = reviewStopReason(g);
-  assert.deepEqual(reason.decidedBy, { vertex: 'implementer-fix', visit: 1, phase: 'fix', ordinal: 2 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer-fix', visit: 1, action: 'test', recovery: 0 });
   assert.equal(reason.outcome, 'integrity-violation');
 });
 
@@ -41,10 +41,10 @@ test('a fix that changes a named test moves the immutability baseline', async (t
   }, { integrity: 'real' });
 
   assert.equal(g.result.outcome, 'done');
-  const first = g.at('implementer-fix', 1, 'fix', 2)[0];
+  const first = g.at('implementer-fix', 1, 'test', 0)[0];
   assert.equal(first?.outcome, 'ok', `fix visit 1: ${first?.rule}`);
   assert.equal(first.violations, undefined, 'fix visit 1 has no violations');
-  const second = g.at('implementer-fix', 2, 'fix', 2)[0];
+  const second = g.at('implementer-fix', 2, 'test', 0)[0];
   assert.equal(second?.outcome, 'ok', `fix visit 2: ${second?.rule}`);
   assert.equal(second.violations, undefined, 'fix visit 2 has no violations');
   assert.deepEqual((await subjects(g)).map((s) => s.split(':')[0]), ['test', 'feat', 'fix', 'fix']);
@@ -71,7 +71,7 @@ test('a fix with no edits keeps the moved immutability baseline', async (t) => {
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'done');
-  const checks = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'implementer-fix' && e.phase === 'fix' && e.ordinal === 2);
+  const checks = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'implementer-fix' && e.action === 'test' && e.recovery === 0);
   assert.deepEqual(checks.map((e) => [e.visit, e.outcome]), [[1, 'ok'], [2, 'ok'], [3, 'ok']]);
 });
 
@@ -81,7 +81,7 @@ test('a review that changes the tree is an integrity violation', async (t) => {
   }, { integrity: 'real' });
 
   assert.equal(g.result.outcome, 'needs-human');
-  const call = g.at('reviewer', 1, 'review', 1)[0];
+  const call = g.at('reviewer', 1, 'review', 0)[0];
   assert.equal(call?.outcome, 'integrity-violation');
   assert.ok(call.violations.some((v) => v.surface === 'tree'), JSON.stringify(call.violations));
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
@@ -89,7 +89,7 @@ test('a review that changes the tree is an integrity violation', async (t) => {
   assert.equal(readFileSync(join(g.worktree, 'lib', 'add.mjs'), 'utf8').replace(/\r\n/g, '\n'), RIGHT_ADD);
   assert.equal(prReviewComments(g).length, 0, 'no review comment after a violation');
   const reason = reviewStopReason(g);
-  assert.deepEqual(reason.decidedBy, { vertex: 'reviewer', visit: 1, phase: 'review', ordinal: 1 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'reviewer', visit: 1, action: 'review', recovery: 0 });
   assert.equal(reason.outcome, 'integrity-violation');
   assert.match(g.gh.comments.at(-1).body, /\btree\b/);
 });

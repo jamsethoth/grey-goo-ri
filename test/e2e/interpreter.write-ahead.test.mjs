@@ -17,9 +17,9 @@ test('a completed call with an integrity violation still rolls back under its ow
 
   assert.equal(outcome, 'needs-human');
   assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base, 'the branch is back at the baseline head');
-  assert.deepEqual(steps(g.rec, actionMarker(g, 'red', 1)), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(steps(g.rec, actionMarker(g, 'red', 'red')), ['intent', 'evidence', 'complete']);
   const [reset] = intents(g.rec, 'reset');
-  // After the red Phase's three declared ordinals, keeping the Attempt.
-  assert.equal(reset.marker, actionMarker(g, 'red', 4));
+  // An Action of its own, keeping the Attempt.
+  assert.equal(reset.marker, actionMarker(g, 'red', 'reset'));
   assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
 });

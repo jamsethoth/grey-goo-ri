@@ -7,8 +7,6 @@ import * as golden from './golden.mjs';
 
 export const resetEntries = (rec) => rec.log.filter((e) => e.action === 'reset').map((e) => e.step);
 
-export const markerOf = (rec, vertex, visit, phase, ordinal) =>
-  marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
 export const stepsOf = (rec, m) => rec.log.filter((e) => e.marker === m).map((e) => e.step);
 // Read through the git the case runs on, real or fake. The messages are the branch's commits since base, newest first.
 export async function branchMessages(g) {
@@ -21,19 +19,19 @@ export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKE
 
 export const EFFECTS = {
   commit: {
-    at: ['green', 1, 'green', 3],
+    at: ['green', 1, 'commit', 0],
     happened: async (g, m) => (await branchMessages(g)).some((b) => b.includes(marker.markerTrailer(m))),
   },
   push: {
-    at: ['green', 1, 'green', 4],
+    at: ['green', 1, 'push', 0],
     happened: async (g) => (await originSha(g)) === (await g.options.git.headSha(g.worktree)),
   },
   'PR upsert': {
-    at: ['green', 1, 'green', 5],
+    at: ['green', 1, 'pr', 0],
     happened: (g, m) => !!g.gh.pr()?.body.includes(marker.markerComment(m)),
   },
   comment: {
-    at: ['done', 1, 'done', 2],
+    at: ['done', 1, 'end-comment', 0],
     happened: (g, m) => withMarker(g.gh.comments.map((c) => c.body), m).length > 0,
   },
 };
@@ -46,7 +44,7 @@ export const POINTS = {
 
 // Runs the golden Execution until crashAt fires at `point` of the Action at `at`, and returns the freshly loaded record.
 export async function crashed(g, at, point) {
-  const m = markerOf(g.rec, ...at);
+  const m = golden.markerOf(g.rec, ...at);
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point } }),
     (err) => err instanceof interpreter.CrashError);
   return { m, loaded: await loadTicket(g) };

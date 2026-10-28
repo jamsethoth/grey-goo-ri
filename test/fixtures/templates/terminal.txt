@@ -1,6 +1,6 @@
 ### gg: needs-human
 
-**Terminal Reason:** An unexpected fault stopped the Execution at green 2.
+**Terminal Reason:** An unexpected fault stopped the Execution at test.
 
 ```
 Error: boom
@@ -8,4 +8,4 @@ Error: boom
 
 **Interrupted:** the done Terminal, whose Terminal Reason was: PR #3 is ready.
 
-<!-- gg-action gg:e1:implement:1:green:3:r1:1 -->
+<!-- gg-action gg:e1:implement:1:pr:0:r1:1 -->

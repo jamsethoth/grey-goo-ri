@@ -101,15 +101,30 @@ Outcome enum.
 _Avoid_: recipe, script, playbook
 
 **Phase**:
-A named agent call within a Procedure, such as red, green, still-green, test-fix, fix or review. The deterministic
-Actions that serve a Phase carry its name. A Terminal's Actions carry the Terminal's name in that place, the Actions
-of a fault report carry `fault`, and the Actions of a hold carry `hold`.
+A named agent call within a Procedure, such as red, green, still-green, test-fix, fix or review. A recovery Phase
+(still-green, test-fix) runs its Procedure's agent Action and Checks again under the next Recovery Number.
 _Avoid_: step, turn
 
 **Action**:
 The smallest logical unit of a Procedure: an agent call, a Check, a commit, a push, a pull request write, a comment
-or a label. Its identity is its Execution, Vertex, Visit, Phase and ordinal within the Phase.
+or a label.
 _Avoid_: step, task, operation
+
+**Action id**:
+An Action's name, unique within its Procedure, with no `:` and no whitespace, such as `green`, `test` or `commit`. A
+Terminal's reporting Actions have the ids `<report>-<step>`: `<report>` is `end`, `hold`, `fault` or `abandon`, and
+`<step>` is `comment`, `epic-comment`, `label` or `pr-ready`.
+_Avoid_: step id
+
+**Action identity**:
+An Action's Execution, Vertex, Visit, Action id and Recovery Number. An Attempt adds its Run and Attempt number; the
+Action Marker carries all seven.
+_Avoid_: step identity
+
+**Recovery Number**:
+How many recovery Phases have run in this Visit; 0 before the first. The Actions that run after a recovery Phase
+starts carry its number; a Terminal's reporting Actions carry 0.
+_Avoid_: retry number
 
 **Attempt**:
 One try of an Action within one Run. Retries of the same Action are further Attempts; a transport retry inside a

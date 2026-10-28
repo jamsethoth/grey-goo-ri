@@ -13,7 +13,7 @@ import {
 test('a completed call is not rerun after a crash before the next action', async (t) => {
   await t.test('a red call', async (t) => {
     const g = await golden.setup(t);
-    await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: actionMarker(g, 'red', 1), point: 'after-completion' } }),
+    await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: actionMarker(g, 'red', 'red'), point: 'after-completion' } }),
       (err) => err instanceof interpreter.CrashError);
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
 
@@ -27,14 +27,14 @@ test('a completed call is not rerun after a crash before the next action', async
       'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
       'reviewer/2/review/1': reviewed(review('ok')),
     });
-    const call = attemptMarker(g, 'reviewer', 1, 'review', 1);
+    const call = attemptMarker(g, 'reviewer', 1, 'review', 0);
     await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: call, point: 'after-completion' } }),
       (err) => err instanceof interpreter.CrashError);
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
 
     assert.equal(result.outcome, 'done');
     assert.equal(g.harness.calls.filter((c) => c.marker === call).length, 1, 'the first review runs once');
-    const events = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.phase === 'review' && e.ordinal === 1);
+    const events = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.action === 'review');
     assert.deepEqual(events.map((e) => e.outcome), ['changes']);
     const final = await loadTicket(g);
     assert.equal(final.traversals['reviewer->implementer-fix:changes'], 1, 'the saved changes result routed to the fix');
@@ -69,7 +69,7 @@ for (const [name, agentWrites] of [
     assert.equal(readFileSync(local, 'utf8'), left, 'nothing is restored or discarded');
     const final = await loadTicket(g);
     assert.equal(final.state, 'held');
-    const red = actionMarker(g, 'red', 1);
+    const red = actionMarker(g, 'red', 'red');
     assert.deepEqual(record.openIntents(final).map((e) => [e.action, e.marker]), [['call', red]], 'the Attempt intent stays open');
     assert.ok(final.terminalReason.text.includes(red), `the hold names the Attempt: ${final.terminalReason.text}`);
     // Deleting the record drops the saved baseline, so the hold says to check the files the agent may have changed first.
@@ -89,7 +89,7 @@ test('findings-hash appends once per visit across a crash', async (t) => {
   let crashed = false;
   // gg dies as the findings-hash Action of the first review records its Event.
   const events = (type, data) => {
-    if (!crashed && type === 'action' && data.vertex === 'reviewer' && data.phase === 'review' && data.ordinal === 2) {
+    if (!crashed && type === 'action' && data.vertex === 'reviewer' && data.action === 'repeat') {
       crashed = true;
       throw new interpreter.CrashError('crash at the findings-hash Event');
     }
@@ -101,7 +101,7 @@ test('findings-hash appends once per visit across a crash', async (t) => {
   assert.equal(result.outcome, 'done');
   const final = await loadTicket(g);
   assert.deepEqual(final.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]], 'one review entry per Visit');
-  const hashed = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.phase === 'review' && e.ordinal === 2);
+  const hashed = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.action === 'repeat');
   assert.equal(hashed.length, 1);
   assert.notEqual(hashed[0].repeat, true, 'the review is not its own repeat');
 });
@@ -139,23 +139,23 @@ test('attempt numbering continues after resume', async (t) => {
   const result = await interpreter.runExecution({ ...g.options, others, record: await loadTicket(g) });
 
   assert.equal(result.outcome, 'done');
-  assert.deepEqual(attemptsOf(g, 'red', 1).map((e) => e.attempt), [1, 2], 'no second Attempt 1');
+  assert.deepEqual(attemptsOf(g, 'red', 'red').map((e) => e.attempt), [1, 2], 'no second Attempt 1');
   assert.equal(g.harness.calls.length, 3, 'red twice, green once');
-  assert.equal(g.harness.calls[1].marker, attemptMarker(g, 'red', 1, 'red', 1, 2), 'the resume runs Attempt 2');
+  assert.equal(g.harness.calls[1].marker, attemptMarker(g, 'red', 1, 'red', 0, 2), 'the resume runs Attempt 2');
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'Attempt 2 resumes the session Attempt 1 saved');
-  assert.deepEqual((await loadTicket(g)).retries['red/1/red/1'], { timeout: 1 }, 'one retry consumed');
+  assert.deepEqual((await loadTicket(g)).retries['red/1/red/0'], { timeout: 1 }, 'one retry consumed');
 });
 
 test('a failed Event insert at an Action completion saves nothing more of that record', async (t) => {
   const g = await golden.setup(t);
-  golden.failAppends(t, (event) => event.type === 'action' && event.phase === 'red' && event.ordinal === 1);
+  golden.failAppends(t, (event) => event.type === 'action' && event.vertex === 'red' && event.action === 'red');
   const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
   const saved = await loadTicket(g);
   assert.equal(saved.state, 'active', 'no fault is saved over the failed transition');
   assert.deepEqual(saved.sessions, {}, 'the call result rolled back with its Event');
-  assert.deepEqual(steps(saved, actionMarker(g, 'red', 1)), ['intent']);
+  assert.deepEqual(steps(saved, actionMarker(g, 'red', 'red')), ['intent']);
   assert.ok(!g.readEvents().some((e) => e.type === 'action' || e.type === 'ticket_end'));
   assert.equal(g.gh.comments.length, 0);
 });
@@ -166,14 +166,14 @@ test('a label update whose failure was saved before its completion is retried on
   let crashed = false;
   // The done label does not land, and gg dies as that Action records its Event: { ok: false } is saved, uncompleted.
   const events = (type, data) => {
-    if (!crashed && type === 'action' && data.vertex === 'done' && data.ordinal === 3) {
+    if (!crashed && type === 'action' && data.vertex === 'done' && data.action === 'end-label') {
       crashed = true;
       throw new interpreter.CrashError('crash at the label Event');
     }
     return ev(type, data);
   };
   await assert.rejects(interpreter.runExecution({ ...g.options, events, gh: { ...g.options.gh, setLabels: async () => false } }));
-  const label = attemptMarker(g, 'done', 1, 'done', 3);
+  const label = attemptMarker(g, 'done', 1, 'end-label', 0);
   const mid = await loadTicket(g);
   assert.deepEqual(mid.log.filter((e) => e.marker === label).map((e) => [e.step, e.evidence]), [['intent', undefined], ['evidence', { ok: false }]]);
   assert.ok(!g.gh.labels.has('gg:state:ready-for-qa'));
@@ -206,17 +206,17 @@ for (const [name, dropTranscript, resume] of [
     delete legacy.visitState.settled;
     delete legacy.heartbeat;
     assert.equal(legacy.cursor.attempt, 2);
-    assert.deepEqual(legacy.retries['red/1/red/1'], { timeout: 1 });
+    assert.deepEqual(legacy.retries['red/1/red/0'], { timeout: 1 });
     await record.save(legacy);
     dropTranscript(legacy.sessions['red/1/red'].transcriptPath);
 
     const result = await interpreter.runExecution({ ...g.options, others, record: await loadTicket(g) });
     assert.equal(result.outcome, 'done', JSON.stringify(result));
     const call = g.harness.calls[1];
-    assert.equal(call.marker, attemptMarker(g, 'red', 1, 'red', 1, 2), 'the resume runs Attempt 2');
+    assert.equal(call.marker, attemptMarker(g, 'red', 1, 'red', 0, 2), 'the resume runs Attempt 2');
     assert.equal(call.resume, resume, 'from the session the record saved, when it can be resumed');
     assert.ok(call.brief.startsWith('RED PHASE'), 'with the full Brief');
-    assert.deepEqual((await loadTicket(g)).retries['red/1/red/1'], { timeout: 1 }, 'the spent budget is kept');
+    assert.deepEqual((await loadTicket(g)).retries['red/1/red/0'], { timeout: 1 }, 'the spent budget is kept');
   });
 }
 

@@ -10,7 +10,7 @@ import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, fixture, seedExecution, markerOf, ticketResult, failComment,
+  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, fixture, seedExecution, ticketResult, failComment,
   endsOf, loadTicket, dirtyTicket, failHoldLabel,
 } from '../support/run.mjs';
 
@@ -414,7 +414,7 @@ test('mixed-case needs-human skips with a held ticket lock', async (t) => {
 test('admission does not re-add differently cased in-progress', async (t) => {
   const f = fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
   f.options.config.labelPrefix = 'Gg';
-  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
+  await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }) });
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
@@ -455,7 +455,7 @@ const NOT_READY = [{ blockedBy: [{ number: 3, state: 'OPEN' }] }, { state: 'CLOS
 for (const issue of NOT_READY) {
   test(`a resumed execution still needs its ticket open and unblocked: ${JSON.stringify(issue)}`, async (t) => {
     const f = fixture(t, { labels: [IN_PROGRESS], issue });
-    await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
+    await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }) });
     const row = f.loadRow();
     await run.runTarget(f.options);
     assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');

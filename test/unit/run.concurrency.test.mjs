@@ -153,7 +153,7 @@ test('an auth failure stops every active ticket and records the class on run_end
   assert.equal(run.runExitCode(results), 2);
   const evs = f.readEvents();
   const bActions = evs.filter((e) => e.type === 'action' && e.ticket === 22 && e.procedure);
-  assert.deepEqual(bActions.map((e) => [e.phase, e.ordinal, e.outcome]), [['red', 1, 'ok']], 'B finished its red call and started no other Action');
+  assert.deepEqual(bActions.map((e) => [e.vertex, e.action, e.recovery, e.outcome]), [['red', 'red', 0, 'ok']], 'B finished its red call and started no other Action');
   const bEnd = evs.find((e) => e.type === 'ticket_end' && e.ticket === 22);
   assert.equal(bEnd.outcome, 'needs-human');
   assert.match(bEnd.reason.text, /#21\b.*\bauth\b/, 'the reason of B names the run-stopping failure');

@@ -175,7 +175,7 @@ for (const [kind, subject] of [
     const lines = message.trimEnd().split('\n');
     assert.equal(lines[0], subject);
     assert.match(message, /Sums line items\./);
-    assert.deepEqual(lines.slice(-2), ['Feature-Flow-Stage: implement claude/opus/high', 'Gg-Action: gg:e1:implement:1:green:3:r1:1']);
+    assert.deepEqual(lines.slice(-2), ['Feature-Flow-Stage: implement claude/opus/high', 'Gg-Action: gg:e1:implement:1:commit:0:r1:1']);
     assert.deepEqual(asText(marker.parseMarker(message)), asText(parts));
   });
 }
@@ -299,7 +299,7 @@ test(`the review comment template matches its builder's output`, async () => {
 
 test(`the Terminal Reason comment template matches its builder's output`, async () => {
   const interrupted = { terminal: 'done', reason: { text: 'PR #3 is ready.' } };
-  assert.equal(await render.terminalComment('needs-human', { text: 'An unexpected fault stopped the Execution at green 2.' }, fixtureMarker,
+  assert.equal(await render.terminalComment('needs-human', { text: 'An unexpected fault stopped the Execution at test.' }, fixtureMarker,
     'Error: boom', interrupted), fixture('terminal.txt'));
   assert.equal(await render.terminalComment('done', { text: 'Every Vertex passed. PR #3 is ready for review.' }, fixtureMarker),
     fixture('terminal-plain.txt'));
