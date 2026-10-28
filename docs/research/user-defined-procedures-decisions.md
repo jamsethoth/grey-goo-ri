@@ -252,8 +252,10 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
   - (b) Multi-step work is composed from Vertices. The shipped Flow becomes red, then green, then the reviewer and fix
     loop, then done; `red` commits the tests and `green` reads them through `inputs`.
   - (c) `resumeGreen` is dropped. Resuming a Session across Vertices waits for a use case.
-  - (d) A passing write Vertex leaves its work committed, and a write Vertex starts only on a clean worktree or one gg's
-    own records explain. This replaces the literal `phase === 'red'` dirty-worktree guard.
+  - (d) A passing write Vertex leaves its work committed, and every Vertex starts only on a clean worktree or one gg's
+    own records explain. This replaces the literal `phase === 'red'` dirty-worktree guard. Read-only Vertices are held
+    too, since any agent can cause a rollback (a failed red, an Integrity Violation) whatever its access (owner,
+    2026-10-28, grey-goo-ri issue #110).
   - (e) Rule tables may match typed `inputs` under the Q4a field rules.
   - (f) Parallel Vertices (fan-out and join) are a possible future capability, outside this design.
   - (g) The shipped Flow routes a review's `changes` by a typed reviewer field: `needsTest: true` goes to `red` (a
