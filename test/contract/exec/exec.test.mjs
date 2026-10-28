@@ -242,15 +242,18 @@ test('runShell timeout kills an orphan its watcher listed, however slowly ps ans
   await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
 });
 
-// At the timeout the grandchild's pid is listed with another start time, as when a new process has taken over the pid:
-// the descendant the watcher listed is gone, and the process now under its pid is not the command's to kill.
-test('runShell timeout leaves alone a process that took over the pid of a descendant it listed', POSIX_CASE, async (t) => {
+// At the timeout the grandchild's pid is listed with another start time. A new process may have taken over the pid, and
+// is not the command's to kill; or the wall clock was stepped, which moves every start time ps reports, and the
+// descendant still runs. A listing cannot tell the two apart, so the descendant is named as not verified gone.
+test('runShell timeout leaves alone a pid listed with another start time, and names its descendant unverified', POSIX_CASE, async (t) => {
   const pidFile = join(tmp, 'reused.pid'); // the grandchild's, as orphanScripts names it
   const listing = ['sh', ['-c', `ps -e -o pid=,ppid=,lstart= | awk -v gc="$(cat '${pidFile}')" '$1 == gc { print $1, $2, "Thu Jan  1 00:00:02 1970"; next } { print }'`]];
   const killed = [];
   const { res, pid } = await timedOutOrphan(t, 'reused', { snapshotCommand: listing, killPid: (p) => killed.push(p) });
   assert.equal(res.timedOut, true);
   assert.ok(!killed.includes(pid), `killed ${JSON.stringify(killed)}, the taken-over pid ${pid} among them`);
+  assert.ok(res.survivors.some((s) => s.pid === pid && /not verified gone/.test(s.error)), `grandchild ${pid} missing from ${JSON.stringify(res.survivors)}`);
+  assert.match(res.output, /could not kill pid/);
 });
 
 // The watcher's ps always fails, so only the listing at the timeout can find the grandchild, whose middle never exits
