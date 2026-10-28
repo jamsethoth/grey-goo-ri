@@ -1132,9 +1132,14 @@ exact admission must be, or which way it may be wrong.
   Amends T9. Issue #107.
 - H6. A Flow's graph checks run only when every check outside any Flow (Procedures, their schemas, the configuration's
   top level) and every other check of that Flow has passed, since a malformed Procedure or route would cascade into
-  misleading graph errors. An Agent is checked at each Vertex that uses it, so an Agent's error holds only the Flows
-  that use it. Another Flow's errors do not hold them: Flows share no graph, and so the output does not depend on the
-  order the Flows are declared in. Each Vertex's routing is still resolved, for `gg doctor`. Issue #107.
+  misleading graph errors. An Agent's error holds only the Flows that use it. Another Flow's errors do not hold them:
+  Flows share no graph, and so the output does not depend on the order the Flows are declared in. Each Vertex's
+  routing is still resolved, for `gg doctor`. Issue #107.
+  - (a) Every declared Agent, used or not, is checked once at `agents.<name>`: it is an object, and it names a
+    registered harness. The validator sees the configuration after every Layer is merged, so no Layer can still supply
+    a missing one (P2), and a Vertex's own `harness` does not excuse it. An Agent no Vertex uses is a warning, and its
+    errors hold no Flow. A harness the Vertex sets itself, or the Agent of a Vertex with no `use`, is checked at the
+    Vertex. Issue #170.
 - H7. An Outcome's route is the first of these that the configuration names:
   1. the Vertex's `route` for that Outcome;
   2. the Flow's `routes` for that Outcome;
