@@ -78,6 +78,7 @@ The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in
 | `record.setSaveHook`, `events.setAppendHook` (`golden.failSaves`, `golden.failAppends`) | fails a chosen save or Event insert |
 | `integrity.withGit(git, fs)` (`golden.crashFs`) | crashes a restore's write |
 | `exec.runShell`'s `timers` and `onHelper` options | moves the timeout clock; listens to the job helper first |
+| `exec.runShell`'s `onWatch` option | sees which descendants the POSIX watcher has listed |
 
 ## Test sizes
 
