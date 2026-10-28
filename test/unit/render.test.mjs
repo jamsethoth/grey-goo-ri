@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import * as render from '../../lib/render.mjs';
 import * as marker from '../../lib/marker.mjs';
 
-const parts = { execution: 'e1', vertex: 'implement', visit: 1, phase: 'green', ordinal: 3, run: 'r1', attempt: 1 };
+const parts = { execution: 'e1', vertex: 'implement', visit: 1, action: 'commit', recovery: 0, run: 'r1', attempt: 1 };
 const asText = (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)]));
 
 test('fence redacts before truncating and prefers complete lines', () => {
@@ -205,7 +205,35 @@ test('the PR body carries the marker line and provenance', async () => {
   assert.match(body, /- \[ \] Docs/);
 });
 
-const last = (s) => s.trimEnd().split('\n').at(-1);
+test('provenance counts one call per Attempt and a resumed Session once', () => {
+  const at = (vertex, action, recovery, attempt) => marker.formatMarker({ execution: 'e1', vertex, visit: 1, action, recovery, run: 'r1', attempt });
+  const usage = (input, cached, output) => ({ input, cached, output });
+  // Each Attempt's completion saves its own usage.delta; the Session keeps only the last cumulative usage.
+  const call = (m, delta) => [{ step: 'intent', marker: m, action: 'call' }, { step: 'evidence', marker: m, action: 'call', evidence: { usage: delta } },
+    { step: 'complete', marker: m, action: 'call' }];
+  const session = (vertex, cumulative) => ({ vertex, harness: 'claude', model: 'opus', effort: 'high', persona: 'tdd.md',
+    personaHash: 'abcdef0123456789', usage: cumulative });
+  const rec = {
+    sessions: {
+      // The recovery pass resumed red's Session, so its cumulative usage holds red's tokens too.
+      'red/1/red': session('red', usage(130, 10, 13)),
+      'green/1/green': session('green', usage(60, 0, 6)),
+    },
+    log: [
+      ...call(at('red', 'red', 0, 1), usage(100, 10, 10)),
+      ...call(at('red', 'red', 1, 1), usage(30, 0, 3)),
+      { step: 'intent', marker: at('red', 'commit', 1, 1), action: 'commit' },
+      // A parse retry: two Attempts of one Action, each one call.
+      ...call(at('green', 'green', 0, 1), usage(50, 0, 5)),
+      ...call(at('green', 'green', 0, 2), usage(60, 0, 6)),
+    ],
+  };
+  const row = (vertex, calls, input, cached, output) => ({ vertex, harness: 'claude', model: 'opus', effort: 'high', persona: 'tdd.md',
+    hash: 'abcdef012345', calls, input, cached, output });
+  assert.deepEqual(render.provenance(rec), [row('red', 2, 130, 10, 13), row('green', 2, 110, 0, 11)]);
+});
+
+const last =(s) => s.trimEnd().split('\n').at(-1);
 const fenced = (s) => '```\n' + s + '\n```';
 
 test('a section renders once per list item', async () => {

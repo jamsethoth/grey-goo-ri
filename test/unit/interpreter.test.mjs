@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
+import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
 import { firstVisit, intents, actionEvent, loadTicket, branchMessages } from '../support/interpreter.mjs';
 
@@ -193,4 +194,42 @@ test('runExecution asserts the Protected Files it is given', async (t) => {
   await interpreter.runExecution({ ...g.options, integrity: injected, protectedPaths: ['.x/'] });
   assert.deepEqual(seen.slice(0, 2), [['begin', ['.x/']], ['end', ['.x/']]]);
   await assert.rejects(interpreter.runExecution({ ...g.options, protectedPaths: undefined }), { message: 'runExecution needs protectedPaths' });
+});
+
+const reportMarker = (g, vertex, action) => marker.formatMarker({ execution: g.rec.execution, vertex, visit: 1, action, recovery: 0, run: g.rec.run, attempt: 1 });
+
+test("a hold's label is set after its comment, each under its own marker", async (t) => {
+  const g = await golden.setup(t);
+  const result = await interpreter.runExecution({ ...g.options,
+    admission: { kind: 'hold', name: 'dirty-worktree', text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.' } });
+
+  assert.equal(result.held, true, JSON.stringify(result));
+  const rec = await loadTicket(g);
+  const [comment, label] = ['hold-comment', 'hold-label'].map((a) => reportMarker(g, 'needs-human', a));
+  assert.deepEqual(rec.log.filter((e) => e.step === 'intent').map((e) => [e.action, e.marker]), [['comment', comment], ['label', label]]);
+  const order = rec.log.map((e) => `${e.step} ${e.marker}`);
+  assert.ok(order.indexOf(`complete ${comment}`) < order.indexOf(`intent ${label}`), 'the label is intended once the comment completed');
+  const [posted] = g.gh.comments;
+  assert.ok(posted.body.includes(marker.markerComment(comment)), 'the comment carries its own marker');
+  assert.ok(g.gh.labels.has('gg:state:needs-human'));
+  assert.deepEqual(record.openIntents(rec), []);
+});
+
+test("a fault during an end does not replay the end's open reporting Action", async (t) => {
+  const g = await golden.setup(t);
+  const real = g.options.gh.commentIssue;
+  let calls = 0;
+  g.options.gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  const rec = await loadTicket(g);
+  const ended = reportMarker(g, 'done', 'end-comment');
+  assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [ended], "the end's comment stays open");
+  assert.equal(calls, 2, "the end's comment is tried once and the fault's once");
+  const [posted, ...rest] = g.gh.comments.filter((c) => c.target === 'issue');
+  assert.equal(rest.length, 0);
+  assert.ok(posted.body.includes(marker.markerComment(reportMarker(g, 'needs-human', 'fault-comment'))), 'the fault reports under its own marker');
+  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'needs-human', 'fault-label')));
+  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'done', 'end-pr-ready')), "the end's pr-ready completed first");
 });
