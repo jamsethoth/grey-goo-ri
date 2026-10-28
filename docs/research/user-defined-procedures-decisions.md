@@ -1128,8 +1128,10 @@ exact admission must be, or which way it may be wrong.
   warn about one that only some runs produce, and then says so: `input <name> is optional, but no route to <vertex>
   is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs`.
   Amends T9. Issue #107.
-- H6. The graph checks run only when every other check of the configuration has passed, since a malformed Procedure
-  or route would cascade into misleading graph errors. Each Vertex's routing is still resolved, for `gg doctor`.
+- H6. A Flow's graph checks run only when every check outside any Flow (Procedures, Agents, schemas, the
+  configuration's top level) and every other check of that Flow has passed, since a malformed Procedure or route would
+  cascade into misleading graph errors. Another Flow's errors do not hold them: Flows share no graph, and so the output
+  does not depend on the order the Flows are declared in. Each Vertex's routing is still resolved, for `gg doctor`.
   Issue #107.
 - H7. An Outcome's route is the first of these that the configuration names:
   1. the Vertex's `route` for that Outcome;
