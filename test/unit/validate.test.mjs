@@ -1035,3 +1035,100 @@ test('an optional input that only some ways of an Outcome produce is warned', as
     message: 'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
   });
 });
+
+test('a harness failure leaves no response', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [{ id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { 'harness-timeout': 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { report: { from: 'judge.judge.response' } } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, [{
+    at: `${V}.consumer.inputs.report`,
+    message: 'input report is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+  }]);
+});
+
+test('pr-ready counts only from the passed table', async () => {
+  const config = example();
+  config.procedures.ship = {
+    access: 'read-only',
+    claims: { ok: { requires: ['test'] }, changes: { requires: ['test'] }, blocked: { stop: true } },
+    actions: [
+      { id: 'ship', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'test', do: 'check', kind: 'command', command: 'test' },
+      { id: 'pr-ready', do: 'pr-ready' },
+    ],
+  };
+  config.flows.default.ticket = {
+    entry: 'ship',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: { ship: { use: 'reviewer', procedure: 'ship', route: { ok: { end: 'ready-for-qa' }, blocked: { end: 'ready-for-qa' } } } },
+  };
+  assert.deepEqual((await check(config)).errors, [{
+    at: `${V}.ship`,
+    message: 'Outcome blocked reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so route it through the Vertex that runs pr-ready',
+  }]);
+});
+
+test('a passing Outcome leaves no rescue', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.reviewer.inputs.previous = { from: 'green.rescue' };
+  assert.deepEqual((await check(config)).errors, [{
+    at: `${V}.reviewer.inputs.previous`,
+    message: 'input previous is required, but some route to reviewer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+  }]);
+});
+
+test('a read-only Vertex leaves no rescue', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.green.access = 'read-only';
+  delete config.flows.default.ticket.vertices['senior-green'].inputs.previous.optional;
+  assert.deepEqual((await check(config)).errors, [{
+    at: `${V}.senior-green.inputs.previous`,
+    message: 'input previous is required, but some route to senior-green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+  }]);
+});
+
+test('a Vertex\'s own route for an Outcome beats the Flow\'s', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.red.route.misscoped = { end: 'needs-human' };
+  const { errors, flows } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(flows.default.ticket.vertices.red.routing.misscoped, { target: { end: 'needs-human' }, by: 'Vertex route', work: 'left in place' });
+});
+
+test('a loop of exhausted targets is an error', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'start',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      start: { procedure: 'base-check', route: { ok: 'x' } },
+      x: { procedure: 'base-check', maxVisits: 1, exhausted: 'y', route: { ok: 'y' } },
+      y: { procedure: 'base-check', maxVisits: 1, exhausted: 'x', route: { ok: 'x' } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'flows.default.ticket',
+    message: 'the exhausted targets of x, y form a loop: once their maxVisits are spent, no Vertex is ever entered',
+  }]);
+});
+
+test('an exhausted target without a bound is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.red.exhausted = { end: 'needs-human' };
+  config.flows.default.ticket.vertices.green.route.ok = { to: 'reviewer', exhausted: { end: 'needs-human' } };
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.red`, message: 'a Vertex names exhausted only with maxVisits' },
+    { at: `${V}.green.route.ok`, message: 'an edge names exhausted only with max' },
+  ]);
+});
