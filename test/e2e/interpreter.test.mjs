@@ -1,18 +1,22 @@
 import { test } from 'node:test';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  TDD_PHASES, FIRST_VISIT, actionMarker, actionEvent, loadTicket, ticketComments, contendRepoLock, lockedSetup,
+  TDD_PHASES, FIRST_VISIT, actionMarker, actionEvent, loadTicket, ticketComments, contendRepoLock, lockedSetup, terminalReasonOf, intents,
 } from '../support/interpreter.mjs';
 
-// The deterministic Actions of a first visit, each an advance at Attempt 1 of the implementer's tdd Visit.
-const deterministic = (phase, ordinal, rule) => ({
-  phase, ordinal, schema: 2, vertex: 'implementer', visit: 1, procedure: 'tdd', attempt: 1, direction: 'advance', rule, agent: undefined,
-});
+// The deterministic Actions of a first visit, each an advance at Attempt 1 of its Vertex's first Visit: red runs tests-fail
+// and green runs implement.
+const deterministic = (phase, ordinal, rule) => {
+  const [vertex, procedure] = ['red', 'still-green'].includes(phase) ? ['red', 'tests-fail'] : ['green', 'implement'];
+  return { phase, ordinal, schema: 2, vertex, visit: 1, procedure, attempt: 1, direction: 'advance', rule, agent: undefined };
+};
 
-test('golden: first-visit pass runs the tdd actions in order to done', async (t) => {
+test('golden: a first-visit pass runs red then green as two Vertices', async (t) => {
   const g = await golden.setup(t, { integrity: 'real' });
   let draft;
   const { markReady } = g.options.gh;
@@ -55,10 +59,10 @@ test('golden: first-visit pass runs the tdd actions in order to done', async (t)
   const messages = golden.sh(g.worktree, 'log', '--format=%B%x00', `${g.base}..HEAD`).split('\0').map((m) => m.trim()).filter(Boolean).reverse();
   assert.equal(messages.length, 2);
   assert.match(messages[0], /^test: /);
-  assert.ok(messages[0].includes('Feature-Flow-Stage: implementer fake/model-x/high'), messages[0]);
+  assert.ok(messages[0].includes('Feature-Flow-Stage: red fake/model-x/high'), messages[0]);
   assert.ok(messages[0].includes(`Gg-Action: ${actionMarker(g, 'red', 3)}`), messages[0]);
   assert.match(messages[1], /^feat: /);
-  assert.ok(messages[1].includes('Feature-Flow-Stage: implementer fake/model-x/high'), messages[1]);
+  assert.ok(messages[1].includes('Feature-Flow-Stage: green fake/model-x/high'), messages[1]);
   assert.ok(messages[1].includes(`Gg-Action: ${actionMarker(g, 'green', 3)}`), messages[1]);
   assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'));
 
@@ -67,11 +71,39 @@ test('golden: first-visit pass runs the tdd actions in order to done', async (t)
   const body = g.gh.pr().body;
   assert.ok(body.includes(marker.markerComment(actionMarker(g, 'green', 5))), body);
   assert.ok(body.includes("Cannot find module 'lib/add.mjs'"), 'red evidence in the PR body');
-  assert.match(body, /^\| implementer \| fake \| model-x \| high \| /m);
+  assert.match(body, /^\| red \| fake \| model-x \| high \| /m);
+  assert.match(body, /^\| green \| fake \| model-x \| high \| /m);
   assert.equal(g.gh.pr().isDraft, false, 'done marks the PR ready');
 
   assert.deepEqual(g.rec.cursor, { vertex: 'done', visit: 1, phase: 'done', ordinal: 3, attempt: 1 });
-  assert.equal(g.rec.visits.implementer, 1);
+  assert.deepEqual(g.rec.visits, { red: 1, green: 1 });
+  assert.equal(g.rec.terminalReason.text,
+    `green visit 1 completed every implement Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+});
+
+// R2d: red committed its tests, then a human edited a tracked file before green started.
+test("a write Vertex on a dirty worktree gg's records do not explain is held", async (t) => {
+  const g = await golden.setup(t, { integrity: 'real' });
+  const { commitStaged } = g.options.git;
+  let edited = null;
+  g.options.git = { ...g.options.git, commitStaged: async (...args) => {
+    const sha = await commitStaged(...args);
+    [edited] = golden.sh(g.worktree, 'ls-files').split('\n');
+    writeFileSync(join(g.worktree, edited), 'a human edit\n');
+    return sha;
+  } };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(g.harness.calls.map((c) => c.marker), [actionMarker(g, 'red', 1)], 'no green agent runs over unknown changes');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), ` M ${edited}`, 'the human edit survives');
+  assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%s'), /^test: /, "red's commit stays");
+  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.equal(g.rec.history.at(-1)?.kind, 'held');
+  assert.deepEqual(g.rec.visits, { red: 1, green: 1 });
+  const reason = terminalReasonOf(g);
+  assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
+  assert.match(reason.text, /uncommitted changes before green/);
 });
 
 // A gh call that changes GitHub: a comment, a label, a label definition or a pull request.

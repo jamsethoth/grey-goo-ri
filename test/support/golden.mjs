@@ -43,34 +43,32 @@ export const greenResponse = {
 };
 
 export const firstVisitResponses = {
-  'implementer/1/red/1': {
+  'red/1/red/1': {
     files: { 'test/add.test.mjs': "import { add } from '../lib/add.mjs';\n" },
     response: redResponse,
     result: { usage: { delta: { input: 100, output: 20 } } },
   },
-  'implementer/1/green/1': {
+  'green/1/green/1': {
     files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' },
     response: greenResponse,
     result: { usage: { delta: { input: 200, output: 40 } } },
   },
 };
 
-// A one-Vertex Resolved Flow: the tdd implementer goes straight to done.
-export const oneVertexFlow = (persona) => ({
+// The Agent every golden Vertex but a reviewer uses.
+export const implementerAgent = (persona) => ({
+  harness: 'fake', model: 'model-x', effort: 'high', persona, skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false,
+});
+
+// A red and green Resolved Flow: red's tests-fail Visit, then green's implement Visit, straight to done.
+export const redGreenFlow = (persona) => ({
   name: 'golden',
   plan: null,
   ticket: {
-    entry: 'implementer',
+    entry: 'red',
     vertices: {
-      implementer: {
-        agent: {
-          harness: 'fake', model: 'model-x', effort: 'high', persona, skills: [], mcp: [], plugins: [],
-          access: 'workspace-write', network: false,
-        },
-        procedure: 'tdd',
-        options: {},
-        then: 'done',
-      },
+      red: { agent: implementerAgent(persona), procedure: 'tests-fail', options: {}, then: 'green' },
+      green: { agent: implementerAgent(persona), procedure: 'implement', options: {}, then: 'done' },
     },
   },
 });
@@ -114,7 +112,7 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   mkdirSync(join(root, 'personas'));
   const personaPath = join(root, 'personas', 'implementer.md');
   writeFileSync(personaPath, PERSONA);
-  const flow = oneVertexFlow(personaPath);
+  const flow = redGreenFlow(personaPath);
 
   const rec = record.createExecution({
     commonDir, ticket: TICKET, epic: 1, flow: { name: flow.name, entry: flow.ticket.entry }, configHash: 'cfg-hash',
