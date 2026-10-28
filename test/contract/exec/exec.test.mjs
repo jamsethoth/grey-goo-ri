@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as exec from '../../../lib/exec.mjs';
@@ -26,15 +26,18 @@ const CASE = { timeout: 120_000 };
 const LIVES_MS = 600_000;
 const writesPid = (pidFile) => `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, ${LIVES_MS});`;
 
-// Parent spawns a detached grandchild through an intermediate that lingers ~2 s (so the watcher sees the chain) and
-// then exits, leaving the grandchild orphaned while the parent outlives the timeout. delayMs holds the spawn back.
+// Parent spawns a detached grandchild through an intermediate that writes midFile and lingers until goFile exists, then
+// exits, leaving the grandchild orphaned while the parent outlives the timeout. delayMs holds the spawn back.
 function orphanScripts(name, { delayMs = 0 } = {}) {
-  const pidFile = join(tmp, `${name}.pid`);
+  const pidFile = join(tmp, `${name}.pid`), midFile = join(tmp, `${name}-mid.pid`), goFile = join(tmp, `${name}.go`);
   const grandchild = script(`${name}-gc.mjs`, writesPid(pidFile));
-  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; setTimeout(() => spawn(process.execPath, [${JSON.stringify(grandchild)}], { detached: true, stdio: 'ignore' }).unref(), ${delayMs}); setTimeout(() => {}, ${delayMs} + 2000);`);
+  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; import { existsSync, writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(midFile)}, String(process.pid)); setTimeout(() => spawn(process.execPath, [${JSON.stringify(grandchild)}], { detached: true, stdio: 'ignore' }).unref(), ${delayMs}); const wait = setInterval(() => { if (existsSync(${JSON.stringify(goFile)})) clearInterval(wait); }, 50);`);
   const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(middle)}], { stdio: 'ignore' }); setTimeout(() => {}, ${LIVES_MS});`);
-  return { pidFile, cmd: `"${process.execPath}" "${top}"` };
+  return { pidFile, midFile, goFile, cmd: `"${process.execPath}" "${top}"` };
 }
+
+// The pid a script wrote to file, or 0 while it has not (yet) written it in full.
+const pidIn = (file) => (existsSync(file) ? Number(readFileSync(file, 'utf8')) : 0);
 
 // Runs commandLine with its timeout clock held until ready() holds, so the processes a case checks exist before the
 // timeout fires however slowly they start. ready is false when the command ended first.
@@ -141,13 +144,26 @@ test('runShell: a timed-out command returns code null and the output it printed 
   assert.match(res.output, /SENTINEL-BEFORE-HANG/);
 });
 
-// Times out an orphan chain once its grandchild has started; the grandchild is killed when the case ends.
-async function timedOutOrphan(t, name, options) {
-  const { pidFile, cmd } = orphanScripts(name, options);
-  const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 3500 }, () => existsSync(pidFile), t.signal);
-  assert.ok(ready, 'grandchild never started');
-  const pid = Number(readFileSync(pidFile, 'utf8'));
-  t.after(() => { try { process.kill(pid); } catch {} });
+// Times out an orphan chain once runShell holds its grandchild (on POSIX, once its watcher has listed it; on Windows the
+// job holds it from the start) and the middle has then exited, so the grandchild is an orphan however slowly the
+// processes start and are listed. beforeClock runs just before the clock starts; options go to runShell. The grandchild
+// is killed when the case ends.
+async function timedOutOrphan(t, name, { delayMs, beforeClock, ...options } = {}) {
+  const { pidFile, midFile, goFile, cmd } = orphanScripts(name, { delayMs });
+  t.after(() => { try { if (pidIn(pidFile)) process.kill(pidIn(pidFile)); } catch {} });
+  let seen = new Map();
+  const ready = () => {
+    const pid = pidIn(pidFile);
+    if (!pid || (process.platform !== 'win32' && !seen.has(pid))) return false;
+    writeFileSync(goFile, '');
+    const mid = pidIn(midFile);
+    if (!mid || alive(mid)) return false;
+    beforeClock?.();
+    return true;
+  };
+  const { res, ready: wasReady } = await timeOutWhen(cmd, { timeoutMs: 3500, ...options, onWatch: (s) => (seen = s) }, ready, t.signal);
+  const pid = pidIn(pidFile);
+  assert.ok(wasReady, `the chain ended before runShell held its grandchild ${pid} and the middle exited: ${res.output}`);
   return { res, pid };
 }
 
@@ -183,30 +199,59 @@ test('in a restricted sandbox, runShell timeout kills or names a descendant that
 });
 
 test('runShell reports surviving PIDs and the kill error when termination fails', CASE, async (t) => {
-  const { pidFile, cmd } = orphanScripts('refused');
-  const { res } = await timeOutWhen(cmd, { timeoutMs: 3500, killPid: () => { throw new Error('EPERM refused'); }, denyTerminate: true }, () => existsSync(pidFile), t.signal);
-  assert.equal(res.timedOut, true);
-  const pid = Number(readFileSync(pidFile, 'utf8'));
+  const { res, pid } = await timedOutOrphan(t, 'refused', { killPid: () => { throw new Error('EPERM refused'); }, denyTerminate: true });
   try {
+    assert.equal(res.timedOut, true);
     assert.ok(res.survivors.some((s) => s.pid === pid && /EPERM refused|withheld/.test(s.error)), JSON.stringify(res.survivors));
   } finally {
     for (const s of res.survivors) try { process.kill(s.pid); } catch {} // the withheld job leaves its root running too
-    try { process.kill(pid); } catch {}
   }
 });
 
 test('runShell with a failed process snapshot reports known descendants as unverified, not as cleaned up', { ...CASE, skip: process.platform === 'win32' && 'Windows contains descendants with a job object, no snapshot' }, async (t) => {
-  const { pidFile, cmd } = orphanScripts('nosnap');
-  const { res } = await timeOutWhen(cmd, { timeoutMs: 3500, killPid: () => { throw new Error('EPERM refused'); }, snapshotCommand: [process.execPath, ['-e', 'process.exit(1)']] }, () => existsSync(pidFile), t.signal);
+  const { res, pid } = await timedOutOrphan(t, 'nosnap', { killPid: () => { throw new Error('EPERM refused'); }, snapshotCommand: [process.execPath, ['-e', 'process.exit(1)']] });
   assert.equal(res.timedOut, true);
-  const pid = Number(readFileSync(pidFile, 'utf8'));
-  try {
-    assert.ok(res.survivors.some((s) => s.pid === pid), JSON.stringify(res.survivors));
-    assert.ok(res.cleanupErrors.length > 0, JSON.stringify(res.cleanupErrors));
-    assert.match(res.output, /cleanup incomplete/);
-  } finally {
-    try { process.kill(pid); } catch {}
-  }
+  assert.ok(res.survivors.some((s) => s.pid === pid), JSON.stringify(res.survivors));
+  assert.ok(res.cleanupErrors.length > 0, JSON.stringify(res.cleanupErrors));
+  assert.match(res.output, /cleanup incomplete/);
+});
+
+// A PATH whose first ps is a stand-in running the sh body; in it, PATH="${PATH#*:}" finds the real ps.
+function psStandIn(name, body) {
+  const dir = join(tmp, `${name}-bin`);
+  mkdirSync(dir);
+  writeFileSync(join(dir, 'ps'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  return `${dir}:${process.env.PATH}`;
+}
+
+const POSIX_CASE = { ...CASE, skip: (process.platform === 'win32' && 'POSIX process listing only') || (sandboxed && 'a restricted sandbox may refuse cleanup') };
+
+// A loaded machine's listing: ps answers after the seconds in delayFile. Every listing outlasts the 1.5 s budget a
+// listing once had, and the one at the timeout takes 3 s longer than the one that saw the grandchild, past the 2 s
+// start-time tolerance once allowed. The sleep is the slow listing under test, not a wait of the case's.
+test('runShell timeout kills an orphan its watcher listed, however slowly ps answers', POSIX_CASE, async (t) => {
+  const delayFile = join(tmp, 'slow-ps.delay');
+  writeFileSync(delayFile, '2');
+  const path = psStandIn('slow-ps', `sleep "$(cat '${delayFile}')"\nPATH="\${PATH#*:}" exec ps "$@"`);
+  const { res, pid } = await withEnv({ PATH: path }, () => timedOutOrphan(t, 'slow-ps', { beforeClock: () => writeFileSync(delayFile, '5') }));
+  assert.equal(res.timedOut, true);
+  assert.deepEqual(res.survivors, []);
+  await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
+});
+
+// The watcher's ps always fails, so only the listing at the timeout can find the grandchild, whose middle never exits
+// here: a listing taken after the group kill would see it reparented, no longer linked to the command.
+test('runShell timeout kills a detached descendant whose parent still runs, though the watcher never listed it', POSIX_CASE, async (t) => {
+  const path = psStandIn('blind-ps', 'exit 1');
+  const { pidFile, cmd } = orphanScripts('blind');
+  const listing = ['sh', ['-c', `PATH="${process.env.PATH}" exec ps -e -o pid=,ppid=,etimes=`]];
+  t.after(() => { try { if (pidIn(pidFile)) process.kill(pidIn(pidFile)); } catch {} });
+  const { res, ready } = await withEnv({ PATH: path }, () => timeOutWhen(cmd, { timeoutMs: 3500, snapshotCommand: listing }, () => pidIn(pidFile) > 0, t.signal));
+  const pid = pidIn(pidFile);
+  assert.ok(ready, `grandchild never started: ${res.output}`);
+  assert.equal(res.timedOut, true);
+  assert.deepEqual(res.survivors, []);
+  await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
 });
 
 test('runShell with a timeout leaves background processes of a command that finished on its own running', { ...CASE, skip: process.platform === 'win32' && 'Windows also reports them: see the next case' }, async (t) => {
@@ -276,8 +321,9 @@ Start-Sleep ${LIVES_MS / 1000}
 });
 
 const withEnv = async (env, fn) => {
+  const old = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
-  try { return await fn(); } finally { for (const k of Object.keys(env)) delete process.env[k]; }
+  try { return await fn(); } finally { for (const [k, v] of Object.entries(old)) if (v === undefined) delete process.env[k]; else process.env[k] = v; }
 };
 
 // A shell whose child writes pidFile; the child starts delayMs after the shell.
@@ -495,15 +541,12 @@ test('runShell: an unreadable job membership is reported as unverified, never as
 });
 
 test('runShell: job membership larger than the first query buffer is still listed in full', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
-  const { pidFile, cmd } = orphanScripts('smallbuf');
-  const { res } = await withEnv({ FF_TEST_BUF: '1' }, () => timeOutWhen(cmd, { timeoutMs: 3500, denyTerminate: true }, () => existsSync(pidFile), t.signal));
-  const pid = Number(readFileSync(pidFile, 'utf8'));
+  const { res, pid } = await withEnv({ FF_TEST_BUF: '1' }, () => timedOutOrphan(t, 'smallbuf', { denyTerminate: true }));
   try {
-    assert.ok(res.survivors.length >= 3, JSON.stringify(res.survivors)); // shell, top, middle or grandchild: more than the 1-entry buffer
+    assert.ok(res.survivors.length >= 3, JSON.stringify(res.survivors)); // shell, top and grandchild: more than the 1-entry buffer
     assert.ok(res.survivors.some((s) => s.pid === pid), JSON.stringify(res.survivors));
   } finally {
     for (const s of res.survivors) try { process.kill(s.pid); } catch {}
-    try { process.kill(pid); } catch {}
   }
 });
 
