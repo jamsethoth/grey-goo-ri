@@ -10,7 +10,7 @@ import {
   stepsOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
 } from '../support/reconcile.mjs';
 
-// Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<step>), then resumes on a
+// Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<effect>), then resumes on a
 // freshly loaded record with the same options.
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of the held needs-human label keeps the held classification`, async (t) => {
