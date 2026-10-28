@@ -1008,3 +1008,30 @@ test('a Vertex whose Agent sets no access is read-only', async () => {
   assert.equal(flows.default.ticket.vertices.baseline.access, 'read-only');
   assert.equal(flows.default.ticket.vertices['senior-red'].access, 'workspace-write');
 });
+
+test('an optional input that only some ways of an Outcome produce is warned', async () => {
+  const config = example();
+  config.procedures.judge = {
+    access: 'read-only',
+    claims: { ok: { requires: ['a'] }, changes: { requires: [] }, blocked: { stop: true } },
+    actions: [
+      { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
+      { id: 'a', do: 'check', kind: 'command', command: 'test' },
+    ],
+    passed: [{ when: { claim: 'ok' }, outcome: 'go' }, { when: { claim: 'changes' }, outcome: 'go' }],
+  };
+  config.flows.default.ticket = {
+    entry: 'judge',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      judge: { use: 'reviewer', procedure: 'judge', route: { go: 'consumer' } },
+      consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.a.evidence', optional: true } } },
+    },
+  };
+  const { errors, warnings } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(warnings.at(-1), {
+    at: `${V}.consumer.inputs.evidence`,
+    message: 'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
+  });
+});
