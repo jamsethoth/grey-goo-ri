@@ -47,11 +47,15 @@ const pidIn = (file) => (existsSync(file) ? Number(readFileSync(file, 'utf8')) :
 // The case's own signal ends the wait too, and then the command is timed out before the case fails.
 async function timeOutWhen(commandLine, options, ready, signal) {
   const clock = new AbortController();
-  let settled = false;
+  let settled = false, wasReady = false;
   const running = exec.runShell(commandLine, { ...options, signal: clock.signal }).finally(() => { settled = true; });
-  while (!settled && !ready() && !signal.aborted) await new Promise((r) => setTimeout(r, 50));
-  const wasReady = ready();
-  clock.abort();
+  try {
+    while (!settled && !signal.aborted && !ready()) await new Promise((r) => setTimeout(r, 50));
+    wasReady = !signal.aborted && ready();
+  } finally {
+    // also when ready() throws, as it can once a failed case's files are gone: the command must not outlive the case
+    clock.abort();
+  }
   const res = await running;
   signal.throwIfAborted();
   return { res, ready: wasReady };
@@ -283,11 +287,13 @@ test('runShell timeout does not name a descendant the watcher saw exit, though a
 });
 
 // The watcher's ps never answers, and the command ends once that ps has started. runShell must let go of it, so the
-// process that called runShell can exit, and kill it rather than leave it running.
+// process that called runShell can exit, and kill it rather than leave it running. Its own child holds its output pipes
+// open after it is killed, as a ps stalled in the kernel would: killing it alone does not let the caller go.
 test('runShell lets its caller exit when the command ends while the watcher is still listing', POSIX_CASE, async (t) => {
-  const psPid = join(tmp, 'stalled-ps.pid');
-  // renamed into place, so the command never sees the file before the pid is in it
-  psStandIn(t, 'stalled-ps', `echo $$ > '${psPid}.tmp' && mv '${psPid}.tmp' '${psPid}'\nexec sleep ${LIVES_MS / 1000}`);
+  const psPid = join(tmp, 'stalled-ps.pid'), holderPid = join(tmp, 'stalled-ps-holder.pid');
+  // renamed into place, so the command never sees the file before the pids are in both
+  psStandIn(t, 'stalled-ps', `sleep ${LIVES_MS / 1000} &\necho $! > '${holderPid}'\necho $$ > '${psPid}.tmp' && mv '${psPid}.tmp' '${psPid}'\nwait`);
+  t.after(() => { try { if (pidIn(holderPid)) process.kill(pidIn(holderPid)); } catch {} });
   const quit = script('stalled-quit.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(${JSON.stringify(psPid)})) clearInterval(wait); }, 50);`);
   const caller = script('stalled-caller.mjs', `import * as exec from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, '../../../lib/exec.mjs')).href)}; const res = await exec.runShell(${JSON.stringify(`"${process.execPath}" "${quit}"`)}, { timeoutMs: ${LIVES_MS} }); process.exitCode = res.code;`);
   const child = spawn(process.execPath, [caller], { stdio: ['ignore', 'ignore', 'inherit'] });
