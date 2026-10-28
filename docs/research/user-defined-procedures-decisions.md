@@ -1135,10 +1135,11 @@ exact admission must be, or which way it may be wrong.
   misleading graph errors. An Agent's error holds only the Flows that use it. Another Flow's errors do not hold them:
   Flows share no graph, and so the output does not depend on the order the Flows are declared in. Each Vertex's
   routing is still resolved, for `gg doctor`. Issue #107.
-  - (a) Every declared Agent, used or not, is checked once at `agents.<name>`: it is an object, and a harness it names
-    is registered. An unused Agent is allowed, and its errors hold no Flow. What a Vertex merges onto the Agent is
-    checked at the Vertex: a harness the Vertex names, and a missing harness, since a user Layer or the Vertex may
-    supply one (P2). Issue #170.
+  - (a) Every declared Agent, used or not, is checked once at `agents.<name>`: it is an object, and it names a
+    registered harness. The validator sees the configuration after every Layer is merged, so no Layer can still supply
+    a missing one (P2), and a Vertex's own `harness` does not excuse it. An Agent no Vertex uses is a warning, and its
+    errors hold no Flow. A harness the Vertex sets itself, or the Agent of a Vertex with no `use`, is checked at the
+    Vertex. Issue #170.
 - H7. An Outcome's route is the first of these that the configuration names:
   1. the Vertex's `route` for that Outcome;
   2. the Flow's `routes` for that Outcome;
