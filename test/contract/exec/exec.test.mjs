@@ -232,15 +232,22 @@ test('runShell with a failed process snapshot reports known descendants as unver
   assert.match(res.output, /cleanup incomplete/);
 });
 
-// Puts a stand-in ps running the sh body first on PATH until the case ends, at its timeout too, when the case's own code
-// may still be running. In the body, PATH="${PATH#*:}" finds the real ps.
+// Sets environment variables for every process the case starts until the case ends, at its timeout too, when the case's
+// own code may still be running. A script runShell starts takes no arguments from the case, so it reads its inputs here
+// and none of them becomes code.
+function caseEnv(t, vars) {
+  const old = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  t.after(() => { for (const [k, v] of Object.entries(old)) if (v === undefined) delete process.env[k]; else process.env[k] = v; });
+}
+
+// Puts a stand-in ps running the sh body first on PATH until the case ends. In the body, PATH="${PATH#*:}" finds the
+// real ps.
 function psStandIn(t, name, body) {
   const dir = join(tmp, `${name}-bin`);
   mkdirSync(dir);
   writeFileSync(join(dir, 'ps'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
-  const path = process.env.PATH;
-  process.env.PATH = `${dir}:${path}`;
-  t.after(() => { process.env.PATH = path; });
+  caseEnv(t, { PATH: `${dir}:${process.env.PATH}` });
 }
 
 const POSIX_CASE = { ...CASE, skip: (process.platform === 'win32' && 'POSIX process listing only') || (sandboxed && 'a restricted sandbox may refuse cleanup') };
@@ -251,7 +258,8 @@ const POSIX_CASE = { ...CASE, skip: (process.platform === 'win32' && 'POSIX proc
 test('runShell timeout kills an orphan its watcher listed, however slowly ps answers', POSIX_CASE, async (t) => {
   const delayFile = join(tmp, 'slow-ps.delay');
   writeFileSync(delayFile, '2');
-  psStandIn(t, 'slow-ps', `sleep "$(cat '${delayFile}')"\nPATH="\${PATH#*:}" exec ps "$@"`);
+  caseEnv(t, { FF_TEST_PS_DELAY: delayFile });
+  psStandIn(t, 'slow-ps', `sleep "$(cat "$FF_TEST_PS_DELAY")" || exit 1\nPATH="\${PATH#*:}" exec ps "$@"`);
   const { res, pid } = await timedOutOrphan(t, 'slow-ps', { beforeClock: () => writeFileSync(delayFile, '5') });
   assert.equal(res.timedOut, true);
   assert.deepEqual(res.survivors, []);
@@ -263,7 +271,7 @@ test('runShell timeout kills an orphan its watcher listed, however slowly ps ans
 // descendant still runs. A listing cannot tell the two apart, so the descendant is named as not verified gone.
 test('runShell timeout leaves alone a pid listed with another start time, and names its descendant unverified', POSIX_CASE, async (t) => {
   const pidFile = join(tmp, 'reused.pid'); // the grandchild's, as orphanScripts names it
-  const listing = ['sh', ['-c', `ps -e -o pid=,ppid=,lstart= | awk -v gc="$(cat '${pidFile}')" '$1 == gc { print $1, $2, "Thu Jan  1 00:00:02 1970"; next } { print }'`]];
+  const listing = ['sh', ['-c', `gc="$(cat "$1")" || exit 1; ps -e -o pid=,ppid=,lstart= | awk -v gc="$gc" '$1 == gc { print $1, $2, "Thu Jan  1 00:00:02 1970"; next } { print }'`, 'sh', pidFile]];
   const killed = [];
   const { res, pid } = await timedOutOrphan(t, 'reused', { snapshotCommand: listing, killPid: (p) => killed.push(p) });
   assert.equal(res.timedOut, true);
@@ -278,7 +286,7 @@ test('runShell timeout leaves alone a pid listed with another start time, and na
 test('runShell timeout does not name a descendant the watcher saw exit, though a new process now holds its pid', POSIX_CASE, async (t) => {
   const { pidFile, midFile, goFile, cmd } = orphanScripts('pruned');
   t.after(() => { try { if (pidIn(pidFile)) process.kill(pidIn(pidFile)); } catch {} });
-  const listing = ['sh', ['-c', `ps -e -o pid=,ppid=,lstart= | awk -v mid="$(cat '${midFile}')" '{ print } END { print mid, 1, "Thu Jan  1 00:00:02 1970" }'`]];
+  const listing = ['sh', ['-c', `mid="$(cat "$1")" || exit 1; ps -e -o pid=,ppid=,lstart= | awk -v mid="$mid" '{ print } END { print mid, 1, "Thu Jan  1 00:00:02 1970" }'`, 'sh', midFile]];
   let seen = new Map(), sawMiddle = false;
   const ready = () => {
     const mid = pidIn(midFile);
@@ -301,13 +309,16 @@ test('runShell timeout does not name a descendant the watcher saw exit, though a
 test('runShell lets its caller exit when the command ends while the watcher is still listing', POSIX_CASE, async (t) => {
   const psPid = join(tmp, 'stalled-ps.pid'), holderPid = join(tmp, 'stalled-ps-holder.pid');
   // renamed into place, so the command never sees the file before the pids are in both
-  psStandIn(t, 'stalled-ps', `sleep ${LIVES_MS / 1000} &\necho $! > '${holderPid}'\necho $$ > '${psPid}.tmp' && mv '${psPid}.tmp' '${psPid}'\nwait`);
+  caseEnv(t, { FF_TEST_PS_HOLDER: holderPid, FF_TEST_PS_PID: psPid });
+  psStandIn(t, 'stalled-ps', `sleep ${LIVES_MS / 1000} &\necho $! > "$FF_TEST_PS_HOLDER"\necho $$ > "$FF_TEST_PS_PID.tmp" && mv "$FF_TEST_PS_PID.tmp" "$FF_TEST_PS_PID"\nwait`);
   t.after(() => { try { if (pidIn(holderPid)) process.kill(pidIn(holderPid)); } catch {} });
-  const quit = script('stalled-quit.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(args[0])) clearInterval(wait); }, 50);`, [psPid]);
+  const quitPid = join(tmp, 'stalled-quit.pid');
+  // it writes its pid so that a failed case can end it: it waits for the ps, and the caller's kill does not reach it
+  const quit = script('stalled-quit.mjs', `import { existsSync, writeFileSync } from 'node:fs'; writeFileSync(args[1], String(process.pid)); const wait = setInterval(() => { if (existsSync(args[0])) clearInterval(wait); }, 50);`, [psPid, quitPid]);
   const caller = script('stalled-caller.mjs', `const exec = await import(args[0]); const res = await exec.runShell(args[1], { timeoutMs: ${LIVES_MS} }); process.exitCode = res.code;`,
     [pathToFileURL(join(import.meta.dirname, '../../../lib/exec.mjs')).href, `"${process.execPath}" "${quit}"`]);
   const child = spawn(process.execPath, [caller], { stdio: ['ignore', 'ignore', 'inherit'] });
-  t.after(() => { child.kill(); try { if (pidIn(psPid)) process.kill(pidIn(psPid)); } catch {} });
+  t.after(() => { child.kill(); for (const f of [psPid, quitPid]) try { if (pidIn(f)) process.kill(pidIn(f)); } catch {} });
   const [code] = await once(child, 'exit'); // a caller kept running by the listing fails at the case timeout
   assert.equal(code, 0);
   const pid = pidIn(psPid);
@@ -318,7 +329,7 @@ test('runShell lets its caller exit when the command ends while the watcher is s
 // The watcher's ps always fails, so only the listing at the timeout can find the grandchild, whose middle never exits
 // here: a listing taken after the group kill would see it reparented, no longer linked to the command.
 test('runShell timeout kills a detached descendant whose parent still runs, though the watcher never listed it', POSIX_CASE, async (t) => {
-  const listing = ['sh', ['-c', `PATH="${process.env.PATH}" exec ps -e -o pid=,ppid=,lstart=`]];
+  const listing = ['sh', ['-c', 'PATH="$1" exec ps -e -o pid=,ppid=,lstart=', 'sh', process.env.PATH]];
   psStandIn(t, 'blind-ps', 'exit 1');
   const { pidFile, cmd } = orphanScripts('blind');
   t.after(() => { try { if (pidIn(pidFile)) process.kill(pidIn(pidFile)); } catch {} });
@@ -378,11 +389,12 @@ public static class BA {
   }
 }
 '@
-$r = [BA]::Run('"${process.execPath}" "${sleeper}"')
+$r = [BA]::Run('"' + $env:FF_TEST_BA_EXE + '" "' + $env:FF_TEST_BA_SCRIPT + '"')
 [Console]::Out.WriteLine($r); [Console]::Out.Flush()
-Set-Content -LiteralPath '${created}' -Value $r
+Set-Content -LiteralPath $env:FF_TEST_BA_CREATED -Value $r
 Start-Sleep ${LIVES_MS / 1000}
 `);
+  caseEnv(t, { FF_TEST_BA_EXE: process.execPath, FF_TEST_BA_SCRIPT: sleeper, FF_TEST_BA_CREATED: created });
   const { res } = await timeOutWhen(`powershell.exe -NoProfile -NonInteractive -File "${ps}"`, { timeoutMs: 6000 }, () => existsSync(created), t.signal);
   const m = res.output.match(/created pid=(\d+)/);
   const pid = m && Number(m[1]);
