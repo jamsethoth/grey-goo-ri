@@ -216,12 +216,15 @@ test('runShell with a failed process snapshot reports known descendants as unver
   assert.match(res.output, /cleanup incomplete/);
 });
 
-// A PATH whose first ps is a stand-in running the sh body; in it, PATH="${PATH#*:}" finds the real ps.
-function psStandIn(name, body) {
+// Puts a stand-in ps running the sh body first on PATH until the case ends, at its timeout too, when the case's own code
+// may still be running. In the body, PATH="${PATH#*:}" finds the real ps.
+function psStandIn(t, name, body) {
   const dir = join(tmp, `${name}-bin`);
   mkdirSync(dir);
   writeFileSync(join(dir, 'ps'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
-  return `${dir}:${process.env.PATH}`;
+  const path = process.env.PATH;
+  process.env.PATH = `${dir}:${path}`;
+  t.after(() => { process.env.PATH = path; });
 }
 
 const POSIX_CASE = { ...CASE, skip: (process.platform === 'win32' && 'POSIX process listing only') || (sandboxed && 'a restricted sandbox may refuse cleanup') };
@@ -232,8 +235,8 @@ const POSIX_CASE = { ...CASE, skip: (process.platform === 'win32' && 'POSIX proc
 test('runShell timeout kills an orphan its watcher listed, however slowly ps answers', POSIX_CASE, async (t) => {
   const delayFile = join(tmp, 'slow-ps.delay');
   writeFileSync(delayFile, '2');
-  const path = psStandIn('slow-ps', `sleep "$(cat '${delayFile}')"\nPATH="\${PATH#*:}" exec ps "$@"`);
-  const { res, pid } = await withEnv({ PATH: path }, () => timedOutOrphan(t, 'slow-ps', { beforeClock: () => writeFileSync(delayFile, '5') }));
+  psStandIn(t, 'slow-ps', `sleep "$(cat '${delayFile}')"\nPATH="\${PATH#*:}" exec ps "$@"`);
+  const { res, pid } = await timedOutOrphan(t, 'slow-ps', { beforeClock: () => writeFileSync(delayFile, '5') });
   assert.equal(res.timedOut, true);
   assert.deepEqual(res.survivors, []);
   await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
@@ -242,11 +245,11 @@ test('runShell timeout kills an orphan its watcher listed, however slowly ps ans
 // The watcher's ps always fails, so only the listing at the timeout can find the grandchild, whose middle never exits
 // here: a listing taken after the group kill would see it reparented, no longer linked to the command.
 test('runShell timeout kills a detached descendant whose parent still runs, though the watcher never listed it', POSIX_CASE, async (t) => {
-  const path = psStandIn('blind-ps', 'exit 1');
-  const { pidFile, cmd } = orphanScripts('blind');
   const listing = ['sh', ['-c', `PATH="${process.env.PATH}" exec ps -e -o pid=,ppid=,etimes=`]];
+  psStandIn(t, 'blind-ps', 'exit 1');
+  const { pidFile, cmd } = orphanScripts('blind');
   t.after(() => { try { if (pidIn(pidFile)) process.kill(pidIn(pidFile)); } catch {} });
-  const { res, ready } = await withEnv({ PATH: path }, () => timeOutWhen(cmd, { timeoutMs: 3500, snapshotCommand: listing }, () => pidIn(pidFile) > 0, t.signal));
+  const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 3500, snapshotCommand: listing }, () => pidIn(pidFile) > 0, t.signal);
   const pid = pidIn(pidFile);
   assert.ok(ready, `grandchild never started: ${res.output}`);
   assert.equal(res.timedOut, true);
@@ -321,9 +324,8 @@ Start-Sleep ${LIVES_MS / 1000}
 });
 
 const withEnv = async (env, fn) => {
-  const old = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
-  try { return await fn(); } finally { for (const [k, v] of Object.entries(old)) if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  try { return await fn(); } finally { for (const k of Object.keys(env)) delete process.env[k]; }
 };
 
 // A shell whose child writes pidFile; the child starts delayMs after the shell.
