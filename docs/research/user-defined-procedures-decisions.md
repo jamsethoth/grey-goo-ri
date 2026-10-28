@@ -79,6 +79,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | T9: an optional input produced on no path is an error | H5: a warning, when no route guarantees any of its sources |
 | T3: a Vertex's own `route` before the Flow's `routes` | H7: explicit Outcome names before either `"*"` |
 | V4: engine Outcome names are reserved | H10: so are the names of `Object.prototype`'s properties |
+| V3: every cycle has an edge with `max` or a Vertex with `maxVisits` | H12: and no loop is made of exhausted targets alone |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -1160,6 +1161,11 @@ exact admission must be, or which way it may be wrong.
   Extends V4. Issue #169.
 - H11. `gg doctor` prints each Vertex's `maxVisits` and its `exhausted` target when set, beside its routes, so the
   bounds can be read against the cycles. Issue #107.
+- H12. Vertices with `maxVisits` whose `exhausted` targets lead back to one another are an error, whatever routes them:
+  once their visits are spent, each entry passes to the next exhausted target and no Vertex is ever entered. V3 does
+  not catch it, since every Vertex in the loop has a bound. Found by #107's QA. Issue #107.
+- H13. `exhausted` is named only with a bound: on a Vertex only with `maxVisits`, and on an edge only with `max`.
+  Without one it is never used, so naming it is an error, the reverse of H8. Found by #107's QA. Issue #107.
 
 ## Open
 
