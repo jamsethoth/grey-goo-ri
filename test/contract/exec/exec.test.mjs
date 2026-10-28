@@ -251,6 +251,7 @@ test('runShell timeout leaves alone a pid listed with another start time, and na
   const killed = [];
   const { res, pid } = await timedOutOrphan(t, 'reused', { snapshotCommand: listing, killPid: (p) => killed.push(p) });
   assert.equal(res.timedOut, true);
+  assert.deepEqual(res.cleanupErrors, []); // the listing was read, so the survivor below is not a failed listing's
   assert.ok(!killed.includes(pid), `killed ${JSON.stringify(killed)}, the taken-over pid ${pid} among them`);
   assert.ok(res.survivors.some((s) => s.pid === pid && /not verified gone/.test(s.error)), `grandchild ${pid} missing from ${JSON.stringify(res.survivors)}`);
   assert.match(res.output, /could not kill pid/);
