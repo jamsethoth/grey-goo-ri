@@ -112,8 +112,8 @@ _Avoid_: step, task, operation
 
 **Action id**:
 An Action's name, unique within its Procedure, with no `:` and no whitespace, such as `green`, `test` or `commit`. A
-Terminal's reporting Actions have the ids `<report>-<step>`: `<report>` is `end`, `hold`, `fault` or `abandon`, and
-`<step>` is `comment`, `epic-comment`, `label` or `pr-ready`.
+Terminal's reporting Actions have the ids `<report>-<effect>`: `<report>` is `end`, `hold`, `fault` or `abandon`, and
+`<effect>` is `comment`, `epic-comment`, `label` or `pr-ready`.
 _Avoid_: step id
 
 **Action identity**:
