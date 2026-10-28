@@ -10,7 +10,7 @@ import {
   stepsOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
 } from '../support/reconcile.mjs';
 
-// Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a
+// Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<step>), then resumes on a
 // freshly loaded record with the same options.
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of the held needs-human label keeps the held classification`, async (t) => {
@@ -128,6 +128,9 @@ test('a missing transcript starts the phase fresh', async (t) => {
   assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT), 'the full test-fix Brief, not a nudge');
   assert.ok(g.logs.some((l) => /transcript/.test(l)), `the fresh start is logged: ${JSON.stringify(g.logs)}`);
   assert.equal(result.outcome, 'done');
+  // The resume continues at the recovery pass: no first-pass Action runs again, and the Actions after it carry its number.
+  assert.deepEqual(g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => `${e.action}/${e.recovery}`),
+    ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
 });
 
 test('bounds survive a restart', async (t) => {

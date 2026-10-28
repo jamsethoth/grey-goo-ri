@@ -121,7 +121,6 @@ export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.
   return record.load(f.commonDir, 'ticket', TICKET);
 }
 
-
 // Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock. By
 // default it holds longer than any case, so only the case releases it.
 export function holdLock(t, commonDir, name, holdMs = 600_000) {
