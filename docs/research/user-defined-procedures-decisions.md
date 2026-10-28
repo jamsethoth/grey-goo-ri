@@ -1157,7 +1157,7 @@ exact admission must be, or which way it may be wrong.
 - H10. The name of a property of `Object.prototype` (`__proto__`, `constructor`, `toString`, `valueOf` and the rest) is
   reserved. No Vertex, Procedure, Agent, Action, Claim token, table `outcome`, `otherwise`, input or route key may use
   one; admission reports it as an error. Before this, a Vertex or Procedure named `__proto__` was silently dropped.
-  Extends V4. A separate issue from #107.
+  Extends V4. Issue #169.
 - H11. `gg doctor` prints each Vertex's `maxVisits` and its `exhausted` target when set, beside its routes, so the
   bounds can be read against the cycles. Issue #107.
 
