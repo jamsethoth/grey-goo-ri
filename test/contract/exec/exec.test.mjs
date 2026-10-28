@@ -10,7 +10,13 @@ import * as exec from '../../../lib/exec.mjs';
 import * as render from '../../../lib/render.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'ff-exec-'));
-const script = (name, body) => { const p = join(tmp, name); writeFileSync(p, body); return p; };
+// With args, the script reads them as `args` from a JSON file beside it, so no value the case passes becomes code.
+const script = (name, body, args) => {
+  const p = join(tmp, name);
+  if (args) writeFileSync(`${p}.json`, JSON.stringify(args));
+  writeFileSync(p, args ? `import { readFileSync as readArgs } from 'node:fs'; const args = JSON.parse(readArgs(process.argv[1] + '.json', 'utf8'));\n${body}` : body);
+  return p;
+};
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 // Waits for fn() to hold. A case that waits for an event that never comes fails at its own timeout, which aborts signal
 // and so ends the wait, letting the case's cleanup run.
@@ -27,15 +33,16 @@ const sandboxed = process.env.FF_TEST_SANDBOXED === '1';
 const CASE = { timeout: 120_000 };
 // How long a test process lives unless it is killed: longer than any case, so no command ends on its own first.
 const LIVES_MS = 600_000;
-const writesPid = (pidFile) => `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, ${LIVES_MS});`;
+// A script body for script(name, writesPid, [pidFile]).
+const writesPid = `import { writeFileSync } from 'node:fs'; writeFileSync(args[0], String(process.pid)); setTimeout(() => {}, ${LIVES_MS});`;
 
 // Parent spawns a detached grandchild through an intermediate that writes midFile and lingers until goFile exists, then
 // exits, leaving the grandchild orphaned while the parent outlives the timeout. delayMs holds the spawn back.
 function orphanScripts(name, { delayMs = 0 } = {}) {
   const pidFile = join(tmp, `${name}.pid`), midFile = join(tmp, `${name}-mid.pid`), goFile = join(tmp, `${name}.go`);
-  const grandchild = script(`${name}-gc.mjs`, writesPid(pidFile));
-  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; import { existsSync, writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(midFile)}, String(process.pid)); setTimeout(() => spawn(process.execPath, [${JSON.stringify(grandchild)}], { detached: true, stdio: 'ignore' }).unref(), ${delayMs}); const wait = setInterval(() => { if (existsSync(${JSON.stringify(goFile)})) clearInterval(wait); }, 50);`);
-  const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(middle)}], { stdio: 'ignore' }); setTimeout(() => {}, ${LIVES_MS});`);
+  const grandchild = script(`${name}-gc.mjs`, writesPid, [pidFile]);
+  const middle = script(`${name}-mid.mjs`, `import { spawn } from 'node:child_process'; import { existsSync, writeFileSync } from 'node:fs'; const [midFile, grandchild, delayMs, goFile] = args; writeFileSync(midFile, String(process.pid)); setTimeout(() => spawn(process.execPath, [grandchild], { detached: true, stdio: 'ignore' }).unref(), delayMs); const wait = setInterval(() => { if (existsSync(goFile)) clearInterval(wait); }, 50);`, [midFile, grandchild, delayMs, goFile]);
+  const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { stdio: 'ignore' }); setTimeout(() => {}, ${LIVES_MS});`, [middle]);
   return { pidFile, midFile, goFile, cmd: `"${process.execPath}" "${top}"` };
 }
 
@@ -146,7 +153,7 @@ test('runShell: a command outliving timeoutMs returns within budget, flagged as 
 
 test('runShell: a timed-out command returns code null and the output it printed before the timeout', CASE, async (t) => {
   const printed = join(tmp, 'sentinel.printed');
-  const p = script('sentinel.mjs', `import { writeFileSync } from 'node:fs'; console.log('SENTINEL-BEFORE-HANG'); writeFileSync(${JSON.stringify(printed)}, ''); setTimeout(() => {}, ${LIVES_MS});`);
+  const p = script('sentinel.mjs', `import { writeFileSync } from 'node:fs'; console.log('SENTINEL-BEFORE-HANG'); writeFileSync(args[0], ''); setTimeout(() => {}, ${LIVES_MS});`, [printed]);
   const { res } = await timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 4000 }, () => existsSync(printed), t.signal);
   assert.equal(res.code, null);
   assert.equal(res.timedOut, true);
@@ -296,8 +303,9 @@ test('runShell lets its caller exit when the command ends while the watcher is s
   // renamed into place, so the command never sees the file before the pids are in both
   psStandIn(t, 'stalled-ps', `sleep ${LIVES_MS / 1000} &\necho $! > '${holderPid}'\necho $$ > '${psPid}.tmp' && mv '${psPid}.tmp' '${psPid}'\nwait`);
   t.after(() => { try { if (pidIn(holderPid)) process.kill(pidIn(holderPid)); } catch {} });
-  const quit = script('stalled-quit.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(${JSON.stringify(psPid)})) clearInterval(wait); }, 50);`);
-  const caller = script('stalled-caller.mjs', `import * as exec from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, '../../../lib/exec.mjs')).href)}; const res = await exec.runShell(${JSON.stringify(`"${process.execPath}" "${quit}"`)}, { timeoutMs: ${LIVES_MS} }); process.exitCode = res.code;`);
+  const quit = script('stalled-quit.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(args[0])) clearInterval(wait); }, 50);`, [psPid]);
+  const caller = script('stalled-caller.mjs', `const exec = await import(args[0]); const res = await exec.runShell(args[1], { timeoutMs: ${LIVES_MS} }); process.exitCode = res.code;`,
+    [pathToFileURL(join(import.meta.dirname, '../../../lib/exec.mjs')).href, `"${process.execPath}" "${quit}"`]);
   const child = spawn(process.execPath, [caller], { stdio: ['ignore', 'ignore', 'inherit'] });
   t.after(() => { child.kill(); try { if (pidIn(psPid)) process.kill(pidIn(psPid)); } catch {} });
   const [code] = await once(child, 'exit'); // a caller kept running by the listing fails at the case timeout
@@ -324,8 +332,8 @@ test('runShell timeout kills a detached descendant whose parent still runs, thou
 
 test('runShell with a timeout leaves background processes of a command that finished on its own running', { ...CASE, skip: process.platform === 'win32' && 'Windows also reports them: see the next case' }, async (t) => {
   const pidFile = join(tmp, 'leftover.pid');
-  const background = script('leftover-gc.mjs', writesPid(pidFile));
-  const quit = script('leftover-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(background)}], { detached: true, stdio: 'ignore' }).unref();`);
+  const background = script('leftover-gc.mjs', writesPid, [pidFile]);
+  const quit = script('leftover-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'ignore' }).unref();`, [background]);
   const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 20000, signal: noClock() });
   assert.equal(res.code, 0);
   await waitFor(() => existsSync(pidFile), t.signal); // a background process that never starts fails at the case timeout
@@ -339,8 +347,8 @@ test('runShell with a timeout leaves background processes of a command that fini
 
 test('runShell with a timeout reports, and leaves running, the background processes of a command that finished on its own', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const pidFile = join(tmp, 'leftover-reported.pid');
-  const background = script('leftover-reported-gc.mjs', writesPid(pidFile));
-  const quit = script('leftover-reported-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(background)}], { detached: true, stdio: 'ignore' }).unref();`);
+  const background = script('leftover-reported-gc.mjs', writesPid, [pidFile]);
+  const quit = script('leftover-reported-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'ignore' }).unref();`, [background]);
   const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 20000, signal: noClock() });
   assert.equal(res.code, 0);
   await waitFor(() => existsSync(pidFile), t.signal); // a background process that never starts fails at the case timeout
@@ -396,8 +404,8 @@ const withEnv = async (env, fn) => {
 // A shell whose child writes pidFile; the child starts delayMs after the shell.
 function linkedChild(name, { delayMs = 0 } = {}) {
   const pidFile = join(tmp, `${name}.pid`);
-  const child = script(`${name}-child.mjs`, writesPid(pidFile));
-  const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; setTimeout(() => spawn(process.execPath, [${JSON.stringify(child)}], { stdio: 'ignore' }), ${delayMs}); setTimeout(() => {}, ${LIVES_MS});`);
+  const child = script(`${name}-child.mjs`, writesPid, [pidFile]);
+  const top = script(`${name}-top.mjs`, `import { spawn } from 'node:child_process'; const [child, delayMs] = args; setTimeout(() => spawn(process.execPath, [child], { stdio: 'ignore' }), delayMs); setTimeout(() => {}, ${LIVES_MS});`, [child, delayMs]);
   return { pidFile, cmd: `"${process.execPath}" "${top}"` };
 }
 
@@ -485,7 +493,7 @@ test('runShell: when the job cannot be set up and taskkill is refused, a child t
 // then be another process's. The leftover holds the output pipes, so they never close.
 test('runShell: a command that finishes is not reported as timed out while its leftover process still holds the output pipes', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const sleeper = script('drain-sleeper.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
-  const quit = script('drain-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(sleeper)}], { detached: true, stdio: 'inherit' }).unref();`);
+  const quit = script('drain-quit.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'inherit' }).unref();`, [sleeper]);
   const timers = manualTimers();
   const onHelper = (helper) => {
     const late = [delayed(helper.stdout), delayed(helper.stderr)];
@@ -513,7 +521,7 @@ test('runShell: a command that finishes is not reported as timed out while its l
 // 1 ms of the budget, then 2 ms more once runShell has seen the command start.
 test('runShell: the timeout counts from when the command starts, not from the job helper start-up', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const go = join(tmp, 'counts.go');
-  const p = script('counts.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(${JSON.stringify(go)})) { clearInterval(wait); console.log('done'); } }, 50);`);
+  const p = script('counts.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(args[0])) { clearInterval(wait); console.log('done'); } }, 50);`, [go]);
   let seen;
   const started = new Promise((r) => (seen = r));
   let notes = '';
@@ -534,7 +542,7 @@ test('runShell: the timeout counts from when the command starts, not from the jo
 // until the next turn of the event loop, after everything the exit set going has run. Its answer must still be read,
 // never taken as a clean cleanup. The timeout fires as soon as runShell has seen the command start.
 test('runShell: a helper answer that arrives after the helper has exited is still read', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
-  const p = script('late-answer.mjs', writesPid(join(tmp, 'late-answer.pid')));
+  const p = script('late-answer.mjs', writesPid, [join(tmp, 'late-answer.pid')]);
   const timers = manualTimers();
   const onHelper = (helper) => {
     const late = delayed(helper.stderr);
@@ -557,7 +565,7 @@ test('runShell: a helper answer that arrives after the helper has exited is stil
 // that ran must not be taken for one the helper never started, and run a second time.
 test('runShell: a finished command whose notes arrive after the helper has exited runs once', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const runs = join(tmp, 'once.runs');
-  const p = script('once.mjs', `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(runs)}, 'ran\\n');`);
+  const p = script('once.mjs', `import { appendFileSync } from 'node:fs'; appendFileSync(args[0], 'ran\\n');`, [runs]);
   const onHelper = (helper) => {
     const late = delayed(helper.stderr);
     late.hold();
@@ -599,7 +607,7 @@ test('runShell: a helper that never starts and cannot be killed is reported, and
 
 test('runShell: an unreadable job membership is reported as unverified, never as a clean cleanup', { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' }, async (t) => {
   const pidFile = join(tmp, 'queryfail.pid');
-  const p = script('queryfail.mjs', writesPid(pidFile));
+  const p = script('queryfail.mjs', writesPid, [pidFile]);
   const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () => timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 3000 }, () => existsSync(pidFile), t.signal));
   assert.equal(res.timedOut, true);
   assert.ok(res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)), JSON.stringify(res.cleanupErrors));
@@ -619,8 +627,8 @@ test('runShell: job membership larger than the first query buffer is still liste
 
 test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
   const pidFile = join(tmp, 'unrelated.pid');
-  const sleeper = script('unrelated-sleeper.mjs', writesPid(pidFile));
-  const spawner = script('unrelated-spawner.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [${JSON.stringify(sleeper)}], { detached: true, stdio: 'ignore' }).unref();`);
+  const sleeper = script('unrelated-sleeper.mjs', writesPid, [pidFile]);
+  const spawner = script('unrelated-spawner.mjs', `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'ignore' }).unref();`, [sleeper]);
   await exec.run(process.execPath, [spawner]); // the sleeper's parent exits at once: an orphan unrelated to the shell below
   await waitFor(() => existsSync(pidFile), t.signal); // a sleeper that never starts fails at the case timeout
   const pid = Number(readFileSync(pidFile, 'utf8'));
