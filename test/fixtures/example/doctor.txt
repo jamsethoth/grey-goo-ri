@@ -7,7 +7,7 @@ flow default
 vertex baseline
   procedure: base-check
   agent: none
-  access: none
+  access: read-only (default)
   tests: frozen
   checks: test (command test)
   claims: ok requires test
@@ -88,6 +88,7 @@ vertex senior-green
     1. response.reason = misscoped -> misscoped
     2. response.reason = bad-test -> bad-test
   outcomes: ok, failed, misscoped, bad-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  maxVisits: 1, exhausted end needs-human
   routes:
     ok -> reviewer
     failed -> end needs-human (Flow "*"); work left in place
@@ -149,6 +150,7 @@ vertex senior-red
     1. response.reason = misscoped -> misscoped
     2. response.reason = no-test-needed -> no-test
   outcomes: ok, failed, misscoped, no-test, blocked, harness-timeout, harness-transient, harness-unparsed
+  maxVisits: 1, exhausted end needs-human
   routes:
     ok -> green
     failed -> end needs-human (Flow "*"); work left in place
@@ -203,6 +205,7 @@ vertex senior-dev
   stopped:
     1. response.reason = misscoped -> misscoped
   outcomes: ok, failed, misscoped, blocked, harness-timeout, harness-transient, harness-unparsed
+  maxVisits: 1, exhausted end needs-human
   routes:
     ok -> reviewer
     failed -> end needs-human (Flow "*"); work left in place
@@ -223,7 +226,7 @@ vertex senior-dev
 vertex publish
   procedure: publish
   agent: none
-  access: none
+  access: read-only (default)
   tests: frozen
   checks: test (command test)
   claims: ok requires test
