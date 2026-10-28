@@ -238,7 +238,7 @@ test('a crash between admission and its hold keeps the decision and its one tick
 });
 
 test('an Interrupted Attempt hold warns before its record is deleted, then and on the next Run', async (t) => {
-  const responses = { ...golden.firstVisitResponses, 'implementer/1/red/1': { throw: new interpreter.CrashError('gg died during the call') } };
+  const responses = { ...golden.firstVisitResponses, 'red/1/red/1': { throw: new interpreter.CrashError('gg died during the call') } };
   const f = fixture(t, { responses, labels: [IN_PROGRESS] });
   await seedExecution(f);
   const warning = /including ignored Protected Files\. Check them[^]*before deleting the record/;
@@ -258,7 +258,7 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
 async function overriddenBeforeFirstVisit(t) {
   const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-  await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+  await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
     configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
   return f;
 }
@@ -345,7 +345,7 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
   test(`mixed-case human needs-human wins before any label write: ${labels.join(', ')}`, async (t) => {
     const f = fixture(t, { labels });
     await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
     const inner = f.gh.gh;
     const states = [];
@@ -414,7 +414,7 @@ test('mixed-case needs-human skips with a held ticket lock', async (t) => {
 test('admission does not re-add differently cased in-progress', async (t) => {
   const f = fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
   f.options.config.labelPrefix = 'Gg';
-  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
@@ -436,7 +436,7 @@ test('a differently cased in-progress without a record is left for Stuck handlin
 });
 
 test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
-  const responses = { ...structuredClone(golden.firstVisitResponses), 'implementer/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const responses = { ...structuredClone(golden.firstVisitResponses), 'red/1/still-green/1': { files: {}, response: golden.redResponse } };
   const f = fixture(t, { responses, labels: [NEEDS_HUMAN] });
   const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
@@ -455,7 +455,7 @@ const NOT_READY = [{ blockedBy: [{ number: 3, state: 'OPEN' }] }, { state: 'CLOS
 for (const issue of NOT_READY) {
   test(`a resumed execution still needs its ticket open and unblocked: ${JSON.stringify(issue)}`, async (t) => {
     const f = fixture(t, { labels: [IN_PROGRESS], issue });
-    await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+    await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
     const row = f.loadRow();
     await run.runTarget(f.options);
     assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');

@@ -8,7 +8,7 @@ import { resetEntries } from '../support/reconcile.mjs';
 
 test('a reset whose evidence was saved but not its completion is completed without a second History item', async (t) => {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/still-green/1': { files: {}, response: golden.redResponse } } });
+    'red/1/still-green/1': { files: {}, response: golden.redResponse } } });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   await interpreter.runExecution(g.options);
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
@@ -21,7 +21,7 @@ test('a reset whose evidence was saved but not its completion is completed witho
 
 test('a failed HEAD read after the reset of a failed red leaves the History item to Reconciliation, once', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = g.options.git;

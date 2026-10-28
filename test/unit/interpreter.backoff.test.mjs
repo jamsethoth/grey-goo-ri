@@ -10,8 +10,8 @@ import {
 } from '../support/interpreter.mjs';
 
 // #83: the pr-upsert, pr-ready and push paths of the in-Action retry, end to end.
-const PUSH = 'implementer/1/green/4';
-const PR_UPSERT = 'implementer/1/green/5';
+const PUSH = 'green/1/green/4';
+const PR_UPSERT = 'green/1/green/5';
 const PR_READY = 'done/1/done/1';
 const isPr = (verb) => (args) => args[0] === 'pr' && args[1] === verb;
 const prCalls = (g, verb) => g.gh.calls.filter((c) => isPr(verb)(c.args));
@@ -57,7 +57,7 @@ test('a transient pr-upsert failure is retried and opens one PR', async (t) => {
   g.clock.onSleep = async () => { during = (await loadTicket(g)).pr; };
   const result = await interpreter.runExecution(g.options);
 
-  const final = await retriedOnce(g, result, PR_UPSERT, attemptMarker(g, 'implementer', 1, 'green', 5));
+  const final = await retriedOnce(g, result, PR_UPSERT, attemptMarker(g, 'green', 1, 'green', 5));
   assert.equal(during, null, 'no PR is recorded during the backoff');
   assert.equal(prCalls(g, 'create').length, 2, 'the failed create and one retry');
   assert.equal(g.gh.pr().number, PR, 'one PR');
@@ -70,7 +70,7 @@ test('an accepted pr-upsert whose call errored is found, not repeated', async (t
   g.gh.fail({ matches: isPr('create'), status: 502, afterEffect: true });
   const result = await interpreter.runExecution(g.options);
 
-  const m = attemptMarker(g, 'implementer', 1, 'green', 5);
+  const m = attemptMarker(g, 'green', 1, 'green', 5);
   const final = await retriedOnce(g, result, PR_UPSERT, m);
   assert.equal(prCalls(g, 'create').length, 1, 'never created again');
   assert.equal(prCalls(g, 'edit').length, 0, 'nor edited');

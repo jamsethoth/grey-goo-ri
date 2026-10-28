@@ -93,7 +93,7 @@ test('fresh admission reuses its Ticket branch after a title change', async (t) 
 
 // An Execution of this Ticket recorded on another Ticket's branch, with one outstanding intent.
 async function foreignBranchRecord(f, branch) {
-  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
     configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch, base: 'main' });
   await record.intent(rec, 'seed-intent', 'commit', { message: 'red' });
   assert.equal(record.openIntents(rec).length, 1);
@@ -158,15 +158,15 @@ async function siblingOverwrite(t, { seeded, siblingRecord, siblingBranch }) {
   const sibling = join(f.root, 'elsewhere', 'ticket-99');
   sh(f.mainRoot, 'worktree', 'add', '-q', '-b', siblingBranch, sibling, 'main');
   if (siblingRecord) {
-    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: 99, epic: null, flow: { name: 'default', entry: 'implementer' },
+    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: 99, epic: null, flow: { name: 'default', entry: 'red' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: sibling, branch: 'ticket/99-other', base: 'main' }));
   }
   if (seeded) {
     await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
   }
-  responses['implementer/1/red/1'].files[relative(f.worktree, join(sibling, 'package.json'))] = '{ "overwritten": true }\n';
+  responses['red/1/red/1'].files[relative(f.worktree, join(sibling, 'package.json'))] = '{ "overwritten": true }\n';
   return { f, sibling, results: await run.runTarget(f.options) };
 }
 
@@ -243,7 +243,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
 
 test('a resumed execution stopped mid-rebase is held without changing the rebase', async (t) => {
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
-  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'red', 3), point: 'after-completion' }) });
+  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'red', 1, 'red', 3), point: 'after-completion' }) });
   const rebase = spawnSync('git', ['rebase', '--exec', 'exit 1', 'main'], { cwd: f.worktree, encoding: 'utf8' });
   assert.equal(rebase.status, 1, rebase.stderr);
   assert.equal(sh(f.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD');

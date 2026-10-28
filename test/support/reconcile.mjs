@@ -21,15 +21,15 @@ export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKE
 
 export const EFFECTS = {
   commit: {
-    at: ['implementer', 1, 'green', 3],
+    at: ['green', 1, 'green', 3],
     happened: async (g, m) => (await branchMessages(g)).some((b) => b.includes(marker.markerTrailer(m))),
   },
   push: {
-    at: ['implementer', 1, 'green', 4],
+    at: ['green', 1, 'green', 4],
     happened: async (g) => (await originSha(g)) === (await g.options.git.headSha(g.worktree)),
   },
   'PR upsert': {
-    at: ['implementer', 1, 'green', 5],
+    at: ['green', 1, 'green', 5],
     happened: (g, m) => !!g.gh.pr()?.body.includes(marker.markerComment(m)),
   },
   comment: {

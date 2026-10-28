@@ -96,7 +96,7 @@ for (const [issue, reason] of NOT_READY) {
 test('every line a Run prints names its repository, in the terminal and in run.log', async (t) => {
   // A fault whose report gets HTTP 502 and whose label edit fails logs from run, the interpreter and github.
   const f = fixture(t, { labels: [IN_PROGRESS], failEdit: true });
-  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
     configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(rec);
   f.options.git = { ...f.options.git, ensureWorktree: async () => { throw new Error('worktree add failed'); } };
@@ -175,7 +175,8 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
   const examples = fileURLToPath(new URL('../../examples/', import.meta.url));
   assert.deepEqual(err.message.split('\n'), [
     '[main] preflight failed:',
-    'vertex implementer: no harness configured for agent implementer',
+    'vertex red: no harness configured for agent implementer',
+    'vertex green: no harness configured for agent implementer',
     'vertex reviewer: no harness configured for agent reviewer',
     'vertex implementer-fix: no harness configured for agent implementer',
     `Merge one of ${join(examples, 'claude.json')}, ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,

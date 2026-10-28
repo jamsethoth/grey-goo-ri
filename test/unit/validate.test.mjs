@@ -103,6 +103,54 @@ test('a table outcome or otherwise named after an end is an error', async () => 
   ]);
 });
 
+const INHERITED = 'is reserved: every object inherits a property of that name from Object.prototype';
+
+test('a Vertex named __proto__ is an error, never dropped', async () => {
+  const config = example();
+  const { vertices } = config.flows.default.ticket;
+  // JSON.parse and spread make __proto__ an own key, as a Layer's JSON does; assignment would set the prototype.
+  config.flows.default.ticket.vertices = { ...vertices, ...JSON.parse('{"__proto__": {"procedure": "base-check"}}') };
+  assert.deepEqual((await check(config)).errors, [{ at: `${V}.__proto__`, message: `Vertex id "__proto__" ${INHERITED}` }]);
+});
+
+test('a name of an Object.prototype property is reserved wherever the configuration names something', async () => {
+  const config = example();
+  config.agents.valueOf = { persona: 'implementer.md', harness: 'fake' };
+  config.procedures['tests-fail'].claims.isPrototypeOf = { stop: true };
+  config.procedures['tests-fail'].stopped[0].outcome = 'toString';
+  config.procedures.review.otherwise = 'toLocaleString';
+  config.procedures.gate = {
+    actions: [{ id: 'constructor', do: 'check', kind: 'command', command: 'test' }],
+    passed: [{ when: { 'check.constructor': 'passed' }, outcome: 'ok' }],
+  };
+  config.procedures.hasOwnProperty = config.procedures['base-check'];
+  config.flows.propertyIsEnumerable = {
+    plan: null,
+    actionCap: 1,
+    ticket: {
+      entry: 'valueOf',
+      routes: { toString: { end: 'needs-human' } },
+      vertices: {
+        valueOf: { procedure: 'gate', inputs: { constructor: { from: 'valueOf.rescue', optional: true } }, route: { __lookupGetter__: { end: 'needs-human' } } },
+      },
+    },
+  };
+  const F = 'flows.propertyIsEnumerable.ticket';
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.valueOf', message: `Agent "valueOf" ${INHERITED}` },
+    { at: 'procedures.tests-fail.claims.isPrototypeOf', message: `Claim token "isPrototypeOf" ${INHERITED}` },
+    { at: 'procedures.tests-fail.stopped[0]', message: `outcome "toString" ${INHERITED}` },
+    { at: 'procedures.review.otherwise', message: `otherwise "toLocaleString" ${INHERITED}` },
+    { at: 'procedures.gate.actions[0]', message: `Action id "constructor" ${INHERITED}` },
+    { at: 'procedures.hasOwnProperty', message: `Procedure "hasOwnProperty" ${INHERITED}` },
+    { at: 'flows.propertyIsEnumerable', message: `Flow "propertyIsEnumerable" ${INHERITED}` },
+    { at: `${F}.routes.toString`, message: `route key "toString" ${INHERITED}` },
+    { at: `${F}.vertices.valueOf`, message: `Vertex id "valueOf" ${INHERITED}` },
+    { at: `${F}.vertices.valueOf.inputs.constructor`, message: `input "constructor" ${INHERITED}` },
+    { at: `${F}.vertices.valueOf.route.__lookupGetter__`, message: `route key "__lookupGetter__" ${INHERITED}` },
+  ]);
+});
+
 test('a Claim enum that differs from the declared tokens is an error', async () => {
   const config = example();
   config.procedures['tests-fail'].claims.stuck = { stop: true };
@@ -925,20 +973,6 @@ test('a stopped Claim guarantees no evidence, so an optional input reading it is
   const { errors, warnings } = await check(config);
   assert.deepEqual(errors, []);
   assert.deepEqual(warnings.at(-1), { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs' });
-});
-
-test('a Check named after an Object property is analysed, never a throw', async () => {
-  const config = example();
-  config.procedures.gate = {
-    actions: [{ id: 'constructor', do: 'check', kind: 'command', command: 'test' }],
-    passed: [{ when: { 'check.constructor': 'passed' }, outcome: 'ok' }],
-  };
-  config.flows.default.ticket = {
-    entry: 'gate',
-    routes: { '*': { end: 'needs-human' } },
-    vertices: { gate: { procedure: 'gate' } },
-  };
-  assert.deepEqual((await check(config)).errors, []);
 });
 
 test('the map takes no evidence from stopped rows, even when each needs a different Check passed', async () => {

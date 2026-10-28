@@ -24,9 +24,10 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
   assert.deepEqual(gg.flows.default, {
     plan: null,
     ticket: {
-      entry: 'implementer',
+      entry: 'red',
       vertices: {
-        implementer: { use: 'implementer', procedure: 'tdd', then: 'reviewer' },
+        red: { use: 'implementer', procedure: 'tests-fail', then: 'green' },
+        green: { use: 'implementer', procedure: 'implement', then: 'reviewer' },
         reviewer: {
           use: 'reviewer', procedure: 'review',
           route: { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' } },
