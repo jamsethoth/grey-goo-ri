@@ -296,6 +296,14 @@ test('an Agent with no harness is one error at the Agent, which a Vertex\'s own 
   ]);
 });
 
+test('an empty Agent is one error at the Agent, not one per Vertex that uses it', async () => {
+  const config = example();
+  config.agents.senior = {};
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.senior', message: 'agent senior names no harness; set one in a user or repository Layer' },
+  ]);
+});
+
 test('an unused Agent naming an unregistered harness is an error', async () => {
   const config = example();
   config.agents.spare = { persona: 'implementer.md', harness: 'other' };
