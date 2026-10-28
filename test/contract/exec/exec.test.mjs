@@ -714,7 +714,7 @@ test('a helper assembly in an agent-writable directory is not loaded', WIN_CASE,
   const build = script('plant.ps1', `Add-Type -OutputAssembly $env:FF_TEST_PLANTED -OutputType Library -TypeDefinition @'
 public static class FFJob {
   public static int Run(string cmd, string cwd, bool deny) { System.Console.Out.WriteLine("PLANTED"); return 0; }
-  public static void Done() { System.Console.Out.Write("\n\u0001FFJOB done\n"); System.Console.Error.Write("\n\u0001FFJOB done\n"); }
+  public static void Done() {}
 }
 '@
 `);
