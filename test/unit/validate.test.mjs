@@ -277,8 +277,22 @@ test('an Agent with no harness or an unregistered one is an error', async () => 
   delete config.agents.reviewer.harness;
   config.agents.senior.harness = 'other';
   assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.reviewer', message: 'agent reviewer names no harness; set one in a user or repository Layer' },
     { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
-    { at: `${V}.reviewer`, message: 'agent reviewer names no harness; set one in a user or repository Layer' },
+  ]);
+});
+
+test('an Agent with no harness is one error at the Agent, which a Vertex\'s own harness does not excuse', async () => {
+  const config = example();
+  delete config.agents.reviewer.harness;
+  delete config.agents.senior.harness;
+  config.flows.default.ticket.vertices.reviewer.harness = 'fake';
+  delete config.flows.default.ticket.vertices.red.use;
+  config.flows.default.ticket.vertices.red.model = 'opus';
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.reviewer', message: 'agent reviewer names no harness; set one in a user or repository Layer' },
+    { at: 'agents.senior', message: 'agent senior names no harness; set one in a user or repository Layer' },
+    { at: `${V}.red`, message: 'the agent of Vertex red names no harness; set one in a user or repository Layer' },
   ]);
 });
 
@@ -286,10 +300,20 @@ test('an unused Agent naming an unregistered harness is an error', async () => {
   const config = example();
   config.agents.spare = { persona: 'implementer.md', harness: 'other' };
   config.agents.blank = 'spare.md';
+  config.agents.bare = { persona: 'implementer.md' };
   assert.deepEqual((await check(config)).errors, [
     { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
     { at: 'agents.blank', message: 'an Agent must be an object' },
+    { at: 'agents.bare', message: 'agent bare names no harness; set one in a user or repository Layer' },
   ]);
+});
+
+test('an Agent no Vertex uses is a warning', async () => {
+  const config = example();
+  config.agents.spare = { persona: 'implementer.md', harness: 'fake' };
+  const { errors, warnings } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(warnings.filter((w) => w.at.startsWith('agents.')), [{ at: 'agents.spare', message: 'agent spare is used by no Vertex' }]);
 });
 
 test('an Agent\'s error is reported once however many Vertices use it', async () => {
