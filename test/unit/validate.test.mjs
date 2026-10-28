@@ -277,10 +277,28 @@ test('an Agent with no harness or an unregistered one is an error', async () => 
   delete config.agents.reviewer.harness;
   config.agents.senior.harness = 'other';
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.senior-green`, message: 'agent senior names harness "other", which is not registered' },
+    { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
     { at: `${V}.reviewer`, message: 'agent reviewer names no harness; set one in a user or repository Layer' },
-    { at: `${V}.senior-red`, message: 'agent senior names harness "other", which is not registered' },
-    { at: `${V}.senior-dev`, message: 'agent senior names harness "other", which is not registered' },
+  ]);
+});
+
+test('an unused Agent naming an unregistered harness is an error', async () => {
+  const config = example();
+  config.agents.spare = { persona: 'implementer.md', harness: 'other' };
+  config.agents.blank = 'spare.md';
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
+    { at: 'agents.blank', message: 'an Agent must be an object' },
+  ]);
+});
+
+test('an Agent\'s error is reported once however many Vertices use it', async () => {
+  const config = example();
+  config.agents.senior.harness = 'other';
+  config.flows.default.ticket.vertices['senior-dev'].harness = 'missing';
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
+    { at: `${V}.senior-dev`, message: 'agent senior names harness "missing", which is not registered' },
   ]);
 });
 
@@ -490,7 +508,7 @@ for (const [what, mutate, errors] of [
   ['inputs that are a number', (c) => { c.flows.default.ticket.vertices.red.inputs = 12; },
     [{ at: `${V}.red.inputs`, message: 'inputs must be an object from name to { from, optional?, pick? }' }]],
   ['an Agent that is a string', (c) => { c.agents.reviewer = 'reviewer.md'; },
-    [{ at: `${V}.reviewer`, message: 'agent reviewer must be an object' }]],
+    [{ at: 'agents.reviewer', message: 'an Agent must be an object' }]],
   ['flows given as a list', (c) => { c.flows = []; },
     [{ at: 'flows', message: 'flows must be an object from name to Flow' }]],
   ['an Action kind given as a list', (c) => { c.procedures.publish.actions[2] = { id: 'ready', do: ['pr-ready'] }; },
@@ -502,7 +520,7 @@ for (const [what, mutate, errors] of [
   ['a Procedure name given as a list', (c) => { c.flows.default.ticket.vertices.publish.procedure = ['publish']; },
     [{ at: `${V}.publish`, message: 'procedure ["publish"] is not declared' }]],
   ['a harness given as a list', (c) => { c.agents.reviewer.harness = ['fake']; },
-    [{ at: `${V}.reviewer`, message: 'agent reviewer names harness ["fake"], which is not registered' }]],
+    [{ at: 'agents.reviewer', message: 'agent reviewer names harness ["fake"], which is not registered' }]],
 ]) {
   test(`malformed configuration is an error, never a throw: ${what}`, async () => {
     const config = example();
@@ -1222,4 +1240,17 @@ test('a loop of exhausted targets reached through a tail names only the loop, on
     at: 'flows.default.ticket',
     message: 'the exhausted targets of a, b form a loop: once their maxVisits are spent, no Vertex is ever entered',
   }]);
+});
+
+test('an Agent\'s error holds the graph checks of the Flows that use it, and only them', async () => {
+  const config = example();
+  config.agents.senior.harness = 'other';
+  config.agents.spare = { persona: 'implementer.md', harness: 'other' };
+  config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
+  config.flows.unrouted = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
+    { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
+    { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
+  ]);
 });
