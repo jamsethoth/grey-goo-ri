@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as exec from '../../../lib/exec.mjs';
 import * as render from '../../../lib/render.mjs';
 
@@ -255,6 +258,42 @@ test('runShell timeout leaves alone a pid listed with another start time, and na
   assert.ok(!killed.includes(pid), `killed ${JSON.stringify(killed)}, the taken-over pid ${pid} among them`);
   assert.ok(res.survivors.some((s) => s.pid === pid && /not verified gone/.test(s.error)), `grandchild ${pid} missing from ${JSON.stringify(res.survivors)}`);
   assert.match(res.output, /could not kill pid/);
+});
+
+// The chain's middle is listed, exits, and a later listing no longer has it; at the timeout the listing names a new
+// process under its pid. A descendant the watcher saw exit is not the command's any more, so nothing is reported.
+test('runShell timeout does not name a descendant the watcher saw exit, though a new process now holds its pid', POSIX_CASE, async (t) => {
+  const { pidFile, midFile, goFile, cmd } = orphanScripts('pruned');
+  t.after(() => { try { if (pidIn(pidFile)) process.kill(pidIn(pidFile)); } catch {} });
+  const listing = ['sh', ['-c', `ps -e -o pid=,ppid=,lstart= | awk -v mid="$(cat '${midFile}')" '{ print } END { print mid, 1, "Thu Jan  1 00:00:02 1970" }'`]];
+  let seen = new Map(), sawMiddle = false;
+  const ready = () => {
+    const mid = pidIn(midFile);
+    sawMiddle ||= mid > 0 && seen.has(mid);
+    if (!sawMiddle) return false;
+    writeFileSync(goFile, '');
+    return !alive(mid) && !seen.has(mid);
+  };
+  const { res, ready: wasReady } = await timeOutWhen(cmd, { timeoutMs: 3500, snapshotCommand: listing, onWatch: (s) => (seen = s) }, ready, t.signal);
+  const mid = pidIn(midFile);
+  assert.ok(wasReady, `the watcher never saw the middle ${mid} exit: ${res.output}`);
+  assert.equal(res.timedOut, true);
+  assert.deepEqual(res.cleanupErrors, []);
+  assert.ok(!res.survivors.some((s) => s.pid === mid), `middle ${mid}, seen to exit, named in ${JSON.stringify(res.survivors)}`);
+});
+
+// The watcher's ps never answers, and the command ends once that ps has started. runShell must let go of it, so the
+// process that called runShell can exit, and kill it rather than leave it running.
+test('runShell lets its caller exit when the command ends while the watcher is still listing', POSIX_CASE, async (t) => {
+  const psPid = join(tmp, 'stalled-ps.pid');
+  psStandIn(t, 'stalled-ps', `echo $$ > '${psPid}'\nexec sleep ${LIVES_MS / 1000}`);
+  const quit = script('stalled-quit.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(${JSON.stringify(psPid)})) clearInterval(wait); }, 50);`);
+  const caller = script('stalled-caller.mjs', `import * as exec from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, '../../../lib/exec.mjs')).href)}; const res = await exec.runShell(${JSON.stringify(`"${process.execPath}" "${quit}"`)}, { timeoutMs: ${LIVES_MS} }); process.exitCode = res.code;`);
+  const child = spawn(process.execPath, [caller], { stdio: ['ignore', 'ignore', 'inherit'] });
+  t.after(() => { child.kill(); try { if (pidIn(psPid)) process.kill(pidIn(psPid)); } catch {} });
+  const [code] = await once(child, 'exit'); // a caller kept running by the listing fails at the case timeout
+  assert.equal(code, 0);
+  await waitFor(() => !alive(pidIn(psPid)), t.signal); // a listing left running fails at the case timeout
 });
 
 // The watcher's ps always fails, so only the listing at the timeout can find the grandchild, whose middle never exits
