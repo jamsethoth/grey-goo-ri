@@ -13,6 +13,7 @@ import * as record from '../../../lib/record.mjs';
 const saver = fileURLToPath(new URL('../../support/record-saver.mjs', import.meta.url));
 const contender = fileURLToPath(new URL('../../support/lock-contender.mjs', import.meta.url));
 const opener = fileURLToPath(new URL('../../support/db-opener.mjs', import.meta.url));
+const holderScript = fileURLToPath(new URL('../../support/write-lock-holder.mjs', import.meta.url));
 
 // A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
 async function tempCommonDir(t) {
@@ -105,6 +106,25 @@ test('two processes save different records concurrently without loss', async (t)
     [1, { busy: false, generation: 200 }],
     [2, { busy: false, generation: 200 }],
   ]);
+});
+
+// SQLite's busy handler is not fair, so on a loaded Windows runner another process's burst of writes held a save off
+// past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136, ADR 0015). The save
+// runs in this process, so the time it blocks is the time it waited for the other process's lock.
+test('a save waits out another process that holds the write lock for longer than 5 s', CASE, async (t) => {
+  const commonDir = await tempCommonDir(t);
+  record.openDb(commonDir);
+  const holder = spawn(process.execPath, [holderScript, commonDir, '8000'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  t.after(() => { if (holder.exitCode === null) holder.kill(); });
+  await new Promise((resolve) => holder.stdout.once('data', resolve));
+  const r = record.createExecution({
+    commonDir, ticket: 1, epic: 1, flow: { name: 'default', entry: 'implement' }, configHash: 'abc123',
+    run: 'run-1', worktree: `${commonDir}/wt-1`, branch: 'ticket/1', base: 'main',
+  });
+  const started = Date.now();
+  await record.save(r);
+  assert.ok(Date.now() - started > 5000, `the save did not wait past 5 s: ${Date.now() - started} ms`);
+  assert.deepEqual((await record.loadAll(commonDir, 'ticket')).map((saved) => saved.ticket), [1]);
 });
 
 const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
