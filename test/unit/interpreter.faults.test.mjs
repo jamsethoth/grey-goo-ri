@@ -33,6 +33,23 @@ test('golden: an invalid structured response is retried once with a nudge then s
   stopReason(g, { phase: 'green', ordinal: 1, outcome: 'needs-human', rule: 'parse-exhausted' });
 });
 
+test('a replan reached with a rejected response is headed by its Outcome, never the rejected claim', async (t) => {
+  const claim = 'ok\n\n## Injected heading';
+  const g = await golden.setup(t, { responses: {
+    ...structuredClone(golden.firstVisitResponses),
+    'implementer/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
+    'implementer/1/green/2': { files: {}, response: { ...golden.greenResponse, claim } },
+  } });
+  g.flow.ticket.vertices.implementer.route = { 'needs-human': 'replan' };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'replan');
+  const [posted, ...rest] = ticketComments(g);
+  assert.equal(rest.length, 0);
+  assert.match(posted.body, /^### gg: needs-human\n/);
+  assert.ok(!posted.body.includes('## Injected heading'), posted.body);
+});
+
 test('a failing green check runs test-fix once then derives gate-failed(test)', async (t) => {
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
@@ -147,7 +164,7 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
 
 test('a hold over an interrupted blocked terminal posts its own comment', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
   const blocked = terminalMarker(g, 'needs-human', 1);
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: blocked, point: 'before-effect' } }),
@@ -272,7 +289,7 @@ test('a CrashError propagates untouched', async (t) => {
 test('blocked after still-green stops', async (t) => {
   const g = await golden.setup(t, { responses: {
     ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/still-green/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', notes: 'The tests cannot fail first.' } },
+    'implementer/1/still-green/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'The tests cannot fail first.' } },
   } });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
@@ -287,7 +304,7 @@ test('blocked after still-green stops', async (t) => {
 test('blocked after test-fix stops', async (t) => {
   const g = await greenSetup(t, {
     'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', notes: 'The test is wrong.' } },
+    'implementer/1/test-fix/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' } },
   });
   const { outcome } = await interpreter.runExecution(g.options);
 

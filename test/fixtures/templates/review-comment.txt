@@ -1,0 +1,39 @@
+### gg review: **changes**
+_fake null (null), persona reviewer@def456_
+
+```
+Two bugs.
+```
+
+- Definition of done met: yes
+- TDD evidence OK: no
+
+**major**
+```
+lib/a.mjs
+```
+````
+off by one
+```
+## Injected
+````
+Fix:
+```
+use <=
+```
+
+**minor**
+```
+lib/b.mjs
+```
+```
+naming
+```
+Fix:
+```
+rename x
+```
+
+VERDICT: changes
+
+<!-- gg-action gg:e1:implement:1:green:3:r1:1 -->

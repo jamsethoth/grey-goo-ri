@@ -1,0 +1,40 @@
+Review the change on branch ticket/7-add-widgets (against origin/main) for GitHub issue #7: Add widgets
+Read-only: do not modify files.
+
+## Ticket (includes the definition of done)
+## Definition of done
+- [ ] widgets
+
+## Repo commands
+- test: `npm test`
+- lint: `npm run lint`
+
+## Diff
+```diff
+diff --git a/lib/w.mjs b/lib/w.mjs
++export const w = 1;
+```
+
+## Test files changed since the red commit
+- test/widgets.test.mjs
+- test/total.test.mjs
+
+## Implementer's report
+{
+  "claim": "ok",
+  "summary": "Adds widgets.",
+  "red": {
+    "command": "npm test",
+    "output": "not ok 1 - widgets render"
+  },
+  "green": {
+    "command": "npm test",
+    "output": "ok 1 - widgets render"
+  }
+}
+
+Check correctness, code quality and simplicity, and definition-of-done coverage. The orchestrator itself verified
+that the "test:" commit's tests failed before implementation and pass now (outputs are in the report); check that
+those tests actually exercise the ticket's behaviour and were not weakened afterwards.
+Return claim ok only if there are no blocker or major findings, changes otherwise, or misscoped with a diagnosis
+when the ticket itself cannot be met as written.

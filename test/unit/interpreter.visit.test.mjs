@@ -138,7 +138,7 @@ test('done counts the files under the pinned testPaths as tests in its diff stat
 
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'The ticket contradicts itself.' };
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
   g.gh.labels.add('gg:state:in-progress');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -165,7 +165,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 2 });
   assert.equal(reason.outcome, 'blocked');
   assert.equal(reason.rule, 'blocked');
-  assert.equal(reason.text, 'The agent made a blocked Claim at green; its notes in the blocked comment say why.');
+  assert.equal(reason.text, 'The agent made a blocked Claim at green; its diagnosis in the blocked comment says why.');
   assert.ok(!reason.text.includes('contradicts'), 'unfenced agent text stays out of the Terminal Reason');
   assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
 });

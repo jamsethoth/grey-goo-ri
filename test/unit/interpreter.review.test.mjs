@@ -82,7 +82,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
   const before = g.harness.calls.length;
   const result = await interpreter.runExecution({ ...g.options, record: saved });
   assert.equal(result.outcome, 'done');
-  assert.deepEqual(g.harness.calls.slice(before).map((c) => (c.brief.startsWith('FIX ROUND') ? 'fix' : c.access)), ['fix', 'read-only'],
+  assert.deepEqual(g.harness.calls.slice(before).map((c) => (c.brief.startsWith('FIX VISIT') ? 'fix' : c.access)), ['fix', 'read-only'],
     'the restart runs the pending fix, then review, not the entry');
   assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
   assert.deepEqual(saved.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
@@ -118,7 +118,7 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
   assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 2, 'two changes verdicts traverse the edge twice');
   assert.equal(g.rec.visits['implementer-fix'], 2);
   assert.equal(g.rec.visits.reviewer, 3);
-  assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX ROUND')).length, 2, 'no third fix call');
+  assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX VISIT')).length, 2, 'no third fix call');
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix' && e.visit === 3), [], 'no third fix Visit');
   assert.deepEqual(g.actions.filter((e) => e.exhausted === true).map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}`),
     ['reviewer/3/review/1'], 'only the deciding Action Event of the third review records exhausted');
@@ -186,4 +186,21 @@ test('the review lists the test files changed since red under the testPaths pinn
   const [, , reviewCall] = g.harness.calls;
   assert.equal(reviewCall.access, 'read-only');
   assert.match(reviewCall.brief, /## Test files changed since the red commit\n- lib\/add\.mjs\n- test\/add\.test\.mjs\n/);
+});
+
+test('the branch diff and changed test files are read for the review Brief and not again for its nudge', async (t) => {
+  const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(null), 'reviewer/1/review/2': reviewed(review('ok')) });
+  // Each read is tagged with how many harness calls came before it: 2 is the Green Check and the review Brief, 3 would
+  // be the nudge.
+  const reads = [];
+  const { branchDiff } = g.options.git;
+  g.options.git = { ...g.options.git, branchDiff: (...args) => { reads.push(`diff ${g.harness.calls.length}`); return branchDiff(...args); } };
+  const { testImmutability } = g.options;
+  g.options.testImmutability = (...args) => { reads.push(`changed tests ${g.harness.calls.length}`); return testImmutability(...args); };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'done');
+  assert.equal(g.harness.calls.length, 4, 'red, green, the review and its nudge');
+  assert.deepEqual(reads, ['changed tests 2', 'diff 2', 'changed tests 2'],
+    'the Green Check reads changed tests; the review Brief reads the diff and changed tests; the nudge reads nothing');
 });

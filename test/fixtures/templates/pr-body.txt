@@ -1,0 +1,43 @@
+Closes #7
+
+## Summary
+Adds the cart total.
+
+## Definition of done
+- [x] Total sums items — test/cart.test.mjs
+- [ ] Docs
+
+## TDD evidence
+**Red** (`npm test`)
+```
+not ok 1 - widgets render
+```
+**Green** (`npm test`)
+```
+ok 1 - widgets render
+```
+
+## QA instructions
+**Setup:** npm ci
+
+1. Run gg
+   - Expected: Total shown
+2. Empty the cart
+   - Expected: Total is 0
+
+**Edge cases to try**
+- empty cart
+
+**Covered by automated tests**
+- total
+
+**Needs human eyes**
+_none_
+
+## Provenance
+| Vertex | Harness | Model | Effort | Persona | Calls | Tokens in (cached) / out |
+|---|---|---|---|---|---|---|
+| implement | fake | model-x | high | implementer@abc123 | 2 | 100 (40) / 20 |
+| review | fake | null | null | reviewer@def456 | 1 | 50 (0) / 10 |
+
+<!-- gg-action gg:e1:implement:1:green:3:r1:1 -->

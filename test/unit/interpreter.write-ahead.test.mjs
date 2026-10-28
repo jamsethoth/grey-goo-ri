@@ -108,7 +108,7 @@ test('findings-hash appends once per visit across a crash', async (t) => {
 
 test('the terminal stop survives a crash before the first terminal action', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', notes: 'NOTES-7f3: the ticket contradicts itself.' };
+  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'NOTES-7f3: the ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
   // Every save carrying a Terminal stop fails, as if gg died once the Terminal cursor was saved.
   const restore = golden.failSaves(t, (saved, next) => next.terminalStop !== undefined);

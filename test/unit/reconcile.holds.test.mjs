@@ -155,7 +155,7 @@ test('bounds survive a restart', async (t) => {
   const before = g.harness.calls.length;
   const result = await interpreter.runExecution({ ...g.options, record: loaded });
   assert.equal(result.outcome, 'needs-human', 'the changes Edge routes to its exhausted target');
-  assert.ok(!g.harness.calls.slice(before).some((c) => c.brief.startsWith('FIX ROUND')), 'no fix call after the restart');
+  assert.ok(!g.harness.calls.slice(before).some((c) => c.brief.startsWith('FIX VISIT')), 'no fix call after the restart');
   const final = await loadTicket(g);
   assert.equal(final.traversals[key], 1);
   assert.deepEqual(final.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });

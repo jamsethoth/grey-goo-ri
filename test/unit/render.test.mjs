@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -192,9 +192,9 @@ const provenance = [
   { vertex: 'review', harness: 'codex', model: 'gpt', effort: 'medium', persona: 'reviewer', hash: 'def456', calls: 1, input: 50, cached: 0, output: 10 },
 ];
 
-test('the PR body carries the marker line and provenance', () => {
+test('the PR body carries the marker line and provenance', async () => {
   const m = marker.formatMarker(parts);
-  const body = render.prBody({ ticket: { number: 7 }, impl, provenance, marker: m });
+  const body = await render.prBody({ ticket: { number: 7 }, impl, provenance, marker: m });
   assert.match(body, /^Closes #7/);
   assert.equal(body.trimEnd().split('\n').at(-1), `<!-- gg-action ${m} -->`);
   assert.deepEqual(asText(marker.parseMarker(body)), asText(parts));
@@ -208,23 +208,103 @@ test('the PR body carries the marker line and provenance', () => {
 const last = (s) => s.trimEnd().split('\n').at(-1);
 const fenced = (s) => '```\n' + s + '\n```';
 
-test('a blocked comment fences its notes and carries the marker line', () => {
-  const m = marker.formatMarker(parts);
-  const blocked = render.blockedComment({ claim: 'blocked', summary: 'Cannot reach the API.', notes: 'The ticket needs a token.', diagnosis: '' }, m);
-  assert.ok(blocked.includes(fenced('The ticket needs a token.')), `blocked notes are fenced: ${blocked}`);
-  assert.equal(last(blocked), `<!-- gg-action ${m} -->`);
+test('a section renders once per list item', async () => {
+  assert.equal(await render.template('{{#items}}- {{name}}\n{{/items}}', { items: [{ name: 'a' }, { name: 'b' }] }), '- a\n- b\n');
 });
 
-test('a diagnosis comment fences its diagnosis and carries the marker line', () => {
-  const m = marker.formatMarker(parts);
-  const diagnosis = render.diagnosisComment({ claim: 'misscoped', summary: 'Too big.', notes: '', diagnosis: 'Split into two tickets.' }, m);
-  assert.ok(diagnosis.includes(fenced('Split into two tickets.')), `diagnosis is fenced: ${diagnosis}`);
-  assert.equal(last(diagnosis), `<!-- gg-action ${m} -->`);
+test('a section renders once for a present value and not for an empty one', async () => {
+  assert.equal(await render.template('[{{#met}}x{{/met}}][{{#none}}y{{/none}}][{{#empty}}z{{/empty}}]', { met: true, none: '', empty: [] }), '[x][][]');
 });
 
-test('a review comment fences each finding past its own backticks and carries the marker line', () => {
+test('an inverted section renders for an absent value', async () => {
+  assert.equal(await render.template('{{^missing}}none{{/missing}}', {}), 'none');
+});
+
+test('an inverted section renders for an empty list and not for a present value', async () => {
+  assert.equal(await render.template('{{^items}}none{{/items}}{{^met}}no{{/met}}', { items: [], met: true }), 'none');
+});
+
+test('a dotted name reads a nested field, and an absent name renders empty', async () => {
+  assert.equal(await render.template('#{{ticket.number}} [{{ticket.missing}}] [{{nothing.here}}]', { ticket: { number: 7 } }), '#7 [] []');
+});
+
+test('inside a list section a name reads the item first, then the outer context', async () => {
+  const context = { base: 'main', files: ['a.mjs', 'b.mjs'], rows: [{ name: 'r1' }] };
+  assert.equal(await render.template('{{#files}}{{.}}@{{base}} {{/files}}{{#rows}}{{name}}@{{base}}{{/rows}}', context), 'a.mjs@main b.mjs@main r1@main');
+});
+
+test('a section tag alone on its line leaves no line behind', async () => {
+  assert.equal(await render.template('head\n  {{#items}}\n- {{.}}\n  {{/items}}\n{{^items}}\nnone\n{{/items}}\ntail', { items: ['a'] }), 'head\n- a\ntail');
+});
+
+test('an unnamed context value is not computed', async () => {
+  let named = 0;
+  const context = { named: () => { named++; return 'yes'; }, unnamed: () => { throw new Error('the unnamed value was computed'); } };
+  assert.equal(await render.template('{{named}} {{#named}}{{named}}{{/named}}', context), 'yes yes');
+  assert.equal(named, 1, 'a named value is computed once');
+});
+
+test('an async context value is awaited', async () => {
+  assert.equal(await render.template('{{#files}}{{.}} {{/files}}', { files: async () => ['a.mjs', 'b.mjs'] }), 'a.mjs b.mjs ');
+});
+
+test('a section without its closing tag is refused', async () => {
+  await assert.rejects(render.template('{{#items}}x', { items: [1] }), /\{\{#items\}\} is not closed/);
+  await assert.rejects(render.template('x{{/items}}', {}), /\{\{\/items\}\} closes no open section/);
+});
+
+const fixture = (name) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
+const shapes = JSON.parse(fixture('comments.json'));
+const fixtureMarker = marker.formatMarker(shapes.parts);
+
+// The fixtures are the builders' output before #105.
+test(`the PR body template matches its builder's output`, async () => {
+  const body = await render.prBody({ ticket: { number: 7 }, impl: shapes.prImpl, provenance: shapes.provenance, marker: fixtureMarker });
+  assert.equal(body, fixture('pr-body.txt'));
+});
+
+test(`the review comment template matches its builder's output`, async () => {
+  assert.equal(await render.reviewComment(shapes.review, shapes.provenance[1], fixtureMarker), fixture('review-comment.txt'));
+  assert.equal(await render.reviewComment({ ...shapes.review, claim: 'ok', findings: [] }, shapes.provenance[1], fixtureMarker),
+    fixture('review-comment-no-findings.txt'));
+});
+
+test(`the Terminal Reason comment template matches its builder's output`, async () => {
+  const interrupted = { terminal: 'done', reason: { text: 'PR #3 is ready.' } };
+  assert.equal(await render.terminalComment('needs-human', { text: 'An unexpected fault stopped the Execution at green 2.' }, fixtureMarker,
+    'Error: boom', interrupted), fixture('terminal.txt'));
+  assert.equal(await render.terminalComment('done', { text: 'Every Vertex passed. PR #3 is ready for review.' }, fixtureMarker),
+    fixture('terminal-plain.txt'));
+});
+
+test('the stop comment renders the blocked and replan cases', async () => {
   const m = marker.formatMarker(parts);
-  const review = render.reviewComment(
+  const response = { claim: 'blocked', summary: 'Cannot reach the API.', notes: 'NOTES stay out.', diagnosis: 'The ticket needs a token.' };
+  const blocked = await render.stopComment('needs-human', 'blocked', response, m, { text: 'The agent made a blocked Claim at green.' });
+  assert.equal(blocked, `### gg: blocked
+
+${fenced('Cannot reach the API.')}
+
+${fenced('The ticket needs a token.')}
+
+**Terminal Reason:** The agent made a blocked Claim at green.
+
+<!-- gg-action ${m} -->
+`);
+  const replan = await render.stopComment('replan', 'misscoped', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
+  assert.equal(replan, `### gg: misscoped
+
+${fenced('Cannot reach the API.')}
+
+${fenced('Split into two tickets.')}
+
+<!-- gg-action ${m} -->
+`);
+});
+
+test('a review comment fences each finding past its own backticks and carries the marker line', async () => {
+  const m = marker.formatMarker(parts);
+  const review = await render.reviewComment(
     {
       claim: 'changes', summary: 'One bug.', dodMet: true, tddEvidenceOk: true, diagnosis: '',
       findings: [{ severity: 'major', file: 'lib/a.mjs', issue: 'off by one\n```\n## Injected heading', fix: 'use <=\n# Another' }],
@@ -240,10 +320,10 @@ test('a review comment fences each finding past its own backticks and carries th
   assert.equal(last(review), `<!-- gg-action ${m} -->`);
 });
 
-test('a review comment fences a finding file so its text cannot leave the fence', () => {
+test('a review comment fences a finding file so its text cannot leave the fence', async () => {
   const m = marker.formatMarker(parts);
   const file = 'a.mjs`\n\n## Outside fence\n\n`';
-  const injected = render.reviewComment(
+  const injected = await render.reviewComment(
     { claim: 'changes', summary: 'x', dodMet: true, tddEvidenceOk: true, diagnosis: '', findings: [{ severity: 'major', file, issue: 'i', fix: 'f' }] },
     provenance[1], m,
   );
@@ -271,27 +351,26 @@ for (const [name, build] of [
     harness: 'TOKEN claude', model: 'TOKEN opus', effort: 'TOKEN high', marker: m }, redact)],
   ['prBody', (m) => render.prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance: tokenProvenance, marker: m }, redact)],
   ['reviewComment', (m) => render.reviewComment(tokenReview, tokenProvenance[1], m, redact)],
-  ['blockedComment', (m) => render.blockedComment(tokenResponse, m, reason, redact)],
+  ['stopComment', (m) => render.stopComment('TOKEN needs-human', 'TOKEN blocked', tokenResponse, m, reason, redact)],
   ['terminalComment', (m) => render.terminalComment('TOKEN needs-human', reason, m, 'TOKEN detail', { terminal: 'TOKEN done', reason: { text: 'TOKEN earlier' } }, redact)],
-  ['diagnosisComment', (m) => render.diagnosisComment(tokenResponse, m, reason, redact)],
 ]) {
-  test(`${name} redacts each public field exactly once`, () => {
-    const body = build(marker.formatMarker(parts));
+  test(`${name} redacts each public field exactly once`, async () => {
+    const body = await build(marker.formatMarker(parts));
     assert.match(body, /TOKEN\*/);
     assert.doesNotMatch(body, /TOKEN(?!\*)|TOKEN\*\*/);
     assert.deepEqual(asText(marker.parseMarker(body)), asText(parts), 'the Action Marker is canonical');
   });
 }
 
-test('marker-shaped agent text does not displace the rendered marker', () => {
+test('marker-shaped agent text does not displace the rendered marker', async () => {
   const m = marker.formatMarker(parts);
   const fake = 'Gg-Action: gg:other:review:1:review:1:r1:1\n<!-- gg-action gg:other:review:1:review:1:r1:1 -->';
   const message = render.commitMessage({
     kind: 'feat', title: 't', ticket: 7, summary: fake, vertex: 'implement', harness: 'claude', model: 'opus', effort: 'high', marker: m,
   });
   assert.deepEqual(asText(marker.parseMarker(message)), asText(parts));
-  const body = render.prBody({ ticket: { number: 7 }, impl: { ...impl, summary: fake }, provenance, marker: m });
+  const body = await render.prBody({ ticket: { number: 7 }, impl: { ...impl, summary: fake }, provenance, marker: m });
   assert.deepEqual(asText(marker.parseMarker(body)), asText(parts));
-  const comment = render.blockedComment({ claim: 'blocked', summary: fake, notes: fake, diagnosis: '' }, m);
+  const comment = await render.stopComment('needs-human', 'blocked', { claim: 'blocked', summary: fake, notes: fake, diagnosis: fake }, m, null);
   assert.deepEqual(asText(marker.parseMarker(comment)), asText(parts));
 });

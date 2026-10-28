@@ -12,21 +12,41 @@ const base = { ticket, base: 'origin/main', commands, worktree, history: [] };
 const redOutput = 'not ok 1 - widgets render\n  AssertionError: expected widget';
 const testFiles = ['test/widgets.test.mjs', 'test/support/widget-fixture.mjs'];
 const IMMUTABLE = /committed tests must not be changed/i;
+const fixture = (name) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
 
-for (const [name, limit] of [['greenBrief', 4000], ['testFixBrief', 6000], ['stillGreenBrief', 3000]]) {
-  test(`${name} output excerpts keep complete-line tails`, () => {
+// The fixtures are the builders' output before #105, with its named changes: FIX VISIT, and diagnosis for a blocked Claim.
+for (const [name, { template, opts }] of Object.entries(JSON.parse(fixture('briefs.json')))) {
+  test(`each Brief template matches its builder's output: ${name}`, async () => {
+    assert.equal(await briefs.brief(template, opts), fixture(`${name}.txt`));
+  });
+}
+
+// The stop comment shows diagnosis, not notes (W6), so a Brief that offers a blocked Claim says where its reason goes.
+for (const name of ['green.md', 'test-fix.md', 'still-green.md']) {
+  test(`the ${name} Brief tells a blocked agent to explain in diagnosis`, async () => {
+    assert.match(await briefs.brief(name, { ...base, testFiles, redOutput, output: 'not ok 1' }), /claim blocked and say why in "diagnosis"/);
+  });
+}
+
+test('a Brief that does not name the diff never computes it', async () => {
+  const diff = () => { throw new Error('the diff was computed'); };
+  assert.match(await briefs.brief('red.md', { ...base, diff, changedTestFiles: diff }), /^RED PHASE/);
+});
+
+for (const [name, limit] of [['green.md', 4000], ['test-fix.md', 6000], ['still-green.md', 3000]]) {
+  test(`${name} output excerpts keep complete-line tails`, async () => {
     const tail = 'x'.repeat(limit - 20) + '\nlast line';
     const output = 'old diagnostic '.repeat(100) + '\n' + tail;
-    const brief = briefs[name]({ ...base, testFiles, redOutput: output, output });
+    const brief = await briefs.brief(name, { ...base, testFiles, redOutput: output, output });
     assert.ok(brief.includes('```\n' + tail + '\n```'), brief);
     assert.doesNotMatch(brief, /old diagnostic/);
   });
 }
 
-for (const name of ['testFixBrief', 'stillGreenBrief']) {
-  test(`agent-facing ${name} preserves distinguishable path-case failures`, () => {
+for (const name of ['test-fix.md', 'still-green.md']) {
+  test(`agent-facing ${name} preserves distinguishable path-case failures`, async () => {
     const output = `expected '${homedir().toLowerCase()}\\a' to equal '${homedir().toUpperCase()}\\a'`;
-    const brief = briefs[name]({ ...base, output });
+    const brief = await briefs.brief(name, { ...base, output });
     assert.ok(brief.includes(output), brief);
     assert.ok(!brief.includes('[local]'), brief);
   });
@@ -35,29 +55,19 @@ for (const name of ['testFixBrief', 'stillGreenBrief']) {
 const evidencePath = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.mjs`;
 const storedRed = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n` });
 
-test('stored Check evidence reaches the green Brief unredacted', () => {
-  const green = briefs.greenBrief({ ...base, testFiles, redOutput: storedRed.output });
+test('stored Check evidence reaches the green Brief unredacted', async () => {
+  const green = await briefs.brief('green.md', { ...base, testFiles, redOutput: storedRed.output });
   assert.ok(green.includes(`${evidencePath}:3:4`), green);
   assert.ok(!green.includes('[local]'), green);
 });
 
-test('stored Check evidence reaches the review Brief unredacted', () => {
-  const review = briefs.reviewBrief({ ...base, impl: { claim: 'ok', red: storedRed, green: storedRed }, diff: '', changedTestFiles: [] });
+test('stored Check evidence reaches the review Brief unredacted', async () => {
+  const review = await briefs.brief('review.md', { ...base, impl: { claim: 'ok', red: storedRed, green: storedRed }, diff: '', changedTestFiles: [] });
   assert.ok(review.includes(`${evidencePath}:3:4`), review);
   assert.ok(!review.includes('[local]'), review);
 });
 
 const validRed = { claim: 'ok', summary: 's', tests: ['widgets render'], notes: '', diagnosis: '' };
-
-test('styleBlock: caveman only for agent-facing prose, human fields stay natural', () => {
-  assert.doesNotMatch(briefs.styleBlock({ internal: 'none' }, 'RULES'), /RULES|caveman-style/);
-  assert.doesNotMatch(briefs.styleBlock({ internal: 'caveman-ultra' }, null), /caveman-style/);
-  const s = briefs.styleBlock({ internal: 'caveman-ultra' }, 'RULES');
-  assert.match(s, /\*\*ultra\*\*/);
-  assert.match(s, /RULES/);
-  assert.match(s, /never caveman/);
-});
-
 for (const name of ['RED_SCHEMA', 'IMPLEMENT_SCHEMA', 'REVIEW_SCHEMA']) {
   test(`${name} is strict`, () => {
     assert.equal(typeof briefs[name], 'object');
@@ -325,8 +335,8 @@ test('validateResponse and assertStrict catch an empty-named property', () => {
   assert.throws(() => briefs.assertStrict({ type: 'object', properties: { '': { type: 'string' } }, required: [], additionalProperties: false }), /required lacks property/);
 });
 
-test('the green brief is a full brief for a fresh session', () => {
-  const g = briefs.greenBrief({ ...base, testFiles, redOutput });
+test('the green brief is a full brief for a fresh session', async () => {
+  const g = await briefs.brief('green.md', { ...base, testFiles, redOutput });
   assert.match(g, /#7/);
   assert.ok(g.includes(ticket.body), 'ticket body');
   assert.ok(g.includes(ticket.branch), 'branch');
@@ -340,15 +350,15 @@ test('the green brief is a full brief for a fresh session', () => {
   assert.doesNotMatch(g, /fix it/i);
 });
 
-test('the green brief forbids changing committed tests', () => {
-  const g = briefs.greenBrief({ ...base, testFiles, redOutput });
+test('the green brief forbids changing committed tests', async () => {
+  const g = await briefs.brief('green.md', { ...base, testFiles, redOutput });
   assert.match(g, IMMUTABLE);
   assert.match(g, /notes/);
   assert.match(g, /blocked/);
 });
 
-test('the test-fix brief forbids changing committed tests', () => {
-  const t = briefs.testFixBrief({ ...base, output: 'not ok 3 - widgets render' });
+test('the test-fix brief forbids changing committed tests', async () => {
+  const t = await briefs.brief('test-fix.md', { ...base, output: 'not ok 3 - widgets render' });
   assert.match(t, IMMUTABLE);
   assert.match(t, /notes/);
   assert.match(t, /blocked/);
@@ -364,15 +374,15 @@ for (const name of ['RED_SCHEMA', 'REVIEW_SCHEMA', 'IMPLEMENT_SCHEMA']) {
 }
 
 for (const [name, build] of [
-  ['red', () => briefs.redBrief(base)],
-  ['green', () => briefs.greenBrief({ ...base, testFiles, redOutput })],
-  ['fix', () => briefs.fixBrief(base)],
-  ['review', () => briefs.reviewBrief({ ...base, impl: { claim: 'ok' }, diff: 'diff --git a/x b/x', changedTestFiles: [] })],
-  ['test-fix', () => briefs.testFixBrief({ ...base, output: 'not ok 3 - widgets render' })],
-  ['still-green', () => briefs.stillGreenBrief({ ...base, output: 'ok 1 - widgets render' })],
+  ['red', () => briefs.brief('red.md', base)],
+  ['green', () => briefs.brief('green.md', { ...base, testFiles, redOutput })],
+  ['fix', () => briefs.brief('fix.md', base)],
+  ['review', () => briefs.brief('review.md', { ...base, impl: { claim: 'ok' }, diff: 'diff --git a/x b/x', changedTestFiles: [] })],
+  ['test-fix', () => briefs.brief('test-fix.md', { ...base, output: 'not ok 3 - widgets render' })],
+  ['still-green', () => briefs.brief('still-green.md', { ...base, output: 'ok 1 - widgets render' })],
 ]) {
-  test(`the ${name} brief lists declared commands and never the worktree path`, () => {
-    const text = build();
+  test(`the ${name} brief lists declared commands and never the worktree path`, async () => {
+    const text = await build();
     assert.ok(text.includes('npm test'), 'lists npm test');
     assert.ok(text.includes('npm run lint'), 'lists npm run lint');
     assert.ok(text.includes(ticket.branch), 'names the branch');
@@ -381,16 +391,16 @@ for (const [name, build] of [
   });
 }
 
-test('a red brief with no declared commands does not point at AGENTS.md', () => {
-  assert.doesNotMatch(briefs.redBrief({ ...base, commands: {} }), /AGENTS\.md/);
+test('a red brief with no declared commands does not point at AGENTS.md', async () => {
+  assert.doesNotMatch(await briefs.brief('red.md', { ...base, commands: {} }), /AGENTS\.md/);
 });
 
-test('the review brief lists test files changed since the red commit', () => {
+test('the review brief lists test files changed since the red commit', async () => {
   const diff = 'diff --git a/lib/widgets.mjs b/lib/widgets.mjs\n+export const widget = 1;';
-  const r = briefs.reviewBrief({ ...base, impl: { claim: 'ok' }, diff, changedTestFiles: ['test/widgets.test.mjs'] });
+  const r = await briefs.brief('review.md', { ...base, impl: { claim: 'ok' }, diff, changedTestFiles: ['test/widgets.test.mjs'] });
   assert.ok(r.includes(diff), 'diff text');
   assert.ok(r.includes('test/widgets.test.mjs'), 'changed test file');
   assert.match(r, /red commit/i);
-  const none = briefs.reviewBrief({ ...base, impl: { claim: 'ok' }, diff, changedTestFiles: [] });
+  const none = await briefs.brief('review.md', { ...base, impl: { claim: 'ok' }, diff, changedTestFiles: [] });
   assert.ok(none.includes(diff), none);
 });
