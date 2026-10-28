@@ -1158,3 +1158,34 @@ test('an error outside every Flow holds every Flow\'s graph checks', async () =>
     { at: 'procedures.base-check.actions[0]', message: 'Check test names command "lint", which the repository Layer does not declare' },
   ]);
 });
+
+test('a Vertex whose exhausted target is itself is a loop', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'x',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: { x: { procedure: 'base-check', maxVisits: 1, exhausted: 'x', route: { ok: { end: 'needs-human' } } } },
+  };
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'flows.default.ticket',
+    message: 'the exhausted targets of x form a loop: once their maxVisits are spent, no Vertex is ever entered',
+  }]);
+});
+
+test('a loop of exhausted targets reached through a tail names only the loop, once', async () => {
+  const config = example();
+  config.flows.default.ticket = {
+    entry: 'start',
+    routes: { '*': { end: 'needs-human' } },
+    vertices: {
+      start: { procedure: 'base-check', route: { ok: 't' } },
+      t: { procedure: 'base-check', maxVisits: 1, exhausted: 'a', route: { ok: 'a' } },
+      a: { procedure: 'base-check', maxVisits: 1, exhausted: 'b', route: { ok: 'b' } },
+      b: { procedure: 'base-check', maxVisits: 1, exhausted: 'a', route: { ok: 'a' } },
+    },
+  };
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'flows.default.ticket',
+    message: 'the exhausted targets of a, b form a loop: once their maxVisits are spent, no Vertex is ever entered',
+  }]);
+});
