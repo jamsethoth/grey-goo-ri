@@ -1132,3 +1132,29 @@ test('an exhausted target without a bound is an error', async () => {
     { at: `${V}.green.route.ok`, message: 'an edge names exhausted only with max' },
   ]);
 });
+
+test('a Flow\'s graph checks wait only for its own errors and those outside every Flow, in either order', async () => {
+  const unrouted = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
+  const misspelt = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check', rout: {}, route: { ok: { end: 'needs-human' } } } } } };
+  const first = example();
+  first.flows = { unrouted, misspelt };
+  assert.deepEqual((await check(first)).errors, [
+    { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
+    { at: 'flows.misspelt.ticket.vertices.gate', message: 'unknown key "rout"' },
+  ]);
+  const second = example();
+  second.flows = { misspelt, unrouted };
+  assert.deepEqual((await check(second)).errors, [
+    { at: 'flows.misspelt.ticket.vertices.gate', message: 'unknown key "rout"' },
+    { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
+  ]);
+});
+
+test('an error outside every Flow holds every Flow\'s graph checks', async () => {
+  const config = example();
+  config.procedures['base-check'].actions[0].command = 'lint';
+  config.flows.light = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'procedures.base-check.actions[0]', message: 'Check test names command "lint", which the repository Layer does not declare' },
+  ]);
+});
