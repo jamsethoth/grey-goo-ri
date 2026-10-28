@@ -103,7 +103,8 @@ test('a vertex missing from the flow holds the ticket', async (t) => {
 
 const GREEN_FAIL_OUTPUT = 'not ok 1 - adds two numbers\n# fail 1';
 
-test('a missing transcript starts the phase fresh', async (t) => {
+// A green whose first pass fails the Green Check, so its test-fix recovery pass runs and passes.
+async function testFixSetup(t) {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
     'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = () => 0;\n' }, response: golden.greenResponse },
     'green/1/test-fix/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: golden.greenResponse } } });
@@ -115,6 +116,24 @@ test('a missing transcript starts the phase fresh', async (t) => {
         ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
     },
   };
+  return g;
+}
+const greenActions = (g) => g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => `${e.action}/${e.recovery}`);
+
+test('a resume after the commit of a recovery pass continues at its push', async (t) => {
+  const g = await testFixSetup(t);
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'commit', 1), point: 'after-completion' } }), /crash/);
+  const loaded = await loadTicket(g);
+  assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['commit', 1], 'the commit inherits the recovery pass number');
+
+  const result = await interpreter.runExecution({ ...g.options, record: loaded });
+  assert.equal(result.outcome, 'done');
+  assert.equal(g.harness.calls.length, 3, 'no agent call runs again');
+  assert.deepEqual(greenActions(g), ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
+});
+
+test('a missing transcript starts the phase fresh', async (t) => {
+  const g = await testFixSetup(t);
   // Before the test-fix Attempt's intent: one interrupted after it would be held instead.
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'green', 1), point: 'before-intent' } }), /crash/);
   const loaded = await loadTicket(g);
@@ -129,8 +148,7 @@ test('a missing transcript starts the phase fresh', async (t) => {
   assert.ok(g.logs.some((l) => /transcript/.test(l)), `the fresh start is logged: ${JSON.stringify(g.logs)}`);
   assert.equal(result.outcome, 'done');
   // The resume continues at the recovery pass: no first-pass Action runs again, and the Actions after it carry its number.
-  assert.deepEqual(g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => `${e.action}/${e.recovery}`),
-    ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
+  assert.deepEqual(greenActions(g), ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
 });
 
 test('bounds survive a restart', async (t) => {

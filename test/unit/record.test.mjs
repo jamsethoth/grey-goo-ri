@@ -227,6 +227,17 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
   });
 });
 
+test('a record written before Action ids is corrupt, not misread', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  // Its cursor names a phase and ordinal, which a resume would read as an Action id and a Recovery Number.
+  await record.save(newExecution(commonDir, 8));
+  const old = { ...newExecution(commonDir, 11), cursor: { vertex: 'green', visit: 1, phase: 'green', ordinal: 3, attempt: 1 } };
+  delete old.commonDir;
+  withDb(commonDir, (db) => db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run('ticket', 11, JSON.stringify(old)));
+  await assert.rejects(record.load(commonDir, 'ticket', 11),
+    (err) => err instanceof record.RecordCorruptError && /Recovery Number/.test(err.message));
+});
+
 // SQLite's busy handler is not fair, so on a loaded Windows runner another process's burst of writes held a save off
 // past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136).
 test('the State Database waits up to 60 s for another writer', async (t) => {
