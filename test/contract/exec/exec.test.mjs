@@ -286,14 +286,17 @@ test('runShell timeout does not name a descendant the watcher saw exit, though a
 // process that called runShell can exit, and kill it rather than leave it running.
 test('runShell lets its caller exit when the command ends while the watcher is still listing', POSIX_CASE, async (t) => {
   const psPid = join(tmp, 'stalled-ps.pid');
-  psStandIn(t, 'stalled-ps', `echo $$ > '${psPid}'\nexec sleep ${LIVES_MS / 1000}`);
+  // renamed into place, so the command never sees the file before the pid is in it
+  psStandIn(t, 'stalled-ps', `echo $$ > '${psPid}.tmp' && mv '${psPid}.tmp' '${psPid}'\nexec sleep ${LIVES_MS / 1000}`);
   const quit = script('stalled-quit.mjs', `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(${JSON.stringify(psPid)})) clearInterval(wait); }, 50);`);
   const caller = script('stalled-caller.mjs', `import * as exec from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, '../../../lib/exec.mjs')).href)}; const res = await exec.runShell(${JSON.stringify(`"${process.execPath}" "${quit}"`)}, { timeoutMs: ${LIVES_MS} }); process.exitCode = res.code;`);
   const child = spawn(process.execPath, [caller], { stdio: ['ignore', 'ignore', 'inherit'] });
   t.after(() => { child.kill(); try { if (pidIn(psPid)) process.kill(pidIn(psPid)); } catch {} });
   const [code] = await once(child, 'exit'); // a caller kept running by the listing fails at the case timeout
   assert.equal(code, 0);
-  await waitFor(() => !alive(pidIn(psPid)), t.signal); // a listing left running fails at the case timeout
+  const pid = pidIn(psPid);
+  assert.ok(pid > 0, `the stalled ps never wrote its pid to ${psPid}`);
+  await waitFor(() => !alive(pid), t.signal); // a listing left running fails at the case timeout
 });
 
 // The watcher's ps always fails, so only the listing at the timeout can find the grandchild, whose middle never exits
