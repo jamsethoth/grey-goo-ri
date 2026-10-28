@@ -145,3 +145,21 @@ test('an assume-unchanged edit before red is held too, so a failed red cannot re
   assert.deepEqual(intents(g.rec, 'reset'), []);
   assert.equal(readFileSync(join(g.worktree, tracked), 'utf8'), 'a hidden human edit\n');
 });
+
+// A failed red resets whatever its Agent's access, so a read-only red Vertex starts only on a clean worktree too.
+test('a read-only red Vertex is held before unknown changes, so a failed red cannot reset them away', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files = {};
+  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses, integrity: 'real' });
+  g.flow.ticket.vertices.red.agent.access = 'read-only';
+  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  writeFileSync(join(g.worktree, tracked), 'a human edit\n');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
+  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.equal(readFileSync(join(g.worktree, tracked), 'utf8'), 'a human edit\n');
+});
