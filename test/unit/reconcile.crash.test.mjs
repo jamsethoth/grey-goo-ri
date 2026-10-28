@@ -19,20 +19,20 @@ const actionOf = (m) => {
 
 // Whatever the crash, the resumed record ends with one intent, one evidence and one completion per side-effect Action.
 const FINAL_LOG = [
-  'implementer/1/red/1 call intent', 'implementer/1/red/1 call evidence', 'implementer/1/red/1 call complete',
-  'implementer/1/red/3 commit intent', 'implementer/1/red/3 commit evidence', 'implementer/1/red/3 commit complete',
-  'implementer/1/green/1 call intent', 'implementer/1/green/1 call evidence', 'implementer/1/green/1 call complete',
-  'implementer/1/green/3 commit intent', 'implementer/1/green/3 commit evidence', 'implementer/1/green/3 commit complete',
-  'implementer/1/green/4 push intent', 'implementer/1/green/4 push evidence', 'implementer/1/green/4 push complete',
-  'implementer/1/green/5 pr-upsert intent', 'implementer/1/green/5 pr-upsert evidence', 'implementer/1/green/5 pr-upsert complete',
+  'red/1/red/1 call intent', 'red/1/red/1 call evidence', 'red/1/red/1 call complete',
+  'red/1/red/3 commit intent', 'red/1/red/3 commit evidence', 'red/1/red/3 commit complete',
+  'green/1/green/1 call intent', 'green/1/green/1 call evidence', 'green/1/green/1 call complete',
+  'green/1/green/3 commit intent', 'green/1/green/3 commit evidence', 'green/1/green/3 commit complete',
+  'green/1/green/4 push intent', 'green/1/green/4 push evidence', 'green/1/green/4 push complete',
+  'green/1/green/5 pr-upsert intent', 'green/1/green/5 pr-upsert evidence', 'green/1/green/5 pr-upsert complete',
   'done/1/done/1 pr-ready intent', 'done/1/done/1 pr-ready evidence', 'done/1/done/1 pr-ready complete',
   'done/1/done/2 comment intent', 'done/1/done/2 comment evidence', 'done/1/done/2 comment complete',
   'done/1/done/3 label intent', 'done/1/done/3 label evidence', 'done/1/done/3 label complete',
 ];
 // One Action Event per Action: vertex/visit/phase/ordinal/attempt.
 const ACTED = [
-  'implementer/1/red/1/1', 'implementer/1/red/2/1', 'implementer/1/red/3/1', 'implementer/1/green/1/1', 'implementer/1/green/2/1',
-  'implementer/1/green/3/1', 'implementer/1/green/4/1', 'implementer/1/green/5/1', 'done/1/done/1/1', 'done/1/done/2/1', 'done/1/done/3/1',
+  'red/1/red/1/1', 'red/1/red/2/1', 'red/1/red/3/1', 'green/1/green/1/1', 'green/1/green/2/1',
+  'green/1/green/3/1', 'green/1/green/4/1', 'green/1/green/5/1', 'done/1/done/1/1', 'done/1/done/2/1', 'done/1/done/3/1',
 ];
 
 for (const [action, effect] of Object.entries(EFFECTS)) {
@@ -52,7 +52,7 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
       assert.deepEqual(final.log.map((e) => `${actionOf(e.marker)} ${e.action} ${e.step}`), FINAL_LOG);
 
       assert.deepEqual((await branchMessages(g)).map((b) => marker.formatMarker(marker.parseMarker(b))),
-        [markerOf(g.rec, 'implementer', 1, 'green', 3), markerOf(g.rec, 'implementer', 1, 'red', 3)], 'one commit per commit intent');
+        [markerOf(g.rec, 'green', 1, 'green', 3), markerOf(g.rec, 'red', 1, 'red', 3)], 'one commit per commit intent');
       assert.equal(await originSha(g), await g.options.git.headSha(g.worktree), 'the remote branch is at the last commit');
 
       assert.equal(g.gh.calls.filter((c) => c.args[0] === 'pr' && c.args[1] === 'create').length, 1, 'exactly one PR');

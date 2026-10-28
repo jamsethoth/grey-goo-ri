@@ -19,12 +19,12 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.equal(red.personaBytes, golden.PERSONA, 'red persona bytes come from the visit snapshot');
   assert.equal(green.personaBytes, golden.PERSONA, 'green persona bytes come from the visit snapshot');
   assert.equal(green.personaHash, red.personaHash);
-  const session = g.rec.sessions['implementer/1/green'];
-  assert.ok(session, 'green session recorded under implementer/1/green');
+  const session = g.rec.sessions['green/1/green'];
+  assert.ok(session, 'green session recorded under green/1/green');
   assert.equal(session.sessionId, 'fake-session-2');
   assert.match(session.transcriptPath, /fake-session-2\.jsonl$/);
   assert.equal(session.usage.input, 200);
-  assert.equal(g.rec.sessions['implementer/1/red'].sessionId, 'fake-session-1');
+  assert.equal(g.rec.sessions['red/1/red'].sessionId, 'fake-session-1');
 });
 
 test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
@@ -44,8 +44,8 @@ test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
 
 test('each public field is redacted once and sent exactly as its intent saved it', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/red/1'].response.summary = 'TOKEN red summary';
-  Object.assign(responses['implementer/1/green/1'].response, {
+  responses['red/1/red/1'].response.summary = 'TOKEN red summary';
+  Object.assign(responses['green/1/green/1'].response, {
     summary: 'TOKEN green summary', dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
     qa: { setup: 'TOKEN setup', steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
       edgeCases: ['TOKEN edge'], automated: ['TOKEN automated'], manual: ['TOKEN manual'] },
@@ -54,9 +54,10 @@ test('each public field is redacted once and sent exactly as its intent saved it
   g.options.ticket.title = 'Add TOKEN';
   g.options.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
-  const agent = g.flow.ticket.vertices.implementer.agent;
-  Object.assign(agent, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
-  writeFileSync(agent.persona, golden.PERSONA);
+  for (const { agent } of Object.values(g.flow.ticket.vertices)) {
+    Object.assign(agent, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
+  }
+  writeFileSync(join(g.root, 'personas', 'TOKEN.md'), golden.PERSONA);
   const runShell = g.options.exec.runShell;
   g.options.exec.runShell = async (...args) => {
     const r = await runShell(...args);
@@ -85,8 +86,8 @@ test('each public field is redacted once and sent exactly as its intent saved it
   assert.ok(body.includes('| model TOKEN* |'), '| model TOKEN |');
   assert.ok(body.includes('| TOKEN* effort |'), '| TOKEN effort |');
   assert.ok(body.includes('| TOKEN*.md@'), '| TOKEN.md@');
-  assert.ok(messages[0].includes('Feature-Flow-Stage: implementer fake/model TOKEN*/TOKEN* effort'), messages[0]);
-  assert.ok(messages[1].includes('Feature-Flow-Stage: implementer fake/model TOKEN*/TOKEN* effort'), messages[1]);
+  assert.ok(messages[0].includes('Feature-Flow-Stage: red fake/model TOKEN*/TOKEN* effort'), messages[0]);
+  assert.ok(messages[1].includes('Feature-Flow-Stage: green fake/model TOKEN*/TOKEN* effort'), messages[1]);
   assert.ok(g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')), 'the PR title');
   assert.deepEqual(intents(rec, 'commit').map((e) => e.payload.message.trim()), messages);
   // A comment goes as the JSON body of its gh api POST.

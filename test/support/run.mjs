@@ -26,14 +26,17 @@ export const NEEDS_HUMAN = 'gg:state:needs-human';
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 // The shipped defaults with every Agent on `harness`, the repository Layer's test command and, unless `fullFlow`, a
-// one-Vertex Flow from tdd straight to done.
+// red and green Flow straight to done.
 export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   const c = config.loadDefaults();
   c.commands = { test: 'npm test' };
   c.testPaths = [...checks.DEFAULT_TEST_GLOBS];
   for (const agent of Object.values(c.agents)) Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   c.worktreeRoot = join(root, 'wt');
-  if (!fullFlow) c.flows.default.ticket = { entry: 'implementer', vertices: { implementer: { use: 'implementer', procedure: 'tdd', then: 'done' } } };
+  if (!fullFlow) {
+    c.flows.default.ticket = { entry: 'red', vertices: { red: { use: 'implementer', procedure: 'tests-fail', then: 'green' },
+      green: { use: 'implementer', procedure: 'implement', then: 'done' } } };
+  }
   return c;
 }
 
@@ -155,7 +158,7 @@ export function conflict(worktree) {
 }
 
 // The green commit was intended, its implementation staged, and the process died before the commit landed.
-export const crashBeforeCommit = (f) => seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 3), point: 'before-effect' }) });
+export const crashBeforeCommit = (f) => seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 3), point: 'before-effect' }) });
 
 // Makes every comment POST fail with HTTP 502 while `on` is set, its retries too; `lost` lets the comment land first, as
 // a lost response does.

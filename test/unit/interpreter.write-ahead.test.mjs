@@ -38,7 +38,7 @@ test('a completed call is not rerun after a crash before the next action', async
     assert.deepEqual(events.map((e) => e.outcome), ['changes']);
     const final = await loadTicket(g);
     assert.equal(final.traversals['reviewer->implementer-fix:changes'], 1, 'the saved changes result routed to the fix');
-    assert.deepEqual(final.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
+    assert.deepEqual(final.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
   });
 });
 
@@ -108,7 +108,7 @@ test('findings-hash appends once per visit across a crash', async (t) => {
 
 test('the terminal stop survives a crash before the first terminal action', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'NOTES-7f3: the ticket contradicts itself.' };
+  responses['green/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'NOTES-7f3: the ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
   // Every save carrying a Terminal stop fails, as if gg died once the Terminal cursor was saved.
   const restore = golden.failSaves(t, (saved, next) => next.terminalStop !== undefined);
@@ -126,9 +126,9 @@ test('the terminal stop survives a crash before the first terminal action', asyn
 });
 
 test('attempt numbering continues after resume', async (t) => {
-  const red = golden.firstVisitResponses['implementer/1/red/1'];
+  const red = golden.firstVisitResponses['red/1/red/1'];
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/red/1': { ...red, result: { status: 'timed-out' } }, 'implementer/1/red/2': red } });
+    'red/1/red/1': { ...red, result: { status: 'timed-out' } }, 'red/1/red/2': red } });
   let reads = 0;
   // The other worktrees are read once per Attempt before its baseline: gg dies after Attempt 1 retried, before Attempt 2.
   const others = async () => {
@@ -141,9 +141,9 @@ test('attempt numbering continues after resume', async (t) => {
   assert.equal(result.outcome, 'done');
   assert.deepEqual(attemptsOf(g, 'red', 1).map((e) => e.attempt), [1, 2], 'no second Attempt 1');
   assert.equal(g.harness.calls.length, 3, 'red twice, green once');
-  assert.equal(g.harness.calls[1].marker, attemptMarker(g, 'implementer', 1, 'red', 1, 2), 'the resume runs Attempt 2');
+  assert.equal(g.harness.calls[1].marker, attemptMarker(g, 'red', 1, 'red', 1, 2), 'the resume runs Attempt 2');
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'Attempt 2 resumes the session Attempt 1 saved');
-  assert.deepEqual((await loadTicket(g)).retries['implementer/1/red/1'], { timeout: 1 }, 'one retry consumed');
+  assert.deepEqual((await loadTicket(g)).retries['red/1/red/1'], { timeout: 1 }, 'one retry consumed');
 });
 
 test('a failed Event insert at an Action completion saves nothing more of that record', async (t) => {
@@ -191,9 +191,9 @@ for (const [name, dropTranscript, resume] of [
   ['without its transcript', (path) => rmSync(path), null],
 ]) {
   test(`a record saved before write-ahead Attempts resumes its retried call from the saved session and budget: ${name}`, async (t) => {
-    const red = golden.firstVisitResponses['implementer/1/red/1'];
+    const red = golden.firstVisitResponses['red/1/red/1'];
     const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
-      'implementer/1/red/1': { ...red, result: { status: 'timed-out' } }, 'implementer/1/red/2': red } });
+      'red/1/red/1': { ...red, result: { status: 'timed-out' } }, 'red/1/red/2': red } });
     let reads = 0;
     const others = async () => {
       if (++reads === 2) throw new interpreter.CrashError('crash before attempt 2');
@@ -206,17 +206,17 @@ for (const [name, dropTranscript, resume] of [
     delete legacy.visitState.settled;
     delete legacy.heartbeat;
     assert.equal(legacy.cursor.attempt, 2);
-    assert.deepEqual(legacy.retries['implementer/1/red/1'], { timeout: 1 });
+    assert.deepEqual(legacy.retries['red/1/red/1'], { timeout: 1 });
     await record.save(legacy);
-    dropTranscript(legacy.sessions['implementer/1/red'].transcriptPath);
+    dropTranscript(legacy.sessions['red/1/red'].transcriptPath);
 
     const result = await interpreter.runExecution({ ...g.options, others, record: await loadTicket(g) });
     assert.equal(result.outcome, 'done', JSON.stringify(result));
     const call = g.harness.calls[1];
-    assert.equal(call.marker, attemptMarker(g, 'implementer', 1, 'red', 1, 2), 'the resume runs Attempt 2');
+    assert.equal(call.marker, attemptMarker(g, 'red', 1, 'red', 1, 2), 'the resume runs Attempt 2');
     assert.equal(call.resume, resume, 'from the session the record saved, when it can be resumed');
     assert.ok(call.brief.startsWith('RED PHASE'), 'with the full Brief');
-    assert.deepEqual((await loadTicket(g)).retries['implementer/1/red/1'], { timeout: 1 }, 'the spent budget is kept');
+    assert.deepEqual((await loadTicket(g)).retries['red/1/red/1'], { timeout: 1 }, 'the spent budget is kept');
   });
 }
 
@@ -241,9 +241,9 @@ for (const [kind, opts, state] of [
 }
 
 test('the record carries the last heartbeat of a running call', async (t) => {
-  const red = golden.firstVisitResponses['implementer/1/red/1'];
+  const red = golden.firstVisitResponses['red/1/red/1'];
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/red/1': { ...red, hang: true }, 'implementer/1/red/2': red } });
+    'red/1/red/1': { ...red, hang: true }, 'red/1/red/2': red } });
   let started;
   const running = new Promise((resolve) => { started = resolve; });
   const run = g.harness.run;

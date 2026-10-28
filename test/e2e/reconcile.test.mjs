@@ -11,7 +11,7 @@ import { resetEntries } from '../support/reconcile.mjs';
 // A failed red Phase whose reset is interrupted by a crash at `when`: before the reset, or after it.
 async function crashedFailedRed(t, when) {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = g.options.git;

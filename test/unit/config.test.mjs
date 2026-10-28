@@ -19,7 +19,7 @@ const reversed = (value) => Array.isArray(value) ? value.map(reversed)
     : value;
 
 test('loadDefaults reads the shipped flow', () => {
-  assert.equal(config.loadDefaults().flows.default.ticket.entry, 'implementer');
+  assert.equal(config.loadDefaults().flows.default.ticket.entry, 'red');
 });
 
 for (const name of ['implementer.md', 'reviewer.md']) {

@@ -18,7 +18,7 @@ for (const point of Object.keys(POINTS)) {
     // The completed commit's Vertex is gone from the Flow, so Reconciliation holds the Ticket.
     await crashed(g, EFFECTS.commit.at, 'after-completion');
     g.options.flow = structuredClone(g.flow);
-    g.options.flow.ticket.vertices = { builder: g.flow.ticket.vertices.implementer };
+    g.options.flow.ticket.vertices = { builder: g.flow.ticket.vertices.green };
     g.options.flow.ticket.entry = 'builder';
     g.options.record = await loadTicket(g);
     await crashed(g, ['needs-human', 1, 'hold', 2], point);
@@ -30,7 +30,7 @@ for (const point of Object.keys(POINTS)) {
     assert.equal((await loadTicket(g)).state, 'held');
     const ends = g.readEvents().filter((e) => e.type === 'ticket_end');
     assert.equal(ends.length, 1);
-    assert.match(ends[0].reason.text, /implementer/);
+    assert.match(ends[0].reason.text, /Vertex green/);
   });
 }
 
@@ -57,7 +57,7 @@ for (const point of Object.keys(POINTS)) {
 
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of the run stop needs-human label keeps the run stop classification`, async (t) => {
-    const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+    const g = await golden.setup(t, { responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
     await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
@@ -88,12 +88,12 @@ test('a vertex missing from the flow holds the ticket', async (t) => {
   const g = await golden.setup(t);
   await crashed(g, EFFECTS.commit.at, 'after-completion');
   const flow = structuredClone(g.flow);
-  flow.ticket.vertices = { builder: flow.ticket.vertices.implementer };
+  flow.ticket.vertices = { builder: flow.ticket.vertices.green };
   flow.ticket.entry = 'builder';
 
   const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g), flow));
   assert.equal(decided.next, 'hold');
-  assert.match(decided.reason, /implementer/);
+  assert.match(decided.reason, /Vertex green/);
 
   await interpreter.runExecution({ ...g.options, flow, record: await loadTicket(g) });
   assert.equal((await loadTicket(g)).state, 'held');
@@ -105,8 +105,8 @@ const GREEN_FAIL_OUTPUT = 'not ok 1 - adds two numbers\n# fail 1';
 
 test('a missing transcript starts the phase fresh', async (t) => {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/green/1': { files: { 'lib/add.mjs': 'export const add = () => 0;\n' }, response: golden.greenResponse },
-    'implementer/1/test-fix/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: golden.greenResponse } } });
+    'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = () => 0;\n' }, response: golden.greenResponse },
+    'green/1/test-fix/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: golden.greenResponse } } });
   g.options.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
@@ -116,10 +116,10 @@ test('a missing transcript starts the phase fresh', async (t) => {
     },
   };
   // Before the test-fix Attempt's intent: one interrupted after it would be held instead.
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: markerOf(g.rec, 'implementer', 1, 'test-fix', 1), point: 'before-intent' } }), /crash/);
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: markerOf(g.rec, 'green', 1, 'test-fix', 1), point: 'before-intent' } }), /crash/);
   const loaded = await loadTicket(g);
   assert.equal(loaded.cursor.phase, 'test-fix');
-  rmSync(loaded.sessions['implementer/1/green'].transcriptPath);
+  rmSync(loaded.sessions['green/1/green'].transcriptPath);
 
   const result = await interpreter.runExecution({ ...g.options, record: loaded });
   const call = g.harness.calls[2];
@@ -141,12 +141,13 @@ test('bounds survive a restart', async (t) => {
     'reviewer/2/review/1': review([finding('second problem')]) } });
   const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
   writeFileSync(reviewerPersona, '# reviewer\nJudge the diff.\n');
-  const implementer = g.flow.ticket.vertices.implementer;
+  const { red, green } = g.flow.ticket.vertices;
   g.flow.ticket.vertices = {
-    implementer: { ...implementer, then: 'reviewer' },
-    reviewer: { agent: { ...structuredClone(implementer.agent), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
+    red,
+    green: { ...green, then: 'reviewer' },
+    reviewer: { agent: { ...structuredClone(green.agent), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
       options: {}, route: { ok: 'done', changes: { to: 'implementer-fix', max: 1, exhausted: 'needs-human' } } },
-    'implementer-fix': { agent: structuredClone(implementer.agent), procedure: 'fix', options: {}, then: 'reviewer' },
+    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, then: 'reviewer' },
   };
   const key = 'reviewer->implementer-fix:changes';
   const { loaded } = await crashed(g, ['reviewer', 2, 'review', 3], 'after-completion');
@@ -158,7 +159,7 @@ test('bounds survive a restart', async (t) => {
   assert.ok(!g.harness.calls.slice(before).some((c) => c.brief.startsWith('FIX VISIT')), 'no fix call after the restart');
   const final = await loadTicket(g);
   assert.equal(final.traversals[key], 1);
-  assert.deepEqual(final.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
+  assert.deepEqual(final.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
 });
 
 test('a corrupt record holds the ticket', async (t) => {

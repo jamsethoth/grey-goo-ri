@@ -16,9 +16,9 @@ const actionOf = (m) => {
 // A misscoped green ends in replan, whose Terminal posts the diagnosis on the ticket (ordinal 1) and the epic (ordinal 2).
 const DIAGNOSIS = 'The ticket asks add to both sum and concatenate.';
 const REPLAN_LOG = [
-  'implementer/1/red/1 call intent', 'implementer/1/red/1 call evidence', 'implementer/1/red/1 call complete',
-  'implementer/1/red/3 commit intent', 'implementer/1/red/3 commit evidence', 'implementer/1/red/3 commit complete',
-  'implementer/1/green/1 call intent', 'implementer/1/green/1 call evidence', 'implementer/1/green/1 call complete',
+  'red/1/red/1 call intent', 'red/1/red/1 call evidence', 'red/1/red/1 call complete',
+  'red/1/red/3 commit intent', 'red/1/red/3 commit evidence', 'red/1/red/3 commit complete',
+  'green/1/green/1 call intent', 'green/1/green/1 call evidence', 'green/1/green/1 call complete',
   'replan/1/replan/1 comment intent', 'replan/1/replan/1 comment evidence', 'replan/1/replan/1 comment complete',
   'replan/1/replan/2 comment intent', 'replan/1/replan/2 comment evidence', 'replan/1/replan/2 comment complete',
   'replan/1/replan/3 label intent', 'replan/1/replan/3 label evidence', 'replan/1/replan/3 label complete',
@@ -26,7 +26,7 @@ const REPLAN_LOG = [
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of the epic diagnosis comment resumes the same replan Actions`, async (t) => {
     const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
-      'implementer/1/green/1': { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: DIAGNOSIS } } } });
+      'green/1/green/1': { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: DIAGNOSIS } } } });
     await crashed(g, ['replan', 1, 'replan', 2], point);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });

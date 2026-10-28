@@ -19,8 +19,8 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
 
   assert.equal(g.result.outcome, 'done');
   assert.deepEqual(g.actions.map((e) => `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}`), [
-    'implementer/1/red/1', 'implementer/1/red/2', 'implementer/1/red/3',
-    'implementer/1/green/1', 'implementer/1/green/2', 'implementer/1/green/3', 'implementer/1/green/4', 'implementer/1/green/5',
+    'red/1/red/1', 'red/1/red/2', 'red/1/red/3',
+    'green/1/green/1', 'green/1/green/2', 'green/1/green/3', 'green/1/green/4', 'green/1/green/5',
     'reviewer/1/review/1', 'reviewer/1/review/2', 'reviewer/1/review/3', 'reviewer/1/review/4',
     'implementer-fix/1/fix/1', 'implementer-fix/1/fix/2', 'implementer-fix/1/fix/3', 'implementer-fix/1/fix/4', 'implementer-fix/1/fix/5',
     'reviewer/2/review/1', 'reviewer/2/review/2', 'reviewer/2/review/3', 'reviewer/2/review/4',
@@ -59,7 +59,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review th
   assert.equal(g.gh.pr().isDraft, false);
 
   assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1);
-  assert.deepEqual(g.rec.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
+  assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
   assert.deepEqual(g.rec.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]]);
   assert.equal(g.events.at(-1).type, 'ticket_end');
   assert.equal(g.events.at(-1).outcome, 'done');
@@ -85,7 +85,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
   assert.deepEqual(g.harness.calls.slice(before).map((c) => (c.brief.startsWith('FIX VISIT') ? 'fix' : c.access)), ['fix', 'read-only'],
     'the restart runs the pending fix, then review, not the entry');
   assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
-  assert.deepEqual(saved.visits, { implementer: 1, reviewer: 2, 'implementer-fix': 1 });
+  assert.deepEqual(saved.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
 });
 
 test('two reviewer vertices keep their own sessions and provenance rows', async (t) => {

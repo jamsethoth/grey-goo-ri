@@ -65,7 +65,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   const f = fixture(t, { integrity: 'real' });
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
-  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
     configHash: 'x', run: 'seed', worktree: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(rec);
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
@@ -88,7 +88,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
 
 test('a merge conflict in the worktree of a resumed execution is held, not faulted', async (t) => {
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
-  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+  await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
   const before = conflict(f.worktree);
 
   assertConflictHeld(f, await run.runTarget(f.options), before);

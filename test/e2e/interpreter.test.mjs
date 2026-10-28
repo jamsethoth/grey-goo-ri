@@ -96,7 +96,7 @@ test("a write Vertex on a dirty worktree gg's records do not explain is held", a
 
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(g.harness.calls.map((c) => c.marker), [actionMarker(g, 'red', 1)], 'no green agent runs over unknown changes');
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), ` M ${edited}`, 'the human edit survives');
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), `M ${edited}`, 'the human edit survives');
   assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%s'), /^test: /, "red's commit stays");
   assert.deepEqual(intents(g.rec, 'reset'), []);
   assert.equal(g.rec.history.at(-1)?.kind, 'held');

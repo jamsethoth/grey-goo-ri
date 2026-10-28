@@ -27,7 +27,7 @@ test('a flow mixing harnesses runs each vertex on its own harness', async (t) =>
   assert.equal(run.runExitCode(results), 0);
   // parseMarker reads a marker from the text it is published in.
   const vertexOf = (c) => marker.parseMarker(marker.markerTrailer(c.marker)).vertex;
-  assert.deepEqual(f.harness.calls.map(vertexOf), ['implementer', 'implementer'], 'the implementer runs on its own harness');
+  assert.deepEqual(f.harness.calls.map(vertexOf), ['red', 'green'], 'the implementer runs on its own harness');
   assert.deepEqual(other.calls.map(vertexOf), ['reviewer'], 'the reviewer runs on its own harness');
 });
 
@@ -47,9 +47,9 @@ for (const state of ['done', 'fault', 'abandoned']) {
   test(`a finished record with open intents is not resumed: ${state}`, async (t) => {
     const f = fixture(t, { labels: [IN_PROGRESS] });
     await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-    const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+    const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
-    rec.visits = { implementer: 1 };
+    rec.visits = { red: 1, green: 1 };
     rec.cursor = { vertex: 'needs-human', visit: null, phase: null, ordinal: 0, attempt: 1 };
     await record.intent(rec, markerOf(rec, 'done', 1, 'done', 2), 'comment', { target: { kind: 'issue', number: TICKET }, body: 'x', bodyHash: 'h' });
     rec.state = state;
@@ -67,7 +67,7 @@ for (const state of ['done', 'fault', 'abandoned']) {
 
 test('a held Execution Record skip gives row-delete recovery without GitHub writes', async (t) => {
   const f = fixture(t);
-  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
     configHash: 'x', run: 'seed', worktree: f.worktree, branch: BRANCH, base: 'main' });
   rec.state = 'held';
   await record.save(rec);
@@ -148,7 +148,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
 test('local paths in fault comments stay in the local Event only', async (t) => {
   const responses = {};
   const f = fixture(t, { responses });
-  responses['implementer/1/red/1'] = { throw: new Error(`Cannot read ${f.worktree}/secret.txt or ${f.commonDir}/gg/gg.db`) };
+  responses['red/1/red/1'] = { throw: new Error(`Cannot read ${f.worktree}/secret.txt or ${f.commonDir}/gg/gg.db`) };
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1);
   assert.ok(f.comments().length > 0);
@@ -192,7 +192,7 @@ test('truncated long Check output does not expose fragments of local paths', asy
 test('truncated fault output does not expose fragments of local paths', async (t) => {
   const responses = {};
   const f = fixture(t, { responses });
-  responses['implementer/1/red/1'] = { throw: new Error(truncatedAt(f.commonDir)) };
+  responses['red/1/red/1'] = { throw: new Error(truncatedAt(f.commonDir)) };
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const bodies = f.comments();
   assert.ok(bodies.length, 'the fault is reported');
