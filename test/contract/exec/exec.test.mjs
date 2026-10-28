@@ -53,8 +53,10 @@ async function timeOutWhen(commandLine, options, ready, signal) {
     while (!settled && !signal.aborted && !ready()) await new Promise((r) => setTimeout(r, 50));
     wasReady = !signal.aborted && ready();
   } finally {
-    // also when ready() throws, as it can once a failed case's files are gone: the command must not outlive the case
+    // also when ready() throws, as it can once a failed case's files are gone: the command is timed out and cleaned up
+    // before the case goes on, and the error ready() threw is the one the case reports
     clock.abort();
+    await running.catch(() => {});
   }
   const res = await running;
   signal.throwIfAborted();
