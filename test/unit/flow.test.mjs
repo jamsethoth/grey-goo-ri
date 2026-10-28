@@ -16,9 +16,10 @@ test('resolveFlow expands use into the resolved flow shape', () => {
     name: 'default',
     plan: null,
     ticket: {
-      entry: 'implementer',
+      entry: 'red',
       vertices: {
-        implementer: { agent: resolvedImplementer, options: {}, procedure: 'tdd', then: 'reviewer' },
+        red: { agent: resolvedImplementer, options: {}, procedure: 'tests-fail', then: 'green' },
+        green: { agent: resolvedImplementer, options: {}, procedure: 'implement', then: 'reviewer' },
         reviewer: {
           agent: { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false, harness: null, model: null, effort: null },
           options: {}, procedure: 'review',
@@ -47,17 +48,19 @@ test('resolveFlow does not mutate the Agent Library', () => {
 });
 
 test('the Resolved Flow carries the persona file name, not a path', () => {
-  assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.implementer.agent.persona, 'implementer.md');
+  assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.green.agent.persona, 'implementer.md');
 });
 
 for (const [harness, agents] of [
   ['claude', {
-    implementer: { harness: 'claude', model: 'opus', effort: 'high' },
+    red: { harness: 'claude', model: 'opus', effort: 'high' },
+    green: { harness: 'claude', model: 'opus', effort: 'high' },
     reviewer: { harness: 'claude', model: 'sonnet', effort: 'high' },
     'implementer-fix': { harness: 'claude', model: 'opus', effort: 'high' },
   }],
   ['codex', {
-    implementer: { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    red: { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    green: { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
     reviewer: { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
     'implementer-fix': { harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
   }],

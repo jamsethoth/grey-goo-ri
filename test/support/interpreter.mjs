@@ -24,8 +24,10 @@ export async function firstVisit(t, opts) {
 
 export const intents = (rec, action) => rec.log.filter((e) => e.step === 'intent' && e.action === action);
 export const steps = (rec, m) => rec.log.filter((e) => e.marker === m).map((e) => e.step);
+// The golden Flow's Vertex of each tests-fail and implement Phase.
+export const vertexOf = (phase) => (['red', 'still-green'].includes(phase) ? 'red' : 'green');
 export const actionMarker = (g, phase, ordinal) => marker.formatMarker({
-  execution: g.rec.execution, vertex: 'implementer', visit: 1, phase, ordinal, run: g.rec.run, attempt: 1,
+  execution: g.rec.execution, vertex: vertexOf(phase), visit: 1, phase, ordinal, run: g.rec.run, attempt: 1,
 });
 
 // The Terminal Reason must agree in the record and on ticket_end, and (unless the caller checks its own comment) be
@@ -71,7 +73,7 @@ export async function greenSetup(t, responses, integrity, git) {
 // A stop's Terminal Reason names the deciding Action, that Action's Outcome and rule, and a sentence of its own.
 export function stopReason(g, { phase, ordinal, outcome, rule, comment }) {
   const reason = terminalReasonOf(g, { comment });
-  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase, ordinal });
+  assert.deepEqual(reason.decidedBy, { vertex: vertexOf(phase), visit: 1, phase, ordinal });
   assert.equal(reason.outcome, outcome);
   assert.equal(reason.rule, rule);
   assert.doesNotMatch(reason.text, /ended with|cannot run yet/, `a sentence naming the failure: ${reason.text}`);
@@ -99,7 +101,8 @@ export const fixed = (files) => ({ files, response: { ...golden.greenResponse, s
 
 export const MAJOR = finding('major', 'lib/add.mjs', 'add ignores non-number input at line 1');
 
-// implementer(tdd) -> reviewer(review); changes -> {implementer-fix, max 2, exhausted needs-human}; implementer-fix(fix) -> reviewer.
+// red(tests-fail) -> green(implement) -> reviewer(review); changes -> {implementer-fix, max 2, exhausted needs-human};
+// implementer-fix(fix) -> reviewer.
 export async function reviewSetup(t, responses, opts) {
   const g = await reviewFlow(t, responses, opts);
   g.result = await interpreter.runExecution(g.options);
@@ -113,15 +116,16 @@ export async function reviewFlow(t, responses, { exec, integrity, git } = {}) {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
   const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
   writeFileSync(reviewerPersona, REVIEWER_PERSONA);
-  const implementer = g.flow.ticket.vertices.implementer;
+  const { red, green } = g.flow.ticket.vertices;
   g.flow.ticket.vertices = {
-    implementer: { ...implementer, then: 'reviewer' },
+    red,
+    green: { ...green, then: 'reviewer' },
     reviewer: {
-      agent: { ...structuredClone(implementer.agent), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
+      agent: { ...structuredClone(green.agent), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
       procedure: 'review', options: {},
       route: { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' }, misscoped: 'replan' },
     },
-    'implementer-fix': { agent: structuredClone(implementer.agent), procedure: 'fix', options: {}, then: 'reviewer' },
+    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, then: 'reviewer' },
   };
   if (exec) g.options.exec = exec;
   return g;

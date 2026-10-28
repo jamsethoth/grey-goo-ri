@@ -7,13 +7,14 @@ import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
 import {
   firstVisit, intents, steps, actionMarker, terminalReasonOf, actionEvent, loadTicket, branchMessages, subjects, headSha,
+  greenSetup, ok, WRONG_ADD,
 } from '../support/interpreter.mjs';
 
 const DONE = ['intent', 'evidence', 'complete'];
 
 test('a persona file name is read from the shipped personas directory', async (t) => {
   const g = await golden.setup(t);
-  g.flow.ticket.vertices.implementer.agent.persona = 'implementer.md';
+  for (const vertex of Object.values(g.flow.ticket.vertices)) vertex.agent.persona = 'implementer.md';
   await interpreter.runExecution(g.options);
   const shipped = readFileSync(new URL('../../defaults/personas/implementer.md', import.meta.url), 'utf8');
   assert.equal(g.harness.calls[0].personaBytes, shipped);
@@ -61,15 +62,22 @@ test('every side-effect action leaves intent, evidence and completion with the f
     [{ ticket: golden.TICKET, add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }], 'the done label write goes through the log');
 });
 
+// green's Visit has two calls when the first fails the Green Check: green, then test-fix.
 test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {
-  const g = await golden.setup(t);
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+  });
   g.options.testPaths = ['test/**'];
-  const vertex = g.flow.ticket.vertices.implementer;
+  const { runShell } = g.options.exec;
+  const commands = [];
+  g.options.exec = { runShell: (command, opts) => { commands.push(command); return runShell(command, opts); } };
+  const vertex = g.flow.ticket.vertices.green;
   const run = g.harness.run;
   const seen = {};
   g.harness.run = async (call) => {
     seen[call.phase] = structuredClone({ agent: call.agent, access: call.access, persona: call.persona });
-    if (call.phase === 'red') {
+    if (call.phase === 'green') {
       vertex.agent.model = 'model-y';
       vertex.agent.access = 'read-only';
       vertex.options.requireTestPass = false;
@@ -84,16 +92,16 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
     return run(call);
   };
   const { outcome } = await interpreter.runExecution(g.options);
-  assert.deepEqual(seen.green, seen.red);
-  assert.equal(seen.green.agent.model, 'model-x');
-  assert.equal(seen.green.access, 'workspace-write');
-  assert.equal(seen.green.persona.bytes, golden.PERSONA);
+  assert.deepEqual(seen['test-fix'], seen.green);
+  assert.equal(seen['test-fix'].agent.model, 'model-x');
+  assert.equal(seen['test-fix'].access, 'workspace-write');
+  assert.equal(seen['test-fix'].persona.bytes, golden.PERSONA);
   assert.equal(g.rec.snapshot.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
   assert.deepEqual(g.rec.snapshot.options, {});
-  assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: implementer fake\/model-x\/high/);
+  assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: green fake\/model-x\/high/);
   assert.equal(outcome, 'done', 'routing follows the entry snapshot');
-  assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.procedure).map((e) => e.procedure))], ['tdd']);
-  assert.deepEqual(g.shells.map((s) => s.command), ['npm test', 'npm test'], 'checks ran the pinned command');
+  assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => e.procedure))], ['implement']);
+  assert.deepEqual(commands, ['npm test', 'npm test', 'npm test'], 'checks ran the pinned command');
   assert.equal(g.rec.snapshot.then, 'done');
   assert.equal(g.rec.snapshot.commands.test, 'npm test');
   assert.deepEqual(g.rec.snapshot.testPaths, ['test/**']);
@@ -101,7 +109,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
 
 test('the red commit records a non-ASCII test path unquoted', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  const red = responses['implementer/1/red/1'];
+  const red = responses['red/1/red/1'];
   red.files = { 'test/añadir.test.mjs': red.files['test/add.test.mjs'] };
   const g = await golden.setup(t, { responses });
   const { outcome } = await interpreter.runExecution(g.options);
@@ -138,7 +146,7 @@ test('done counts the files under the pinned testPaths as tests in its diff stat
 
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
+  responses['green/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
   g.gh.labels.add('gg:state:in-progress');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -162,7 +170,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
 
   // The blocked comment carries the Terminal Reason, so there is still exactly one comment.
   const reason = terminalReasonOf(g, { comment: false });
-  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 2 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, phase: 'green', ordinal: 2 });
   assert.equal(reason.outcome, 'blocked');
   assert.equal(reason.rule, 'blocked');
   assert.equal(reason.text, 'The agent made a blocked Claim at green; its diagnosis in the blocked comment says why.');
@@ -173,8 +181,8 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
 test('agent-reported test names stay out of a red-failed Terminal Reason and are fenced in its comment', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   const injected = 'missing\n\n## injected heading';
-  responses['implementer/1/red/1'] = { ...responses['implementer/1/red/1'], response: { ...golden.redResponse, tests: [injected] } };
-  responses['implementer/1/still-green/1'] = { files: {}, response: { ...golden.redResponse, tests: [injected] } };
+  responses['red/1/red/1'] = { ...responses['red/1/red/1'], response: { ...golden.redResponse, tests: [injected] } };
+  responses['red/1/still-green/1'] = { files: {}, response: { ...golden.redResponse, tests: [injected] } };
   const g = await golden.setup(t, { responses });
   await interpreter.runExecution(g.options);
 
@@ -201,18 +209,17 @@ test('the Terminal Reason is saved before any Terminal side effect, so a crash m
 test('done carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
   const g = await firstVisit(t);
   const reason = terminalReasonOf(g);
-  assert.deepEqual(reason.decidedBy, { vertex: 'implementer', visit: 1, phase: 'green', ordinal: 5 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, phase: 'green', ordinal: 5 });
   assert.equal(reason.outcome, 'ok');
   assert.equal(reason.rule, 'effect-completed');
-  assert.equal(reason.text,
-    `implementer visit 1 completed every tdd Action: the Red Check and the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+  assert.equal(reason.text, `green visit 1 completed every implement Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
 });
 
 // ff's red-gate e2e cases on the fake harness: red writes test/fail.test.mjs, the runner answers with `run`,
 // and green writes lib/add.mjs, after which the suite passes.
 async function redGate(t, { tests, run }) {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/red/1'] = {
+  responses['red/1/red/1'] = {
     files: { 'test/fail.test.mjs': "import assert from 'node:assert';\nassert.fail('rejects bad input');\n" },
     response: { ...golden.redResponse, tests },
   };
@@ -258,7 +265,7 @@ test('a red run whose output names none of the reported tests is not committed',
 
 test('a red Phase that leaves nothing to commit fails red with "No tests were written."', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/red/1'] = { files: {}, response: { ...golden.redResponse, tests: ['rejects bad input'] } };
+  responses['red/1/red/1'] = { files: {}, response: { ...golden.redResponse, tests: ['rejects bad input'] } };
   const g = await golden.setup(t, { responses });
   g.options.exec = { runShell: async () => ({ code: 1, output: FAIL_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);

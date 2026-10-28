@@ -211,7 +211,7 @@ both added to the AGENTS.md Layout table.
 ### E1. Red and green on separate Vertices
 
 R2a–d. `tdd` splits into code Procedures `tests-fail` and `implement`; the shipped Flow becomes red → green →
-reviewer ⇄ implementer-fix. `resumeGreen` goes. The dirty-worktree guard becomes R2d (a write Vertex starts on a
+reviewer ⇄ implementer-fix. `resumeGreen` goes. The dirty-worktree guard becomes R2d (every Vertex starts on a
 clean worktree or one gg's records explain), replacing the literal `phase === 'red'` test. Green still reads red's
 outputs from the record; E4 makes that an input.
 - Goldens: all six `golden:` cases and the crash-and-resume traces (Vertex names, Visits). Glossary: none.

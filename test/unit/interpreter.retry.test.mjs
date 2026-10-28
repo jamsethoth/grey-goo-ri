@@ -116,7 +116,7 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.equal(pushes, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
-    assert.equal(g.rec.retries['implementer/1/green/4'].remote.count, 0, 'no retry is reserved');
+    assert.equal(g.rec.retries['green/1/green/4'].remote.count, 0, 'no retry is reserved');
     assert.match(g.rec.terminalStop.error, /non-fast-forward|rejected/);
     assert.equal(await originSha(g), theirs, 'nothing was forced');
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
@@ -191,7 +191,7 @@ test('a cooldown raised while a retry looks for its effect is waited out before 
 });
 
 test('a human needs-human label during a fault report backoff abandons the Execution', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   g.gh.fail({ matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 });
   g.clock.onSleep = () => { g.gh.labels.add('gg:state:needs-human'); };
   const result = await interpreter.runExecution(g.options);

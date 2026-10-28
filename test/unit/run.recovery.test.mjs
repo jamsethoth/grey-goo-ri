@@ -14,7 +14,7 @@ import {
 
 test('an admission failure on an active execution is reported as a fault', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
   let adds = 0;
   f.options.git = { ...f.options.git, ensureWorktree: async () => { adds++; throw new Error('worktree add failed\nfatal: disk full') } };
 
@@ -224,7 +224,7 @@ test('an ensureWorktree failure without a record is marked and never retried', a
 
 test('admission holds emit ticket lifecycle events with their Terminal Reason: a record on another branch', async (t) => {
   const f = fixture(t);
-  await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'implementer' },
+  await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
     configHash: 'x', run: 'seed', worktree: f.worktree, branch: 'ticket/99-other', base: 'main' }));
 
   const results = await run.runTarget(f.options);

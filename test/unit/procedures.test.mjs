@@ -4,29 +4,41 @@ import * as procedures from '../../lib/procedures.mjs';
 
 const pairs = (actions) => actions.map((a) => [a.phase, a.ordinal]);
 
-test('tdd describes its actions, checks, lineage and outcome map in order', () => {
-  const tdd = procedures.PROCEDURES.tdd;
-  assert.deepEqual(tdd.options, { stillGreen: 1, testFix: 1, resumeGreen: false, requireTestPass: true });
-  assert.deepEqual(tdd.checks, ['red', 'immutability', 'green']);
-  assert.deepEqual(tdd.briefs, { red: 'red.md', green: 'green.md', 'still-green': 'still-green.md', 'test-fix': 'test-fix.md' });
-  assert.deepEqual(tdd.claims, ['ok', 'blocked', 'misscoped']);
-  assert.deepEqual(tdd.outcomes, ['ok', 'blocked', 'misscoped', 'red-failed', 'gate-failed(test)']);
-  assert.equal(tdd.checkOutcome.red, 'red-failed');
-  assert.equal(tdd.checkOutcome.test, 'gate-failed(test)');
-  assert.deepEqual(tdd.commitKinds, { red: 'test', green: 'feat' });
+test('tests-fail describes its actions, checks, lineage and outcome map in order', () => {
+  const p = procedures.PROCEDURES['tests-fail'];
+  assert.deepEqual(p.options, { stillGreen: 1 });
+  assert.deepEqual(p.checks, ['red']);
+  assert.deepEqual(p.briefs, { red: 'red.md', 'still-green': 'still-green.md' });
+  assert.deepEqual(p.claims, ['ok', 'blocked', 'misscoped']);
+  assert.deepEqual(p.outcomes, ['ok', 'blocked', 'misscoped', 'red-failed']);
+  assert.deepEqual(p.checkOutcome, { red: 'red-failed' });
+  assert.deepEqual(p.commitKinds, { red: 'test' });
 
-  const d = procedures.describe('tdd');
-  assert.deepEqual(pairs(d.actions.filter((a) => !a.when)), [
-    ['red', 1], ['red', 2], ['red', 3],
-    ['green', 1], ['green', 2], ['green', 3], ['green', 4], ['green', 5],
-  ]);
-  assert.deepEqual(pairs(d.actions.filter((a) => a.when)), [['still-green', 1], ['still-green', 2], ['test-fix', 1], ['test-fix', 2]]);
-  assert.deepEqual(d.checks, [
-    { name: 'red', relaxed: false }, { name: 'immutability', relaxed: false }, { name: 'green', relaxed: false },
-  ]);
+  const d = procedures.describe('tests-fail');
+  assert.deepEqual(pairs(d.actions.filter((a) => !a.when)), [['red', 1], ['red', 2], ['red', 3]]);
+  assert.deepEqual(pairs(d.actions.filter((a) => a.when)), [['still-green', 1], ['still-green', 2]]);
+  assert.deepEqual(d.checks, [{ name: 'red', relaxed: false }]);
   // Session Lineage: the Phase each Phase resumes, or null for a fresh session.
-  assert.deepEqual(d.lineage, { red: null, 'still-green': 'red', green: null, 'test-fix': 'green' });
-  assert.equal(procedures.describe('tdd', { resumeGreen: true }).lineage.green, 'red');
+  assert.deepEqual(d.lineage, { red: null, 'still-green': 'red' });
+});
+
+test('implement describes its actions, checks, lineage and outcome map in order', () => {
+  const p = procedures.PROCEDURES.implement;
+  assert.deepEqual(p.options, { testFix: 1, requireTestPass: true });
+  assert.deepEqual(p.checks, ['immutability', 'green']);
+  assert.deepEqual(p.briefs, { green: 'green.md', 'test-fix': 'test-fix.md' });
+  assert.deepEqual(p.claims, ['ok', 'blocked', 'misscoped']);
+  assert.deepEqual(p.outcomes, ['ok', 'blocked', 'misscoped', 'gate-failed(test)']);
+  assert.deepEqual(p.checkOutcome, { test: 'gate-failed(test)' });
+  assert.deepEqual(p.commitKinds, { green: 'feat' });
+
+  const d = procedures.describe('implement');
+  assert.deepEqual(pairs(d.actions.filter((a) => !a.when)), [['green', 1], ['green', 2], ['green', 3], ['green', 4], ['green', 5]]);
+  assert.deepEqual(pairs(d.actions.filter((a) => a.when)), [['test-fix', 1], ['test-fix', 2]]);
+  assert.deepEqual(d.checks, [{ name: 'immutability', relaxed: false }, { name: 'green', relaxed: false }]);
+  // green starts fresh: no Session crosses Vertices, so there is no option to resume red's (R2c).
+  assert.deepEqual(d.lineage, { green: null, 'test-fix': 'green' });
+  assert.deepEqual(procedures.describe('implement', { resumeGreen: true }).lineage, { green: null, 'test-fix': 'green' });
 });
 
 test('review describes its actions, checks, lineage and outcome map', () => {
@@ -70,15 +82,14 @@ test('fix describes its actions, checks, lineage and outcome map', () => {
 });
 
 test('requireTestPass false relaxes the green check in describe', () => {
-  const d = procedures.describe('tdd', { requireTestPass: false });
-  assert.deepEqual(d.checks, [
-    { name: 'red', relaxed: false }, { name: 'immutability', relaxed: false }, { name: 'green', relaxed: true },
-  ]);
+  const d = procedures.describe('implement', { requireTestPass: false });
+  assert.deepEqual(d.checks, [{ name: 'immutability', relaxed: false }, { name: 'green', relaxed: true }]);
 });
 
 test('zero recovery counts drop their conditional actions from describe', () => {
-  const phases = (o) => [...new Set(procedures.describe('tdd', o).actions.map((a) => a.phase))];
-  assert.deepEqual(phases({ stillGreen: 0 }), ['red', 'green', 'test-fix']);
-  assert.deepEqual(phases({ testFix: 0 }), ['red', 'still-green', 'green']);
-  assert.deepEqual(phases({ stillGreen: 0, testFix: 0 }), ['red', 'green']);
+  const phases = (name, o) => [...new Set(procedures.describe(name, o).actions.map((a) => a.phase))];
+  assert.deepEqual(phases('tests-fail', { stillGreen: 0 }), ['red']);
+  assert.deepEqual(phases('implement', { testFix: 0 }), ['green']);
+  assert.deepEqual(phases('tests-fail', {}), ['red', 'still-green']);
+  assert.deepEqual(phases('implement', {}), ['green', 'test-fix']);
 });

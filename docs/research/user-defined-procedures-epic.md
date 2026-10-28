@@ -398,7 +398,7 @@ The shipped Flow runs red and green as two Vertices, with behaviour per Vertex u
 - `tdd` splits into code Procedures `tests-fail` (red, still-green, commit tests) and `implement` (green, test-fix,
   commit, push, PR). The shipped Flow becomes red → green → reviewer ⇄ implementer-fix.
 - `resumeGreen` goes (R2c).
-- The dirty-worktree guard becomes R2d: a write Vertex starts only on a clean worktree or one gg's records explain.
+- The dirty-worktree guard becomes R2d: every Vertex starts only on a clean worktree or one gg's records explain.
 - Green keeps reading red's outputs from the record (E4 makes them inputs).
 
 ### Out of scope

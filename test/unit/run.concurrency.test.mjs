@@ -49,7 +49,7 @@ test('a failed label update reaches the log, the event and the exit code', async
 });
 
 test('a crashed ticket keeps the reason from the later lines of the error', async (t) => {
-  const f = fixture(t, { responses: { 'implementer/1/red/1': { throw: new Error('git push origin x exited 1\nremote: Permission to o/r denied to u') } } });
+  const f = fixture(t, { responses: { 'red/1/red/1': { throw: new Error('git push origin x exited 1\nremote: Permission to o/r denied to u') } } });
   const results = await run.runTarget(f.options);
   assert.match(ticketResult(results).error, /Permission to o\/r denied/);
   assert.match(f.readEvents().find((e) => e.type === 'ticket_end' && e.ticket === TICKET).error, /Permission to o\/r denied/);
@@ -137,7 +137,7 @@ test('an auth failure stops every active ticket and records the class on run_end
   });
   // A's red call fails with auth while B is inside its own red call; B's call returns once A has ended.
   ticketHarnesses(f, [21, 22], {
-    responses: { 21: { 'implementer/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
+    responses: { 21: { 'red/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
     before: async (n, call) => {
       if (call.phase !== 'red') return;
       if (n === 21) await bInCall.wait();
@@ -204,7 +204,7 @@ test('a run stop skips queued tickets without admitting them', { timeout: 120_00
   f.options.target = EPIC;
   f.options.config.maxParallel = 1;
   const fakes = ticketHarnesses(f, [21, 22], {
-    responses: { 21: { 'implementer/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
+    responses: { 21: { 'red/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
   });
 
   const results = await run.runTarget(f.options);

@@ -12,8 +12,8 @@ import {
 test('golden: an invalid structured response is retried once with a nudge then stops', async (t) => {
   const g = await golden.setup(t, { responses: {
     ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
-    'implementer/1/green/2': { files: {}, response: { ...golden.greenResponse, claim: 'ok blocked' } },
+    'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
+    'green/1/green/2': { files: {}, response: { ...golden.greenResponse, claim: 'ok blocked' } },
   } });
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -28,7 +28,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
   assert.ok(!nudge.brief.startsWith('GREEN PHASE'), 'attempt 2 gets the nudge, not the green Brief again');
   assert.match(nudge.brief, /structured result/i);
   assert.notEqual(nudge.marker, first.marker, 'the marker names the attempt');
-  assert.equal(g.rec.retries['implementer/1/green/1'].parse, 1);
+  assert.equal(g.rec.retries['green/1/green/1'].parse, 1);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
   stopReason(g, { phase: 'green', ordinal: 1, outcome: 'needs-human', rule: 'parse-exhausted' });
 });
@@ -37,10 +37,10 @@ test('a replan reached with a rejected response is headed by its Outcome, never 
   const claim = 'ok\n\n## Injected heading';
   const g = await golden.setup(t, { responses: {
     ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
-    'implementer/1/green/2': { files: {}, response: { ...golden.greenResponse, claim } },
+    'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
+    'green/1/green/2': { files: {}, response: { ...golden.greenResponse, claim } },
   } });
-  g.flow.ticket.vertices.implementer.route = { 'needs-human': 'replan' };
+  g.flow.ticket.vertices.green.route = { 'needs-human': 'replan' };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'replan');
@@ -52,8 +52,8 @@ test('a replan reached with a rejected response is headed by its Outcome, never 
 
 test('a failing green check runs test-fix once then derives gate-failed(test)', async (t) => {
   const g = await greenSetup(t, {
-    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -68,16 +68,16 @@ test('a failing green check runs test-fix once then derives gate-failed(test)', 
   const exhausted = actionEvent(g, 'test-fix', 2);
   assert.equal(exhausted.outcome, 'gate-failed(test)');
   assert.equal(exhausted.rule, 'check-exhausted');
-  assert.equal(g.rec.visits.implementer, 1, 'no Edge was traversed for the retry');
+  assert.deepEqual(g.rec.visits, { red: 1, green: 1 }, 'no Edge was traversed for the retry');
   const reason = stopReason(g, { phase: 'test-fix', ordinal: 2, outcome: 'gate-failed(test)', rule: 'check-exhausted' });
   assert.match(reason.text, /Green Check/);
 });
 
 test('a timed-out result gets one fresh attempt then needs-human', async (t) => {
-  const red = golden.firstVisitResponses['implementer/1/red/1'];
+  const red = golden.firstVisitResponses['red/1/red/1'];
   const g = await golden.setup(t, { responses: {
-    'implementer/1/red/1': { ...red, result: { status: 'timed-out' } },
-    'implementer/1/red/2': { ...red, result: { status: 'timed-out' } },
+    'red/1/red/1': { ...red, result: { status: 'timed-out' } },
+    'red/1/red/2': { ...red, result: { status: 'timed-out' } },
   } });
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -85,7 +85,7 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
   assert.deepEqual(attemptsOf(g, 'red', 1).map((e) => [e.attempt, e.rule]), [[1, 'timeout-retry'], [2, 'timeout-exhausted']]);
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'the fresh Attempt resumes the session');
-  assert.equal(g.rec.retries['implementer/1/red/1'].timeout, 1);
+  assert.equal(g.rec.retries['red/1/red/1'].timeout, 1);
   const reason = stopReason(g, { phase: 'red', ordinal: 1, outcome: 'needs-human', rule: 'timeout-exhausted' });
   assert.match(reason.text, /timed out/);
 });
@@ -93,7 +93,7 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
 test('a transient failure is retried within budget honouring retryAfterMs', async (t) => {
   const failed = { files: {}, response: null, failure: { class: 'transient', retryAfterMs: 5 } };
   const g = await golden.setup(t, { responses: {
-    'implementer/1/red/1': failed, 'implementer/1/red/2': failed, 'implementer/1/red/3': failed,
+    'red/1/red/1': failed, 'red/1/red/2': failed, 'red/1/red/3': failed,
   } });
   const sleeps = [];
   const { clock } = g.options;
@@ -107,13 +107,13 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
   assert.equal(g.harness.calls.length, 3);
   assert.deepEqual(sleeps, [5, 5]);
   assert.equal(clock.now() - start, 10, 'the injected clock advanced by retryAfterMs each time');
-  assert.equal(g.rec.retries['implementer/1/red/1'].transient, 2);
+  assert.equal(g.rec.retries['red/1/red/1'].transient, 2);
   const reason = stopReason(g, { phase: 'red', ordinal: 1, outcome: 'needs-human', rule: 'transient-exhausted' });
   assert.match(reason.text, /transient/);
 });
 
 test('an auth failure stops the run with its class', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'needs-human');
@@ -126,7 +126,7 @@ test('an auth failure stops the run with its class', async (t) => {
 });
 
 test('an auth failure keeps its run stop when the terminal comment fails', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
   g.options.gh = { ...g.options.gh, commentIssue: async () => { throw new Error('gh comment down'); } };
   const result = await interpreter.runExecution(g.options);
 
@@ -140,7 +140,7 @@ const terminalMarker = (g, phase, ordinal) => marker.formatMarker({
 });
 
 test('a fault interrupting a Terminal comment posts its own comment with the error and the interrupted Terminal Reason', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
   const real = g.options.gh.commentIssue;
   let calls = 0;
   g.options.gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
@@ -164,7 +164,7 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
 
 test('a hold over an interrupted blocked terminal posts its own comment', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['implementer/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
+  responses['green/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
   const g = await golden.setup(t, { responses });
   const blocked = terminalMarker(g, 'needs-human', 1);
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: blocked, point: 'before-effect' } }),
@@ -192,7 +192,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
 });
 
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   const m = terminalMarker(g, 'fault', 1);
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-effect' } }));
   const mid = await record.load(g.commonDir, 'ticket', golden.TICKET);
@@ -209,7 +209,7 @@ test('a crash inside the fault report replays its comment once on resume', async
 });
 
 test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
   const real = g.options.gh.commentIssue;
   let calls = 0;
   const gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
@@ -226,7 +226,7 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
 });
 
 test('an unknown failure goes to needs-human without retry', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { files: {}, response: null, failure: { class: 'unknown' } } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'unknown' } } } });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'needs-human');
@@ -238,7 +238,7 @@ test('an unknown failure goes to needs-human without retry', async (t) => {
 });
 
 test('a rejecting harness is an unexpected fault', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.fault, true);
@@ -253,7 +253,7 @@ test('a rejecting harness is an unexpected fault', async (t) => {
 });
 
 test('a fault whose terminal comment also fails is still recorded as a fault', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error('harness exploded') } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   g.options.gh = { ...g.options.gh, commentIssue: async () => { throw new Error('gh comment down'); } };
   const result = await interpreter.runExecution(g.options);
 
@@ -266,7 +266,7 @@ test('a fault whose terminal comment also fails is still recorded as a fault', a
 });
 
 test('a harness rejecting with an empty error is still a fault', async (t) => {
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: new Error() } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error() } } });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.fault, true);
@@ -278,7 +278,7 @@ test('a harness rejecting with an empty error is still a fault', async (t) => {
 
 test('a CrashError propagates untouched', async (t) => {
   const crash = new interpreter.CrashError('injected crash');
-  const g = await golden.setup(t, { responses: { 'implementer/1/red/1': { throw: crash } } });
+  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: crash } } });
   await assert.rejects(interpreter.runExecution(g.options), (err) => err === crash);
 
   assert.equal((await record.load(g.commonDir, 'ticket', golden.TICKET)).state, 'active');
@@ -289,7 +289,7 @@ test('a CrashError propagates untouched', async (t) => {
 test('blocked after still-green stops', async (t) => {
   const g = await golden.setup(t, { responses: {
     ...structuredClone(golden.firstVisitResponses),
-    'implementer/1/still-green/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'The tests cannot fail first.' } },
+    'red/1/still-green/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'The tests cannot fail first.' } },
   } });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
@@ -303,8 +303,8 @@ test('blocked after still-green stops', async (t) => {
 
 test('blocked after test-fix stops', async (t) => {
   const g = await greenSetup(t, {
-    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' } },
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' } },
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -316,9 +316,9 @@ test('blocked after test-fix stops', async (t) => {
   stopReason(g, { phase: 'test-fix', ordinal: 2, outcome: 'blocked', rule: 'blocked', comment: false });
 });
 
-test('requireTestPass false is recorded on every event and does not block advance', async (t) => {
-  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
-  g.flow.ticket.vertices.implementer.options = { requireTestPass: false };
+test('requireTestPass false is recorded on every event of its Visit and does not block advance', async (t) => {
+  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  g.flow.ticket.vertices.green.options = { requireTestPass: false };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'done');
@@ -327,16 +327,17 @@ test('requireTestPass false is recorded on every event and does not block advanc
   assert.equal(check.direction, 'advance');
   assert.ok(!tddTrace(g).some((e) => e.phase === 'test-fix'), 'a relaxed Green Check needs no recovery');
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)']);
-  const visit = g.readEvents().filter((e) => e.type === 'action' && e.procedure === 'tdd');
+  const visit = g.readEvents().filter((e) => e.type === 'action' && e.procedure);
   assert.deepEqual(visit.map((e) => `${e.phase}/${e.ordinal} ${e.requireTestPass}`), [
-    'red/1 false', 'red/2 false', 'red/3 false', 'green/1 false', 'green/2 false', 'green/3 false', 'green/4 false', 'green/5 false',
+    'red/1 undefined', 'red/2 undefined', 'red/3 undefined',
+    'green/1 false', 'green/2 false', 'green/3 false', 'green/4 false', 'green/5 false',
   ]);
 });
 
 test('a persona edit between green and test-fix does not reach the test-fix call', async (t) => {
   const g = await greenSetup(t, {
-    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
   });
   const run = g.harness.run;
   g.harness.run = async (call) => {

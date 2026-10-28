@@ -11,7 +11,7 @@ import { TICKET, BRANCH, IN_PROGRESS, sh, fixture, seedExecution, markerOf } fro
 test('an in-progress ticket with a recoverable record is resumed', async (t) => {
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   // The push of the green commit was intended but never made.
-  const rec = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'implementer', 1, 'green', 4), point: 'before-effect' }) });
+  const rec = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
   assert.equal(rec.state, 'active');
   assert.deepEqual(record.openIntents(rec).map((e) => e.action), ['push'], 'the push is the open intent');
 
@@ -34,8 +34,8 @@ test('an in-progress ticket with a recoverable record is resumed', async (t) => 
 test('local paths in captured Check output and agent text do not reach PR bodies', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   const f = fixture(t, { git: 'real', responses });
-  responses['implementer/1/green/1'].response.summary = `Updated ${f.worktree}/lib/add.mjs`;
-  responses['implementer/1/red/1'].response.summary = `Tested ${f.worktree}/test/add.test.mjs`;
+  responses['green/1/green/1'].response.summary = `Updated ${f.worktree}/lib/add.mjs`;
+  responses['red/1/red/1'].response.summary = `Tested ${f.worktree}/test/add.test.mjs`;
   f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
     ? { code: 0, output: `${golden.GREEN_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false }
     : { code: 1, output: `${golden.RED_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false };
@@ -57,8 +57,8 @@ test('encoded and JSON-escaped local paths reach no done publication', async (t)
   const issue = {};
   const f = fixture(t, { git: 'real', responses, issue, rootName: 'gg run é-', branch: 'ticket/15-add-two-numbers-local' });
   issue.title = `Add two numbers ${pathToFileURL(f.worktree).href}`;
-  responses['implementer/1/red/1'].response.summary = `Tested ${forms(join(f.worktree, 'test', 'add.test.mjs'))}`;
-  responses['implementer/1/green/1'].response.summary = `Updated ${forms(join(f.worktree, 'lib', 'add.mjs'))}`;
+  responses['red/1/red/1'].response.summary = `Tested ${forms(join(f.worktree, 'test', 'add.test.mjs'))}`;
+  responses['green/1/green/1'].response.summary = `Updated ${forms(join(f.worktree, 'lib', 'add.mjs'))}`;
   f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
     ? { code: 0, output: `${golden.GREEN_OUTPUT}\n${forms(f.worktree)}`, timedOut: false }
     : { code: 1, output: `${golden.RED_OUTPUT}\n${forms(f.worktree)}`, timedOut: false };
@@ -83,7 +83,7 @@ test('encoded and JSON-escaped local paths reach no fault publication', async (t
   const issue = {};
   const f = fixture(t, { git: 'real', responses, issue, rootName: 'gg run é-', branch: 'ticket/15-add-two-numbers-local' });
   issue.title = `Add two numbers ${pathToFileURL(f.worktree).href}`;
-  responses['implementer/1/red/1'] = { throw: new Error(`Cannot read ${forms(f.commonDir)}`) };
+  responses['red/1/red/1'] = { throw: new Error(`Cannot read ${forms(f.commonDir)}`) };
 
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const origin = join(f.root, 'origin.git');

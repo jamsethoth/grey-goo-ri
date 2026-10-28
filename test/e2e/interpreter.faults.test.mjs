@@ -63,8 +63,8 @@ test('an integrity violation removes an injected ignored Protected File and rest
 });
 test('a test-fix that changes the committed test is rolled back to its baseline and stops', async (t) => {
   const g = await greenSetup(t, {
-    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
   }, 'real');
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -84,8 +84,8 @@ function excludeTests(g, ...paths) {
 
 test('a test-fix that adds an ignored test file has it removed by the rollback', async (t) => {
   const g = await greenSetup(t, {
-    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
   }, 'real');
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -97,8 +97,8 @@ test('a test-fix that adds an ignored test file has it removed by the rollback',
 
 test('a test-fix that adds an ignored file under a declared test path outside the default globs has it removed by the rollback', async (t) => {
   const g = await greenSetup(t, {
-    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'spec/injected.mjs': 'injected' }),
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'spec/injected.mjs': 'injected' }),
   }, 'real');
   g.options.testPaths = ['test/**', 'spec/**'];
   excludeTests(g, 'spec/injected.mjs');
@@ -110,7 +110,7 @@ test('a test-fix that adds an ignored file under a declared test path outside th
 });
 
 test('an ignored test file that was there before the call gets its bytes back from the rollback', async (t) => {
-  const g = await greenSetup(t, { 'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) }, 'real');
+  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) }, 'real');
   excludeTests(g, 'test/owner.test.mjs');
   mkdirSync(join(g.worktree, 'test'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'owner');
@@ -123,8 +123,8 @@ test('an ignored test file that was there before the call gets its bytes back fr
 
 test('an integrity violation on a Protected File also removes an ignored test file the same Attempt added', async (t) => {
   const g = await greenSetup(t, {
-    'implementer/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer/1/test-fix/1': ok({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
   }, 'real');
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
