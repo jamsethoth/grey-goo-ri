@@ -15,7 +15,8 @@ of the file's own bytes. The helper looks only for its own source's name, reads 
 against those bytes and loads the same bytes with `Assembly.Load`, so the file cannot change between check and load. A
 file whose bytes do not match its name is deleted. A copy from another version of the script has another name and is
 never looked at. When nothing matches, the helper compiles to a temporary file in the cache, loads its bytes and
-renames it into place; if a concurrent helper renamed its copy first, that copy stands. When the cache cannot be
+renames it into place. The compile is not deterministic, so helpers that start together on an empty cache each keep a
+copy under its own name, and later calls load whichever intact one they find first. When the cache cannot be
 written, a read-only install for example, the helper compiles in memory on every call, as it did before. A `loaded` or
 `compiled` note on stderr says which happened; `lib/exec.mjs` ignores notes it does not know, so it did not change.
 
@@ -50,7 +51,7 @@ could rewrite both. The content hash in the name detects damage, not tampering.
 
 ## Consequences
 
-- One assembly of about 20 KB stays in `lib/winjob-cache/` for each version of the script that has run. Old ones are
-  not pruned.
+- Assemblies of about 8.5 KB stay in `lib/winjob-cache/`: one for each version of the script that has run, plus one
+  for each extra helper that compiled at the same time on an empty cache. None are pruned.
 - `lib/winjob-cache/` is gitignored, which also keeps it out of an npm package.
 - Pre-warming PowerShell or replacing it remains out of scope. PowerShell's own start-up is still most of a cold call.

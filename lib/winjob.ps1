@@ -174,7 +174,7 @@ if (-not $how) {
     [void][Reflection.Assembly]::Load($bytes)
     $how = 'compiled'
     $to = Join-Path $cache "$key-$(Hash $bytes).dll"
-    [IO.File]::Move($tmp, $to) # fails when a concurrent helper cached its copy first
+    [IO.File]::Move($tmp, $to)
     $how = "compiled $to"
   } catch {} finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
   if (-not $how) { Add-Type -TypeDefinition $source; $how = 'compiled' } # an install gg cannot write to compiles every time
