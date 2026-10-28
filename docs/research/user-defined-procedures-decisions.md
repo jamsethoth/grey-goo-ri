@@ -75,6 +75,10 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | L11, L15: a cleanup hold continues with the recorded next Action | J4: the suspended Action's completion resumes from its recorded result |
 | R8d, U4: a partial-overlap warning per pair of rows; U4's three warnings | J14: one warning per partly taken row; U4's three overlaps in two |
 | R8b, J14: errors and warnings within each Claim token's split | J16: decided over the union of every token's legal inputs |
+| Q7, S4, R11e: inputs and `pr-ready` on every path, per Outcome | H1–H4: on the route map, never admitting an unsafe Flow |
+| T9: an optional input produced on no path is an error | H5: a warning, when no route guarantees any of its sources |
+| T3: a Vertex's own `route` before the Flow's `routes` | H7: explicit Outcome names before either `"*"` |
+| V4: engine Outcome names are reserved | H10: so are the names of `Object.prototype`'s properties |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -1081,6 +1085,81 @@ and the owner accepted all four findings as recommended.
   The analyser takes the union as a list of boxes, one per token (one per required Check in the `failed` table), and
   gathers what each row matches and who takes it across them before warning; N2's work limit sums the boxes. Issues
   #106, #165.
+
+## Owner decisions: Vertex admission (2026-10-28)
+
+Taken while grilling #107's graph analysis, after six review rounds on grey-goo-ri PR #167 each found the per-Outcome
+input check too coarse in a new way. The cause was that Q7 and S4 state the check per Outcome, and that later decisions
+(T6, U5, W3, V7, N9, J16 and request 3.3's counting) made what a Visit produces depend on its run. No decision said how
+exact admission must be, or which way it may be wrong.
+
+- H1. Admission may reject a Flow that would run correctly, but never admits one that could break its guarantees:
+  - every required input is produced on every route to its consumer (Q7);
+  - every route to `end: ready-for-qa` runs `pr-ready` (R11e);
+  - a write Vertex commits under a token that requires a Check (S2, T1c);
+  - every cycle has a bound (V3).
+
+  A rejection that may be a guess says so and names the workaround (H4). Issue #107.
+- H2. Admission reasons on the route map, not about runs. The map is the Vertices, the Outcomes each can produce
+  (R12b) and where each routes. Every landing a route can reach counts, `exhausted` targets included, from the first
+  traversal. Visit and edge counts, Check states and first-match rows are not simulated, so admission needs no state
+  limit. It amends Q7 and S4's "per Outcome": an Outcome's guarantees are those of H3. Issue #107.
+- H3. An Outcome guarantees an output only when every way of reaching it does:
+  - the agent Action's `response`, on any Outcome from a Claim (not `harness-*`; N10);
+  - effects (`commit.files`, and that `pr-ready` ran), only on an Outcome from the `passed` table (S4);
+  - a Check's `evidence`, only on an Outcome from the `passed` table, and only for a Check the token requires
+    (N9; never from the `failed` or `stopped` table, whatever a row names);
+  - `<vertex>.rescue`, on an Outcome of a write Vertex not from the `passed` table whose route lands on a Vertex
+    (R5a, U5, W3).
+
+  The ways of reaching an Outcome are its Claim tokens, each through one table. A list input (T6) is met on a route
+  when each way produces at least one of its sources. Issue #107.
+- H4. Of the graph errors, two may be guesses under H2, and each says so:
+  - `input <name> is required, but some route to <vertex> may not produce any of its sources; admission checks
+    routes, not runs, so if every run does produce one, mark the input optional`;
+  - `Outcome <o> reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so
+    route it through the Vertex that runs pr-ready`.
+
+  The other graph errors are exact on the map: an unrouted Outcome, an unbounded cycle, a missing commit, and R11d's
+  token check. Issue #107.
+- H5. T9 is a warning, not an error: an absent optional input never holds the Ticket (T10). It warns when no route
+  guarantees any of the input's sources, by H3, so it never misses an optional input that cannot arrive. It may also
+  warn about one that only some runs produce, and then says so: `input <name> is optional, but no route to <vertex>
+  is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs`.
+  Amends T9. Issue #107.
+- H6. The graph checks run only when every other check of the configuration has passed, since a malformed Procedure
+  or route would cascade into misleading graph errors. Each Vertex's routing is still resolved, for `gg doctor`.
+  Issue #107.
+- H7. An Outcome's route is the first of these that the configuration names:
+  1. the Vertex's `route` for that Outcome;
+  2. the Flow's `routes` for that Outcome;
+  3. the Vertex's `"*"`;
+  4. the Flow's `"*"`;
+  5. the engine default, `end: needs-human` for `failed` and `harness-*` (R12c, T7).
+
+  An explicit name is a deliberate rule, and a Vertex's catch-all must not swallow, for example, the Flow's
+  `misscoped: { end: needs-replan }` (T3, U6). Amends T3's reading of "may override". Issue #107.
+- H8. An edge with `max`, and a Vertex with `maxVisits`, must name `exhausted`; a missing one is an error. Where a
+  Ticket goes when a bound is spent is configuration, never a default (request 3.3, X2b). Issue #107.
+- H9. A Vertex's `access` is the first of these that is set:
+  1. the Procedure's `access: read-only` cap (U12);
+  2. the Vertex's `access`;
+  3. its Agent entry's `access`;
+  4. otherwise `read-only`.
+
+  Only the configuration Layers grant writes; no running agent or response changes it. The Resolved Flow records the
+  result, and every consumer reads that one value:
+  - the integrity assertion (a worktree change by a read-only Vertex is a violation);
+  - S2's commit rule (a read-only Vertex does not write);
+  - the Harness, which launches without write permission.
+
+  `gg doctor` shows a defaulted value as `read-only (default)`. Issue #107.
+- H10. The name of a property of `Object.prototype` (`__proto__`, `constructor`, `toString`, `valueOf` and the rest) is
+  reserved. No Vertex, Procedure, Agent, Action, Claim token, table `outcome`, `otherwise`, input or route key may use
+  one; admission reports it as an error. Before this, a Vertex or Procedure named `__proto__` was silently dropped.
+  Extends V4. A separate issue from #107.
+- H11. `gg doctor` prints each Vertex's `maxVisits` and its `exhausted` target when set, beside its routes, so the
+  bounds can be read against the cycles. Issue #107.
 
 ## Open
 
