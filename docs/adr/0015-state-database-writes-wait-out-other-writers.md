@@ -34,4 +34,5 @@ so the wait ends when the other writer's burst does, and only a lock truly held 
   Ticket holds at `needs-human` with them in place, until grey-goo-ri issue #68 rescues an Interrupted Attempt. A
   lock held that long means a hung process, which this surfaces instead of making every other gg process wait.
 - The open lock (`gg/locks/open.db`) keeps its 5 s timeout, and the locks keep `busy_timeout = 0` (ADR 0008).
-- `test/record.test.mjs` holds the write lock for 6 s and checks that a save waits it out.
+- `test/contract/sqlite/record.test.mjs` has another process hold the write lock for 8 s and checks that a save waits
+  it out for longer than 5 s.
