@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as exec from '../../../lib/exec.mjs';
 import * as render from '../../../lib/render.mjs';
 
@@ -685,6 +685,23 @@ test('the job helper reuses its compiled assembly on a second call', WIN_CASE, a
   assert.equal(second.code, 0);
   assert.match(second.raw, /ran/);
   assert.deepEqual(howLoaded(second.raw), [['loaded', cached]], second.raw);
+});
+
+// The wiring: runShell starts the helper so that it finds the cache beside lib/winjob.ps1. The case above shows the
+// cache is written; the suite's own cache may already be warm here.
+test('a second runShell with a timeout loads the cached helper assembly', WIN_CASE, async () => {
+  const call = async () => {
+    let raw = '';
+    const onHelper = (helper) => { for (const s of [helper.stdout, helper.stderr]) s.on('data', (d) => (raw += d)); };
+    const res = await exec.runShell(`"${process.execPath}" -e "1"`, { timeoutMs: 60_000, onHelper });
+    return { res, raw };
+  };
+  await call();
+  const second = await call();
+  assert.equal(second.res.code, 0);
+  assert.deepEqual(howLoaded(second.raw).map(([k]) => k), ['loaded'], second.raw);
+  const [[, from]] = howLoaded(second.raw);
+  assert.equal(dirname(from), fileURLToPath(new URL('../../../lib/winjob-cache', import.meta.url)));
 });
 
 test('a truncated helper assembly falls back to compiling', WIN_CASE, async (t) => {
