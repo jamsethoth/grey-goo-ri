@@ -79,7 +79,7 @@ for (const [name, agentWrites] of [
   });
 }
 
-test('findings-hash appends once per visit across a crash', async (t) => {
+test('the repeat Check appends once per visit across a crash', async (t) => {
   const g = await reviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
@@ -87,11 +87,11 @@ test('findings-hash appends once per visit across a crash', async (t) => {
   });
   const ev = g.options.events;
   let crashed = false;
-  // gg dies as the findings-hash Action of the first review records its Event.
+  // gg dies as the repeat Check of the first review records its Event.
   const events = (type, data) => {
     if (!crashed && type === 'action' && data.vertex === 'reviewer' && data.action === 'repeat') {
       crashed = true;
-      throw new interpreter.CrashError('crash at the findings-hash Event');
+      throw new interpreter.CrashError('crash at the repeat Event');
     }
     return ev(type, data);
   };
@@ -103,7 +103,7 @@ test('findings-hash appends once per visit across a crash', async (t) => {
   assert.deepEqual(final.outputs.filter((o) => o.action === 'repeat').map((o) => [o.vertex, o.visit]), [['reviewer', 1], ['reviewer', 2]], 'one review entry per Visit');
   const hashed = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.action === 'repeat');
   assert.equal(hashed.length, 1);
-  assert.notEqual(hashed[0].repeat, true, 'the review is not its own repeat');
+  assert.equal(hashed[0].signals.checks[0].state, 'passed', 'the review is not its own repeat');
 });
 
 test('the terminal stop survives a crash before the first terminal action', async (t) => {

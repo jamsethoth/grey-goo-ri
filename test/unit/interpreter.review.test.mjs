@@ -22,13 +22,13 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   assert.deepEqual(g.actions.map((e) => `${e.vertex}/${e.visit}/${e.action}/${e.recovery}`), [
     'red/1/red/0', 'red/1/red-check/0', 'red/1/commit/0',
     'green/1/green/0', 'green/1/test/0', 'green/1/commit/0', 'green/1/push/0', 'green/1/pr/0',
-    'reviewer/1/review/0', 'reviewer/1/repeat/0', 'reviewer/1/comment/0', 'reviewer/1/pr/0',
+    'reviewer/1/review/0', 'reviewer/1/review-pass/0', 'reviewer/1/repeat/0', 'reviewer/1/comment/0', 'reviewer/1/pr/0',
     'implementer-fix/1/fix/0', 'implementer-fix/1/test/0', 'implementer-fix/1/commit/0', 'implementer-fix/1/push/0', 'implementer-fix/1/pr/0',
-    'reviewer/2/review/0', 'reviewer/2/repeat/0', 'reviewer/2/comment/0', 'reviewer/2/pr/0',
+    'reviewer/2/review/0', 'reviewer/2/review-pass/0', 'reviewer/2/repeat/0', 'reviewer/2/comment/0', 'reviewer/2/pr/0',
     'publish/1/test/0', 'publish/1/pr/0', 'publish/1/pr-ready/0',
   ]);
   assert.deepEqual(g.actions.filter((e) => e.attempt !== 1), [], 'every Action is its first Attempt');
-  assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure), Array(8).fill('review'));
+  assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure), Array(10).fill('review'));
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), Array(5).fill('fix'));
   assert.equal(g.at('reviewer', 1, 'review', 0)[0].outcome, 'changes');
   assert.equal(g.at('reviewer', 1, 'review', 0)[0].rule, 'claim-route', 'a changes claim routes through claim-route');
@@ -132,19 +132,22 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
   assert.equal(reason.outcome, 'changes');
 });
 
-test('review ok without evidence is changes through the review-pass check', async (t) => {
+test('golden: a review ok without evidence routes as changes through the passed table', async (t) => {
   const g = await reviewSetup(t, {
     'reviewer/1/review/1': reviewed(review('ok', [finding('blocker', 'lib/add.mjs', 'add drops the second argument')])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => b + a;\n' }),
     'reviewer/2/review/1': reviewed(review('ok')),
   });
 
-  const decided = g.actions.filter((e) => e.vertex === 'reviewer' && e.visit === 1 && e.check === 'review-pass');
-  assert.equal(decided.length, 1, 'review-pass is evaluated once on the Structured Response');
-  assert.equal(decided[0].rule, 'check-failed');
-  assert.equal(decided[0].outcome, 'changes');
-  assert.equal(decided[0].signals.claim.claim, 'ok', 'the agent claimed ok');
-  assert.equal(decided[0].signals.checks.find((c) => c.name === 'review-pass').passed, false);
+  const checked = g.at('reviewer', 1, 'review-pass', 0);
+  assert.equal(checked.length, 1, 'review-pass is evaluated once on the Structured Response');
+  assert.equal(checked[0].signals.claim.claim, 'ok', 'the agent claimed ok');
+  assert.deepEqual(checked[0].signals.checks, [{ id: 'review-pass', kind: 'response', state: 'failed', tree: null }]);
+  // No Claim requires review-pass (P5a), so the review still comments and updates the PR.
+  assert.equal(checked[0].outcome, 'ok');
+  assert.equal(g.at('reviewer', 1, 'comment', 0).length, 1);
+  assert.equal(g.at('reviewer', 1, 'pr', 0).length, 1);
+  // The passed table's only ok row needs review-pass passed, so the Visit routes by otherwise: changes.
   assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1, 'the changes edge is taken');
   assert.equal(g.result.outcome, 'ready-for-qa');
 });
@@ -165,9 +168,9 @@ test('a repeated findings hash is flagged', async (t) => {
   assert.equal(first.value.findingsHash, checks.findingsHash(same));
   assert.equal(second.value.findingsHash, first.value.findingsHash, 'normalised Findings hash the same');
   const hashed = (visit) => g.at('reviewer', visit, 'repeat', 0)[0];
-  assert.notEqual(hashed(1).repeat, true, 'the first review is not a repeat');
-  assert.equal(hashed(2).repeat, true, 'the second review is flagged as a repeat');
-  assert.equal(hashed(2).outcome, 'changes', 'repeat is not routed in this slice');
+  assert.deepEqual(hashed(1).signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }], 'the first review is not a repeat');
+  assert.deepEqual(hashed(2).signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'failed', tree: null }], 'the second review is a repeat');
+  assert.equal(hashed(2).outcome, 'changes', 'repeat is not routed yet (#117)');
   assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 2);
   assert.equal(g.result.outcome, 'ready-for-qa');
 });

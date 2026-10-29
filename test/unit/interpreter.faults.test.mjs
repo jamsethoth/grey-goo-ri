@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
@@ -49,7 +50,7 @@ test('a needs-replan reached with a rejected response is headed by its end, neve
   assert.ok(!posted.body.includes('## Injected heading'), posted.body);
 });
 
-test('a failing green check runs test-fix once then derives gate-failed(test)', async (t) => {
+test('golden: a failing test Check runs test-fix once then fails with the Outcome failed', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
     'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
@@ -65,11 +66,12 @@ test('a failing green check runs test-fix once then derives gate-failed(test)', 
   assert.equal(fix.resume, 'fake-session-2', 'test-fix resumes the green session');
   assert.ok(fix.brief.includes(GREEN_FAIL_OUTPUT), 'test-fix gets the failing output');
   const exhausted = actionEvent(g, 'green', 'test', 1);
-  assert.equal(exhausted.outcome, 'gate-failed(test)');
+  assert.equal(exhausted.outcome, 'failed');
   assert.equal(exhausted.rule, 'check-exhausted');
   assert.deepEqual(g.rec.visits, { red: 1, green: 1 }, 'no Edge was traversed for the retry');
-  const reason = stopReason(g, { vertex: 'green', action: 'test', recovery: 1, outcome: 'gate-failed(test)', rule: 'check-exhausted' });
-  assert.match(reason.text, /Green Check/);
+  const reason = stopReason(g, { vertex: 'green', action: 'test', recovery: 1, outcome: 'failed', rule: 'check-exhausted' });
+  assert.equal(reason.text, 'The command Check test failed with no recovery left (rule check-exhausted).');
+  assert.equal(readFileSync(join(g.worktree, 'lib', 'add.mjs'), 'utf8'), 'export const add = (a, b) => a - b;\n', 'the last attempt stays for the human');
 });
 
 test('a timed-out result gets one fresh attempt then needs-human', async (t) => {
@@ -316,14 +318,16 @@ test('blocked after test-fix stops', async (t) => {
 test('requireTestPass false is recorded on every event of its Visit and does not block advance, but publishing still needs a passing test', async (t) => {
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
   g.flow.ticket.vertices.green.options = { requireTestPass: false };
+  // A relaxed test that fails has no evidence (N9), so publish reads green's as optional.
+  g.flow.ticket.vertices.publish.inputs.green.optional = true;
   const { outcome } = await interpreter.runExecution(g.options);
 
   // R11d: publish runs the test command itself, whichever Vertex ran before it.
   assert.equal(outcome, 'needs-human');
-  assert.equal(actionEvent(g, 'publish', 'test').outcome, 'gate-failed(test)');
+  assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed');
   assert.equal(g.gh.pr().isDraft, true, 'nothing is marked ready');
   const check = actionEvent(g, 'green', 'test');
-  assert.equal(check.signals.checks.find((c) => c.name === 'test').passed, false, 'the failing Green Check is recorded');
+  assert.deepEqual(check.signals.checks.map((c) => [c.id, c.state]), [['test', 'failed']], 'the failing test Check is recorded');
   assert.equal(check.direction, 'advance');
   assert.ok(!tddTrace(g).some((e) => e.recovery > 0), 'a relaxed Green Check needs no recovery');
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)']);

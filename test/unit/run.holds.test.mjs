@@ -436,19 +436,18 @@ test('a differently cased in-progress without a record is left for Stuck handlin
 });
 
 test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
-  const responses = { ...structuredClone(golden.firstVisitResponses), 'red/1/still-green/1': { files: {}, response: golden.redResponse } };
-  const f = fixture(t, { responses, labels: [NEEDS_HUMAN] });
-  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const f = fixture(t, { labels: [NEEDS_HUMAN] });
+  // red's Attempt breaks an Integrity Assertion, and gg dies before its reset.
+  const integrity = { ...f.options.integrity, end: async () => ({ violations: [{ worktree: f.worktree, surface: 'head', before: null, after: 'a'.repeat(40) }] }) };
   const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
-  await seedExecution(f, { git, exec });
-  f.options.exec = exec;
+  await seedExecution(f, { git, integrity });
 
   await run.runTarget(f.options);
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), "the agent's changes are kept for the human");
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'abandoned', 'the label overrides the record');
   assert.deepEqual(f.labelAdds(), [], 'no label written');
   assert.deepEqual(f.comments(), [], 'no comment posted');
-  assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
+  assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded red');
 });
 
 const NOT_READY = [{ blockedBy: [{ number: 3, state: 'OPEN' }] }, { state: 'CLOSED' }];

@@ -158,19 +158,26 @@ test('findings hash changes with severity', () => {
 
 const review = { claim: 'ok', summary: '', dodMet: true, tddEvidenceOk: true, findings: [{ severity: 'minor', file: 'a', issue: 'nit', fix: '' }], diagnosis: '' };
 
+// The shipped review's review-pass Check (P5d).
+const REVIEW_PASS = { 'all-of': [
+  { field: 'dodMet', is: true },
+  { field: 'tddEvidenceOk', is: true },
+  { none: 'findings', where: { severity: ['blocker', 'major'] } },
+] };
+
 test('review-pass passes a review with dodMet, tddEvidenceOk and only a minor finding', () => {
-  assert.deepEqual(checks.reviewPass(review), { passed: true, reasons: [] });
+  assert.deepEqual(checks.responseCheck(review, REVIEW_PASS), { passed: true, reasons: [] });
 });
 
 const REVIEW_FAILS = [
-  ['a major finding', { ...review, findings: [{ severity: 'major', file: 'a', issue: 'bug', fix: '' }] }, 'major finding in a: bug'],
-  ['a blocker finding', { ...review, findings: [{ severity: 'blocker', file: 'a', issue: 'bug', fix: '' }] }, 'blocker finding in a: bug'],
-  ['dodMet false', { ...review, dodMet: false }, 'The review does not confirm the definition of done is met.'],
-  ['tddEvidenceOk false', { ...review, tddEvidenceOk: false }, 'The review does not accept the TDD evidence.'],
+  ['a major finding', { ...review, findings: [{ severity: 'major', file: 'a', issue: 'bug', fix: '' }] }, 'findings has 1 of 1 items where severity is blocker or major; expected none'],
+  ['a blocker finding', { ...review, findings: [{ severity: 'blocker', file: 'a', issue: 'bug', fix: '' }] }, 'findings has 1 of 1 items where severity is blocker or major; expected none'],
+  ['dodMet false', { ...review, dodMet: false }, 'dodMet is false, expected true'],
+  ['tddEvidenceOk false', { ...review, tddEvidenceOk: false }, 'tddEvidenceOk is false, expected true'],
 ];
 for (const [name, response, reason] of REVIEW_FAILS) {
   test(`review-pass fails a review with ${name}`, () => {
-    assert.deepEqual(checks.reviewPass(response), { passed: false, reasons: [reason] });
+    assert.deepEqual(checks.responseCheck(response, REVIEW_PASS), { passed: false, reasons: [reason] });
   });
 }
 

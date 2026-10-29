@@ -270,9 +270,15 @@ const publishing = async (t, during) => {
 };
 const markedReady = (g) => g.gh.calls.some((c) => c.args[0] === 'pr' && c.args[1] === 'ready');
 
-test('pr-ready holds when the published tree differs from the checked tree', async (t) => {
-  // The test command rewrites a committed file, so the tree it passed on is not the pushed commit's.
-  const g = await publishing(t, (g) => writeFileSync(join(g.worktree, 'lib', 'add.mjs'), 'export const add = (a, b) => b + a;\n'));
+test('pr-ready holds when the worktree changed after its Check passed', async (t) => {
+  const g = await golden.setup(t);
+  const ev = g.options.events;
+  // A committed file is rewritten once publish's test has passed, so the worktree is no longer the commit it publishes.
+  g.options.events = (type, data) => {
+    ev(type, data);
+    if (type === 'action' && data.vertex === 'publish' && data.action === 'test') writeFileSync(join(g.worktree, 'lib', 'add.mjs'), 'export const add = (a, b) => b + a;\n');
+  };
+  g.result = await interpreter.runExecution(g.options);
 
   assert.equal(g.result.outcome, 'needs-human', JSON.stringify(g.result));
   assert.equal(g.result.held, true);
@@ -280,7 +286,7 @@ test('pr-ready holds when the published tree differs from the checked tree', asy
   assert.equal(g.gh.pr().isDraft, true, 'the PR stays a draft');
   const rec = await loadTicket(g);
   assert.deepEqual(rec.terminalReason.decidedBy, { hold: 'unchecked-publish' });
-  assert.match(rec.terminalReason.text, /its Check passed on tree \w+, not on tree \w+ of commit \w+/);
+  assert.match(rec.terminalReason.text, /the worktree is not clean at commit \w+/);
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
 });
 

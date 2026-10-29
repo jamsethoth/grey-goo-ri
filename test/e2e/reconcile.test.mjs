@@ -8,12 +8,12 @@ import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
 import { resetEntries } from '../support/reconcile.mjs';
 
-// A failed red Phase whose reset is interrupted by a crash at `when`: before the reset, or after it.
-async function crashedFailedRed(t, when) {
+// red's Attempt writes a Protected File, an Integrity Violation whose reset is interrupted by a crash at `when`: before
+// the reset, or after it.
+async function crashedViolation(t, when) {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const g = await golden.setup(t, { responses, integrity: 'real' });
-  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = g.options.git;
   g.options.git = { ...git, resetTo: async (...args) => {
     if (when === 'after reset') await git.resetTo(...args);
@@ -25,15 +25,15 @@ async function crashedFailedRed(t, when) {
   return g;
 }
 
-test('a crash after the reset of a failed red keeps its History item exactly once', async (t) => {
-  const g = await crashedFailedRed(t, 'after reset');
+test('a crash after the reset of an Integrity Violation keeps its History item exactly once', async (t) => {
+  const g = await crashedViolation(t, 'after reset');
   assert.deepEqual(g.loaded.history, [], 'the crash came before the History item was saved');
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'continue');
   assert.equal(g.loaded.history.length, 1);
-  assert.equal(g.loaded.history[0].kind, 'red phase failed');
-  assert.match(g.loaded.history[0].text, /did not fail before implementation/);
+  assert.equal(g.loaded.history[0].kind, 'integrity violation');
+  assert.match(g.loaded.history[0].text, /changed protected/);
   assert.deepEqual(resetEntries(g.loaded), ['intent', 'evidence', 'complete']);
   assert.deepEqual(record.openIntents(g.loaded), []);
 
@@ -44,28 +44,28 @@ test('a crash after the reset of a failed red keeps its History item exactly onc
 });
 
 test('a crash before the reset is finished by Reconciliation while the worktree is as the agent left it', async (t) => {
-  const g = await crashedFailedRed(t, 'before reset');
+  const g = await crashedViolation(t, 'before reset');
   assert.notEqual(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the agent changes are still in the worktree');
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.git }), 'continue');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', "the record proves the changes the agent's, so they are discarded");
-  assert.deepEqual(g.loaded.history.map((h) => h.kind), ['red phase failed']);
+  assert.deepEqual(g.loaded.history.map((h) => h.kind), ['integrity violation']);
   assert.deepEqual(resetEntries(g.loaded), ['intent', 'evidence', 'complete']);
 });
 
 test('a crash before the reset holds the Execution and discards nothing once a human changed the worktree', async (t) => {
-  const g = await crashedFailedRed(t, 'before reset');
+  const g = await crashedViolation(t, 'before reset');
   writeFileSync(join(g.worktree, 'human.txt'), 'mine\n');
   const dirty = golden.sh(g.worktree, 'status', '--porcelain');
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
   assert.deepEqual(g.loaded.history, []);
-  assert.equal(record.openIntents(g.loaded)[0].payload.history.kind, 'red phase failed', 'the reason waits in the open intent');
+  assert.equal(record.openIntents(g.loaded)[0].payload.history.kind, 'integrity violation', 'the reason waits in the open intent');
 });
 
 test('an assume-unchanged edit left at the baseline does not prove the reset done', async (t) => {
-  const g = await crashedFailedRed(t, 'after reset');
+  const g = await crashedViolation(t, 'after reset');
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
   golden.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);
   writeFileSync(join(g.worktree, tracked), 'a hidden agent edit\n');
@@ -77,7 +77,7 @@ test('an assume-unchanged edit left at the baseline does not prove the reset don
 });
 
 test('an ignored test added after an interrupted reset holds the restore and is kept', async (t) => {
-  const g = await crashedFailedRed(t, 'after reset');
+  const g = await crashedViolation(t, 'after reset');
   writeFileSync(join(g.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
   mkdirSync(join(g.worktree, 'test'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'mine\n');
@@ -115,7 +115,7 @@ test('a crash between the reset and the Protected File restore of an integrity v
 });
 
 test('Reconciliation uses an injected integrity', async (t) => {
-  const g = await crashedFailedRed(t, 'after reset');
+  const g = await crashedViolation(t, 'after reset');
   // The real worktree is clean at the reset's baseline, so only the injected integrity can make it look a human's.
   const elsewhere = { head: 'elsewhere', index: 'elsewhere', tree: 'elsewhere' };
   const integrity = { snapshot: async () => elsewhere, isCleanAt: async () => false, untrackedFiles: async () => ({}), ignoredFiles: async () => ({}) };

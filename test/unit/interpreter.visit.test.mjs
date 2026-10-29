@@ -174,7 +174,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   const check = actionEvent(g, 'green', 'test');
   assert.ok(check, 'the Green Check runs and is recorded');
   assert.equal(check.signals.claim.claim, 'blocked');
-  assert.equal(check.signals.checks.find((c) => c.name === 'test').passed, true);
+  assert.deepEqual(check.signals.checks.map((c) => [c.id, c.state]), [['test', 'passed']]);
   assert.equal(check.rule, 'blocked');
   assert.equal(check.outcome, 'blocked');
 
@@ -188,7 +188,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.ok(comment.body.includes(`**Terminal Reason:** ${reason.text}`), comment.body);
 });
 
-test('agent-reported test names stay out of a red-failed Terminal Reason and are fenced in its comment', async (t) => {
+test("agent-reported test names stay out of a failed red's Terminal Reason and are fenced in its comment", async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   const injected = 'missing\n\n## injected heading';
   responses['red/1/red/1'] = { ...responses['red/1/red/1'], response: { ...golden.redResponse, tests: [injected] } };
@@ -197,7 +197,7 @@ test('agent-reported test names stay out of a red-failed Terminal Reason and are
   await interpreter.runExecution(g.options);
 
   const reason = terminalReasonOf(g);
-  assert.equal(reason.outcome, 'red-failed');
+  assert.equal(reason.outcome, 'failed');
   assert.ok(!reason.text.includes('injected'), reason.text);
   const [comment] = g.gh.comments;
   assert.ok(!/^## injected heading$/m.test(comment.body), 'the diagnosis cannot render as markdown');
@@ -222,7 +222,7 @@ test('ready-for-qa carries a Terminal Reason naming the passed Checks and the re
   assert.deepEqual(reason.decidedBy, { vertex: 'publish', visit: 1, action: 'pr-ready', recovery: 0 });
   assert.equal(reason.outcome, 'ok');
   assert.equal(reason.rule, 'effect-completed');
-  assert.equal(reason.text, `publish visit 1 completed every publish Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+  assert.equal(reason.text, `publish visit 1 completed every publish Action: test passed. PR #${g.rec.pr} is ready for review.`);
 });
 
 // ff's red-gate e2e cases on the fake harness: red writes test/fail.test.mjs, the runner answers with `run`,
@@ -245,53 +245,25 @@ async function redGate(t, { tests, run }) {
 
 const FAIL_OUTPUT = 'not ok 1 - rejects bad input\n# fail 1';
 
-test('a red run whose runner cannot start is not committed; red-failed records the reason and the next attempt sees it', async (t) => {
+test('a red run whose runner cannot start is not committed and fails with the reason', async (t) => {
   const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 127, output: 'ff-no-such-runner-xyz: command not found' } });
   assert.deepEqual(await subjects(g), [], 'no test: commit');
-  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'red-failed');
-  assert.equal(actionEvent(g, 'red', 'red-check').rule, 'check-exhausted');
-  assert.equal(g.rec.history[0]?.kind, 'red phase failed');
-  const reason = g.rec.history[0].text;
-  assert.match(reason, /could not start/);
-
-  // A second Execution of the same Ticket, its history carried over by the caller, shows the reason in its red Brief.
-  const next = record.createExecution({
-    commonDir: g.commonDir, ticket: golden.TICKET, epic: 1, flow: { name: g.flow.name, entry: g.flow.ticket.entry },
-    configHash: 'cfg-hash', run: '20261015T000100Z-def456', worktree: g.worktree, branch: golden.BRANCH, base: 'main',
-  });
-  next.history = structuredClone(g.rec.history);
-  await interpreter.runExecution({ ...g.options, record: next });
-  const red = g.harness.calls.at(-1);
-  assert.ok(red.brief.startsWith('RED PHASE'), 'the last call is the next red call');
-  assert.ok(red.brief.includes(reason), 'history carries the reason into the next red brief');
+  const check = actionEvent(g, 'red', 'red-check');
+  assert.equal(check.outcome, 'failed');
+  assert.equal(check.rule, 'check-exhausted', 'a runner that cannot start is not recovered');
+  assert.match(g.gh.comments[0].body, /```\nThe test runner could not start/, 'the reason is posted fenced');
 });
 
 test('a red run whose output names none of the reported tests is not committed', async (t) => {
   const g = await redGate(t, { tests: ['some other test'], run: { code: 1, output: FAIL_OUTPUT } });
   assert.deepEqual(await subjects(g), [], 'no test: commit');
-  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'red-failed');
-  assert.match(g.rec.history[0]?.text ?? '', /does not mention any reported failing test/);
-});
-
-test('a red Phase that leaves nothing to commit fails red with "No tests were written."', async (t) => {
-  const responses = structuredClone(golden.firstVisitResponses);
-  responses['red/1/red/1'] = { files: {}, response: { ...golden.redResponse, tests: ['rejects bad input'] } };
-  const g = await golden.setup(t, { responses });
-  g.options.exec = { runShell: async () => ({ code: 1, output: FAIL_OUTPUT, timedOut: false }) };
-  const { outcome } = await interpreter.runExecution(g.options);
-  assert.equal(outcome, 'needs-human');
-  const commit = actionEvent(g, 'red', 'commit');
-  assert.equal(commit.outcome, 'red-failed');
-  assert.equal(commit.rule, 'check-exhausted');
-  assert.deepEqual(intents(g.rec, 'commit'), [], 'no commit intent for an empty commit');
-  assert.deepEqual(g.rec.outputs.find((o) => o.action === 'commit')?.value, { files: [] }, 'an empty commit records files: []');
-  assert.deepEqual(g.rec.history, [{ kind: 'red phase failed', text: 'No tests were written.' }]);
-  assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 'commit'));
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'failed');
+  assert.match(g.gh.comments[0].body, /does not mention any reported failing test/);
 });
 
 test('a red run with a nonzero exit naming a reported test is committed as test:', async (t) => {
   const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 1, output: FAIL_OUTPUT } });
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)']);
-  assert.ok(!g.readEvents().some((e) => e.type === 'action' && e.outcome === 'red-failed'));
+  assert.ok(!g.readEvents().some((e) => e.type === 'action' && e.outcome === 'failed'));
   assert.deepEqual(g.rec.history, []);
 });

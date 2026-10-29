@@ -12,35 +12,34 @@ import {
 } from '../support/run.mjs';
 
 test('agent-made dirty state proven by the record is discarded', async (t) => {
-  const responses = { ...structuredClone(golden.firstVisitResponses), 'red/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const responses = structuredClone(golden.firstVisitResponses);
+  // red writes a Protected File: an Integrity Violation, whose reset crashes.
+  responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  // The red test passes before implementation, so the red Phase fails; the crash comes before its reset.
-  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
-  const seeded = await seedExecution(f, { git, exec });
+  const seeded = await seedExecution(f, { git });
   assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['reset'], 'the record holds the decided reset');
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), "the agent's test is still in the worktree");
-  f.options.exec = exec;
 
   await run.runTarget(f.options);
   assert.equal(sh(f.worktree, 'status', '--porcelain'), '', "the agent's changes are discarded");
-  assert.equal(f.harness.calls.length, 2, 'no agent call is repeated');
+  assert.equal(f.harness.calls.length, 1, 'no agent call is repeated');
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.notEqual(final.state, 'held', 'the Ticket is not held for its own agent changes');
-  assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its failed red');
-  assert.deepEqual(final.history.map((h) => h.kind), ['red phase failed']);
+  assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its Integrity Violation');
+  assert.deepEqual(final.history.map((h) => h.kind), ['integrity violation']);
   assert.deepEqual(record.openIntents(final), []);
 });
 
 test('changes made after an interrupted reset are held, not discarded', async (t) => {
-  const responses = { ...structuredClone(golden.firstVisitResponses), 'red/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const responses = structuredClone(golden.firstVisitResponses);
+  // red writes a Protected File: an Integrity Violation, whose reset crashes.
+  responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
-  await seedExecution(f, { git, exec });
+  await seedExecution(f, { git });
   // A human works in the worktree after the crash, on top of what the agent left.
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
-  f.options.exec = exec;
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2);
@@ -48,62 +47,62 @@ test('changes made after an interrupted reset are held, not discarded', async (t
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
   assert.ok(f.comments().some((b) => b.includes('human.txt')), `a comment carries the diff stat: ${JSON.stringify(f.comments())}`);
-  assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
+  assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded red');
 });
 
 test('an ignored test added after an interrupted reset is held, not deleted', async (t) => {
-  const responses = { ...structuredClone(golden.firstVisitResponses), 'red/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const responses = structuredClone(golden.firstVisitResponses);
+  // red writes a Protected File: an Integrity Violation, whose reset crashes.
+  responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
-  await seedExecution(f, { git, exec });
+  await seedExecution(f, { git });
   // An ignored file leaves HEAD and the tree as the agent left them, so only the saved ignored files can tell it apart.
   writeFileSync(join(f.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
   writeFileSync(join(f.worktree, 'test', 'human.test.mjs'), 'mine\n');
-  f.options.exec = exec;
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2);
   assert.equal(readFileSync(join(f.worktree, 'test', 'human.test.mjs'), 'utf8'), 'mine\n', 'the human file is untouched');
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
-  assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
+  assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded red');
 });
 
 test('a human change staged after an interrupted reset is held, not discarded', async (t) => {
-  const responses = { ...structuredClone(golden.firstVisitResponses), 'red/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const responses = structuredClone(golden.firstVisitResponses);
+  // red writes a Protected File: an Integrity Violation, whose reset crashes.
+  responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
-  await seedExecution(f, { git, exec });
+  await seedExecution(f, { git });
   // Staged, then the working-tree bytes put back: HEAD and the worktree match what the agent left, only the index differs.
   const pkg = join(f.worktree, 'package.json');
   const original = readFileSync(pkg, 'utf8');
   writeFileSync(pkg, '{ "human": true }\n');
   sh(f.worktree, 'add', 'package.json');
   writeFileSync(pkg, original);
-  f.options.exec = exec;
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2);
   assert.equal(sh(f.worktree, 'show', ':package.json'), '{ "human": true }', 'the staged human content survives');
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
-  assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
+  assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded red');
 });
 
 test('an interrupted reset whose intent predates the index fingerprint is held', async (t) => {
-  const responses = { ...structuredClone(golden.firstVisitResponses), 'red/1/still-green/1': { files: {}, response: golden.redResponse } };
+  const responses = structuredClone(golden.firstVisitResponses);
+  // red writes a Protected File: an Integrity Violation, whose reset crashes.
+  responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
-  const seeded = await seedExecution(f, { git, exec });
+  const seeded = await seedExecution(f, { git });
   delete record.openIntents(seeded)[0].payload.left.index;
   await record.save(seeded);
-  f.options.exec = exec;
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2);
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
-  assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
+  assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded red');
 });
 
 test('a Run resumes a partial restore without repeating the agent call', async (t) => {
