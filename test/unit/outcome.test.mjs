@@ -170,6 +170,47 @@ test('resolve is pure: it does not mutate its inputs', () => {
   assert.deepEqual(input, copy);
 });
 
+// #115: the Visit's Outcome (Q3d). A Procedure's tables pick among the legitimate Outcomes only after gg's fixed rows.
+test('the decision order is fixed rows, stopped, passed or failed, otherwise', () => {
+  const procedure = {
+    stopped: [{ when: { 'response.reason': 'misscoped' }, outcome: 'misscoped' }],
+    passed: [{ when: { pass: 2 }, outcome: 'recovered' }],
+    failed: [{ when: { 'check.lint': 'failed' }, outcome: 'lint-failed' }],
+    otherwise: 'changes',
+  };
+  const ok = { requires: ['test', 'lint'] };
+  const stop = { stop: true };
+  const decide = (token, checks, scope, extra = {}) => outcome.decide({ result: completed, claim: claim(token === stop ? 'blocked' : 'ok'),
+    checks: [integrityOk, ...checks], retries: none, token, procedure, scope: { pass: 1, check: {}, response: {}, ...scope }, ...extra });
+  const passing = [check('test', true), check('lint', true)];
+
+  // gg's fixed rows come first, whatever the Claim and its tables say.
+  const violated = decide(stop, [check('worktree-unchanged', false, true)], { response: { reason: 'misscoped' } });
+  assert.deepEqual([violated.outcome, violated.rule], ['integrity-violation', { table: 'fixed', row: 'integrity-violation' }]);
+  // A stop token goes to the stopped table, else stays the token; passing Checks never override it, nor does otherwise.
+  assert.deepEqual(decide(stop, passing, { response: { reason: 'misscoped' } }).rule, { table: 'stopped', row: 0 });
+  const blocked = decide(stop, passing, { response: { reason: 'none' } });
+  assert.deepEqual([blocked.outcome, blocked.direction, blocked.rule], ['blocked', 'stop', { table: 'stopped', row: null }]);
+  // Every required Check passed: the passed table, then otherwise.
+  assert.deepEqual(decide(ok, passing, { pass: 2 }).rule, { table: 'passed', row: 0 });
+  const otherwise = decide(ok, passing, {});
+  assert.deepEqual([otherwise.outcome, otherwise.rule], ['changes', { table: 'passed', row: 'otherwise' }]);
+  // A required Check failed: recovery while it is left, then the failed table, then otherwise.
+  const failing = [check('test', true), check('lint', false)];
+  assert.deepEqual(decide(ok, failing, { check: { lint: 'failed' } }, { recoverable: true }).row, 'recover');
+  assert.deepEqual(decide(ok, failing, { check: { lint: 'failed' } }).rule, { table: 'failed', row: 0 });
+  assert.deepEqual(decide(ok, failing, { check: { lint: 'passed' } }).rule, { table: 'failed', row: 'otherwise' });
+});
+
+test('with no row and no otherwise the Outcome is the token, or failed when a required Check failed', () => {
+  const decide = (checks) => outcome.decide({ result: completed, claim: claim('ok'), checks: [integrityOk, ...checks], retries: none,
+    token: { requires: ['test'] }, procedure: {}, scope: { pass: 1, check: {} } });
+  const passed = decide([check('test', true)]);
+  assert.deepEqual([passed.outcome, passed.direction, passed.rule], ['ok', 'advance', { table: 'passed', row: null }]);
+  const failed = decide([check('test', false)]);
+  assert.deepEqual([failed.outcome, failed.direction, failed.rule], ['failed', 'stop', { table: 'failed', row: null }]);
+});
+
 // #66: GitHub and git failures of a remote Action, classified as gh and git report them.
 const http = (status, message, headers = {}) =>
   Object.assign(new Error(`gh: ${message} (HTTP ${status})\ngh api repos/{owner}/{repo}/issues/7/comments`), { code: 1, http: { status, headers } });
