@@ -33,8 +33,8 @@ const usage = () => ({ peakContext: 1200, turns: 3, toolCalls: 4, compactions: 0
 
 const actionFields = () => ({
   flow: 'default', configHash: 'c0ffee', launchProfile: null, confinement: null,
-  ticket: 7, run: 'r1', execution: 'e1', vertex: 'implement', visit: 1, procedure: 'tdd', phase: 'red',
-  ordinal: 1, attempt: 1, durationMs: 1500, outcome: 'ok', direction: 'forward', signals: [], rule: 'red-ok',
+  ticket: 7, run: 'r1', execution: 'e1', vertex: 'implement', visit: 1, procedure: 'tdd', action: 'red',
+  recovery: 0, attempt: 1, durationMs: 1500, outcome: 'ok', direction: 'forward', signals: [], rule: 'red-ok',
   agent: true,
   harness: 'fake', cliVersion: null, model: 'fake-model', effort: 'medium', personaHash: 'p1', tools: ['Read'],
   init: null, sessionId: 's1', lineage: [], transcriptPath: null,
@@ -44,7 +44,7 @@ const actionFields = () => ({
 
 const required = [
   'flow', 'configHash', 'launchProfile', 'confinement', 'ticket', 'run', 'execution', 'vertex', 'visit',
-  'procedure', 'phase', 'ordinal', 'attempt', 'durationMs', 'outcome', 'direction', 'signals', 'rule',
+  'procedure', 'action', 'recovery', 'attempt', 'durationMs', 'outcome', 'direction', 'signals', 'rule',
 ];
 const agentRequired = [
   'harness', 'cliVersion', 'model', 'effort', 'personaHash', 'tools', 'init', 'sessionId', 'lineage',
@@ -66,7 +66,7 @@ test('an action event carries schema 2 and every required field', (t) => {
   assert.equal(typeof back.ts, 'string');
   assert.deepEqual(Object.keys(back), [
     'schema', 'ts', 'type', 'run', 'flow', 'configHash', 'launchProfile', 'confinement', 'ticket', 'execution', 'vertex',
-    'visit', 'procedure', 'phase', 'ordinal', 'attempt', 'durationMs', 'outcome', 'direction', 'signals', 'rule', 'agent',
+    'visit', 'procedure', 'action', 'recovery', 'attempt', 'durationMs', 'outcome', 'direction', 'signals', 'rule', 'agent',
     'harness', 'cliVersion', 'model', 'effort', 'personaHash', 'tools', 'init', 'sessionId', 'lineage', 'transcriptPath',
     'usage', 'exitCode', 'signal', 'finalEventSubtype', 'permissionDenials', 'commandsRun', 'failureClass',
   ]);
@@ -189,12 +189,12 @@ test('readEvents returns events in insertion order', (t) => {
   log('run_start');
   log('ticket_start', { execution: 'e1', ticket: 7 });
   log('action', events.actionEvent(actionFields()));
-  log('action', events.actionEvent({ ...actionFields(), ordinal: 2 }));
+  log('action', events.actionEvent({ ...actionFields(), recovery: 1 }));
   log('ticket_end', { execution: 'e1', ticket: 7, outcome: 'done' });
   log('run_end');
   const read = events.readEvents(dir);
-  assert.deepEqual(read.map((e) => [e.type, e.ordinal ?? null]),
-    [['run_start', null], ['ticket_start', null], ['action', 1], ['action', 2], ['ticket_end', null], ['run_end', null]]);
+  assert.deepEqual(read.map((e) => [e.type, e.recovery ?? null]),
+    [['run_start', null], ['ticket_start', null], ['action', 0], ['action', 1], ['ticket_end', null], ['run_end', null]]);
   assert.deepEqual(read, rows(dir).map((row) => JSON.parse(row.json)));
 });
 

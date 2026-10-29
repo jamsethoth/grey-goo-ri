@@ -19,7 +19,7 @@ test('a transient comment failure is retried once and posts one comment', async 
   assert.equal(posts[1].input, posts[0].input, 'the retry sends the recorded payload');
   const between = g.gh.calls.slice(g.gh.calls.indexOf(posts[0]) + 1, g.gh.calls.indexOf(posts[1]));
   assert.ok(between.some((c) => golden.isCommentRead(c.args, PR)), 'the marker lookup runs before the retry');
-  const m = attemptMarker(g, 'reviewer', 1, 'review', 3);
+  const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
   const [posted, ...more] = prReviewComments(g);
   assert.equal(more.length, 0, 'exactly one review comment');
   assert.ok(posted.body.includes(marker.markerComment(m)), 'it carries the original Action Marker');
@@ -27,7 +27,7 @@ test('a transient comment failure is retried once and posts one comment', async 
   const final = await loadTicket(g);
   assert.deepEqual(steps(final, m), ['intent', 'evidence', 'complete']);
   assert.equal(final.retries[REVIEW_COMMENT].remote.count, 1);
-  assert.equal(g.readEvents().filter((e) => e.type === 'action' && `${e.vertex}/${e.visit}/${e.phase}/${e.ordinal}` === REVIEW_COMMENT).length, 1,
+  assert.equal(g.readEvents().filter((e) => e.type === 'action' && `${e.vertex}/${e.visit}/${e.action}/${e.recovery}` === REVIEW_COMMENT).length, 1,
     'one Action Event for the retried Action');
 });
 
@@ -59,7 +59,7 @@ test('an accepted write whose call errored is found by marker, not reposted', as
   assert.equal(commentPosts(g).length, 1, 'never posted again');
   const [posted, ...more] = prReviewComments(g);
   assert.equal(more.length, 0);
-  const m = attemptMarker(g, 'reviewer', 1, 'review', 3);
+  const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
   const final = await loadTicket(g);
   assert.deepEqual(steps(final, m), ['intent', 'evidence', 'complete']);
   assert.equal(final.log.find((e) => e.marker === m && e.step === 'evidence').evidence.id, posted.id, 'the found comment is the evidence');
@@ -67,7 +67,7 @@ test('an accepted write whose call errored is found by marker, not reposted', as
 
 test('the retry budget survives a crash', async (t) => {
   const g = await reviewFlow(t, okReview);
-  const m = attemptMarker(g, 'reviewer', 1, 'review', 3);
+  const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
   g.gh.fail(onPr({ status: 502 }));
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-retry-saved' } }),
     (err) => err instanceof interpreter.CrashError);
@@ -116,7 +116,7 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.equal(pushes, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
-    assert.equal(g.rec.retries['green/1/green/4'].remote.count, 0, 'no retry is reserved');
+    assert.equal(g.rec.retries['green/1/push/0'].remote.count, 0, 'no retry is reserved');
     assert.match(g.rec.terminalStop.error, /non-fast-forward|rejected/);
     assert.equal(await originSha(g), theirs, 'nothing was forced');
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
@@ -260,17 +260,17 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
     const result = await interpreter.runExecution(g.options);
 
     assert.equal(result.fault, true, JSON.stringify(result));
-    const text = 'A transient GitHub failure (HTTP 502) at review 3 persisted after 2 retries; the error is in this comment and on ticket_end.';
+    const text = 'A transient GitHub failure (HTTP 502) at comment persisted after 2 retries; the error is in this comment and on ticket_end.';
     assert.equal(g.rec.terminalReason.text, text);
     assert.ok(ticketComments(g).some((c) => c.body.includes(`**Terminal Reason:** ${text}`)), 'the comment carries it');
-    assert.ok(g.logs.some((l) => /reviewer\/1\/review\/3: transient failure, retries exhausted after 2 of 2/.test(l)), g.logs.join('\n'));
+    assert.ok(g.logs.some((l) => /reviewer\/1\/comment\/0: transient failure, retries exhausted after 2 of 2/.test(l)), g.logs.join('\n'));
   });
   await t.test('an auth failure keeps the unexpected-fault reason', async (t) => {
     const g = await reviewFlow(t, okReview);
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     await interpreter.runExecution(g.options);
 
-    assert.equal(g.rec.terminalReason.text, 'An unexpected fault stopped the Execution at review 3; the error is in this comment and on ticket_end.');
+    assert.equal(g.rec.terminalReason.text, 'An unexpected fault stopped the Execution at comment; the error is in this comment and on ticket_end.');
     assert.ok(!g.logs.some((l) => /retries exhausted/.test(l)));
   });
 });

@@ -40,6 +40,6 @@ test('a fault before the first visit still records its action events', async (t)
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1);
   const actions = f.readEvents().filter((e) => e.type === 'action' && e.ticket === TICKET);
-  assert.deepEqual(actions.map((e) => `${e.phase} ${e.ordinal}`), ['fault 1', 'fault 2'], 'the comment and the label each record an Event');
+  assert.deepEqual(actions.map((e) => e.action), ['fault-comment', 'fault-label'], 'the comment and the label each record an Event');
   assert.ok(!f.logs.some((l) => /fault report failed/.test(l)), `no reporting failure is logged: ${JSON.stringify(f.logs)}`);
 });

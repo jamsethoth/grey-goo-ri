@@ -31,7 +31,7 @@ test('every side-effect action leaves intent, evidence and completion with the f
   // Each agent Attempt is write-ahead too, its intent carrying the baseline the Integrity Assertion compares against,
   // which a resume reads back from the State Database.
   const calls = intents(g.rec, 'call');
-  assert.deepEqual(calls.map((c) => c.marker), [actionMarker(g, 'red', 1), actionMarker(g, 'green', 1)]);
+  assert.deepEqual(calls.map((c) => c.marker), [actionMarker(g, 'red', 'red'), actionMarker(g, 'green', 'green')]);
   const saved = intents(await loadTicket(g), 'call');
   assert.deepEqual(saved.map((c) => c.payload.baseline), calls.map((c) => c.payload.baseline), 'each baseline reads back as it was taken');
   assert.equal(saved[0].payload.baseline.head, g.base, 'red compares against the base');
@@ -161,7 +161,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human'], 'needs-human replaces in-progress');
 
-  const check = actionEvent(g, 'green', 2);
+  const check = actionEvent(g, 'green', 'test');
   assert.ok(check, 'the Green Check runs and is recorded');
   assert.equal(check.signals.claim.claim, 'blocked');
   assert.equal(check.signals.checks.find((c) => c.name === 'test').passed, true);
@@ -170,7 +170,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
 
   // The blocked comment carries the Terminal Reason, so there is still exactly one comment.
   const reason = terminalReasonOf(g, { comment: false });
-  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, phase: 'green', ordinal: 2 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 0 });
   assert.equal(reason.outcome, 'blocked');
   assert.equal(reason.rule, 'blocked');
   assert.equal(reason.text, 'The agent made a blocked Claim at green; its diagnosis in the blocked comment says why.');
@@ -209,7 +209,7 @@ test('the Terminal Reason is saved before any Terminal side effect, so a crash m
 test('done carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
   const g = await firstVisit(t);
   const reason = terminalReasonOf(g);
-  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, phase: 'green', ordinal: 5 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'pr', recovery: 0 });
   assert.equal(reason.outcome, 'ok');
   assert.equal(reason.rule, 'effect-completed');
   assert.equal(reason.text, `green visit 1 completed every implement Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
@@ -238,8 +238,8 @@ const FAIL_OUTPUT = 'not ok 1 - rejects bad input\n# fail 1';
 test('a red run whose runner cannot start is not committed; red-failed records the reason and the next attempt sees it', async (t) => {
   const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 127, output: 'ff-no-such-runner-xyz: command not found' } });
   assert.deepEqual(await subjects(g), [], 'no test: commit');
-  assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
-  assert.equal(actionEvent(g, 'red', 2).rule, 'check-exhausted');
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'red-failed');
+  assert.equal(actionEvent(g, 'red', 'red-check').rule, 'check-exhausted');
   assert.equal(g.rec.history[0]?.kind, 'red phase failed');
   const reason = g.rec.history[0].text;
   assert.match(reason, /could not start/);
@@ -259,7 +259,7 @@ test('a red run whose runner cannot start is not committed; red-failed records t
 test('a red run whose output names none of the reported tests is not committed', async (t) => {
   const g = await redGate(t, { tests: ['some other test'], run: { code: 1, output: FAIL_OUTPUT } });
   assert.deepEqual(await subjects(g), [], 'no test: commit');
-  assert.equal(actionEvent(g, 'red', 2).outcome, 'red-failed');
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'red-failed');
   assert.match(g.rec.history[0]?.text ?? '', /does not mention any reported failing test/);
 });
 
@@ -270,12 +270,12 @@ test('a red Phase that leaves nothing to commit fails red with "No tests were wr
   g.options.exec = { runShell: async () => ({ code: 1, output: FAIL_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'needs-human');
-  const commit = actionEvent(g, 'red', 3);
+  const commit = actionEvent(g, 'red', 'commit');
   assert.equal(commit.outcome, 'red-failed');
   assert.equal(commit.rule, 'check-exhausted');
   assert.deepEqual(intents(g.rec, 'commit'), [], 'no commit intent for an empty commit');
   assert.deepEqual(g.rec.history, [{ kind: 'red phase failed', text: 'No tests were written.' }]);
-  assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 3));
+  assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 'commit'));
 });
 
 test('a red run with a nonzero exit naming a reported test is committed as test:', async (t) => {

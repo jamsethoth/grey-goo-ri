@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as procedures from '../../lib/procedures.mjs';
 
-const pairs = (actions) => actions.map((a) => [a.phase, a.ordinal]);
+// An Action after the recovery passes has no Recovery Number of its own: it carries the Visit's.
+const pairs = (actions) => actions.map((a) => [a.id, a.recovery ?? null]);
 
 test('tests-fail describes its actions, checks, lineage and outcome map in order', () => {
   const p = procedures.PROCEDURES['tests-fail'];
@@ -15,8 +16,8 @@ test('tests-fail describes its actions, checks, lineage and outcome map in order
   assert.deepEqual(p.commitKinds, { red: 'test' });
 
   const d = procedures.describe('tests-fail');
-  assert.deepEqual(pairs(d.actions.filter((a) => !a.when)), [['red', 1], ['red', 2], ['red', 3]]);
-  assert.deepEqual(pairs(d.actions.filter((a) => a.when)), [['still-green', 1], ['still-green', 2]]);
+  assert.deepEqual(pairs(d.actions.filter((a) => !a.when)), [['red', 0], ['red-check', 0], ['commit', null]]);
+  assert.deepEqual(pairs(d.actions.filter((a) => a.when)), [['red', 1], ['red-check', 1]]);
   assert.deepEqual(d.checks, [{ name: 'red', relaxed: false }]);
   // Session Lineage: the Phase each Phase resumes, or null for a fresh session.
   assert.deepEqual(d.lineage, { red: null, 'still-green': 'red' });
@@ -33,8 +34,8 @@ test('implement describes its actions, checks, lineage and outcome map in order'
   assert.deepEqual(p.commitKinds, { green: 'feat' });
 
   const d = procedures.describe('implement');
-  assert.deepEqual(pairs(d.actions.filter((a) => !a.when)), [['green', 1], ['green', 2], ['green', 3], ['green', 4], ['green', 5]]);
-  assert.deepEqual(pairs(d.actions.filter((a) => a.when)), [['test-fix', 1], ['test-fix', 2]]);
+  assert.deepEqual(pairs(d.actions.filter((a) => !a.when)), [['green', 0], ['test', 0], ['commit', null], ['push', null], ['pr', null]]);
+  assert.deepEqual(pairs(d.actions.filter((a) => a.when)), [['green', 1], ['test', 1]]);
   assert.deepEqual(d.checks, [{ name: 'immutability', relaxed: false }, { name: 'green', relaxed: false }]);
   // green starts fresh: no Session crosses Vertices, so there is no option to resume red's (R2c).
   assert.deepEqual(d.lineage, { green: null, 'test-fix': 'green' });
@@ -46,8 +47,8 @@ test('review describes its actions, checks, lineage and outcome map', () => {
   assert.ok(review, 'PROCEDURES.review exists');
 
   // One read-only call, the Findings Hash, the PR comment, the PR body re-render.
-  assert.deepEqual(pairs(review.actions), [['review', 1], ['review', 2], ['review', 3], ['review', 4]]);
-  assert.deepEqual(pairs(review.actions.filter((a) => a.kind === 'call')), [['review', 1]]);
+  assert.deepEqual(pairs(review.actions), [['review', null], ['repeat', null], ['comment', null], ['pr', null]]);
+  assert.deepEqual(pairs(review.actions.filter((a) => a.kind === 'call')), [['review', null]]);
   assert.ok(review.actions.every((a) => !a.when), 'every review Action runs');
   assert.deepEqual(review.checks, ['review-pass']);
   assert.equal(review.access, 'read-only');
@@ -65,11 +66,11 @@ test('fix describes its actions, checks, lineage and outcome map', () => {
   assert.ok(fix, 'PROCEDURES.fix exists');
 
   // A fresh fix call, the Green Check with one test-fix that resumes fix, commit kind fix, push, PR upsert.
-  assert.deepEqual(fix.actions.filter((a) => !a.when).map((a) => [a.phase, a.ordinal, a.kind]), [
-    ['fix', 1, 'call'], ['fix', 2, 'check'], ['fix', 3, 'commit'], ['fix', 4, 'push'], ['fix', 5, 'pr-upsert'],
+  assert.deepEqual(fix.actions.filter((a) => !a.when).map((a) => [a.id, a.recovery ?? null, a.kind]), [
+    ['fix', 0, 'call'], ['test', 0, 'check'], ['commit', null, 'commit'], ['push', null, 'push'], ['pr', null, 'pr-upsert'],
   ]);
-  assert.equal(fix.actions.find((a) => a.phase === 'fix' && a.ordinal === 2).check, 'green');
-  assert.deepEqual(pairs(fix.actions.filter((a) => a.when)), [['test-fix', 1], ['test-fix', 2]]);
+  assert.equal(fix.actions.find((a) => a.id === 'test' && a.recovery === 0).check, 'green');
+  assert.deepEqual(pairs(fix.actions.filter((a) => a.when)), [['fix', 1], ['test', 1]]);
   assert.deepEqual(fix.claims, ['ok', 'blocked', 'misscoped']);
   assert.deepEqual(fix.outcomes, ['ok', 'blocked', 'misscoped', 'gate-failed(test)']);
   assert.equal(fix.checkOutcome.test, 'gate-failed(test)');
@@ -92,4 +93,15 @@ test('zero recovery counts drop their conditional actions from describe', () => 
   assert.deepEqual(phases('implement', { testFix: 0 }), ['green']);
   assert.deepEqual(phases('tests-fail', {}), ['red', 'still-green']);
   assert.deepEqual(phases('implement', {}), ['green', 'test-fix']);
+});
+
+test('an Action id names one Action of its Procedure in each recovery pass', () => {
+  for (const [name, p] of Object.entries(procedures.PROCEDURES)) {
+    const keys = p.actions.map((a) => `${a.id}/${a.recovery ?? 'after'}`);
+    assert.equal(new Set(keys).size, keys.length, `${name}: ${keys}`);
+    assert.ok(p.actions.every((a) => /^[^:\s]+$/.test(a.id)), `${name}: no ':' or whitespace in an Action id`);
+    // A recovery pass repeats only the first pass's Actions, so each of its ids resumes one already run.
+    const first = new Set(p.actions.filter((a) => a.recovery === 0).map((a) => a.id));
+    assert.ok(p.actions.filter((a) => a.recovery > 0).every((a) => first.has(a.id)), name);
+  }
 });

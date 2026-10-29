@@ -40,4 +40,4 @@ _none_
 | implement | fake | model-x | high | implementer@abc123 | 2 | 100 (40) / 20 |
 | review | fake | null | null | reviewer@def456 | 1 | 50 (0) / 10 |
 
-<!-- gg-action gg:e1:implement:1:green:3:r1:1 -->
+<!-- gg-action gg:e1:implement:1:pr:0:r1:1 -->

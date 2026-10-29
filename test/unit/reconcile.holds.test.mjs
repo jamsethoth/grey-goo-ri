@@ -7,10 +7,10 @@ import * as reconcile from '../../lib/reconcile.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  markerOf, stepsOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
+  stepsOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
 } from '../support/reconcile.mjs';
 
-// Each Terminal kind crashes at its needs-human label (a fault report's Actions have phase fault), then resumes on a
+// Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<effect>), then resumes on a
 // freshly loaded record with the same options.
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of the held needs-human label keeps the held classification`, async (t) => {
@@ -21,7 +21,7 @@ for (const point of Object.keys(POINTS)) {
     g.options.flow.ticket.vertices = { builder: g.flow.ticket.vertices.green };
     g.options.flow.ticket.entry = 'builder';
     g.options.record = await loadTicket(g);
-    await crashed(g, ['needs-human', 1, 'hold', 2], point);
+    await crashed(g, ['needs-human', 1, 'hold-label', 0], point);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
     assert.equal(result.outcome, 'needs-human');
@@ -42,7 +42,7 @@ for (const point of Object.keys(POINTS)) {
       if (call.phase === 'red') throw new Error('the harness exploded');
       return run(call);
     };
-    await crashed(g, ['needs-human', 1, 'fault', 2], point);
+    await crashed(g, ['needs-human', 1, 'fault-label', 0], point);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
     assert.equal(result.outcome, 'needs-human');
@@ -58,7 +58,7 @@ for (const point of Object.keys(POINTS)) {
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of the run stop needs-human label keeps the run stop classification`, async (t) => {
     const g = await golden.setup(t, { responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } } });
-    await crashed(g, ['needs-human', 1, 'needs-human', 2], point);
+    await crashed(g, ['needs-human', 1, 'end-label', 0], point);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
     assert.equal(result.outcome, 'needs-human');
@@ -103,7 +103,8 @@ test('a vertex missing from the flow holds the ticket', async (t) => {
 
 const GREEN_FAIL_OUTPUT = 'not ok 1 - adds two numbers\n# fail 1';
 
-test('a missing transcript starts the phase fresh', async (t) => {
+// A green whose first pass fails the Green Check, so its test-fix recovery pass runs and passes.
+async function testFixSetup(t) {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
     'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = () => 0;\n' }, response: golden.greenResponse },
     'green/1/test-fix/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: golden.greenResponse } } });
@@ -115,19 +116,39 @@ test('a missing transcript starts the phase fresh', async (t) => {
         ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
     },
   };
-  // Before the test-fix Attempt's intent: one interrupted after it would be held instead.
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: markerOf(g.rec, 'green', 1, 'test-fix', 1), point: 'before-intent' } }), /crash/);
+  return g;
+}
+const greenActions = (g) => g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => `${e.action}/${e.recovery}`);
+
+test('a resume after the commit of a recovery pass continues at its push', async (t) => {
+  const g = await testFixSetup(t);
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'commit', 1), point: 'after-completion' } }), /crash/);
   const loaded = await loadTicket(g);
-  assert.equal(loaded.cursor.phase, 'test-fix');
+  assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['commit', 1], 'the commit inherits the recovery pass number');
+
+  const result = await interpreter.runExecution({ ...g.options, record: loaded });
+  assert.equal(result.outcome, 'done');
+  assert.equal(g.harness.calls.length, 3, 'no agent call runs again');
+  assert.deepEqual(greenActions(g), ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
+});
+
+test('a missing transcript starts the phase fresh', async (t) => {
+  const g = await testFixSetup(t);
+  // Before the test-fix Attempt's intent: one interrupted after it would be held instead.
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'green', 1), point: 'before-intent' } }), /crash/);
+  const loaded = await loadTicket(g);
+  assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['green', 1], 'the recovery pass');
   rmSync(loaded.sessions['green/1/green'].transcriptPath);
 
   const result = await interpreter.runExecution({ ...g.options, record: loaded });
   const call = g.harness.calls[2];
-  assert.ok(call.marker.includes(':test-fix:'), call.marker);
+  assert.equal(call.marker, golden.markerOf(loaded, 'green', 1, 'green', 1), 'the recovery pass of the green call');
   assert.equal(call.resume, null, 'the green Session is not resumed without its transcript');
   assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT), 'the full test-fix Brief, not a nudge');
   assert.ok(g.logs.some((l) => /transcript/.test(l)), `the fresh start is logged: ${JSON.stringify(g.logs)}`);
   assert.equal(result.outcome, 'done');
+  // The resume continues at the recovery pass: no first-pass Action runs again, and the Actions after it carry its number.
+  assert.deepEqual(greenActions(g), ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
 });
 
 test('bounds survive a restart', async (t) => {
@@ -150,7 +171,7 @@ test('bounds survive a restart', async (t) => {
     'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, then: 'reviewer' },
   };
   const key = 'reviewer->implementer-fix:changes';
-  const { loaded } = await crashed(g, ['reviewer', 2, 'review', 3], 'after-completion');
+  const { loaded } = await crashed(g, ['reviewer', 2, 'comment', 0], 'after-completion');
   assert.equal(loaded.traversals[key], 1, 'the Edge is at its Bound');
 
   const before = g.harness.calls.length;

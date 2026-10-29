@@ -12,7 +12,6 @@ import * as flowModule from '../../lib/flow.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as marker from '../../lib/marker.mjs';
 import { pathKey } from '../../lib/paths.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from './golden.mjs';
@@ -122,9 +121,6 @@ export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.
   return record.load(f.commonDir, 'ticket', TICKET);
 }
 
-export const markerOf = (rec, vertex, visit, phase, ordinal) =>
-  marker.formatMarker({ execution: rec.execution, vertex, visit, phase, ordinal, run: rec.run, attempt: 1 });
-
 // Spawns a process holding the lock `name`, resolving once it reports its handle; killing it releases the lock. By
 // default it holds longer than any case, so only the case releases it.
 export function holdLock(t, commonDir, name, holdMs = 600_000) {
@@ -158,7 +154,7 @@ export function conflict(worktree) {
 }
 
 // The green commit was intended, its implementation staged, and the process died before the commit landed.
-export const crashBeforeCommit = (f) => seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 3), point: 'before-effect' }) });
+export const crashBeforeCommit = (f) => seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'commit', 0), point: 'before-effect' }) });
 
 // Makes every comment POST fail with HTTP 502 while `on` is set, its retries too; `lost` lets the comment land first, as
 // a lost response does.

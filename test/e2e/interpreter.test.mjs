@@ -6,14 +6,14 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  TDD_PHASES, FIRST_VISIT, actionMarker, actionEvent, loadTicket, ticketComments, contendRepoLock, lockedSetup, terminalReasonOf, intents,
+  TDD_VERTICES, FIRST_VISIT, actionMarker, actionEvent, loadTicket, ticketComments, contendRepoLock, lockedSetup, terminalReasonOf, intents,
 } from '../support/interpreter.mjs';
 
 // The deterministic Actions of a first visit, each an advance at Attempt 1 of its Vertex's first Visit: red runs tests-fail
 // and green runs implement.
-const deterministic = (phase, ordinal, rule) => {
-  const [vertex, procedure] = ['red', 'still-green'].includes(phase) ? ['red', 'tests-fail'] : ['green', 'implement'];
-  return { phase, ordinal, schema: 2, vertex, visit: 1, procedure, attempt: 1, direction: 'advance', rule, agent: undefined };
+const deterministic = (vertex, action, rule) => {
+  const procedure = vertex === 'red' ? 'tests-fail' : 'implement';
+  return { action, recovery: 0, schema: 2, vertex, visit: 1, procedure, attempt: 1, direction: 'advance', rule, agent: undefined };
 };
 
 test('golden: a first-visit pass runs red then green as two Vertices', async (t) => {
@@ -24,30 +24,30 @@ test('golden: a first-visit pass runs red then green as two Vertices', async (t)
   await interpreter.runExecution(g.options);
   g.events = g.readEvents();
 
-  assert.deepEqual(golden.trace(g.events).filter((e) => TDD_PHASES.includes(e.phase)), FIRST_VISIT);
+  assert.deepEqual(golden.trace(g.events).filter((e) => TDD_VERTICES.includes(e.vertex)), FIRST_VISIT);
   const end = g.events.at(-1);
   assert.equal(end.type, 'ticket_end');
   assert.equal(end.outcome, 'done');
   assert.equal(end.ticket, golden.TICKET);
 
-  const fields = ({ phase, ordinal, schema, vertex, visit, procedure, attempt, direction, rule, agent }) =>
-    ({ phase, ordinal, schema, vertex, visit, procedure, attempt, direction, rule, agent });
-  const actions = g.events.filter((e) => e.type === 'action' && TDD_PHASES.includes(e.phase));
+  const fields = ({ action, recovery, schema, vertex, visit, procedure, attempt, direction, rule, agent }) =>
+    ({ action, recovery, schema, vertex, visit, procedure, attempt, direction, rule, agent });
+  const actions = g.events.filter((e) => e.type === 'action' && TDD_VERTICES.includes(e.vertex));
   assert.deepEqual(actions.map(fields), [
-    { ...deterministic('red', 1, 'ok'), agent: true }, deterministic('red', 2, 'ok'), deterministic('red', 3, 'effect-completed'),
-    { ...deterministic('green', 1, 'ok'), agent: true }, deterministic('green', 2, 'ok'), deterministic('green', 3, 'effect-completed'),
-    deterministic('green', 4, 'effect-completed'), deterministic('green', 5, 'effect-completed'),
+    { ...deterministic('red', 'red', 'ok'), agent: true }, deterministic('red', 'red-check', 'ok'), deterministic('red', 'commit', 'effect-completed'),
+    { ...deterministic('green', 'green', 'ok'), agent: true }, deterministic('green', 'test', 'ok'), deterministic('green', 'commit', 'effect-completed'),
+    deterministic('green', 'push', 'effect-completed'), deterministic('green', 'pr', 'effect-completed'),
   ]);
-  assert.deepEqual(actions.filter((e) => e.signals == null).map((e) => `${e.phase}/${e.ordinal}`), [], 'every Action carries its signals');
+  assert.deepEqual(actions.filter((e) => e.signals == null).map((e) => `${e.action}/${e.recovery}`), [], 'every Action carries its signals');
 
-  const red = actionEvent(g, 'red', 1);
+  const red = actionEvent(g, 'red', 'red');
   assert.equal(red.sessionId, 'fake-session-1');
   assert.equal(red.lineage, null, 'red starts a fresh session');
   assert.match(red.transcriptPath, /fake-session-1\.jsonl$/);
   assert.equal(red.usage.cumulative.costUsd, null, 'red: absent cost capability is null');
   assert.equal(red.usage.cumulative.reasoning, null, 'red: absent reasoning capability is null');
   assert.equal(typeof red.usage.cumulative.input, 'number');
-  const green = actionEvent(g, 'green', 1);
+  const green = actionEvent(g, 'green', 'green');
   assert.equal(green.sessionId, 'fake-session-2');
   assert.equal(green.lineage, null, 'green starts a fresh session');
   assert.match(green.transcriptPath, /fake-session-2\.jsonl$/);
@@ -60,22 +60,22 @@ test('golden: a first-visit pass runs red then green as two Vertices', async (t)
   assert.equal(messages.length, 2);
   assert.match(messages[0], /^test: /);
   assert.ok(messages[0].includes('Feature-Flow-Stage: red fake/model-x/high'), messages[0]);
-  assert.ok(messages[0].includes(`Gg-Action: ${actionMarker(g, 'red', 3)}`), messages[0]);
+  assert.ok(messages[0].includes(`Gg-Action: ${actionMarker(g, 'red', 'commit')}`), messages[0]);
   assert.match(messages[1], /^feat: /);
   assert.ok(messages[1].includes('Feature-Flow-Stage: green fake/model-x/high'), messages[1]);
-  assert.ok(messages[1].includes(`Gg-Action: ${actionMarker(g, 'green', 3)}`), messages[1]);
+  assert.ok(messages[1].includes(`Gg-Action: ${actionMarker(g, 'green', 'commit')}`), messages[1]);
   assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'));
 
   // The draft PR body carries the marker line, the red Evidence and the provenance row.
   assert.equal(draft, true, 'the PR is opened as a draft');
   const body = g.gh.pr().body;
-  assert.ok(body.includes(marker.markerComment(actionMarker(g, 'green', 5))), body);
+  assert.ok(body.includes(marker.markerComment(actionMarker(g, 'green', 'pr'))), body);
   assert.ok(body.includes("Cannot find module 'lib/add.mjs'"), 'red evidence in the PR body');
   assert.match(body, /^\| red \| fake \| model-x \| high \| /m);
   assert.match(body, /^\| green \| fake \| model-x \| high \| /m);
   assert.equal(g.gh.pr().isDraft, false, 'done marks the PR ready');
 
-  assert.deepEqual(g.rec.cursor, { vertex: 'done', visit: 1, phase: 'done', ordinal: 3, attempt: 1 });
+  assert.deepEqual(g.rec.cursor, { vertex: 'done', visit: 1, action: 'end-label', recovery: 0, attempt: 1 });
   assert.deepEqual(g.rec.visits, { red: 1, green: 1 });
   assert.equal(g.rec.terminalReason.text,
     `green visit 1 completed every implement Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
@@ -95,7 +95,7 @@ test("a write Vertex on a dirty worktree gg's records do not explain is held", a
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(g.harness.calls.map((c) => c.marker), [actionMarker(g, 'red', 1)], 'no green agent runs over unknown changes');
+  assert.deepEqual(g.harness.calls.map((c) => c.marker), [actionMarker(g, 'red', 'red')], 'no green agent runs over unknown changes');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), `M ${edited}`, 'the human edit survives');
   assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%s'), /^test: /, "red's commit stays");
   assert.deepEqual(intents(g.rec, 'reset'), []);
@@ -133,7 +133,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.equal(final.state, 'needs-human');
   assert.equal(final.terminalReason.rule, 'run-stopped');
   assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
-    + 'Execution stopped before green 4.');
+    + 'Execution stopped before push.');
   const writes = g.gh.calls.slice(before).filter((c) => ghWrite(c.args));
   assert.equal(writes.length, 2, JSON.stringify(writes.map((c) => c.args)));
   assert.ok(golden.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');

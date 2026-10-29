@@ -9,7 +9,7 @@ import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, sh, fixture, seedExecution, markerOf, ticketResult, conflict,
+  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, sh, fixture, seedExecution, ticketResult, conflict,
   crashBeforeCommit,
 } from '../support/run.mjs';
 
@@ -182,7 +182,7 @@ for (const row of SIBLINGS) {
   test(`admission detects an agent overwrite of an idle sibling as an Integrity Violation: ${JSON.stringify(row)}`, async (t) => {
     const { f, sibling, results } = await siblingOverwrite(t, row);
     assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-    const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === TICKET && e.phase === 'red' && e.agent);
+    const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === TICKET && e.action === 'red' && e.agent);
     assert.equal(red?.outcome, 'integrity-violation');
     assert.equal(red.rule, 'integrity-violation');
     assert.ok(red.violations.some((v) => pathKey(v.worktree) === pathKey(sibling) && v.surface === 'tree'), JSON.stringify(red.violations));
@@ -243,7 +243,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
 
 test('a resumed execution stopped mid-rebase is held without changing the rebase', async (t) => {
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
-  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'red', 1, 'red', 3), point: 'after-completion' }) });
+  const seeded = await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'red', 1, 'commit', 0), point: 'after-completion' }) });
   const rebase = spawnSync('git', ['rebase', '--exec', 'exit 1', 'main'], { cwd: f.worktree, encoding: 'utf8' });
   assert.equal(rebase.status, 1, rebase.stderr);
   assert.equal(sh(f.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD');

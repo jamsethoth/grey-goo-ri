@@ -9,6 +9,7 @@ import * as checks from '../../lib/checks.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as shipped from '../../lib/harnesses/shipped.mjs';
+import * as marker from '../../lib/marker.mjs';
 import * as record from '../../lib/record.mjs';
 import * as events from '../../lib/events.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
@@ -75,7 +76,11 @@ export const redGreenFlow = (persona) => ({
 
 // Reduces Action Events to what a golden trace asserts.
 export const trace = (evs) => evs.filter((e) => e.type === 'action')
-  .map(({ phase, ordinal, attempt, outcome }) => ({ phase, ordinal, attempt, outcome }));
+  .map(({ vertex, action, recovery, attempt, outcome }) => ({ vertex, action, recovery, attempt, outcome }));
+
+// The Action Marker of an Attempt of the record's Execution, in the Run that wrote it.
+export const markerOf = (rec, vertex, visit, action, recovery = 0, attempt = 1) =>
+  marker.formatMarker({ execution: rec.execution, vertex, visit, action, recovery, run: rec.run, attempt });
 
 // The Protected Files gg run passes: gg's own paths and every shipped Harness's.
 export const PROTECTED_PATHS = interpreter.protectedFiles(shipped.HARNESSES);

@@ -10,7 +10,7 @@ import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import { fakeHarness } from '../support/fake-harness.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, fixture, markerOf, ticketResult, failComment, failHoldLabel,
+  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, fixture, ticketResult, failComment, failHoldLabel,
 } from '../support/run.mjs';
 
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
@@ -50,8 +50,8 @@ for (const state of ['done', 'fault', 'abandoned']) {
     const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
     rec.visits = { red: 1, green: 1 };
-    rec.cursor = { vertex: 'needs-human', visit: null, phase: null, ordinal: 0, attempt: 1 };
-    await record.intent(rec, markerOf(rec, 'done', 1, 'done', 2), 'comment', { target: { kind: 'issue', number: TICKET }, body: 'x', bodyHash: 'h' });
+    rec.cursor = { vertex: 'needs-human', visit: null, action: null, recovery: 0, attempt: 1 };
+    await record.intent(rec, golden.markerOf(rec, 'done', 1, 'end-comment', 0), 'comment', { target: { kind: 'issue', number: TICKET }, body: 'x', bodyHash: 'h' });
     rec.state = state;
     await record.save(rec);
     const row = f.loadRow();

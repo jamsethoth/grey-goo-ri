@@ -12,4 +12,4 @@ _No findings._
 
 VERDICT: ok
 
-<!-- gg-action gg:e1:implement:1:green:3:r1:1 -->
+<!-- gg-action gg:e1:implement:1:pr:0:r1:1 -->

@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
+import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
-import { firstVisit, intents, actionEvent, loadTicket, branchMessages } from '../support/interpreter.mjs';
+import { firstVisit, intents, actionEvent, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD } from '../support/interpreter.mjs';
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const g = await firstVisit(t);
@@ -152,7 +153,7 @@ test('runExecution asks the injected integrity whether an Attempt kept to its ac
   const result = await interpreter.runExecution({ ...g.options, integrity: injected });
 
   assert.equal(result.outcome, 'needs-human');
-  const red = actionEvent(g, 'red', 1);
+  const red = actionEvent(g, 'red', 'red');
   assert.equal(red.outcome, 'integrity-violation');
   assert.deepEqual(red.violations, [violation]);
 });
@@ -163,7 +164,7 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   const result = await interpreter.runExecution({ ...g.options, testImmutability });
 
   assert.equal(result.outcome, 'needs-human');
-  const check = actionEvent(g, 'green', 2);
+  const check = actionEvent(g, 'green', 'test');
   assert.equal(check.outcome, 'integrity-violation');
   assert.deepEqual(check.violations, ['test/add.test.mjs']);
 });
@@ -193,4 +194,61 @@ test('runExecution asserts the Protected Files it is given', async (t) => {
   await interpreter.runExecution({ ...g.options, integrity: injected, protectedPaths: ['.x/'] });
   assert.deepEqual(seen.slice(0, 2), [['begin', ['.x/']], ['end', ['.x/']]]);
   await assert.rejects(interpreter.runExecution({ ...g.options, protectedPaths: undefined }), { message: 'runExecution needs protectedPaths' });
+});
+
+const reportMarker = (g, vertex, action) => marker.formatMarker({ execution: g.rec.execution, vertex, visit: 1, action, recovery: 0, run: g.rec.run, attempt: 1 });
+
+test("a hold's label is set after its comment, each under its own marker", async (t) => {
+  const g = await golden.setup(t);
+  const result = await interpreter.runExecution({ ...g.options,
+    admission: { kind: 'hold', name: 'dirty-worktree', text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.' } });
+
+  assert.equal(result.held, true, JSON.stringify(result));
+  const rec = await loadTicket(g);
+  const [comment, label] = ['hold-comment', 'hold-label'].map((a) => reportMarker(g, 'needs-human', a));
+  assert.deepEqual(rec.log.filter((e) => e.step === 'intent').map((e) => [e.action, e.marker]), [['comment', comment], ['label', label]]);
+  const order = rec.log.map((e) => `${e.step} ${e.marker}`);
+  assert.ok(order.indexOf(`complete ${comment}`) < order.indexOf(`intent ${label}`), 'the label is intended once the comment completed');
+  const [posted] = g.gh.comments;
+  assert.ok(posted.body.includes(marker.markerComment(comment)), 'the comment carries its own marker');
+  assert.ok(g.gh.labels.has('gg:state:needs-human'));
+  assert.deepEqual(record.openIntents(rec), []);
+});
+
+test("a fault during an end does not replay the end's open reporting Action", async (t) => {
+  const g = await golden.setup(t);
+  const real = g.options.gh.commentIssue;
+  let calls = 0;
+  g.options.gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  const rec = await loadTicket(g);
+  const ended = reportMarker(g, 'done', 'end-comment');
+  assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [ended], "the end's comment stays open");
+  assert.equal(calls, 2, "the end's comment is tried once and the fault's once");
+  const [posted, ...rest] = g.gh.comments.filter((c) => c.target === 'issue');
+  assert.equal(rest.length, 0);
+  assert.ok(posted.body.includes(marker.markerComment(reportMarker(g, 'needs-human', 'fault-comment'))), 'the fault reports under its own marker');
+  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'needs-human', 'fault-label')));
+  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'done', 'end-pr-ready')), "the end's pr-ready completed first");
+});
+
+test("the PR's provenance counts a retried Attempt and a resumed Session once each", async (t) => {
+  const usage = (input, output) => ({ usage: { delta: { input, output } } });
+  const red = golden.firstVisitResponses['red/1/red/1'];
+  const g = await greenSetup(t, {
+    // A parse retry: two Attempts of red, each one call.
+    'red/1/red/1': { ...red, response: null, result: usage(10, 2) },
+    'red/1/red/2': { ...red, result: usage(100, 20) },
+    // test-fix resumes green's Session, whose cumulative usage then holds green's tokens too.
+    'green/1/green/1': { ...ok({ 'lib/add.mjs': WRONG_ADD }), result: usage(200, 40) },
+    'green/1/test-fix/1': { ...ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }), result: usage(50, 5) },
+  });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  const body = g.gh.pr().body;
+  assert.match(body, /^\| red \| .* \| 2 \| 110 \(0\) \/ 22 \|$/m, body);
+  assert.match(body, /^\| green \| .* \| 2 \| 250 \(0\) \/ 45 \|$/m, body);
 });

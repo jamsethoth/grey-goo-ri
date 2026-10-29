@@ -6,12 +6,12 @@ import { pathToFileURL } from 'node:url';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
-import { TICKET, BRANCH, IN_PROGRESS, sh, fixture, seedExecution, markerOf } from '../support/run.mjs';
+import { TICKET, BRANCH, IN_PROGRESS, sh, fixture, seedExecution } from '../support/run.mjs';
 
 test('an in-progress ticket with a recoverable record is resumed', async (t) => {
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   // The push of the green commit was intended but never made.
-  const rec = await seedExecution(f, { crashAt: (r) => ({ marker: markerOf(r, 'green', 1, 'green', 4), point: 'before-effect' }) });
+  const rec = await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }) });
   assert.equal(rec.state, 'active');
   assert.deepEqual(record.openIntents(rec).map((e) => e.action), ['push'], 'the push is the open intent');
 
