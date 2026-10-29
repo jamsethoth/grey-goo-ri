@@ -444,3 +444,20 @@ test('a commit with nothing to commit records files: [] and makes no commit', as
     [['red', 1, ['test/add.test.mjs']], ['green', 1, ['lib/add.mjs']], ['implementer-fix', 1, []]]);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)'], 'no fix commit');
 });
+
+test("each draft PR body renders its own Vertex's report and Green Evidence", async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+  assert.equal(g.result.outcome, 'ready-for-qa');
+  const bodyOf = (vertex) => intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === vertex).payload.body;
+  for (const [vertex, summary] of [['green', golden.greenResponse.summary], ['implementer-fix', 'Address the findings.']]) {
+    const body = bodyOf(vertex);
+    const green = body.slice(body.indexOf('**Green**'), body.indexOf('## QA instructions'));
+    assert.ok(green.includes(golden.GREEN_OUTPUT.split('\n')[0]), `${vertex}'s Green section shows its test.evidence:\n${green}`);
+    assert.ok(!green.includes('Cannot find module'), `${vertex}'s Green section does not show the Red Evidence`);
+    assert.ok(body.includes(summary), `${vertex}'s body renders its own report`);
+  }
+});
