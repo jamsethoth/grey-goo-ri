@@ -17,7 +17,7 @@ test('a completed call is not rerun after a crash before the next action', async
       (err) => err instanceof interpreter.CrashError);
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
 
-    assert.equal(result.outcome, 'done');
+    assert.equal(result.outcome, 'ready-for-qa');
     assert.equal(g.harness.calls.length, 2, 'red and green run once each');
     assert.deepEqual(tddTrace(g), FIRST_VISIT, 'one Action Event per Action');
   });
@@ -32,13 +32,13 @@ test('a completed call is not rerun after a crash before the next action', async
       (err) => err instanceof interpreter.CrashError);
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
 
-    assert.equal(result.outcome, 'done');
+    assert.equal(result.outcome, 'ready-for-qa');
     assert.equal(g.harness.calls.filter((c) => c.marker === call).length, 1, 'the first review runs once');
     const events = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.action === 'review');
     assert.deepEqual(events.map((e) => e.outcome), ['changes']);
     const final = await loadTicket(g);
     assert.equal(final.traversals['reviewer->implementer-fix:changes'], 1, 'the saved changes result routed to the fix');
-    assert.deepEqual(final.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
+    assert.deepEqual(final.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
   });
 });
 
@@ -98,7 +98,7 @@ test('findings-hash appends once per visit across a crash', async (t) => {
   await assert.rejects(interpreter.runExecution({ ...g.options, events }));
   const result = await interpreter.runExecution({ ...g.options, events, record: await loadTicket(g) });
 
-  assert.equal(result.outcome, 'done');
+  assert.equal(result.outcome, 'ready-for-qa');
   const final = await loadTicket(g);
   assert.deepEqual(final.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]], 'one review entry per Visit');
   const hashed = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.action === 'repeat');
@@ -138,7 +138,7 @@ test('attempt numbering continues after resume', async (t) => {
   await assert.rejects(interpreter.runExecution({ ...g.options, others }), (err) => err instanceof interpreter.CrashError);
   const result = await interpreter.runExecution({ ...g.options, others, record: await loadTicket(g) });
 
-  assert.equal(result.outcome, 'done');
+  assert.equal(result.outcome, 'ready-for-qa');
   assert.deepEqual(attemptsOf(g, 'red', 'red').map((e) => e.attempt), [1, 2], 'no second Attempt 1');
   assert.equal(g.harness.calls.length, 3, 'red twice, green once');
   assert.equal(g.harness.calls[1].marker, attemptMarker(g, 'red', 1, 'red', 0, 2), 'the resume runs Attempt 2');
@@ -164,22 +164,22 @@ test('a label update whose failure was saved before its completion is retried on
   const g = await golden.setup(t);
   const ev = g.options.events;
   let crashed = false;
-  // The done label does not land, and gg dies as that Action records its Event: { ok: false } is saved, uncompleted.
+  // The ready-for-qa label does not land, and gg dies as that Action records its Event: { ok: false } is saved, uncompleted.
   const events = (type, data) => {
-    if (!crashed && type === 'action' && data.vertex === 'done' && data.action === 'end-label') {
+    if (!crashed && type === 'action' && data.vertex === 'ready-for-qa' && data.action === 'end-label') {
       crashed = true;
       throw new interpreter.CrashError('crash at the label Event');
     }
     return ev(type, data);
   };
   await assert.rejects(interpreter.runExecution({ ...g.options, events, gh: { ...g.options.gh, setLabels: async () => false } }));
-  const label = attemptMarker(g, 'done', 1, 'end-label', 0);
+  const label = attemptMarker(g, 'ready-for-qa', 1, 'end-label', 0);
   const mid = await loadTicket(g);
   assert.deepEqual(mid.log.filter((e) => e.marker === label).map((e) => [e.step, e.evidence]), [['intent', undefined], ['evidence', { ok: false }]]);
   assert.ok(!g.gh.labels.has('gg:state:ready-for-qa'));
 
   const result = await interpreter.runExecution({ ...g.options, events, record: mid });
-  assert.equal(result.outcome, 'done');
+  assert.equal(result.outcome, 'ready-for-qa');
   assert.ok(g.gh.labels.has('gg:state:ready-for-qa'), 'the failed label update is made on resume');
   assert.equal(steps(await loadTicket(g), label).at(-1), 'complete');
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
@@ -211,7 +211,7 @@ for (const [name, dropTranscript, resume] of [
     dropTranscript(legacy.sessions['red/1/red'].transcriptPath);
 
     const result = await interpreter.runExecution({ ...g.options, others, record: await loadTicket(g) });
-    assert.equal(result.outcome, 'done', JSON.stringify(result));
+    assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
     const call = g.harness.calls[1];
     assert.equal(call.marker, attemptMarker(g, 'red', 1, 'red', 0, 2), 'the resume runs Attempt 2');
     assert.equal(call.resume, resume, 'from the session the record saved, when it can be resumed');
@@ -267,6 +267,6 @@ test('the record carries the last heartbeat of a running call', async (t) => {
     g.harness.cancel();
     await execution.catch(() => {});
   }
-  assert.equal((await execution).outcome, 'done');
+  assert.equal((await execution).outcome, 'ready-for-qa');
   assert.equal((await loadTicket(g)).heartbeat, null, 'cleared once the call ends');
 });

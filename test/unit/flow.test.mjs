@@ -10,22 +10,24 @@ import * as flow from '../../lib/flow.mjs';
 const IMPLEMENTER = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false };
 const REVIEWER = { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false };
 
-test('resolveFlow expands use into the resolved flow shape', () => {
+test('resolveFlow expands use into the resolved flow shape, with the Flow routes and an Agent-less publish', () => {
   const resolvedImplementer = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: null, effort: null };
   assert.deepEqual(flow.resolveFlow(config.loadDefaults()), {
     name: 'default',
     plan: null,
     ticket: {
       entry: 'red',
+      routes: { misscoped: { end: 'needs-replan' }, '*': { end: 'needs-human' } },
       vertices: {
-        red: { agent: resolvedImplementer, options: {}, procedure: 'tests-fail', then: 'green' },
-        green: { agent: resolvedImplementer, options: {}, procedure: 'implement', then: 'reviewer' },
+        red: { agent: resolvedImplementer, options: {}, procedure: 'tests-fail', route: { ok: 'green' } },
+        green: { agent: resolvedImplementer, options: {}, procedure: 'implement', route: { ok: 'reviewer' } },
         reviewer: {
           agent: { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false, harness: null, model: null, effort: null },
           options: {}, procedure: 'review',
-          route: { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' } },
+          route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
         },
-        'implementer-fix': { agent: resolvedImplementer, options: {}, procedure: 'fix', then: 'reviewer' },
+        'implementer-fix': { agent: resolvedImplementer, options: {}, procedure: 'fix', route: { ok: 'reviewer' } },
+        publish: { agent: null, options: {}, procedure: 'publish', route: { ok: { end: 'ready-for-qa' } } },
       },
     },
   });
@@ -33,16 +35,16 @@ test('resolveFlow expands use into the resolved flow shape', () => {
 
 test('a Vertex field overrides the library Agent it uses, and the rest comes from that Agent', () => {
   const overridden = config.loadDefaults();
-  overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', then: 'reviewer' };
+  overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', route: { ok: 'reviewer' } };
   assert.deepEqual(flow.resolveFlow(overridden).ticket.vertices['implementer-fix'], {
     agent: { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: 'model-z', effort: null },
-    options: {}, procedure: 'fix', then: 'reviewer',
+    options: {}, procedure: 'fix', route: { ok: 'reviewer' },
   });
 });
 
 test('resolveFlow does not mutate the Agent Library', () => {
   const overridden = config.loadDefaults();
-  overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', then: 'reviewer' };
+  overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', route: { ok: 'reviewer' } };
   flow.resolveFlow(overridden);
   assert.deepEqual(overridden.agents, { implementer: IMPLEMENTER, reviewer: REVIEWER });
 });
@@ -73,27 +75,29 @@ for (const [harness, agents] of [
     mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
     copyFileSync(example, config.layerPath(repo));
     const { vertices } = flow.resolveFlow(config.loadConfig(repo, join(repo, 'no-user-layer'))).ticket;
+    assert.equal(vertices.publish.agent, null, 'publish runs no agent');
+    delete vertices.publish;
     assert.deepEqual(Object.fromEntries(Object.entries(vertices).map(([id, { agent }]) => [id, { harness: agent.harness, model: agent.model, effort: agent.effort }])), agents);
   });
 }
 
 test('resolveFlow rejects an unknown agent or procedure naming the vertex', () => {
   const unknownAgent = config.loadDefaults();
-  unknownAgent.flows.default.ticket.vertices['odd-vertex'] = { use: 'no-such-agent', procedure: 'fix', then: 'reviewer' };
+  unknownAgent.flows.default.ticket.vertices['odd-vertex'] = { use: 'no-such-agent', procedure: 'fix', route: { ok: 'reviewer' } };
   assert.throws(() => flow.resolveFlow(unknownAgent), /odd-vertex/);
 
   const unknownProcedure = config.loadDefaults();
-  unknownProcedure.flows.default.ticket.vertices['odd-vertex'] = { use: 'implementer', procedure: 'no-such-procedure', then: 'reviewer' };
+  unknownProcedure.flows.default.ticket.vertices['odd-vertex'] = { use: 'implementer', procedure: 'no-such-procedure', route: { ok: 'reviewer' } };
   assert.throws(() => flow.resolveFlow(unknownProcedure), /odd-vertex/);
 });
 
 test('resolveFlow rejects inherited property names as agent or procedure naming the vertex', () => {
   const inheritedAgent = config.loadDefaults();
-  inheritedAgent.flows.default.ticket.vertices['odd-vertex'] = { use: 'constructor', procedure: 'fix', then: 'reviewer' };
+  inheritedAgent.flows.default.ticket.vertices['odd-vertex'] = { use: 'constructor', procedure: 'fix', route: { ok: 'reviewer' } };
   assert.throws(() => flow.resolveFlow(inheritedAgent), /odd-vertex/);
 
   const inheritedProcedure = config.loadDefaults();
-  inheritedProcedure.flows.default.ticket.vertices['odd-vertex'] = { use: 'implementer', procedure: 'constructor', then: 'reviewer' };
+  inheritedProcedure.flows.default.ticket.vertices['odd-vertex'] = { use: 'implementer', procedure: 'constructor', route: { ok: 'reviewer' } };
   assert.throws(() => flow.resolveFlow(inheritedProcedure), /odd-vertex/);
 });
 

@@ -86,7 +86,7 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
 
   const results = await run.runTarget(f.options);
   assert.equal(f.options.config.maxParallel, 2);
-  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'ready-for-qa'], [22, 'ready-for-qa']], JSON.stringify(results));
   assert.equal(run.runExitCode(results), 0);
   const views = f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'view').map((c) => Number(c.args[2]));
   // A git write of one Ticket that waited for the repo lock behind the other reads its labels again, so count each once.
@@ -189,13 +189,13 @@ test('a ticket lock failure is that ticket\'s fault and run_end waits for every 
   const results = await running;
   await aEnded.wait();
   assert.ok(Array.isArray(results), `the Run settles with every Ticket's result: ${results}`);
-  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'fault']]);
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'ready-for-qa'], [22, 'fault']]);
   assert.match(results[1].error, /unable to open database file/, 'the result keeps the acquisition error');
   assert.equal(run.runExitCode(results), 1);
   const evs = f.readEvents();
   const ends = evs.filter((e) => e.type === 'run_end');
   assert.equal(ends.length, 1);
-  assert.deepEqual(ends[0].tickets, [{ ticket: 21, outcome: 'done' }, { ticket: 22, outcome: 'fault' }]);
+  assert.deepEqual(ends[0].tickets, [{ ticket: 21, outcome: 'ready-for-qa' }, { ticket: 22, outcome: 'fault' }]);
   assert.ok(evs.indexOf(ends[0]) > evs.findIndex((e) => e.type === 'ticket_end' && e.ticket === 21), 'run_end follows the ending of A');
 });
 
@@ -245,7 +245,7 @@ test('a rate limit on one Ticket delays the next GitHub write of the other', { t
   } });
 
   const results = await run.runTarget(f.options);
-  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'ready-for-qa'], [22, 'ready-for-qa']], JSON.stringify(results));
   assert.deepEqual(sleeps.map((s) => s.ms), [7_000, 7_000], "B waited out A's Retry-After");
   assert.equal(sleeps[1].bCalls, 0, 'before any GitHub write of B');
   assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args, 21)).length, 2);

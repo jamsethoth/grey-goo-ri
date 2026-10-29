@@ -30,8 +30,8 @@ test('activity brackets every launched process', async (t) => {
   assert.deepEqual([...new Set(g.activity.map((a) => a.what.split(/[ .]/)[0]))].sort(), ['gh', 'git', 'harness', 'test'],
     'harness, test, git and gh calls observed');
   assert.deepEqual(g.activity.filter((a) => a.busy !== true), [], 'every process ran while the worktree was busy');
-  assert.deepEqual([...new Set(g.activity.map((a) => a.generation))], [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27],
-    'one busy generation per Action and per write Vertex\'s clean check, rising by two');
+  assert.deepEqual([...new Set(g.activity.map((a) => a.generation))], [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33],
+    'one busy generation per Action and per Vertex\'s clean check, rising by two');
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.activity.filter((a) => a.what === 'harness').length, 2);
   assert.equal(g.rec.activity.busy, false);

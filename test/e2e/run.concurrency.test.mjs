@@ -184,7 +184,7 @@ test('a busy worktree is never attributed to another ticket\'s action', { timeou
 
   const results = await run.runTarget(f.options);
   assert.equal(bActivity?.busy, true, 'B was busy during the red call of A');
-  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'done'], [22, 'done']], JSON.stringify(results));
+  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'ready-for-qa'], [22, 'ready-for-qa']], JSON.stringify(results));
   const flagged = f.readEvents().filter((e) => e.type === 'action' && e.ticket === 21 && e.violations);
   assert.deepEqual(flagged, [], 'no Action of A carries a violation');
 });

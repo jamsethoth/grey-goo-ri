@@ -203,7 +203,7 @@ test('admission excludes non-ticket worktrees from sibling assertions', async (t
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
-  assert.equal(ticketResult(results).outcome, 'done');
+  assert.equal(ticketResult(results).outcome, 'ready-for-qa');
 });
 
 // Windows paths are case-insensitive: the own worktree, listed in another case, would see its agent's writes as violations.
@@ -214,7 +214,7 @@ test('admission excludes its own worktree, listed in another case, from sibling 
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
-  assert.equal(ticketResult(results).outcome, 'done');
+  assert.equal(ticketResult(results).outcome, 'ready-for-qa');
 });
 
 test('a resumed execution detached at the recorded SHA is held before recovery', async (t) => {

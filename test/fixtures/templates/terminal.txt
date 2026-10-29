@@ -6,6 +6,6 @@
 Error: boom
 ```
 
-**Interrupted:** the done Terminal, whose Terminal Reason was: PR #3 is ready.
+**Interrupted:** the ready-for-qa Terminal, whose Terminal Reason was: PR #3 is ready.
 
 <!-- gg-action gg:e1:implement:1:pr:0:r1:1 -->

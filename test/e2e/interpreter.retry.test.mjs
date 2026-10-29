@@ -25,7 +25,7 @@ test('a git write queued behind another holder of the repo lock checks the human
     const result = await interpreter.runExecution(g.options);
 
     assert.equal(lock.state(), 'released', 'the push waited for the lock');
-    assert.equal(result.outcome, 'done', JSON.stringify(result));
+    assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
     assert.equal(counts.push ?? 0, 0, 'the commit is on origin, so it is not pushed again');
     assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0], golden.sh(g.worktree, 'rev-parse', 'HEAD'));
   });

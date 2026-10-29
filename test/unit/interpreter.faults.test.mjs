@@ -19,7 +19,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
   assert.equal(outcome, 'needs-human');
   const green = attemptsOf(g, 'green', 'green');
   assert.deepEqual(green.map((e) => [e.attempt, e.rule]), [[1, 'parse-retry'], [2, 'parse-exhausted']]);
-  assert.equal(green[1].outcome, 'needs-human');
+  assert.equal(green[1].outcome, 'harness-unparsed');
   assert.equal(g.harness.calls.length, 3);
   const [, first, nudge] = g.harness.calls;
   assert.equal(nudge.resume, 'fake-session-2', 'the nudge resumes the green session');
@@ -29,23 +29,23 @@ test('golden: an invalid structured response is retried once with a nudge then s
   assert.notEqual(nudge.marker, first.marker, 'the marker names the attempt');
   assert.equal(g.rec.retries['green/1/green/0'].parse, 1);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
-  stopReason(g, { vertex: 'green', action: 'green', recovery: 0, outcome: 'needs-human', rule: 'parse-exhausted' });
+  stopReason(g, { vertex: 'green', action: 'green', recovery: 0, outcome: 'harness-unparsed', rule: 'parse-exhausted' });
 });
 
-test('a replan reached with a rejected response is headed by its Outcome, never the rejected claim', async (t) => {
+test('a needs-replan reached with a rejected response is headed by its end, never the rejected claim', async (t) => {
   const claim = 'ok\n\n## Injected heading';
   const g = await golden.setup(t, { responses: {
     ...structuredClone(golden.firstVisitResponses),
     'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
     'green/1/green/2': { files: {}, response: { ...golden.greenResponse, claim } },
   } });
-  g.flow.ticket.vertices.green.route = { 'needs-human': 'replan' };
+  g.flow.ticket.vertices.green.route = { 'harness-unparsed': { end: 'needs-replan' } };
   const { outcome } = await interpreter.runExecution(g.options);
 
-  assert.equal(outcome, 'replan');
+  assert.equal(outcome, 'needs-replan');
   const [posted, ...rest] = ticketComments(g);
   assert.equal(rest.length, 0);
-  assert.match(posted.body, /^### gg: needs-human\n/);
+  assert.match(posted.body, /^### gg: needs-replan\n/);
   assert.ok(!posted.body.includes('## Injected heading'), posted.body);
 });
 
@@ -85,7 +85,7 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'the fresh Attempt resumes the session');
   assert.equal(g.rec.retries['red/1/red/0'].timeout, 1);
-  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'needs-human', rule: 'timeout-exhausted' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'harness-timeout', rule: 'timeout-exhausted' });
   assert.match(reason.text, /timed out/);
 });
 
@@ -107,7 +107,7 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
   assert.deepEqual(sleeps, [5, 5]);
   assert.equal(clock.now() - start, 10, 'the injected clock advanced by retryAfterMs each time');
   assert.equal(g.rec.retries['red/1/red/0'].transient, 2);
-  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'needs-human', rule: 'transient-exhausted' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'harness-transient', rule: 'transient-exhausted' });
   assert.match(reason.text, /transient/);
 });
 
@@ -313,12 +313,15 @@ test('blocked after test-fix stops', async (t) => {
   stopReason(g, { vertex: 'green', action: 'test', recovery: 1, outcome: 'blocked', rule: 'blocked', comment: false });
 });
 
-test('requireTestPass false is recorded on every event of its Visit and does not block advance', async (t) => {
+test('requireTestPass false is recorded on every event of its Visit and does not block advance, but publishing still needs a passing test', async (t) => {
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
   g.flow.ticket.vertices.green.options = { requireTestPass: false };
   const { outcome } = await interpreter.runExecution(g.options);
 
-  assert.equal(outcome, 'done');
+  // R11d: publish runs the test command itself, whichever Vertex ran before it.
+  assert.equal(outcome, 'needs-human');
+  assert.equal(actionEvent(g, 'publish', 'test').outcome, 'gate-failed(test)');
+  assert.equal(g.gh.pr().isDraft, true, 'nothing is marked ready');
   const check = actionEvent(g, 'green', 'test');
   assert.equal(check.signals.checks.find((c) => c.name === 'test').passed, false, 'the failing Green Check is recorded');
   assert.equal(check.direction, 'advance');
@@ -327,7 +330,7 @@ test('requireTestPass false is recorded on every event of its Visit and does not
   const visit = g.readEvents().filter((e) => e.type === 'action' && e.procedure);
   assert.deepEqual(visit.map((e) => `${e.vertex}/${e.action} ${e.requireTestPass}`), [
     'red/red undefined', 'red/red-check undefined', 'red/commit undefined',
-    'green/green false', 'green/test false', 'green/commit false', 'green/push false', 'green/pr false',
+    'green/green false', 'green/test false', 'green/commit false', 'green/push false', 'green/pr false', 'publish/test undefined',
   ]);
 });
 
@@ -344,7 +347,7 @@ test('a persona edit between green and test-fix does not reach the test-fix call
   };
   const { outcome } = await interpreter.runExecution(g.options);
 
-  assert.equal(outcome, 'done');
+  assert.equal(outcome, 'ready-for-qa');
   assert.equal(g.harness.calls.length, 3);
   assert.equal(g.harness.calls[2].personaBytes, golden.PERSONA, 'test-fix gets the bytes pinned at Visit entry');
   assert.equal(g.harness.calls[2].personaHash, g.harness.calls[1].personaHash);

@@ -13,7 +13,7 @@ test('a transient comment failure is retried once and posts one comment', async 
   g.gh.fail(onPr({ status: 502 }));
   const result = await interpreter.runExecution(g.options);
 
-  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   const posts = commentPosts(g);
   assert.equal(posts.length, 2, 'the failed POST and one retry');
   assert.equal(posts[1].input, posts[0].input, 'the retry sends the recorded payload');
@@ -41,7 +41,7 @@ test('retry-after is honoured on the fake clock', async (t) => {
   };
   const result = await interpreter.runExecution(g.options);
 
-  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.deepEqual(g.sleeps, [7_000]);
   assert.deepEqual(seen?.saved, { count: 1, class: 'rate-limited', nextEligibleAt: seen?.now + 7_000, started: false },
     'the retry is saved before the sleep');
@@ -55,7 +55,7 @@ test('an accepted write whose call errored is found by marker, not reposted', as
   g.gh.fail(onPr({ status: 502, afterEffect: true }));
   const result = await interpreter.runExecution(g.options);
 
-  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.equal(commentPosts(g).length, 1, 'never posted again');
   const [posted, ...more] = prReviewComments(g);
   assert.equal(more.length, 0);
@@ -147,7 +147,7 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
     assert.deepEqual((await loadTicket(g)).retries[REVIEW_COMMENT].remote.started, true, 'the first retry launched');
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
-    assert.equal(result.outcome, 'done', JSON.stringify(result));
+    assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
     assert.equal(posts(), 3);
     assert.equal(prReviewComments(g).length, 1);
     assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2, 'the relaunch spent the second retry');
@@ -286,7 +286,7 @@ for (const [name, matches] of [
     g.gh.fail({ matches, status: 502 });
     const result = await interpreter.runExecution(g.options);
 
-    assert.equal(result.outcome, 'done', JSON.stringify(result));
+    assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
     assert.deepEqual(g.sleeps, [60_000, 120_000], 'the failed read spent the second retry');
     assert.equal(commentPosts(g).length, 2, 'the failed POST and one retry, launched only after a read that worked');
     assert.equal(prReviewComments(g).length, 1);

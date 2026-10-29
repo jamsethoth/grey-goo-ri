@@ -127,7 +127,7 @@ test('a resume after the commit of a recovery pass continues at its push', async
   assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['commit', 1], 'the commit inherits the recovery pass number');
 
   const result = await interpreter.runExecution({ ...g.options, record: loaded });
-  assert.equal(result.outcome, 'done');
+  assert.equal(result.outcome, 'ready-for-qa');
   assert.equal(g.harness.calls.length, 3, 'no agent call runs again');
   assert.deepEqual(greenActions(g), ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
 });
@@ -146,7 +146,7 @@ test('a missing transcript starts the phase fresh', async (t) => {
   assert.equal(call.resume, null, 'the green Session is not resumed without its transcript');
   assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT), 'the full test-fix Brief, not a nudge');
   assert.ok(g.logs.some((l) => /transcript/.test(l)), `the fresh start is logged: ${JSON.stringify(g.logs)}`);
-  assert.equal(result.outcome, 'done');
+  assert.equal(result.outcome, 'ready-for-qa');
   // The resume continues at the recovery pass: no first-pass Action runs again, and the Actions after it carry its number.
   assert.deepEqual(greenActions(g), ['green/0', 'test/0', 'green/1', 'test/1', 'commit/1', 'push/1', 'pr/1']);
 });
@@ -162,13 +162,14 @@ test('bounds survive a restart', async (t) => {
     'reviewer/2/review/1': review([finding('second problem')]) } });
   const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
   writeFileSync(reviewerPersona, '# reviewer\nJudge the diff.\n');
-  const { red, green } = g.flow.ticket.vertices;
+  const { red, green, publish } = g.flow.ticket.vertices;
   g.flow.ticket.vertices = {
     red,
-    green: { ...green, then: 'reviewer' },
+    green: { ...green, route: { ok: 'reviewer' } },
     reviewer: { agent: { ...structuredClone(green.agent), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
-      options: {}, route: { ok: 'done', changes: { to: 'implementer-fix', max: 1, exhausted: 'needs-human' } } },
-    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, then: 'reviewer' },
+      options: {}, route: { ok: 'publish', changes: { to: 'implementer-fix', max: 1, exhausted: { end: 'needs-human' } } } },
+    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, route: { ok: 'reviewer' } },
+    publish,
   };
   const key = 'reviewer->implementer-fix:changes';
   const { loaded } = await crashed(g, ['reviewer', 2, 'comment', 0], 'after-completion');
@@ -227,7 +228,7 @@ test('a failed lookup in a Run is retried on the Action budget and finds the lan
   } };
 
   const result = await interpreter.runExecution({ ...g.options, gh: once, record: await loadTicket(g) });
-  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.equal(withMarker(g.gh.comments.map((c) => c.body), m).length, 1, 'not posted again');
   assert.deepEqual(g.sleeps, [60_000]);
   assert.deepEqual(stepsOf(await loadTicket(g), m), ['intent', 'evidence', 'complete']);

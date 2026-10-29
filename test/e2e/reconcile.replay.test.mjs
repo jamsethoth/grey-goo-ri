@@ -61,8 +61,12 @@ test('a crash before the commit replays the intended tree, not a human edit', as
   writeFileSync(join(g.worktree, 'notes.txt'), 'a human note\n');
 
   const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
-  assert.equal(result.outcome, 'done');
+  // The replayed commit is pushed, but pr-ready never publishes beside the human's file (T1a), so nothing is marked ready.
+  assert.equal(result.outcome, 'needs-human');
   const final = await loadTicket(g);
+  assert.deepEqual(final.terminalReason.decidedBy, { hold: 'unchecked-publish' });
+  assert.match(final.terminalReason.text, /its Check passed on tree \w+, not on tree \w+ of commit/, 'the Check ran with the human file in the tree');
+  assert.equal(g.gh.pr().isDraft, true);
   const { payload } = final.log.find((e) => e.marker === m && e.step === 'intent');
   const { sha } = final.log.find((e) => e.marker === m && e.step === 'evidence').evidence;
   assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^{tree}`), payload.tree, 'the commit has the intended tree');

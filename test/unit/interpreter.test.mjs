@@ -277,7 +277,7 @@ test('pr-ready holds when the published tree differs from the checked tree', asy
   assert.equal(g.gh.pr().isDraft, true, 'the PR stays a draft');
   const rec = await loadTicket(g);
   assert.deepEqual(rec.terminalReason.decidedBy, { hold: 'unchecked-publish' });
-  assert.match(rec.terminalReason.text, /tree/);
+  assert.match(rec.terminalReason.text, /its Check passed on tree \w+, not on tree \w+ of commit \w+/);
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
 });
 
@@ -339,4 +339,19 @@ test('a stop comment replaces the end comment and reaches the Epic at needs-repl
   assert.equal(onEpic.length, 1, 'the same comment on the Epic');
   const unmarked = (body) => body.replace(/<!-- gg-action \S+ -->/, '');
   assert.equal(unmarked(onEpic[0].body), unmarked(onTicket[0].body));
+});
+
+test("H7: the Flow's route for an Outcome beats the Vertex's \"*\", and no \"*\" catches an unroutable Outcome", async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: 'Two tickets.' } };
+  const g = await golden.setup(t, { responses });
+  g.flow.ticket.vertices.green.route['*'] = { end: 'needs-human' };
+  assert.equal((await interpreter.runExecution(g.options)).outcome, 'needs-replan');
+
+  const v = await golden.setup(t);
+  v.flow.ticket.routes['*'] = { end: 'needs-replan' };
+  v.flow.ticket.vertices.red.route['*'] = { end: 'needs-replan' };
+  const violation = { worktree: v.worktree, surface: 'head', before: v.base, after: 'a'.repeat(40) };
+  const result = await interpreter.runExecution({ ...v.options, integrity: { ...v.options.integrity, end: async () => ({ violations: [violation] }) } });
+  assert.equal(result.outcome, 'needs-human', 'an Integrity Violation is never routed');
 });

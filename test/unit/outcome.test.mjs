@@ -43,9 +43,9 @@ test('row transient-retry: failed rate-limited within budget -> transient-retry'
   assert.equal(r.retryKind, 'rateLimited');
 });
 
-test('row transient-exhausted: failed transient at budget -> needs-human', () => {
-  assertRow(resolve({ result: failed('transient'), retries: { ...none, transient: 2 } }), 'transient-exhausted', 'needs-human', 'stop');
-  assertRow(resolve({ result: failed('rate-limited'), retries: { ...none, rateLimited: 2 } }), 'transient-exhausted', 'needs-human', 'stop');
+test('row transient-exhausted: failed transient at budget -> harness-transient', () => {
+  assertRow(resolve({ result: failed('transient'), retries: { ...none, transient: 2 } }), 'transient-exhausted', 'harness-transient', 'stop');
+  assertRow(resolve({ result: failed('rate-limited'), retries: { ...none, rateLimited: 2 } }), 'transient-exhausted', 'harness-transient', 'stop');
 });
 
 for (const cls of ['auth', 'quota', 'budget']) {
@@ -64,9 +64,9 @@ for (const status of ['timed-out', 'killed']) {
   });
 }
 
-test('row timeout-exhausted: timed-out at budget -> needs-human', () => {
+test('row timeout-exhausted: timed-out at budget -> harness-timeout', () => {
   const r = resolve({ result: { status: 'timed-out', response: null, failure: null }, retries: { ...none, timeout: 1 } });
-  assertRow(r, 'timeout-exhausted', 'needs-human', 'stop');
+  assertRow(r, 'timeout-exhausted', 'harness-timeout', 'stop');
 });
 
 test('row unknown-failure: failed unknown -> needs-human', () => {
@@ -79,9 +79,9 @@ test('row parse-retry: completed, invalid claim within budget -> parse-retry', (
   assert.equal(r.retryKind, 'parse');
 });
 
-test('row parse-exhausted: completed, invalid claim at budget -> needs-human', () => {
+test('row parse-exhausted: completed, invalid claim at budget -> harness-unparsed', () => {
   const r = resolve({ claim: { valid: false, reason: 'field missing' }, retries: { ...none, parse: 1 } });
-  assertRow(r, 'parse-exhausted', 'needs-human', 'stop');
+  assertRow(r, 'parse-exhausted', 'harness-unparsed', 'stop');
 });
 
 test('row blocked: completed, valid blocked -> blocked', () => {
@@ -152,12 +152,12 @@ test('a non-ok non-stop claim routes by its token', () => {
 test('a completed result with response null and no claim is a parse retry, then parse-exhausted at budget', () => {
   const result = { status: 'completed', response: null, failure: null };
   assertRow(resolve({ result, claim: null }), 'parse-retry', 'parse-retry', 'retry');
-  assertRow(resolve({ result, claim: null, retries: { ...none, parse: 1 } }), 'parse-exhausted', 'needs-human', 'stop');
+  assertRow(resolve({ result, claim: null, retries: { ...none, parse: 1 } }), 'parse-exhausted', 'harness-unparsed', 'stop');
 });
 
 test('a policy overrides the retry budgets', () => {
   const policy = { ...outcome.DEFAULT_POLICY, transient: 0 };
-  assertRow(resolve({ result: failed('transient'), policy }), 'transient-exhausted', 'needs-human', 'stop');
+  assertRow(resolve({ result: failed('transient'), policy }), 'transient-exhausted', 'harness-transient', 'stop');
 });
 
 for (const [status, failure] of [['failed', { class: 'transient', retryAfterMs: null }], ['timed-out', null], ['killed', null]]) {
