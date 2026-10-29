@@ -284,6 +284,7 @@ test('a red Phase that leaves nothing to commit fails red with "No tests were wr
   assert.equal(commit.outcome, 'red-failed');
   assert.equal(commit.rule, 'check-exhausted');
   assert.deepEqual(intents(g.rec, 'commit'), [], 'no commit intent for an empty commit');
+  assert.deepEqual(g.rec.outputs.find((o) => o.action === 'commit')?.value, { files: [] }, 'an empty commit records files: []');
   assert.deepEqual(g.rec.history, [{ kind: 'red phase failed', text: 'No tests were written.' }]);
   assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 'commit'));
 });
