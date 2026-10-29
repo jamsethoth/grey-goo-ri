@@ -62,7 +62,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
 
   assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1);
   assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
-  assert.deepEqual(g.rec.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]]);
+  assert.deepEqual(g.rec.outputs.filter((o) => o.action === 'repeat').map((o) => [o.vertex, o.visit]), [['reviewer', 1], ['reviewer', 2]]);
   assert.equal(g.events.at(-1).type, 'ticket_end');
   assert.equal(g.events.at(-1).outcome, 'ready-for-qa');
 });
@@ -160,10 +160,10 @@ test('a repeated findings hash is flagged', async (t) => {
     'reviewer/3/review/1': reviewed(review('ok')),
   });
 
-  const [first, second] = g.rec.outputs.reviews;
+  const [first, second] = g.rec.outputs.filter((o) => o.action === 'repeat');
   assert.deepEqual([first.vertex, first.visit, second.vertex, second.visit], ['reviewer', 1, 'reviewer', 2]);
-  assert.equal(first.findingsHash, checks.findingsHash(same));
-  assert.equal(second.findingsHash, first.findingsHash, 'normalised Findings hash the same');
+  assert.equal(first.value.findingsHash, checks.findingsHash(same));
+  assert.equal(second.value.findingsHash, first.value.findingsHash, 'normalised Findings hash the same');
   const hashed = (visit) => g.at('reviewer', visit, 'repeat', 0)[0];
   assert.notEqual(hashed(1).repeat, true, 'the first review is not a repeat');
   assert.equal(hashed(2).repeat, true, 'the second review is flagged as a repeat');

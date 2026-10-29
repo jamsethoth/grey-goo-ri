@@ -124,7 +124,7 @@ test('the red commit records a non-ASCII test path unquoted', async (t) => {
   const g = await golden.setup(t, { responses });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(g.rec.outputs.red.tests, ['test/añadir.test.mjs']);
+  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value.files, ['test/añadir.test.mjs']);
 });
 
 test('ready-for-qa removes in-progress and adds its label', async (t) => {
@@ -284,6 +284,7 @@ test('a red Phase that leaves nothing to commit fails red with "No tests were wr
   assert.equal(commit.outcome, 'red-failed');
   assert.equal(commit.rule, 'check-exhausted');
   assert.deepEqual(intents(g.rec, 'commit'), [], 'no commit intent for an empty commit');
+  assert.deepEqual(g.rec.outputs.find((o) => o.action === 'commit')?.value, { files: [] }, 'an empty commit records files: []');
   assert.deepEqual(g.rec.history, [{ kind: 'red phase failed', text: 'No tests were written.' }]);
   assert.equal(intents(g.rec, 'reset')[0].marker, actionMarker(g, 'red', 'commit'));
 });

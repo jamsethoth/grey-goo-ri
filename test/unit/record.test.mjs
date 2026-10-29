@@ -60,7 +60,8 @@ test('createExecution mints an execution id and the documented fields', async (t
   assert.deepEqual(r.traversals, {});
   assert.deepEqual(r.retries, {});
   assert.deepEqual(r.sessions, {});
-  assert.deepEqual(r.outputs, { red: null, implementation: [], reviews: [] });
+  assert.deepEqual(r.outputs, []);
+  assert.deepEqual(r.testCommits, { first: null, baseline: null });
   assert.deepEqual(r.history, []);
   assert.equal(r.branch, 'ticket/8');
   assert.equal(r.base, 'main');

@@ -9,6 +9,7 @@ import * as golden from '../support/golden.mjs';
 import {
   stepsOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
 } from '../support/reconcile.mjs';
+import { FIX_INPUTS, REVIEW_INPUTS } from '../support/interpreter.mjs';
 
 // Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<effect>), then resumes on a
 // freshly loaded record with the same options.
@@ -167,9 +168,9 @@ test('bounds survive a restart', async (t) => {
     red,
     green: { ...green, route: { ok: 'reviewer' } },
     reviewer: { agent: { ...structuredClone(green.agent), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
-      options: {}, route: { ok: 'publish', changes: { to: 'implementer-fix', max: 1, exhausted: { end: 'needs-human' } } } },
-    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, route: { ok: 'reviewer' } },
-    publish,
+      options: {}, inputs: REVIEW_INPUTS, route: { ok: 'publish', changes: { to: 'implementer-fix', max: 1, exhausted: { end: 'needs-human' } } } },
+    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
+    publish: { ...publish, inputs: REVIEW_INPUTS },
   };
   const key = 'reviewer->implementer-fix:changes';
   const { loaded } = await crashed(g, ['reviewer', 2, 'comment', 0], 'after-completion');

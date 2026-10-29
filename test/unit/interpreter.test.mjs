@@ -7,7 +7,8 @@ import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
-import { firstVisit, intents, actionEvent, attemptsOf, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD } from '../support/interpreter.mjs';
+import { firstVisit, intents, actionEvent, attemptsOf, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD,
+  finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, subjects } from '../support/interpreter.mjs';
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const g = await firstVisit(t);
@@ -38,7 +39,8 @@ test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
   };
   await interpreter.runExecution(g.options);
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
-  assert.ok(rec.outputs.red.evidence.output.includes(path), rec.outputs.red.evidence.output);
+  const { output } = rec.outputs.find((o) => o.vertex === 'red' && o.action === 'red-check').value.evidence;
+  assert.ok(output.includes(path), output);
   assert.ok(g.harness.calls[1].brief.includes(`${path}:1:1`), 'the green Brief quotes the raw path');
   assert.ok(!g.gh.pr().body.includes(g.root), 'the PR body does not');
 });
@@ -356,4 +358,111 @@ test('no "*" catches an unroutable Outcome', async (t) => {
   const violation = { worktree: g.worktree, surface: 'head', before: g.base, after: 'a'.repeat(40) };
   const result = await interpreter.runExecution({ ...g.options, integrity: { ...g.options.integrity, end: async () => ({ violations: [violation] }) } });
   assert.equal(result.outcome, 'needs-human', 'an Integrity Violation is never routed');
+});
+
+// Each Visit's snapshot as last saved, by `vertex/visit`: the record keeps only the current Visit's.
+function pinnedInputs(t) {
+  const seen = {};
+  const previous = record.setSaveHook((r) => {
+    if (r.snapshot) seen[`${r.snapshot.vertex}/${r.snapshot.visit}`] = structuredClone(r.snapshot.inputs);
+  });
+  t.after(() => record.setSaveHook(previous));
+  return seen;
+}
+const briefOf = (g, vertex, visit) => g.harness.calls.find((c) => {
+  const at = marker.partsOf(c.marker);
+  return at.vertex === vertex && at.visit === String(visit);
+}).brief;
+
+test("green reads red's committed tests through an input", async (t) => {
+  const pinned = pinnedInputs(t);
+  const g = await firstVisit(t);
+  assert.equal(g.result.outcome, 'ready-for-qa');
+  assert.deepEqual(pinned['green/1'].tests, { value: ['test/add.test.mjs'], vertex: 'red', visit: 1, action: 'commit' });
+  assert.equal(pinned['green/1'].red.vertex, 'red');
+  assert.equal(pinned['green/1'].red.action, 'red-check');
+  assert.match(pinned['green/1'].red.value.output, /Cannot find module 'lib\/add.mjs'/);
+  assert.ok(briefOf(g, 'green', 1).includes('- test/add.test.mjs'), 'the Brief lists the input');
+});
+
+test('a list input takes the latest Visit across its sources', async (t) => {
+  const pinned = pinnedInputs(t);
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+  assert.equal(g.result.outcome, 'ready-for-qa');
+  const from = ({ vertex, visit, action }) => ({ vertex, visit, action });
+  assert.deepEqual(from(pinned['reviewer/1'].report), { vertex: 'green', visit: 1, action: 'green' });
+  assert.deepEqual(from(pinned['reviewer/2'].report), { vertex: 'implementer-fix', visit: 1, action: 'fix' });
+  assert.deepEqual(from(pinned['reviewer/2'].green), { vertex: 'implementer-fix', visit: 1, action: 'test' });
+  assert.deepEqual(from(pinned['publish/1'].report), { vertex: 'implementer-fix', visit: 1, action: 'fix' });
+  assert.ok(briefOf(g, 'reviewer', 2).includes('Address the findings.'), "the second review reads the fix's report");
+  assert.ok(!briefOf(g, 'reviewer', 1).includes('Address the findings.'));
+  assert.ok(g.gh.pr().body.includes('Address the findings.'), "publish renders the PR body from the fix's report");
+});
+
+test('an absent optional input renders empty in the Brief', async (t) => {
+  const pinned = pinnedInputs(t);
+  const g = await golden.setup(t);
+  g.flow.ticket.vertices.green.inputs = { ...golden.GREEN_INPUTS, tests: { from: 'senior-red.commit.files', optional: true } };
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'ready-for-qa');
+  assert.deepEqual(pinned['green/1'].tests, { absent: true });
+  assert.match(briefOf(g, 'green', 1), /## Committed tests\n\nThe orchestrator committed/, 'the list renders empty');
+});
+
+test('pick projects findings to file paths', async (t) => {
+  const pinned = pinnedInputs(t);
+  const named = finding('minor', 'test/add.test.mjs', 'the test misses negatives');
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR, named])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+  // The fix's Test Immutability sees the named test changed, which only its `tests: named` input permits.
+  const immutability = g.options.testImmutability;
+  g.options.testImmutability = async (...args) => (g.rec.cursor.vertex === 'implementer-fix'
+    ? { ok: false, changed: ['test/add.test.mjs'] } : immutability(...args));
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'ready-for-qa');
+  assert.deepEqual(pinned['implementer-fix/1'].testFiles,
+    { value: ['lib/add.mjs', 'test/add.test.mjs'], vertex: 'reviewer', visit: 1, action: 'review' });
+  assert.deepEqual(pinned['implementer-fix/1'].findings.value, [MAJOR, named]);
+});
+
+test('a commit with nothing to commit records files: [] and makes no commit', async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({}),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+  assert.equal(g.result.outcome, 'ready-for-qa');
+  const commits = g.rec.outputs.filter((o) => o.action === 'commit');
+  assert.deepEqual(commits.map((o) => [o.vertex, o.visit, o.value.files]),
+    [['red', 1, ['test/add.test.mjs']], ['green', 1, ['lib/add.mjs']], ['implementer-fix', 1, []]]);
+  assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)'], 'no fix commit');
+});
+
+test("each draft PR body renders its own Vertex's report and Green Evidence", async (t) => {
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+  assert.equal(g.result.outcome, 'ready-for-qa');
+  // The body each Vertex's pr-upsert saved in its intent, before a later Vertex re-rendered it.
+  const bodyOf = (vertex) => intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === vertex).payload.body;
+  const greenSection = (body) => body.slice(body.indexOf('**Green**'), body.indexOf('## QA instructions'));
+
+  const green = bodyOf('green');
+  assert.ok(green.includes('Add two numbers.'), `green's body renders green's report:\n${green}`);
+  assert.ok(greenSection(green).includes('✔ adds two numbers (0.8ms)'), `green's Green section shows green's test.evidence:\n${green}`);
+  assert.ok(!greenSection(green).includes('Cannot find module'), `green's Green section does not show the Red Evidence:\n${green}`);
+
+  const fix = bodyOf('implementer-fix');
+  assert.ok(fix.includes('Address the findings.'), `the fix's body renders the fix's report:\n${fix}`);
+  assert.ok(greenSection(fix).includes('✔ adds two numbers (0.8ms)'), `the fix's Green section shows the fix's test.evidence:\n${fix}`);
+  assert.ok(!greenSection(fix).includes('Cannot find module'), `the fix's Green section does not show the Red Evidence:\n${fix}`);
 });

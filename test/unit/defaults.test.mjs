@@ -4,6 +4,19 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const defaultsDir = fileURLToPath(new URL('../../defaults/', import.meta.url));
+// The inputs of the shipped Flow (#113): green reads red's tests and Red Evidence; the reviewer and publish the latest
+// report and Green Evidence, and the Red Evidence; the fix the review's Findings and their file paths.
+const GREEN_INPUTS = { tests: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
+const IMPL_INPUTS = {
+  report: { from: ['green.green.response', 'implementer-fix.fix.response'] },
+  red: { from: 'red.red-check.evidence' },
+  green: { from: ['green.test.evidence', 'implementer-fix.test.evidence'] },
+};
+const FIX_INPUTS = {
+  findings: { from: 'reviewer.review.response.findings' },
+  testFiles: { from: 'reviewer.review.response.findings', pick: 'file' },
+  red: { from: 'red.red-check.evidence' },
+};
 
 test('defaults/gg.json declares the default flow and its two agents', () => {
   const gg = JSON.parse(readFileSync(`${defaultsDir}gg.json`, 'utf8'));
@@ -28,13 +41,13 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
       routes: { misscoped: { end: 'needs-replan' }, '*': { end: 'needs-human' } },
       vertices: {
         red: { use: 'implementer', procedure: 'tests-fail', route: { ok: 'green' } },
-        green: { use: 'implementer', procedure: 'implement', route: { ok: 'reviewer' } },
+        green: { use: 'implementer', procedure: 'implement', inputs: GREEN_INPUTS, route: { ok: 'reviewer' } },
         reviewer: {
-          use: 'reviewer', procedure: 'review',
+          use: 'reviewer', procedure: 'review', inputs: IMPL_INPUTS,
           route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
         },
-        'implementer-fix': { use: 'implementer', procedure: 'fix', route: { ok: 'reviewer' } },
-        publish: { procedure: 'publish', route: { ok: { end: 'ready-for-qa' } } },
+        'implementer-fix': { use: 'implementer', procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
+        publish: { procedure: 'publish', inputs: IMPL_INPUTS, route: { ok: { end: 'ready-for-qa' } } },
       },
     },
   });
