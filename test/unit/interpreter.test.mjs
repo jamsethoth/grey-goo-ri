@@ -568,16 +568,18 @@ function unrequiredTest(t, g) {
   g.flow.ticket.vertices.publish.inputs.green.optional = true;
 }
 
-// implement with a second required command Check, lint, after test.
+// implement with a second required command Check, lint, after test. The lint command answers with `lintRuns` in order.
 const LINT_OUTPUT = 'lib/add.mjs: 1 problem (no-unused-vars)';
-function withLint(t, g, lint) {
+const LINT_FAILS = { code: 1, output: LINT_OUTPUT, timedOut: false };
+const LINT_PASSES = { code: 0, output: '', timedOut: false };
+function withLint(t, g, lintRuns) {
   variant(t, g, 'green', (p) => ({
     actions: [...p.actions.slice(0, 2), { id: 'lint', phase: 'green', kind: 'check', check: 'command', command: 'lint', recoverBrief: 'test-fix.md' }, ...p.actions.slice(2)],
     claims: { ...p.claims, ok: { requires: ['test', 'lint'] } },
   }));
   g.options.commands = { ...g.options.commands, lint: 'npm run lint' };
-  const runShell = g.options.exec.runShell;
-  g.options.exec.runShell = async (command, opts) => (command === 'npm run lint' ? lint() : runShell(command, opts));
+  const shells = { ...g.options.exec, 'npm run lint': async () => lintRuns.shift() };
+  g.options.exec.runShell = async (command, opts) => (shells[command] ?? shells.runShell)(command, opts);
 }
 
 const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
@@ -590,8 +592,7 @@ test("recovery resumes the Session with every failing Check's section", async (t
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
     'green/1/recover/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
   });
-  let lints = 0;
-  withLint(t, g, async () => (++lints === 1 ? { code: 1, output: LINT_OUTPUT, timedOut: false } : { code: 0, output: '', timedOut: false }));
+  withLint(t, g, [LINT_FAILS, LINT_PASSES]);
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
@@ -608,13 +609,13 @@ test('every Check runs again after recovery', async (t) => {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
     'green/1/recover/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
   });
-  let lints = 0;
-  withLint(t, g, async () => { lints++; return { code: 0, output: '', timedOut: false }; });
+  const lintRuns = [LINT_PASSES, LINT_PASSES];
+  withLint(t, g, lintRuns);
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
   assert.deepEqual(greenTrace(g), ['green/0', 'test/0', 'lint/0', 'green/1', 'test/1', 'lint/1', 'commit/1', 'push/1', 'pr/1']);
-  assert.equal(lints, 2, 'lint passed in the first pass and still ran again');
+  assert.deepEqual(lintRuns, [], 'lint passed in the first pass and still ran again');
   assert.doesNotMatch(g.harness.calls[2].brief, /Check lint/, 'a passing Check has no section');
 });
 
@@ -688,8 +689,7 @@ test("a Check that passed and then failed in a recovery pass keeps no evidence o
     'green/1/green/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
     'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD }),
   });
-  const lintRuns = [{ code: 1, output: LINT_OUTPUT, timedOut: false }, { code: 0, output: '', timedOut: false }];
-  withLint(t, g, async () => lintRuns.shift());
+  withLint(t, g, [LINT_FAILS, LINT_PASSES]);
   // ok requires only lint, so the Visit commits with test failing in its last pass.
   variant(t, g, 'green', (p) => ({ claims: { ...p.claims, ok: { requires: ['lint'] } } }));
   g.flow.ticket.vertices.publish.inputs.green.optional = true;
@@ -703,11 +703,13 @@ test("a Check that passed and then failed in a recovery pass keeps no evidence o
 
 test('a command Check that times out is not recovered', async (t) => {
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
-  const runShell = g.options.exec.runShell;
-  g.options.exec.runShell = async (command, opts) => (g.rec.cursor.vertex === 'green' ? { code: null, output: 'killed after 30 min', timedOut: true } : runShell(command, opts));
+  // red's Check fails as red should; green's test command then times out.
+  const runs = [{ code: 1, output: golden.RED_OUTPUT, timedOut: false }, { code: null, output: 'killed after 30 min', timedOut: true }];
+  g.options.exec.runShell = async () => runs.shift();
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
+  assert.deepEqual(runs, [], 'the test command ran once in red and once in green');
   assert.deepEqual(greenTrace(g), ['green/0', 'test/0']);
   assert.deepEqual(g.rec.terminalReason.rule, { table: 'failed', row: null });
 });

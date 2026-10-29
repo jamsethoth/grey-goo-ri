@@ -154,18 +154,23 @@ test('the decision order is fixed rows, stopped, passed or failed, otherwise', (
   const violated = decide(stop, [check('worktree-unchanged', false, true)], { response: { reason: 'misscoped' } });
   assert.deepEqual([violated.outcome, violated.rule], ['integrity-violation', { table: 'fixed', row: 'integrity-violation' }]);
   // A stop token goes to the stopped table, else stays the token; passing Checks never override it, nor does otherwise.
-  assert.deepEqual(decide(stop, passing, { response: { reason: 'misscoped' } }).rule, { table: 'stopped', row: 0 });
+  const misscoped = decide(stop, passing, { response: { reason: 'misscoped' } });
+  assert.deepEqual([misscoped.outcome, misscoped.direction, misscoped.rule], ['misscoped', 'stop', { table: 'stopped', row: 0 }]);
   const blocked = decide(stop, passing, { response: { reason: 'none' } });
   assert.deepEqual([blocked.outcome, blocked.direction, blocked.rule], ['blocked', 'stop', { table: 'stopped', row: null }]);
   // Every required Check passed: the passed table, then otherwise.
-  assert.deepEqual(decide(ok, passing, { pass: 2 }).rule, { table: 'passed', row: 0 });
+  const recovered = decide(ok, passing, { pass: 2 });
+  assert.deepEqual([recovered.outcome, recovered.direction, recovered.rule], ['recovered', 'advance', { table: 'passed', row: 0 }]);
   const otherwise = decide(ok, passing, {});
-  assert.deepEqual([otherwise.outcome, otherwise.rule], ['changes', { table: 'passed', row: 'otherwise' }]);
+  assert.deepEqual([otherwise.outcome, otherwise.direction, otherwise.rule], ['changes', 'advance', { table: 'passed', row: 'otherwise' }]);
   // A required Check failed: recovery while it is left, then the failed table, then otherwise.
   const failing = [check('test', true), check('lint', false)];
-  assert.deepEqual(decide(ok, failing, { check: { lint: 'failed' } }, { recoverable: true }).row, 'recover');
-  assert.deepEqual(decide(ok, failing, { check: { lint: 'failed' } }).rule, { table: 'failed', row: 0 });
-  assert.deepEqual(decide(ok, failing, { check: { lint: 'passed' } }).rule, { table: 'failed', row: 'otherwise' });
+  const recover = decide(ok, failing, { check: { lint: 'failed' } }, { recoverable: true });
+  assert.deepEqual([recover.outcome, recover.direction, recover.rule], ['recover', 'retry', { table: 'fixed', row: 'recover' }]);
+  const lintFailed = decide(ok, failing, { check: { lint: 'failed' } });
+  assert.deepEqual([lintFailed.outcome, lintFailed.direction, lintFailed.rule], ['lint-failed', 'stop', { table: 'failed', row: 0 }]);
+  const failedOtherwise = decide(ok, failing, { check: { lint: 'passed' } });
+  assert.deepEqual([failedOtherwise.outcome, failedOtherwise.direction, failedOtherwise.rule], ['changes', 'stop', { table: 'failed', row: 'otherwise' }]);
 });
 
 test('with no row and no otherwise the Outcome is the token, or failed when a required Check failed', () => {
