@@ -683,6 +683,24 @@ test('a red that changed no test file is recovered once, then fails', async (t) 
   assert.deepEqual([g.rec.terminalReason.outcome, g.rec.terminalReason.rule], ['failed', { table: 'failed', row: null }]);
 });
 
+test("a Check that passed and then failed in a recovery pass keeps no evidence of the earlier pass", async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+  });
+  const lintRuns = [{ code: 1, output: LINT_OUTPUT, timedOut: false }, { code: 0, output: '', timedOut: false }];
+  withLint(t, g, async () => lintRuns.shift());
+  // ok requires only lint, so the Visit commits with test failing in its last pass.
+  variant(t, g, 'green', (p) => ({ claims: { ...p.claims, ok: { requires: ['lint'] } } }));
+  g.flow.ticket.vertices.publish.inputs.green.optional = true;
+  await interpreter.runExecution(g.options);
+
+  assert.deepEqual(greenTrace(g).slice(0, 6), ['green/0', 'test/0', 'lint/0', 'green/1', 'test/1', 'lint/1']);
+  assert.equal(actionEvent(g, 'green', 'test', 1).signals.checks[0].state, 'failed');
+  assert.equal(g.rec.outputs.find((o) => o.vertex === 'green' && o.action === 'test')?.value.evidence, undefined, 'the first pass evidence is gone (N9)');
+  assert.ok(g.gh.pr().body.includes('**Green**: the test command has no passing run.\n'), g.gh.pr().body);
+});
+
 test('a command Check that times out is not recovered', async (t) => {
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
   const runShell = g.options.exec.runShell;
