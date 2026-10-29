@@ -108,7 +108,7 @@ export async function reviewSetup(t, responses, opts) {
   return g;
 }
 
-const IMPLEMENTERS = ['green', 'implementer-fix'];
+export const REVIEW_INPUTS = golden.implInputs(['green', 'implementer-fix']);
 // The fix reads the latest review's Findings, their file paths as its named tests, and the Red Evidence for the PR body.
 export const FIX_INPUTS = {
   findings: { from: 'reviewer.review.response.findings' },
@@ -126,11 +126,11 @@ export async function reviewFlow(t, responses, { exec, integrity, git } = {}) {
     green: { ...green, route: { ok: 'reviewer' } },
     reviewer: {
       agent: { ...structuredClone(green.agent), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
-      procedure: 'review', options: {}, inputs: golden.implInputs(IMPLEMENTERS),
+      procedure: 'review', options: {}, inputs: REVIEW_INPUTS,
       route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
     },
     'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
-    publish: { ...publish, inputs: golden.implInputs(IMPLEMENTERS) },
+    publish: { ...publish, inputs: REVIEW_INPUTS },
   };
   if (exec) g.options.exec = exec;
   return g;

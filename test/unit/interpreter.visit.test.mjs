@@ -124,7 +124,7 @@ test('the red commit records a non-ASCII test path unquoted', async (t) => {
   const g = await golden.setup(t, { responses });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(g.rec.outputs.red.tests, ['test/añadir.test.mjs']);
+  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value.files, ['test/añadir.test.mjs']);
 });
 
 test('ready-for-qa removes in-progress and adds its label', async (t) => {

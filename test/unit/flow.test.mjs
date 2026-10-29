@@ -9,6 +9,19 @@ import * as flow from '../../lib/flow.mjs';
 
 const IMPLEMENTER = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false };
 const REVIEWER = { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false };
+// The inputs of the shipped Flow (#113): green reads red's tests and Red Evidence; the reviewer and publish the latest
+// report and Green Evidence, and the Red Evidence; the fix the review's Findings and their file paths.
+const GREEN_INPUTS = { tests: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
+const IMPL_INPUTS = {
+  report: { from: ['green.green.response', 'implementer-fix.fix.response'] },
+  red: { from: 'red.red-check.evidence' },
+  green: { from: ['green.test.evidence', 'implementer-fix.test.evidence'] },
+};
+const FIX_INPUTS = {
+  findings: { from: 'reviewer.review.response.findings' },
+  testFiles: { from: 'reviewer.review.response.findings', pick: 'file' },
+  red: { from: 'red.red-check.evidence' },
+};
 
 test('resolveFlow expands use into the resolved flow shape, with the Flow routes and an Agent-less publish', () => {
   const resolvedImplementer = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: null, effort: null };
@@ -20,14 +33,14 @@ test('resolveFlow expands use into the resolved flow shape, with the Flow routes
       routes: { misscoped: { end: 'needs-replan' }, '*': { end: 'needs-human' } },
       vertices: {
         red: { agent: resolvedImplementer, options: {}, procedure: 'tests-fail', route: { ok: 'green' } },
-        green: { agent: resolvedImplementer, options: {}, procedure: 'implement', route: { ok: 'reviewer' } },
+        green: { agent: resolvedImplementer, options: {}, procedure: 'implement', inputs: GREEN_INPUTS, route: { ok: 'reviewer' } },
         reviewer: {
           agent: { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false, harness: null, model: null, effort: null },
-          options: {}, procedure: 'review',
+          options: {}, procedure: 'review', inputs: IMPL_INPUTS,
           route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
         },
-        'implementer-fix': { agent: resolvedImplementer, options: {}, procedure: 'fix', route: { ok: 'reviewer' } },
-        publish: { agent: null, options: {}, procedure: 'publish', route: { ok: { end: 'ready-for-qa' } } },
+        'implementer-fix': { agent: resolvedImplementer, options: {}, procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
+        publish: { agent: null, options: {}, procedure: 'publish', inputs: IMPL_INPUTS, route: { ok: { end: 'ready-for-qa' } } },
       },
     },
   });

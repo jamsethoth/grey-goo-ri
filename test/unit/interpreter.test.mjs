@@ -39,7 +39,8 @@ test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
   };
   await interpreter.runExecution(g.options);
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
-  assert.ok(rec.outputs.red.evidence.output.includes(path), rec.outputs.red.evidence.output);
+  const { output } = rec.outputs.find((o) => o.vertex === 'red' && o.action === 'red-check').value.evidence;
+  assert.ok(output.includes(path), output);
   assert.ok(g.harness.calls[1].brief.includes(`${path}:1:1`), 'the green Brief quotes the raw path');
   assert.ok(!g.gh.pr().body.includes(g.root), 'the PR body does not');
 });
@@ -368,7 +369,10 @@ function pinnedInputs(t) {
   t.after(() => record.setSaveHook(previous));
   return seen;
 }
-const briefOf = (g, vertex, visit) => g.harness.calls.find((c) => c.vertex === vertex && c.visit === visit).brief;
+const briefOf = (g, vertex, visit) => g.harness.calls.find((c) => {
+  const at = marker.partsOf(c.marker);
+  return at.vertex === vertex && at.visit === String(visit);
+}).brief;
 
 test("green reads red's committed tests through an input", async (t) => {
   const pinned = pinnedInputs(t);

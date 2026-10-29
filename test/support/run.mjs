@@ -33,10 +33,11 @@ export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   for (const agent of Object.values(c.agents)) Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   c.worktreeRoot = join(root, 'wt');
   if (!fullFlow) {
-    c.flows.default.ticket = { entry: 'red', routes: c.flows.default.ticket.routes, vertices: {
+    const { routes, vertices: shipped } = c.flows.default.ticket;
+    c.flows.default.ticket = { entry: 'red', routes, vertices: {
       red: { use: 'implementer', procedure: 'tests-fail', route: { ok: 'green' } },
-      green: { use: 'implementer', procedure: 'implement', route: { ok: 'publish' } },
-      publish: { procedure: 'publish', route: { ok: { end: 'ready-for-qa' } } } } };
+      green: { use: 'implementer', procedure: 'implement', inputs: shipped.green.inputs, route: { ok: 'publish' } },
+      publish: { procedure: 'publish', inputs: shipped.publish.inputs, route: { ok: { end: 'ready-for-qa' } } } } };
   }
   return c;
 }

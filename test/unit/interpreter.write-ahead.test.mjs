@@ -100,7 +100,7 @@ test('findings-hash appends once per visit across a crash', async (t) => {
 
   assert.equal(result.outcome, 'ready-for-qa');
   const final = await loadTicket(g);
-  assert.deepEqual(final.outputs.reviews.map((r) => [r.vertex, r.visit]), [['reviewer', 1], ['reviewer', 2]], 'one review entry per Visit');
+  assert.deepEqual(final.outputs.filter((o) => o.action === 'repeat').map((o) => [o.vertex, o.visit]), [['reviewer', 1], ['reviewer', 2]], 'one review entry per Visit');
   const hashed = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'reviewer' && e.visit === 1 && e.action === 'repeat');
   assert.equal(hashed.length, 1);
   assert.notEqual(hashed[0].repeat, true, 'the review is not its own repeat');
