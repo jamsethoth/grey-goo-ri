@@ -452,12 +452,17 @@ test("each draft PR body renders its own Vertex's report and Green Evidence", as
     'reviewer/2/review/1': reviewed(review('ok')),
   });
   assert.equal(g.result.outcome, 'ready-for-qa');
+  // The body each Vertex's pr-upsert saved in its intent, before a later Vertex re-rendered it.
   const bodyOf = (vertex) => intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === vertex).payload.body;
-  for (const [vertex, summary] of [['green', golden.greenResponse.summary], ['implementer-fix', 'Address the findings.']]) {
-    const body = bodyOf(vertex);
-    const green = body.slice(body.indexOf('**Green**'), body.indexOf('## QA instructions'));
-    assert.ok(green.includes(golden.GREEN_OUTPUT.split('\n')[0]), `${vertex}'s Green section shows its test.evidence:\n${green}`);
-    assert.ok(!green.includes('Cannot find module'), `${vertex}'s Green section does not show the Red Evidence`);
-    assert.ok(body.includes(summary), `${vertex}'s body renders its own report`);
-  }
+  const greenSection = (body) => body.slice(body.indexOf('**Green**'), body.indexOf('## QA instructions'));
+
+  const green = bodyOf('green');
+  assert.ok(green.includes('Add two numbers.'), `green's body renders green's report:\n${green}`);
+  assert.ok(greenSection(green).includes('✔ adds two numbers (0.8ms)'), `green's Green section shows green's test.evidence:\n${green}`);
+  assert.ok(!greenSection(green).includes('Cannot find module'), `green's Green section does not show the Red Evidence:\n${green}`);
+
+  const fix = bodyOf('implementer-fix');
+  assert.ok(fix.includes('Address the findings.'), `the fix's body renders the fix's report:\n${fix}`);
+  assert.ok(greenSection(fix).includes('✔ adds two numbers (0.8ms)'), `the fix's Green section shows the fix's test.evidence:\n${fix}`);
+  assert.ok(!greenSection(fix).includes('Cannot find module'), `the fix's Green section does not show the Red Evidence:\n${fix}`);
 });
