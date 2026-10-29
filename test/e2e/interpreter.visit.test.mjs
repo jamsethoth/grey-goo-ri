@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
@@ -50,7 +50,7 @@ test('a green call that changes the committed test is an integrity violation', a
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'no feat commit after the violation');
 });
 
-test('golden: a failed red retries still-green once then stops at needs-human with history', async (t) => {
+test('golden: a failed red retries still-green once then fails at needs-human with its work in place', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
@@ -63,50 +63,52 @@ test('golden: a failed red retries still-green once then stops at needs-human wi
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'still-green resumes the red session');
   const exhausted = actionEvent(g, 'red', 'red-check', 1);
-  assert.equal(exhausted.outcome, 'red-failed');
-  assert.equal(exhausted.rule, 'check-exhausted', 'the transition table derives red-failed');
+  assert.equal(exhausted.outcome, 'failed');
+  assert.equal(exhausted.rule, 'check-exhausted', 'the transition table derives the engine Outcome failed');
   assert.equal(exhausted.direction, 'stop');
   assert.equal(actionEvent(g, 'red', 'red-check').rule, 'check-failed', 'the first failing run retries through still-green');
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', `${g.base}..HEAD`), '0', 'no commit on the branch');
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the worktree is clean at the baseline head');
-  assert.equal(g.rec.history.length, 1);
-  assert.equal(g.rec.history[0].kind, 'red phase failed');
-  assert.match(g.rec.history[0].text, /did not fail before implementation/);
-
-  // The reset is a write-ahead side effect whose intent carries the baseline and the History item.
-  const [reset] = intents(g.rec, 'reset');
-  assert.equal(reset.marker, actionMarker(g, 'red', 'red-check', 1));
-  assert.deepEqual(Object.keys(reset.payload).sort(), ['baseline', 'history', 'left', 'untracked']);
-  assert.equal(reset.payload.baseline, g.base);
-  assert.deepEqual(reset.payload.history, g.rec.history[0]);
-  assert.equal(reset.payload.left.head, g.base, 'the intent saves the worktree the agent left, so admission can prove it');
-  assert.match(reset.payload.left.tree, /^[0-9a-f]{40}$/);
-  assert.deepEqual(reset.payload.untracked.files, {}, 'the rollback set of the first red call is saved too');
-  assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
+  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '?? test/', "the agent's test stays in the worktree for the human");
+  assert.deepEqual(intents(g.rec, 'reset'), [], 'nothing is reset');
+  assert.deepEqual(g.rec.history, []);
   assert.deepEqual(record.openIntents(g.rec), []);
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
 
   const reason = terminalReasonOf(g);
   assert.deepEqual(reason.decidedBy, { vertex: 'red', visit: 1, action: 'red-check', recovery: 1 });
-  assert.equal(reason.outcome, 'red-failed');
+  assert.equal(reason.outcome, 'failed');
   assert.equal(reason.rule, 'check-exhausted');
-  assert.equal(reason.text, "The red phase failed the Red Check (rule check-exhausted) and the agent's changes were discarded.");
+  assert.equal(reason.text, 'The tests-fail Check red-check failed with no recovery left (rule check-exhausted).');
   assert.match(g.gh.comments[0].body, /```\nThe new tests did not fail before implementation/, 'the diagnosis is posted fenced');
 });
 
-test('a failed red rollback removes an ignored test file the red call added', async (t) => {
+test('an ignored test file already there at the baseline is not a changed test', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['red/1/red/1'].files['test/extra.test.mjs'] = 'extra';
-  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/red/1'].files = {};
   const g = await golden.setup(t, { responses, integrity: 'real' });
-  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/extra.test.mjs');
+  // Build output under a test glob, ignored and left from before the Visit; red writes no test.
+  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/cache/\n');
+  mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.equal(actionEvent(g, 'red', 'red-check', 1).outcome, 'red-failed');
-  assert.ok(!existsSync(join(g.worktree, 'test', 'extra.test.mjs')), 'the ignored test the red call added is removed');
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'failed');
+  assert.deepEqual(g.shells, [], 'no test changed, so the test command never ran');
+});
+
+test('an ignored test file already there at the baseline counts once the Visit changes it', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  // red rewrites the ignored test file that was there before the Visit, and writes no other.
+  responses['red/1/red/1'].files = { 'test/cache/out.json': '{"changed":true}\n' };
+  const g = await golden.setup(t, { responses, integrity: 'real' });
+  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/cache/\n');
+  mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
+  await interpreter.runExecution(g.options);
+
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'ok');
+  assert.equal(g.shells[0].command, 'npm test', 'the changed test made the Red Check run the test command');
 });
 
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
@@ -130,7 +132,7 @@ test('uncommitted changes before red are held at needs-human and nothing is dele
   assert.match(reason.text, /uncommitted changes before red/);
 });
 
-test('an assume-unchanged edit before red is held too, so a failed red cannot reset it away', async (t) => {
+test('an assume-unchanged edit before red is held too, so a rollback cannot reset it away', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
@@ -146,8 +148,8 @@ test('an assume-unchanged edit before red is held too, so a failed red cannot re
   assert.equal(readFileSync(join(g.worktree, tracked), 'utf8'), 'a hidden human edit\n');
 });
 
-// A failed red resets whatever its Agent's access, so a read-only red Vertex starts only on a clean worktree too.
-test('a read-only red Vertex is held before unknown changes, so a failed red cannot reset them away', async (t) => {
+// An Integrity Violation resets whatever its Agent's access, so a read-only red Vertex starts only on a clean worktree too.
+test('a read-only red Vertex is held before unknown changes, so a rollback cannot reset them away', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files = {};
   responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };

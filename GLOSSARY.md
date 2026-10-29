@@ -198,16 +198,18 @@ _Avoid_: locked file, reserved path
 **Check**:
 A deterministic verification the orchestrator performs itself, whose result feeds an Outcome. Named kinds include
 the Red Check, the Green Check, Quality Gates, Integrity Assertions, the Findings Hash comparison and the Approval
-Admission Check.
+Admission Check. A Procedure declares its Checks as Actions, each with an id, a Check kind (`command`, `tests-fail`,
+`response` or `repeat`) and that kind's parameters; its result is the Check signal.
 _Avoid_: gate (alone), test (when a check is meant), validation (reserved for configuration)
 
 **Red Check**:
-The Check that the tests an agent wrote fail before implementation: the runner failed on its own, and a test the
-agent named is reported failing where the runner reports per test, or present in the output where it does not.
+The `tests-fail` Check that the tests an agent wrote fail before implementation: a file under `testPaths` changed since
+the Visit's baseline, the runner failed on its own, and a test the agent named is reported failing where the runner
+reports per test, or present in the output where it does not.
 _Avoid_: red gate, red verification
 
 **Green Check**:
-The Check that the test Declared Command passes after implementation.
+The `command` Check that the test Declared Command passes after implementation.
 _Avoid_: green gate, test gate
 
 **Quality Gate**:
@@ -270,12 +272,16 @@ The typed category of a failed Harness Result: auth, quota, budget, rate-limited
 _Avoid_: error type, error code
 
 **Signal**:
-One input to resolving an Outcome: a Claim, a Harness Result or a Check result. Not an OS signal.
+One input to resolving an Outcome: a Claim, a Harness Result or a Check signal. The Check signal is a Check's result,
+`{ id, kind, state, tree }`: its Action id, its Check kind, `passed` or `failed`, and the worktree tree it checked, or
+none for a Check that reads only the response. On an Action Event a failed Check's signal also carries its output,
+as diagnosis, never as Evidence. Not an OS signal.
 _Avoid_: hint, flag
 
 **Outcome**:
 The value the interpreter derives for a Vertex that selects its Edge: from the Signals of a Persona Vertex, from
-the command result of a Gate Vertex, from the Decision of an Approval Vertex.
+the command result of a Gate Vertex, from the Decision of an Approval Vertex. A required Check that fails with no
+recovery left gives the engine Outcome `failed`, routable like any other.
 _Avoid_: result, status, decision (reserved for humans), verdict (reserved for reviewers)
 
 **Direction**:

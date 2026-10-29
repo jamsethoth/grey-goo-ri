@@ -26,6 +26,11 @@ Read-only: do not modify files.
 
 ## Implementer's report
 {{report}}
+{{#impl.red.heuristic}}
+
+The Red Check found the failing test by its name only: the runner printed no per-test statuses. Check that the test
+fails for the reason the ticket gives.
+{{/impl.red.heuristic}}
 
 Check correctness, code quality and simplicity, and definition-of-done coverage. The orchestrator itself verified
 that the "test:" commit's tests failed before implementation and pass now (outputs are in the report); check that

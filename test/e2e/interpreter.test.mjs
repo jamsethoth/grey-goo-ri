@@ -86,7 +86,7 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
   assert.equal(g.rec.state, 'ready-for-qa');
   assert.ok(g.gh.labels.has('gg:state:ready-for-qa'));
   assert.equal(g.rec.terminalReason.text,
-    `publish visit 1 completed every publish Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+    `publish visit 1 completed every publish Action: test passed. PR #${g.rec.pr} is ready for review.`);
 });
 
 // R2d: red committed its tests, then a human edited a tracked file before green started.

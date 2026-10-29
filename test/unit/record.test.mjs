@@ -91,7 +91,7 @@ test('save writes a records row and never a records directory', async (t) => {
   withDb(commonDir, (db) => {
     assert.equal(db.prepare('PRAGMA user_version').get().user_version, 1);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name);
-    assert.deepEqual(tables, ['configs', 'events', 'records']);
+    assert.deepEqual(tables, ['check_results', 'configs', 'events', 'records']);
     const rows = db.prepare('SELECT kind, n, json FROM records ORDER BY kind').all().map((row) => ({ ...row }));
     assert.deepEqual(rows, [
       { kind: 'epic', n: 1, json: JSON.stringify(withoutCommonDir(epic), null, 2) + '\n' },

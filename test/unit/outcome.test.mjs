@@ -99,13 +99,10 @@ test('row check-failed: completed, valid ok, declared check fails -> check-faile
   assert.equal(r.retryKind, null, 'a recovery Phase spends no Attempt budget');
 });
 
-test('row check-exhausted: a failing check with the procedure\'s recovery exhausted -> its failure outcome, stop', () => {
-  const r = outcome.resolve({ result: completed, claim: claim('ok'), checks: [integrityOk, check('red', false)], retries: none,
-    exhausted: true, failureOutcomes: { red: 'red-failed' } });
-  assertRow(r, 'check-exhausted', 'red-failed', 'stop');
+test('row check-exhausted: a failing check with the procedure\'s recovery exhausted -> the engine Outcome failed, stop', () => {
+  const r = outcome.resolve({ result: completed, claim: claim('ok'), checks: [integrityOk, check('red', false)], retries: none, exhausted: true });
+  assertRow(r, 'check-exhausted', 'failed', 'stop');
   assert.equal(r.check, 'red');
-  const unmapped = outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('lint', false)], retries: none, exhausted: true });
-  assertRow(unmapped, 'check-exhausted', 'needs-human', 'stop');
 });
 
 test('exhausted recovery never overrides a stop claim or a passing check', () => {
@@ -114,16 +111,8 @@ test('exhausted recovery never overrides a stop claim or a passing check', () =>
   assertRow(outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('red', true)], retries: none, exhausted: true }), 'ok', 'ok', 'advance');
 });
 
-test('a routed check failing on a claim ok advances by its mapped Outcome through check-failed', () => {
-  const r = outcome.resolve({ result: completed, claim: claim('ok'), checks: [integrityOk, check('review-pass', false)], retries: none,
-    routes: { 'review-pass': 'changes' } });
-  assertRow(r, 'check-failed', 'changes', 'advance');
-  assert.equal(r.check, 'review-pass');
-});
-
-test('a changes claim with a failing routed check keeps the claim-route row', () => {
-  const r = outcome.resolve({ result: completed, claim: claim('changes'), checks: [integrityOk, check('review-pass', false)], retries: none,
-    routes: { 'review-pass': 'changes' } });
+test('a changes claim with a failing check keeps the claim-route row', () => {
+  const r = outcome.resolve({ result: completed, claim: claim('changes'), checks: [integrityOk, check('review-pass', false)], retries: none });
   assertRow(r, 'claim-route', 'changes', 'advance');
 });
 

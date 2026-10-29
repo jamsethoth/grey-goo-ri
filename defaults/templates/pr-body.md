@@ -11,8 +11,13 @@ Closes #{{ticket.number}}
 ## TDD evidence
 **Red** (`{{red.command}}`)
 {{red.output}}
+{{#green}}
 **Green** (`{{green.command}}`)
 {{green.output}}
+{{/green}}
+{{^green}}
+**Green**: the test command has no passing run.
+{{/green}}
 
 ## QA instructions
 **Setup:** {{qa.setup}}
