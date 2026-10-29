@@ -28,8 +28,9 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
     'publish/1/test/0', 'publish/1/pr/0', 'publish/1/pr-ready/0',
   ]);
   assert.deepEqual(g.actions.filter((e) => e.attempt !== 1), [], 'every Action is its first Attempt');
-  assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure), Array(10).fill('review'));
-  assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), Array(5).fill('fix'));
+  assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure),
+    ['review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review']);
+  assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), ['fix', 'fix', 'fix', 'fix', 'fix']);
   assert.equal(g.at('reviewer', 1, 'review', 0)[0].outcome, 'changes');
   assert.equal(g.at('reviewer', 1, 'review', 0)[0].rule, 'claim-route', 'a changes claim routes through claim-route');
   assert.equal(g.at('reviewer', 2, 'review', 0)[0].outcome, 'ok');

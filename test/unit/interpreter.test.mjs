@@ -9,7 +9,7 @@ import * as marker from '../../lib/marker.mjs';
 import * as procedures from '../../lib/procedures.mjs';
 import * as golden from '../support/golden.mjs';
 import { firstVisit, intents, actionEvent, attemptsOf, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD,
-  finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, subjects, tddTrace, headSha } from '../support/interpreter.mjs';
+  finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, subjects, tddTrace, headSha, GREEN_FAIL_OUTPUT } from '../support/interpreter.mjs';
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const g = await firstVisit(t);
@@ -505,12 +505,15 @@ test('a final test failure is the Outcome failed naming the Check', async (t) =>
   assert.equal(check.rule, 'check-exhausted');
   assert.equal(check.check, 'test');
   const [signal] = check.signals.checks;
-  assert.deepEqual(signal, { id: 'test', kind: 'command', state: 'failed', tree: signal.tree });
+  // A failing Check's output reaches its signal and the Terminal comment, never its evidence (N9).
+  assert.deepEqual(signal, { id: 'test', kind: 'command', state: 'failed', tree: signal.tree, output: GREEN_FAIL_OUTPUT });
   assert.match(signal.tree, /^[0-9a-f]{40}$/);
+  assert.deepEqual(g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'), []);
   const reason = g.rec.terminalReason;
   assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
   assert.equal(reason.outcome, 'failed');
   assert.equal(reason.text, 'The command Check test failed with no recovery left (rule check-exhausted).');
+  assert.ok(g.gh.comments[0].body.includes(`\`\`\`\n${GREEN_FAIL_OUTPUT}\n\`\`\``), g.gh.comments[0].body);
 });
 
 test('a Check result on an older tree does not count', async (t) => {

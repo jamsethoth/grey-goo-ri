@@ -274,7 +274,8 @@ _Avoid_: error type, error code
 **Signal**:
 One input to resolving an Outcome: a Claim, a Harness Result or a Check signal. The Check signal is a Check's result,
 `{ id, kind, state, tree }`: its Action id, its Check kind, `passed` or `failed`, and the worktree tree it checked, or
-none for a Check that reads only the response. Not an OS signal.
+none for a Check that reads only the response. On an Action Event a failed Check's signal also carries its output,
+as diagnosis, never as Evidence. Not an OS signal.
 _Avoid_: hint, flag
 
 **Outcome**:
