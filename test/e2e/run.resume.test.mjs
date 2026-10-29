@@ -20,7 +20,7 @@ test('an in-progress ticket with a recoverable record is resumed', async (t) => 
   assert.equal(f.harness.calls.length, 2, 'the resume continues at the cursor; no agent call is repeated');
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.execution, rec.execution, 'the same Execution is resumed');
-  assert.equal(final.state, 'done');
+  assert.equal(final.state, 'ready-for-qa');
   assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${BRANCH}`).split('\t')[0], sh(f.worktree, 'rev-parse', 'HEAD'));
   // The resume's Events belong to this Run; the markers keep the Run that wrote them, so no effect is redone.
   const evs = f.readEvents();

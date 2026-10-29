@@ -61,15 +61,18 @@ export const implementerAgent = (persona) => ({
   harness: 'fake', model: 'model-x', effort: 'high', persona, skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false,
 });
 
-// A red and green Resolved Flow: red's tests-fail Visit, then green's implement Visit, straight to done.
+// A red, green and publish Resolved Flow: red's tests-fail Visit, green's implement Visit, then publish's Visit, which has
+// no Agent, to ready-for-qa. A misscoped Claim reaches the planner through the Flow's routes, as in the shipped Flow.
 export const redGreenFlow = (persona) => ({
   name: 'golden',
   plan: null,
   ticket: {
     entry: 'red',
+    routes: { misscoped: { end: 'needs-replan' } },
     vertices: {
-      red: { agent: implementerAgent(persona), procedure: 'tests-fail', options: {}, then: 'green' },
-      green: { agent: implementerAgent(persona), procedure: 'implement', options: {}, then: 'done' },
+      red: { agent: implementerAgent(persona), procedure: 'tests-fail', options: {}, route: { ok: 'green' } },
+      green: { agent: implementerAgent(persona), procedure: 'implement', options: {}, route: { ok: 'publish' } },
+      publish: { agent: null, procedure: 'publish', options: {}, route: { ok: { end: 'ready-for-qa' } } },
     },
   },
 });
@@ -148,7 +151,7 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   const observedGit = Object.fromEntries(Object.entries(git).map(([verb, fn]) =>
     [verb, typeof fn === 'function' ? (...args) => { observe(`git ${verb}`); return fn(...args); } : fn]));
 
-  const gh = fakeGh({ branch: BRANCH, observe });
+  const gh = fakeGh({ branch: BRANCH, observe, headOf: (branch) => git.remoteSha(mainRoot, branch) });
   const previousGh = github.setGh(gh.gh);
   t.after(() => github.setGh(previousGh));
 
@@ -196,8 +199,9 @@ export function ghError(args, { status, headers = {}, body, stderr }) {
 }
 
 // A stand-in for the gh executable: records every argv and answers with canned JSON. `fail(f)` queues a failure: the
-// first unspent one whose `matches(args)` holds fails that call, after its effect when `afterEffect` is set.
-export function fakeGh({ branch, ticket = TICKET, observe = () => {}, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
+// first unspent one whose `matches(args)` holds fails that call, after its effect when `afterEffect` is set. A PR's head
+// commit is what `headOf(branch)` says origin has, unless a test sets the PR's `headRefOid`.
+export function fakeGh({ branch, ticket = TICKET, observe = () => {}, headOf = async () => null, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
   const calls = [];
   const comments = [];
   const failures = [];
@@ -233,7 +237,10 @@ export function fakeGh({ branch, ticket = TICKET, observe = () => {}, repoLabels
       return `${prs.get(head).url}\n`;
     }
     if (noun === 'pr' && verb === 'edit') { prOf(Number(args[2])).body = input; return ''; }
-    if (noun === 'pr' && verb === 'view') return JSON.stringify(prOf(Number(args[2])));
+    if (noun === 'pr' && verb === 'view') {
+      const pr = prOf(Number(args[2]));
+      return JSON.stringify(pr && { ...pr, isCrossRepository: false, headRefOid: pr.headRefOid ?? await headOf(pr.headRefName) });
+    }
     if (noun === 'pr' && verb === 'ready') { prOf(Number(args[2])).isDraft = false; return ''; }
     if (isCommentPost(args)) {
       const n = Number(args.join(' ').match(/issues\/(\d+)\/comments/)[1]);

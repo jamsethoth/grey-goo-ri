@@ -40,7 +40,7 @@ test('a fix that changes a named test moves the immutability baseline', async (t
     'reviewer/3/review/1': reviewed(review('ok')),
   }, { integrity: 'real' });
 
-  assert.equal(g.result.outcome, 'done');
+  assert.equal(g.result.outcome, 'ready-for-qa');
   const first = g.at('implementer-fix', 1, 'test', 0)[0];
   assert.equal(first?.outcome, 'ok', `fix visit 1: ${first?.rule}`);
   assert.equal(first.violations, undefined, 'fix visit 1 has no violations');
@@ -70,7 +70,7 @@ test('a fix with no edits keeps the moved immutability baseline', async (t) => {
   g.flow.ticket.vertices.reviewer.route.changes.max = 3;
   const { outcome } = await interpreter.runExecution(g.options);
 
-  assert.equal(outcome, 'done');
+  assert.equal(outcome, 'ready-for-qa');
   const checks = g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'implementer-fix' && e.action === 'test' && e.recovery === 0);
   assert.deepEqual(checks.map((e) => [e.visit, e.outcome]), [[1, 'ok'], [2, 'ok'], [3, 'ok']]);
 });

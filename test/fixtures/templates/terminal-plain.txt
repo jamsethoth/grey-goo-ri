@@ -1,4 +1,4 @@
-### gg: done
+### gg: ready-for-qa
 
 **Terminal Reason:** Every Vertex passed. PR #3 is ready for review.
 

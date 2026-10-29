@@ -22,14 +22,16 @@ const FINAL_LOG = [
   'green/1/commit/0 commit intent', 'green/1/commit/0 commit evidence', 'green/1/commit/0 commit complete',
   'green/1/push/0 push intent', 'green/1/push/0 push evidence', 'green/1/push/0 push complete',
   'green/1/pr/0 pr-upsert intent', 'green/1/pr/0 pr-upsert evidence', 'green/1/pr/0 pr-upsert complete',
-  'done/1/end-pr-ready/0 pr-ready intent', 'done/1/end-pr-ready/0 pr-ready evidence', 'done/1/end-pr-ready/0 pr-ready complete',
-  'done/1/end-comment/0 comment intent', 'done/1/end-comment/0 comment evidence', 'done/1/end-comment/0 comment complete',
-  'done/1/end-label/0 label intent', 'done/1/end-label/0 label evidence', 'done/1/end-label/0 label complete',
+  'publish/1/pr/0 pr-upsert intent', 'publish/1/pr/0 pr-upsert evidence', 'publish/1/pr/0 pr-upsert complete',
+  'publish/1/pr-ready/0 pr-ready intent', 'publish/1/pr-ready/0 pr-ready evidence', 'publish/1/pr-ready/0 pr-ready complete',
+  'ready-for-qa/1/end-comment/0 comment intent', 'ready-for-qa/1/end-comment/0 comment evidence', 'ready-for-qa/1/end-comment/0 comment complete',
+  'ready-for-qa/1/end-label/0 label intent', 'ready-for-qa/1/end-label/0 label evidence', 'ready-for-qa/1/end-label/0 label complete',
 ];
 // One Action Event per Action: vertex/visit/action/recovery/attempt.
 const ACTED = [
   'red/1/red/0/1', 'red/1/red-check/0/1', 'red/1/commit/0/1', 'green/1/green/0/1', 'green/1/test/0/1',
-  'green/1/commit/0/1', 'green/1/push/0/1', 'green/1/pr/0/1', 'done/1/end-pr-ready/0/1', 'done/1/end-comment/0/1', 'done/1/end-label/0/1',
+  'green/1/commit/0/1', 'green/1/push/0/1', 'green/1/pr/0/1', 'publish/1/test/0/1', 'publish/1/pr/0/1', 'publish/1/pr-ready/0/1',
+  'ready-for-qa/1/end-comment/0/1', 'ready-for-qa/1/end-label/0/1',
 ];
 
 for (const [action, effect] of Object.entries(EFFECTS)) {
@@ -41,9 +43,9 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
       assert.deepEqual(stepsOf(loaded, m), expect.steps, `the log as the crash ${point} left it`);
 
       const result = await interpreter.runExecution({ ...g.options, record: loaded });
-      assert.equal(result.outcome, 'done');
+      assert.equal(result.outcome, 'ready-for-qa');
       const final = await loadTicket(g);
-      assert.equal(final.state, 'done');
+      assert.equal(final.state, 'ready-for-qa');
       assert.equal(g.harness.calls.length, 2, 'the resume continues at the cursor; no agent call is repeated');
       assert.deepEqual(g.readEvents().filter((e) => e.type === 'action').map((e) => `${e.vertex}/${e.visit}/${e.action}/${e.recovery}/${e.attempt}`), ACTED);
       assert.deepEqual(final.log.map((e) => `${actionOf(e.marker)} ${e.action} ${e.step}`), FINAL_LOG);
@@ -53,8 +55,13 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
       assert.equal(await originSha(g), await g.options.git.headSha(g.worktree), 'the remote branch is at the last commit');
 
       assert.equal(g.gh.calls.filter((c) => c.args[0] === 'pr' && c.args[1] === 'create').length, 1, 'exactly one PR');
-      const upsert = final.log.find((e) => e.action === 'pr-upsert' && e.step === 'intent');
+      // publish's re-render is the last PR body.
+      const upsert = final.log.findLast((e) => e.action === 'pr-upsert' && e.step === 'intent');
       assert.ok(g.gh.pr().body.includes(marker.markerComment(upsert.marker)), 'the PR body carries the marker');
+      assert.equal(g.gh.pr().isDraft, false, 'the PR ends ready');
+      assert.deepEqual(final.log.find((e) => e.action === 'pr-ready' && e.step === 'intent').payload,
+        { number: g.gh.pr().number, sha: await g.options.git.headSha(g.worktree), tree: await g.options.git.treeOf(g.worktree) },
+        'pr-ready targets the pushed commit and the tree its Check passed on');
       assert.equal(sha256(g.gh.pr().body), upsert.payload.bodyHash, 'the PR body is the intended one');
 
       const done = golden.markerOf(g.rec, ...EFFECTS.comment.at);

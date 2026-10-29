@@ -10,24 +10,24 @@ import { loadTicket, POINTS, crashed, NEEDS_HUMAN } from '../support/reconcile.m
 // An Action Marker without the Execution and Run every entry of one record shares.
 const actionOf = (m) => marker.actionKeyOf(marker.partsOf(m));
 
-// A misscoped green ends in replan, whose Terminal posts the diagnosis on the ticket and the epic.
+// A misscoped green ends at needs-replan through the Flow's routes, whose Terminal posts the diagnosis on the ticket and the epic.
 const DIAGNOSIS = 'The ticket asks add to both sum and concatenate.';
 const REPLAN_LOG = [
   'red/1/red/0 call intent', 'red/1/red/0 call evidence', 'red/1/red/0 call complete',
   'red/1/commit/0 commit intent', 'red/1/commit/0 commit evidence', 'red/1/commit/0 commit complete',
   'green/1/green/0 call intent', 'green/1/green/0 call evidence', 'green/1/green/0 call complete',
-  'replan/1/end-comment/0 comment intent', 'replan/1/end-comment/0 comment evidence', 'replan/1/end-comment/0 comment complete',
-  'replan/1/end-epic-comment/0 comment intent', 'replan/1/end-epic-comment/0 comment evidence', 'replan/1/end-epic-comment/0 comment complete',
-  'replan/1/end-label/0 label intent', 'replan/1/end-label/0 label evidence', 'replan/1/end-label/0 label complete',
+  'needs-replan/1/end-comment/0 comment intent', 'needs-replan/1/end-comment/0 comment evidence', 'needs-replan/1/end-comment/0 comment complete',
+  'needs-replan/1/end-epic-comment/0 comment intent', 'needs-replan/1/end-epic-comment/0 comment evidence', 'needs-replan/1/end-epic-comment/0 comment complete',
+  'needs-replan/1/end-label/0 label intent', 'needs-replan/1/end-label/0 label evidence', 'needs-replan/1/end-label/0 label complete',
 ];
 for (const point of Object.keys(POINTS)) {
-  test(`a crash ${point} of the epic diagnosis comment resumes the same replan Actions`, async (t) => {
+  test(`a crash ${point} of the epic diagnosis comment resumes the same needs-replan Actions`, async (t) => {
     const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
       'green/1/green/1': { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: DIAGNOSIS } } } });
-    await crashed(g, ['replan', 1, 'end-epic-comment', 0], point);
+    await crashed(g, ['needs-replan', 1, 'end-epic-comment', 0], point);
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
-    assert.equal(result.outcome, 'replan');
+    assert.equal(result.outcome, 'needs-replan');
     const onEpic = g.gh.comments.filter((c) => c.target === 'issue' && c.number === g.rec.epic);
     assert.equal(onEpic.length, 1, 'exactly one diagnosis on the epic');
     assert.ok(onEpic[0].body.includes(DIAGNOSIS));
@@ -36,7 +36,7 @@ for (const point of Object.keys(POINTS)) {
     assert.ok(onTicket[0].body.includes(DIAGNOSIS));
     assert.ok(g.gh.labels.has('gg:state:needs-replan'), 'the label Action keeps its own payload');
     const final = await loadTicket(g);
-    assert.equal(final.state, 'replan');
+    assert.equal(final.state, 'needs-replan');
     assert.deepEqual(final.log.map((e) => `${actionOf(e.marker)} ${e.action} ${e.step}`), REPLAN_LOG,
       'one intent, one evidence and one completion per Action');
   });

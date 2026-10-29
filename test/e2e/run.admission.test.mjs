@@ -106,7 +106,7 @@ test('a commit interrupted before it landed is admitted and replayed', async (t)
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
   assert.equal(f.harness.calls.length, 2, 'no agent call is repeated');
-  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'done');
+  assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'ready-for-qa');
   assert.equal(sh(f.worktree, 'status', '--porcelain'), '', 'the replayed commit took the staged changes');
   assert.notEqual(sh(f.worktree, 'ls-tree', 'HEAD', 'lib/add.mjs'), '', 'the implementation is committed');
 });

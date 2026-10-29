@@ -298,14 +298,14 @@ test(`the review comment template matches its builder's output`, async () => {
 });
 
 test(`the Terminal Reason comment template matches its builder's output`, async () => {
-  const interrupted = { terminal: 'done', reason: { text: 'PR #3 is ready.' } };
+  const interrupted = { terminal: 'ready-for-qa', reason: { text: 'PR #3 is ready.' } };
   assert.equal(await render.terminalComment('needs-human', { text: 'An unexpected fault stopped the Execution at test.' }, fixtureMarker,
     'Error: boom', interrupted), fixture('terminal.txt'));
-  assert.equal(await render.terminalComment('done', { text: 'Every Vertex passed. PR #3 is ready for review.' }, fixtureMarker),
+  assert.equal(await render.terminalComment('ready-for-qa', { text: 'Every Vertex passed. PR #3 is ready for review.' }, fixtureMarker),
     fixture('terminal-plain.txt'));
 });
 
-test('the stop comment renders the blocked and replan cases', async () => {
+test('the stop comment renders the blocked and needs-replan cases', async () => {
   const m = marker.formatMarker(parts);
   const response = { claim: 'blocked', summary: 'Cannot reach the API.', notes: 'NOTES stay out.', diagnosis: 'The ticket needs a token.' };
   const blocked = await render.stopComment('needs-human', 'blocked', response, m, { text: 'The agent made a blocked Claim at green.' });
@@ -319,7 +319,7 @@ ${fenced('The ticket needs a token.')}
 
 <!-- gg-action ${m} -->
 `);
-  const replan = await render.stopComment('replan', 'misscoped', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
+  const replan = await render.stopComment('needs-replan', 'misscoped', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
   assert.equal(replan, `### gg: misscoped
 
 ${fenced('Cannot reach the API.')}

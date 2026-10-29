@@ -22,6 +22,6 @@ test("a worktree backing off is idle to other Tickets' integrity checks", async 
   };
   const result = await interpreter.runExecution(g.options);
 
-  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.ok(violations?.some((v) => v.worktree === g.worktree && v.surface === 'tree'), JSON.stringify(violations));
 });

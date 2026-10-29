@@ -25,7 +25,7 @@ A Ticket or an Epic as something gg manages, lists, resumes or resets.
 _Avoid_: job
 
 **Execution**:
-One Ticket's complete passage through the ticket section of its Flow, from first entry to a Terminal, across any
+One Ticket's complete passage through the ticket section of its Flow, from first entry to an end state, across any
 number of Runs.
 _Avoid_: journey, ticket run
 
@@ -69,7 +69,7 @@ One entry of a Vertex during an Execution.
 _Avoid_: round, iteration
 
 **Edge**:
-A route from a Vertex to a Vertex or a Terminal, selected by an Outcome. A back edge carries a Bound.
+A route from a Vertex to a Vertex or an end state, selected by an Outcome. A back edge carries a Bound.
 _Avoid_: transition, link
 
 **Bound**:
@@ -80,12 +80,19 @@ _Avoid_: limit, max
 The limit on Attempts in one Execution; exhausting it ends the Execution at needs-human.
 _Avoid_: step cap, ticket cap
 
+**End state**:
+Where an Execution ends: ready-for-qa, needs-human or needs-replan, each the State Label it sets. A route names one as
+`end: <name>`; a hold or fault ends at needs-human, as an abandonment does under the human's label. The set is fixed,
+since each value is a contract with an outside reader. `done` is not one: only a human sets it, with `gg work done`.
+_Avoid_: replan, sink
+
 **Terminal**:
-A built-in end of an Execution: done, needs-human or replan.
-_Avoid_: end state, sink
+What gg does at an end state, never a Vertex: the end comment (a stop token's comment instead, when the Execution
+stopped on one, and the same comment on the Epic at needs-replan), the State Label, and the ticket end event.
+_Avoid_: end Vertex
 
 **Terminal Reason**:
-Why an Execution reached its Terminal, recorded for every Terminal, successful or not: the Action that decided it (or
+Why an Execution reached its end state, recorded for every Terminal, successful or not: the Action that decided it (or
 the named hold that stopped the Execution before any Action), its Outcome and rule, and one sentence for a human.
 _Avoid_: rationale, cause, end reason
 
@@ -110,10 +117,16 @@ The smallest logical unit of a Procedure: an agent call, a Check, a commit, a pu
 or a label.
 _Avoid_: step, task, operation
 
+**Publishing Action**:
+An Action that makes work final for an outside reader: `pr-ready`, later merge. It runs in a Vertex that requires a
+Check, only if that Check's recorded tree is the tree of the commit being published, the worktree is clean at that
+commit and the pull request's head is that commit; otherwise the Ticket is held.
+_Avoid_: release, ship
+
 **Action id**:
 An Action's name, unique within its Procedure, with no `:` and no whitespace, such as `green`, `test` or `commit`. A
 Terminal's reporting Actions have the ids `<report>-<effect>`: `<report>` is `end`, `hold`, `fault` or `abandon`, and
-`<effect>` is `comment`, `epic-comment`, `label` or `pr-ready`.
+`<effect>` is `comment`, `epic-comment` or `label`.
 _Avoid_: step id
 
 **Action identity**:

@@ -30,8 +30,13 @@ export const EFFECTS = {
     at: ['green', 1, 'pr', 0],
     happened: (g, m) => !!g.gh.pr()?.body.includes(marker.markerComment(m)),
   },
+  // publish's pr-ready, whose saved target a resume publishes.
+  'pr-ready': {
+    at: ['publish', 1, 'pr-ready', 0],
+    happened: (g) => g.gh.pr()?.isDraft === false,
+  },
   comment: {
-    at: ['done', 1, 'end-comment', 0],
+    at: ['ready-for-qa', 1, 'end-comment', 0],
     happened: (g, m) => withMarker(g.gh.comments.map((c) => c.body), m).length > 0,
   },
 };

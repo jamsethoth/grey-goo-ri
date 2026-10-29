@@ -43,7 +43,7 @@ test('an in-progress ticket without a record is skipped', async (t) => {
 });
 
 // A fault report leaves the comment intent of the Terminal it interrupted open for good.
-for (const state of ['done', 'fault', 'abandoned']) {
+for (const state of ['ready-for-qa', 'fault', 'abandoned']) {
   test(`a finished record with open intents is not resumed: ${state}`, async (t) => {
     const f = fixture(t, { labels: [IN_PROGRESS] });
     await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
@@ -51,7 +51,7 @@ for (const state of ['done', 'fault', 'abandoned']) {
       configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
     rec.visits = { red: 1, green: 1 };
     rec.cursor = { vertex: 'needs-human', visit: null, action: null, recovery: 0, attempt: 1 };
-    await record.intent(rec, golden.markerOf(rec, 'done', 1, 'end-comment', 0), 'comment', { target: { kind: 'issue', number: TICKET }, body: 'x', bodyHash: 'h' });
+    await record.intent(rec, golden.markerOf(rec, 'ready-for-qa', 1, 'end-comment', 0), 'comment', { target: { kind: 'issue', number: TICKET }, body: 'x', bodyHash: 'h' });
     rec.state = state;
     await record.save(rec);
     const row = f.loadRow();
@@ -168,7 +168,8 @@ test('truncated Check output does not expose fragments of local paths', async (t
   f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
     ? { code: 0, output: raw, timedOut: false } : { code: 1, output: golden.RED_OUTPUT, timedOut: false };
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
-  const bodies = [...f.comments(), f.gh.pr().body];
+  // Every PR body gh was sent: publish re-renders the body green's pr-upsert created.
+  const bodies = [...f.comments(), ...f.gh.calls.filter((c) => c.args[0] === 'pr' && ['create', 'edit'].includes(c.args[1])).map((c) => c.input)];
   assert.deepEqual(bodies.filter((body) => body.includes(basename(f.root))), [], 'a truncated path exposed the temp directory name');
   const intents = (await record.load(f.commonDir, 'ticket', TICKET)).log.filter((e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.action));
   assert.deepEqual(intents.filter((e) => e.payload.bodyHash !== sha256(e.payload.body)), [], 'each stored hash is of its body');
@@ -182,7 +183,8 @@ test('truncated long Check output does not expose fragments of local paths', asy
   f.options.exec.runShell = async (_command, opts) => existsSync(join(opts.cwd, 'lib', 'add.mjs'))
     ? { code: 0, output: raw, timedOut: false } : { code: 1, output: golden.RED_OUTPUT, timedOut: false };
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
-  const bodies = [...f.comments(), f.gh.pr().body];
+  // Every PR body gh was sent: publish re-renders the body green's pr-upsert created.
+  const bodies = [...f.comments(), ...f.gh.calls.filter((c) => c.args[0] === 'pr' && ['create', 'edit'].includes(c.args[1])).map((c) => c.input)];
   assert.deepEqual(bodies.filter((body) => body.includes(basename(f.root))), [], 'a truncated path exposed the temp directory name');
   const intents = (await record.load(f.commonDir, 'ticket', TICKET)).log.filter((e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.action));
   assert.deepEqual(intents.filter((e) => e.payload.bodyHash !== sha256(e.payload.body)), [], 'each stored hash is of its body');

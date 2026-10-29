@@ -51,7 +51,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/marker.mjs` | Action Marker format and parse |
 | `lib/reconcile.mjs` | Reconciliation of a record against git and GitHub at resume |
 | `lib/events.mjs` | event schema 2 append and read from the State Database |
-| `lib/labels.mjs` | State, Await and Decide Label names and prefix |
+| `lib/labels.mjs` | State, Await and Decide Label names and prefix, and the end states |
 | `lib/approval.mjs` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.mjs` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.mjs` | the Harness contract check and shared Usage shape |

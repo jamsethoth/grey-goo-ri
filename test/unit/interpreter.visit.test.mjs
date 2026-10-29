@@ -14,7 +14,7 @@ const DONE = ['intent', 'evidence', 'complete'];
 
 test('a persona file name is read from the shipped personas directory', async (t) => {
   const g = await golden.setup(t);
-  for (const vertex of Object.values(g.flow.ticket.vertices)) vertex.agent.persona = 'implementer.md';
+  for (const vertex of Object.values(g.flow.ticket.vertices).filter((v) => v.agent)) vertex.agent.persona = 'implementer.md';
   await interpreter.runExecution(g.options);
   const shipped = readFileSync(new URL('../../defaults/personas/implementer.md', import.meta.url), 'utf8');
   assert.equal(g.harness.calls[0].personaBytes, shipped);
@@ -23,8 +23,8 @@ test('a persona file name is read from the shipped personas directory', async (t
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
   const g = await firstVisit(t);
   assert.deepEqual(g.rec.log.filter((e) => e.step === 'intent').map((i) => [i.action, steps(g.rec, i.marker)]), [
-    ['call', DONE], ['commit', DONE], ['call', DONE], ['commit', DONE], ['push', DONE], ['pr-upsert', DONE], ['pr-ready', DONE],
-    ['comment', DONE], ['label', DONE],
+    ['call', DONE], ['commit', DONE], ['call', DONE], ['commit', DONE], ['push', DONE], ['pr-upsert', DONE], ['pr-upsert', DONE],
+    ['pr-ready', DONE], ['comment', DONE], ['label', DONE],
   ]);
   assert.deepEqual(record.openIntents(g.rec), []);
 
@@ -50,7 +50,8 @@ test('every side-effect action leaves intent, evidence and completion with the f
   assert.deepEqual(push.payload, { branch: golden.BRANCH, sha: head });
   assert.equal(evidenceOf(push.marker).remoteSha, head);
 
-  const [pr] = intents(g.rec, 'pr-upsert');
+  // publish's re-render is the PR body GitHub shows.
+  const pr = intents(g.rec, 'pr-upsert').at(-1);
   assert.equal(pr.payload.branch, golden.BRANCH);
   assert.equal(pr.payload.base, 'main');
   assert.equal(pr.payload.title, 'Add two numbers');
@@ -58,8 +59,11 @@ test('every side-effect action leaves intent, evidence and completion with the f
   assert.equal(typeof pr.payload.bodyHash, 'string');
   assert.deepEqual(evidenceOf(pr.marker), { number: 7, url: 'https://github.com/o/r/pull/7' });
 
+  // pr-ready's saved target: the pushed commit and the tree publish's Check passed on.
+  assert.deepEqual(intents(g.rec, 'pr-ready').map((r) => r.payload), [{ number: 7, sha: head, tree: await g.options.git.treeOf(g.worktree, head) }]);
+
   assert.deepEqual(intents(g.rec, 'label').map((l) => l.payload),
-    [{ ticket: golden.TICKET, add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }], 'the done label write goes through the log');
+    [{ ticket: golden.TICKET, add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }], 'the ready-for-qa label write goes through the log');
 });
 
 // green's Visit has two calls when the first fails the Green Check: green, then test-fix.
@@ -71,7 +75,13 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   g.options.testPaths = ['test/**'];
   const { runShell } = g.options.exec;
   const commands = [];
-  g.options.exec = { runShell: (command, opts) => { commands.push(command); return runShell(command, opts); } };
+  // green's own snapshot, as its last Check saw it: publish pins its own after.
+  let pinned;
+  g.options.exec = { runShell: (command, opts) => {
+    commands.push(command);
+    if (g.rec.cursor.vertex === 'green') pinned = structuredClone(g.rec.snapshot);
+    return runShell(command, opts);
+  } };
   const vertex = g.flow.ticket.vertices.green;
   const run = g.harness.run;
   const seen = {};
@@ -83,7 +93,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
       vertex.options.requireTestPass = false;
       // Routing, Procedure and Declared Commands are pinned too: none of these may reach the rest of the Visit.
       vertex.procedure = 'fix';
-      vertex.then = 'needs-human';
+      vertex.route = { ok: { end: 'needs-human' } };
       g.options.commands.test = 'npm run other';
       g.options.testPaths.push('lib/**');
       call.agent.effort = 'low';
@@ -96,15 +106,15 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   assert.equal(seen['test-fix'].agent.model, 'model-x');
   assert.equal(seen['test-fix'].access, 'workspace-write');
   assert.equal(seen['test-fix'].persona.bytes, golden.PERSONA);
-  assert.equal(g.rec.snapshot.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
-  assert.deepEqual(g.rec.snapshot.options, {});
+  assert.equal(pinned.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
+  assert.deepEqual(pinned.options, {});
   assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: green fake\/model-x\/high/);
-  assert.equal(outcome, 'done', 'routing follows the entry snapshot');
+  assert.equal(outcome, 'ready-for-qa', 'routing follows the entry snapshot');
   assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => e.procedure))], ['implement']);
-  assert.deepEqual(commands, ['npm test', 'npm test', 'npm test'], 'checks ran the pinned command');
-  assert.equal(g.rec.snapshot.then, 'done');
-  assert.equal(g.rec.snapshot.commands.test, 'npm test');
-  assert.deepEqual(g.rec.snapshot.testPaths, ['test/**']);
+  assert.deepEqual(commands, ['npm test', 'npm test', 'npm test', 'npm run other'], "green's Checks ran its pinned command; publish pins the edited one");
+  assert.deepEqual(pinned.route, { ok: 'publish' });
+  assert.equal(pinned.commands.test, 'npm test');
+  assert.deepEqual(pinned.testPaths, ['test/**']);
 });
 
 test('the red commit records a non-ASCII test path unquoted', async (t) => {
@@ -113,11 +123,11 @@ test('the red commit records a non-ASCII test path unquoted', async (t) => {
   red.files = { 'test/añadir.test.mjs': red.files['test/add.test.mjs'] };
   const g = await golden.setup(t, { responses });
   const { outcome } = await interpreter.runExecution(g.options);
-  assert.equal(outcome, 'done');
+  assert.equal(outcome, 'ready-for-qa');
   assert.deepEqual(g.rec.outputs.red.tests, ['test/añadir.test.mjs']);
 });
 
-test('done removes in-progress and adds ready-for-qa', async (t) => {
+test('ready-for-qa removes in-progress and adds its label', async (t) => {
   const g = await golden.setup(t);
   g.gh.labels.add('gg:state:in-progress');
   await interpreter.runExecution(g.options);
@@ -126,20 +136,20 @@ test('done removes in-progress and adds ready-for-qa', async (t) => {
   assert.equal(g.gh.pr().isDraft, false, 'PR 7 is ready');
   assert.deepEqual([...g.gh.labels], ['gg:state:ready-for-qa']);
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
-  assert.equal(end.outcome, 'done');
+  assert.equal(end.outcome, 'ready-for-qa');
   assert.equal(end.execution, g.rec.execution);
   assert.equal(end.run, g.rec.run);
   assert.ok(end.diffStats, 'ticket_end carries diff stats');
   assert.equal(end.diffStats.testFiles, 1);
 });
 
-test('done counts the files under the pinned testPaths as tests in its diff stats', async (t) => {
+test('ready-for-qa counts the files under the pinned testPaths as tests in its diff stats', async (t) => {
   const g = await golden.setup(t);
   g.options.testPaths = ['test/**', 'lib/**'];
   await interpreter.runExecution(g.options);
 
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
-  assert.equal(end.outcome, 'done');
+  assert.equal(end.outcome, 'ready-for-qa');
   assert.equal(end.diffStats.files, 2);
   assert.equal(end.diffStats.testFiles, 2, 'lib/add.mjs counts as a test because the pinned testPaths name lib/');
 });
@@ -194,25 +204,25 @@ test('agent-reported test names stay out of a red-failed Terminal Reason and are
   assert.ok(comment.body.includes('injected heading'), 'the diagnosis is still posted, fenced');
 });
 
-test('the Terminal Reason is saved before any Terminal side effect, so a crash marking the PR ready keeps it', async (t) => {
+test('the Terminal Reason is saved before any Terminal side effect, so a crash posting the end comment keeps it', async (t) => {
   const g = await golden.setup(t);
   // A CrashError, since any other throw is now an unexpected fault handled inside runExecution.
-  g.options.gh = { ...g.options.gh, markReady: async () => { throw new interpreter.CrashError('crash'); } };
+  g.options.gh = { ...g.options.gh, commentIssue: async () => { throw new interpreter.CrashError('crash'); } };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
 
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
-  assert.equal(saved.cursor.vertex, 'done');
+  assert.equal(saved.cursor.vertex, 'ready-for-qa');
   assert.equal(saved.terminalReason?.outcome, 'ok');
   assert.match(saved.terminalReason.text, new RegExp(`PR #${saved.pr} is ready for review\\.$`));
 });
 
-test('done carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
+test('ready-for-qa carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
   const g = await firstVisit(t);
   const reason = terminalReasonOf(g);
-  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'pr', recovery: 0 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'publish', visit: 1, action: 'pr-ready', recovery: 0 });
   assert.equal(reason.outcome, 'ok');
   assert.equal(reason.rule, 'effect-completed');
-  assert.equal(reason.text, `green visit 1 completed every implement Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+  assert.equal(reason.text, `publish visit 1 completed every publish Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
 });
 
 // ff's red-gate e2e cases on the fake harness: red writes test/fail.test.mjs, the runner answers with `run`,

@@ -33,7 +33,7 @@ test('test-fix after fix resumes the fix session', async (t) => {
   const call = g.harness.calls.find((c) => c.marker === golden.markerOf(g.rec, 'implementer-fix', 1, 'fix', 1));
   assert.equal(call.resume, fixCall.sessionId, 'test-fix resumes the fix session');
   assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT));
-  assert.equal(g.result.outcome, 'done');
+  assert.equal(g.result.outcome, 'ready-for-qa');
 });
 
 test('misscoped lands in replan with the diagnosis on ticket and epic', async (t) => {
@@ -43,11 +43,11 @@ test('misscoped lands in replan with the diagnosis on ticket and epic', async (t
   g.result = await interpreter.runExecution(g.options);
   g.events = g.readEvents();
 
-  assert.equal(g.result.outcome, 'replan');
-  assert.equal(g.rec.state, 'replan');
+  assert.equal(g.result.outcome, 'needs-replan');
+  assert.equal(g.rec.state, 'needs-replan');
   const end = g.events.at(-1);
   assert.equal(end.type, 'ticket_end');
-  assert.equal(end.outcome, 'replan');
+  assert.equal(end.outcome, 'needs-replan');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-replan'], 'needs-replan replaces in-progress, and needs-human is not added');
 
   const onTicket = ticketComments(g);

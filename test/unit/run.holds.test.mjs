@@ -419,7 +419,7 @@ test('admission does not re-add differently cased in-progress', async (t) => {
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
   assert.equal(f.harness.calls.length, 2, 'the Execution resumes at its cursor');
-  assert.equal((await loadTicket(f)).state, 'done');
+  assert.equal((await loadTicket(f)).state, 'ready-for-qa');
   assert.deepEqual(f.labelAdds(), ['Gg:state:ready-for-qa'], 'in-progress is not added again');
   assert.ok(![...f.gh.labels].some((l) => l.toLowerCase() === IN_PROGRESS), `the Terminal removes it: ${[...f.gh.labels]}`);
 });

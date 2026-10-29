@@ -190,7 +190,7 @@ test('readEvents returns events in insertion order', (t) => {
   log('ticket_start', { execution: 'e1', ticket: 7 });
   log('action', events.actionEvent(actionFields()));
   log('action', events.actionEvent({ ...actionFields(), recovery: 1 }));
-  log('ticket_end', { execution: 'e1', ticket: 7, outcome: 'done' });
+  log('ticket_end', { execution: 'e1', ticket: 7, outcome: 'ready-for-qa' });
   log('run_end');
   const read = events.readEvents(dir);
   assert.deepEqual(read.map((e) => [e.type, e.recovery ?? null]),

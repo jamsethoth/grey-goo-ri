@@ -18,14 +18,16 @@
       "plan": null,
       "ticket": {
         "entry": "red",
+        "routes": { "misscoped": { "end": "needs-replan" }, "*": { "end": "needs-human" } },
         "vertices": {
-          "red": { "use": "implementer", "procedure": "tests-fail", "then": "green" },
-          "green": { "use": "implementer", "procedure": "implement", "then": "reviewer" },
+          "red": { "use": "implementer", "procedure": "tests-fail", "route": { "ok": "green" } },
+          "green": { "use": "implementer", "procedure": "implement", "route": { "ok": "reviewer" } },
           "reviewer": {
             "use": "reviewer", "procedure": "review",
-            "route": { "ok": "done", "changes": { "to": "implementer-fix", "max": 2, "exhausted": "needs-human" } }
+            "route": { "ok": "publish", "changes": { "to": "implementer-fix", "max": 2, "exhausted": { "end": "needs-human" } } }
           },
-          "implementer-fix": { "use": "implementer", "procedure": "fix", "then": "reviewer" }
+          "implementer-fix": { "use": "implementer", "procedure": "fix", "route": { "ok": "reviewer" } },
+          "publish": { "procedure": "publish", "route": { "ok": { "end": "ready-for-qa" } } }
         }
       }
     }

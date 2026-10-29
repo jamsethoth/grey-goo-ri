@@ -210,7 +210,7 @@ test('every label written through gh carries the prefix', async (t) => {
   await github.editLabels(7, { add: ['x:state:in-progress'], remove: ['x:await:qa-approval'] }, '/repo');
   await github.setLabels(7, { add: ['x:state:ready-for-qa'], remove: ['x:state:in-progress'] }, '/repo', { log() {}, ev() {} });
   assert.deepEqual(labelArgs(calls), [
-    'x:state:in-progress', 'x:state:needs-human', 'x:state:ready-for-qa', 'x:state:needs-replan',
+    'x:state:in-progress', 'x:state:ready-for-qa', 'x:state:needs-human', 'x:state:needs-replan',
     'x:state:in-progress', 'x:await:qa-approval',
     'x:state:ready-for-qa', 'x:state:in-progress',
   ]);
@@ -232,7 +232,7 @@ test('viewPr reads the PR fields through gh pr view', async (t) => {
   assert.equal(got.headRefName, 'ticket/7-x');
   const view = calls.find(({ args }) => args[0] === 'pr' && args[1] === 'view').args;
   assert.equal(view[2], '12');
-  assert.deepEqual(view[view.indexOf('--json') + 1].split(',').sort(), ['body', 'headRefName', 'isDraft', 'number', 'state', 'url']);
+  assert.deepEqual(view[view.indexOf('--json') + 1].split(',').sort(), ['body', 'headRefName', 'headRefOid', 'isCrossRepository', 'isDraft', 'number', 'state', 'url']);
 });
 
 test('prComments reads the PR comments through gh api', async (t) => {

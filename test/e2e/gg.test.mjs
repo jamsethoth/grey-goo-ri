@@ -127,11 +127,11 @@ test('gg doctor reads the repository Layer and its schemas and prints the Resolv
   }
   const r = ggIn('doctor');
   assert.ok(r.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'), r.stdout + r.stderr);
-  // The defaults Layer still ships the old Flow's Vertices until #121, so they merge into the example's own red and green
-  // and fail validation.
-  assert.ok(r.stdout.includes('\nerror: flows.default.ticket.vertices.red: unknown key "then"\n'), r.stdout);
-  assert.ok(r.stdout.includes('\nerror: flows.default.ticket.vertices.green: unknown key "then"\n'), r.stdout);
-  assert.equal(r.status, 1);
+  // The defaults Layer still ships its Flow until #121, which merges into the example's own; since #112 both route with
+  // `route`, `routes` and ends, so the merged Flow validates.
+  assert.ok(r.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), r.stdout);
+  assert.ok(!r.stdout.includes('\nerror: '), r.stdout);
+  assert.equal(r.status, 0, r.stdout);
 });
 
 test('gg run rejects a ticket that is not a positive integer', (t) => {

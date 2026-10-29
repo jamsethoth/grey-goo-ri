@@ -109,11 +109,11 @@ test('load returns null for a missing row and the record for a saved one', async
   // Changed behind the module's back, so the load must come from the row.
   withDb(commonDir, (db) => {
     db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8")
-      .run(JSON.stringify({ ...withoutCommonDir(r), state: 'done' }));
+      .run(JSON.stringify({ ...withoutCommonDir(r), state: 'ready-for-qa' }));
   });
   const loaded = await record.load(commonDir, 'ticket', 8);
   assert.equal(loaded.commonDir, commonDir);
-  assert.deepEqual(loaded, { ...r, state: 'done' });
+  assert.deepEqual(loaded, { ...r, state: 'ready-for-qa' });
 
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
   await record.save(epic);
@@ -163,9 +163,9 @@ test('a record transition and its event commit together', async (t) => {
   await record.save(r, () => ev('ticket_end', { execution: r.execution }));
   assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'held');
   assert.deepEqual(eventTypes(), ['ticket_start', 'ticket_end']);
-  r.state = 'done';
+  r.state = 'ready-for-qa';
   await record.save(r);
-  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'done', 'a plain save still works after a rollback');
+  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'ready-for-qa', 'a plain save still works after a rollback');
 });
 
 test('openIntents lists intents without completion oldest first', async (t) => {

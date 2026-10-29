@@ -13,7 +13,7 @@ test('gg run runs the Declared Commands of its config, not those of AGENTS.md', 
   const { runShell } = f.options.exec;
   f.options.exec = { ...f.options.exec, runShell: (command, opts) => (ran.push(command), runShell(command, opts)) };
   const results = await run.runTarget(f.options);
-  assert.equal(ticketResult(results).outcome, 'done', JSON.stringify(results));
+  assert.equal(ticketResult(results).outcome, 'ready-for-qa', JSON.stringify(results));
   assert.ok(ran.length > 0, 'the Checks ran');
   assert.deepEqual([...new Set(ran)], ['npm test']);
 });
@@ -59,7 +59,7 @@ test('a standalone Ticket under a Flow without a plan key is accepted', async (t
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
-  assert.equal(ticketResult(results).outcome, 'done');
+  assert.equal(ticketResult(results).outcome, 'ready-for-qa');
   assert.equal(f.harness.calls.length, 2, 'both agent Phases ran on the fake Harness');
   const { run: runId } = f.readEvents().find((e) => e.type === 'run_start');
   const resolved = JSON.parse(readFileSync(join(f.commonDir, 'gg', 'runs', runId, 'flow.json'), 'utf8'));
@@ -88,7 +88,7 @@ test('following standalone Ticket advice in the repo Layer allows the Ticket to 
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
-  assert.equal(ticketResult(results).outcome, 'done');
+  assert.equal(ticketResult(results).outcome, 'ready-for-qa');
   assert.equal(f.harness.calls.length, 2, 'both agent Phases ran on the fake Harness');
 });
 
@@ -103,7 +103,7 @@ test('a ticket reaching done exits 0 and the run events carry the run id and out
   assert.ok(start && end, 'run_start and run_end are recorded');
   assert.equal(typeof start.run, 'string');
   assert.equal(end.run, start.run);
-  assert.deepEqual(end.tickets, [{ ticket: TICKET, outcome: 'done' }], 'run_end carries the Ticket outcome');
+  assert.deepEqual(end.tickets, [{ ticket: TICKET, outcome: 'ready-for-qa' }], 'run_end carries the Ticket outcome');
   assert.equal(evs.find((e) => e.type === 'ticket_end').run, start.run);
   const runDir = join(f.commonDir, 'gg', 'runs', start.run);
   assert.ok(existsSync(join(runDir, 'flow.json')), 'the Resolved Flow is in the run directory');
