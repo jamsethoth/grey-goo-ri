@@ -341,17 +341,19 @@ test('a stop comment replaces the end comment and reaches the Epic at needs-repl
   assert.equal(unmarked(onEpic[0].body), unmarked(onTicket[0].body));
 });
 
-test("H7: the Flow's route for an Outcome beats the Vertex's \"*\", and no \"*\" catches an unroutable Outcome", async (t) => {
+test("H7: the Flow's route for an Outcome beats the Vertex's \"*\"", async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: 'Two tickets.' } };
   const g = await golden.setup(t, { responses });
   g.flow.ticket.vertices.green.route['*'] = { end: 'needs-human' };
   assert.equal((await interpreter.runExecution(g.options)).outcome, 'needs-replan');
+});
 
-  const v = await golden.setup(t);
-  v.flow.ticket.routes['*'] = { end: 'needs-replan' };
-  v.flow.ticket.vertices.red.route['*'] = { end: 'needs-replan' };
-  const violation = { worktree: v.worktree, surface: 'head', before: v.base, after: 'a'.repeat(40) };
-  const result = await interpreter.runExecution({ ...v.options, integrity: { ...v.options.integrity, end: async () => ({ violations: [violation] }) } });
+test('no "*" catches an unroutable Outcome', async (t) => {
+  const g = await golden.setup(t);
+  g.flow.ticket.routes['*'] = { end: 'needs-replan' };
+  g.flow.ticket.vertices.red.route['*'] = { end: 'needs-replan' };
+  const violation = { worktree: g.worktree, surface: 'head', before: g.base, after: 'a'.repeat(40) };
+  const result = await interpreter.runExecution({ ...g.options, integrity: { ...g.options.integrity, end: async () => ({ violations: [violation] }) } });
   assert.equal(result.outcome, 'needs-human', 'an Integrity Violation is never routed');
 });
