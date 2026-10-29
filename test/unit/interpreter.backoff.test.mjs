@@ -284,7 +284,7 @@ test('a run stop during a backoff ends the Execution at needs-human', async (t) 
   assert.equal(commentPosts(g).length, 1, 'no retry launched');
   const final = await loadTicket(g);
   assert.equal(final.state, 'needs-human');
-  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry stays as saved');
   assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
     + 'Execution stopped while waiting to retry comment; its retry is kept as saved.');
@@ -309,7 +309,7 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
   assert.equal(posts(), 2, 'not launched again');
   const final = await loadTicket(g);
   assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry is not spent');
-  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
 });
 
 test('a rate-limited push keeps the fallback without a probe', async (t) => {
@@ -341,7 +341,7 @@ test('a run stop during a pr-ready backoff ends at needs-human without marking r
   assert.equal(g.gh.pr().isDraft, true, 'the PR is not marked ready');
   const final = await loadTicket(g);
   assert.equal(final.state, 'needs-human');
-  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[PR_READY].remote, saved, 'the retry stays as saved');
   assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
     + 'Execution stopped while waiting to retry pr-ready; its retry is kept as saved.');
@@ -366,7 +366,7 @@ test('a run stop during the ready-for-qa comment backoff ends at needs-human aft
   assert.equal(g.gh.pr().isDraft, false, 'pr-ready had landed');
   const final = await loadTicket(g);
   assert.equal(final.state, 'needs-human');
-  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[DONE_COMMENT].remote, saved, 'the retry stays as saved');
   assert.ok(!ticketComments(g).some((c) => c.body.startsWith('### gg: ready-for-qa')), 'no ready-for-qa comment lands');
   assert.ok(ticketComments(g).some((c) => c.body.startsWith('### gg: needs-human')), 'the needs-human comment lands');
@@ -391,7 +391,7 @@ test('a run stop during a resume lookup backoff ends at needs-human', async (t) 
   assert.equal(commentPosts(g).length, 1, 'no retry launched');
   const final = await loadTicket(g);
   assert.equal(final.state, 'needs-human');
-  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry stays as saved');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 });

@@ -50,9 +50,9 @@ test('a green call that changes the committed test is an integrity violation', a
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'no feat commit after the violation');
 });
 
-test('golden: a failed red retries still-green once then fails at needs-human with its work in place', async (t) => {
+test('golden: a failed red is recovered once then fails at needs-human with its work in place', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
   // The new test passes before any implementation exists, both times.
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
@@ -61,12 +61,12 @@ test('golden: a failed red retries still-green once then fails at needs-human wi
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery}`), ['red/0', 'red-check/0', 'red/1', 'red-check/1']);
   assert.equal(g.harness.calls.length, 2);
-  assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'still-green resumes the red session');
+  assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'the recovery pass resumes the red session');
   const exhausted = actionEvent(g, 'red', 'red-check', 1);
   assert.equal(exhausted.outcome, 'failed');
-  assert.equal(exhausted.rule, 'check-exhausted', 'the transition table derives the engine Outcome failed');
+  assert.deepEqual(exhausted.rule, { table: 'failed', row: null }, 'no failed row and no otherwise: the engine Outcome failed');
   assert.equal(exhausted.direction, 'stop');
-  assert.equal(actionEvent(g, 'red', 'red-check').rule, 'check-failed', 'the first failing run retries through still-green');
+  assert.deepEqual(actionEvent(g, 'red', 'red-check').rule, { table: 'fixed', row: 'recover' }, 'the first failing run recovers');
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', `${g.base}..HEAD`), '0', 'no commit on the branch');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '?? test/', "the agent's test stays in the worktree for the human");
   assert.deepEqual(intents(g.rec, 'reset'), [], 'nothing is reset');
@@ -77,23 +77,25 @@ test('golden: a failed red retries still-green once then fails at needs-human wi
   const reason = terminalReasonOf(g);
   assert.deepEqual(reason.decidedBy, { vertex: 'red', visit: 1, action: 'red-check', recovery: 1 });
   assert.equal(reason.outcome, 'failed');
-  assert.equal(reason.rule, 'check-exhausted');
-  assert.equal(reason.text, 'The tests-fail Check red-check failed with no recovery left (rule check-exhausted).');
+  assert.deepEqual(reason.rule, { table: 'failed', row: null });
+  assert.equal(reason.text, 'The tests-fail Check red-check failed with no recovery left.');
   assert.match(g.gh.comments[0].body, /```\nThe new tests did not fail before implementation/, 'the diagnosis is posted fenced');
 });
 
 test('an ignored test file already there at the baseline is not a changed test', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files = {};
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
-  // Build output under a test glob, ignored and left from before the Visit; red writes no test.
+  // Build output under a test glob, ignored and left from before the Visit; red writes no test, in either pass.
   writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/cache/\n');
   mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'failed');
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'recover', 'no test changed is recoverable (K7)');
+  assert.equal(actionEvent(g, 'red', 'red-check', 1).outcome, 'failed');
   assert.deepEqual(g.shells, [], 'no test changed, so the test command never ran');
 });
 
@@ -134,7 +136,7 @@ test('uncommitted changes before red are held at needs-human and nothing is dele
 
 test('an assume-unchanged edit before red is held too, so a rollback cannot reset it away', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
@@ -152,7 +154,7 @@ test('an assume-unchanged edit before red is held too, so a rollback cannot rese
 test('a read-only red Vertex is held before unknown changes, so a rollback cannot reset them away', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files = {};
-  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
   g.flow.ticket.vertices.red.agent.access = 'read-only';
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };

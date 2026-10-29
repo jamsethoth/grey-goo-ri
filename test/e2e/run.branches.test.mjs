@@ -184,7 +184,7 @@ for (const row of SIBLINGS) {
     assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
     const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === TICKET && e.action === 'red' && e.agent);
     assert.equal(red?.outcome, 'integrity-violation');
-    assert.equal(red.rule, 'integrity-violation');
+    assert.deepEqual(red.rule, { table: 'fixed', row: 'integrity-violation' });
     assert.ok(red.violations.some((v) => pathKey(v.worktree) === pathKey(sibling) && v.surface === 'tree'), JSON.stringify(red.violations));
     assert.equal(f.harness.calls.length, 1, 'no agent call after the violation');
     assert.equal(f.gh.calls.some((c) => c.args[0] === 'pr'), false, 'no PR was read or published');

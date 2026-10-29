@@ -19,7 +19,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
 
   assert.equal(outcome, 'needs-human');
   const green = attemptsOf(g, 'green', 'green');
-  assert.deepEqual(green.map((e) => [e.attempt, e.rule]), [[1, 'parse-retry'], [2, 'parse-exhausted']]);
+  assert.deepEqual(green.map((e) => [e.attempt, e.rule.row]), [[1, 'parse-retry'], [2, 'parse-exhausted']]);
   assert.equal(green[1].outcome, 'harness-unparsed');
   assert.equal(g.harness.calls.length, 3);
   const [, first, nudge] = g.harness.calls;
@@ -30,7 +30,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
   assert.notEqual(nudge.marker, first.marker, 'the marker names the attempt');
   assert.equal(g.rec.retries['green/1/green/0'].parse, 1);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
-  stopReason(g, { vertex: 'green', action: 'green', recovery: 0, outcome: 'harness-unparsed', rule: 'parse-exhausted' });
+  stopReason(g, { vertex: 'green', action: 'green', recovery: 0, outcome: 'harness-unparsed', rule: { table: 'fixed', row: 'parse-exhausted' } });
 });
 
 test('a needs-replan reached with a rejected response is headed by its end, never the rejected claim', async (t) => {
@@ -50,27 +50,27 @@ test('a needs-replan reached with a rejected response is headed by its end, neve
   assert.ok(!posted.body.includes('## Injected heading'), posted.body);
 });
 
-test('golden: a failing test Check runs test-fix once then fails with the Outcome failed', async (t) => {
+test('golden: a failing test Check is recovered once then fails with the Outcome failed', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(tddTrace(g).map((e) => `${e.vertex}/${e.action}/${e.recovery}`),
     ['red/red/0', 'red/red-check/0', 'red/commit/0', 'green/green/0', 'green/test/0', 'green/green/1', 'green/test/1']);
-  assert.equal(actionEvent(g, 'green', 'test').rule, 'check-failed', 'the first failure recovers through test-fix');
-  assert.ok(tddTrace(g).every((e) => e.attempt === 1), 'test-fix is its own Actions, not another Attempt');
+  assert.deepEqual(actionEvent(g, 'green', 'test').rule, { table: 'fixed', row: 'recover' }, 'the first failure recovers');
+  assert.ok(tddTrace(g).every((e) => e.attempt === 1), 'the recovery pass is its own Actions, not another Attempt');
   const fix = g.harness.calls[2];
-  assert.equal(fix.resume, 'fake-session-2', 'test-fix resumes the green session');
-  assert.ok(fix.brief.includes(GREEN_FAIL_OUTPUT), 'test-fix gets the failing output');
+  assert.equal(fix.resume, 'fake-session-2', 'the recovery pass resumes the green session');
+  assert.ok(fix.brief.includes(GREEN_FAIL_OUTPUT), 'the recovery pass gets the failing output');
   const exhausted = actionEvent(g, 'green', 'test', 1);
   assert.equal(exhausted.outcome, 'failed');
-  assert.equal(exhausted.rule, 'check-exhausted');
+  assert.deepEqual(exhausted.rule, { table: 'failed', row: null });
   assert.deepEqual(g.rec.visits, { red: 1, green: 1 }, 'no Edge was traversed for the retry');
-  const reason = stopReason(g, { vertex: 'green', action: 'test', recovery: 1, outcome: 'failed', rule: 'check-exhausted' });
-  assert.equal(reason.text, 'The command Check test failed with no recovery left (rule check-exhausted).');
+  const reason = stopReason(g, { vertex: 'green', action: 'test', recovery: 1, outcome: 'failed', rule: { table: 'failed', row: null } });
+  assert.equal(reason.text, 'The command Check test failed with no recovery left.');
   assert.equal(readFileSync(join(g.worktree, 'lib', 'add.mjs'), 'utf8'), 'export const add = (a, b) => a - b;\n', 'the last attempt stays for the human');
 });
 
@@ -83,11 +83,11 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(attemptsOf(g, 'red', 'red').map((e) => [e.attempt, e.rule]), [[1, 'timeout-retry'], [2, 'timeout-exhausted']]);
+  assert.deepEqual(attemptsOf(g, 'red', 'red').map((e) => [e.attempt, e.rule.row]), [[1, 'timeout-retry'], [2, 'timeout-exhausted']]);
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'the fresh Attempt resumes the session');
   assert.equal(g.rec.retries['red/1/red/0'].timeout, 1);
-  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'harness-timeout', rule: 'timeout-exhausted' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'harness-timeout', rule: { table: 'fixed', row: 'timeout-exhausted' } });
   assert.match(reason.text, /timed out/);
 });
 
@@ -103,13 +103,13 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(attemptsOf(g, 'red', 'red').map((e) => [e.attempt, e.rule]),
+  assert.deepEqual(attemptsOf(g, 'red', 'red').map((e) => [e.attempt, e.rule.row]),
     [[1, 'transient-retry'], [2, 'transient-retry'], [3, 'transient-exhausted']]);
   assert.equal(g.harness.calls.length, 3);
   assert.deepEqual(sleeps, [5, 5]);
   assert.equal(clock.now() - start, 10, 'the injected clock advanced by retryAfterMs each time');
   assert.equal(g.rec.retries['red/1/red/0'].transient, 2);
-  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'harness-transient', rule: 'transient-exhausted' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'harness-transient', rule: { table: 'fixed', row: 'transient-exhausted' } });
   assert.match(reason.text, /transient/);
 });
 
@@ -122,7 +122,7 @@ test('an auth failure stops the run with its class', async (t) => {
   assert.equal(g.harness.calls.length, 1, 'no retry');
   assert.equal(actionEvent(g, 'red', 'red').failureClass, 'auth');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
-  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'run-stop', rule: 'run-stop' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'run-stop', rule: { table: 'fixed', row: 'run-stop' } });
   assert.match(reason.text, /auth/);
 });
 
@@ -232,7 +232,7 @@ test('an unknown failure goes to needs-human without retry', async (t) => {
   assert.equal(result.runStop, undefined);
   assert.equal(g.harness.calls.length, 1, 'no retry');
   assert.equal(attemptsOf(g, 'red', 'red').length, 1);
-  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'needs-human', rule: 'unknown-failure' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'needs-human', rule: { table: 'fixed', row: 'unknown-failure' } });
   assert.match(reason.text, /unknown/);
 });
 
@@ -285,10 +285,10 @@ test('a CrashError propagates untouched', async (t) => {
   assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
 });
 
-test('blocked after still-green stops', async (t) => {
+test('golden: blocked after a red recovery pass stops', async (t) => {
   const g = await golden.setup(t, { responses: {
     ...structuredClone(golden.firstVisitResponses),
-    'red/1/still-green/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'The tests cannot fail first.' } },
+    'red/1/recover/1': { files: {}, response: { ...golden.redResponse, claim: 'blocked', diagnosis: 'The tests cannot fail first.' } },
   } });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
@@ -297,51 +297,13 @@ test('blocked after still-green stops', async (t) => {
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.gh.comments.length, 1);
   assert.match(g.gh.comments[0].body, /### gg: blocked/);
-  stopReason(g, { vertex: 'red', action: 'red-check', recovery: 1, outcome: 'blocked', rule: 'blocked', comment: false });
+  stopReason(g, { vertex: 'red', action: 'red-check', recovery: 1, outcome: 'blocked', rule: { table: 'stopped', row: null }, comment: false });
 });
 
-test('blocked after test-fix stops', async (t) => {
+test('a persona edit between green and its recovery pass does not reach the recovery call', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' } },
-  });
-  const { outcome } = await interpreter.runExecution(g.options);
-
-  assert.equal(outcome, 'needs-human');
-  assert.equal(g.harness.calls.length, 3, 'red, green and test-fix');
-  assert.equal(g.gh.comments.length, 1);
-  assert.match(g.gh.comments[0].body, /### gg: blocked/);
-  assert.equal(actionEvent(g, 'green', 'test', 1)?.rule, 'blocked', 'the Green Check after test-fix still runs');
-  stopReason(g, { vertex: 'green', action: 'test', recovery: 1, outcome: 'blocked', rule: 'blocked', comment: false });
-});
-
-test('requireTestPass false is recorded on every event of its Visit and does not block advance, but publishing still needs a passing test', async (t) => {
-  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
-  g.flow.ticket.vertices.green.options = { requireTestPass: false };
-  // A relaxed test that fails has no evidence (N9), so publish reads green's as optional.
-  g.flow.ticket.vertices.publish.inputs.green.optional = true;
-  const { outcome } = await interpreter.runExecution(g.options);
-
-  // R11d: publish runs the test command itself, whichever Vertex ran before it.
-  assert.equal(outcome, 'needs-human');
-  assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed');
-  assert.equal(g.gh.pr().isDraft, true, 'nothing is marked ready');
-  const check = actionEvent(g, 'green', 'test');
-  assert.deepEqual(check.signals.checks.map((c) => [c.id, c.state]), [['test', 'failed']], 'the failing test Check is recorded');
-  assert.equal(check.direction, 'advance');
-  assert.ok(!tddTrace(g).some((e) => e.recovery > 0), 'a relaxed Green Check needs no recovery');
-  assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)']);
-  const visit = g.readEvents().filter((e) => e.type === 'action' && e.procedure);
-  assert.deepEqual(visit.map((e) => `${e.vertex}/${e.action} ${e.requireTestPass}`), [
-    'red/red undefined', 'red/red-check undefined', 'red/commit undefined',
-    'green/green false', 'green/test false', 'green/commit false', 'green/push false', 'green/pr false', 'publish/test undefined',
-  ]);
-});
-
-test('a persona edit between green and test-fix does not reach the test-fix call', async (t) => {
-  const g = await greenSetup(t, {
-    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
   });
   const run = g.harness.run;
   g.harness.run = async (call) => {
@@ -353,6 +315,6 @@ test('a persona edit between green and test-fix does not reach the test-fix call
 
   assert.equal(outcome, 'ready-for-qa');
   assert.equal(g.harness.calls.length, 3);
-  assert.equal(g.harness.calls[2].personaBytes, golden.PERSONA, 'test-fix gets the bytes pinned at Visit entry');
+  assert.equal(g.harness.calls[2].personaBytes, golden.PERSONA, 'the recovery call gets the bytes pinned at Visit entry');
   assert.equal(g.harness.calls[2].personaHash, g.harness.calls[1].personaHash);
 });

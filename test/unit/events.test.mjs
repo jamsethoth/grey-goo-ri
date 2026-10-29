@@ -94,7 +94,7 @@ test('actionEvent rejects an unknown key', () => {
 });
 
 const optional = {
-  check: 'red', violations: [], requireTestPass: true, exhausted: false, retryAfterMs: 1000, error: 'boom',
+  check: 'red', violations: [], exhausted: false, retryAfterMs: 1000, error: 'boom',
 };
 for (const [key, value] of Object.entries(optional)) {
   test(`actionEvent accepts the optional key ${key}`, () => {
@@ -103,8 +103,8 @@ for (const [key, value] of Object.entries(optional)) {
 }
 
 test('actionEvent accepts every optional key together', () => {
-  const { check, violations, requireTestPass, exhausted, retryAfterMs, error } = events.actionEvent({ ...actionFields(), ...optional });
-  assert.deepEqual({ check, violations, requireTestPass, exhausted, retryAfterMs, error }, optional);
+  const { check, violations, exhausted, retryAfterMs, error } = events.actionEvent({ ...actionFields(), ...optional });
+  assert.deepEqual({ check, violations, exhausted, retryAfterMs, error }, optional);
 });
 
 for (const key of [...required, ...agentRequired]) {

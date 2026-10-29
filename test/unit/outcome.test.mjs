@@ -84,58 +84,25 @@ test('row parse-exhausted: completed, invalid claim at budget -> harness-unparse
   assertRow(r, 'parse-exhausted', 'harness-unparsed', 'stop');
 });
 
-test('row blocked: completed, valid blocked -> blocked', () => {
-  assertRow(resolve({ claim: claim('blocked') }), 'blocked', 'blocked', 'stop');
-});
-
-test('row misscoped: completed, valid misscoped -> misscoped', () => {
-  assertRow(resolve({ claim: claim('misscoped') }), 'misscoped', 'misscoped', 'stop');
-});
-
-test('row check-failed: completed, valid ok, declared check fails -> check-failed', () => {
-  const r = resolve({ claim: claim('ok'), checks: [integrityOk, check('red', true), check('test', false), check('lint', false)] });
-  assertRow(r, 'check-failed', 'check-failed', 'retry');
-  assert.equal(r.check, 'test');
-  assert.equal(r.retryKind, null, 'a recovery Phase spends no Attempt budget');
-});
-
-test('row check-exhausted: a failing check with the procedure\'s recovery exhausted -> the engine Outcome failed, stop', () => {
-  const r = outcome.resolve({ result: completed, claim: claim('ok'), checks: [integrityOk, check('red', false)], retries: none, exhausted: true });
-  assertRow(r, 'check-exhausted', 'failed', 'stop');
-  assert.equal(r.check, 'red');
-});
-
-test('exhausted recovery never overrides a stop claim or a passing check', () => {
-  const blocked = outcome.resolve({ result: completed, claim: claim('blocked'), checks: [check('red', false)], retries: none, exhausted: true });
-  assertRow(blocked, 'blocked', 'blocked', 'stop');
-  assertRow(outcome.resolve({ result: completed, claim: claim('ok'), checks: [check('red', true)], retries: none, exhausted: true }), 'ok', 'ok', 'advance');
-});
-
-test('a changes claim with a failing check keeps the claim-route row', () => {
-  const r = outcome.resolve({ result: completed, claim: claim('changes'), checks: [integrityOk, check('review-pass', false)], retries: none });
-  assertRow(r, 'claim-route', 'changes', 'advance');
-});
-
-test('row claim-route: completed, valid changes, every check passing -> changes', () => {
-  assertRow(resolve({ claim: claim('changes'), checks: [integrityOk, check('review-pass', true)] }), 'claim-route', 'changes', 'advance');
-});
-
-test('row ok: completed, valid ok, every check passing -> ok', () => {
-  assertRow(resolve({ claim: claim('ok'), checks: [integrityOk, check('test', true)] }), 'ok', 'ok', 'advance');
-});
+// The claim rows are gone (#115): any valid Claim, stop tokens included, hands over to the Procedure's tables (decide).
+for (const token of ['ok', 'blocked', 'changes']) {
+  test(`row claimed: completed, valid ${token} -> ${token}, handed to the tables`, () => {
+    const r = resolve({ claim: claim(token), checks: [integrityOk, check('test', false)] });
+    assertRow(r, 'claimed', token, 'advance');
+    assert.deepEqual(r.rule, { table: 'fixed', row: 'claimed' });
+    assert.equal(r.retryKind, null, 'a Check spends no Attempt budget');
+  });
+}
 
 test('integrity beats a timed-out result', () => {
   const r = resolve({ result: { status: 'timed-out', response: null, failure: null }, claim: null, checks: [check('worktree-unchanged', false, true)] });
   assertRow(r, 'integrity-violation', 'integrity-violation', 'stop');
 });
 
-test('blocked beats passing checks', () => {
-  const r = resolve({ claim: claim('blocked'), checks: [integrityOk, check('test', true), check('lint', true)] });
-  assertRow(r, 'blocked', 'blocked', 'stop');
-});
-
-test('a non-ok non-stop claim routes by its token', () => {
-  assertRow(resolve({ claim: claim('repeat') }), 'claim-route', 'repeat', 'advance');
+test('a stop token beats passing checks', () => {
+  const r = outcome.decide({ result: completed, claim: claim('blocked'), checks: [integrityOk, check('test', true)], retries: none,
+    token: { stop: true }, procedure: {}, scope: {} });
+  assert.deepEqual([r.outcome, r.direction, r.rule], ['blocked', 'stop', { table: 'stopped', row: null }]);
 });
 
 test('a completed result with response null and no claim is a parse retry, then parse-exhausted at budget', () => {
@@ -155,11 +122,10 @@ for (const [status, failure] of [['failed', { class: 'transient', retryAfterMs: 
   });
 }
 
-test('advance needs completed, valid ok and every check passing', () => {
+test('advance needs completed, a valid claim and no integrity violation', () => {
   assert.equal(resolve({ claim: claim('ok') }).direction, 'advance');
   assert.notEqual(resolve({ claim: { valid: false, reason: 'malformed' } }).direction, 'advance');
   assert.notEqual(resolve({ claim: null }).direction, 'advance');
-  assert.notEqual(resolve({ claim: claim('ok'), checks: [integrityOk, check('test', false)] }).direction, 'advance');
   assert.notEqual(resolve({ claim: claim('ok'), checks: [check('worktree-unchanged', false, true)] }).direction, 'advance');
 });
 

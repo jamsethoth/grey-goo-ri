@@ -244,9 +244,9 @@ test("the PR's provenance counts a retried Attempt and a resumed Session once ea
     // A parse retry: two Attempts of red, each one call.
     'red/1/red/1': { ...red, response: null, result: usage(10, 2) },
     'red/1/red/2': { ...red, result: usage(100, 20) },
-    // test-fix resumes green's Session, whose cumulative usage then holds green's tokens too.
+    // the recovery pass resumes green's Session, whose cumulative usage then holds green's tokens too.
     'green/1/green/1': { ...ok({ 'lib/add.mjs': WRONG_ADD }), result: usage(200, 40) },
-    'green/1/test-fix/1': { ...ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }), result: usage(50, 5) },
+    'green/1/recover/1': { ...ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }), result: usage(50, 5) },
   });
   const result = await interpreter.runExecution(g.options);
 
@@ -315,7 +315,7 @@ test('an unrouted harness-timeout ends at needs-human', async (t) => {
   assert.equal(attemptsOf(g, 'green', 'green').at(-1).outcome, 'harness-timeout');
   const rec = await loadTicket(g);
   assert.equal(rec.terminalReason.outcome, 'harness-timeout');
-  assert.equal(rec.terminalReason.rule, 'timeout-exhausted');
+  assert.deepEqual(rec.terminalReason.rule, { table: 'fixed', row: 'timeout-exhausted' });
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
 });
 
@@ -478,7 +478,7 @@ test("each draft PR body renders its own Vertex's report and Green Evidence", as
 // is the engine Outcome failed.
 test('a failed red at an end leaves its work in place', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses });
   // The new test passes before any implementation exists, both times.
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
@@ -495,14 +495,14 @@ test('a failed red at an end leaves its work in place', async (t) => {
 test('a final test failure is the Outcome failed naming the Check', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   const check = actionEvent(g, 'green', 'test', 1);
   assert.equal(check.outcome, 'failed');
-  assert.equal(check.rule, 'check-exhausted');
+  assert.deepEqual(check.rule, { table: 'failed', row: null });
   assert.equal(check.check, 'test');
   const [signal] = check.signals.checks;
   // A failing Check's output reaches its signal and the Terminal comment, never its evidence (N9).
@@ -512,7 +512,7 @@ test('a final test failure is the Outcome failed naming the Check', async (t) =>
   const reason = g.rec.terminalReason;
   assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
   assert.equal(reason.outcome, 'failed');
-  assert.equal(reason.text, 'The command Check test failed with no recovery left (rule check-exhausted).');
+  assert.equal(reason.text, 'The command Check test failed with no recovery left.');
   assert.ok(g.gh.comments[0].body.includes(`\`\`\`\n${GREEN_FAIL_OUTPUT}\n\`\`\``), g.gh.comments[0].body);
 });
 
@@ -615,7 +615,7 @@ test('every Check runs again after recovery', async (t) => {
   assert.equal(outcome, 'ready-for-qa');
   assert.deepEqual(greenTrace(g), ['green/0', 'test/0', 'lint/0', 'green/1', 'test/1', 'lint/1', 'commit/1', 'push/1', 'pr/1']);
   assert.equal(lints, 2, 'lint passed in the first pass and still ran again');
-  assert.ok(!g.harness.calls[2].brief.includes('npm run lint'), 'a passing Check has no section');
+  assert.doesNotMatch(g.harness.calls[2].brief, /Check lint/, 'a passing Check has no section');
 });
 
 test('a stop token after recovery stops', async (t) => {
@@ -681,6 +681,17 @@ test('a red that changed no test file is recovered once, then fails', async (t) 
   assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery}`), ['red/0', 'red-check/0', 'red/1', 'red-check/1']);
   assert.match(g.harness.calls[1].brief, /no-test-needed/, 'the section offers the no-test-needed stop');
   assert.deepEqual([g.rec.terminalReason.outcome, g.rec.terminalReason.rule], ['failed', { table: 'failed', row: null }]);
+});
+
+test('a command Check that times out is not recovered', async (t) => {
+  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (command, opts) => (g.rec.cursor.vertex === 'green' ? { code: null, output: 'killed after 30 min', timedOut: true } : runShell(command, opts));
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(greenTrace(g), ['green/0', 'test/0']);
+  assert.deepEqual(g.rec.terminalReason.rule, { table: 'failed', row: null });
 });
 
 test('a failed Check produces no evidence output', async (t) => {

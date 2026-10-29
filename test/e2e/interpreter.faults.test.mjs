@@ -30,7 +30,7 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
   assert.equal(golden.sh(g.worktree, 'branch', '--contains', g.agentCommit), '', 'the agent commit is gone from the branch');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '');
   assert.equal(g.harness.calls.length, 1, 'no retry after a violation');
-  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'integrity-violation', rule: 'integrity-violation' });
+  const reason = stopReason(g, { vertex: 'red', action: 'red', recovery: 0, outcome: 'integrity-violation', rule: { table: 'fixed', row: 'integrity-violation' } });
   assert.match(reason.text, /integrity/i);
   assert.match(g.gh.comments[0].body, /\bhead\b/, 'the comment names the surface');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human'], 'the ticket is at needs-human');
@@ -61,10 +61,10 @@ test('an integrity violation removes an injected ignored Protected File and rest
   assert.ok(!existsSync(join(g.worktree, '.claude', 'skills', 'injected', 'SKILL.md')), 'the injected skill is removed');
   assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', 'the pre-existing file keeps its baseline bytes');
 });
-test('a test-fix that changes the committed test is rolled back to its baseline and stops', async (t) => {
+test('a recovery pass that changes the committed test is rolled back to its baseline and stops', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
   }, 'real');
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -82,10 +82,10 @@ function excludeTests(g, ...paths) {
   writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), paths.join(String.fromCharCode(10)));
 }
 
-test('a test-fix that adds an ignored test file has it removed by the rollback', async (t) => {
+test('a recovery pass that adds an ignored test file has it removed by the rollback', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
   }, 'real');
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -95,10 +95,10 @@ test('a test-fix that adds an ignored test file has it removed by the rollback',
   assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
 });
 
-test('a test-fix that adds an ignored file under a declared test path outside the default globs has it removed by the rollback', async (t) => {
+test('a recovery pass that adds an ignored file under a declared test path outside the default globs has it removed by the rollback', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'lib/add.mjs': WRONG_ADD, 'spec/injected.mjs': 'injected' }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD, 'spec/injected.mjs': 'injected' }),
   }, 'real');
   g.options.testPaths = ['test/**', 'spec/**'];
   excludeTests(g, 'spec/injected.mjs');
@@ -124,7 +124,7 @@ test('an ignored test file that was there before the call gets its bytes back fr
 test('an integrity violation on a Protected File also removes an ignored test file the same Attempt added', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
+    'green/1/recover/1': ok({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
   }, 'real');
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);

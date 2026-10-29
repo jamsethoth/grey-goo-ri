@@ -1,0 +1,8 @@
+## The tests-fail Check red-check
+The orchestrator ran the test command after your red work and your tests PASSED, so they do not fail yet:
+
+```
+ok 1 - widgets render
+```
+
+Write tests that fail until the ticket is implemented. Do not implement anything.

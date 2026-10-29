@@ -8,11 +8,11 @@ import {
   WRONG_ADD, GREEN_FAIL_OUTPUT, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, ticketComments, reviewStopReason,
 } from '../support/interpreter.mjs';
 
-test('test-fix after fix resumes the fix session', async (t) => {
+test('a recovery pass after fix resumes the fix session', async (t) => {
   const g = await reviewSetup(t, {
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer-fix/1/test-fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
+    'implementer-fix/1/recover/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
     'reviewer/2/review/1': reviewed(review('ok')),
   }, {
     exec: {
@@ -25,13 +25,13 @@ test('test-fix after fix resumes the fix session', async (t) => {
     },
   });
 
-  assert.equal(g.at('implementer-fix', 1, 'test', 0)[0]?.rule, 'check-failed');
+  assert.deepEqual(g.at('implementer-fix', 1, 'test', 0)[0]?.rule, { table: 'fixed', row: 'recover' });
   const fixCall = g.at('implementer-fix', 1, 'fix', 0)[0];
   const testFix = g.at('implementer-fix', 1, 'fix', 1)[0];
-  assert.ok(testFix, 'test-fix/1 runs after the failing Green Check');
-  assert.equal(testFix.lineage, 'fix', 'test-fix descends from the fix Phase');
+  assert.ok(testFix, 'the recovery pass runs after the failing Green Check');
+  assert.equal(testFix.lineage, 'fix', 'the recovery pass resumes the fix Phase');
   const call = g.harness.calls.find((c) => c.marker === golden.markerOf(g.rec, 'implementer-fix', 1, 'fix', 1));
-  assert.equal(call.resume, fixCall.sessionId, 'test-fix resumes the fix session');
+  assert.equal(call.resume, fixCall.sessionId, 'the recovery pass resumes the fix session');
   assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT));
   assert.equal(g.result.outcome, 'ready-for-qa');
 });

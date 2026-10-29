@@ -1,13 +1,9 @@
-The orchestrator ran the test command on branch ticket/7-add-widgets after your work and it FAILED:
+## The command Check test
+The orchestrator ran `npm test` after your work and it FAILED:
 
 ```
 not ok 2 - widgets total
 ```
 
-## Repo commands
-- test: `npm test`
-- lint: `npm run lint`
-
-Make the test command pass.
-Committed tests must not be changed. If one is genuinely wrong, claim ok only if the implementation
+Make it pass. Committed tests must not be changed. If one is genuinely wrong, claim ok only if the implementation
 still passes it as written, and say why in notes; otherwise claim blocked and say why in "diagnosis".

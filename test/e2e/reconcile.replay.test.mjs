@@ -126,7 +126,7 @@ for (const point of ['before-effect', 'after-effect', 'after-completion']) {
     assert.equal(g.harness.calls.length, 1, 'the violating call is not dispatched again');
     const final = await loadTicket(g);
     assert.equal(final.state, 'needs-human');
-    assert.equal(final.terminalReason.rule, 'integrity-violation');
+    assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'integrity-violation' });
     assert.equal(final.history.filter((h) => h.kind === 'integrity violation').length, 1);
     assert.ok(!existsSync(join(g.worktree, 'CLAUDE.md')), 'the violation stays rolled back');
   });

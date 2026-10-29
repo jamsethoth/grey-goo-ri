@@ -71,7 +71,7 @@ export function stopReason(g, { vertex, action, recovery = 0, outcome, rule, com
   const reason = terminalReasonOf(g, { comment });
   assert.deepEqual(reason.decidedBy, { vertex, visit: 1, action, recovery });
   assert.equal(reason.outcome, outcome);
-  assert.equal(reason.rule, rule);
+  assert.deepEqual(reason.rule, rule);
   assert.doesNotMatch(reason.text, /ended with|cannot run yet/, `a sentence naming the failure: ${reason.text}`);
   return reason;
 }

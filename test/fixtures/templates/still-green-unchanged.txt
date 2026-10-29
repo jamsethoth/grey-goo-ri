@@ -1,0 +1,3 @@
+## The tests-fail Check red-check
+No file under the repository's test paths changed since this Visit began, so no test was written.
+Write the failing test now. If the ticket needs no test, claim blocked and start "diagnosis" with no-test-needed, then say why.

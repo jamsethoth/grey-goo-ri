@@ -10,10 +10,10 @@ import {
 } from '../support/interpreter.mjs';
 
 // The deterministic Actions of a first visit, each an advance at Attempt 1 of its Vertex's first Visit: red runs tests-fail
-// and green runs implement.
-const deterministic = (vertex, action, rule) => {
+// and green runs implement. A call and a Check whose pass passed hand the Claim over (claimed); an effect completed.
+const deterministic = (vertex, action, row) => {
   const procedure = vertex === 'red' ? 'tests-fail' : 'implement';
-  return { action, recovery: 0, schema: 2, vertex, visit: 1, procedure, attempt: 1, direction: 'advance', rule, agent: undefined };
+  return { action, recovery: 0, schema: 2, vertex, visit: 1, procedure, attempt: 1, direction: 'advance', rule: { table: 'fixed', row }, agent: undefined };
 };
 
 test('golden: a first-visit pass ends at ready-for-qa through publish', async (t) => {
@@ -40,8 +40,8 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
     ({ action, recovery, schema, vertex, visit, procedure, attempt, direction, rule, agent });
   const actions = g.events.filter((e) => e.type === 'action' && TDD_VERTICES.includes(e.vertex));
   assert.deepEqual(actions.map(fields), [
-    { ...deterministic('red', 'red', 'ok'), agent: true }, deterministic('red', 'red-check', 'ok'), deterministic('red', 'commit', 'effect-completed'),
-    { ...deterministic('green', 'green', 'ok'), agent: true }, deterministic('green', 'test', 'ok'), deterministic('green', 'commit', 'effect-completed'),
+    { ...deterministic('red', 'red', 'claimed'), agent: true }, deterministic('red', 'red-check', 'claimed'), deterministic('red', 'commit', 'effect-completed'),
+    { ...deterministic('green', 'green', 'claimed'), agent: true }, deterministic('green', 'test', 'claimed'), deterministic('green', 'commit', 'effect-completed'),
     deterministic('green', 'push', 'effect-completed'), deterministic('green', 'pr', 'effect-completed'),
   ]);
   assert.deepEqual(actions.filter((e) => e.signals == null).map((e) => `${e.action}/${e.recovery}`), [], 'every Action carries its signals');
@@ -139,7 +139,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
   const final = await loadTicket(g);
   assert.equal(final.state, 'needs-human');
-  assert.equal(final.terminalReason.rule, 'run-stopped');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
     + 'Execution stopped before push.');
   const writes = g.gh.calls.slice(before).filter((c) => ghWrite(c.args));
