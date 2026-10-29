@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
 import * as marker from '../../lib/marker.mjs';
+import * as procedures from '../../lib/procedures.mjs';
 import * as golden from '../support/golden.mjs';
 import { firstVisit, intents, actionEvent, attemptsOf, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD,
-  finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, subjects } from '../support/interpreter.mjs';
+  finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, subjects, tddTrace, headSha } from '../support/interpreter.mjs';
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const g = await firstVisit(t);
@@ -465,4 +466,176 @@ test("each draft PR body renders its own Vertex's report and Green Evidence", as
   assert.ok(fix.includes('Address the findings.'), `the fix's body renders the fix's report:\n${fix}`);
   assert.ok(greenSection(fix).includes('✔ adds two numbers (0.8ms)'), `the fix's Green section shows the fix's test.evidence:\n${fix}`);
   assert.ok(!greenSection(fix).includes('Cannot find module'), `the fix's Green section does not show the Red Evidence:\n${fix}`);
+});
+
+// #114: Checks as declared Actions. Their results are the Check signal { id, kind, state, tree }, and a final failure
+// is the engine Outcome failed.
+test('a failed red at an end leaves its work in place', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  // The new test passes before any implementation exists, both times.
+  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8'), "import { add } from '../lib/add.mjs';\n", 'the test red wrote is still there');
+  assert.equal(await headSha(g), g.base, 'nothing was committed');
+  assert.deepEqual(intents(g.rec, 'reset'), [], 'nothing was reset');
+  assert.deepEqual(g.rec.history, []);
+  assert.equal(g.rec.terminalReason.outcome, 'failed');
+});
+
+test('a final test failure is the Outcome failed naming the Check', async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
+  });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  const check = actionEvent(g, 'green', 'test', 1);
+  assert.equal(check.outcome, 'failed');
+  assert.equal(check.rule, 'check-exhausted');
+  assert.equal(check.check, 'test');
+  const [signal] = check.signals.checks;
+  assert.deepEqual(signal, { id: 'test', kind: 'command', state: 'failed', tree: signal.tree });
+  assert.match(signal.tree, /^[0-9a-f]{40}$/);
+  const reason = g.rec.terminalReason;
+  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
+  assert.equal(reason.outcome, 'failed');
+  assert.equal(reason.text, 'The command Check test failed with no recovery left (rule check-exhausted).');
+});
+
+test('a Check result on an older tree does not count', async (t) => {
+  const g = await golden.setup(t);
+  const ev = g.options.events;
+  // A file appears after green's test passed and before its commit, so the commit sees a tree the Check never saw.
+  g.options.events = (type, data) => {
+    ev(type, data);
+    if (type === 'action' && data.vertex === 'green' && data.action === 'test') writeFileSync(join(g.worktree, 'lib', 'late.mjs'), 'export {};\n');
+  };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  const commit = actionEvent(g, 'green', 'commit');
+  assert.equal(commit.outcome, 'failed');
+  assert.equal(commit.signals.checks[0].id, 'test');
+  assert.equal(commit.signals.checks[0].state, 'failed', 'a pass on an older tree counts as failed');
+  assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
+});
+
+test('a Check that changes the tree fails', async (t) => {
+  const g = await golden.setup(t);
+  const runShell = g.options.exec.runShell;
+  // The passing run leaves a generated file behind.
+  g.options.exec.runShell = async (command, opts) => {
+    const r = await runShell(command, opts);
+    if (r.code === 0) writeFileSync(join(g.worktree, 'lib', 'generated.mjs'), 'export {};\n');
+    return r;
+  };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  const check = actionEvent(g, 'green', 'test');
+  assert.equal(check.outcome, 'failed');
+  assert.equal(check.signals.checks[0].state, 'failed');
+  assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
+});
+
+test('a tests-fail Check fails when no file under testPaths changed, without running the command', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files = { 'lib/note.mjs': 'export {};\n' };
+  const g = await golden.setup(t, { responses });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(g.shells, [], 'the test command never ran');
+  assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery} ${e.outcome}`), ['red/0 ok', 'red-check/0 failed']);
+  assert.equal(g.rec.terminalReason.outcome, 'failed');
+});
+
+test('a failed Check produces no evidence output', async (t) => {
+  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  g.flow.ticket.vertices.green.options = { requireTestPass: false };
+  g.flow.ticket.vertices.publish.inputs.green.optional = true;
+  await interpreter.runExecution(g.options);
+
+  assert.deepEqual(g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'), [], 'a relaxed failing test has no evidence');
+  assert.equal(actionEvent(g, 'green', 'test').signals.checks[0].state, 'failed');
+  assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed', 'the Execution reached publish');
+});
+
+test('a tests-fail pass by name match alone carries heuristic: true in its evidence', async (t) => {
+  const output = `Error: ${golden.TEST_NAME} threw\n`;
+  // The runner prints no per-test statuses, only the test's name.
+  const runShell = async (command, opts) => (existsSync(join(opts.cwd, 'lib', 'add.mjs'))
+    ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output, timedOut: false });
+  const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) }, { exec: { runShell } });
+
+  const red = g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'red-check');
+  assert.deepEqual(red.value.evidence, { command: 'npm test', output, heuristic: true });
+  assert.match(g.harness.calls[2].brief, /found the failing test by its name only/, 'the review Brief shows it');
+});
+
+// Declares reuse: tree on each named Procedure's first test Check, for this case only.
+function reuseTree(t, ...names) {
+  for (const name of names) {
+    const check = procedures.PROCEDURES[name].actions.find((a) => a.id === 'test');
+    check.reuse = 'tree';
+    t.after(() => { delete check.reuse; });
+  }
+}
+
+test('a reuse: tree command Check reuses a pass for the same tree and command and runs again for another', async (t) => {
+  reuseTree(t, 'implement', 'fix', 'publish');
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  });
+
+  assert.equal(g.result.outcome, 'ready-for-qa');
+  assert.equal(g.shells.length, 3, "red-check, green's test and the fix's test ran the command; publish reused the fix's pass");
+  const evidence = (vertex) => g.rec.outputs.find((o) => o.vertex === vertex && o.action === 'test').value.evidence;
+  assert.equal(evidence('green').output, golden.GREEN_OUTPUT);
+  assert.equal(evidence('implementer-fix').output, golden.GREEN_OUTPUT, 'the fix changed the tree, so its test ran again');
+  assert.equal(evidence('publish').output,
+    `Reused the passing run of ${golden.markerOf(g.rec, 'implementer-fix', 1, 'test')} on this tree.\n${golden.GREEN_OUTPUT}`);
+});
+
+test('a failing reuse: tree result is never reused', async (t) => {
+  reuseTree(t, 'implement', 'publish');
+  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  g.flow.ticket.vertices.green.options = { requireTestPass: false };
+  g.flow.ticket.vertices.publish.inputs.green.optional = true;
+  const runs = [];
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (command, opts) => {
+    runs.push(command);
+    return runShell(command, opts);
+  };
+  await interpreter.runExecution(g.options);
+
+  assert.equal(runs.length, 3, 'publish ran the command again on the tree green failed on');
+  assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed');
+});
+
+test('a deleted test file counts as a change', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files = {};
+  const g = await golden.setup(t, { responses });
+  g.options.testPaths = ['package.json'];
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    if (call.phase === 'red') rmSync(join(g.worktree, 'package.json'));
+    return out;
+  };
+  await interpreter.runExecution(g.options);
+
+  const check = actionEvent(g, 'red', 'red-check');
+  assert.equal(check.outcome, 'ok');
+  assert.equal(check.signals.checks[0].state, 'passed');
+  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value, { files: ['package.json'] });
 });

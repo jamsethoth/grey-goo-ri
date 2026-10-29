@@ -262,3 +262,20 @@ test('the fake git reads a ? in a glob as the test path matcher does, literally'
   assert.equal(checks.testPathMatcher(['a?c.mjs'])('abc.mjs'), false);
   assert.deepEqual(await fake.git.untrackedPaths(mainRoot, { include: 'all', within: { globs: ['a?c.mjs'] } }), []);
 });
+
+test('a response Check with all-of names each failed condition', () => {
+  const response = { dodMet: false, tddEvidenceOk: true, findings: [
+    { severity: 'blocker', file: 'lib/a.mjs', issue: 'Throws', fix: '' },
+    { severity: 'minor', file: 'lib/b.mjs', issue: 'Naming', fix: '' },
+    { severity: 'major', file: 'lib/c.mjs', issue: 'Off by one', fix: '' },
+  ] };
+  const result = checks.responseCheck(response, { 'all-of': [
+    { field: 'dodMet', is: true },
+    { field: 'tddEvidenceOk', is: true },
+    { none: 'findings', where: { severity: ['blocker', 'major'] } },
+  ] });
+  assert.deepEqual(result, { passed: false, reasons: [
+    'dodMet is false, expected true',
+    'findings has 2 of 3 items where severity is blocker or major; expected none',
+  ] });
+});
