@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as exec from '../../../lib/exec.mjs';
+import * as paths from '../../../lib/paths.mjs';
 import * as render from '../../../lib/render.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'ff-exec-'));
@@ -701,7 +702,7 @@ test('a second runShell with a timeout loads the cached helper assembly', WIN_CA
   assert.equal(second.res.code, 0);
   assert.deepEqual(howLoaded(second.raw).map(([k]) => k), ['loaded'], second.raw);
   const [[, from]] = howLoaded(second.raw);
-  assert.equal(dirname(from), fileURLToPath(new URL('../../../lib/winjob-cache', import.meta.url)));
+  assert.equal(paths.pathKey(dirname(from)), paths.pathKey(fileURLToPath(new URL('../../../lib/winjob-cache', import.meta.url))), from);
 });
 
 test('a truncated helper assembly falls back to compiling', WIN_CASE, async (t) => {
