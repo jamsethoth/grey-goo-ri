@@ -286,3 +286,13 @@ test('a response Check with all-of names each failed condition', () => {
     'findings has 2 of 3 items where severity is blocker or major; expected none',
   ] });
 });
+
+test('a response condition without where names its list alone', () => {
+  const result = checks.responseCheck({ findings: [] }, { any: 'findings' });
+  assert.deepEqual(result, { passed: false, reasons: ['findings has 0 of 0 items; expected at least one'] });
+});
+
+test('a count condition without a comparison fails, naming it', () => {
+  const result = checks.responseCheck({ findings: [] }, { count: 'findings', where: {} });
+  assert.deepEqual(result, { passed: false, reasons: ['the count of findings names no comparison'] });
+});

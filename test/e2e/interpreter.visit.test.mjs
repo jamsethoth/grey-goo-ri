@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
@@ -80,6 +80,21 @@ test('golden: a failed red retries still-green once then fails at needs-human wi
   assert.equal(reason.rule, 'check-exhausted');
   assert.equal(reason.text, 'The tests-fail Check red-check failed with no recovery left (rule check-exhausted).');
   assert.match(g.gh.comments[0].body, /```\nThe new tests did not fail before implementation/, 'the diagnosis is posted fenced');
+});
+
+test('an ignored test file already there at the baseline is not a changed test', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files = {};
+  const g = await golden.setup(t, { responses, integrity: 'real' });
+  // Build output under a test glob, ignored and left from before the Visit; red writes no test.
+  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/cache/\n');
+  mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'failed');
+  assert.deepEqual(g.shells, [], 'no test changed, so the test command never ran');
 });
 
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {

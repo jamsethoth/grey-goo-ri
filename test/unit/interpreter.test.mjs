@@ -571,6 +571,7 @@ test('a failed Check produces no evidence output', async (t) => {
   await interpreter.runExecution(g.options);
 
   assert.deepEqual(g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'), [], 'a relaxed failing test has no evidence');
+  assert.ok(g.gh.pr().body.includes('**Green**: the test command has no passing run.\n'), g.gh.pr().body);
   assert.equal(actionEvent(g, 'green', 'test').signals.checks[0].state, 'failed');
   assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed', 'the Execution reached publish');
 });
