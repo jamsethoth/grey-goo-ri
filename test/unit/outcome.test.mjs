@@ -144,32 +144,31 @@ test('the decision order is fixed rows, stopped, passed or failed, otherwise', (
     failed: [{ when: { 'check.lint': 'failed' }, outcome: 'lint-failed' }],
     otherwise: 'changes',
   };
-  const ok = { requires: ['test', 'lint'] };
-  const stop = { stop: true };
-  const decide = (token, checks, scope, extra = {}) => outcome.decide({ result: completed, claim: claim(token === stop ? 'blocked' : 'ok'),
-    checks: [integrityOk, ...checks], retries: none, token, procedure, scope: { pass: 1, check: {}, response: {}, ...scope }, ...extra });
+  const tokens = { ok: { requires: ['test', 'lint'] }, blocked: { stop: true } };
+  const decide = (token, checks, scope, extra = {}) => outcome.decide({ result: completed, claim: claim(token), checks: [integrityOk, ...checks],
+    retries: none, token: tokens[token], procedure, scope: { pass: 1, check: {}, response: {}, ...scope }, ...extra });
   const passing = [check('test', true), check('lint', true)];
 
   // gg's fixed rows come first, whatever the Claim and its tables say.
-  const violated = decide(stop, [check('worktree-unchanged', false, true)], { response: { reason: 'misscoped' } });
+  const violated = decide('blocked', [check('worktree-unchanged', false, true)], { response: { reason: 'misscoped' } });
   assert.deepEqual([violated.outcome, violated.rule], ['integrity-violation', { table: 'fixed', row: 'integrity-violation' }]);
   // A stop token goes to the stopped table, else stays the token; passing Checks never override it, nor does otherwise.
-  const misscoped = decide(stop, passing, { response: { reason: 'misscoped' } });
+  const misscoped = decide('blocked', passing, { response: { reason: 'misscoped' } });
   assert.deepEqual([misscoped.outcome, misscoped.direction, misscoped.rule], ['misscoped', 'stop', { table: 'stopped', row: 0 }]);
-  const blocked = decide(stop, passing, { response: { reason: 'none' } });
+  const blocked = decide('blocked', passing, { response: { reason: 'none' } });
   assert.deepEqual([blocked.outcome, blocked.direction, blocked.rule], ['blocked', 'stop', { table: 'stopped', row: null }]);
   // Every required Check passed: the passed table, then otherwise.
-  const recovered = decide(ok, passing, { pass: 2 });
+  const recovered = decide('ok', passing, { pass: 2 });
   assert.deepEqual([recovered.outcome, recovered.direction, recovered.rule], ['recovered', 'advance', { table: 'passed', row: 0 }]);
-  const otherwise = decide(ok, passing, {});
+  const otherwise = decide('ok', passing, {});
   assert.deepEqual([otherwise.outcome, otherwise.direction, otherwise.rule], ['changes', 'advance', { table: 'passed', row: 'otherwise' }]);
   // A required Check failed: recovery while it is left, then the failed table, then otherwise.
   const failing = [check('test', true), check('lint', false)];
-  const recover = decide(ok, failing, { check: { lint: 'failed' } }, { recoverable: true });
+  const recover = decide('ok', failing, { check: { lint: 'failed' } }, { recoverable: true });
   assert.deepEqual([recover.outcome, recover.direction, recover.rule], ['recover', 'retry', { table: 'fixed', row: 'recover' }]);
-  const lintFailed = decide(ok, failing, { check: { lint: 'failed' } });
+  const lintFailed = decide('ok', failing, { check: { lint: 'failed' } });
   assert.deepEqual([lintFailed.outcome, lintFailed.direction, lintFailed.rule], ['lint-failed', 'stop', { table: 'failed', row: 0 }]);
-  const failedOtherwise = decide(ok, failing, { check: { lint: 'passed' } });
+  const failedOtherwise = decide('ok', failing, { check: { lint: 'passed' } });
   assert.deepEqual([failedOtherwise.outcome, failedOtherwise.direction, failedOtherwise.rule], ['changes', 'stop', { table: 'failed', row: 'otherwise' }]);
 });
 
