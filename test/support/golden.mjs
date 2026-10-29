@@ -61,6 +61,15 @@ export const implementerAgent = (persona) => ({
   harness: 'fake', model: 'model-x', effort: 'high', persona, skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false,
 });
 
+// The inputs the shipped Flow declares: green reads red's committed tests and Red Evidence; a reviewer or publish reads
+// the latest implementation report and Green Evidence across the implementing Vertices, and the Red Evidence.
+export const GREEN_INPUTS = { tests: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
+export const implInputs = (vertices) => ({
+  report: { from: vertices.map((v) => `${v}.${v === 'green' ? 'green' : 'fix'}.response`) },
+  red: { from: 'red.red-check.evidence' },
+  green: { from: vertices.map((v) => `${v}.test.evidence`) },
+});
+
 // A red, green and publish Resolved Flow: red's tests-fail Visit, green's implement Visit, then publish's Visit, which has
 // no Agent, to ready-for-qa. A misscoped Claim reaches the planner through the Flow's routes, as in the shipped Flow.
 export const redGreenFlow = (persona) => ({
@@ -71,8 +80,8 @@ export const redGreenFlow = (persona) => ({
     routes: { misscoped: { end: 'needs-replan' } },
     vertices: {
       red: { agent: implementerAgent(persona), procedure: 'tests-fail', options: {}, route: { ok: 'green' } },
-      green: { agent: implementerAgent(persona), procedure: 'implement', options: {}, route: { ok: 'publish' } },
-      publish: { agent: null, procedure: 'publish', options: {}, route: { ok: { end: 'ready-for-qa' } } },
+      green: { agent: implementerAgent(persona), procedure: 'implement', options: {}, inputs: GREEN_INPUTS, route: { ok: 'publish' } },
+      publish: { agent: null, procedure: 'publish', options: {}, inputs: implInputs(['green']), route: { ok: { end: 'ready-for-qa' } } },
     },
   },
 });
