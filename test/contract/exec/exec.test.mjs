@@ -644,14 +644,6 @@ const helperNotes = (raw) => [...raw.matchAll(/\n\u0001FFJOB (\w+) ?([^\n]*)\n/g
 const howLoaded = (raw) => helperNotes(raw).filter(([k]) => k === 'loaded' || k === 'compiled');
 const WIN_CASE = { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' };
 
-// runShell with a timeout on a command that exits at once; raw is everything the helper wrote, notes included.
-async function helperCall(opts = {}) {
-  let raw = '';
-  const onHelper = (helper) => { for (const s of [helper.stdout, helper.stderr]) s.on('data', (d) => (raw += d)); };
-  const res = await exec.runShell(`"${process.execPath}" -e "1"`, { timeoutMs: 60_000, onHelper, ...opts });
-  return { res, raw };
-}
-
 // A copy of the job helper in its own directory, so a case can damage the cache beside it without touching the suite's.
 function helperCopy() {
   const dir = mkdtempSync(join(tmp, 'winjob-'));
@@ -684,11 +676,15 @@ public static class FFJob {
   return path;
 }
 
-test('the job helper reuses its compiled assembly on a second call', WIN_CASE, async () => {
-  await helperCall();
-  const second = await helperCall();
-  assert.equal(second.res.code, 0);
-  assert.deepEqual(howLoaded(second.raw).map(([k]) => k), ['loaded'], second.raw);
+test('the job helper reuses its compiled assembly on a second call', WIN_CASE, async (t) => {
+  const dir = helperCopy();
+  const first = await runHelper(dir, t.signal); // nothing cached yet: compiles, and caches what it compiled
+  assert.deepEqual(howLoaded(first.raw).map(([k]) => k), ['compiled'], first.raw);
+  const [[, cached]] = howLoaded(first.raw);
+  const second = await runHelper(dir, t.signal);
+  assert.equal(second.code, 0);
+  assert.match(second.raw, /ran/);
+  assert.deepEqual(howLoaded(second.raw), [['loaded', cached]], second.raw);
 });
 
 test('a truncated helper assembly falls back to compiling', WIN_CASE, async (t) => {
