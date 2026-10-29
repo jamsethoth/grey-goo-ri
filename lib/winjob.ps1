@@ -2,7 +2,7 @@
 # orphans, is killed together. Control: a byte on stdin (or stdin EOF) terminates the job. Exit code: the command's.
 # Diagnostics go to stderr as lines prefixed with \x01FFJOB so exec.mjs can strip and parse them.
 if ($env:FF_TEST_STALL -eq '1') { Start-Sleep 600 } # test seam: a helper that never gets as far as starting the command, longer than any test case
-Add-Type -TypeDefinition @'
+$source = @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -147,6 +147,39 @@ public static class FFJob {
   }
 }
 '@
+# FFJob comes from a compiled copy cached beside this script, named for the hashes of $source and of its own bytes, and
+# is compiled, and cached, only when no intact copy is there. Only gg's install is searched: an agent that could write
+# there could rewrite this script too (ADR 0017). The loaded or compiled note says which happened.
+function Note($s) { [Console]::Error.Write("`n$([char]1)FFJOB $s`n"); [Console]::Error.Flush() }
+$sha = [Security.Cryptography.SHA256]::Create()
+function Hash($bytes) { [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant() }
+$cache = Join-Path $PSScriptRoot 'winjob-cache'
+$key = Hash ([Text.Encoding]::UTF8.GetBytes($source))
+$how = $null
+foreach ($f in Get-ChildItem -LiteralPath $cache -Filter "$key-*.dll" -ErrorAction SilentlyContinue) {
+  try {
+    # hashed and loaded from the same bytes, so the file cannot change in between
+    $bytes = [IO.File]::ReadAllBytes($f.FullName)
+    if ($f.Name -ne "$key-$(Hash $bytes).dll") { Remove-Item -LiteralPath $f.FullName -ErrorAction SilentlyContinue; continue } # damaged
+    [void][Reflection.Assembly]::Load($bytes)
+    $how = "loaded $($f.FullName)"; break
+  } catch {}
+}
+if (-not $how) {
+  $tmp = Join-Path $cache "$key.$PID.tmp"
+  try {
+    [void](New-Item -ItemType Directory -Force $cache -ErrorAction Stop)
+    Add-Type -TypeDefinition $source -OutputAssembly $tmp -OutputType Library -ErrorAction Stop
+    $bytes = [IO.File]::ReadAllBytes($tmp)
+    [void][Reflection.Assembly]::Load($bytes)
+    $how = 'compiled'
+    $to = Join-Path $cache "$key-$(Hash $bytes).dll"
+    [IO.File]::Move($tmp, $to)
+    $how = "compiled $to"
+  } catch {} finally { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue }
+  if (-not $how) { Add-Type -TypeDefinition $source; $how = 'compiled' } # an install gg cannot write to compiles every time
+}
+Note $how
 $code = [FFJob]::Run($env:FF_CMD, $(if ($env:FF_CWD) { $env:FF_CWD }), $env:FF_DENY -eq '1')
 [FFJob]::Done()
 exit $code
