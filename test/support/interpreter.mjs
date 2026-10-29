@@ -97,8 +97,8 @@ export const fixed = (files) => ({ files, response: { ...golden.greenResponse, s
 
 export const MAJOR = finding('major', 'lib/add.mjs', 'add ignores non-number input at line 1');
 
-// red(tests-fail) -> green(implement) -> reviewer(review); changes -> {implementer-fix, max 2, exhausted needs-human};
-// implementer-fix(fix) -> reviewer.
+// red(tests-fail) -> green(implement) -> reviewer(review); ok -> publish; changes -> {implementer-fix, max 2, exhausted
+// needs-human}; implementer-fix(fix) -> reviewer.
 export async function reviewSetup(t, responses, opts) {
   const g = await reviewFlow(t, responses, opts);
   g.result = await interpreter.runExecution(g.options);
@@ -112,16 +112,17 @@ export async function reviewFlow(t, responses, { exec, integrity, git } = {}) {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
   const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
   writeFileSync(reviewerPersona, REVIEWER_PERSONA);
-  const { red, green } = g.flow.ticket.vertices;
+  const { red, green, publish } = g.flow.ticket.vertices;
   g.flow.ticket.vertices = {
     red,
-    green: { ...green, then: 'reviewer' },
+    green: { ...green, route: { ok: 'reviewer' } },
     reviewer: {
       agent: { ...structuredClone(green.agent), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
       procedure: 'review', options: {},
-      route: { ok: 'done', changes: { to: 'implementer-fix', max: 2, exhausted: 'needs-human' }, misscoped: 'replan' },
+      route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
     },
-    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, then: 'reviewer' },
+    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, route: { ok: 'reviewer' } },
+    publish,
   };
   if (exec) g.options.exec = exec;
   return g;

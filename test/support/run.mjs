@@ -25,7 +25,7 @@ export const NEEDS_HUMAN = 'gg:state:needs-human';
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 // The shipped defaults with every Agent on `harness`, the repository Layer's test command and, unless `fullFlow`, a
-// red and green Flow straight to done.
+// red, green and publish Flow to ready-for-qa.
 export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   const c = config.loadDefaults();
   c.commands = { test: 'npm test' };
@@ -33,8 +33,10 @@ export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   for (const agent of Object.values(c.agents)) Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   c.worktreeRoot = join(root, 'wt');
   if (!fullFlow) {
-    c.flows.default.ticket = { entry: 'red', vertices: { red: { use: 'implementer', procedure: 'tests-fail', then: 'green' },
-      green: { use: 'implementer', procedure: 'implement', then: 'done' } } };
+    c.flows.default.ticket = { entry: 'red', routes: c.flows.default.ticket.routes, vertices: {
+      red: { use: 'implementer', procedure: 'tests-fail', route: { ok: 'green' } },
+      green: { use: 'implementer', procedure: 'implement', route: { ok: 'publish' } },
+      publish: { procedure: 'publish', route: { ok: { end: 'ready-for-qa' } } } } };
   }
   return c;
 }
@@ -58,7 +60,7 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
   const { base, git, fakeGit } = golden.seedGit(real, which);
   const fakeIntegrity = golden.fakeOf(integrity, base);
 
-  const fake = golden.fakeGh({ branch, repoLabels });
+  const fake = golden.fakeGh({ branch, repoLabels, headOf: (b) => git.remoteSha(mainRoot, b) });
   for (const l of labels) fake.labels.add(l);
   const inner = fake.gh;
   fake.gh = async (args, cwd, input) => {

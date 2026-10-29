@@ -7,7 +7,7 @@ import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
-import { firstVisit, intents, actionEvent, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD } from '../support/interpreter.mjs';
+import { firstVisit, intents, actionEvent, attemptsOf, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD } from '../support/interpreter.mjs';
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const g = await firstVisit(t);
@@ -55,7 +55,7 @@ test('each public field is redacted once and sent exactly as its intent saved it
   g.options.ticket.title = 'Add TOKEN';
   g.options.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
-  for (const { agent } of Object.values(g.flow.ticket.vertices)) {
+  for (const { agent } of Object.values(g.flow.ticket.vertices).filter((v) => v.agent)) {
     Object.assign(agent, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
   }
   writeFileSync(join(g.root, 'personas', 'TOKEN.md'), golden.PERSONA);
@@ -224,14 +224,14 @@ test("a fault during an end does not replay the end's open reporting Action", as
 
   assert.equal(result.fault, true, JSON.stringify(result));
   const rec = await loadTicket(g);
-  const ended = reportMarker(g, 'done', 'end-comment');
+  const ended = reportMarker(g, 'ready-for-qa', 'end-comment');
   assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [ended], "the end's comment stays open");
   assert.equal(calls, 2, "the end's comment is tried once and the fault's once");
   const [posted, ...rest] = g.gh.comments.filter((c) => c.target === 'issue');
   assert.equal(rest.length, 0);
   assert.ok(posted.body.includes(marker.markerComment(reportMarker(g, 'needs-human', 'fault-comment'))), 'the fault reports under its own marker');
   assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'needs-human', 'fault-label')));
-  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'done', 'end-pr-ready')), "the end's pr-ready completed first");
+  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'publish', 'pr-ready')), "publish's pr-ready completed first");
 });
 
 test("the PR's provenance counts a retried Attempt and a resumed Session once each", async (t) => {
@@ -247,8 +247,96 @@ test("the PR's provenance counts a retried Attempt and a resumed Session once ea
   });
   const result = await interpreter.runExecution(g.options);
 
-  assert.equal(result.outcome, 'done', JSON.stringify(result));
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   const body = g.gh.pr().body;
   assert.match(body, /^\| red \| .* \| 2 \| 110 \(0\) \/ 22 \|$/m, body);
   assert.match(body, /^\| green \| .* \| 2 \| 250 \(0\) \/ 45 \|$/m, body);
+});
+
+// T1a, M1: publish's pr-ready marks ready only the commit its Check passed on, while the PR's head is that commit.
+const publishing = async (t, during) => {
+  const g = await golden.setup(t);
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (...args) => {
+    const r = await runShell(...args);
+    if (g.rec.cursor.vertex === 'publish') await during(g);
+    return r;
+  };
+  g.result = await interpreter.runExecution(g.options);
+  return g;
+};
+const markedReady = (g) => g.gh.calls.some((c) => c.args[0] === 'pr' && c.args[1] === 'ready');
+
+test('pr-ready holds when the published tree differs from the checked tree', async (t) => {
+  // The test command rewrites a committed file, so the tree it passed on is not the pushed commit's.
+  const g = await publishing(t, (g) => writeFileSync(join(g.worktree, 'lib', 'add.mjs'), 'export const add = (a, b) => b + a;\n'));
+
+  assert.equal(g.result.outcome, 'needs-human', JSON.stringify(g.result));
+  assert.equal(g.result.held, true);
+  assert.equal(markedReady(g), false, 'gh pr ready never runs');
+  assert.equal(g.gh.pr().isDraft, true, 'the PR stays a draft');
+  const rec = await loadTicket(g);
+  assert.deepEqual(rec.terminalReason.decidedBy, { hold: 'unchecked-publish' });
+  assert.match(rec.terminalReason.text, /tree/);
+  assert.ok(g.gh.labels.has('gg:state:needs-human'));
+});
+
+test('pr-ready holds when only the remote PR head moved after the push', async (t) => {
+  const moved = 'e'.repeat(40);
+  const g = await publishing(t, (g) => { g.gh.pr().headRefOid = moved; });
+
+  assert.equal(g.result.outcome, 'needs-human', JSON.stringify(g.result));
+  assert.equal(g.result.held, true);
+  assert.equal(markedReady(g), false, 'gh pr ready never runs');
+  assert.equal(g.gh.pr().isDraft, true, 'the PR stays a draft');
+  const rec = await loadTicket(g);
+  assert.deepEqual(rec.terminalReason.decidedBy, { hold: 'unchecked-publish' });
+  assert.ok(rec.terminalReason.text.includes(moved), rec.terminalReason.text);
+  assert.equal(await g.options.git.remoteSha(g.mainRoot, golden.BRANCH), await g.options.git.headSha(g.worktree), "gg's push stands");
+});
+
+const timedOut = { 'green/1/green/1': { files: {}, response: null, result: { status: 'timed-out' } },
+  'green/1/green/2': { files: {}, response: null, result: { status: 'timed-out' } } };
+
+test('an unrouted harness-timeout ends at needs-human', async (t) => {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...timedOut } });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.equal(attemptsOf(g, 'green', 'green').at(-1).outcome, 'harness-timeout');
+  const rec = await loadTicket(g);
+  assert.equal(rec.terminalReason.outcome, 'harness-timeout');
+  assert.equal(rec.terminalReason.rule, 'timeout-exhausted');
+  assert.ok(g.gh.labels.has('gg:state:needs-human'));
+});
+
+test('a routed harness-timeout takes its route', async (t) => {
+  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...timedOut } });
+  g.flow.ticket.vertices.green.route['harness-timeout'] = { end: 'needs-replan' };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'needs-replan', JSON.stringify(result));
+  assert.ok(g.gh.labels.has('gg:state:needs-replan'));
+});
+
+test('a stop comment replaces the end comment and reaches the Epic at needs-replan', async (t) => {
+  const diagnosis = 'The ticket asks add to both sum and concatenate.';
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis } };
+  const g = await golden.setup(t, { responses });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'needs-replan', JSON.stringify(result));
+  const rec = await loadTicket(g);
+  assert.equal(rec.state, 'needs-replan');
+  assert.deepEqual([...g.gh.labels], ['gg:state:needs-replan']);
+  const onTicket = g.gh.comments.filter((c) => c.number === golden.TICKET);
+  assert.equal(onTicket.length, 1, 'one comment on the Ticket');
+  assert.match(onTicket[0].body, /^### gg: misscoped\n/, 'the stop comment, not the end comment');
+  assert.ok(onTicket[0].body.includes(diagnosis));
+  assert.ok(onTicket[0].body.includes(`**Terminal Reason:** ${rec.terminalReason.text}`), 'it carries the Terminal Reason');
+  const onEpic = g.gh.comments.filter((c) => c.number === rec.epic);
+  assert.equal(onEpic.length, 1, 'the same comment on the Epic');
+  const unmarked = (body) => body.replace(/<!-- gg-action \S+ -->/, '');
+  assert.equal(unmarked(onEpic[0].body), unmarked(onTicket[0].body));
 });

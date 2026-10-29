@@ -16,7 +16,7 @@ const deterministic = (vertex, action, rule) => {
   return { action, recovery: 0, schema: 2, vertex, visit: 1, procedure, attempt: 1, direction: 'advance', rule, agent: undefined };
 };
 
-test('golden: a first-visit pass runs red then green as two Vertices', async (t) => {
+test('golden: a first-visit pass ends at ready-for-qa through publish', async (t) => {
   const g = await golden.setup(t, { integrity: 'real' });
   let draft;
   const { markReady } = g.options.gh;
@@ -27,8 +27,14 @@ test('golden: a first-visit pass runs red then green as two Vertices', async (t)
   assert.deepEqual(golden.trace(g.events).filter((e) => TDD_VERTICES.includes(e.vertex)), FIRST_VISIT);
   const end = g.events.at(-1);
   assert.equal(end.type, 'ticket_end');
-  assert.equal(end.outcome, 'done');
+  assert.equal(end.outcome, 'ready-for-qa');
   assert.equal(end.ticket, golden.TICKET);
+  // publish has no Agent: its test Check, the PR body re-render and pr-ready, each at Recovery Number 0.
+  assert.deepEqual(golden.trace(g.events).filter((e) => e.vertex === 'publish'), ['test', 'pr', 'pr-ready']
+    .map((action) => ({ vertex: 'publish', action, recovery: 0, attempt: 1, outcome: 'ok' })));
+  assert.deepEqual(g.events.filter((e) => e.type === 'action' && e.vertex === 'publish').map((e) => [e.action, e.agent, e.procedure]),
+    [['test', undefined, 'publish'], ['pr', undefined, 'publish'], ['pr-ready', undefined, 'publish']]);
+  assert.equal(g.shells.length, 3, "publish runs the test command again, on the tree pr-ready publishes");
 
   const fields = ({ action, recovery, schema, vertex, visit, procedure, attempt, direction, rule, agent }) =>
     ({ action, recovery, schema, vertex, visit, procedure, attempt, direction, rule, agent });
@@ -69,16 +75,18 @@ test('golden: a first-visit pass runs red then green as two Vertices', async (t)
   // The draft PR body carries the marker line, the red Evidence and the provenance row.
   assert.equal(draft, true, 'the PR is opened as a draft');
   const body = g.gh.pr().body;
-  assert.ok(body.includes(marker.markerComment(actionMarker(g, 'green', 'pr'))), body);
   assert.ok(body.includes("Cannot find module 'lib/add.mjs'"), 'red evidence in the PR body');
   assert.match(body, /^\| red \| fake \| model-x \| high \| /m);
   assert.match(body, /^\| green \| fake \| model-x \| high \| /m);
-  assert.equal(g.gh.pr().isDraft, false, 'done marks the PR ready');
+  assert.equal(g.gh.pr().isDraft, false, "publish's pr-ready marks the PR ready");
+  assert.ok(g.gh.pr().body.includes(marker.markerComment(actionMarker(g, 'publish', 'pr'))), 'publish re-renders the PR body');
 
-  assert.deepEqual(g.rec.cursor, { vertex: 'done', visit: 1, action: 'end-label', recovery: 0, attempt: 1 });
-  assert.deepEqual(g.rec.visits, { red: 1, green: 1 });
+  assert.deepEqual(g.rec.cursor, { vertex: 'ready-for-qa', visit: 1, action: 'end-label', recovery: 0, attempt: 1 });
+  assert.deepEqual(g.rec.visits, { red: 1, green: 1, publish: 1 });
+  assert.equal(g.rec.state, 'ready-for-qa');
+  assert.ok(g.gh.labels.has('gg:state:ready-for-qa'));
   assert.equal(g.rec.terminalReason.text,
-    `green visit 1 completed every implement Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
+    `publish visit 1 completed every publish Action: the Green Check passed. PR #${g.rec.pr} is ready for review.`);
 });
 
 // R2d: red committed its tests, then a human edited a tracked file before green started.
