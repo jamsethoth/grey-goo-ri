@@ -97,6 +97,20 @@ test('an ignored test file already there at the baseline is not a changed test',
   assert.deepEqual(g.shells, [], 'no test changed, so the test command never ran');
 });
 
+test('an ignored test file already there at the baseline counts once the Visit changes it', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  // red rewrites the ignored test file that was there before the Visit, and writes no other.
+  responses['red/1/red/1'].files = { 'test/cache/out.json': '{"changed":true}\n' };
+  const g = await golden.setup(t, { responses, integrity: 'real' });
+  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/cache/\n');
+  mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
+  await interpreter.runExecution(g.options);
+
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'ok');
+  assert.equal(g.shells[0].command, 'npm test', 'the changed test made the Red Check run the test command');
+});
+
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
   const g = await golden.setup(t, { integrity: 'real' });
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
