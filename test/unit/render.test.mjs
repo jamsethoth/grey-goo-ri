@@ -287,6 +287,25 @@ test('a section without its closing tag is refused', async () => {
   await assert.rejects(render.template('x{{/items}}', {}), /\{\{\/items\}\} closes no open section/);
 });
 
+test("a fence whose opening line names a value fences every value it holds past that value's backticks", async () => {
+  assert.equal(await render.template('```{{lang}}\n{{text}}\n```', { lang: 'text', text: 'x\n```\n## Outside' }), '````text\nx\n```\n## Outside\n````');
+});
+
+test('a value between two fences is not fenced', async () => {
+  assert.equal(await render.template('```\na\n```\n{{v}}\n```\nb\n```', { v: '``` v' }), '```\na\n```\n``` v\n```\nb\n```');
+});
+
+test('a tilde fence outruns the tildes it holds, and an info string holding a backtick takes a tilde fence', async () => {
+  assert.equal(await render.template('~~~\n{{text}}\n~~~', { text: '~~~\n## Outside' }), '~~~~\n~~~\n## Outside\n~~~~');
+  assert.equal(await render.template('```{{lang}}\n{{text}}\n```', { lang: 'a`b', text: 'x' }), '~~~a`b\nx\n~~~');
+});
+
+test('a section that crosses a fence, and a fence that is not closed, are refused', async () => {
+  await assert.rejects(render.template('{{#a}}\n```\n{{/a}}\n```', { a: 1 }), /\{\{\/a\}\} closes no open section/);
+  await assert.rejects(render.template('```\n{{#a}}\n```\n{{/a}}', { a: 1 }), /\{\{#a\}\} must close inside the fence it opens in/);
+  await assert.rejects(render.template('```\nx', {}), /a fence is not closed/);
+});
+
 const fixture = (name) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
 const shapes = JSON.parse(fixture('comments.json'));
 const fixtureMarker = marker.formatMarker(shapes.parts);
