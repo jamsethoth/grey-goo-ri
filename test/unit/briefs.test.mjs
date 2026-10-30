@@ -43,6 +43,27 @@ for (const [name, limit] of [['green.md', 4000], ['test-fix.md', 6000], ['still-
   });
 }
 
+test("direct input references retain each Brief's excerpt limit", async () => {
+  const tail = (limit) => 'x'.repeat(limit - 20) + '\nlast line';
+  const output = (limit) => 'old diagnostic '.repeat(100) + '\n' + tail(limit);
+  const green = await briefs.brief('green.md', { ...base, inputs: { tests: testFiles, red: { command: 'npm test', output: output(4000) } } });
+  const testFix = await briefs.brief('test-fix.md', { ...base, output: output(6000) });
+  const stillGreen = await briefs.brief('still-green.md', { ...base, output: output(3000), failure: 'passed' });
+  assert.ok(green.includes('```\n' + tail(4000) + '\n```'), green);
+  assert.ok(testFix.includes('```\n' + tail(6000) + '\n```'), testFix);
+  assert.ok(stillGreen.includes('```\n' + tail(3000) + '\n```'), stillGreen);
+  assert.doesNotMatch(green + testFix + stillGreen, /old diagnostic/);
+});
+
+test('an absent optional input renders empty through a direct reference', async () => {
+  const green = await briefs.brief('green.md', { ...base, inputs: { tests: undefined, red: undefined } });
+  const fix = await briefs.brief('fix.md', { ...base, inputs: { findings: undefined } });
+  const review = await briefs.brief('review.md', { ...base, inputs: { report: { claim: 'ok' }, red: storedRed, green: undefined }, diff: '', changedTestFiles: [] });
+  assert.match(green, /## Committed tests\n\nThe orchestrator committed these failing tests; the test command failed as expected:\n\n```\n\n```\n/);
+  assert.doesNotMatch(fix, /## Review findings/);
+  assert.match(review, /## Green Evidence\nThe test command has no passing run\.\n/);
+});
+
 for (const name of ['test-fix.md', 'still-green.md']) {
   test(`agent-facing ${name} preserves distinguishable path-case failures`, async () => {
     const output = `expected '${homedir().toLowerCase()}\\a' to equal '${homedir().toUpperCase()}\\a'`;
