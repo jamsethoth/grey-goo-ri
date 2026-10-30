@@ -19,7 +19,7 @@ You are on branch ticket/7-add-widgets, created from origin/main. Work only here
 ### Attempt 1: red-failed
 The Red Check failed: no new test failed.
 
-### Attempt 2: review findings from reviewer visit 1
+## Review findings
 - major in lib/a.mjs: off by one
   Fix: use <=
 

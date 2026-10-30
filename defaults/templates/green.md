@@ -19,14 +19,14 @@ You are on branch {{ticket.branch}}, created from {{base}}. Work only here.
 - Stay inside the ticket's scope.
 
 ## Committed tests
-{{#testFiles}}
+{{#inputs.tests}}
 - {{.}}
-{{/testFiles}}
+{{/inputs.tests}}
 
 The orchestrator committed these failing tests; the test command failed as expected:
 
 ```
-{{redOutput}}
+{{inputs.red.output}}
 ```
 
 Write the smallest implementation that makes them pass and meets every definition-of-done item.

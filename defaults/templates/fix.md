@@ -28,6 +28,14 @@ You are on branch {{ticket.branch}}, created from {{base}}. Work only here.
 ### Attempt {{n}}: {{kind}}
 {{text}}
 {{/history}}
+{{#inputs.findings.length}}
+
+## Review findings
+{{/inputs.findings.length}}
+{{#inputs.findings}}
+- {{severity}} in {{file}}: {{issue}}
+  Fix: {{fix}}
+{{/inputs.findings}}
 
 The branch already holds the previous work. Address every blocker and major finding above.
 If a fix changes behaviour, add or adjust a failing test first. Finish with the test command passing.

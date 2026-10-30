@@ -39,8 +39,8 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   const [review1, fix, review2] = g.harness.calls.slice(2);
   assert.equal(review1.access, 'read-only');
   assert.ok(review1.brief.includes('a + b'), 'the diff is in the review Brief');
-  assert.ok(review1.brief.includes(JSON.stringify(golden.RED_OUTPUT)), 'the Red Evidence is in the review Brief');
-  assert.ok(review1.brief.includes(JSON.stringify(golden.GREEN_OUTPUT)), 'the Green Evidence is in the review Brief');
+  assert.ok(review1.brief.includes(golden.RED_OUTPUT), 'the Red Evidence is in the review Brief');
+  assert.ok(review1.brief.includes(golden.GREEN_OUTPUT), 'the Green Evidence is in the review Brief');
   assert.equal(review1.personaBytes, REVIEWER_PERSONA);
   // fix/1 is a fresh Session whose Brief carries the review Findings.
   assert.equal(fix.resume, null, 'fix never resumes');

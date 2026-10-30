@@ -25,15 +25,32 @@ Read-only: do not modify files.
 {{/changedTestFiles}}
 
 ## Implementer's report
-{{report}}
-{{#impl.red.heuristic}}
+{{inputs.report}}
+
+## Red Evidence
+`{{inputs.red.command}}` failed before the implementation:
+```
+{{inputs.red.output}}
+```
+{{#inputs.red.heuristic}}
 
 The Red Check found the failing test by its name only: the runner printed no per-test statuses. Check that the test
 fails for the reason the ticket gives.
-{{/impl.red.heuristic}}
+{{/inputs.red.heuristic}}
+
+## Green Evidence
+{{#inputs.green}}
+`{{inputs.green.command}}` passed after it:
+```
+{{inputs.green.output}}
+```
+{{/inputs.green}}
+{{^inputs.green}}
+The test command has no passing run.
+{{/inputs.green}}
 
 Check correctness, code quality and simplicity, and definition-of-done coverage. The orchestrator itself verified
-that the "test:" commit's tests failed before implementation and pass now (outputs are in the report); check that
+that the "test:" commit's tests failed before implementation and pass now (the evidence above); check that
 those tests actually exercise the ticket's behaviour and were not weakened afterwards.
 Return claim ok only if there are no blocker or major findings, changes otherwise, or misscoped with a diagnosis
 when the ticket itself cannot be met as written.

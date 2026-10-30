@@ -187,6 +187,12 @@ const impl = {
   green: { command: 'npm test', output: 'ok 1 - total' },
   qa: { setup: 'npm ci', steps: [{ action: 'Run gg', expected: 'Total shown' }], edgeCases: ['empty cart'], automated: ['total'], manual: [] },
 };
+// The shipped PR body, review comment and stop comment over the context their Actions give them.
+const prBody = ({ ticket, impl, provenance, marker: m }, redact) => render.publicBody('pr-body.md',
+  { ticket, report: impl, red: impl.red, green: impl.green, provenance }, m, redact);
+const reviewComment = (response, agent, m, redact) => render.publicBody('review-comment.md', { review: { response }, agent }, m, redact);
+const stopComment = (end, outcome, response, m, reason, redact) => render.publicBody('stop.md',
+  { end, outcome, response, reason: reason?.text }, m, redact);
 const provenance = [
   { vertex: 'implement', harness: 'claude', model: 'opus', effort: 'high', persona: 'tdd-implementer', hash: 'abc123', calls: 2, input: 100, cached: 40, output: 20 },
   { vertex: 'review', harness: 'codex', model: 'gpt', effort: 'medium', persona: 'reviewer', hash: 'def456', calls: 1, input: 50, cached: 0, output: 10 },
@@ -194,7 +200,7 @@ const provenance = [
 
 test('the PR body carries the marker line and provenance', async () => {
   const m = marker.formatMarker(parts);
-  const body = await render.prBody({ ticket: { number: 7 }, impl, provenance, marker: m });
+  const body = await prBody({ ticket: { number: 7 }, impl, provenance, marker: m });
   assert.match(body, /^Closes #7/);
   assert.equal(body.trimEnd().split('\n').at(-1), `<!-- gg-action ${m} -->`);
   assert.deepEqual(asText(marker.parseMarker(body)), asText(parts));
@@ -287,13 +293,13 @@ const fixtureMarker = marker.formatMarker(shapes.parts);
 
 // The fixtures are the builders' output before #105.
 test(`the PR body template matches its builder's output`, async () => {
-  const body = await render.prBody({ ticket: { number: 7 }, impl: shapes.prImpl, provenance: shapes.provenance, marker: fixtureMarker });
+  const body = await prBody({ ticket: { number: 7 }, impl: shapes.prImpl, provenance: shapes.provenance, marker: fixtureMarker });
   assert.equal(body, fixture('pr-body.txt'));
 });
 
 test(`the review comment template matches its builder's output`, async () => {
-  assert.equal(await render.reviewComment(shapes.review, shapes.provenance[1], fixtureMarker), fixture('review-comment.txt'));
-  assert.equal(await render.reviewComment({ ...shapes.review, claim: 'ok', findings: [] }, shapes.provenance[1], fixtureMarker),
+  assert.equal(await reviewComment(shapes.review, shapes.provenance[1], fixtureMarker), fixture('review-comment.txt'));
+  assert.equal(await reviewComment({ ...shapes.review, claim: 'ok', findings: [] }, shapes.provenance[1], fixtureMarker),
     fixture('review-comment-no-findings.txt'));
 });
 
@@ -308,7 +314,7 @@ test(`the Terminal Reason comment template matches its builder's output`, async 
 test('the stop comment renders the blocked and needs-replan cases', async () => {
   const m = marker.formatMarker(parts);
   const response = { claim: 'blocked', summary: 'Cannot reach the API.', notes: 'NOTES stay out.', diagnosis: 'The ticket needs a token.' };
-  const blocked = await render.stopComment('needs-human', 'blocked', response, m, { text: 'The agent made a blocked Claim at green.' });
+  const blocked = await stopComment('needs-human', 'blocked', response, m, { text: 'The agent made a blocked Claim at green.' });
   assert.equal(blocked, `### gg: blocked
 
 ${fenced('Cannot reach the API.')}
@@ -319,7 +325,7 @@ ${fenced('The ticket needs a token.')}
 
 <!-- gg-action ${m} -->
 `);
-  const replan = await render.stopComment('needs-replan', 'misscoped', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
+  const replan = await stopComment('needs-replan', 'misscoped', { ...response, claim: 'misscoped', diagnosis: 'Split into two tickets.' }, m, null);
   assert.equal(replan, `### gg: misscoped
 
 ${fenced('Cannot reach the API.')}
@@ -332,7 +338,7 @@ ${fenced('Split into two tickets.')}
 
 test('a review comment fences each finding past its own backticks and carries the marker line', async () => {
   const m = marker.formatMarker(parts);
-  const review = await render.reviewComment(
+  const review = await reviewComment(
     {
       claim: 'changes', summary: 'One bug.', dodMet: true, tddEvidenceOk: true, diagnosis: '',
       findings: [{ severity: 'major', file: 'lib/a.mjs', issue: 'off by one\n```\n## Injected heading', fix: 'use <=\n# Another' }],
@@ -351,7 +357,7 @@ test('a review comment fences each finding past its own backticks and carries th
 test('a review comment fences a finding file so its text cannot leave the fence', async () => {
   const m = marker.formatMarker(parts);
   const file = 'a.mjs`\n\n## Outside fence\n\n`';
-  const injected = await render.reviewComment(
+  const injected = await reviewComment(
     { claim: 'changes', summary: 'x', dodMet: true, tddEvidenceOk: true, diagnosis: '', findings: [{ severity: 'major', file, issue: 'i', fix: 'f' }] },
     provenance[1], m,
   );
@@ -377,9 +383,9 @@ const tokenReview = { claim: 'changes', summary: 'TOKEN summary', dodMet: true, 
 for (const [name, build] of [
   ['commitMessage', (m) => render.commitMessage({ kind: 'TOKEN feat', title: 'TOKEN title', ticket: 7, summary: 'TOKEN summary', vertex: 'TOKEN implement',
     harness: 'TOKEN claude', model: 'TOKEN opus', effort: 'TOKEN high', marker: m }, redact)],
-  ['prBody', (m) => render.prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance: tokenProvenance, marker: m }, redact)],
-  ['reviewComment', (m) => render.reviewComment(tokenReview, tokenProvenance[1], m, redact)],
-  ['stopComment', (m) => render.stopComment('TOKEN needs-human', 'TOKEN blocked', tokenResponse, m, reason, redact)],
+  ['prBody', (m) => prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance: tokenProvenance, marker: m }, redact)],
+  ['reviewComment', (m) => reviewComment(tokenReview, tokenProvenance[1], m, redact)],
+  ['stopComment', (m) => stopComment('TOKEN needs-human', 'TOKEN blocked', tokenResponse, m, reason, redact)],
   ['terminalComment', (m) => render.terminalComment('TOKEN needs-human', reason, m, 'TOKEN detail', { terminal: 'TOKEN done', reason: { text: 'TOKEN earlier' } }, redact)],
 ]) {
   test(`${name} redacts each public field exactly once`, async () => {
@@ -411,8 +417,8 @@ test('marker-shaped agent text does not displace the rendered marker', async () 
     kind: 'feat', title: 't', ticket: 7, summary: fake, vertex: 'implement', harness: 'claude', model: 'opus', effort: 'high', marker: m,
   });
   assert.deepEqual(asText(marker.parseMarker(message)), asText(parts));
-  const body = await render.prBody({ ticket: { number: 7 }, impl: { ...impl, summary: fake }, provenance, marker: m });
+  const body = await prBody({ ticket: { number: 7 }, impl: { ...impl, summary: fake }, provenance, marker: m });
   assert.deepEqual(asText(marker.parseMarker(body)), asText(parts));
-  const comment = await render.stopComment('needs-human', 'blocked', { claim: 'blocked', summary: fake, notes: fake, diagnosis: fake }, m, null);
+  const comment = await stopComment('needs-human', 'blocked', { claim: 'blocked', summary: fake, notes: fake, diagnosis: fake }, m, null);
   assert.deepEqual(asText(marker.parseMarker(comment)), asText(parts));
 });

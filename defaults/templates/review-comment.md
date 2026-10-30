@@ -1,25 +1,31 @@
-### gg review: **{{claim}}**
+### gg review: **{{review.response.claim}}**
 _{{agent.harness}} {{agent.model}} ({{agent.effort}}), persona {{agent.persona}}@{{agent.hash}}_
 
-{{summary}}
+```
+{{review.response.summary}}
+```
 
-- Definition of done met: {{#dodMet}}yes{{/dodMet}}{{^dodMet}}no{{/dodMet}}
-- TDD evidence OK: {{#tddEvidenceOk}}yes{{/tddEvidenceOk}}{{^tddEvidenceOk}}no{{/tddEvidenceOk}}
+- Definition of done met: {{#review.response.dodMet}}yes{{/review.response.dodMet}}{{^review.response.dodMet}}no{{/review.response.dodMet}}
+- TDD evidence OK: {{#review.response.tddEvidenceOk}}yes{{/review.response.tddEvidenceOk}}{{^review.response.tddEvidenceOk}}no{{/review.response.tddEvidenceOk}}
+{{#review.response.findings}}
 
-{{#findings}}
-{{^first}}
-
-{{/first}}
 **{{severity}}**
+```
 {{file}}
+```
+```
 {{issue}}
+```
 Fix:
+```
 {{fix}}
-{{/findings}}
-{{^findings}}
-_No findings._
-{{/findings}}
+```
+{{/review.response.findings}}
+{{^review.response.findings}}
 
-VERDICT: {{claim}}
+_No findings._
+{{/review.response.findings}}
+
+VERDICT: {{review.response.claim}}
 
 {{marker}}

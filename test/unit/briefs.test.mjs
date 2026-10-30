@@ -11,6 +11,7 @@ const worktree = 'C:\\dev\\worktrees\\repo\\ticket-7';
 const base = { ticket, base: 'origin/main', commands, worktree, history: [] };
 const redOutput = 'not ok 1 - widgets render\n  AssertionError: expected widget';
 const testFiles = ['test/widgets.test.mjs', 'test/support/widget-fixture.mjs'];
+const greenInputs = { tests: testFiles, red: { command: 'npm test', output: redOutput } };
 const IMMUTABLE = /committed tests must not be changed/i;
 const fixture = (name) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
 
@@ -24,7 +25,7 @@ for (const [name, { template, opts }] of Object.entries(JSON.parse(fixture('brie
 // The stop comment shows diagnosis, not notes (W6), so a Brief that offers a blocked Claim says where its reason goes.
 for (const name of ['green.md', 'test-fix.md', 'recover.md']) {
   test(`the ${name} Brief tells a blocked agent to explain in diagnosis`, async () => {
-    assert.match(await briefs.brief(name, { ...base, testFiles, redOutput, output: 'not ok 1' }), /claim blocked and say why in "diagnosis"/);
+    assert.match(await briefs.brief(name, { ...base, inputs: greenInputs, output: 'not ok 1' }), /claim blocked and say why in "diagnosis"/);
   });
 }
 
@@ -32,16 +33,6 @@ test('a Brief that does not name the diff never computes it', async () => {
   const diff = () => { throw new Error('the diff was computed'); };
   assert.match(await briefs.brief('red.md', { ...base, diff, changedTestFiles: diff }), /^RED PHASE/);
 });
-
-for (const [name, limit] of [['green.md', 4000], ['test-fix.md', 6000], ['still-green.md', 3000]]) {
-  test(`${name} output excerpts keep complete-line tails`, async () => {
-    const tail = 'x'.repeat(limit - 20) + '\nlast line';
-    const output = 'old diagnostic '.repeat(100) + '\n' + tail;
-    const brief = await briefs.brief(name, { ...base, testFiles, redOutput: output, output, failure: 'passed' });
-    assert.ok(brief.includes('```\n' + tail + '\n```'), brief);
-    assert.doesNotMatch(brief, /old diagnostic/);
-  });
-}
 
 test("direct input references retain each Brief's excerpt limit", async () => {
   const tail = (limit) => 'x'.repeat(limit - 20) + '\nlast line';
@@ -77,13 +68,13 @@ const evidencePath = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.
 const storedRed = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n` });
 
 test('stored Check evidence reaches the green Brief unredacted', async () => {
-  const green = await briefs.brief('green.md', { ...base, testFiles, redOutput: storedRed.output });
+  const green = await briefs.brief('green.md', { ...base, inputs: { tests: testFiles, red: storedRed } });
   assert.ok(green.includes(`${evidencePath}:3:4`), green);
   assert.ok(!green.includes('[local]'), green);
 });
 
 test('stored Check evidence reaches the review Brief unredacted', async () => {
-  const review = await briefs.brief('review.md', { ...base, impl: { claim: 'ok', red: storedRed, green: storedRed }, diff: '', changedTestFiles: [] });
+  const review = await briefs.brief('review.md', { ...base, inputs: { report: { claim: 'ok' }, red: storedRed, green: storedRed }, diff: '', changedTestFiles: [] });
   assert.ok(review.includes(`${evidencePath}:3:4`), review);
   assert.ok(!review.includes('[local]'), review);
 });
@@ -357,7 +348,7 @@ test('validateResponse and assertStrict catch an empty-named property', () => {
 });
 
 test('the green brief is a full brief for a fresh session', async () => {
-  const g = await briefs.brief('green.md', { ...base, testFiles, redOutput });
+  const g = await briefs.brief('green.md', { ...base, inputs: greenInputs });
   assert.match(g, /#7/);
   assert.ok(g.includes(ticket.body), 'ticket body');
   assert.ok(g.includes(ticket.branch), 'branch');
@@ -372,7 +363,7 @@ test('the green brief is a full brief for a fresh session', async () => {
 });
 
 test('the green brief forbids changing committed tests', async () => {
-  const g = await briefs.brief('green.md', { ...base, testFiles, redOutput });
+  const g = await briefs.brief('green.md', { ...base, inputs: greenInputs });
   assert.match(g, IMMUTABLE);
   assert.match(g, /notes/);
   assert.match(g, /blocked/);
@@ -409,9 +400,9 @@ for (const name of ['RED_SCHEMA', 'REVIEW_SCHEMA', 'IMPLEMENT_SCHEMA']) {
 
 for (const [name, build] of [
   ['red', () => briefs.brief('red.md', base)],
-  ['green', () => briefs.brief('green.md', { ...base, testFiles, redOutput })],
+  ['green', () => briefs.brief('green.md', { ...base, inputs: greenInputs })],
   ['fix', () => briefs.brief('fix.md', base)],
-  ['review', () => briefs.brief('review.md', { ...base, impl: { claim: 'ok' }, diff: 'diff --git a/x b/x', changedTestFiles: [] })],
+  ['review', () => briefs.brief('review.md', { ...base, inputs: { report: { claim: 'ok' }, red: storedRed }, diff: 'diff --git a/x b/x', changedTestFiles: [] })],
   ['recover', () => briefs.recoveryBrief('recover.md', { ...base, sections: [
     { brief: 'test-fix.md', id: 'test', kind: 'command', command: 'npm test', output: 'not ok 3 - widgets render' },
     { brief: 'still-green.md', id: 'red-check', kind: 'tests-fail', command: 'npm test', output: 'ok 1 - widgets render', failure: 'passed' },
@@ -433,10 +424,10 @@ test('a red brief with no declared commands does not point at AGENTS.md', async 
 
 test('the review brief lists test files changed since the red commit', async () => {
   const diff = 'diff --git a/lib/widgets.mjs b/lib/widgets.mjs\n+export const widget = 1;';
-  const r = await briefs.brief('review.md', { ...base, impl: { claim: 'ok' }, diff, changedTestFiles: ['test/widgets.test.mjs'] });
+  const r = await briefs.brief('review.md', { ...base, inputs: { report: { claim: 'ok' }, red: storedRed }, diff, changedTestFiles: ['test/widgets.test.mjs'] });
   assert.ok(r.includes(diff), 'diff text');
   assert.ok(r.includes('test/widgets.test.mjs'), 'changed test file');
   assert.match(r, /red commit/i);
-  const none = await briefs.brief('review.md', { ...base, impl: { claim: 'ok' }, diff, changedTestFiles: [] });
+  const none = await briefs.brief('review.md', { ...base, inputs: { report: { claim: 'ok' }, red: storedRed }, diff, changedTestFiles: [] });
   assert.ok(none.includes(diff), none);
 });

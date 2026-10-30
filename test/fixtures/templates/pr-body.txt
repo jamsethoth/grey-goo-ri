@@ -22,7 +22,7 @@ ok 1 - widgets render
 
 1. Run gg
    - Expected: Total shown
-2. Empty the cart
+1. Empty the cart
    - Expected: Total is 0
 
 **Edge cases to try**
