@@ -1,0 +1,14 @@
+The orchestrator ran your work's Checks on branch ticket/7-add-widgets, and these failed:
+
+## The command Check test
+It failed.
+
+## The command Check lint
+It failed too.
+
+## Repo commands
+- test: `npm test`
+- lint: `npm run lint`
+
+Fix what each section asks, then return the structured result again; every Check runs again.
+If you cannot, claim blocked and say why in "diagnosis".

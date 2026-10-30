@@ -104,11 +104,11 @@ test('a vertex missing from the flow holds the ticket', async (t) => {
 
 const GREEN_FAIL_OUTPUT = 'not ok 1 - adds two numbers\n# fail 1';
 
-// A green whose first pass fails the Green Check, so its test-fix recovery pass runs and passes.
+// A green whose first pass fails the Green Check, so its recovery pass runs and passes.
 async function testFixSetup(t) {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
     'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = () => 0;\n' }, response: golden.greenResponse },
-    'green/1/test-fix/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: golden.greenResponse } } });
+    'green/1/recover/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: golden.greenResponse } } });
   g.options.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
@@ -135,7 +135,7 @@ test('a resume after the commit of a recovery pass continues at its push', async
 
 test('a missing transcript starts the phase fresh', async (t) => {
   const g = await testFixSetup(t);
-  // Before the test-fix Attempt's intent: one interrupted after it would be held instead.
+  // Before the recovery Attempt's intent: one interrupted after it would be held instead.
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'green', 1), point: 'before-intent' } }), /crash/);
   const loaded = await loadTicket(g);
   assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['green', 1], 'the recovery pass');
@@ -145,7 +145,7 @@ test('a missing transcript starts the phase fresh', async (t) => {
   const call = g.harness.calls[2];
   assert.equal(call.marker, golden.markerOf(loaded, 'green', 1, 'green', 1), 'the recovery pass of the green call');
   assert.equal(call.resume, null, 'the green Session is not resumed without its transcript');
-  assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT), 'the full test-fix Brief, not a nudge');
+  assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT), 'the full recovery Brief, not a nudge');
   assert.ok(g.logs.some((l) => /transcript/.test(l)), `the fresh start is logged: ${JSON.stringify(g.logs)}`);
   assert.equal(result.outcome, 'ready-for-qa');
   // The resume continues at the recovery pass: no first-pass Action runs again, and the Actions after it carry its number.

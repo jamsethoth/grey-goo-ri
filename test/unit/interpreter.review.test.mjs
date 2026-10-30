@@ -32,7 +32,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
     ['review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review']);
   assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), ['fix', 'fix', 'fix', 'fix', 'fix']);
   assert.equal(g.at('reviewer', 1, 'review', 0)[0].outcome, 'changes');
-  assert.equal(g.at('reviewer', 1, 'review', 0)[0].rule, 'claim-route', 'a changes claim routes through claim-route');
+  assert.deepEqual(g.at('reviewer', 1, 'review', 0)[0].rule, { table: 'fixed', row: 'claimed' }, 'a changes claim is handed to the review tables');
   assert.equal(g.at('reviewer', 2, 'review', 0)[0].outcome, 'ok');
 
   // The review is a read-only call with the diff and the captured Red and Green Evidence in its Brief.

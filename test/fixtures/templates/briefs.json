@@ -63,7 +63,7 @@
       "redOutput": "not ok 1 - widgets render\n  AssertionError: expected widget"
     }
   },
-  "still-green": {
+  "still-green-passed": {
     "template": "still-green.md",
     "opts": {
       "ticket": {
@@ -77,10 +77,14 @@
         "test": "npm test",
         "lint": "npm run lint"
       },
+      "id": "red-check",
+      "kind": "tests-fail",
+      "command": "npm test",
+      "failure": "passed",
       "output": "ok 1 - widgets render"
     }
   },
-  "still-green-no-commands": {
+  "still-green-unchanged": {
     "template": "still-green.md",
     "opts": {
       "ticket": {
@@ -90,8 +94,72 @@
         "branch": "ticket/7-add-widgets"
       },
       "base": "origin/main",
-      "commands": {},
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "id": "red-check",
+      "kind": "tests-fail",
+      "command": "npm test",
+      "failure": "unchanged",
       "output": "ok 1 - widgets render"
+    }
+  },
+  "still-green-missing": {
+    "template": "still-green.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "id": "red-check",
+      "kind": "tests-fail",
+      "command": "npm test",
+      "failure": "missing",
+      "output": "not ok 1 - something else"
+    }
+  },
+  "recover": {
+    "template": "recover.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {
+        "test": "npm test",
+        "lint": "npm run lint"
+      },
+      "sections": [
+        "## The command Check test\nIt failed.",
+        "## The command Check lint\nIt failed too."
+      ]
+    }
+  },
+  "recover-no-commands": {
+    "template": "recover.md",
+    "opts": {
+      "ticket": {
+        "number": 7,
+        "title": "Add widgets",
+        "body": "## Definition of done\n- [ ] widgets",
+        "branch": "ticket/7-add-widgets"
+      },
+      "base": "origin/main",
+      "commands": {},
+      "sections": [
+        "## The command Check test\nIt failed."
+      ]
     }
   },
   "test-fix": {
@@ -108,7 +176,10 @@
         "test": "npm test",
         "lint": "npm run lint"
       },
-      "output": "not ok 2 - widgets total"
+      "output": "not ok 2 - widgets total",
+      "id": "test",
+      "kind": "command",
+      "command": "npm test"
     }
   },
   "fix": {

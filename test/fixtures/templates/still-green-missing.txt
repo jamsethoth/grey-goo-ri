@@ -1,0 +1,8 @@
+## The tests-fail Check red-check
+The test command failed, but its output does not name the tests you reported:
+
+```
+not ok 1 - something else
+```
+
+In "tests", give each failing test's name exactly as the runner prints them, or make the test command run your tests.

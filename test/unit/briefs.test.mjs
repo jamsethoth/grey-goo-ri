@@ -22,7 +22,7 @@ for (const [name, { template, opts }] of Object.entries(JSON.parse(fixture('brie
 }
 
 // The stop comment shows diagnosis, not notes (W6), so a Brief that offers a blocked Claim says where its reason goes.
-for (const name of ['green.md', 'test-fix.md', 'still-green.md']) {
+for (const name of ['green.md', 'test-fix.md', 'recover.md']) {
   test(`the ${name} Brief tells a blocked agent to explain in diagnosis`, async () => {
     assert.match(await briefs.brief(name, { ...base, testFiles, redOutput, output: 'not ok 1' }), /claim blocked and say why in "diagnosis"/);
   });
@@ -37,7 +37,7 @@ for (const [name, limit] of [['green.md', 4000], ['test-fix.md', 6000], ['still-
   test(`${name} output excerpts keep complete-line tails`, async () => {
     const tail = 'x'.repeat(limit - 20) + '\nlast line';
     const output = 'old diagnostic '.repeat(100) + '\n' + tail;
-    const brief = await briefs.brief(name, { ...base, testFiles, redOutput: output, output });
+    const brief = await briefs.brief(name, { ...base, testFiles, redOutput: output, output, failure: 'passed' });
     assert.ok(brief.includes('```\n' + tail + '\n```'), brief);
     assert.doesNotMatch(brief, /old diagnostic/);
   });
@@ -46,7 +46,7 @@ for (const [name, limit] of [['green.md', 4000], ['test-fix.md', 6000], ['still-
 for (const name of ['test-fix.md', 'still-green.md']) {
   test(`agent-facing ${name} preserves distinguishable path-case failures`, async () => {
     const output = `expected '${homedir().toLowerCase()}\\a' to equal '${homedir().toUpperCase()}\\a'`;
-    const brief = await briefs.brief(name, { ...base, output });
+    const brief = await briefs.brief(name, { ...base, output, failure: 'passed' });
     assert.ok(brief.includes(output), brief);
     assert.ok(!brief.includes('[local]'), brief);
   });
@@ -357,6 +357,19 @@ test('the green brief forbids changing committed tests', async () => {
   assert.match(g, /blocked/);
 });
 
+// #115: the recovery Brief is the Procedure's frame with one section per failing Check (T4b).
+test('the recovery Brief carries every failing Check its own section, in order', async () => {
+  const r = await briefs.recoveryBrief('recover.md', { ...base, sections: [
+    { brief: 'test-fix.md', id: 'test', kind: 'command', command: 'npm test', output: 'not ok 3 - widgets render' },
+    { brief: 'test-fix.md', id: 'lint', kind: 'command', command: 'npm run lint', output: 'lib/widgets.mjs: 1 problem' },
+  ] });
+  const first = r.indexOf('## The command Check test');
+  const second = r.indexOf('## The command Check lint');
+  assert.ok(first > 0 && second > first, r);
+  assert.ok(r.includes('not ok 3 - widgets render') && r.includes('lib/widgets.mjs: 1 problem'), r);
+  assert.equal(r.match(/## Repo commands/g).length, 1, 'the frame lists the commands once');
+});
+
 test('the test-fix brief forbids changing committed tests', async () => {
   const t = await briefs.brief('test-fix.md', { ...base, output: 'not ok 3 - widgets render' });
   assert.match(t, IMMUTABLE);
@@ -378,8 +391,10 @@ for (const [name, build] of [
   ['green', () => briefs.brief('green.md', { ...base, testFiles, redOutput })],
   ['fix', () => briefs.brief('fix.md', base)],
   ['review', () => briefs.brief('review.md', { ...base, impl: { claim: 'ok' }, diff: 'diff --git a/x b/x', changedTestFiles: [] })],
-  ['test-fix', () => briefs.brief('test-fix.md', { ...base, output: 'not ok 3 - widgets render' })],
-  ['still-green', () => briefs.brief('still-green.md', { ...base, output: 'ok 1 - widgets render' })],
+  ['recover', () => briefs.recoveryBrief('recover.md', { ...base, sections: [
+    { brief: 'test-fix.md', id: 'test', kind: 'command', command: 'npm test', output: 'not ok 3 - widgets render' },
+    { brief: 'still-green.md', id: 'red-check', kind: 'tests-fail', command: 'npm test', output: 'ok 1 - widgets render', failure: 'passed' },
+  ] })],
 ]) {
   test(`the ${name} brief lists declared commands and never the worktree path`, async () => {
     const text = await build();

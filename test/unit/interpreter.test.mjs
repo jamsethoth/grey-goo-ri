@@ -244,9 +244,9 @@ test("the PR's provenance counts a retried Attempt and a resumed Session once ea
     // A parse retry: two Attempts of red, each one call.
     'red/1/red/1': { ...red, response: null, result: usage(10, 2) },
     'red/1/red/2': { ...red, result: usage(100, 20) },
-    // test-fix resumes green's Session, whose cumulative usage then holds green's tokens too.
+    // the recovery pass resumes green's Session, whose cumulative usage then holds green's tokens too.
     'green/1/green/1': { ...ok({ 'lib/add.mjs': WRONG_ADD }), result: usage(200, 40) },
-    'green/1/test-fix/1': { ...ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }), result: usage(50, 5) },
+    'green/1/recover/1': { ...ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }), result: usage(50, 5) },
   });
   const result = await interpreter.runExecution(g.options);
 
@@ -315,7 +315,7 @@ test('an unrouted harness-timeout ends at needs-human', async (t) => {
   assert.equal(attemptsOf(g, 'green', 'green').at(-1).outcome, 'harness-timeout');
   const rec = await loadTicket(g);
   assert.equal(rec.terminalReason.outcome, 'harness-timeout');
-  assert.equal(rec.terminalReason.rule, 'timeout-exhausted');
+  assert.deepEqual(rec.terminalReason.rule, { table: 'fixed', row: 'timeout-exhausted' });
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
 });
 
@@ -478,7 +478,7 @@ test("each draft PR body renders its own Vertex's report and Green Evidence", as
 // is the engine Outcome failed.
 test('a failed red at an end leaves its work in place', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['red/1/still-green/1'] = { files: {}, response: golden.redResponse };
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses });
   // The new test passes before any implementation exists, both times.
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
@@ -495,14 +495,14 @@ test('a failed red at an end leaves its work in place', async (t) => {
 test('a final test failure is the Outcome failed naming the Check', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/test-fix/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   const check = actionEvent(g, 'green', 'test', 1);
   assert.equal(check.outcome, 'failed');
-  assert.equal(check.rule, 'check-exhausted');
+  assert.deepEqual(check.rule, { table: 'failed', row: null });
   assert.equal(check.check, 'test');
   const [signal] = check.signals.checks;
   // A failing Check's output reaches its signal and the Terminal comment, never its evidence (N9).
@@ -512,7 +512,7 @@ test('a final test failure is the Outcome failed naming the Check', async (t) =>
   const reason = g.rec.terminalReason;
   assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
   assert.equal(reason.outcome, 'failed');
-  assert.equal(reason.text, 'The command Check test failed with no recovery left (rule check-exhausted).');
+  assert.equal(reason.text, 'The command Check test failed with no recovery left.');
   assert.ok(g.gh.comments[0].body.includes(`\`\`\`\n${GREEN_FAIL_OUTPUT}\n\`\`\``), g.gh.comments[0].body);
 });
 
@@ -552,25 +552,174 @@ test('a Check that changes the tree fails', async (t) => {
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
 });
 
-test('a tests-fail Check fails when no file under testPaths changed, without running the command', async (t) => {
+// Registers a variant of the Vertex's Procedure for this case only, and gives it to the Vertex.
+function variant(t, g, vertex, changes) {
+  const v = g.flow.ticket.vertices[vertex];
+  const name = `${v.procedure}-variant`;
+  procedures.PROCEDURES[name] = { ...procedures.PROCEDURES[v.procedure], ...changes(procedures.PROCEDURES[v.procedure]) };
+  t.after(() => { delete procedures.PROCEDURES[name]; });
+  v.procedure = name;
+}
+
+// implement whose ok requires nothing, so its failing test Check is recorded but blocks nothing; publish then reads green's
+// evidence as optional, since a failing Check has none (N9).
+function unrequiredTest(t, g) {
+  variant(t, g, 'green', (p) => ({ claims: { ...p.claims, ok: { requires: [] } } }));
+  g.flow.ticket.vertices.publish.inputs.green.optional = true;
+}
+
+// implement with a second required command Check, lint, after test. The lint command answers with `lintRuns` in order.
+const LINT_OUTPUT = 'lib/add.mjs: 1 problem (no-unused-vars)';
+const LINT_FAILS = { code: 1, output: LINT_OUTPUT, timedOut: false };
+const LINT_PASSES = { code: 0, output: '', timedOut: false };
+function withLint(t, g, lintRuns) {
+  variant(t, g, 'green', (p) => ({
+    actions: [...p.actions.slice(0, 2), { id: 'lint', phase: 'green', kind: 'check', check: 'command', command: 'lint', recoverBrief: 'test-fix.md' }, ...p.actions.slice(2)],
+    claims: { ...p.claims, ok: { requires: ['test', 'lint'] } },
+  }));
+  g.options.commands = { ...g.options.commands, lint: 'npm run lint' };
+  const shells = { ...g.options.exec, 'npm run lint': async () => lintRuns.shift() };
+  g.options.exec.runShell = async (command, opts) => (shells[command] ?? shells.runShell)(command, opts);
+}
+
+const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
+const greenTrace = (g) => tddTrace(g).filter((e) => e.vertex === 'green').map((e) => `${e.action}/${e.recovery}`);
+
+// #115: Claim tokens declare `requires` or `stop`, recovery is one per-Visit budget, and the Outcome is decided in one fixed
+// order (Q3, Q3d, T4, W1).
+test("recovery resumes the Session with every failing Check's section", async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
+  });
+  withLint(t, g, [LINT_FAILS, LINT_PASSES]);
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'ready-for-qa');
+  const recovery = g.harness.calls[2];
+  assert.equal(recovery.resume, 'fake-session-2', "the recovery pass resumes green's Session");
+  assert.ok(recovery.brief.includes(GREEN_FAIL_OUTPUT), `the test Check's section:\n${recovery.brief}`);
+  assert.ok(recovery.brief.includes(LINT_OUTPUT), `the lint Check's section:\n${recovery.brief}`);
+  const check = actionEvent(g, 'green', 'lint');
+  assert.deepEqual([check.outcome, check.direction, check.rule], ['recover', 'retry', { table: 'fixed', row: 'recover' }]);
+});
+
+test('every Check runs again after recovery', async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
+  });
+  const lintRuns = [LINT_PASSES, LINT_PASSES];
+  withLint(t, g, lintRuns);
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'ready-for-qa');
+  assert.deepEqual(greenTrace(g), ['green/0', 'test/0', 'lint/0', 'green/1', 'test/1', 'lint/1', 'commit/1', 'push/1', 'pr/1']);
+  assert.deepEqual(lintRuns, [], 'lint passed in the first pass and still ran again');
+  assert.doesNotMatch(g.harness.calls[2].brief, /Check lint/, 'a passing Check has no section');
+});
+
+test('a stop token after recovery stops', async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/recover/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' } },
+  });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(greenTrace(g), ['green/0', 'test/0', 'green/1', 'test/1'], "the stop waits for its pass's Checks");
+  assert.match(g.gh.comments[0].body, /### gg: blocked/);
+  const reason = g.rec.terminalReason;
+  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
+  assert.deepEqual([reason.outcome, reason.rule], ['blocked', { table: 'stopped', row: null }]);
+  assert.deepEqual(actionEvent(g, 'green', 'test', 1).rule, reason.rule);
+});
+
+test('pass is matchable in the passed table', async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
+  });
+  variant(t, g, 'green', (p) => ({ passed: [{ when: { pass: 2 }, outcome: 'recovered' }], outcomes: [...p.outcomes, 'recovered'] }));
+  g.flow.ticket.vertices.green.route = { ...g.flow.ticket.vertices.green.route, recovered: { end: 'needs-human' } };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  const reason = g.rec.terminalReason;
+  assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'pr', recovery: 1 });
+  assert.deepEqual([reason.outcome, reason.rule], ['recovered', { table: 'passed', row: 0 }]);
+});
+
+test('named tests missing from the output are recovered once, then fail', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  // The runner fails, but its output never names the reported test.
+  g.options.exec = { runShell: async () => ({ code: 1, output: 'Error: something else broke', timedOut: false }) };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery}`), ['red/0', 'red-check/0', 'red/1', 'red-check/1']);
+  const recovery = g.harness.calls[1];
+  assert.equal(recovery.resume, 'fake-session-1', "the recovery pass resumes red's Session");
+  assert.match(recovery.brief, /as the runner prints them/);
+  assert.ok(recovery.brief.includes('Error: something else broke'), recovery.brief);
+  assert.deepEqual(actionEvent(g, 'red', 'red-check').rule, { table: 'fixed', row: 'recover' });
+  const reason = g.rec.terminalReason;
+  assert.deepEqual(reason.decidedBy, { vertex: 'red', visit: 1, action: 'red-check', recovery: 1 });
+  assert.deepEqual([reason.outcome, reason.rule], ['failed', { table: 'failed', row: null }]);
+});
+
+test('a red that changed no test file is recovered once, then fails', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files = { 'lib/note.mjs': 'export {};\n' };
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(g.shells, [], 'the test command never ran');
-  assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery} ${e.outcome}`), ['red/0 ok', 'red-check/0 failed']);
-  assert.equal(g.rec.terminalReason.outcome, 'failed');
+  assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery}`), ['red/0', 'red-check/0', 'red/1', 'red-check/1']);
+  assert.match(g.harness.calls[1].brief, /no-test-needed/, 'the section offers the no-test-needed stop');
+  assert.deepEqual([g.rec.terminalReason.outcome, g.rec.terminalReason.rule], ['failed', { table: 'failed', row: null }]);
+});
+
+test("a Check that passed and then failed in a recovery pass keeps no evidence of the earlier pass", async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+  });
+  withLint(t, g, [LINT_FAILS, LINT_PASSES]);
+  // ok requires only lint, so the Visit commits with test failing in its last pass.
+  variant(t, g, 'green', (p) => ({ claims: { ...p.claims, ok: { requires: ['lint'] } } }));
+  g.flow.ticket.vertices.publish.inputs.green.optional = true;
+  await interpreter.runExecution(g.options);
+
+  assert.deepEqual(greenTrace(g).slice(0, 6), ['green/0', 'test/0', 'lint/0', 'green/1', 'test/1', 'lint/1']);
+  assert.equal(actionEvent(g, 'green', 'test', 1).signals.checks[0].state, 'failed');
+  assert.equal(g.rec.outputs.find((o) => o.vertex === 'green' && o.action === 'test')?.value.evidence, undefined, 'the first pass evidence is gone (N9)');
+  assert.ok(g.gh.pr().body.includes('**Green**: the test command has no passing run.\n'), g.gh.pr().body);
+});
+
+test('a command Check that times out is not recovered', async (t) => {
+  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  // red's Check fails as red should; green's test command then times out.
+  const runs = [{ code: 1, output: golden.RED_OUTPUT, timedOut: false }, { code: null, output: 'killed after 30 min', timedOut: true }];
+  g.options.exec.runShell = async () => runs.shift();
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(runs, [], 'the test command ran once in red and once in green');
+  assert.deepEqual(greenTrace(g), ['green/0', 'test/0']);
+  assert.deepEqual(g.rec.terminalReason.rule, { table: 'failed', row: null });
 });
 
 test('a failed Check produces no evidence output', async (t) => {
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
-  g.flow.ticket.vertices.green.options = { requireTestPass: false };
-  g.flow.ticket.vertices.publish.inputs.green.optional = true;
+  unrequiredTest(t, g);
   await interpreter.runExecution(g.options);
 
-  assert.deepEqual(g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'), [], 'a relaxed failing test has no evidence');
+  assert.deepEqual(g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'), [], 'a failing test no token requires has no evidence');
   assert.ok(g.gh.pr().body.includes('**Green**: the test command has no passing run.\n'), g.gh.pr().body);
   assert.equal(actionEvent(g, 'green', 'test').signals.checks[0].state, 'failed');
   assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed', 'the Execution reached publish');
@@ -617,8 +766,7 @@ test('a reuse: tree command Check reuses a pass for the same tree and command an
 test('a failing reuse: tree result is never reused', async (t) => {
   reuseTree(t, 'implement', 'publish');
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
-  g.flow.ticket.vertices.green.options = { requireTestPass: false };
-  g.flow.ticket.vertices.publish.inputs.green.optional = true;
+  unrequiredTest(t, g);
   const runs = [];
   const runShell = g.options.exec.runShell;
   g.options.exec.runShell = async (command, opts) => {

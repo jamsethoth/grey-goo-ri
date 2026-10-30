@@ -115,9 +115,15 @@ Outcome enum.
 _Avoid_: recipe, script, playbook
 
 **Phase**:
-A named agent call within a Procedure, such as red, green, still-green, test-fix, fix or review. A recovery Phase
-(still-green, test-fix) runs its Procedure's agent Action and Checks again under the next Recovery Number.
+A named agent call within a Procedure, such as red, green, fix or review. A recovery pass's call is the Phase recover.
 _Avoid_: step, turn
+
+**pass**:
+One run of a Procedure's agent Action and the Checks after it within a Visit, numbered from 1: the Recovery Number + 1.
+After a pass in which a Check the claimed token requires failed in a way its kind can recover from, while the
+Procedure's `recover: { max, brief }` has passes left, the agent's Session resumes with the recovery Brief, and every
+Check runs again. A rule may match `pass`.
+_Avoid_: round, retry, recovery Phase
 
 **Action**:
 The smallest logical unit of a Procedure: an agent call, a Check, a commit, a push, a pull request write, a comment
@@ -142,8 +148,8 @@ Action Marker carries all seven.
 _Avoid_: step identity
 
 **Recovery Number**:
-How many recovery Phases have run in this Visit; 0 before the first. The Actions that run after a recovery Phase
-starts carry its number; a Terminal's reporting Actions carry 0.
+How many recovery passes have run in this Visit; 0 before the first. The Actions of a pass, and those after it, carry its
+number; a Terminal's reporting Actions carry 0.
 _Avoid_: retry number
 
 **Attempt**:
@@ -249,6 +255,13 @@ _Avoid_: output (alone), payload
 **Claim**:
 The one field of a Structured Response in which the agent names what it reports: exactly one enum token.
 _Avoid_: status, result, response (for this field)
+
+**Claim token**:
+One value a Procedure lets its Claim take, declared as `{ requires: [<check ids>] }` or `{ stop: true }`. A token with
+`requires` is held to those Checks: when every one passed, the `passed` table decides the Outcome, else the `failed`
+table after recovery. A stop token still runs its pass's Checks, then the `stopped` table decides, else the token. A
+Vertex with no agent Action has the implicit token ok, which requires every Check it declares.
+_Avoid_: stop claim, advance claim
 
 **Verdict**:
 A reviewer's Claim about the change: ok, changes or misscoped. The derived repeat, from a repeated Findings Hash,
