@@ -350,6 +350,20 @@ test('a stop comment replaces the end comment and reaches the Epic at needs-repl
   assert.equal(unmarked(onEpic[0].body), unmarked(onTicket[0].body));
 });
 
+test("a stop token's comment names the stopped Visit's own outputs and inputs", async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'blocked', summary: 'SENTINEL green summary' } };
+  const g = await golden.setup(t, { responses });
+  const comment = join(g.root, 'stop-direct.md');
+  writeFileSync(comment, 'own: {{green.response.summary}}\ninput: {{inputs.red.output}}\n{{marker}}\n');
+  variant(t, g, 'green', (p) => ({ claims: { ...p.claims, blocked: { stop: true, comment } } }));
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'needs-human');
+  const onTicket = g.gh.comments.filter((c) => c.number === golden.TICKET);
+  assert.equal(onTicket.length, 1, 'one comment on the Ticket');
+  assert.ok(onTicket[0].body.startsWith(`own: SENTINEL green summary\ninput: ${golden.RED_OUTPUT}\n`), onTicket[0].body);
+});
+
 test("H7: the Flow's route for an Outcome beats the Vertex's \"*\"", async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: 'Two tickets.' } };
@@ -418,6 +432,42 @@ test('an absent optional input renders empty in the Brief', async (t) => {
   assert.equal(outcome, 'ready-for-qa');
   assert.deepEqual(pinned['green/1'].tests, { absent: true });
   assert.match(briefOf(g, 'green', 1), /## Committed tests\n\nThe orchestrator committed/, 'the list renders empty');
+});
+
+test('a shipped Brief names its inputs directly', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files['test/sentinel.test.mjs'] = "import { add } from '../lib/add.mjs';\n";
+  const g = await golden.setup(t, { responses });
+  const runShell = g.options.exec.runShell;
+  g.options.exec.runShell = async (...args) => {
+    const r = await runShell(...args);
+    return { ...r, output: `${r.output}\nSENTINEL red output` };
+  };
+  // The shipped green Brief, then every fixed name its context once carried for an input.
+  const brief = join(g.root, 'green-aliases.md');
+  writeFileSync(brief, `${render.templateFile('green.md')}\n[{{testFiles}}|{{redOutput}}|{{impl}}|{{report}}]`);
+  variant(t, g, 'green', () => ({ briefs: { green: brief } }));
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'ready-for-qa');
+  const green = briefOf(g, 'green', 1);
+  assert.ok(green.includes('- test/sentinel.test.mjs'), green);
+  assert.ok(green.includes('SENTINEL red output'), green);
+  assert.ok(green.endsWith('\n[|||]'), `no alias in the context:\n${green}`);
+});
+
+test('a template names its own outputs and inputs directly', async (t) => {
+  const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(review('ok', [], { summary: 'SENTINEL review summary' })) });
+  const body = join(g.root, 'pr-direct.md');
+  writeFileSync(body, 'green: {{test.evidence.output}}\nred: {{inputs.red.output}}\n{{marker}}\n');
+  variant(t, g, 'green', (p) => ({ actions: p.actions.with(4, { id: 'pr', phase: 'green', kind: 'pr-upsert', body }) }));
+  const comment = join(g.root, 'comment-direct.md');
+  writeFileSync(comment, 'review: {{review.response.summary}}\n{{marker}}\n');
+  variant(t, g, 'reviewer', (p) => ({ actions: p.actions.with(3, { id: 'comment', phase: 'review', kind: 'comment', body: comment }) }));
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'ready-for-qa');
+  const green = intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === 'green').payload.body;
+  assert.ok(green.startsWith(`green: ${golden.GREEN_OUTPUT}\nred: ${golden.RED_OUTPUT}\n`), green);
+  assert.deepEqual(g.gh.comments.filter((c) => c.body.startsWith('review: ')).map((c) => c.body.split('\n')[0]), ['review: SENTINEL review summary']);
 });
 
 test('pick projects findings to file paths', async (t) => {

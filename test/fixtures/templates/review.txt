@@ -22,19 +22,23 @@ diff --git a/lib/w.mjs b/lib/w.mjs
 ## Implementer's report
 {
   "claim": "ok",
-  "summary": "Adds widgets.",
-  "red": {
-    "command": "npm test",
-    "output": "not ok 1 - widgets render"
-  },
-  "green": {
-    "command": "npm test",
-    "output": "ok 1 - widgets render"
-  }
+  "summary": "Adds widgets."
 }
 
+## Red Evidence
+`npm test` failed before the implementation:
+```
+not ok 1 - widgets render
+```
+
+## Green Evidence
+`npm test` passed after it:
+```
+ok 1 - widgets render
+```
+
 Check correctness, code quality and simplicity, and definition-of-done coverage. The orchestrator itself verified
-that the "test:" commit's tests failed before implementation and pass now (outputs are in the report); check that
+that the "test:" commit's tests failed before implementation and pass now (the evidence above); check that
 those tests actually exercise the ticket's behaviour and were not weakened afterwards.
 Return claim ok only if there are no blocker or major findings, changes otherwise, or misscoped with a diagnosis
 when the ticket itself cannot be met as written.

@@ -1,8 +1,12 @@
 ### gg: {{outcome}}
 
-{{summary}}
+```
+{{response.summary}}
+```
 
-{{diagnosis}}
+```
+{{response.diagnosis}}
+```
 {{#reason}}
 
 **Terminal Reason:** {{reason}}

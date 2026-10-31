@@ -56,11 +56,16 @@
         "test": "npm test",
         "lint": "npm run lint"
       },
-      "testFiles": [
-        "test/widgets.test.mjs",
-        "test/support/widget-fixture.mjs"
-      ],
-      "redOutput": "not ok 1 - widgets render\n  AssertionError: expected widget"
+      "inputs": {
+        "tests": [
+          "test/widgets.test.mjs",
+          "test/support/widget-fixture.mjs"
+        ],
+        "red": {
+          "command": "npm test",
+          "output": "not ok 1 - widgets render\n  AssertionError: expected widget"
+        }
+      }
     }
   },
   "still-green-passed": {
@@ -200,12 +205,18 @@
         {
           "kind": "red-failed",
           "text": "The Red Check failed: no new test failed."
-        },
-        {
-          "kind": "review findings from reviewer visit 1",
-          "text": "- major in lib/a.mjs: off by one\n  Fix: use <="
         }
-      ]
+      ],
+      "inputs": {
+        "findings": [
+          {
+            "severity": "major",
+            "file": "lib/a.mjs",
+            "issue": "off by one",
+            "fix": "use <="
+          }
+        ]
+      }
     }
   },
   "review": {
@@ -222,9 +233,16 @@
         "test": "npm test",
         "lint": "npm run lint"
       },
-      "impl": {
-        "claim": "ok",
-        "summary": "Adds widgets.",
+      "diff": "diff --git a/lib/w.mjs b/lib/w.mjs\n+export const w = 1;",
+      "changedTestFiles": [
+        "test/widgets.test.mjs",
+        "test/total.test.mjs"
+      ],
+      "inputs": {
+        "report": {
+          "claim": "ok",
+          "summary": "Adds widgets."
+        },
         "red": {
           "command": "npm test",
           "output": "not ok 1 - widgets render"
@@ -233,12 +251,7 @@
           "command": "npm test",
           "output": "ok 1 - widgets render"
         }
-      },
-      "diff": "diff --git a/lib/w.mjs b/lib/w.mjs\n+export const w = 1;",
-      "changedTestFiles": [
-        "test/widgets.test.mjs",
-        "test/total.test.mjs"
-      ]
+      }
     }
   },
   "review-no-changed-tests": {
@@ -255,9 +268,13 @@
         "test": "npm test",
         "lint": "npm run lint"
       },
-      "impl": {
-        "claim": "ok",
-        "summary": "Adds widgets.",
+      "diff": "diff --git a/lib/w.mjs b/lib/w.mjs\n+export const w = 1;",
+      "changedTestFiles": [],
+      "inputs": {
+        "report": {
+          "claim": "ok",
+          "summary": "Adds widgets."
+        },
         "red": {
           "command": "npm test",
           "output": "not ok 1 - widgets render"
@@ -266,9 +283,7 @@
           "command": "npm test",
           "output": "ok 1 - widgets render"
         }
-      },
-      "diff": "diff --git a/lib/w.mjs b/lib/w.mjs\n+export const w = 1;",
-      "changedTestFiles": []
+      }
     }
   },
   "nudge": {
