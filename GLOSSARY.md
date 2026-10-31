@@ -80,7 +80,8 @@ A route from a Vertex to a Vertex or an end state, selected by an Outcome. A bac
 _Avoid_: transition, link
 
 **Bound**:
-The limit on traversals of an Edge or Visits of a Vertex, with the target to go to when it is exhausted.
+The limit on traversals of an Edge or Visits of a Vertex, with the target to go to when it is exhausted. Both are
+written `max` and `exhausted`.
 _Avoid_: limit, max
 
 **Action Cap**:

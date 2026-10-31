@@ -1131,7 +1131,7 @@ test('a Procedure with no agent Action posts its comment', async (t) => {
   assert.ok(g.gh.comments[0].body.startsWith('a note\n'), g.gh.comments[0].body);
 });
 
-// #117: Vertex maxVisits, the Action Cap and repeat routing (request 3.3; T5, R4d, U5, V1).
+// #117: a Vertex max, the Action Cap and repeat routing (request 3.3; T5, R4d, U5, V1).
 const reviewTrace = (g) => g.actions.map((e) => `${e.vertex}/${e.visit}/${e.action}`);
 
 test('golden: a repeated review escalates', async (t) => {
@@ -1160,7 +1160,7 @@ test('golden: a repeated review escalates', async (t) => {
   assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 3, 'implementer-fix': 1, 'senior-dev': 1, publish: 1 });
 });
 
-// changes -> implementer-fix (max 2), and implementer-fix has maxVisits 1 with its own exhausted target.
+// changes -> implementer-fix (max 2), and implementer-fix has max 1 with its own exhausted target.
 const fixBoundSetup = (t, changes) => reviewFlow(t, {
   'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
   'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
@@ -1169,7 +1169,7 @@ const fixBoundSetup = (t, changes) => reviewFlow(t, {
   'reviewer/3/review/1': reviewed(review('ok')),
 }, { configure: (c) => {
   const { vertices } = c.flows.golden.ticket;
-  Object.assign(vertices['implementer-fix'], { maxVisits: 1, exhausted: 'senior-dev' });
+  Object.assign(vertices['implementer-fix'], { max: 1, exhausted: 'senior-dev' });
   Object.assign(vertices.reviewer.route.changes, changes);
 } });
 const runReview = async (g) => {
@@ -1179,7 +1179,7 @@ const runReview = async (g) => {
   return g;
 };
 
-test("golden: maxVisits exhausted takes the Vertex's exhausted target", async (t) => {
+test("golden: a spent Vertex max takes the Vertex's exhausted target", async (t) => {
   const g = await runReview(await fixBoundSetup(t, {}));
 
   assert.equal(g.result.outcome, 'ready-for-qa');
@@ -1302,7 +1302,7 @@ test('a route passes through a chain of spent Vertices to the last exhausted tar
     'reviewer/3/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'third problem')])),
   }, { configure: (c) => {
     const { vertices } = c.flows.golden.ticket;
-    Object.assign(vertices['implementer-fix'], { maxVisits: 1, exhausted: 'senior-dev' });
+    Object.assign(vertices['implementer-fix'], { max: 1, exhausted: 'senior-dev' });
     vertices['senior-dev'].exhausted = { end: 'needs-replan' };
   } });
   await runReview(g);
@@ -1316,7 +1316,7 @@ test('an ok route into a spent Vertex names the Bound in the Terminal Reason', a
   const g = await reviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
-  }, { configure: (c) => { Object.assign(c.flows.golden.ticket.vertices.reviewer, { maxVisits: 1, exhausted: { end: 'needs-human' } }); } });
+  }, { configure: (c) => { Object.assign(c.flows.golden.ticket.vertices.reviewer, { max: 1, exhausted: { end: 'needs-human' } }); } });
   await runReview(g);
 
   assert.equal(g.result.outcome, 'needs-human');

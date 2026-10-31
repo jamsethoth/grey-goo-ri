@@ -161,7 +161,7 @@
           "senior-green": {
             "use": "senior",
             "procedure": "implement",
-            "maxVisits": 1,
+            "max": 1,
             "exhausted": { "end": "needs-human" },
             "inputs": {
               "tests": { "from": ["red.commit.files", "senior-red.commit.files"], "optional": true },
@@ -194,7 +194,7 @@
           "senior-red": {
             "use": "senior",
             "procedure": "tests-fail",
-            "maxVisits": 1,
+            "max": 1,
             "exhausted": { "end": "needs-human" },
             "inputs": {
               "findings": { "from": "reviewer.review.response.findings" },
@@ -219,7 +219,7 @@
           "senior-dev": {
             "use": "senior",
             "procedure": "fix",
-            "maxVisits": 1,
+            "max": 1,
             "exhausted": { "end": "needs-human" },
             "inputs": {
               "report": { "from": ["green.green.response", "senior-green.green.response", "implementer-fix.fix.response", "senior-dev.fix.response"] },

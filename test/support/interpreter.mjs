@@ -98,7 +98,7 @@ export const fixed = (files) => ({ files, response: { ...golden.greenResponse, s
 export const MAJOR = finding('major', 'lib/add.mjs', 'add ignores non-number input at line 1');
 
 // red(tests-fail) -> green(implement) -> reviewer(review); ok -> publish; changes -> {implementer-fix, max 2, exhausted
-// needs-human}; repeat -> {senior-dev, max 1, exhausted needs-human}; implementer-fix(fix) and senior-dev(fix, maxVisits
+// needs-human}; repeat -> {senior-dev, max 1, exhausted needs-human}; implementer-fix(fix) and senior-dev(fix, max
 // 1, exhausted needs-human) -> reviewer.
 export async function reviewSetup(t, responses, opts) {
   const g = await reviewFlow(t, responses, opts);
@@ -129,7 +129,7 @@ export async function reviewFlow(t, responses, { exec, integrity, git, configure
       route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } },
         repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } } } };
     vertices['implementer-fix'] = { use: 'implementer', procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } };
-    vertices['senior-dev'] = { use: 'implementer', procedure: 'fix', maxVisits: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS,
+    vertices['senior-dev'] = { use: 'implementer', procedure: 'fix', max: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS,
       route: { ok: 'reviewer' } };
     vertices.publish.inputs = REVIEW_INPUTS;
   });

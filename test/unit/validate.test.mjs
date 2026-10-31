@@ -696,7 +696,7 @@ test('a cycle bounded only by the Action Cap is an error', async () => {
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
   assert.deepEqual((await check(config)).errors, [{
     at: 'flows.default.ticket',
-    message: 'the cycle through reviewer, implementer-fix has no edge with max and no Vertex with maxVisits; the Action Cap does not bound a cycle',
+    message: 'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound a cycle',
   }]);
 });
 
@@ -705,7 +705,7 @@ test('a cycle through an edge\'s exhausted target is not bounded by that edge\'s
   config.flows.default.ticket.vertices.reviewer.route.changes = { to: 'implementer-fix', max: 2, exhausted: 'implementer-fix' };
   assert.deepEqual((await check(config)).errors, [{
     at: 'flows.default.ticket',
-    message: 'the cycle through reviewer, implementer-fix has no edge with max and no Vertex with maxVisits; the Action Cap does not bound a cycle',
+    message: 'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound a cycle',
   }]);
 });
 
@@ -814,11 +814,11 @@ test('malformed routing is an error, never a throw, in the graph checks', async 
   const config = example();
   config.flows.default.ticket.vertices['senior-green'].exhausted = ['nowhere'];
   config.flows.default.ticket.vertices.reviewer.route.retest = { to: 'red', max: 2, exhausted: 7 };
-  config.flows.default.ticket.vertices['senior-dev'].maxVisits = 'one';
+  config.flows.default.ticket.vertices['senior-dev'].max = 'one';
   assert.deepEqual((await check(config)).errors, [
     { at: `${V}.senior-green.exhausted`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
     { at: `${V}.reviewer.route.retest`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
-    { at: `${V}.senior-dev.maxVisits`, message: 'maxVisits must be a positive integer' },
+    { at: `${V}.senior-dev.max`, message: 'max must be a positive integer' },
   ]);
 });
 
@@ -876,7 +876,7 @@ test('the map counts a Vertex\'s exhausted target from its first entry', async (
     routes: { '*': { end: 'needs-human' } },
     vertices: {
       start: { procedure: 'base-check', route: { ok: 'producer' } },
-      producer: { procedure: 'base-check', maxVisits: 1, exhausted: 'consumer', route: { ok: 'producer' } },
+      producer: { procedure: 'base-check', max: 1, exhausted: 'consumer', route: { ok: 'producer' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence' } } },
     },
   };
@@ -923,7 +923,7 @@ test('a Vertex\'s exhausted target is a landing of every route into it', async (
     routes: { '*': { end: 'needs-human' } },
     vertices: {
       q: { procedure: 'base-check', route: { ok: { to: 'p', max: 1, exhausted: { end: 'needs-human' } } } },
-      p: { procedure: 'base-check', maxVisits: 1, exhausted: { end: 'ready-for-qa' }, route: { ok: 'q' } },
+      p: { procedure: 'base-check', max: 1, exhausted: { end: 'ready-for-qa' }, route: { ok: 'q' } },
     },
   };
   assert.deepEqual((await check(config)).errors, [
@@ -931,14 +931,14 @@ test('a Vertex\'s exhausted target is a landing of every route into it', async (
   ]);
 });
 
-test('the map counts a maxVisits above 1 as spent from the first entry', async () => {
+test('the map counts a Vertex max above 1 as spent from the first entry', async () => {
   const config = example();
   config.flows.default.ticket = {
     entry: 'a',
     routes: { '*': { end: 'needs-human' } },
     vertices: {
-      a: { procedure: 'base-check', maxVisits: 2, exhausted: 'consumer', route: { ok: 'b' } },
-      b: { procedure: 'base-check', maxVisits: 1, exhausted: 'c', route: { ok: 'a' } },
+      a: { procedure: 'base-check', max: 2, exhausted: 'consumer', route: { ok: 'b' } },
+      b: { procedure: 'base-check', max: 1, exhausted: 'c', route: { ok: 'a' } },
       c: { procedure: 'base-check', route: { ok: 'a' } },
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'c.test.evidence' } } },
     },
@@ -1096,7 +1096,7 @@ test('a bound without an exhausted target is an error', async () => {
   delete config.flows.default.ticket.vertices['senior-dev'].exhausted;
   assert.deepEqual((await check(config)).errors, [
     { at: `${V}.green.route.bad-test`, message: 'an edge with max names its exhausted target' },
-    { at: `${V}.senior-dev`, message: 'a Vertex with maxVisits names its exhausted target' },
+    { at: `${V}.senior-dev`, message: 'a Vertex with max names its exhausted target' },
   ]);
 });
 
@@ -1214,13 +1214,13 @@ test('a loop of exhausted targets is an error', async () => {
     routes: { '*': { end: 'needs-human' } },
     vertices: {
       start: { procedure: 'base-check', route: { ok: 'x' } },
-      x: { procedure: 'base-check', maxVisits: 1, exhausted: 'y', route: { ok: 'y' } },
-      y: { procedure: 'base-check', maxVisits: 1, exhausted: 'x', route: { ok: 'x' } },
+      x: { procedure: 'base-check', max: 1, exhausted: 'y', route: { ok: 'y' } },
+      y: { procedure: 'base-check', max: 1, exhausted: 'x', route: { ok: 'x' } },
     },
   };
   assert.deepEqual((await check(config)).errors, [{
     at: 'flows.default.ticket',
-    message: 'the exhausted targets of x, y form a loop: once their maxVisits are spent, no Vertex is ever entered',
+    message: 'the exhausted targets of x, y form a loop: once their Visits reach max, no Vertex is ever entered',
   }]);
 });
 
@@ -1229,7 +1229,7 @@ test('an exhausted target without a bound is an error', async () => {
   config.flows.default.ticket.vertices.red.exhausted = { end: 'needs-human' };
   config.flows.default.ticket.vertices.green.route.ok = { to: 'reviewer', exhausted: { end: 'needs-human' } };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.red`, message: 'a Vertex names exhausted only with maxVisits' },
+    { at: `${V}.red`, message: 'a Vertex names exhausted only with max' },
     { at: `${V}.green.route.ok`, message: 'an edge names exhausted only with max' },
   ]);
 });
@@ -1265,11 +1265,11 @@ test('a Vertex whose exhausted target is itself is a loop', async () => {
   config.flows.default.ticket = {
     entry: 'x',
     routes: { '*': { end: 'needs-human' } },
-    vertices: { x: { procedure: 'base-check', maxVisits: 1, exhausted: 'x', route: { ok: { end: 'needs-human' } } } },
+    vertices: { x: { procedure: 'base-check', max: 1, exhausted: 'x', route: { ok: { end: 'needs-human' } } } },
   };
   assert.deepEqual((await check(config)).errors, [{
     at: 'flows.default.ticket',
-    message: 'the exhausted targets of x form a loop: once their maxVisits are spent, no Vertex is ever entered',
+    message: 'the exhausted targets of x form a loop: once their Visits reach max, no Vertex is ever entered',
   }]);
 });
 
@@ -1280,14 +1280,14 @@ test('a loop of exhausted targets reached through a tail names only the loop, on
     routes: { '*': { end: 'needs-human' } },
     vertices: {
       start: { procedure: 'base-check', route: { ok: 't' } },
-      t: { procedure: 'base-check', maxVisits: 1, exhausted: 'a', route: { ok: 'a' } },
-      a: { procedure: 'base-check', maxVisits: 1, exhausted: 'b', route: { ok: 'b' } },
-      b: { procedure: 'base-check', maxVisits: 1, exhausted: 'a', route: { ok: 'a' } },
+      t: { procedure: 'base-check', max: 1, exhausted: 'a', route: { ok: 'a' } },
+      a: { procedure: 'base-check', max: 1, exhausted: 'b', route: { ok: 'b' } },
+      b: { procedure: 'base-check', max: 1, exhausted: 'a', route: { ok: 'a' } },
     },
   };
   assert.deepEqual((await check(config)).errors, [{
     at: 'flows.default.ticket',
-    message: 'the exhausted targets of a, b form a loop: once their maxVisits are spent, no Vertex is ever entered',
+    message: 'the exhausted targets of a, b form a loop: once their Visits reach max, no Vertex is ever entered',
   }]);
 });
 
@@ -1443,4 +1443,13 @@ test('a pick that steps into a list inside each item is an error', async () => {
   config.flows.default.ticket.vertices['implementer-fix'].inputs.details = { from: 'reviewer.review.response.findings', pick: 'details.file' };
   const { errors } = await check(config, nestedFindings());
   assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.details`, message: 'pick: "details.file": "details" is a list, so a path reads only its length or an item by index' }]);
+});
+
+test("a Vertex's maxVisits is an unknown key: its Bound is max, as on an edge", async () => {
+  const config = example();
+  const vertex = config.flows.default.ticket.vertices['senior-dev'];
+  vertex.maxVisits = vertex.max;
+  delete vertex.max;
+  delete vertex.exhausted;
+  assert.deepEqual((await check(config)).errors, [{ at: `${V}.senior-dev`, message: 'unknown key "maxVisits"' }]);
 });

@@ -133,7 +133,7 @@
           },
           "senior-dev": {
             "use": "implementer", "procedure": "fix",
-            "maxVisits": 1, "exhausted": { "end": "needs-human" },
+            "max": 1, "exhausted": { "end": "needs-human" },
             "inputs": {
               "findings": { "from": "reviewer.review.response.findings" },
               "testFiles": { "from": "reviewer.review.response.findings", "pick": "file" },

@@ -50,7 +50,7 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
             repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } } },
         },
         'implementer-fix': { use: 'implementer', procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
-        'senior-dev': { use: 'implementer', procedure: 'fix', maxVisits: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
+        'senior-dev': { use: 'implementer', procedure: 'fix', max: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
         publish: { procedure: 'publish', inputs: IMPL_INPUTS, route: { ok: { end: 'ready-for-qa' } } },
       },
     },
