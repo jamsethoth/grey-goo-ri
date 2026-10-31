@@ -1378,3 +1378,56 @@ test('an input source that steps into a list of objects is an error', async () =
   assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.testFiles`,
     message: '"reviewer.review.response.findings.file": "reviewer.review.response.findings" is a list, so a path reads only its length or an item by index' }]);
 });
+
+test('a comment between the agent Action and its Checks is an error', async () => {
+  const config = example();
+  const { actions } = config.procedures.implement;
+  config.procedures.implement.actions = [actions[0], { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' }, ...actions.slice(1)];
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[2]',
+    message: 'Check test comes after comment Action note; every Check comes before any effect, so no effect runs before its pass is decided' }]);
+});
+
+test('a commit in a Procedure with no agent Action is an error', async () => {
+  const config = example();
+  config.procedures['base-check'].actions.push({ id: 'commit', do: 'commit', type: 'chore' });
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.base-check.actions[1]', message: "a commit carries the agent Action's summary, which this Procedure lacks" }]);
+});
+
+// The review schema with an object and a list of objects inside each finding.
+function nestedFindings() {
+  const files = schemas();
+  const { items } = files['review.schema.json'].properties.findings;
+  items.properties.detail = { type: 'object', properties: { severity: { type: 'string', enum: ['major', 'minor'] } }, required: ['severity'],
+    additionalProperties: false };
+  items.properties.details = { type: 'array', items: { type: 'object', properties: { file: { type: 'string' } }, required: ['file'],
+    additionalProperties: false } };
+  items.required.push('detail', 'details');
+  return files;
+}
+
+test('a response condition list that steps into a list of objects is an error', async () => {
+  const config = example();
+  config.procedures.review.actions[1] = { id: 'review-pass', do: 'check', kind: 'response', none: 'findings.detail', where: { severity: 'major' } };
+  const { errors } = await check(config, nestedFindings());
+  assert.deepEqual(errors, [{ at: 'procedures.review.actions[1]', message: '"findings.detail": "findings" is a list, so a path reads only its length or an item by index' }]);
+});
+
+test('a where field or repeat field is one field of each item, not a path', async () => {
+  const config = example();
+  config.procedures.review.actions[1] = { id: 'review-pass', do: 'check', kind: 'response', none: 'findings', where: { 'detail.severity': 'major' } };
+  config.procedures.review.actions[2].fields = ['file', 'detail.severity'];
+  const { errors } = await check(config, nestedFindings());
+  assert.deepEqual(errors, [
+    { at: 'procedures.review.actions[1]', message: 'where: "detail.severity" is not a field of the list\'s items' },
+    { at: 'procedures.review.actions[2]', message: 'fields: "detail.severity" is not a field of the list\'s items' },
+  ]);
+});
+
+test('a pick that steps into a list inside each item is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles.pick = 'details.file';
+  const { errors } = await check(config, nestedFindings());
+  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.testFiles`, message: 'pick: "details.file": "details" is a list, so a path reads only its length or an item by index' }]);
+});
