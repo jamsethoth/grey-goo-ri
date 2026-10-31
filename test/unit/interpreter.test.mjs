@@ -1323,3 +1323,17 @@ test('an ok route into a spent Vertex names the Bound in the Terminal Reason', a
   assert.equal(g.rec.terminalReason.text, 'implementer-fix visit 1 completed every fix Action: test passed, and reviewer had used '
     + 'its Bound of 1 Visit, so the route ended at needs-human.');
 });
+
+test('a restart does not count the resumed Attempt again toward the Action Cap', async (t) => {
+  // red's three Actions are the cap of 3; the process dies inside the third, red's commit, after its effect.
+  const g = await cappedSetup(t, 3);
+  const commit = golden.markerOf(g.rec, 'red', 1, 'commit');
+  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: commit, point: 'after-effect' } }),
+    (err) => err instanceof interpreter.CrashError);
+
+  g.rec = await loadTicket(g);
+  const result = await interpreter.runExecution({ ...g.options, record: g.rec });
+  assert.equal(result.outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, 1, 'only red called the agent');
+  stopReason(g, { vertex: 'green', action: 'green', outcome: 'needs-human', rule: { table: 'fixed', row: 'action-cap' } });
+});
