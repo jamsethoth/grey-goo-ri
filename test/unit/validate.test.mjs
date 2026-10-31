@@ -643,8 +643,8 @@ test('a Check\'s evidence and a response object of the same fields are one type'
   files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
   files['fix.schema.json'].properties.output = {
     type: 'object',
-    properties: { command: { type: 'string' }, output: { type: 'string' } },
-    required: ['command', 'output'],
+    properties: { command: { type: 'string' }, output: { type: 'string' }, heuristic: { type: 'boolean' } },
+    required: ['command', 'output', 'heuristic'],
     additionalProperties: false,
   };
   files['fix.schema.json'].required.push('output');

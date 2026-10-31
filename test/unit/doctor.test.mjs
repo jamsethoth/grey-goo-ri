@@ -10,11 +10,16 @@ const fixture = (name) => readFileSync(new URL(`../fixtures/example/${name}`, im
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const file = (bytes) => ({ bytes, hash: sha256(bytes) });
 
-// The example Layer as loadConfig gives it: its schemas loaded beside it.
+// The example Layer as loadConfig gives it: its schemas loaded beside it, and a template naming nothing for each template
+// it names (its own templates arrive with #120).
 function example() {
   const config = JSON.parse(fixture('gg.json'));
   for (const agent of Object.values(config.agents)) agent.harness = 'fake';
-  config.files = Object.fromEntries(['red', 'implement', 'review'].map((p) => [`${p}.schema.json`, file(fixture(`${p}.schema.json`))]));
+  config.files = Object.fromEntries([
+    ...['red', 'implement', 'review'].map((p) => [`${p}.schema.json`, file(fixture(`${p}.schema.json`))]),
+    ...['red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md', 'test-fix.md', 'blocked.md', 'pr-body.md', 'review-comment.md']
+      .map((name) => [name, file(`${name}\n`)]),
+  ]);
   return config;
 }
 

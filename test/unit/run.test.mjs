@@ -130,10 +130,6 @@ test('every error a Run throws names its repository', async (t) => {
   const epic = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(epic?.message.startsWith(`[main] #${EPIC}: nothing ready`), epic?.message);
 
-  const g = fixture(t);
-  g.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
-  const standalone = await run.runTarget(g.options).then(() => null, (e) => e);
-  assert.ok(standalone?.message.startsWith(`[main] #${TICKET} is a standalone Ticket`), standalone?.message);
 });
 
 test('preflight names every failing vertex in one error, before any gh call, worktree or run directory', async (t) => {
@@ -176,10 +172,8 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
   const examples = fileURLToPath(new URL('../../examples/', import.meta.url));
   assert.deepEqual(err.message.split('\n'), [
     '[main] preflight failed:',
-    'vertex red: no harness configured for agent implementer',
-    'vertex green: no harness configured for agent implementer',
-    'vertex reviewer: no harness configured for agent reviewer',
-    'vertex implementer-fix: no harness configured for agent implementer',
+    'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer',
+    'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer',
     `Merge one of ${join(examples, 'claude.json')}, ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,
   ]);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
@@ -193,8 +187,8 @@ test('preflight names an unset harness and an unknown harness in one error', asy
   f.options.config.agents.reviewer.harness = 'nope';
   const err = await run.runTarget(f.options).then(() => null, (e) => e);
   assert.ok(err, 'preflight rejects the run');
-  assert.match(err.message, /no harness configured for agent implementer/);
-  assert.match(err.message, /reviewer[^]*nope/, 'the unknown harness is named with its vertex');
+  assert.match(err.message, /agent implementer names no harness/);
+  assert.match(err.message, /agent reviewer names harness "nope", which is not registered/, 'the unknown harness is named with its Agent');
   assert.equal(err.exitCode, 2, 'an unset harness exits 2');
   assert.deepEqual(f.gh.calls, [], 'no gh call');
 });

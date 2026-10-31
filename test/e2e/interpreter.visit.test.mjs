@@ -43,10 +43,10 @@ test('a green call that changes the committed test is an integrity violation', a
   const g = await golden.setup(t, { responses, integrity: 'real' });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'needs-human');
-  const greenCheck = g.readEvents().find((e) => e.type === 'action' && e.vertex === 'green' && e.action === 'test');
-  assert.equal(greenCheck.outcome, 'integrity-violation');
-  assert.equal(greenCheck.direction, 'stop');
-  assert.deepEqual(greenCheck.violations, ['test/add.test.mjs']);
+  const greenCall = g.readEvents().find((e) => e.type === 'action' && e.vertex === 'green' && e.action === 'green');
+  assert.equal(greenCall.outcome, 'integrity-violation');
+  assert.equal(greenCall.direction, 'stop');
+  assert.deepEqual(greenCall.violations, [{ worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] }]);
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'no feat commit after the violation');
 });
 
@@ -156,7 +156,7 @@ test('a read-only red Vertex is held before unknown changes, so a rollback canno
   responses['red/1/red/1'].files = {};
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
-  g.flow.ticket.vertices.red.agent.access = 'read-only';
+  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.red.access = 'read-only'; });
   g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
   writeFileSync(join(g.worktree, tracked), 'a human edit\n');

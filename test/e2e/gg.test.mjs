@@ -108,30 +108,33 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   const { repo, ggIn } = tempRepo(t);
   const r = ggIn('run', '1');
   assert.equal(r.status, 2, r.stderr);
-  assert.ok(r.stderr.includes('vertex red: no harness configured for agent implementer\n'), r.stderr);
-  assert.ok(r.stderr.includes('vertex green: no harness configured for agent implementer\n'), r.stderr);
-  assert.ok(r.stderr.includes('vertex reviewer: no harness configured for agent reviewer\n'), r.stderr);
+  assert.ok(r.stderr.includes('error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer\n'), r.stderr);
+  assert.ok(r.stderr.includes('error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer\n'), r.stderr);
   assert.ok(r.stderr.includes(fileURLToPath(new URL('../../examples/claude.json', import.meta.url))), r.stderr);
   assert.ok(r.stderr.includes('into the user Layer at '), r.stderr);
   assert.equal((r.stderr.match(/Merge /g) ?? []).length, 1);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
-test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {
-  const agents = { implementer: { harness: 'claude' }, reviewer: { harness: 'claude' }, senior: { harness: 'claude' } };
-  const { repo, ggIn } = tempRepo(t, JSON.stringify({ agents }));
-  const layer = join(repo, '.agents', 'gg');
+// The example fixture as a repository Layer at `layer`: its gg.json and schemas, and every other file it names, each a
+// template naming nothing (the example's own Personas and templates arrive with #120).
+function exampleLayer(layer) {
   mkdirSync(layer, { recursive: true });
   for (const name of ['gg.json', 'red.schema.json', 'implement.schema.json', 'review.schema.json']) {
     writeFileSync(join(layer, name), readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url)));
   }
-  // Every file a Layer names must be beside it; the example's own Personas and templates arrive with #120.
   for (const name of ['implementer.md', 'reviewer.md', 'red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md',
     'test-fix.md', 'blocked.md', 'pr-body.md', 'review-comment.md']) writeFileSync(join(layer, name), `${name}\n`);
+}
+
+test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {
+  const agents = { implementer: { harness: 'claude' }, reviewer: { harness: 'claude' }, senior: { harness: 'claude' } };
+  const { repo, ggIn } = tempRepo(t, JSON.stringify({ agents }));
+  exampleLayer(join(repo, '.agents', 'gg'));
   const r = ggIn('doctor');
   assert.ok(r.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'), r.stdout + r.stderr);
-  // The defaults Layer still ships its Flow until #121, which merges into the example's own; since #112 both route with
-  // `route`, `routes` and ends, so the merged Flow validates.
+  // The defaults Layer still ships its Flow and Procedures until #121; the example's own of the same names replace them
+  // whole (P2).
   assert.ok(r.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), r.stdout);
   assert.ok(!r.stdout.includes('\nerror: '), r.stdout);
   assert.equal(r.status, 0, r.stdout);

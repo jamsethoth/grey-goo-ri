@@ -8,12 +8,12 @@ import { fileURLToPath } from 'node:url';
 import * as checks from '../../lib/checks.mjs';
 import * as config from '../../lib/config.mjs';
 import * as events from '../../lib/events.mjs';
-import * as flowModule from '../../lib/flow.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import { pathKey } from '../../lib/paths.mjs';
 import * as record from '../../lib/record.mjs';
+import * as validate from '../../lib/validate.mjs';
 import * as golden from './golden.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 
@@ -25,7 +25,7 @@ export const NEEDS_HUMAN = 'gg:state:needs-human';
 export const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
 // The shipped defaults with every Agent on `harness`, the repository Layer's test command and, unless `fullFlow`, a
-// red, green and publish Flow to ready-for-qa.
+// red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
 export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   const c = config.loadDefaults();
   c.commands = { test: 'npm test' };
@@ -37,7 +37,7 @@ export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
     c.flows.default.ticket = { entry: 'red', routes, vertices: {
       red: { use: 'implementer', procedure: 'tests-fail', route: { ok: 'green' } },
       green: { use: 'implementer', procedure: 'implement', inputs: shipped.green.inputs, route: { ok: 'publish' } },
-      publish: { procedure: 'publish', inputs: shipped.publish.inputs, route: { ok: { end: 'ready-for-qa' } } } } };
+      publish: { procedure: 'publish', inputs: golden.implInputs(['green']), route: { ok: { end: 'ready-for-qa' } } } } };
   }
   return c;
 }
@@ -111,7 +111,9 @@ export function fixture(t, { responses = golden.firstVisitResponses, failEdit = 
 // An Execution of the fixture's Ticket run straight through the interpreter, as an earlier Run left it.
 export async function seedExecution(f, { git = f.options.git, crashAt, exec = f.exec, integrity = f.options.integrity } = {}) {
   await git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-  const flow = flowModule.resolveFlow(f.options.config);
+  const cfg = f.options.config;
+  const flow = validate.validate(cfg, { harnesses: f.options.harnesses, readSchema: (name) => JSON.parse(config.layerFile(cfg.files, name)),
+    readTemplate: (name) => config.layerFile(cfg.files, name) }).flows.default;
   const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: flow.name, entry: flow.ticket.entry },
     configHash: 'cfg-hash', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(rec);

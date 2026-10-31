@@ -7,6 +7,7 @@ import fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
+import * as config from '../../lib/config.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as shipped from '../../lib/harnesses/shipped.mjs';
@@ -15,6 +16,7 @@ import * as record from '../../lib/record.mjs';
 import * as events from '../../lib/events.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as labelModule from '../../lib/labels.mjs';
+import * as validate from '../../lib/validate.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 import * as fakeIntegrityModule from './fake-integrity.mjs';
 import * as fakeGitModule from './fake-git.mjs';
@@ -73,21 +75,50 @@ export const implInputs = (vertices) => ({
   green: { from: vertices.map((v) => `${v}.test.evidence`) },
 });
 
-// A red, green and publish Resolved Flow: red's tests-fail Visit, green's implement Visit, then publish's Visit, which has
-// no Agent, to ready-for-qa. A misscoped Claim reaches the planner through the Flow's routes, as in the shipped Flow.
-export const redGreenFlow = (persona) => ({
-  name: 'golden',
+// A red, green and publish Flow: red's tests-fail Visit, green's implement Visit, then publish's Visit, which has no
+// Agent, to ready-for-qa. A misscoped Claim reaches the planner through the Flow's routes, as in the shipped Flow.
+export const redGreenFlow = () => ({
   plan: null,
+  actionCap: 180,
   ticket: {
     entry: 'red',
-    routes: { misscoped: { end: 'needs-replan' } },
+    routes: { misscoped: { end: 'needs-replan' }, '*': { end: 'needs-human' } },
     vertices: {
-      red: { agent: implementerAgent(persona), procedure: 'tests-fail', options: {}, route: { ok: 'green' } },
-      green: { agent: implementerAgent(persona), procedure: 'implement', options: {}, inputs: GREEN_INPUTS, route: { ok: 'publish' } },
-      publish: { agent: null, procedure: 'publish', options: {}, inputs: implInputs(['green']), route: { ok: { end: 'ready-for-qa' } } },
+      red: { use: 'implementer', procedure: 'tests-fail', route: { ok: 'green' } },
+      green: { use: 'implementer', procedure: 'implement', inputs: GREEN_INPUTS, route: { ok: 'publish' } },
+      publish: { procedure: 'publish', inputs: implInputs(['green']), route: { ok: { end: 'ready-for-qa' } } },
     },
   },
 });
+
+// The golden configuration: the shipped Procedures and their files, the implementer on the fake Harness with the golden
+// Persona, the repository's commands and test paths, and the golden Flow.
+export function goldenConfig() {
+  const defaults = config.loadDefaults();
+  return {
+    commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS],
+    agents: { implementer: implementerAgent('implementer.md') },
+    procedures: defaults.procedures,
+    flows: { golden: redGreenFlow() },
+    files: { ...defaults.files, 'implementer.md': layerFile(PERSONA) },
+  };
+}
+
+// The golden Flow as admission resolves it; a configuration the validator rejects fails the case.
+export function resolve(c) {
+  const { flows, errors } = validate.validate(c, { harnesses: { fake: {} },
+    readSchema: (name) => JSON.parse(config.layerFile(c.files, name)), readTemplate: (name) => config.layerFile(c.files, name) });
+  if (errors.length) throw new Error(`the golden configuration is invalid:\n${errors.map((e) => `${e.at}: ${e.message}`).join('\n')}`);
+  return flows.golden;
+}
+
+// Edits the case's configuration with `edit(config)` and resolves the Flow again.
+// A record that has entered no Vertex yet starts at the new entry.
+export function configure(g, edit) {
+  edit(g.config);
+  g.flow = g.options.flow = resolve(g.config);
+  if (!Object.keys(g.rec.visits).length) g.rec.cursor.vertex = g.flow.ticket.entry;
+}
 
 // Reduces Action Events to what a golden trace asserts.
 export const trace = (evs) => evs.filter((e) => e.type === 'action')
@@ -129,9 +160,9 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   else await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const commonDir = join(mainRoot, '.git');
 
-  // The Layer files the golden Flow names.
-  const files = { 'implementer.md': layerFile(PERSONA) };
-  const flow = redGreenFlow('implementer.md');
+  const cfg = goldenConfig();
+  const { files } = cfg;
+  const flow = resolve(cfg);
 
   const rec = record.createExecution({
     commonDir, ticket: TICKET, epic: 1, flow: { name: flow.name, entry: flow.ticket.entry }, configHash: 'cfg-hash',
@@ -181,11 +212,11 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
 
   const options = {
     flow, record: rec, harness, gh: github, git: observedGit, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
-    commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS], ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
+    commands: cfg.commands, testPaths: cfg.testPaths, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main', labelPrefix: 'gg', others: [], clock, protectedPaths: PROTECTED_PATHS, files, ...injected(fake),
   };
   return {
-    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, files, clock, sleeps, fake, fakeGit,
+    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, config: cfg, files, clock, sleeps, fake, fakeGit,
     readEvents: () => events.readEvents(commonDir),
   };
 }

@@ -34,15 +34,15 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `bin/gg.mjs` | `gg` entry point: usage and command dispatch |
 | `lib/opts.mjs` | option parsing |
 | `lib/config.mjs` | Layers, merge, migration table, Config Hash, the Layer files each Layer names, Declared Command loading |
-| `lib/flow.mjs` | Flow loading and Agent Library expansion for the interpreter, until #116 moves admission to `lib/validate.mjs` |
-| `lib/validate.mjs` | the Flow validator: the configuration's agents, procedures and flows checked, giving each Resolved Flow plus errors and warnings |
+| `lib/flow.mjs` | the Resolved Flow and Config Hash written to a Run's directory |
+| `lib/validate.mjs` | the Flow validator, which `gg doctor` and `gg run` admission share: the configuration's agents, procedures, flows and the names each template reads checked, giving each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/refs.mjs` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
 | `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
 | `lib/effects.mjs` | write-ahead side effects, the activity bracket, remote retries and backoff, the repo-lock guard |
 | `lib/terminal.mjs` | Terminals: hold, abandonment, fault, run-stopped and their reports, Terminal Reason texts |
-| `lib/procedures.mjs` | tests-fail, implement, fix, review, plan as data (Actions, declared Checks, options, Outcome enum) |
-| `lib/briefs.mjs` | Brief context and rendering, Structured Response schemas and validation |
+| `lib/procedures.mjs` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs (Procedures themselves are configuration) |
+| `lib/briefs.mjs` | Brief context and rendering, Structured Response schema and response validation |
 | `lib/outcome.mjs` | the transition table and Resolution Policy |
 | `lib/rules.mjs` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
 | `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, review-pass |
@@ -63,8 +63,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/paths.mjs` | canonical local paths and the path key every path comparison uses |
 | `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
 | `lib/render.mjs` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
-| `lib/templates/` | gg's own comment templates: the Terminal Reason comment |
-| `defaults/templates/` | the shipped Briefs, PR body, review comment and stop comment, beside the shipped Personas |
+| `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the parse-retry nudge and the default recovery section |
+| `defaults/` | the defaults Layer: `gg.json` (the shipped Agents, Procedures and Flow) and the files it names, under `personas/`, `templates/` and `schemas/` |
 | `lib/work.mjs` | `gg work` and the Registry |
 | `lib/trace.mjs` | Trajectory export and `gg trace` |
 | `lib/stats.mjs` | `gg stats` |

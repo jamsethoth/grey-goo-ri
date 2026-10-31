@@ -1,0 +1,107 @@
+{
+  "type": "object",
+  "properties": {
+    "claim": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "blocked",
+        "misscoped"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "dod": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "met": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "met",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "qa": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string"
+              },
+              "expected": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "expected"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "edgeCases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "automated": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "manual": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "setup",
+        "steps",
+        "edgeCases",
+        "automated",
+        "manual"
+      ],
+      "additionalProperties": false
+    },
+    "diagnosis": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim",
+    "summary",
+    "dod",
+    "qa",
+    "diagnosis",
+    "notes"
+  ],
+  "additionalProperties": false
+}

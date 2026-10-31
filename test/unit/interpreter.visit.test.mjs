@@ -81,8 +81,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
     seen[call.phase] = structuredClone({ agent: call.agent, access: call.access, persona: call.persona });
     if (call.phase === 'green') {
       vertex.agent.model = 'model-y';
-      vertex.agent.access = 'read-only';
-      vertex.options.edited = true;
+      vertex.access = 'read-only';
       // Routing, Procedure and Declared Commands are pinned too: none of these may reach the rest of the Visit.
       vertex.procedure = 'fix';
       vertex.route = { ok: { end: 'needs-human' } };
@@ -99,7 +98,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   assert.equal(seen.recover.access, 'workspace-write');
   assert.equal(seen.recover.persona.bytes, golden.PERSONA);
   assert.equal(pinned.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
-  assert.deepEqual(pinned.options, {});
+  assert.equal(pinned.access, 'workspace-write');
   assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: green fake\/model-x\/high/);
   assert.equal(outcome, 'ready-for-qa', 'routing follows the entry snapshot');
   assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => e.procedure))], ['implement']);

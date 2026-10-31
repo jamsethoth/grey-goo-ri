@@ -40,7 +40,7 @@ test('a needs-replan reached with a rejected response is headed by its end, neve
     'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
     'green/1/green/2': { files: {}, response: { ...golden.greenResponse, claim } },
   } });
-  g.flow.ticket.vertices.green.route = { 'harness-unparsed': { end: 'needs-replan' } };
+  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.green.route = { 'harness-unparsed': { end: 'needs-replan' } }; });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-replan');
