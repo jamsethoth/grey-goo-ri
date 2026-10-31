@@ -61,6 +61,19 @@ test('the Resolved Flow carries each Vertex\'s Agent, Procedure, access, tests a
   assert.deepEqual(flows.default.ticket.vertices.publish.outcomes, ['ok', 'failed']);
 });
 
+// The digest is sha256 of '{"actions":[{"command":"test","do":"check","id":"test","kind":"command","reuse":"tree"}],"failed":[],"passed":[]}'.
+test("a Procedure's hash is the sha256 of its canonical JSON as declared, whatever its key order", async () => {
+  const config = example();
+  config.procedures['base-check'] = {
+    passed: [],
+    failed: [],
+    actions: [{ reuse: 'tree', kind: 'command', id: 'test', do: 'check', command: 'test' }],
+  };
+  const { errors, flows } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.equal(flows.default.procedures['base-check'].hash, '4929e4d499e9975dfedf3bd83b200523d9cb06c8f5b9d30416a9fbf924226e79');
+});
+
 test('a Procedure with no agent Action has the implicit Claim ok requiring every Check', async () => {
   const { flows } = await check(example());
   assert.deepEqual(flows.default.procedures.publish.claims, { ok: { requires: ['test'] } });
