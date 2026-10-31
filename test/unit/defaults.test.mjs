@@ -9,9 +9,9 @@ const defaultsDir = fileURLToPath(new URL('../../defaults/', import.meta.url));
 // report and Green Evidence, and the Red Evidence; the fix the review's Findings and their file paths.
 const GREEN_INPUTS = { tests: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
 const IMPL_INPUTS = {
-  report: { from: ['green.green.response', 'implementer-fix.fix.response'] },
+  report: { from: ['green.green.response', 'implementer-fix.fix.response', 'senior-dev.fix.response'] },
   red: { from: 'red.red-check.evidence' },
-  green: { from: ['green.test.evidence', 'implementer-fix.test.evidence'] },
+  green: { from: ['green.test.evidence', 'implementer-fix.test.evidence', 'senior-dev.test.evidence'] },
 };
 const FIX_INPUTS = {
   findings: { from: 'reviewer.review.response.findings' },
@@ -46,9 +46,11 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
         green: { use: 'implementer', procedure: 'implement', inputs: GREEN_INPUTS, route: { ok: 'reviewer' } },
         reviewer: {
           use: 'reviewer', procedure: 'review', inputs: IMPL_INPUTS,
-          route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
+          route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } },
+            repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } } },
         },
         'implementer-fix': { use: 'implementer', procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
+        'senior-dev': { use: 'implementer', procedure: 'fix', maxVisits: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
         publish: { procedure: 'publish', inputs: IMPL_INPUTS, route: { ok: { end: 'ready-for-qa' } } },
       },
     },

@@ -84,7 +84,9 @@ The limit on traversals of an Edge or Visits of a Vertex, with the target to go 
 _Avoid_: limit, max
 
 **Action Cap**:
-The limit on Attempts in one Execution; exhausting it ends the Execution at needs-human.
+The limit on Attempts in one Execution, a Flow's required `actionCap`. Every Attempt of a Flow Action counts, recovery
+passes and retries included. An Attempt past the cap never runs: the Execution ends at needs-human, before any Bound
+applies. The Terminal's own reporting does not count and still runs, so a restart after the cap resumes only that.
 _Avoid_: step cap, ticket cap
 
 **End state**:

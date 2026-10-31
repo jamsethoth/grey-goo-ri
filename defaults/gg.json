@@ -80,7 +80,10 @@
         "changes": { "requires": [] },
         "misscoped": { "stop": true, "comment": "templates/stop.md" }
       },
-      "passed": [{ "when": { "claim": "ok", "check.review-pass": "passed" }, "outcome": "ok" }],
+      "passed": [
+        { "when": { "claim": "ok", "check.review-pass": "passed" }, "outcome": "ok" },
+        { "when": { "check.repeat": "failed" }, "outcome": "repeat" }
+      ],
       "otherwise": "changes"
     },
     "publish": {
@@ -109,11 +112,15 @@
           "reviewer": {
             "use": "reviewer", "procedure": "review",
             "inputs": {
-              "report": { "from": ["green.green.response", "implementer-fix.fix.response"] },
+              "report": { "from": ["green.green.response", "implementer-fix.fix.response", "senior-dev.fix.response"] },
               "red": { "from": "red.red-check.evidence" },
-              "green": { "from": ["green.test.evidence", "implementer-fix.test.evidence"] }
+              "green": { "from": ["green.test.evidence", "implementer-fix.test.evidence", "senior-dev.test.evidence"] }
             },
-            "route": { "ok": "publish", "changes": { "to": "implementer-fix", "max": 2, "exhausted": { "end": "needs-human" } } }
+            "route": {
+              "ok": "publish",
+              "changes": { "to": "implementer-fix", "max": 2, "exhausted": { "end": "needs-human" } },
+              "repeat": { "to": "senior-dev", "max": 1, "exhausted": { "end": "needs-human" } }
+            }
           },
           "implementer-fix": {
             "use": "implementer", "procedure": "fix",
@@ -124,12 +131,22 @@
             },
             "route": { "ok": "reviewer" }
           },
+          "senior-dev": {
+            "use": "implementer", "procedure": "fix",
+            "maxVisits": 1, "exhausted": { "end": "needs-human" },
+            "inputs": {
+              "findings": { "from": "reviewer.review.response.findings" },
+              "testFiles": { "from": "reviewer.review.response.findings", "pick": "file" },
+              "red": { "from": "red.red-check.evidence" }
+            },
+            "route": { "ok": "reviewer" }
+          },
           "publish": {
             "procedure": "publish",
             "inputs": {
-              "report": { "from": ["green.green.response", "implementer-fix.fix.response"] },
+              "report": { "from": ["green.green.response", "implementer-fix.fix.response", "senior-dev.fix.response"] },
               "red": { "from": "red.red-check.evidence" },
-              "green": { "from": ["green.test.evidence", "implementer-fix.test.evidence"] }
+              "green": { "from": ["green.test.evidence", "implementer-fix.test.evidence", "senior-dev.test.evidence"] }
             },
             "route": { "ok": { "end": "ready-for-qa" } }
           }

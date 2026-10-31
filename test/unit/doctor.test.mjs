@@ -71,6 +71,9 @@ test('gg doctor accepts the shipped defaults once a harness is set', () => {
   shipped.commands = { test: 'npm test' };
   const { text, exitCode } = doctor.doctor({ config: shipped, harnesses: { fake: {} } });
   assert.ok(text.startsWith('flow default\n  plan: null\n  actionCap: 180\n  entry: red\n'), text);
-  assert.ok(text.endsWith('\n0 errors\n'), text);
+  // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.
+  assert.ok(text.endsWith('\nwarning: procedures.review.passed: rule table review.passed: row 2 (check.repeat = failed) is partly taken by '
+    + 'row 1 (claim = ok and check.review-pass = passed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}}\n'
+    + '0 errors, 1 warning\n'), text);
   assert.equal(exitCode, 0);
 });
