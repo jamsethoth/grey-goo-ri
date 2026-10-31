@@ -157,7 +157,9 @@ test('openers of a new database queue while the open lock is held and all succee
   const openers = tickets.map(() => openInChild(commonDir));
   t.after(() => { for (const { child } of openers) if (child.exitCode === null) child.kill(); });
   await Promise.all(openers.map(({ said }) => said('locking')));
-  assert.deepEqual(openers.map(({ child }) => child.exitCode), tickets.map(() => null), 'no opener gets past a held open lock');
+  const codes = openers.map(({ child }) => child.exitCode);
+  const early = await Promise.all(openers.filter(({ child }) => child.exitCode !== null).map(({ exit }) => exit));
+  assert.deepEqual(codes, tickets.map(() => null), `no opener gets past a held open lock: ${JSON.stringify(early)}`);
   await locks.release(openLock);
   const exits = (await Promise.all(openers.map(({ exit }) => exit))).map(({ code, err }) => ({ code, err }));
   assert.deepEqual(exits, tickets.map(() => ({ code: 0, err: '' })));
