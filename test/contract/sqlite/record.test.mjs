@@ -153,11 +153,20 @@ test('eight processes creating one new database at once all open it in WAL mode'
 });
 
 test('openers of a new database queue while the open lock is held and all succeed once it is released', CASE, async (t) => {
+  // node:test skips later after hooks once one throws, and removing the temp directory throws while the open lock is
+  // held, so this hook comes first: it kills the openers, since a gated one waits for go forever, and frees the lock.
+  const openers = [];
+  let openLock;
+  t.after(async () => {
+    const running = openers.filter(({ child }) => child.exitCode === null);
+    for (const { child } of running) child.kill();
+    await Promise.all(running.map(({ exit }) => exit));
+    if (openLock?.db.isOpen) await locks.release(openLock);
+  });
   const commonDir = await tempCommonDir(t);
-  const openLock = await locks.tryAcquire(commonDir, 'open');
+  openLock = await locks.tryAcquire(commonDir, 'open');
   assert.ok(openLock);
-  const openers = tickets.map(() => openInChild(commonDir, { gated: true }));
-  t.after(() => { for (const { child } of openers) if (child.exitCode === null) child.kill(); });
+  for (const _ of tickets) openers.push(openInChild(commonDir, { gated: true }));
   // Each opener's 5 s busy timeout starts at its `locking`. Under load eight Node start-ups spread over more than that
   // (grey-goo-ri issue #188), so the openers start their waits together once all have loaded.
   await Promise.all(openers.map(({ said }) => said('ready')));
@@ -173,9 +182,10 @@ test('openers of a new database queue while the open lock is held and all succee
 });
 
 test('an opener of a new database proceeds when the process holding the open lock dies', CASE, async (t) => {
+  let holder;
+  t.after(() => holder?.kill()); // before the temp directory's removal, which throws while the holder has the lock open
   const commonDir = await tempCommonDir(t);
-  const holder = spawn(process.execPath, [contender, commonDir, 'open', '600000'], { stdio: ['ignore', 'pipe', 'inherit'] });
-  t.after(() => holder.kill());
+  holder = spawn(process.execPath, [contender, commonDir, 'open', '600000'], { stdio: ['ignore', 'pipe', 'inherit'] });
   const report = await new Promise((resolve) => holder.stdout.once('data', (chunk) => resolve(JSON.parse(chunk))));
   assert.ok(report.handle, 'the child holds the open lock');
   const { child, said, exit } = openInChild(commonDir);
