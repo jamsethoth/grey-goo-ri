@@ -98,7 +98,8 @@ export const fixed = (files) => ({ files, response: { ...golden.greenResponse, s
 export const MAJOR = finding('major', 'lib/add.mjs', 'add ignores non-number input at line 1');
 
 // red(tests-fail) -> green(implement) -> reviewer(review); ok -> publish; changes -> {implementer-fix, max 2, exhausted
-// needs-human}; implementer-fix(fix) -> reviewer.
+// needs-human}; repeat -> {senior-dev, max 1, exhausted needs-human}; implementer-fix(fix) and senior-dev(fix, maxVisits
+// 1, exhausted needs-human) -> reviewer.
 export async function reviewSetup(t, responses, opts) {
   const g = await reviewFlow(t, responses, opts);
   g.result = await interpreter.runExecution(g.options);
@@ -108,7 +109,7 @@ export async function reviewSetup(t, responses, opts) {
   return g;
 }
 
-export const REVIEW_INPUTS = golden.implInputs(['green', 'implementer-fix']);
+export const REVIEW_INPUTS = golden.implInputs(['green', 'implementer-fix', 'senior-dev']);
 // The fix reads the latest review's Findings, their file paths as its named tests, and the Red Evidence for the PR body.
 export const FIX_INPUTS = {
   findings: { from: 'reviewer.review.response.findings' },
@@ -125,8 +126,11 @@ export async function reviewFlow(t, responses, { exec, integrity, git, configure
     const { vertices } = c.flows.golden.ticket;
     vertices.green.route = { ok: 'reviewer' };
     vertices.reviewer = { use: 'reviewer', procedure: 'review', inputs: REVIEW_INPUTS,
-      route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } } };
+      route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } },
+        repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } } } };
     vertices['implementer-fix'] = { use: 'implementer', procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } };
+    vertices['senior-dev'] = { use: 'implementer', procedure: 'fix', maxVisits: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS,
+      route: { ok: 'reviewer' } };
     vertices.publish.inputs = REVIEW_INPUTS;
   });
   if (configure) golden.configure(g, configure);
