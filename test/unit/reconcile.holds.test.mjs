@@ -233,3 +233,17 @@ test('a failed lookup in a Run is retried on the Action budget and finds the lan
   assert.deepEqual(g.sleeps, [60_000]);
   assert.deepEqual(stepsOf(await loadTicket(g), m), ['intent', 'evidence', 'complete']);
 });
+
+test('a resumed Visit whose Procedure changed is held', async (t) => {
+  const g = await golden.setup(t);
+  await crashed(g, EFFECTS.commit.at, 'after-completion');
+  golden.configure(g, (c) => { c.procedures.implement.recover.max = 2; });
+
+  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  assert.equal(decided.next, 'hold');
+  assert.match(decided.reason, /Procedure implement/);
+
+  await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+  assert.equal((await loadTicket(g)).state, 'held');
+  assert.equal(g.harness.calls.length, 2, 'nothing ran after the hold');
+});

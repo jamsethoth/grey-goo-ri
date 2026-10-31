@@ -870,3 +870,238 @@ test('a deleted test file counts as a change', async (t) => {
   assert.equal(check.signals.checks[0].state, 'passed');
   assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value, { files: ['package.json'] });
 });
+
+// #116: Procedures are configuration. These cases declare Procedures of their own, with names gg does not know.
+const PROBE_SCHEMA = JSON.stringify({ type: 'object', properties: { claim: { type: 'string', enum: ['ok', 'blocked'] }, summary: { type: 'string' } },
+  required: ['claim', 'summary'], additionalProperties: false });
+const probed = (summary, files = {}) => ({ files, response: { claim: 'ok', summary } });
+// The files a declared Procedure below names: a Brief that names nothing and the probe schema.
+function probeFiles(c) {
+  c.files['plain.md'] = golden.layerFile('Do the work.\n');
+  c.files['probe.schema.json'] = golden.layerFile(PROBE_SCHEMA);
+}
+// An agent Action, the test command as Check `gate`, and a commit of `type`; `tests` as the Procedure declares it.
+const sealing = (tests, type) => ({
+  tests,
+  actions: [
+    { id: 'ask', do: 'agent', brief: 'plain.md', schema: 'probe.schema.json' },
+    { id: 'gate', do: 'check', kind: 'command', command: 'test' },
+    { id: 'seal', do: 'commit', type },
+  ],
+  claims: { ok: { requires: ['gate'] }, blocked: { stop: true } },
+});
+// Test Immutability scripted with ordered results; `baselines` records the commit each assertion compared against.
+function scriptedImmutability(g, results) {
+  const baselines = [];
+  g.options.testImmutability = async (cwd, baseline) => {
+    baselines.push(baseline);
+    return results.shift();
+  };
+  return baselines;
+}
+const commitOf = (g, vertex) => g.rec.log.find((e) => e.step === 'evidence' && e.action === 'commit' && marker.partsOf(e.marker).vertex === vertex).evidence.sha;
+
+test('the interpreter names no Procedure, Action or Check', async (t) => {
+  const g = await golden.setup(t, { responses: { 'build/1/ask/1': probed('Probe the sum.', { 'lib/add.mjs': RIGHT_ADD }) } });
+  golden.configure(g, (c) => {
+    c.files['ask.md'] = golden.layerFile('Probe {{ticket.title}}.\n');
+    c.files['probe.schema.json'] = golden.layerFile(PROBE_SCHEMA);
+    c.files['probe-body.md'] = golden.layerFile('{{ask.response.summary}}\n{{gate.evidence.output}}\n{{marker}}\n');
+    c.procedures.probe = {
+      actions: [
+        { id: 'ask', do: 'agent', brief: 'ask.md', schema: 'probe.schema.json' },
+        { id: 'gate', do: 'check', kind: 'command', command: 'test' },
+        { id: 'seal', do: 'commit', type: 'chore' },
+        { id: 'ship', do: 'push' },
+        { id: 'post', do: 'pr-upsert', body: 'probe-body.md' },
+        { id: 'done', do: 'pr-ready' },
+      ],
+      claims: { ok: { requires: ['gate'] }, blocked: { stop: true } },
+    };
+    c.flows.golden.ticket = { entry: 'build', routes: { '*': { end: 'needs-human' } },
+      vertices: { build: { use: 'implementer', procedure: 'probe', route: { ok: { end: 'ready-for-qa' } } } } };
+  });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'ready-for-qa');
+  assert.deepEqual(golden.trace(g.readEvents()).map((e) => `${e.vertex}/${e.action}/${e.outcome}`),
+    ['build/ask/ok', 'build/gate/ok', 'build/seal/ok', 'build/ship/ok', 'build/post/ok', 'build/done/ok']);
+  assert.equal(g.harness.calls[0].brief, 'Probe Add two numbers.\n');
+  assert.deepEqual(await subjects(g), ['chore: Add two numbers (#15)']);
+  assert.ok(g.gh.pr().body.startsWith(`Probe the sum.\n${golden.GREEN_OUTPUT}\n`), g.gh.pr().body);
+  assert.equal(g.gh.pr().isDraft, false, 'pr-ready marked the PR ready');
+});
+
+test('lib/interpreter.mjs holds no Procedure table, describe, shipped Procedure name or phase read', () => {
+  const source = readFileSync(new URL('../../lib/interpreter.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /PROCEDURES|procedures\.describe/);
+  assert.doesNotMatch(source, /'(red|green|fix|review|implement|publish)'/);
+  assert.doesNotMatch(source, /\.phase\b/);
+});
+
+test('a Vertex with no access set runs read-only', async (t) => {
+  const g = await golden.setup(t);
+  golden.configure(g, (c) => { delete c.agents.implementer.access; });
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    g.fake.write(g.worktree, 'test/add.test.mjs');
+    return out;
+  };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.harness.calls[0].access, 'read-only');
+  const red = actionEvent(g, 'red', 'red');
+  assert.equal(red.outcome, 'integrity-violation');
+  assert.equal(red.violations[0].surface, 'tree');
+});
+
+test("the Visit snapshot pins the Procedure's name and hash", async (t) => {
+  const seen = {};
+  const previous = record.setSaveHook((r) => {
+    if (r.snapshot) seen[`${r.snapshot.vertex}/${r.snapshot.visit}`] = structuredClone(r.snapshot.procedure);
+  });
+  t.after(() => record.setSaveHook(previous));
+  const g = await golden.setup(t);
+  await interpreter.runExecution(g.options);
+
+  assert.deepEqual(seen['green/1'], { name: 'implement', hash: g.flow.procedures.implement.hash });
+  assert.match(seen['green/1'].hash, /^[0-9a-f]{64}$/);
+  assert.notEqual(seen['red/1'].hash, seen['green/1'].hash);
+});
+
+test('a passed row does not count a Check that passed on an older tree', async (t) => {
+  const g = await golden.setup(t, { responses: { 'look/1/ask/1': probed('Looked.') } });
+  golden.configure(g, (c) => {
+    probeFiles(c);
+    c.commands.touch = 'npm run touch';
+    c.procedures.look = {
+      access: 'read-only',
+      actions: [
+        { id: 'ask', do: 'agent', brief: 'plain.md', schema: 'probe.schema.json' },
+        { id: 'gate', do: 'check', kind: 'command', command: 'test' },
+        { id: 'touch', do: 'check', kind: 'command', command: 'touch' },
+      ],
+      claims: { ok: { requires: [] }, blocked: { stop: true } },
+      passed: [{ when: { 'check.gate': 'passed' }, outcome: 'ok' }],
+      otherwise: 'stale',
+    };
+    c.flows.golden.ticket = { entry: 'look', routes: { '*': { end: 'needs-human' } }, vertices: { look: { use: 'implementer', procedure: 'look' } } };
+  });
+  // Every command passes; touch also changes the worktree after gate checked it.
+  g.options.exec.runShell = async (command) => {
+    if (command === 'npm run touch') writeFileSync(join(g.worktree, 'touched.txt'), 'x\n');
+    return { code: 0, output: 'ok', timedOut: false };
+  };
+  await interpreter.runExecution(g.options);
+
+  assert.equal(actionEvent(g, 'look', 'gate').signals.checks[0].state, 'passed', 'gate passed on the tree it checked');
+  const reason = g.rec.terminalReason;
+  assert.deepEqual([reason.outcome, reason.rule], ['stale', { table: 'passed', row: 'otherwise' }]);
+});
+
+test('a failing Check with no recoverBrief gets a default section', async (t) => {
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
+  });
+  golden.configure(g, (c) => { delete c.procedures.implement.actions[1].recoverBrief; });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'ready-for-qa');
+  const recovery = g.harness.calls[2].brief;
+  assert.ok(recovery.includes('## The command Check test\n'), recovery);
+  assert.ok(recovery.includes(GREEN_FAIL_OUTPUT), recovery);
+});
+
+test('a Check with recoverable: false is not recovered', async (t) => {
+  const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
+  golden.configure(g, (c) => { c.procedures.implement.actions[1].recoverable = false; });
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, 2, 'no recovery call');
+  assert.deepEqual(greenTrace(g), ['green/0', 'test/0']);
+  assert.deepEqual(g.rec.terminalReason.rule, { table: 'failed', row: null });
+});
+
+test('Test Immutability is asserted after an agent Attempt of a write Vertex with no worktree Check', async (t) => {
+  const g = await golden.setup(t);
+  golden.configure(g, (c) => {
+    c.procedures.implement.actions[1] = { id: 'test', do: 'check', kind: 'response', field: 'claim', is: 'ok' };
+  });
+  const baselines = scriptedImmutability(g, [{ ok: false, changed: ['test/add.test.mjs'] }]);
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.deepEqual(baselines, [commitOf(g, 'red')], "asserted once, against red's commit");
+  const green = actionEvent(g, 'green', 'green');
+  assert.equal(green.outcome, 'integrity-violation');
+  assert.deepEqual(green.violations.at(-1).after, ['test/add.test.mjs']);
+  assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'nothing more was committed');
+});
+
+test('Test Immutability uses the Execution base before any gg commit', async (t) => {
+  const g = await golden.setup(t, { responses: { 'one/1/ask/1': probed('One.', { 'lib/add.mjs': RIGHT_ADD }) } });
+  golden.configure(g, (c) => {
+    probeFiles(c);
+    c.procedures.sealing = sealing('frozen', 'feat');
+    c.flows.golden.ticket = { entry: 'one', routes: { '*': { end: 'needs-human' } }, vertices: { one: { use: 'implementer', procedure: 'sealing' } } };
+  });
+  const baselines = scriptedImmutability(g, [{ ok: true, changed: [] }]);
+  await interpreter.runExecution(g.options);
+
+  assert.deepEqual(baselines, [g.base]);
+});
+
+test('every gg commit moves the Test Immutability baseline', async (t) => {
+  const g = await golden.setup(t, { responses: {
+    'one/1/ask/1': probed('One.', { 'lib/add.mjs': RIGHT_ADD }),
+    'two/1/ask/1': probed('Two.', { 'lib/two.mjs': 'export {};\n' }),
+  } });
+  golden.configure(g, (c) => {
+    probeFiles(c);
+    c.procedures.sealing = sealing('frozen', 'feat');
+    c.flows.golden.ticket = { entry: 'one', routes: { '*': { end: 'needs-human' } },
+      vertices: { one: { use: 'implementer', procedure: 'sealing', route: { ok: 'two' } }, two: { use: 'implementer', procedure: 'sealing' } } };
+  });
+  const baselines = scriptedImmutability(g, [{ ok: true, changed: [] }, { ok: true, changed: [] }]);
+  await interpreter.runExecution(g.options);
+
+  assert.deepEqual(baselines, [g.base, commitOf(g, 'one')]);
+  assert.equal(g.rec.testCommits.baseline, commitOf(g, 'two'));
+});
+
+test('a code-only commit does not become the first test commit', async (t) => {
+  const g = await golden.setup(t, { responses: {
+    'one/1/ask/1': probed('Code.', { 'lib/add.mjs': RIGHT_ADD }),
+    'two/1/ask/1': probed('Tests.', { 'test/two.test.mjs': 'export {};\n' }),
+  } });
+  golden.configure(g, (c) => {
+    probeFiles(c);
+    c.procedures.sealing = sealing('write', 'test');
+    c.flows.golden.ticket = { entry: 'one', routes: { '*': { end: 'needs-human' } },
+      vertices: { one: { use: 'implementer', procedure: 'sealing', route: { ok: 'two' } }, two: { use: 'implementer', procedure: 'sealing' } } };
+  });
+  await interpreter.runExecution(g.options);
+
+  assert.equal(g.rec.testCommits.first, commitOf(g, 'two'));
+});
+
+test('a stop token posts the comment its token names, or the Terminal Reason comment without one', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'SENTINEL diagnosis' } };
+  const named = await golden.setup(t, { responses });
+  await interpreter.runExecution(named.options);
+  const plain = await golden.setup(t, { responses });
+  golden.configure(plain, (c) => { delete c.procedures.implement.claims.blocked.comment; });
+  await interpreter.runExecution(plain.options);
+
+  const [stop] = named.gh.comments;
+  assert.ok(stop.body.startsWith('### gg: blocked\n'), stop.body);
+  assert.ok(stop.body.includes('SENTINEL diagnosis'), stop.body);
+  const [terminal] = plain.gh.comments;
+  assert.ok(terminal.body.startsWith('### gg: needs-human\n\n**Terminal Reason:** '), terminal.body);
+  assert.ok(!terminal.body.includes('SENTINEL diagnosis'), terminal.body);
+});

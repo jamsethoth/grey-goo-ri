@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import * as config from '../../lib/config.mjs';
 import * as doctor from '../../lib/doctor.mjs';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url), 'utf8');
@@ -56,4 +57,14 @@ test('gg doctor reads schemas from the loaded Layer files', () => {
   const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
   assert.equal(exitCode, 1);
   assert.ok(text.includes('\nerror: procedures.review.claims: review.schema.json: claim: enum "ok" | "changes" does not equal the declared tokens "ok" | "changes" | "blocked"\n'), text);
+});
+
+test('gg doctor accepts the shipped defaults once a harness is set', () => {
+  const shipped = config.loadDefaults();
+  for (const agent of Object.values(shipped.agents)) agent.harness = 'fake';
+  shipped.commands = { test: 'npm test' };
+  const { text, exitCode } = doctor.doctor({ config: shipped, harnesses: { fake: {} } });
+  assert.ok(text.startsWith('flow default\n  plan: null\n  actionCap: 180\n  entry: red\n'), text);
+  assert.ok(text.endsWith('\n0 errors\n'), text);
+  assert.equal(exitCode, 0);
 });

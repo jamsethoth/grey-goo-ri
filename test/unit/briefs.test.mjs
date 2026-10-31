@@ -430,3 +430,11 @@ test('the review brief lists test files changed since the red commit', async () 
   const none = await briefs.brief('review.md', { ...base, inputs: { report: { claim: 'ok' }, red: storedRed }, diff, changedTestFiles: [] });
   assert.ok(none.includes(diff), none);
 });
+
+// Carried from #183: a limit is keyed on the name the Brief's own context holds, never on a section item's field.
+test("an excerpt limit applies only to a name the Brief's own context holds", async () => {
+  const own = 'x'.repeat(3100);
+  const item = 'y'.repeat(3100);
+  const out = await briefs.brief('own.md', '{{output}}|{{#items}}{{output}}{{/items}}', { output: own, items: [{ output: item }] });
+  assert.equal(out, `${'x'.repeat(3000)}|${item}`);
+});

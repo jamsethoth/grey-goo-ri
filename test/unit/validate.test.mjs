@@ -16,7 +16,7 @@ const schemas = () => ({
   'review.schema.json': fixture('review.schema.json'),
 });
 
-async function check(config, files = schemas()) {
+async function check(config, files = schemas(), templates) {
   const validate = await import('../../lib/validate.mjs');
   return validate.validate(config, {
     harnesses: { fake: {} },
@@ -24,6 +24,10 @@ async function check(config, files = schemas()) {
       if (!Object.hasOwn(files, name)) throw new Error('no such file');
       return files[name];
     },
+    ...(templates && { readTemplate: (name) => {
+      if (!Object.hasOwn(templates, name)) throw new Error('no such file');
+      return templates[name];
+    } }),
   });
 }
 
@@ -1285,4 +1289,35 @@ test('an Agent\'s error holds the graph checks of the Flows that use it, and onl
     { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
     { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
   ]);
+});
+
+// #116 (Y20, L2): every name a template reads resolves in the scope of each Vertex that uses it.
+// The example's templates, each naming nothing, with `changes` in place of one.
+const templates = (changes = {}) => ({
+  ...Object.fromEntries(['red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md', 'test-fix.md', 'blocked.md', 'pr-body.md',
+    'review-comment.md'].map((name) => [name, `${name}\n`])),
+  ...changes,
+});
+
+test('a template that names an undeclared input is an error at its Action', async () => {
+  const { errors } = await check(example(), schemas(), templates({ 'green.md': 'tests: {{#inputs.tests}}{{.}}{{/inputs.tests}}\n{{inputs.nope}}\n' }));
+  assert.deepEqual(errors, [
+    { at: `${V}.green (procedure implement).actions[0]`, message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined' },
+    { at: `${V}.senior-green (procedure implement).actions[0]`, message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined' },
+  ]);
+});
+
+test('a template may name gg context, own outputs, inputs and with aliases', async () => {
+  const { errors } = await check(example(), schemas(), templates({
+    'green.md': '{{ticket.title}} {{base}} {{#commands}}{{name}}: {{command}}{{/commands}} {{#history}}{{text}}{{/history}} {{diff}}\n'
+      + '{{#inputs.tests}}{{.}}{{/inputs.tests}} {{inputs.red.output}} {{#inputs.findings}}{{file}} {{severity}}{{/inputs.findings}}\n'
+      + '{{green.response.summary}} {{test.evidence.output}} {{claim}} {{pass}} {{check.test}} {{#inputs.findings.length}}n{{/inputs.findings.length}}\n',
+    'pr-body.md': '{{report.summary}} {{#report.dod}}{{item}} {{#met}}y{{/met}}{{/report.dod}} {{red.output}} {{redReport.summary}} {{ticket.number}} '
+      + '{{#provenance}}{{vertex}}{{/provenance}} {{marker}}\n',
+    'review-comment.md': '{{review.response.summary}} {{#review.response.findings}}{{issue}}{{/review.response.findings}} {{agent.model}} {{marker}}\n',
+    'blocked.md': '{{response.summary}} {{outcome}} {{end}} {{reason}} {{marker}}\n',
+    'test-fix.md': '{{id}} {{kind}} {{command}} {{output}} {{#failure.passed}}p{{/failure.passed}}\n',
+    'recover.md': '{{#sections}}{{.}}{{/sections}} {{ticket.branch}}\n',
+  }));
+  assert.deepEqual(errors, []);
 });

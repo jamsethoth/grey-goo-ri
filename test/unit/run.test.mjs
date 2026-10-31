@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.mjs';
+import * as doctor from '../../lib/doctor.mjs';
 import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
@@ -195,5 +196,52 @@ test('preflight names an unset harness and an unknown harness in one error', asy
   assert.match(err.message, /no harness configured for agent implementer/);
   assert.match(err.message, /reviewer[^]*nope/, 'the unknown harness is named with its vertex');
   assert.equal(err.exitCode, 2, 'an unset harness exits 2');
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+});
+
+// #116: admission runs the validator gg doctor runs, before any GitHub access.
+test('gg run rejects a Flow gg doctor rejects, with the same message', async (t) => {
+  const f = fixture(t);
+  f.options.config.procedures.implement.actions[1].command = 'lint';
+  const line = 'error: procedures.implement.actions[1]: Check test names command "lint", which the repository Layer does not declare';
+  const { text } = doctor.doctor({ config: f.options.config, harnesses: f.options.harnesses });
+  assert.ok(text.includes(`\n${line}\n`), text);
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', line]);
+  assert.equal(err.exitCode, 1);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+});
+
+test('gg run rejects a required input that a route may not produce', async (t) => {
+  const f = fixture(t);
+  f.options.config.flows.default.ticket.vertices.green.inputs.previous = { from: 'green.commit.files' };
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:',
+    'error: flows.default.ticket.vertices.green.inputs.previous: input previous is required, but some route to green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional']);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.harness.calls.length, 0, 'no Visit');
+});
+
+test('gg run rejects pick over a value that is not a list of objects', async (t) => {
+  const f = fixture(t);
+  f.options.config.flows.default.ticket.vertices.green.inputs.names = { from: 'red.commit.files', pick: 'name' };
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:',
+    'error: flows.default.ticket.vertices.green.inputs.names: pick needs a list of objects; "red.commit.files" is {"kind":"list","of":{"kind":"string"}}']);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.harness.calls.length, 0, 'no Visit');
+});
+
+test('an Agent naming no harness still exits 2 naming the example Layers', async (t) => {
+  const f = fixture(t);
+  f.options.config.agents.implementer.harness = null;
+  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const examples = fileURLToPath(new URL('../../examples/', import.meta.url));
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer',
+    `Merge one of ${join(examples, 'claude.json')}, ${join(examples, 'codex.json')} into the user Layer at ${config.layerPath(homedir())}.`,
+  ]);
+  assert.equal(err.exitCode, 2);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
 });
