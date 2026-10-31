@@ -1290,3 +1290,36 @@ test('a crash during that report resumes only the report', async (t) => {
   assert.equal(g.gh.comments.filter((c) => c.number === golden.TICKET).length, 1, 'the comment is not posted twice');
   assert.equal((await loadTicket(g)).state, 'needs-human');
 });
+
+test('a route passes through a chain of spent Vertices to the last exhausted target', async (t) => {
+  // review 2 repeats review 1 and escalates to senior-dev; review 3's changes then finds implementer-fix and senior-dev
+  // both spent, so the route passes from one exhausted target to the next.
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
+    'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+    'senior-dev/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // two\n' }),
+    'reviewer/3/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'third problem')])),
+  }, { configure: (c) => {
+    const { vertices } = c.flows.golden.ticket;
+    Object.assign(vertices['implementer-fix'], { maxVisits: 1, exhausted: 'senior-dev' });
+    vertices['senior-dev'].exhausted = { end: 'needs-replan' };
+  } });
+  await runReview(g);
+
+  assert.equal(g.result.outcome, 'needs-replan');
+  assert.equal(g.rec.terminalReason.text, 'reviewer visit 3 completed every review Action with outcome changes, and '
+    + 'implementer-fix had used its Bound of 1 Visit and senior-dev had used its Bound of 1 Visit, so the route ended at needs-replan.');
+});
+
+test('an ok route into a spent Vertex names the Bound in the Terminal Reason', async (t) => {
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+  }, { configure: (c) => { Object.assign(c.flows.golden.ticket.vertices.reviewer, { maxVisits: 1, exhausted: { end: 'needs-human' } }); } });
+  await runReview(g);
+
+  assert.equal(g.result.outcome, 'needs-human');
+  assert.equal(g.rec.terminalReason.text, 'implementer-fix visit 1 completed every fix Action: test passed, and reviewer had used '
+    + 'its Bound of 1 Visit, so the route ended at needs-human.');
+});
