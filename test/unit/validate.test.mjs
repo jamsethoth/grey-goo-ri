@@ -1338,7 +1338,7 @@ test('a comment of a Procedure with no agent Action may not name the Agent', asy
   const config = example();
   config.procedures['base-check'].actions.push({ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' });
   const { errors } = await check(config, schemas(), templates({ 'note.md': '{{agent.model}} {{marker}}\n' }));
-  assert.deepEqual(errors, [{ at: `${V}.baseline (procedure base-check).actions[1]`, message: 'body note.md: {{agent.model}}: "agent" is not defined' }]);
+  assert.deepEqual(errors, [{ at: `${V}.baseline (procedure base-check).actions[1]`, message: 'body note.md: {{agent.model}}: "agent.model": "agent" is not defined' }]);
 });
 
 // Q3a: a commit, or pr-ready, counts only the Checks that ran before it.
