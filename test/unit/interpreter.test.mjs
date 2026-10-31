@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as config from '../../lib/config.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
@@ -28,6 +31,26 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.match(session.transcriptPath, /fake-session-2\.jsonl$/);
   assert.equal(session.usage.input, 200);
   assert.equal(g.rec.sessions['red/1/red'].sessionId, 'fake-session-1');
+});
+
+test('a Persona from the repository Layer is pinned with its hash', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'gg-persona-layer-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const repo = join(dir, 'repo');
+  mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
+  writeFileSync(config.layerPath(repo), '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}');
+  writeFileSync(join(repo, '.agents', 'gg', 'repo-implementer.md'), '# repo implementer\n');
+  const layered = config.loadConfig(repo, join(dir, 'home'));
+  const g = await golden.setup(t);
+  g.options.files = layered.files;
+  for (const vertex of Object.values(g.flow.ticket.vertices).filter((v) => v.agent)) vertex.agent.persona = layered.agents.implementer.persona;
+  await interpreter.runExecution(g.options);
+  const [red, green] = g.harness.calls;
+  assert.equal(red.personaBytes, '# repo implementer\n');
+  assert.equal(red.personaHash, createHash('sha256').update('# repo implementer\n').digest('hex'));
+  assert.equal(green.personaHash, red.personaHash);
+  assert.equal(g.rec.sessions['red/1/red'].persona, 'repo-implementer.md');
+  assert.equal(g.rec.sessions['red/1/red'].personaHash, red.personaHash);
 });
 
 test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
