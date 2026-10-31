@@ -1328,9 +1328,9 @@ test('a template path that steps into a list of objects is an error, as renderin
   }));
   assert.deepEqual(errors, [
     { at: `${V}.implementer-fix (procedure fix).actions[0]`,
-      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings" is a list; read its items in a section, {{#inputs.findings}}' },
+      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}' },
     { at: `${V}.senior-dev (procedure fix).actions[0]`,
-      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings" is a list; read its items in a section, {{#inputs.findings}}' },
+      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}' },
   ]);
 });
 
@@ -1341,11 +1341,40 @@ test('a comment of a Procedure with no agent Action may not name the Agent', asy
   assert.deepEqual(errors, [{ at: `${V}.baseline (procedure base-check).actions[1]`, message: 'body note.md: {{agent.model}}: "agent.model": "agent" is not defined' }]);
 });
 
-// Q3a: a commit, or pr-ready, counts only the Checks that ran before it.
-test('a commit before a Check its Claim token requires is an error', async () => {
+// A pass is the agent Action and the Checks after it (T4, R1a): every Check runs before any effect, so a commit or
+// pr-ready counts only Checks that ran (Q3a), and no effect runs for a Visit that then stops or fails (Q3).
+test('a Check after an effect Action is an error', async () => {
   const config = example();
   const { actions } = config.procedures.implement;
   config.procedures.implement.actions = [actions[0], actions[2], actions[1], ...actions.slice(3)];
   const { errors } = await check(config);
-  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[1]', message: 'commit runs before Check test, which Claim token ok requires; it counts only the Checks that ran before it (Q3a)' }]);
+  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[2]',
+    message: 'Check test comes after commit Action commit; every Check comes before any effect, so no effect runs before its pass is decided' }]);
+});
+
+test('an agent Action after a Check is an error', async () => {
+  const config = example();
+  const { actions } = config.procedures.implement;
+  config.procedures.implement.actions = [actions[1], actions[0], ...actions.slice(2)];
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[1]', message: 'the agent Action comes first, so a recovery pass runs every Check again after it' }]);
+});
+
+// A reference gg reads at run time is typed as it is read (refs.read): into a list only by length or an index.
+test('a with alias that steps into a list of objects is an error', async () => {
+  const config = example();
+  config.procedures.fix.actions[4].with.files = 'inputs.findings.file';
+  const { errors } = await check(config, schemas(), templates());
+  assert.deepEqual(errors, [
+    { at: `${V}.implementer-fix (procedure fix).actions[4]`, message: '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index' },
+    { at: `${V}.senior-dev (procedure fix).actions[4]`, message: '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index' },
+  ]);
+});
+
+test('an input source that steps into a list of objects is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles = { from: 'reviewer.review.response.findings.file' };
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.testFiles`,
+    message: '"reviewer.review.response.findings.file": "reviewer.review.response.findings" is a list, so a path reads only its length or an item by index' }]);
 });

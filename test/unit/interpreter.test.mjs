@@ -1118,31 +1118,6 @@ test('a stop token that names no comment posts the Terminal Reason comment', asy
   assert.ok(!terminal.body.includes('SENTINEL diagnosis'), terminal.body);
 });
 
-// Review round 1: Actions a Procedure may order freely run in any admitted order.
-test('a Check after an effect Action still decides the pass', async (t) => {
-  const g = await golden.setup(t, { responses: { 'build/1/ask/1': probed('Probe the sum.', { 'lib/add.mjs': RIGHT_ADD }) } });
-  golden.configure(g, (c) => {
-    probeFiles(c);
-    c.files['note.md'] = golden.layerFile('note {{marker}}\n');
-    c.procedures.probe = {
-      actions: [
-        { id: 'ask', do: 'agent', brief: 'plain.md', schema: 'probe.schema.json' },
-        { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' },
-        { id: 'gate', do: 'check', kind: 'command', command: 'test' },
-        { id: 'seal', do: 'commit', type: 'chore' },
-      ],
-      claims: { ok: { requires: ['gate'] }, blocked: { stop: true } },
-    };
-    c.flows.golden.ticket = { entry: 'build', routes: { '*': { end: 'needs-human' } }, vertices: { build: { use: 'implementer', procedure: 'probe' } } };
-  });
-  const result = await interpreter.runExecution(g.options);
-
-  assert.equal(result.fault, undefined, JSON.stringify(result));
-  assert.deepEqual(golden.trace(g.readEvents()).slice(0, 4).map((e) => `${e.vertex}/${e.action}/${e.outcome}`),
-    ['build/ask/ok', 'build/note/ok', 'build/gate/ok', 'build/seal/ok']);
-  assert.deepEqual(await subjects(g), ['chore: Add two numbers (#15)']);
-});
-
 test('a Procedure with no agent Action posts its comment', async (t) => {
   const g = await golden.setup(t);
   golden.configure(g, (c) => {
