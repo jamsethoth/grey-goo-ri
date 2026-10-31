@@ -30,8 +30,9 @@ const dbPath = (commonDir) => join(commonDir, 'gg', 'gg.db');
 // Cases that wait for another process to reach a lock or exit: one that never does fails at this bound.
 const CASE = { timeout: 120_000 };
 
-// Another gg process opening the State Database (support/db-opener.mjs). said(text) resolves once it has printed text;
-// exit resolves with its code, output and error text. A gated opener waits after loading until go() is called.
+// Another gg process opening the State Database (support/db-opener.mjs). said(text) resolves once it has printed text,
+// and rejects with its exit if it closes without printing it; exit resolves with its code, output and error text. A gated
+// opener waits after loading until go() is called.
 function openInChild(commonDir, { gated = false } = {}) {
   const child = spawn(process.execPath, [opener, commonDir, ...(gated ? ['gated'] : [])], {
     stdio: [gated ? 'pipe' : 'ignore', 'pipe', 'pipe'],
@@ -40,9 +41,10 @@ function openInChild(commonDir, { gated = false } = {}) {
   child.stdout.setEncoding('utf8').on('data', (chunk) => { out += chunk; });
   child.stderr.setEncoding('utf8').on('data', (chunk) => { err += chunk; });
   const exit = new Promise((resolve) => child.on('close', (code) => resolve({ code, out, err })));
-  const said = (text) => new Promise((resolve) => {
+  const said = (text) => new Promise((resolve, reject) => {
     const check = () => (out.includes(text) ? resolve() : child.stdout.once('data', check));
     check();
+    exit.then((exited) => reject(new Error(`the opener closed without printing ${text}: ${JSON.stringify(exited)}`)));
   });
   return { child, said, exit, go: () => child.stdin.end('go\n') };
 }
