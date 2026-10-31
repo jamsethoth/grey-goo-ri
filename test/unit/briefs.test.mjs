@@ -35,14 +35,13 @@ test('a Brief that does not name the diff never computes it', async () => {
 });
 
 test("direct input references retain each Brief's excerpt limit", async () => {
-  const tail = (limit) => 'x'.repeat(limit - 20) + '\nlast line';
-  const output = (limit) => 'old diagnostic '.repeat(100) + '\n' + tail(limit);
-  const green = await briefs.brief('green.md', { ...base, inputs: { tests: testFiles, red: { command: 'npm test', output: output(4000) } } });
-  const testFix = await briefs.brief('test-fix.md', { ...base, output: output(6000) });
-  const stillGreen = await briefs.brief('still-green.md', { ...base, output: output(3000), failure: 'passed' });
-  assert.ok(green.includes('```\n' + tail(4000) + '\n```'), green);
-  assert.ok(testFix.includes('```\n' + tail(6000) + '\n```'), testFix);
-  assert.ok(stillGreen.includes('```\n' + tail(3000) + '\n```'), stillGreen);
+  const old = 'old diagnostic '.repeat(100) + '\n';
+  const green = await briefs.brief('green.md', { ...base, inputs: { tests: testFiles, red: { command: 'npm test', output: old + 'x'.repeat(3980) + '\nlast line' } } });
+  const testFix = await briefs.brief('test-fix.md', { ...base, output: old + 'x'.repeat(5980) + '\nlast line' });
+  const stillGreen = await briefs.brief('still-green.md', { ...base, output: old + 'x'.repeat(2980) + '\nlast line', failure: 'passed' });
+  assert.ok(green.includes('```\n' + 'x'.repeat(3980) + '\nlast line\n```'), green);
+  assert.ok(testFix.includes('```\n' + 'x'.repeat(5980) + '\nlast line\n```'), testFix);
+  assert.ok(stillGreen.includes('```\n' + 'x'.repeat(2980) + '\nlast line\n```'), stillGreen);
   assert.doesNotMatch(green + testFix + stillGreen, /old diagnostic/);
 });
 

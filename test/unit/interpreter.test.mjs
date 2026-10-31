@@ -350,6 +350,20 @@ test('a stop comment replaces the end comment and reaches the Epic at needs-repl
   assert.equal(unmarked(onEpic[0].body), unmarked(onTicket[0].body));
 });
 
+test("a stop token's comment names the stopped Visit's own outputs and inputs", async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'blocked', summary: 'SENTINEL green summary' } };
+  const g = await golden.setup(t, { responses });
+  const comment = join(g.root, 'stop-direct.md');
+  writeFileSync(comment, 'own: {{green.response.summary}}\ninput: {{inputs.red.output}}\n{{marker}}\n');
+  variant(t, g, 'green', (p) => ({ claims: { ...p.claims, blocked: { stop: true, comment } } }));
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'needs-human');
+  const onTicket = g.gh.comments.filter((c) => c.number === golden.TICKET);
+  assert.equal(onTicket.length, 1, 'one comment on the Ticket');
+  assert.ok(onTicket[0].body.startsWith(`own: SENTINEL green summary\ninput: ${golden.RED_OUTPUT}\n`), onTicket[0].body);
+});
+
 test("H7: the Flow's route for an Outcome beats the Vertex's \"*\"", async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: 'Two tickets.' } };
