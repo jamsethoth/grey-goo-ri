@@ -161,13 +161,12 @@ test('bounds survive a restart', async (t) => {
     'implementer-fix/1/fix/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' },
       response: { ...golden.greenResponse, summary: 'Address the findings.' } },
     'reviewer/2/review/1': review([finding('second problem')]) } });
-  const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
-  writeFileSync(reviewerPersona, '# reviewer\nJudge the diff.\n');
+  g.files['reviewer.md'] = golden.layerFile('# reviewer\nJudge the diff.\n');
   const { red, green, publish } = g.flow.ticket.vertices;
   g.flow.ticket.vertices = {
     red,
     green: { ...green, route: { ok: 'reviewer' } },
-    reviewer: { agent: { ...structuredClone(green.agent), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
+    reviewer: { agent: { ...structuredClone(green.agent), persona: 'reviewer.md', access: 'read-only' }, procedure: 'review',
       options: {}, inputs: REVIEW_INPUTS, route: { ok: 'publish', changes: { to: 'implementer-fix', max: 1, exhausted: { end: 'needs-human' } } } },
     'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
     publish: { ...publish, inputs: REVIEW_INPUTS },

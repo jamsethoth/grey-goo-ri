@@ -82,9 +82,9 @@ test('each public field is redacted once and sent exactly as its intent saved it
   g.options.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
   for (const { agent } of Object.values(g.flow.ticket.vertices).filter((v) => v.agent)) {
-    Object.assign(agent, { model: 'model TOKEN', effort: 'TOKEN effort', persona: join(g.root, 'personas', 'TOKEN.md') });
+    Object.assign(agent, { model: 'model TOKEN', effort: 'TOKEN effort', persona: 'TOKEN.md' });
   }
-  writeFileSync(join(g.root, 'personas', 'TOKEN.md'), golden.PERSONA);
+  g.files['TOKEN.md'] = golden.layerFile(golden.PERSONA);
   const runShell = g.options.exec.runShell;
   g.options.exec.runShell = async (...args) => {
     const r = await runShell(...args);

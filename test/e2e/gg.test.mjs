@@ -125,6 +125,9 @@ test('gg doctor reads the repository Layer and its schemas and prints the Resolv
   for (const name of ['gg.json', 'red.schema.json', 'implement.schema.json', 'review.schema.json']) {
     writeFileSync(join(layer, name), readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url)));
   }
+  // Every file a Layer names must be beside it; the example's own Personas and templates arrive with #120.
+  for (const name of ['implementer.md', 'reviewer.md', 'red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md',
+    'test-fix.md', 'blocked.md', 'pr-body.md', 'review-comment.md']) writeFileSync(join(layer, name), `${name}\n`);
   const r = ggIn('doctor');
   assert.ok(r.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'), r.stdout + r.stderr);
   // The defaults Layer still ships its Flow until #121, which merges into the example's own; since #112 both route with

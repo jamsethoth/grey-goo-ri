@@ -70,7 +70,9 @@ test('following standalone Ticket advice in the repo Layer allows the Ticket to 
   const f = fixture(t);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
   const home = join(f.root, 'home');
-  const { commands, testPaths, ...user } = f.options.config;
+  // The Persona names stay the defaults' own: a user Layer that named them would need its own files.
+  const { commands, testPaths, files, ...user } = f.options.config;
+  for (const agent of Object.values(user.agents)) delete agent.persona;
   mkdirSync(join(home, '.agents', 'gg'), { recursive: true });
   writeFileSync(join(home, '.agents', 'gg', 'gg.json'), JSON.stringify(user));
   const repoLayer = join(f.mainRoot, '.agents', 'gg', 'gg.json');

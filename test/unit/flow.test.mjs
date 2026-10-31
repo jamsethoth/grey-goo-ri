@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.mjs';
 import * as flow from '../../lib/flow.mjs';
 
-const IMPLEMENTER = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false };
-const REVIEWER = { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false };
+const IMPLEMENTER = { persona: 'personas/implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false };
+const REVIEWER = { persona: 'personas/reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false };
 // The inputs of the shipped Flow (#113): green reads red's tests and Red Evidence; the reviewer and publish the latest
 // report and Green Evidence, and the Red Evidence; the fix the review's Findings and their file paths.
 const GREEN_INPUTS = { tests: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
@@ -24,7 +24,7 @@ const FIX_INPUTS = {
 };
 
 test('resolveFlow expands use into the resolved flow shape, with the Flow routes and an Agent-less publish', () => {
-  const resolvedImplementer = { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: null, effort: null };
+  const resolvedImplementer = { persona: 'personas/implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: null, effort: null };
   assert.deepEqual(flow.resolveFlow(config.loadDefaults()), {
     name: 'default',
     plan: null,
@@ -35,7 +35,7 @@ test('resolveFlow expands use into the resolved flow shape, with the Flow routes
         red: { agent: resolvedImplementer, options: {}, procedure: 'tests-fail', route: { ok: 'green' } },
         green: { agent: resolvedImplementer, options: {}, procedure: 'implement', inputs: GREEN_INPUTS, route: { ok: 'reviewer' } },
         reviewer: {
-          agent: { persona: 'reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false, harness: null, model: null, effort: null },
+          agent: { persona: 'personas/reviewer.md', skills: [], mcp: [], plugins: [], access: 'read-only', network: false, harness: null, model: null, effort: null },
           options: {}, procedure: 'review', inputs: IMPL_INPUTS,
           route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
         },
@@ -50,7 +50,7 @@ test('a Vertex field overrides the library Agent it uses, and the rest comes fro
   const overridden = config.loadDefaults();
   overridden.flows.default.ticket.vertices['implementer-fix'] = { use: 'implementer', model: 'model-z', procedure: 'fix', route: { ok: 'reviewer' } };
   assert.deepEqual(flow.resolveFlow(overridden).ticket.vertices['implementer-fix'], {
-    agent: { persona: 'implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: 'model-z', effort: null },
+    agent: { persona: 'personas/implementer.md', skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false, harness: null, model: 'model-z', effort: null },
     options: {}, procedure: 'fix', route: { ok: 'reviewer' },
   });
 });
@@ -63,7 +63,7 @@ test('resolveFlow does not mutate the Agent Library', () => {
 });
 
 test('the Resolved Flow carries the persona file name, not a path', () => {
-  assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.green.agent.persona, 'implementer.md');
+  assert.equal(flow.resolveFlow(config.loadDefaults()).ticket.vertices.green.agent.persona, 'personas/implementer.md');
 });
 
 for (const [harness, agents] of [

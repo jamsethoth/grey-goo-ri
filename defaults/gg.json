@@ -5,11 +5,11 @@
   "labelPrefix": "gg",
   "agents": {
     "implementer": {
-      "persona": "implementer.md",
+      "persona": "personas/implementer.md",
       "skills": [], "mcp": [], "plugins": [], "access": "workspace-write", "network": false
     },
     "reviewer": {
-      "persona": "reviewer.md",
+      "persona": "personas/reviewer.md",
       "skills": [], "mcp": [], "plugins": [], "access": "read-only", "network": false
     }
   },

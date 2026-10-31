@@ -29,7 +29,7 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
   const intents = { implementer: 'workspace-write', reviewer: 'read-only' };
   for (const [name, access] of Object.entries(intents)) {
     assert.deepEqual(gg.agents[name], {
-      persona: `${name}.md`, skills: [], mcp: [], plugins: [], access, network: false,
+      persona: `personas/${name}.md`, skills: [], mcp: [], plugins: [], access, network: false,
     }, `${name} names no harness, model or effort`);
     assert.ok(existsSync(`${defaultsDir}personas/${name}.md`), `${name}.md ships in defaults/personas`);
   }

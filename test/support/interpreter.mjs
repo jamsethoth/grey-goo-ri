@@ -118,14 +118,13 @@ export const FIX_INPUTS = {
 
 export async function reviewFlow(t, responses, { exec, integrity, git } = {}) {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
-  const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
-  writeFileSync(reviewerPersona, REVIEWER_PERSONA);
+  g.files['reviewer.md'] = golden.layerFile(REVIEWER_PERSONA);
   const { red, green, publish } = g.flow.ticket.vertices;
   g.flow.ticket.vertices = {
     red,
     green: { ...green, route: { ok: 'reviewer' } },
     reviewer: {
-      agent: { ...structuredClone(green.agent), model: 'model-r', persona: reviewerPersona, access: 'read-only' },
+      agent: { ...structuredClone(green.agent), model: 'model-r', persona: 'reviewer.md', access: 'read-only' },
       procedure: 'review', options: {}, inputs: REVIEW_INPUTS,
       route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } } },
     },

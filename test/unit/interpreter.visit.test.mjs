@@ -12,14 +12,6 @@ import {
 
 const DONE = ['intent', 'evidence', 'complete'];
 
-test('a persona file name is read from the shipped personas directory', async (t) => {
-  const g = await golden.setup(t);
-  for (const vertex of Object.values(g.flow.ticket.vertices).filter((v) => v.agent)) vertex.agent.persona = 'implementer.md';
-  await interpreter.runExecution(g.options);
-  const shipped = readFileSync(new URL('../../defaults/personas/implementer.md', import.meta.url), 'utf8');
-  assert.equal(g.harness.calls[0].personaBytes, shipped);
-});
-
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
   const g = await firstVisit(t);
   assert.deepEqual(g.rec.log.filter((e) => e.step === 'intent').map((i) => [i.action, steps(g.rec, i.marker)]), [
@@ -97,7 +89,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
       g.options.commands.test = 'npm run other';
       g.options.testPaths.push('lib/**');
       call.agent.effort = 'low';
-      writeFileSync(g.personaPath, '# changed\n');
+      g.files['implementer.md'] = golden.layerFile('# changed\n');
     }
     return run(call);
   };

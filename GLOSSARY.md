@@ -452,8 +452,9 @@ its own Repository Content Digest.
 _Avoid_: config id, variant id
 
 **Pinned Configuration**:
-The resolved configuration a Config Hash fingerprints: Resolved Flow, Persona bytes, harness settings, Launch Profile
-and Declared Commands, stored by hash in the State Database so two hashes can be diffed.
+The resolved configuration a Config Hash fingerprints: Resolved Flow, the bytes and hash of every Layer file it names
+(Personas, Briefs, templates and schemas, by the name the declaring Layer gives each), harness settings, Launch Profile,
+Declared Commands and test paths, stored by hash in the State Database so two hashes can be diffed.
 _Avoid_: config snapshot (reserved for a Visit), config blob
 
 **Repository Content Digest**:

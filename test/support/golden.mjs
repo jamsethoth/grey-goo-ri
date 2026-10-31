@@ -1,6 +1,7 @@
 // Golden-trace fixture: a temp bare origin and clone with a ticket worktree, a fake gh at lib/github.mjs's seam,
 // a fake test runner, the fake harness, and every harness, test, git and gh call tagged with the activity it observed.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -29,6 +30,8 @@ export const TEST_NAME = 'adds two numbers';
 export const RED_OUTPUT = `✖ ${TEST_NAME} (1.2ms)\n  Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'lib/add.mjs'\nℹ fail 1`;
 export const GREEN_OUTPUT = `✔ ${TEST_NAME} (0.8ms)\nℹ pass 1`;
 export const PERSONA = '# implementer\nWrite the smallest change.\n';
+// A Layer file as loadConfig loads it.
+export const layerFile = (bytes) => ({ bytes, hash: createHash('sha256').update(bytes).digest('hex') });
 
 export const redResponse = {
   claim: 'ok', summary: 'Failing test for add.', tests: [TEST_NAME], notes: 'add does not exist yet', diagnosis: '',
@@ -126,10 +129,9 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   else await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const commonDir = join(mainRoot, '.git');
 
-  mkdirSync(join(root, 'personas'));
-  const personaPath = join(root, 'personas', 'implementer.md');
-  writeFileSync(personaPath, PERSONA);
-  const flow = redGreenFlow(personaPath);
+  // The Layer files the golden Flow names.
+  const files = { 'implementer.md': layerFile(PERSONA) };
+  const flow = redGreenFlow('implementer.md');
 
   const rec = record.createExecution({
     commonDir, ticket: TICKET, epic: 1, flow: { name: flow.name, entry: flow.ticket.entry }, configHash: 'cfg-hash',
@@ -180,10 +182,10 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   const options = {
     flow, record: rec, harness, gh: github, git: observedGit, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
     commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS], ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
-    base: 'main', labelPrefix: 'gg', others: [], clock, protectedPaths: PROTECTED_PATHS, ...injected(fake),
+    base: 'main', labelPrefix: 'gg', others: [], clock, protectedPaths: PROTECTED_PATHS, files, ...injected(fake),
   };
   return {
-    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, personaPath, clock, sleeps, fake, fakeGit,
+    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, files, clock, sleeps, fake, fakeGit,
     readEvents: () => events.readEvents(commonDir),
   };
 }

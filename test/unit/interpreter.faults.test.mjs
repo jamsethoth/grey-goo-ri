@@ -308,7 +308,7 @@ test('a persona edit between green and its recovery pass does not reach the reco
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
-    if (call.phase === 'green') writeFileSync(g.personaPath, '# edited mid-visit\n');
+    if (call.phase === 'green') g.files['implementer.md'] = golden.layerFile('# edited mid-visit\n');
     return out;
   };
   const { outcome } = await interpreter.runExecution(g.options);
