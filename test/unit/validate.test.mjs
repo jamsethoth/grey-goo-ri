@@ -1427,7 +1427,7 @@ test('a where field or repeat field is one field of each item, not a path', asyn
 
 test('a pick that steps into a list inside each item is an error', async () => {
   const config = example();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles.pick = 'details.file';
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.details = { from: 'reviewer.review.response.findings', pick: 'details.file' };
   const { errors } = await check(config, nestedFindings());
-  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.testFiles`, message: 'pick: "details.file": "details" is a list, so a path reads only its length or an item by index' }]);
+  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.details`, message: 'pick: "details.file": "details" is a list, so a path reads only its length or an item by index' }]);
 });
