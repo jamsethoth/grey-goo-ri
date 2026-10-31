@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as briefs from '../../lib/briefs.mjs';
 import * as golden from '../support/golden.mjs';
 import {
   finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, prReviewComments, reviewStopReason, subjects,
@@ -18,14 +17,14 @@ test('a fix that changes an unnamed test is an integrity violation', async (t) =
   }, { integrity: 'real' });
 
   assert.equal(g.result.outcome, 'needs-human');
-  const check = g.at('implementer-fix', 1, 'test', 0)[0];
-  assert.equal(check?.outcome, 'integrity-violation');
-  assert.deepEqual(check.violations, ['test/add.test.mjs']);
+  const call = g.at('implementer-fix', 1, 'fix', 0)[0];
+  assert.equal(call?.outcome, 'integrity-violation');
+  assert.deepEqual(call.violations, [{ worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] }]);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)'], 'no fix commit');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the fix edit is rolled back');
   assert.ok(!readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'));
   const reason = reviewStopReason(g);
-  assert.deepEqual(reason.decidedBy, { vertex: 'implementer-fix', visit: 1, action: 'test', recovery: 0 });
+  assert.deepEqual(reason.decidedBy, { vertex: 'implementer-fix', visit: 1, action: 'fix', recovery: 0 });
   assert.equal(reason.outcome, 'integrity-violation');
 });
 
@@ -67,7 +66,7 @@ test('a fix with no edits keeps the moved immutability baseline', async (t) => {
     'implementer-fix/3/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/4/review/1': reviewed(review('ok')),
   }, { integrity: 'real' });
-  g.flow.ticket.vertices.reviewer.route.changes.max = 3;
+  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.reviewer.route.changes.max = 3; });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
@@ -98,10 +97,11 @@ test('a review on a workspace-write agent is still read-only', async (t) => {
   const g = await reviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
   }, { integrity: 'real' });
-  g.flow.ticket.vertices.reviewer.agent.access = 'workspace-write';
+  golden.configure(g, (c) => { c.agents.reviewer.access = 'workspace-write'; });
   g.result = await interpreter.runExecution(g.options);
 
   assert.equal(g.result.outcome, 'needs-human');
-  const reviewCall = g.harness.calls.find((c) => c.schema === briefs.REVIEW_SCHEMA);
+  const [, , reviewCall] = g.harness.calls;
+  assert.deepEqual(reviewCall.schema, JSON.parse(g.files['schemas/review.schema.json'].bytes), 'the review call');
   assert.equal(reviewCall.access, 'read-only', 'the Harness runs the review read-only');
 });

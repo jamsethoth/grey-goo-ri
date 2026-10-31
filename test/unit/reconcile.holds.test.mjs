@@ -9,7 +9,7 @@ import * as golden from '../support/golden.mjs';
 import {
   stepsOf, withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs,
 } from '../support/reconcile.mjs';
-import { FIX_INPUTS, REVIEW_INPUTS } from '../support/interpreter.mjs';
+import { reviewFlow } from '../support/interpreter.mjs';
 
 // Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<effect>), then resumes on a
 // freshly loaded record with the same options.
@@ -156,22 +156,12 @@ test('bounds survive a restart', async (t) => {
   const review = (findings) => ({ files: {}, response: {
     claim: 'changes', summary: 'The review says changes.', dodMet: true, tddEvidenceOk: true, findings, diagnosis: '' } });
   const finding = (issue) => ({ severity: 'major', file: 'lib/add.mjs', issue, fix: 'Make it right.' });
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses),
+  const g = await reviewFlow(t, {
     'reviewer/1/review/1': review([finding('first problem')]),
     'implementer-fix/1/fix/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' },
       response: { ...golden.greenResponse, summary: 'Address the findings.' } },
-    'reviewer/2/review/1': review([finding('second problem')]) } });
-  const reviewerPersona = join(g.root, 'personas', 'reviewer.md');
-  writeFileSync(reviewerPersona, '# reviewer\nJudge the diff.\n');
-  const { red, green, publish } = g.flow.ticket.vertices;
-  g.flow.ticket.vertices = {
-    red,
-    green: { ...green, route: { ok: 'reviewer' } },
-    reviewer: { agent: { ...structuredClone(green.agent), persona: reviewerPersona, access: 'read-only' }, procedure: 'review',
-      options: {}, inputs: REVIEW_INPUTS, route: { ok: 'publish', changes: { to: 'implementer-fix', max: 1, exhausted: { end: 'needs-human' } } } },
-    'implementer-fix': { agent: structuredClone(green.agent), procedure: 'fix', options: {}, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
-    publish: { ...publish, inputs: REVIEW_INPUTS },
-  };
+    'reviewer/2/review/1': review([finding('second problem')]) },
+  { configure: (c) => { c.flows.golden.ticket.vertices.reviewer.route.changes.max = 1; } });
   const key = 'reviewer->implementer-fix:changes';
   const { loaded } = await crashed(g, ['reviewer', 2, 'comment', 0], 'after-completion');
   assert.equal(loaded.traversals[key], 1, 'the Edge is at its Bound');
@@ -233,4 +223,18 @@ test('a failed lookup in a Run is retried on the Action budget and finds the lan
   assert.equal(withMarker(g.gh.comments.map((c) => c.body), m).length, 1, 'not posted again');
   assert.deepEqual(g.sleeps, [60_000]);
   assert.deepEqual(stepsOf(await loadTicket(g), m), ['intent', 'evidence', 'complete']);
+});
+
+test('a resumed Visit whose Procedure changed is held', async (t) => {
+  const g = await golden.setup(t);
+  await crashed(g, EFFECTS.commit.at, 'after-completion');
+  golden.configure(g, (c) => { c.procedures.implement.recover.max = 2; });
+
+  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  assert.equal(decided.next, 'hold');
+  assert.match(decided.reason, /Procedure implement/);
+
+  await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
+  assert.equal((await loadTicket(g)).state, 'held');
+  assert.equal(g.harness.calls.length, 2, 'nothing ran after the hold');
 });

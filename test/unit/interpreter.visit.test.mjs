@@ -12,14 +12,6 @@ import {
 
 const DONE = ['intent', 'evidence', 'complete'];
 
-test('a persona file name is read from the shipped personas directory', async (t) => {
-  const g = await golden.setup(t);
-  for (const vertex of Object.values(g.flow.ticket.vertices).filter((v) => v.agent)) vertex.agent.persona = 'implementer.md';
-  await interpreter.runExecution(g.options);
-  const shipped = readFileSync(new URL('../../defaults/personas/implementer.md', import.meta.url), 'utf8');
-  assert.equal(g.harness.calls[0].personaBytes, shipped);
-});
-
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
   const g = await firstVisit(t);
   assert.deepEqual(g.rec.log.filter((e) => e.step === 'intent').map((i) => [i.action, steps(g.rec, i.marker)]), [
@@ -89,15 +81,14 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
     seen[call.phase] = structuredClone({ agent: call.agent, access: call.access, persona: call.persona });
     if (call.phase === 'green') {
       vertex.agent.model = 'model-y';
-      vertex.agent.access = 'read-only';
-      vertex.options.edited = true;
+      vertex.access = 'read-only';
       // Routing, Procedure and Declared Commands are pinned too: none of these may reach the rest of the Visit.
       vertex.procedure = 'fix';
       vertex.route = { ok: { end: 'needs-human' } };
       g.options.commands.test = 'npm run other';
       g.options.testPaths.push('lib/**');
       call.agent.effort = 'low';
-      writeFileSync(g.personaPath, '# changed\n');
+      g.files['implementer.md'] = golden.layerFile('# changed\n');
     }
     return run(call);
   };
@@ -107,7 +98,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   assert.equal(seen.recover.access, 'workspace-write');
   assert.equal(seen.recover.persona.bytes, golden.PERSONA);
   assert.equal(pinned.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
-  assert.deepEqual(pinned.options, {});
+  assert.equal(pinned.access, 'workspace-write');
   assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: green fake\/model-x\/high/);
   assert.equal(outcome, 'ready-for-qa', 'routing follows the entry snapshot');
   assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => e.procedure))], ['implement']);

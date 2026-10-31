@@ -7,7 +7,6 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as checks from '../../lib/checks.mjs';
 import * as config from '../../lib/config.mjs';
-import * as flow from '../../lib/flow.mjs';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const personaPath = (name) => join(repoRoot, 'defaults', 'personas', name);
@@ -25,7 +24,7 @@ test('loadDefaults reads the shipped flow', () => {
 for (const name of ['implementer.md', 'reviewer.md']) {
   test(`loadDefaults reads the shipped persona ${name} with its hash`, () => {
     const file = readFileSync(personaPath(name));
-    const persona = config.loadDefaults().personas[name];
+    const persona = config.loadDefaults().files[`personas/${name}`];
     assert.ok(persona, `${name} is loaded`);
     assert.equal(String(persona.bytes), file.toString('utf8'));
     assert.equal(persona.hash, sha256(file));
@@ -45,7 +44,7 @@ test('loadConfig reads the Layer identified by layerPath', (t) => {
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
   const defaults = config.loadDefaults();
   const base = {
-    flow: flow.resolveFlow(defaults), personas: defaults.personas, harnesses: { claude: {} }, launchProfile: null,
+    flow: defaults.flows.default, files: defaults.files, harnesses: { claude: {} }, launchProfile: null,
     commands: { test: 'npm test' }, testPaths: ['test/**'],
   };
   const hash = config.configHash(base);
@@ -54,8 +53,8 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   assert.equal(config.configHash(reversed(base)), hash, 'stable across key order');
 
   const persona = structuredClone(base);
-  const bytes = `${String(persona.personas['implementer.md'].bytes)} `;
-  persona.personas['implementer.md'] = { bytes, hash: sha256(bytes) };
+  const bytes = `${String(persona.files['personas/implementer.md'].bytes)} `;
+  persona.files['personas/implementer.md'] = { bytes, hash: sha256(bytes) };
   assert.notEqual(config.configHash(persona), hash, 'a Persona byte changes the hash');
 
   const vertex = structuredClone(base);
@@ -71,26 +70,29 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   assert.notEqual(config.configHash(testPaths), hash, 'a test path changes the hash');
 });
 
-// A copy of gg's lib and defaults installed under its own root, and the Config Hash input and hash it gives the defaults.
-async function installed(t, install) {
+// A copy of gg's lib and defaults installed under its own root, with `edit` applied to the copy, and the Config Hash
+// input and hash it gives the defaults.
+async function installed(t, install, edit = () => {}) {
   const root = join(mkdtempSync(join(tmpdir(), `gg-install-${install}-`)), 'gg');
   t.after(() => rmSync(join(root, '..'), { recursive: true, force: true }));
   cpSync(join(repoRoot, 'lib'), join(root, 'lib'), { recursive: true });
   cpSync(join(repoRoot, 'defaults'), join(root, 'defaults'), { recursive: true });
+  edit(root);
   const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
-  const f = await import(pathToFileURL(join(root, 'lib', 'flow.mjs')).href);
   const defaults = c.loadDefaults();
-  const input = { flow: f.resolveFlow(defaults), personas: defaults.personas, harnesses: {}, commands: {} };
+  const input = { flow: defaults.flows.default, files: defaults.files, harnesses: {}, commands: {} };
   return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: c.configHash(input) };
 }
 
-test('the Config Hash does not depend on the install path', async (t) => {
+test('asset bytes change the Config Hash but installation paths do not', async (t) => {
   // Two copies of gg installed under different roots must hash the shipped defaults the same.
   const one = await installed(t, 'one');
   const two = await installed(t, 'two');
   assert.ok(!one.input.includes(one.root), 'no install path in the hashed input');
   assert.ok(!two.input.includes(two.root), 'no install path in the hashed input');
   assert.equal(one.hash, two.hash);
+  const edited = await installed(t, 'edited', (root) => writeFileSync(join(root, 'defaults', 'personas', 'reviewer.md'), '# reviewer, edited\n'));
+  assert.notEqual(edited.hash, one.hash, 'a shipped Persona byte changes the hash');
 });
 
 // A repository root and a home directory, each with the Layer text given (or none).
@@ -104,6 +106,76 @@ function layers(t, { repo, home } = {}) {
   }
   return roots;
 }
+
+// Writes `files` (name to text) beside the Layer of `root`.
+function beside(root, files) {
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(root, '.agents', 'gg', name), text);
+}
+
+test('loadConfig reads each file from the Layer that declares its name', (t) => {
+  const { repo, home } = layers(t, {
+    repo: '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}',
+    home: '{"procedures":{"probe":{"actions":[{"id":"ask","do":"agent","brief":"ask.md","schema":"ask.schema.json"},{"id":"pr","do":"pr-upsert","body":"body.md"}],"recover":{"max":1,"brief":"again.md"},"claims":{"halt":{"stop":true,"comment":"stopped.md"}}}}}',
+  });
+  beside(repo, { 'repo-implementer.md': '# repo implementer\n' });
+  beside(home, { 'ask.md': 'ask', 'ask.schema.json': '{}', 'body.md': 'body', 'again.md': 'again', 'stopped.md': 'stopped' });
+  const { files } = config.loadConfig(repo, home);
+  assert.deepEqual(files['repo-implementer.md'], { bytes: '# repo implementer\n', hash: '906646d8774b848deba8dffcf8c2b5961d3f249ca95cc4b5f025d299d66036e1' });
+  assert.deepEqual(files['ask.md'], { bytes: 'ask', hash: '2f2fc7f2e9ce13b09b84f63d54d0b4a59f4dbd46aea41da67023817e2d0c5e59' });
+  assert.deepEqual(files['ask.schema.json'], { bytes: '{}', hash: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a' });
+  assert.deepEqual(files['body.md'], { bytes: 'body', hash: '230d8358dc8e8890b4c58deeb62912ee2f20357ae92a5cc861b98e68fe31acb5' });
+  assert.deepEqual(files['again.md'], { bytes: 'again', hash: 'b4c9e14061c2fd453b36700e3b0da008db2189c711ac629f0f583089164e267d' });
+  assert.deepEqual(files['stopped.md'], { bytes: 'stopped', hash: '8322e87d24582952e5c996da182de0eca66dd2bf58fba5ec56a325c656f21b38' });
+  assert.equal(files['personas/implementer.md'].bytes, readFileSync(personaPath('implementer.md'), 'utf8'), 'the defaults keep their own files');
+});
+
+test('an inherited file reference keeps its declaring Layer', (t) => {
+  const { repo, home } = layers(t, {
+    home: '{"agents":{"implementer":{"persona":"shared.md"}}}',
+    repo: '{"agents":{"implementer":{"harness":"claude"}},"procedures":{"probe":{"actions":[{"id":"check","do":"check","kind":"command","command":"test","recoverBrief":"fix-it.md"}]}}}',
+  });
+  beside(home, { 'shared.md': '# from the user Layer\n' });
+  beside(repo, { 'shared.md': '# a repository file no Layer names\n', 'fix-it.md': 'fix it' });
+  const c = config.loadConfig(repo, home);
+  assert.equal(c.agents.implementer.persona, 'shared.md');
+  assert.equal(c.files['shared.md'].bytes, '# from the user Layer\n');
+  assert.equal(c.files['fix-it.md'].bytes, 'fix it');
+});
+
+test('an inline Vertex persona loads from its declaring Layer', (t) => {
+  const { repo, home } = layers(t, { repo: '{"flows":{"default":{"ticket":{"vertices":{"red":{"persona":"red-persona.md"}}}}}}' });
+  beside(repo, { 'red-persona.md': '# red only\n' });
+  const c = config.loadConfig(repo, home);
+  assert.equal(c.flows.default.ticket.vertices.red.persona, 'red-persona.md');
+  assert.deepEqual(c.files['red-persona.md'], { bytes: '# red only\n', hash: '3313d3429e16c51e825e1913e361874833f523924d91c9f303f616a03540243a' });
+});
+
+test('a name two Layers declare for different files is a load error naming both', (t) => {
+  const { repo, home } = layers(t, {
+    home: '{"agents":{"implementer":{"persona":"same.md"}}}',
+    repo: '{"agents":{"reviewer":{"persona":"same.md"}}}',
+  });
+  beside(home, { 'same.md': '# home\n' });
+  beside(repo, { 'same.md': '# repo\n' });
+  assert.throws(() => config.loadConfig(repo, home), {
+    message: `file "same.md" is declared by ${config.layerPath(home)} and by ${config.layerPath(repo)}, each beside its own Layer; give one of them another name`,
+  });
+});
+
+test('a declared file that does not exist is a load error naming the Layer file and the name', (t) => {
+  const { repo, home } = layers(t, { repo: '{"agents":{"implementer":{"persona":"missing.md"}}}' });
+  assert.throws(() => config.loadConfig(repo, home), { message: `${config.layerPath(repo)} names file "missing.md", which cannot be read (ENOENT)` });
+});
+
+test('a Flow or Procedure a later Layer declares replaces the earlier one of its name whole', (t) => {
+  const { repo, home } = layers(t, {
+    repo: '{"procedures":{"review":{"actions":[{"id":"look","do":"check","kind":"command","command":"test"}]}},"flows":{"default":{"plan":null,"actionCap":5,"ticket":{"entry":"look","vertices":{"look":{"procedure":"review"}}}}}}',
+  });
+  const c = config.loadConfig(repo, home);
+  assert.deepEqual(c.procedures.review, { actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }] });
+  assert.deepEqual(c.flows.default, { plan: null, actionCap: 5, ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } } });
+  assert.equal(c.procedures.implement.actions[0].id, 'green', 'a Procedure the Layer does not declare stays');
+});
 
 test('loadConfig takes Declared Commands whole from the repository Layer', (t) => {
   const { repo, home } = layers(t, { repo: '{"commands":{"test":"npm test","lint-js":"npm run lint"}}', home: '{"baseBranch":"dev"}' });

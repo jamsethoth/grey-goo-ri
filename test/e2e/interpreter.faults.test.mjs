@@ -69,9 +69,9 @@ test('a recovery pass that changes the committed test is rolled back to its base
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  const check = actionEvent(g, 'green', 'test', 1);
-  assert.equal(check.outcome, 'integrity-violation');
-  assert.deepEqual(check.violations, ['test/add.test.mjs']);
+  const call = actionEvent(g, 'green', 'green', 1);
+  assert.equal(call.outcome, 'integrity-violation');
+  assert.deepEqual(call.violations, [{ worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] }]);
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'no forbidden edit or implementation file survives');
   assert.ok(!readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'), 'the committed test bytes are restored');
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'the red commit survives');
@@ -91,7 +91,7 @@ test('a recovery pass that adds an ignored test file has it removed by the rollb
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(actionEvent(g, 'green', 'test', 1).violations, ['test/injected.test.mjs']);
+  assert.deepEqual(actionEvent(g, 'green', 'green', 1).violations, [{ worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/injected.test.mjs'] }]);
   assert.ok(!existsSync(join(g.worktree, 'test', 'injected.test.mjs')), 'the ignored test the agent added is removed');
 });
 
@@ -105,7 +105,7 @@ test('a recovery pass that adds an ignored file under a declared test path outsi
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(actionEvent(g, 'green', 'test', 1).violations, ['spec/injected.mjs']);
+  assert.deepEqual(actionEvent(g, 'green', 'green', 1).violations, [{ worktree: g.worktree, surface: 'committed tests', before: null, after: ['spec/injected.mjs'] }]);
   assert.ok(!existsSync(join(g.worktree, 'spec', 'injected.mjs')), 'the ignored test the agent added is removed');
 });
 
@@ -117,7 +117,7 @@ test('an ignored test file that was there before the call gets its bytes back fr
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(actionEvent(g, 'green', 'test').violations, ['test/owner.test.mjs']);
+  assert.deepEqual(actionEvent(g, 'green', 'green').violations, [{ worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/owner.test.mjs'] }]);
   assert.equal(readFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'utf8'), 'owner');
 });
 

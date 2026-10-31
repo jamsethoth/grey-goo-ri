@@ -110,12 +110,14 @@ _Avoid_: fallback, hand-off
 ### Procedure
 
 **Procedure**:
-A named sequence of Actions the interpreter performs for a Persona Vertex, with declared options, Checks and an
-Outcome enum.
+A named sequence of Actions a Vertex runs, declared in a Layer: its agent Action, Checks, effects, Claim tokens, tables and
+recovery. The interpreter runs each Action by its kind and names no Procedure; a Visit pins the Procedure's name and
+its hash, the sha256 of its canonical JSON as declared.
 _Avoid_: recipe, script, playbook
 
 **Phase**:
-A named agent call within a Procedure, such as red, green, fix or review. A recovery pass's call is the Phase recover.
+The name a Harness is given for an agent Action's call: the Action's id, such as red, green, fix or review. A recovery
+pass's call is the Phase recover.
 _Avoid_: step, turn
 
 **pass**:
@@ -443,7 +445,8 @@ Procedure, access, `tests`, Outcomes and inputs.
 _Avoid_: compiled flow, effective flow
 
 **Configuration Snapshot**:
-The resolved configuration a Visit entered with, Persona contents included, which holds for the whole Visit.
+The resolved configuration a Visit entered with, Persona contents and the Procedure's name and hash included, which
+holds for the whole Visit. A resumed Visit whose Procedure has changed since is held.
 _Avoid_: pinned config, frozen config
 
 **Config Hash**:
@@ -452,8 +455,9 @@ its own Repository Content Digest.
 _Avoid_: config id, variant id
 
 **Pinned Configuration**:
-The resolved configuration a Config Hash fingerprints: Resolved Flow, Persona bytes, harness settings, Launch Profile
-and Declared Commands, stored by hash in the State Database so two hashes can be diffed.
+The resolved configuration a Config Hash fingerprints: Resolved Flow, the bytes and hash of every Layer file it names
+(Personas, Briefs, templates and schemas, by the name the declaring Layer gives each), harness settings, Launch Profile,
+Declared Commands and test paths, stored by hash in the State Database so two hashes can be diffed.
 _Avoid_: config snapshot (reserved for a Visit), config blob
 
 **Repository Content Digest**:

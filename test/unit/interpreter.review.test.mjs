@@ -4,7 +4,6 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as checks from '../../lib/checks.mjs';
-import * as procedures from '../../lib/procedures.mjs';
 import * as golden from '../support/golden.mjs';
 import {
   REVIEWER_PERSONA, finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, prReviewComments,
@@ -74,7 +73,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/2/review/1': reviewed(review('ok')),
   });
-  g.flow.ticket.vertices.reviewer.route.changes.max = 1;
+  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.reviewer.route.changes.max = 1; });
   // Before the fix Attempt's intent: one interrupted after it would be held instead.
   const fix = golden.markerOf(g.rec, 'implementer-fix', 1, 'fix');
   await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: fix, point: 'before-intent' } }), /crash/);
@@ -96,10 +95,11 @@ test('two reviewer vertices keep their own sessions and provenance rows', async 
     'reviewer/1/review/1': reviewed(review('ok')),
     'reviewer-2/1/review/1': reviewed(review('ok')),
   });
-  const { vertices } = g.flow.ticket;
-  vertices.reviewer.route = { ...vertices.reviewer.route, ok: 'reviewer-2' };
-  vertices['reviewer-2'] = { ...structuredClone(vertices.reviewer), route: { ...vertices.reviewer.route, ok: 'publish' } };
-  vertices['reviewer-2'].agent.model = 'model-s';
+  golden.configure(g, (c) => {
+    const { vertices } = c.flows.golden.ticket;
+    vertices.reviewer.route.ok = 'reviewer-2';
+    vertices['reviewer-2'] = { ...structuredClone(vertices.reviewer), model: 'model-s', route: { ...vertices.reviewer.route, ok: 'publish' } };
+  });
   g.result = await interpreter.runExecution(g.options);
 
   assert.equal(g.result.outcome, 'ready-for-qa');
@@ -208,16 +208,13 @@ test('the branch diff and changed test files are read for the review Brief and n
   assert.equal(outcome, 'ready-for-qa');
   assert.equal(g.harness.calls.length, 4, 'red, green, the review and its nudge');
   assert.deepEqual(reads, ['changed tests 2', 'diff 2', 'changed tests 2'],
-    'the Green Check reads changed tests; the review Brief reads the diff and changed tests; the nudge reads nothing');
+    "green's agent Attempt reads changed tests; the review Brief reads the diff and changed tests; the nudge reads nothing");
 });
 
 // W5: a comment Action with `target: ticket` posts on the Ticket, under its own marker, not on the PR.
 test('a comment Action with target ticket posts on the Ticket', async (t) => {
-  const { actions } = procedures.PROCEDURES.review;
-  const comment = actions.find((a) => a.kind === 'comment');
-  comment.target = 'ticket';
-  t.after(() => { delete comment.target; });
-  const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
+  const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) },
+    { configure: (c) => { c.procedures.review.actions[3].target = 'ticket'; } });
 
   assert.equal(g.result.outcome, 'ready-for-qa');
   assert.deepEqual(prReviewComments(g), [], 'nothing on the PR');

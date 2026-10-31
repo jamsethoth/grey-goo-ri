@@ -5,17 +5,97 @@
   "labelPrefix": "gg",
   "agents": {
     "implementer": {
-      "persona": "implementer.md",
+      "persona": "personas/implementer.md",
       "skills": [], "mcp": [], "plugins": [], "access": "workspace-write", "network": false
     },
     "reviewer": {
-      "persona": "reviewer.md",
+      "persona": "personas/reviewer.md",
       "skills": [], "mcp": [], "plugins": [], "access": "read-only", "network": false
+    }
+  },
+  "procedures": {
+    "tests-fail": {
+      "tests": "write",
+      "actions": [
+        { "id": "red", "do": "agent", "brief": "templates/red.md", "schema": "schemas/red.schema.json" },
+        { "id": "red-check", "do": "check", "kind": "tests-fail", "command": "test", "names": "response.tests", "recoverBrief": "templates/still-green.md" },
+        { "id": "commit", "do": "commit", "type": "test" }
+      ],
+      "claims": {
+        "ok": { "requires": ["red-check"] },
+        "blocked": { "stop": true, "comment": "templates/stop.md" },
+        "misscoped": { "stop": true, "comment": "templates/stop.md" }
+      },
+      "recover": { "max": 1, "brief": "templates/recover.md" }
+    },
+    "implement": {
+      "actions": [
+        { "id": "green", "do": "agent", "brief": "templates/green.md", "schema": "schemas/implement.schema.json" },
+        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "templates/test-fix.md" },
+        { "id": "commit", "do": "commit", "type": "feat" },
+        { "id": "push", "do": "push" },
+        { "id": "pr", "do": "pr-upsert", "body": "templates/pr-body.md",
+          "with": { "report": "green.response", "red": "inputs.red", "green": "test.evidence" } }
+      ],
+      "claims": {
+        "ok": { "requires": ["test"] },
+        "blocked": { "stop": true, "comment": "templates/stop.md" },
+        "misscoped": { "stop": true, "comment": "templates/stop.md" }
+      },
+      "recover": { "max": 1, "brief": "templates/recover.md" }
+    },
+    "fix": {
+      "tests": { "named": "inputs.testFiles" },
+      "actions": [
+        { "id": "fix", "do": "agent", "brief": "templates/fix.md", "schema": "schemas/implement.schema.json" },
+        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "templates/test-fix.md" },
+        { "id": "commit", "do": "commit", "type": "fix" },
+        { "id": "push", "do": "push" },
+        { "id": "pr", "do": "pr-upsert", "body": "templates/pr-body.md",
+          "with": { "report": "fix.response", "red": "inputs.red", "green": "test.evidence" } }
+      ],
+      "claims": {
+        "ok": { "requires": ["test"] },
+        "blocked": { "stop": true, "comment": "templates/stop.md" },
+        "misscoped": { "stop": true, "comment": "templates/stop.md" }
+      },
+      "recover": { "max": 1, "brief": "templates/recover.md" }
+    },
+    "review": {
+      "access": "read-only",
+      "actions": [
+        { "id": "review", "do": "agent", "brief": "templates/review.md", "schema": "schemas/review.schema.json" },
+        { "id": "review-pass", "do": "check", "kind": "response", "all-of": [
+          { "field": "dodMet", "is": true },
+          { "field": "tddEvidenceOk", "is": true },
+          { "none": "findings", "where": { "severity": ["blocker", "major"] } }
+        ] },
+        { "id": "repeat", "do": "check", "kind": "repeat", "list": "response.findings", "fields": ["file", "severity", "issue"] },
+        { "id": "comment", "do": "comment", "target": "pr", "body": "templates/review-comment.md" },
+        { "id": "pr", "do": "pr-upsert", "body": "templates/pr-body.md",
+          "with": { "report": "inputs.report", "red": "inputs.red", "green": "inputs.green" } }
+      ],
+      "claims": {
+        "ok": { "requires": [] },
+        "changes": { "requires": [] },
+        "misscoped": { "stop": true, "comment": "templates/stop.md" }
+      },
+      "passed": [{ "when": { "claim": "ok", "check.review-pass": "passed" }, "outcome": "ok" }],
+      "otherwise": "changes"
+    },
+    "publish": {
+      "actions": [
+        { "id": "test", "do": "check", "kind": "command", "command": "test" },
+        { "id": "pr", "do": "pr-upsert", "body": "templates/pr-body.md",
+          "with": { "report": "inputs.report", "red": "inputs.red", "green": "inputs.green" } },
+        { "id": "pr-ready", "do": "pr-ready" }
+      ]
     }
   },
   "flows": {
     "default": {
       "plan": null,
+      "actionCap": 180,
       "ticket": {
         "entry": "red",
         "routes": { "misscoped": { "end": "needs-replan" }, "*": { "end": "needs-human" } },

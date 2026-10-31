@@ -16,7 +16,7 @@ const schemas = () => ({
   'review.schema.json': fixture('review.schema.json'),
 });
 
-async function check(config, files = schemas()) {
+async function check(config, files = schemas(), templates) {
   const validate = await import('../../lib/validate.mjs');
   return validate.validate(config, {
     harnesses: { fake: {} },
@@ -24,6 +24,10 @@ async function check(config, files = schemas()) {
       if (!Object.hasOwn(files, name)) throw new Error('no such file');
       return files[name];
     },
+    ...(templates && { readTemplate: (name) => {
+      if (!Object.hasOwn(templates, name)) throw new Error('no such file');
+      return templates[name];
+    } }),
   });
 }
 
@@ -55,6 +59,19 @@ test('the Resolved Flow carries each Vertex\'s Agent, Procedure, access, tests a
   assert.deepEqual(flows.default.ticket.vertices.reviewer.outcomes,
     ['ok', 'repeat', 'retest', 'changes', 'misscoped', 'blocked', 'harness-timeout', 'harness-transient', 'harness-unparsed']);
   assert.deepEqual(flows.default.ticket.vertices.publish.outcomes, ['ok', 'failed']);
+});
+
+// The digest is sha256 of '{"actions":[{"command":"test","do":"check","id":"test","kind":"command","reuse":"tree"}],"failed":[],"passed":[]}'.
+test("a Procedure's hash is the sha256 of its canonical JSON as declared, whatever its key order", async () => {
+  const config = example();
+  config.procedures['base-check'] = {
+    passed: [],
+    failed: [],
+    actions: [{ reuse: 'tree', kind: 'command', id: 'test', do: 'check', command: 'test' }],
+  };
+  const { errors, flows } = await check(config);
+  assert.deepEqual(errors, []);
+  assert.equal(flows.default.procedures['base-check'].hash, '4929e4d499e9975dfedf3bd83b200523d9cb06c8f5b9d30416a9fbf924226e79');
 });
 
 test('a Procedure with no agent Action has the implicit Claim ok requiring every Check', async () => {
@@ -639,8 +656,8 @@ test('a Check\'s evidence and a response object of the same fields are one type'
   files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
   files['fix.schema.json'].properties.output = {
     type: 'object',
-    properties: { command: { type: 'string' }, output: { type: 'string' } },
-    required: ['command', 'output'],
+    properties: { command: { type: 'string' }, output: { type: 'string' }, heuristic: { type: 'boolean' } },
+    required: ['command', 'output', 'heuristic'],
     additionalProperties: false,
   };
   files['fix.schema.json'].required.push('output');
@@ -1285,4 +1302,145 @@ test('an Agent\'s error holds the graph checks of the Flows that use it, and onl
     { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
     { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
   ]);
+});
+
+// #116 (Y20, L2): every name a template reads resolves in the scope of each Vertex that uses it.
+// The example's templates, each naming nothing, with `changes` in place of one.
+const templates = (changes = {}) => ({
+  ...Object.fromEntries(['red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md', 'test-fix.md', 'blocked.md', 'pr-body.md',
+    'review-comment.md'].map((name) => [name, `${name}\n`])),
+  ...changes,
+});
+
+test('a template that names an undeclared input is an error at its Action', async () => {
+  const { errors } = await check(example(), schemas(), templates({ 'green.md': 'tests: {{#inputs.tests}}{{.}}{{/inputs.tests}}\n{{inputs.nope}}\n' }));
+  assert.deepEqual(errors, [
+    { at: `${V}.green (procedure implement).actions[0]`, message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined' },
+    { at: `${V}.senior-green (procedure implement).actions[0]`, message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined' },
+  ]);
+});
+
+test('a template may name gg context, own outputs, inputs and with aliases', async () => {
+  const { errors } = await check(example(), schemas(), templates({
+    'green.md': '{{ticket.title}} {{base}} {{#commands}}{{name}}: {{command}}{{/commands}} {{#history}}{{text}}{{/history}} {{diff}}\n'
+      + '{{#inputs.tests}}{{.}}{{/inputs.tests}} {{inputs.red.output}} {{#inputs.findings}}{{file}} {{severity}}{{/inputs.findings}}\n'
+      + '{{green.response.summary}} {{test.evidence.output}} {{claim}} {{pass}} {{check.test}} {{#inputs.findings.length}}n{{/inputs.findings.length}}\n',
+    'pr-body.md': '{{report.summary}} {{#report.dod}}{{item}} {{#met}}y{{/met}}{{/report.dod}} {{red.output}} {{redReport.summary}} {{ticket.number}} '
+      + '{{#provenance}}{{vertex}}{{/provenance}} {{marker}}\n',
+    'review-comment.md': '{{review.response.summary}} {{#review.response.findings}}{{issue}}{{/review.response.findings}} {{agent.model}} {{marker}}\n',
+    'blocked.md': '{{response.summary}} {{outcome}} {{end}} {{reason}} {{marker}}\n',
+    'test-fix.md': '{{id}} {{kind}} {{command}} {{output}} {{#failure.passed}}p{{/failure.passed}}\n',
+    'recover.md': '{{#sections}}{{.}}{{/sections}} {{ticket.branch}}\n',
+  }));
+  assert.deepEqual(errors, []);
+});
+
+test('a template path that steps into a list of objects is an error, as rendering reads none', async () => {
+  const { errors } = await check(example(), schemas(), templates({
+    'fix.md': '{{#inputs.findings}}{{file}}{{/inputs.findings}} {{inputs.findings.length}} {{inputs.findings.file}}\n',
+  }));
+  assert.deepEqual(errors, [
+    { at: `${V}.implementer-fix (procedure fix).actions[0]`,
+      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}' },
+    { at: `${V}.senior-dev (procedure fix).actions[0]`,
+      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}' },
+  ]);
+});
+
+test('a comment of a Procedure with no agent Action may not name the Agent', async () => {
+  const config = example();
+  config.procedures['base-check'].actions.push({ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' });
+  const { errors } = await check(config, schemas(), templates({ 'note.md': '{{agent.model}} {{marker}}\n' }));
+  assert.deepEqual(errors, [{ at: `${V}.baseline (procedure base-check).actions[1]`, message: 'body note.md: {{agent.model}}: "agent.model": "agent" is not defined' }]);
+});
+
+// A pass is the agent Action and the Checks after it (T4, R1a): every Check runs before any effect, so a commit or
+// pr-ready counts only Checks that ran (Q3a), and no effect runs for a Visit that then stops or fails (Q3).
+test('a Check after an effect Action is an error', async () => {
+  const config = example();
+  const { actions } = config.procedures.implement;
+  config.procedures.implement.actions = [actions[0], actions[2], actions[1], ...actions.slice(3)];
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[2]',
+    message: 'Check test comes after commit Action commit; every Check comes before any effect, so no effect runs before its pass is decided' }]);
+});
+
+test('an agent Action after a Check is an error', async () => {
+  const config = example();
+  const { actions } = config.procedures.implement;
+  config.procedures.implement.actions = [actions[1], actions[0], ...actions.slice(2)];
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[1]', message: 'the agent Action comes first, so a recovery pass runs every Check again after it' }]);
+});
+
+// A reference gg reads at run time is typed as it is read (refs.read): into a list only by length or an index.
+test('a with alias that steps into a list of objects is an error', async () => {
+  const config = example();
+  config.procedures.fix.actions[4].with.files = 'inputs.findings.file';
+  const { errors } = await check(config, schemas(), templates());
+  assert.deepEqual(errors, [
+    { at: `${V}.implementer-fix (procedure fix).actions[4]`, message: '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index' },
+    { at: `${V}.senior-dev (procedure fix).actions[4]`, message: '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index' },
+  ]);
+});
+
+test('an input source that steps into a list of objects is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles = { from: 'reviewer.review.response.findings.file' };
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.testFiles`,
+    message: '"reviewer.review.response.findings.file": "reviewer.review.response.findings" is a list, so a path reads only its length or an item by index' }]);
+});
+
+test('a comment between the agent Action and its Checks is an error', async () => {
+  const config = example();
+  const { actions } = config.procedures.implement;
+  config.procedures.implement.actions = [actions[0], { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' }, ...actions.slice(1)];
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[2]',
+    message: 'Check test comes after comment Action note; every Check comes before any effect, so no effect runs before its pass is decided' }]);
+});
+
+test('a commit in a Procedure with no agent Action is an error', async () => {
+  const config = example();
+  config.procedures['base-check'].actions.push({ id: 'commit', do: 'commit', type: 'chore' });
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.base-check.actions[1]', message: "a commit carries the agent Action's summary, which this Procedure lacks" }]);
+});
+
+// The review schema with an object and a list of objects inside each finding.
+function nestedFindings() {
+  const files = schemas();
+  const { items } = files['review.schema.json'].properties.findings;
+  items.properties.detail = { type: 'object', properties: { severity: { type: 'string', enum: ['major', 'minor'] } }, required: ['severity'],
+    additionalProperties: false };
+  items.properties.details = { type: 'array', items: { type: 'object', properties: { file: { type: 'string' } }, required: ['file'],
+    additionalProperties: false } };
+  items.required.push('detail', 'details');
+  return files;
+}
+
+test('a response condition list that steps into a list of objects is an error', async () => {
+  const config = example();
+  config.procedures.review.actions[1] = { id: 'review-pass', do: 'check', kind: 'response', none: 'findings.detail', where: { severity: 'major' } };
+  const { errors } = await check(config, nestedFindings());
+  assert.deepEqual(errors, [{ at: 'procedures.review.actions[1]', message: '"findings.detail": "findings" is a list, so a path reads only its length or an item by index' }]);
+});
+
+test('a where field or repeat field is one field of each item, not a path', async () => {
+  const config = example();
+  config.procedures.review.actions[1] = { id: 'review-pass', do: 'check', kind: 'response', none: 'findings', where: { 'detail.severity': 'major' } };
+  config.procedures.review.actions[2].fields = ['file', 'detail.severity'];
+  const { errors } = await check(config, nestedFindings());
+  assert.deepEqual(errors, [
+    { at: 'procedures.review.actions[1]', message: 'where: "detail.severity" is not a field of the list\'s items' },
+    { at: 'procedures.review.actions[2]', message: 'fields: "detail.severity" is not a field of the list\'s items' },
+  ]);
+});
+
+test('a pick that steps into a list inside each item is an error', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.details = { from: 'reviewer.review.response.findings', pick: 'details.file' };
+  const { errors } = await check(config, nestedFindings());
+  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.details`, message: 'pick: "details.file": "details" is a list, so a path reads only its length or an item by index' }]);
 });

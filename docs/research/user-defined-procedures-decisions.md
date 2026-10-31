@@ -1176,6 +1176,29 @@ exact admission must be, or which way it may be wrong.
 - H13. `exhausted` is named only with a bound: on a Vertex only with `maxVisits`, and on an edge only with `max`.
   Without one it is never used, so naming it is an error, the reverse of H8. Found by #107's QA. Issue #107.
 
+## Procedure admission (2026-10-31)
+
+Found in PR #186's review rounds once `gg run` admission ran the validator (#116): admission accepted Procedures the
+interpreter could not run as T4, R1 and Q3 describe. Each rule below follows H1. The owner accepted them on 2026-10-31.
+
+- G1. The agent Action is a Procedure's first Action. A pass is the agent Action and the Checks after it (T4a, R1a), so
+  a Check before the agent would sit outside every pass: it would never run again after recovery and could still count
+  for the claimed token. A Check that must run before the agent is a Vertex of its own (R2b), as the example's
+  `baseline` is. Issue #116.
+- G2. Every Check comes before any effect, that is any Action other than the agent and a Check (`commit`, `push`,
+  `comment`, `pr-upsert`, `pr-ready`, `await-approval`). The pass is decided at its last Check, so an effect before it
+  would act for a Visit that may still fail or stop (Q3: a stop token skips the remaining Actions; Q3a: a commit counts
+  only Checks that ran; X1a: Checks run before an approval). A Check of an effect's result, such as CI after a push, is
+  a following Vertex. Issue #116.
+- G3. A `commit` needs the Procedure's agent Action: its message carries the agent's summary, and no other Action
+  writes. This is interim: the owner wants Procedures to commit the results of non-agent Actions, and grey-goo-ri
+  issue #189 designs that and amends G3. Issue #116.
+- G4. Every path gg reads at run time is typed as `refs.read` reads it, extending R13e: into a list only by `length`
+  or an index. A path that steps into a list's items (`inputs.findings.file`) is an error, since gg would read it as
+  nothing. This covers template names (Y20 in the round 5 review), `with`, input sources, Check parameters,
+  `tests: named`, rule fields, response conditions and `pick`. A `where` or a repeat Check's field names one key of
+  each item, not a path. A template reads a list's items through a section. Issue #116.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).

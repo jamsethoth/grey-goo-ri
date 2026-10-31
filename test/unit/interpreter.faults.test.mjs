@@ -40,7 +40,7 @@ test('a needs-replan reached with a rejected response is headed by its end, neve
     'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
     'green/1/green/2': { files: {}, response: { ...golden.greenResponse, claim } },
   } });
-  g.flow.ticket.vertices.green.route = { 'harness-unparsed': { end: 'needs-replan' } };
+  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.green.route = { 'harness-unparsed': { end: 'needs-replan' } }; });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-replan');
@@ -308,7 +308,7 @@ test('a persona edit between green and its recovery pass does not reach the reco
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
-    if (call.phase === 'green') writeFileSync(g.personaPath, '# edited mid-visit\n');
+    if (call.phase === 'green') g.files['implementer.md'] = golden.layerFile('# edited mid-visit\n');
     return out;
   };
   const { outcome } = await interpreter.runExecution(g.options);
