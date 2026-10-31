@@ -1321,3 +1321,31 @@ test('a template may name gg context, own outputs, inputs and with aliases', asy
   }));
   assert.deepEqual(errors, []);
 });
+
+test('a template path that steps into a list of objects is an error, as rendering reads none', async () => {
+  const { errors } = await check(example(), schemas(), templates({
+    'fix.md': '{{#inputs.findings}}{{file}}{{/inputs.findings}} {{inputs.findings.length}} {{inputs.findings.file}}\n',
+  }));
+  assert.deepEqual(errors, [
+    { at: `${V}.implementer-fix (procedure fix).actions[0]`,
+      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings" is a list; read its items in a section, {{#inputs.findings}}' },
+    { at: `${V}.senior-dev (procedure fix).actions[0]`,
+      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings" is a list; read its items in a section, {{#inputs.findings}}' },
+  ]);
+});
+
+test('a comment of a Procedure with no agent Action may not name the Agent', async () => {
+  const config = example();
+  config.procedures['base-check'].actions.push({ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' });
+  const { errors } = await check(config, schemas(), templates({ 'note.md': '{{agent.model}} {{marker}}\n' }));
+  assert.deepEqual(errors, [{ at: `${V}.baseline (procedure base-check).actions[1]`, message: 'body note.md: {{agent.model}}: "agent" is not defined' }]);
+});
+
+// Q3a: a commit, or pr-ready, counts only the Checks that ran before it.
+test('a commit before a Check its Claim token requires is an error', async () => {
+  const config = example();
+  const { actions } = config.procedures.implement;
+  config.procedures.implement.actions = [actions[0], actions[2], actions[1], ...actions.slice(3)];
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[1]', message: 'commit runs before Check test, which Claim token ok requires; it counts only the Checks that ran before it (Q3a)' }]);
+});

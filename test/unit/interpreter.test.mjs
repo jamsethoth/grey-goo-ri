@@ -1093,19 +1093,65 @@ test('a code-only commit does not become the first test commit', async (t) => {
   assert.equal(g.rec.testCommits.first, commitOf(g, 'two'));
 });
 
-test('a stop token posts the comment its token names, or the Terminal Reason comment without one', async (t) => {
+const blockedGreen = () => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'SENTINEL diagnosis' } };
-  const named = await golden.setup(t, { responses });
-  await interpreter.runExecution(named.options);
-  const plain = await golden.setup(t, { responses });
-  golden.configure(plain, (c) => { delete c.procedures.implement.claims.blocked.comment; });
-  await interpreter.runExecution(plain.options);
+  return responses;
+};
 
-  const [stop] = named.gh.comments;
+test('a stop token posts the comment its token names', async (t) => {
+  const g = await golden.setup(t, { responses: blockedGreen() });
+  await interpreter.runExecution(g.options);
+
+  const [stop] = g.gh.comments;
   assert.ok(stop.body.startsWith('### gg: blocked\n'), stop.body);
   assert.ok(stop.body.includes('SENTINEL diagnosis'), stop.body);
-  const [terminal] = plain.gh.comments;
+});
+
+test('a stop token that names no comment posts the Terminal Reason comment', async (t) => {
+  const g = await golden.setup(t, { responses: blockedGreen() });
+  golden.configure(g, (c) => { delete c.procedures.implement.claims.blocked.comment; });
+  await interpreter.runExecution(g.options);
+
+  const [terminal] = g.gh.comments;
   assert.ok(terminal.body.startsWith('### gg: needs-human\n\n**Terminal Reason:** '), terminal.body);
   assert.ok(!terminal.body.includes('SENTINEL diagnosis'), terminal.body);
+});
+
+// Review round 1: Actions a Procedure may order freely run in any admitted order.
+test('a Check after an effect Action still decides the pass', async (t) => {
+  const g = await golden.setup(t, { responses: { 'build/1/ask/1': probed('Probe the sum.', { 'lib/add.mjs': RIGHT_ADD }) } });
+  golden.configure(g, (c) => {
+    probeFiles(c);
+    c.files['note.md'] = golden.layerFile('note {{marker}}\n');
+    c.procedures.probe = {
+      actions: [
+        { id: 'ask', do: 'agent', brief: 'plain.md', schema: 'probe.schema.json' },
+        { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' },
+        { id: 'gate', do: 'check', kind: 'command', command: 'test' },
+        { id: 'seal', do: 'commit', type: 'chore' },
+      ],
+      claims: { ok: { requires: ['gate'] }, blocked: { stop: true } },
+    };
+    c.flows.golden.ticket = { entry: 'build', routes: { '*': { end: 'needs-human' } }, vertices: { build: { use: 'implementer', procedure: 'probe' } } };
+  });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, undefined, JSON.stringify(result));
+  assert.deepEqual(golden.trace(g.readEvents()).slice(0, 4).map((e) => `${e.vertex}/${e.action}/${e.outcome}`),
+    ['build/ask/ok', 'build/note/ok', 'build/gate/ok', 'build/seal/ok']);
+  assert.deepEqual(await subjects(g), ['chore: Add two numbers (#15)']);
+});
+
+test('a Procedure with no agent Action posts its comment', async (t) => {
+  const g = await golden.setup(t);
+  golden.configure(g, (c) => {
+    c.files['note.md'] = golden.layerFile('a note\n{{marker}}\n');
+    c.procedures.say = { actions: [{ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' }] };
+    c.flows.golden.ticket = { entry: 'say', routes: { '*': { end: 'needs-human' } }, vertices: { say: { procedure: 'say' } } };
+  });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.fault, undefined, JSON.stringify(result));
+  assert.ok(g.gh.comments[0].body.startsWith('a note\n'), g.gh.comments[0].body);
 });

@@ -58,7 +58,8 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
 test("defaults/gg.json declares the shipped Procedures in the validator's shape", async () => {
   const { validate } = await import('../../lib/validate.mjs');
   const c = config.loadDefaults();
-  for (const agent of Object.values(c.agents)) agent.harness = 'fake';
+  c.agents.implementer.harness = 'fake';
+  c.agents.reviewer.harness = 'fake';
   c.commands = { test: 'npm test' };
   const { flows, errors } = validate(c, { harnesses: { fake: {} }, readSchema: (name) => JSON.parse(config.layerFile(c.files, name)),
     readTemplate: (name) => config.layerFile(c.files, name) });

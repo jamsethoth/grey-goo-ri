@@ -66,7 +66,8 @@ test('gg doctor reads schemas from the loaded Layer files', () => {
 
 test('gg doctor accepts the shipped defaults once a harness is set', () => {
   const shipped = config.loadDefaults();
-  for (const agent of Object.values(shipped.agents)) agent.harness = 'fake';
+  shipped.agents.implementer.harness = 'fake';
+  shipped.agents.reviewer.harness = 'fake';
   shipped.commands = { test: 'npm test' };
   const { text, exitCode } = doctor.doctor({ config: shipped, harnesses: { fake: {} } });
   assert.ok(text.startsWith('flow default\n  plan: null\n  actionCap: 180\n  entry: red\n'), text);
