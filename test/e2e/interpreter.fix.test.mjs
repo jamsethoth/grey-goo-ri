@@ -62,7 +62,8 @@ test('a fix with no edits keeps the moved immutability baseline', async (t) => {
     'implementer-fix/1/fix/1': fixed({ 'test/add.test.mjs': TEST_EDIT }),
     'reviewer/2/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/2/fix/1': fixed({}),
-    'reviewer/3/review/1': reviewed(review('changes', [MAJOR])),
+    // A finding of its own, so the third review is not a repeat of the second.
+    'reviewer/3/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'add still ignores strings')])),
     'implementer-fix/3/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/4/review/1': reviewed(review('ok')),
   }, { integrity: 'real' });

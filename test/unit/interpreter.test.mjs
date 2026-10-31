@@ -1217,15 +1217,10 @@ test('a spent Bound that ends the Execution names the effective target in the Te
 
 test('a restart at a bound routes the same way', async (t) => {
   const g = await fixBoundSetup(t, {});
-  // The process dies as it saves the route into senior-dev, so the restart routes reviewer/2's saved result again.
-  let crashed = false;
-  const previous = record.setSaveHook((next) => {
-    if (crashed || next.cursor?.vertex !== 'senior-dev' || next.cursor.action !== null) return;
-    crashed = true;
-    throw new interpreter.CrashError('crash before the route is saved');
-  });
-  t.after(() => record.setSaveHook(previous));
-  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
+  // The save of the route into senior-dev fails, which ends the process, so the restart routes reviewer/2's saved result again.
+  const restore = golden.failSaves(t, (saved, next) => next.cursor.vertex === 'senior-dev' && next.cursor.action === null);
+  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof record.RecordSaveError);
+  restore();
   const saved = await loadTicket(g);
   assert.deepEqual(saved.cursor, { vertex: 'reviewer', visit: 2, action: 'pr', recovery: 0, attempt: 1 });
 
