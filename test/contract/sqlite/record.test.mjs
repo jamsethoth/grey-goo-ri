@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -174,12 +175,17 @@ test('openers of a new database queue while the open lock is held and all succee
   await Promise.all(openers.map(({ said }) => said('ready')));
   for (const { go } of openers) go();
   await Promise.all(openers.map(({ said }) => said('locking')));
-  const codes = openers.map(({ child }) => child.exitCode);
-  const early = await Promise.all(openers.filter(({ child }) => child.exitCode !== null).map(({ exit }) => exit));
-  assert.deepEqual(codes, tickets.map(() => null), `no opener gets past a held open lock: ${JSON.stringify(early)}`);
+  // An opener that got past the held lock switches to WAL within milliseconds of its `locking`, as fast as this process
+  // could release, so the lock stays held a while longer to let one show itself; its own clock then says it switched
+  // before the release. A queued opener switches only once it holds the lock.
+  await sleep(1000);
+  const releasedAt = Date.now();
   await locks.release(openLock);
-  const exits = (await Promise.all(openers.map(({ exit }) => exit))).map(({ code, err }) => ({ code, err }));
-  assert.deepEqual(exits, tickets.map(() => ({ code: 0, err: '' })));
+  const exits = await Promise.all(openers.map(({ exit }) => exit));
+  const switchedAt = (out) => [...out.matchAll(/^switching (\d+)$/gm)].map(([, ms]) => Number(ms));
+  const switchedEarly = exits.filter(({ out }) => switchedAt(out).some((ms) => ms < releasedAt));
+  assert.deepEqual(switchedEarly, [], 'no opener gets past a held open lock');
+  assert.deepEqual(exits.map(({ code, err }) => ({ code, err })), tickets.map(() => ({ code: 0, err: '' })));
   assert.equal(journalMode(commonDir), 'wal');
 });
 
