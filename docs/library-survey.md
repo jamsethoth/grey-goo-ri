@@ -33,6 +33,28 @@ from the repository at ddd552d.
 | Rescue Ref and workspace snapshot | ADR 0011 | | `isomorphic-git`, Jujutsu | a second git implementation or binary | | **git plumbing** (2026-10-18): temporary index, `write-tree`, `commit-tree`, `update-ref` |
 | Retry of file removal on Windows locks | `lib/integrity.mjs` | | `fs.rm` `maxRetries` (built-in) | none | retries EBUSY and EPERM | **Built-in**, in the Interrupted Attempt ticket (ADR 0011) |
 
+## Toolchain, 2026-10-31
+
+The first dependencies, all dev, for grey-goo-ri epic #193's rules (ADR 0018). None ships with gg or runs in a Run;
+ESLint and tsc run in every suite stage.
+
+| Package | Version | Reason | Decision |
+| --- | --- | --- | --- |
+| `typescript` | `~6.0.3` | `tsc --noEmit` checks the `.ts` modules Node runs by stripping types | **Adopted**; held below 6.1, the newest typescript-eslint 8.72 supports, and TypeScript 7's native compiler waits for it |
+| `@types/node` | `^24.19.2` | without it tsc resolves no `node:` module; major 24 matches the Node floor (ADR 0012) | **Adopted**, named in `types` since TypeScript 6 loads no `@types` package unlisted |
+| `eslint` | `^10.14.0` | the epic's rules (names, lengths, nesting, imports, module state), each failure at its line | **Adopted**; a hand-rolled checker would be an AST walker gg would own |
+| `typescript-eslint` | `^8.72.1` | the parser ESLint needs to read `.ts`; no type-aware rules | **Adopted**, parser only |
+| `@stylistic/eslint-plugin` | `^5.10.0` | `max-len` and `max-statements-per-line`, which left ESLint core | **Adopted** |
+| `prettier` | `^3.9.10` | one formatting, so diffs and reviews carry no style noise | **Adopted**; configured here, run and checked from grey-goo-ri issue #196 |
+
+`npm audit` reports GHSA-g3hv-75wg-m249 (CVE-2026-118764, moderate) in minimatch 10.2.6. It is a denial of service that
+needs an attacker-supplied glob pattern, and is fixed only in minimatch 11.0.1. `eslint`, `@eslint/config-array` and
+`@typescript-eslint/typescript-estree` all require `^10`. The only patterns minimatch sees here are the repository's
+own config globs and the launcher's `.`, and it never runs during a gg Run, so the owner chose to wait (2026-11-01)
+rather than force minimatch 11 with an npm `overrides` entry. That entry was probed: it cleared the audit, and ESLint
+linted the same 131 files with identical results. The fixes upstream are eslint/eslint#21476, eslint/rewrite#532 and
+typescript-eslint/typescript-eslint#13125; Dependabot's weekly npm update picks them up when they ship.
+
 ## Retention of the state database
 
 Agreed with the owner: nothing is purged automatically. `gg work archive --before <date>` (slice 6) exports and

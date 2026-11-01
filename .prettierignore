@@ -1,0 +1,9 @@
+# Prettier formats code files only (grey-goo-ri epic #193). Templates, Personas, schemas, fixtures and gg.json are
+# hashed or rendered byte for byte, and prose keeps its own wrapping.
+defaults/
+lib/templates/
+test/fixtures/
+docs/
+*.md
+*.json
+*.yml

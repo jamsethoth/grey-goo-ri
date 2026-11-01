@@ -11,7 +11,7 @@ import * as events from '../../lib/events.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import { pathKey } from '../../lib/paths.mjs';
+import { pathKey } from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as validate from '../../lib/validate.mjs';
 import * as golden from './golden.mjs';

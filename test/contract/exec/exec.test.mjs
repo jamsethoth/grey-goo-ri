@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as exec from '../../../lib/exec.mjs';
-import * as paths from '../../../lib/paths.mjs';
+import * as paths from '../../../lib/paths.ts';
 import * as render from '../../../lib/render.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'ff-exec-'));

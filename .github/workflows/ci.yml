@@ -45,6 +45,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
+      # ESLint and tsc, which every suite stage runs first (ADR 0018). No install scripts: no dev dependency needs one.
+      - name: Dev dependencies
+        run: npm ci --ignore-scripts
+
       # Any real gh, claude or codex spawned by the suite lands in calls.log and fails the job below.
       # Linux only: Windows spawns without a shell find only .exe, and no stand-in .exe is worth building.
       - name: Tripwire for real gh, claude and codex

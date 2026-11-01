@@ -9,25 +9,38 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const launcherUrl = new URL('../../scripts/run-suite.mjs', import.meta.url);
 // The machine's own cap, as the launcher computes it; the cases assert the rest of the command line literally.
 const concurrency = `--test-concurrency=${Math.min(12, Math.max(1, availableParallelism() - 1))}`;
+// ADR 0018: ESLint and tsc run as node plus each package's own bin script, before the tests, in every stage.
+const checks = [['node_modules/eslint/bin/eslint.js', '.'], ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json']];
 
 test('the full stage runs node --test over the whole suite in the repo root, at most twelve files at once', async () => {
   const runSuite = await import(launcherUrl);
   const cmd = runSuite.suiteCommand({}, []);
   assert.equal(cmd.command, process.execPath);
-  assert.deepEqual(cmd.args, ['--test', concurrency]);
+  assert.deepEqual(cmd.steps.at(-1), ['--test', concurrency]);
   assert.equal(resolve(cmd.cwd), resolve(root));
+});
+
+test('the full stage runs lint and the type check before the tests', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.deepEqual(runSuite.suiteCommand({}, []).steps, [...checks, ['--test', concurrency]]);
+});
+
+test('the fast stage runs lint and the type check before the tests', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps, [...checks, ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}']]);
 });
 
 test('the fast stage runs only test/unit and the contract suites it is given', async () => {
   const runSuite = await import(launcherUrl);
   const cmd = runSuite.suiteCommand({}, ['fast', 'sqlite', 'git']);
-  assert.deepEqual(cmd.args, ['--test', concurrency, 'test/unit/**/*.test.mjs', 'test/contract/sqlite/**/*.test.mjs', 'test/contract/git/**/*.test.mjs']);
+  assert.deepEqual(cmd.steps.at(-1), ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}', 'test/contract/sqlite/**/*.test.{mjs,ts}',
+    'test/contract/git/**/*.test.{mjs,ts}']);
   assert.equal(resolve(cmd.cwd), resolve(root));
 });
 
 test('the fast stage with no boundary runs only test/unit', async () => {
   const runSuite = await import(launcherUrl);
-  assert.deepEqual(runSuite.suiteCommand({}, ['fast']).args, ['--test', concurrency, 'test/unit/**/*.test.mjs']);
+  assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps.at(-1), ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}']);
 });
 
 // ADR 0016: anything outside the closed set stops the launcher before it runs anything.

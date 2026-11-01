@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import * as events from '../../lib/events.mjs';
 import * as integrity from '../../lib/integrity.mjs';
 import * as locks from '../../lib/locks.mjs';
-import { pathKey } from '../../lib/paths.mjs';
+import { pathKey } from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import {

@@ -19,6 +19,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - Plain Node ESM (`.mjs`), Node 24 LTS (24.15 or later, where `node:sqlite` loads without a warning; ADR 0012), must
   run on stock Node on native Windows. npm dependencies are allowed when they earn their place; prefer node
   built-ins. Never adopt an agentic workflow framework (ADR 0001).
+- TypeScript on Node's type stripping, no build step (ADR 0018): new and converted modules and tests are `.ts`, and no
+  new `.mjs` file may be added. Erasable syntax only (no enums, namespaces or parameter properties). The strict ESLint
+  rules apply to `.ts` files; `test/unit/layout.test.mjs` lists the converted and legacy files.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
   git (`test/support/fake-git.mjs`); real git in temp repositories only for the `lib/git.mjs` contract suite, tests whose
@@ -72,7 +75,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/exec.mjs` | process spawn and job-object runner (ported) |
 | `lib/winjob.ps1` | the Windows job-object helper `lib/exec.mjs` runs, which caches its compiled assembly beside itself (ADR 0017) |
 | `lib/git.mjs` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
-| `lib/paths.mjs` | canonical local paths and the path key every path comparison uses |
+| `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
 | `lib/render.mjs` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
 | `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the parse-retry nudge and the default recovery section |
@@ -100,7 +103,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 ## Examples to copy
 
-- A new module: `lib/paths.mjs` (one concept, a why-comment per rule) and `scripts/run-suite.mjs` (a closed set of
+- A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.mjs` (a closed set of
   inputs, a usage error that prints the usage).
 - A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
@@ -137,6 +140,11 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 
 - test: `node scripts/run-suite.mjs` (`npm test` is the same)
 - fast stage: `node scripts/run-suite.mjs fast [boundary ...]` runs `test/unit/` and the named `test/contract/` suites
+- lint: `node node_modules/eslint/bin/eslint.js .`
+- typecheck: `node node_modules/typescript/bin/tsc -p tsconfig.json`
+
+Run `npm ci` once in a new checkout or worktree: every stage runs lint and the type check before its tests, and stops at
+the first failure.
 
 gg reads Declared Commands from `.agents/gg/gg.json` (ADR 0013). This section stays, equal to it, for feature-flow
 until the cutover (grey-goo-ri issue #97).
