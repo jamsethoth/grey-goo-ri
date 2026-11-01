@@ -222,10 +222,13 @@ test('an Action id with whitespace is an error', async () => {
   }]);
 });
 
-test('a configuration with no Flow is an error naming gg init', async () => {
+test('a configuration without a Flow names the example document, not gg init', async () => {
   const config = example();
   delete config.flows;
-  assert.deepEqual((await check(config)).errors, [{ at: 'flows', message: 'no Flow is declared; gg init writes an example' }]);
+  assert.deepEqual((await check(config)).errors, [{
+    at: 'flows',
+    message: 'no Flow is declared; docs/research/user-defined-procedures-example-flow.md has an example to copy',
+  }]);
 });
 
 test('a repeated Action id is an error', async () => {
