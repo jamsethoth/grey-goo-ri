@@ -55,18 +55,18 @@ const actionFields = () => ({
   rule: 'red-ok',
   agent: true,
   harness: 'fake',
-  cliVersion: null,
+  agentCliVersion: null,
   model: 'fake-model',
   effort: 'medium',
   personaHash: 'p1',
   tools: ['Read'],
-  init: null,
+  sessionInit: null,
   sessionId: 's1',
-  lineage: [],
+  sessionLineage: [],
   transcriptPath: null,
   usage: { cumulative: usage(), delta: usage() },
   exitCode: 0,
-  signal: null,
+  exitSignal: null,
   finalEventSubtype: 'success',
   permissionDenials: [],
   commandsRun: [],
@@ -95,18 +95,18 @@ const required = [
 ];
 const agentRequired = [
   'harness',
-  'cliVersion',
+  'agentCliVersion',
   'model',
   'effort',
   'personaHash',
   'tools',
-  'init',
+  'sessionInit',
   'sessionId',
-  'lineage',
+  'sessionLineage',
   'transcriptPath',
   'usage',
   'exitCode',
-  'signal',
+  'exitSignal',
   'finalEventSubtype',
   'permissionDenials',
   'commandsRun',
@@ -197,7 +197,7 @@ test('actionEvent rejects an unknown key', () => {
 
 const optional = {
   check: 'red',
-  violations: [],
+  integrityViolations: [],
   retryAfterMs: 1000,
   error: 'boom',
 };
@@ -208,8 +208,73 @@ for (const [key, value] of Object.entries(optional)) {
 }
 
 test('actionEvent accepts every optional key together', () => {
-  const { check, violations, retryAfterMs, error } = events.actionEvent({ ...actionFields(), ...optional });
-  assert.deepEqual({ check, violations, retryAfterMs, error }, optional);
+  const { check, integrityViolations, retryAfterMs, error } = events.actionEvent({ ...actionFields(), ...optional });
+  assert.deepEqual({ check, integrityViolations, retryAfterMs, error }, optional);
+});
+
+test('an Event carries schemaVersion and time', (t) => {
+  const dir = tempDir(t);
+  events.eventLog(dir, { run: 'r1' })('run_start');
+  const [event] = events.readEvents(dir);
+  assert.deepEqual(Object.keys(event), ['schemaVersion', 'time', 'type', 'run']);
+  assert.equal(event.schemaVersion, 2);
+  assert.ok(!Number.isNaN(Date.parse(event.time)), event.time);
+});
+
+const OPTIONAL_KEYS = ['check', 'integrityViolations', 'retryAfterMs', 'error'];
+
+test('an agent Action Event declares every field, null where it was not given', () => {
+  const event = events.actionEvent(actionFields());
+  assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...agentRequired, ...OPTIONAL_KEYS]);
+  assert.deepEqual(
+    OPTIONAL_KEYS.map((key) => event[key]),
+    [null, null, null, null],
+  );
+});
+
+test('a deterministic Action Event declares every field of its shape', () => {
+  const check = Object.fromEntries(Object.entries(actionFields()).filter(([key]) => required.includes(key)));
+  const event = events.actionEvent(check);
+  assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...OPTIONAL_KEYS]);
+  assert.deepEqual(
+    ['agent', ...OPTIONAL_KEYS].map((key) => event[key]),
+    [false, null, null, null, null],
+  );
+});
+
+test('a Lifecycle Event declares every field of its type, null where it was not given', () => {
+  const exact = (actual, expected) => {
+    assert.deepEqual(actual, expected);
+    assert.deepEqual(Object.keys(actual), Object.keys(expected));
+  };
+  exact(events.lifecycleEvent('run_end', { run: 'r1' }), {
+    type: 'run_end',
+    run: 'r1',
+    tickets: null,
+    failureClass: null,
+  });
+  exact(events.lifecycleEvent('ticket_end', { run: 'r1', execution: 'e1', ticket: 7 }), {
+    type: 'ticket_end',
+    run: 'r1',
+    execution: 'e1',
+    ticket: 7,
+    outcome: null,
+    diffStats: null,
+    terminalReason: null,
+    error: null,
+    interrupted: null,
+  });
+  exact(events.lifecycleEvent('label_failed', { ticket: 7, change: { add: ['x'], remove: [] }, error: 'gh 502' }), {
+    type: 'label_failed',
+    ticket: 7,
+    change: { add: ['x'], remove: [] },
+    error: 'gh 502',
+    run: null,
+  });
+  assert.throws(
+    () => events.lifecycleEvent('ticket_end', { run: 'r1', execution: 'e1', ticket: 7, reason: {} }),
+    /\breason\b/,
+  );
 });
 
 for (const key of [...required, ...agentRequired]) {

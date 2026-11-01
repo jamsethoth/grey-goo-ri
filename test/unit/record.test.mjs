@@ -49,42 +49,116 @@ function withoutCommonDir(r) {
   return rest;
 }
 
-test('createExecution mints an execution id and the documented fields', async (t) => {
+test('a fresh Execution Record declares every field it can hold', async (t) => {
   const commonDir = await tempCommonDir(t);
-  const r = newExecution(commonDir);
-  assert.match(r.execution, /^8\.[0-9a-f]{6}$/);
-  assert.equal(r.schemaVersion, 1);
-  assert.equal(r.commonDir, commonDir);
-  assert.equal(r.ticket, 8);
-  assert.equal(r.epic, 1);
-  assert.equal(r.configHash, 'abc123');
-  assert.equal(r.run, 'run-1');
-  assert.equal(r.state, 'active');
-  assert.deepEqual(Object.keys(r.cursor).sort(), ['action', 'attempt', 'recovery', 'vertex', 'visit']);
-  assert.equal(r.cursor.vertex, 'implement');
-  assert.equal(r.cursor.visit, 1);
-  assert.deepEqual(r.visits, {});
-  assert.deepEqual(r.traversals, {});
-  assert.deepEqual(r.retries, {});
-  assert.deepEqual(r.sessions, {});
-  assert.deepEqual(r.outputs, []);
-  assert.deepEqual(r.testCommits, { first: null, baseline: null });
-  assert.deepEqual(r.history, []);
-  assert.equal(r.branch, 'ticket/8');
-  assert.equal(r.base, 'main');
-  assert.equal(r.pr, null);
-  assert.equal(r.pending, null);
-  assert.equal(r.snapshot, null);
-  assert.deepEqual(r.activity, { busy: false, generation: 0 });
-  assert.equal(r.heartbeat, null);
-  assert.deepEqual(r.log, []);
-  assert.notEqual(newExecution(commonDir).execution, r.execution);
+  const executionRecord = newExecution(commonDir);
+  assert.match(executionRecord.execution, /^8\.[0-9a-f]{6}$/);
+  assert.notEqual(newExecution(commonDir).execution, executionRecord.execution);
+  assert.equal(executionRecord.commonDir, commonDir);
+  const expected = {
+    schemaVersion: 1,
+    execution: executionRecord.execution,
+    ticket: 8,
+    epic: 1,
+    flow: 'default',
+    configHash: 'abc123',
+    run: 'run-1',
+    state: 'active',
+    terminalReason: null,
+    terminalStop: null,
+    admissionStop: null,
+    cursor: { vertex: 'implement', visit: 1, action: null, recovery: 0, attempt: 1 },
+    visits: {},
+    traversals: {},
+    retries: {},
+    sessions: {},
+    attempts: 0,
+    outputs: [],
+    testCommits: { first: null, baseline: null },
+    history: [],
+    worktree: join(commonDir, 'wt'),
+    branch: 'ticket/8',
+    base: 'main',
+    pr: null,
+    approvalRequest: null,
+    configurationSnapshot: null,
+    visitState: null,
+    activity: { busy: false, generation: 0 },
+    heartbeat: null,
+    writeAheadLog: [],
+  };
+  // deepEqual ignores key order, and the saved JSON keeps it, so the order is asserted too.
+  assert.deepEqual(withoutCommonDir(executionRecord), expected);
+  assert.deepEqual(Object.keys(withoutCommonDir(executionRecord)), Object.keys(expected));
+
+  const { epic, ...withoutEpic } = expected;
+  const noEpic = record.createExecution({
+    commonDir,
+    ticket: 8,
+    flow: { name: 'default', entry: 'implement' },
+    configHash: 'abc123',
+    run: 'run-1',
+    worktree: join(commonDir, 'wt'),
+    branch: 'ticket/8',
+    base: 'main',
+  });
+  assert.equal(epic, 1);
+  assert.deepEqual(withoutCommonDir(noEpic), { ...withoutEpic, epic: null, execution: noEpic.execution });
 });
 
-test('createEpicRecord has the documented fields', async (t) => {
+test('saving a record never adds a field createExecution did not declare', async (t) => {
   const commonDir = await tempCommonDir(t);
-  const epic = record.createEpicRecord({ commonDir, epic: 1 });
-  assert.deepEqual(withoutCommonDir(epic), { schemaVersion: 1, epic: 1, approval: null, pending: null });
+  const executionRecord = newExecution(commonDir);
+  executionRecord.admission = { kind: 'hold' };
+  await assert.rejects(record.save(executionRecord), (err) => {
+    assert.ok(err instanceof record.RecordSaveError, err.stack);
+    assert.match(err.message, /\badmission\b/);
+    return true;
+  });
+  assert.equal(await record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
+
+  const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
+  epicRecord.approval = null;
+  await assert.rejects(record.save(epicRecord), /\bapproval\b/);
+  assert.equal(await record.load(commonDir, 'epic', 1), null, 'nothing is saved');
+});
+
+test('saving a record never drops a field createExecution declared', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const executionRecord = newExecution(commonDir);
+  delete executionRecord.admissionStop;
+  await assert.rejects(record.save(executionRecord), /\badmissionStop\b/);
+  assert.equal(await record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
+});
+
+test('a fresh Epic Record declares every field it can hold', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
+  const expected = { schemaVersion: 1, epic: 1, planDecision: null, approvalRequest: null };
+  assert.deepEqual(withoutCommonDir(epicRecord), expected);
+  assert.deepEqual(Object.keys(withoutCommonDir(epicRecord)), Object.keys(expected));
+});
+
+test('a write-ahead entry carries every field, null where its step has none', async (t) => {
+  const commonDir = await tempCommonDir(t);
+  const executionRecord = newExecution(commonDir);
+  await record.intent(executionRecord, 'm1', 'commit', { tree: 't1' });
+  await record.evidence(executionRecord, 'm1', { sha: 's1' });
+  await record.complete(executionRecord, 'm1');
+  const entries = executionRecord.writeAheadLog;
+  assert.ok(Array.isArray(entries), 'the record has a writeAheadLog');
+  assert.deepEqual(
+    entries.map(({ time, ...entry }) => entry),
+    [
+      { step: 'intent', actionMarker: 'm1', effect: 'commit', payload: { tree: 't1' }, evidence: null },
+      { step: 'evidence', actionMarker: 'm1', effect: 'commit', payload: null, evidence: { sha: 's1' } },
+      { step: 'complete', actionMarker: 'm1', effect: 'commit', payload: null, evidence: null },
+    ],
+  );
+  for (const entry of entries) {
+    assert.deepEqual(Object.keys(entry), ['step', 'actionMarker', 'effect', 'payload', 'evidence', 'time']);
+    assert.ok(!Number.isNaN(Date.parse(entry.time)), entry.time);
+  }
 });
 
 test('save writes a records row and never a records directory', async (t) => {

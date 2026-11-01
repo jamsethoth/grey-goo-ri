@@ -632,6 +632,70 @@ test('an absent optional input renders empty in the Brief', async (t) => {
   assert.match(briefOf(g, 'green', 1), /## Committed tests\n\nThe orchestrator committed/, 'the list renders empty');
 });
 
+test('a Visit saves a state and inputs that declare every field', async (t) => {
+  const saved = [];
+  const previous = record.setSaveHook((next) => saved.push(structuredClone(next)));
+  t.after(() => record.setSaveHook(previous));
+  const g = await golden.setup(t);
+  golden.configure(g, (c) => {
+    c.flows.golden.ticket.vertices.green.inputs = {
+      ...golden.GREEN_INPUTS,
+      tests: { from: 'green.commit.files', optional: true },
+    };
+  });
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'ready-for-qa');
+
+  const green = saved.find((next) => next.configurationSnapshot?.vertex === 'green');
+  assert.ok(green, 'a record was saved with the green Visit pinned');
+  const { inputs } = green.configurationSnapshot;
+  const inputKeys = ['value', 'vertex', 'visit', 'action', 'absent'];
+  assert.deepEqual(inputs.tests, { value: null, vertex: null, visit: null, action: null, absent: true });
+  assert.deepEqual(Object.keys(inputs.tests), inputKeys);
+  assert.deepEqual(Object.keys(inputs.red), inputKeys);
+  assert.equal(inputs.red.absent, false);
+
+  const states = saved.filter((next) => next.visitState).map((next) => next.visitState);
+  assert.ok(states.length > 0, 'a Visit state was saved');
+  for (const state of states)
+    assert.deepEqual(Object.keys(state), ['recovery', 'call', 'response', 'runs', 'checks', 'checkFollows', 'settled']);
+  const { settled } = states.findLast((state) => state.settled);
+  assert.deepEqual(Object.keys(settled), ['action', 'recovery', 'resolution']);
+});
+
+test('a held Execution saves a Terminal stop that declares every field', async (t) => {
+  const g = await golden.setup(t);
+  const result = await interpreter.runExecution({
+    ...g.options,
+    admission: {
+      kind: 'hold',
+      name: 'dirty-worktree',
+      text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+    },
+  });
+  assert.equal(result.held, true, JSON.stringify(result));
+  const { terminalStop } = await loadTicket(g);
+  const expected = {
+    outcome: 'needs-human',
+    response: null,
+    actionRef: null,
+    held: true,
+    abandoned: false,
+    inProgress: false,
+    fresh: false,
+    stopped: false,
+    comment: null,
+    advice: null,
+    detail: null,
+    error: null,
+    failureClass: null,
+    runStop: null,
+    interrupted: null,
+  };
+  assert.deepEqual(terminalStop, expected);
+  assert.deepEqual(Object.keys(terminalStop), Object.keys(expected));
+});
+
 test('a shipped Brief names its inputs directly', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files['test/sentinel.test.mjs'] = "import { add } from '../lib/add.mjs';\n";
