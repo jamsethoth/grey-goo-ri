@@ -15,9 +15,10 @@ test('the launcher exits 2 with its usage and runs nothing for an argument outsi
   assert.match(r.stderr, /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/);
 });
 
-// A copy of the launcher in a temp repo whose ESLint and tsc bin scripts are fakes that log their step and exit with the
-// code a case gives; its one test file logs `tests`. Each step appends to steps.log, so the log is what ran, in order.
-function launcherCopy(t, { eslint = 0, tsc = 0, installed = true } = {}) {
+// A copy of the launcher in a temp repo whose Prettier, ESLint and tsc bin scripts are fakes that log their step and exit
+// with the code a case gives; its one test file logs `tests`. Each step appends to steps.log, so the log is what ran, in
+// order.
+function launcherCopy(t, { prettier = 0, eslint = 0, tsc = 0, installed = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'gg-run-suite-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, 'scripts'));
@@ -26,8 +27,10 @@ function launcherCopy(t, { eslint = 0, tsc = 0, installed = true } = {}) {
   copyFileSync(launcher, join(root, 'scripts', 'run-suite.mjs'));
   const step = (name, code) => `require('node:fs').appendFileSync('steps.log', '${name}\\n'); process.exit(${code});\n`;
   if (installed) {
+    mkdirSync(join(root, 'node_modules', 'prettier', 'bin'), { recursive: true });
     mkdirSync(join(root, 'node_modules', 'eslint', 'bin'), { recursive: true });
     mkdirSync(join(root, 'node_modules', 'typescript', 'bin'), { recursive: true });
+    writeFileSync(join(root, 'node_modules', 'prettier', 'bin', 'prettier.cjs'), step('prettier', prettier));
     writeFileSync(join(root, 'node_modules', 'eslint', 'bin', 'eslint.js'), step('eslint', eslint));
     writeFileSync(join(root, 'node_modules', 'typescript', 'bin', 'tsc'), step('tsc', tsc));
   }
@@ -40,30 +43,36 @@ function launcherCopy(t, { eslint = 0, tsc = 0, installed = true } = {}) {
 }
 
 for (const [stage, argv] of [['full', []], ['fast', ['fast']]]) {
-  test(`the ${stage} stage runs lint, the type check and the tests in that order and exits 0`, (t) => {
+  test(`the ${stage} stage runs the format check, lint, the type check and the tests in that order and exits 0`, (t) => {
     const copy = launcherCopy(t);
     const r = copy.run(argv);
     assert.equal(r.status, 0, r.stderr);
-    assert.equal(copy.steps(), 'eslint\ntsc\ntests\n');
+    assert.equal(copy.steps(), 'prettier\neslint\ntsc\ntests\n');
+  });
+
+  test(`a failing format check stops the ${stage} stage with its exit code before lint, the type check and the tests`, (t) => {
+    const copy = launcherCopy(t, { prettier: 4 });
+    assert.equal(copy.run(argv).status, 4);
+    assert.equal(copy.steps(), 'prettier\n');
   });
 
   test(`a failing lint step stops the ${stage} stage with its exit code before the type check and the tests`, (t) => {
     const copy = launcherCopy(t, { eslint: 3 });
     assert.equal(copy.run(argv).status, 3);
-    assert.equal(copy.steps(), 'eslint\n');
+    assert.equal(copy.steps(), 'prettier\neslint\n');
   });
 
   test(`a failing type check stops the ${stage} stage with its exit code before the tests`, (t) => {
     const copy = launcherCopy(t, { tsc: 2 });
     assert.equal(copy.run(argv).status, 2);
-    assert.equal(copy.steps(), 'eslint\ntsc\n');
+    assert.equal(copy.steps(), 'prettier\neslint\ntsc\n');
   });
 
   test(`the ${stage} stage without node_modules says to run npm ci and runs nothing`, (t) => {
     const copy = launcherCopy(t, { installed: false });
     const r = copy.run(argv);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /node_modules\/eslint\/bin\/eslint\.js and node_modules\/typescript\/bin\/tsc not found: run npm ci first/);
+    assert.match(r.stderr, /node_modules\/prettier\/bin\/prettier\.cjs and node_modules\/eslint\/bin\/eslint\.js and node_modules\/typescript\/bin\/tsc not found: run npm ci first/);
     assert.equal(copy.steps(), '');
   });
 }

@@ -38,13 +38,14 @@ ESLint, through typescript-eslint's parser and `@stylistic/eslint-plugin`, enfor
 a module meets them when it converts, and an unconverted `.mjs` file is legacy until its ticket. There is no
 suppressions file. Where a rule takes a message (`no-restricted-syntax`), the message says how to fix, since agents
 read it. Prettier is installed and configured for code files only (never templates, Personas, schemas, fixtures or
-JSON, whose bytes are hashed or rendered); it runs in grey-goo-ri issue #196, which also turns its check on.
+JSON, whose bytes are hashed or rendered); grey-goo-ri issue #196 formats every code file and turns its check on.
 
-Every stage of `scripts/run-suite.mjs` runs ESLint, then `tsc`, then the tests, and the first failure stops it, so CI
-(which runs the full stage) enforces the rules as well as the fast stage. The launcher spawns each as `process.execPath`
-plus the package's own bin script (`node_modules/eslint/bin/eslint.js`, `node_modules/typescript/bin/tsc`), never
-through a shell or an npm `.cmd` shim, in the same cleaned environment as the tests (ADR 0010). They load only the
-repository's own configuration and the packages `package-lock.json` pins. The launcher's arguments are unchanged, so
+Every stage of `scripts/run-suite.mjs` runs `prettier --check` (from #196), then ESLint, then `tsc`, then the tests,
+and the first failure stops it, so CI (which runs the full stage) enforces the rules as well as the fast stage. The
+launcher spawns each as `process.execPath` plus the package's own bin script (`node_modules/prettier/bin/prettier.cjs`,
+`node_modules/eslint/bin/eslint.js`, `node_modules/typescript/bin/tsc`), never through a shell or an npm `.cmd` shim, in
+the same cleaned environment as the tests (ADR 0010). They load only the repository's own configuration and the
+packages `package-lock.json` pins. The launcher's arguments are unchanged, so
 ADR 0016's closed set stands. The fast stage's patterns become `*.test.{mjs,ts}`; the full stage's `node --test` with
 no pattern already finds `.ts` tests.
 
@@ -73,4 +74,4 @@ no pattern already finds `.ts` tests.
   runs from a checkout. Publishing gg as an npm
   package would need a build step and a new ADR.
 - The "Plain Node ESM (`.mjs`)" convention in AGENTS.md is amended: `.ts` for new and converted modules and tests.
-- The fast stage gains the time ESLint and tsc take (a few seconds each on an idle machine).
+- The fast stage gains the time Prettier, ESLint and tsc take (a few seconds each on an idle machine).
