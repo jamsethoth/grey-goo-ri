@@ -1337,3 +1337,54 @@ test('a restart does not count the resumed Attempt again toward the Action Cap',
   assert.equal(g.harness.calls.length, 1, 'only red called the agent');
   stopReason(g, { vertex: 'green', action: 'green', outcome: 'needs-human', rule: { table: 'fixed', row: 'action-cap' } });
 });
+
+// Request 3.3's worked example: nested retries, a cap boundary and a restart in one Execution. red's call is retried
+// for parse (Attempt 2) and green's test fails once, so green's call runs a recovery pass: both count toward the Action
+// Cap, neither toward a Visit or an Edge. reviewer/2's changes find their Edge spent (max 1), whose exhausted target is
+// senior-dev; the cap of 26 is used by then, so senior-dev's first Attempt is refused and the cap wins over the Bound. The
+// process dies as it saves that route, and the restart routes the same way.
+test('worked example: retries and a recovery pass count toward the cap, which wins over a spent Bound across a restart', async (t) => {
+  const g = await reviewFlow(t, {
+    'red/1/red/1': { response: null },
+    'red/1/red/2': structuredClone(golden.firstVisitResponses['red/1/red/1']),
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
+    'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
+  }, { configure: (c) => {
+    c.flows.golden.actionCap = 26;
+    c.flows.golden.ticket.vertices.reviewer.route.changes = { to: 'implementer-fix', max: 1, exhausted: 'senior-dev' };
+  } });
+  // The suite passes only once lib/add.mjs really adds, so green's first test Check fails.
+  g.options.exec = { runShell: async (command, opts) => {
+    const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
+    if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
+    return readFileSync(file, 'utf8').includes('a + b')
+      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
+  } };
+  const restore = golden.failSaves(t, (saved, next) => next.cursor.vertex === 'senior-dev' && next.cursor.action === null);
+  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof record.RecordSaveError);
+  restore();
+  g.rec = await loadTicket(g);
+  assert.deepEqual(g.rec.cursor, { vertex: 'reviewer', visit: 2, action: 'pr', recovery: 0, attempt: 1 }, 'the route was not saved');
+
+  const calls = g.harness.calls.length;
+  const result = await interpreter.runExecution({ ...g.options, record: g.rec });
+  assert.equal(result.outcome, 'needs-human');
+  assert.equal(g.harness.calls.length, calls, 'no agent runs after the restart');
+  assert.deepEqual(golden.trace(g.readEvents()).filter((e) => !['needs-human'].includes(e.vertex))
+    .map((e) => `${e.vertex}/${e.action}/${e.recovery}/${e.attempt}`), [
+    'red/red/0/1', 'red/red/0/2', 'red/red-check/0/1', 'red/commit/0/1',
+    'green/green/0/1', 'green/test/0/1', 'green/green/1/1', 'green/test/1/1', 'green/commit/1/1', 'green/push/1/1', 'green/pr/1/1',
+    'reviewer/review/0/1', 'reviewer/review-pass/0/1', 'reviewer/repeat/0/1', 'reviewer/comment/0/1', 'reviewer/pr/0/1',
+    'implementer-fix/fix/0/1', 'implementer-fix/test/0/1', 'implementer-fix/commit/0/1', 'implementer-fix/push/0/1', 'implementer-fix/pr/0/1',
+    'reviewer/review/0/1', 'reviewer/review-pass/0/1', 'reviewer/repeat/0/1', 'reviewer/comment/0/1', 'reviewer/pr/0/1',
+  ], 'the 26 Attempts the cap allows');
+  assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, 'senior-dev': 1 }, 'retries and recovery add no Visit');
+  assert.deepEqual(g.rec.traversals, { 'reviewer->implementer-fix:changes': 1 });
+  // The review's comments are write-ahead too, so the Terminal Reason's comment is found on the Ticket.
+  const reason = stopReason(g, { vertex: 'senior-dev', action: 'fix', outcome: 'needs-human', rule: { table: 'fixed', row: 'action-cap' }, comment: false });
+  assert.equal(reason.text, 'The Execution reached its Action Cap of 26 Attempts, so fix at senior-dev did not run.');
+  assert.equal(g.gh.comments.filter((c) => c.number === golden.TICKET && c.body.includes(`**Terminal Reason:** ${reason.text}`)).length, 1);
+});
