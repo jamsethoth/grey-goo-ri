@@ -5,25 +5,39 @@ import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  WRONG_ADD, GREEN_FAIL_OUTPUT, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, ticketComments, reviewStopReason,
+  WRONG_ADD,
+  GREEN_FAIL_OUTPUT,
+  review,
+  reviewed,
+  fixed,
+  MAJOR,
+  reviewSetup,
+  reviewFlow,
+  ticketComments,
+  reviewStopReason,
 } from '../support/interpreter.mjs';
 
 test('a recovery pass after fix resumes the fix session', async (t) => {
-  const g = await reviewSetup(t, {
-    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': WRONG_ADD }),
-    'implementer-fix/1/recover/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
-    'reviewer/2/review/1': reviewed(review('ok')),
-  }, {
-    exec: {
-      runShell: async (command, opts) => {
-        const file = join(opts?.cwd ?? '', 'lib', 'add.mjs');
-        if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
-        return readFileSync(file, 'utf8').includes('a + b')
-          ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
+  const g = await reviewSetup(
+    t,
+    {
+      'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': WRONG_ADD }),
+      'implementer-fix/1/recover/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
+      'reviewer/2/review/1': reviewed(review('ok')),
+    },
+    {
+      exec: {
+        runShell: async (command, opts) => {
+          const file = join(opts?.cwd ?? '', 'lib', 'add.mjs');
+          if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
+          return readFileSync(file, 'utf8').includes('a + b')
+            ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
+            : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
+        },
       },
     },
-  });
+  );
 
   assert.deepEqual(g.at('implementer-fix', 1, 'test', 0)[0]?.rule, { table: 'fixed', row: 'recover' });
   const fixCall = g.at('implementer-fix', 1, 'fix', 0)[0];
@@ -48,7 +62,11 @@ test('misscoped lands in replan with the diagnosis on ticket and epic', async (t
   const end = g.events.at(-1);
   assert.equal(end.type, 'ticket_end');
   assert.equal(end.outcome, 'needs-replan');
-  assert.deepEqual([...g.gh.labels], ['gg:state:needs-replan'], 'needs-replan replaces in-progress, and needs-human is not added');
+  assert.deepEqual(
+    [...g.gh.labels],
+    ['gg:state:needs-replan'],
+    'needs-replan replaces in-progress, and needs-human is not added',
+  );
 
   const onTicket = ticketComments(g);
   assert.equal(onTicket.length, 1, 'the diagnosis comment carries the Terminal Reason, no second comment');

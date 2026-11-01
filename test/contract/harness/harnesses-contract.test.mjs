@@ -73,7 +73,8 @@ for (const [field, message] of [
 test('every Harness declares the paths that configure it', async () => {
   const { HARNESSES } = await import('../../../lib/harnesses/shipped.mjs');
   const modules = readdirSync(new URL('../../../lib/harnesses/', import.meta.url))
-    .filter((f) => !['contract.mjs', 'shipped.mjs'].includes(f)).map((f) => f.replace(/\.mjs$/, ''));
+    .filter((f) => !['contract.mjs', 'shipped.mjs'].includes(f))
+    .map((f) => f.replace(/\.mjs$/, ''));
   assert.deepEqual(Object.keys(HARNESSES).sort(), modules.sort(), 'every Harness module is shipped');
   assert.deepEqual(Object.fromEntries(Object.entries(HARNESSES).map(([name, h]) => [name, h.protectedPaths])), {
     claude: ['.claude/', '.mcp.json', 'CLAUDE.md'],
@@ -85,18 +86,51 @@ test('every Harness declares the paths that configure it', async () => {
 
 test('USAGE_FIELDS lists the Usage fields', () => {
   assert.deepEqual(contract.USAGE_FIELDS, [
-    'input', 'cached', 'cacheWrite', 'output', 'reasoning', 'costUsd', 'peakContext', 'turns', 'toolCalls', 'compactions',
+    'input',
+    'cached',
+    'cacheWrite',
+    'output',
+    'reasoning',
+    'costUsd',
+    'peakContext',
+    'turns',
+    'toolCalls',
+    'compactions',
   ]);
 });
 
 test('emptyUsage sets null for absent capabilities', () => {
-  assert.deepEqual(contract.emptyUsage({ cost: false, reasoningTokens: false, peakContext: true, turns: true, toolCalls: true }), {
-    input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: null, costUsd: null, peakContext: 0, turns: 0, toolCalls: 0, compactions: 0,
-  });
+  assert.deepEqual(
+    contract.emptyUsage({ cost: false, reasoningTokens: false, peakContext: true, turns: true, toolCalls: true }),
+    {
+      input: 0,
+      cached: 0,
+      cacheWrite: 0,
+      output: 0,
+      reasoning: null,
+      costUsd: null,
+      peakContext: 0,
+      turns: 0,
+      toolCalls: 0,
+      compactions: 0,
+    },
+  );
 });
 
 test('emptyUsage with no usage capability present sets null for every field a capability gates', () => {
-  assert.deepEqual(contract.emptyUsage({ cost: false, reasoningTokens: false, peakContext: false, turns: false, toolCalls: false }), {
-    input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: null, costUsd: null, peakContext: null, turns: null, toolCalls: null, compactions: 0,
-  });
+  assert.deepEqual(
+    contract.emptyUsage({ cost: false, reasoningTokens: false, peakContext: false, turns: false, toolCalls: false }),
+    {
+      input: 0,
+      cached: 0,
+      cacheWrite: 0,
+      output: 0,
+      reasoning: null,
+      costUsd: null,
+      peakContext: null,
+      turns: null,
+      toolCalls: null,
+      compactions: 0,
+    },
+  );
 });

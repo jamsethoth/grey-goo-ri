@@ -25,10 +25,20 @@ test('the Check kinds and the keys each may declare', () => {
 });
 
 test("an agent Action's response is typed by its schema; a Check gives evidence and a commit its files", () => {
-  const schema = { type: 'object', properties: { claim: { type: 'string', enum: ['ok'] } }, required: ['claim'], additionalProperties: false };
+  const schema = {
+    type: 'object',
+    properties: { claim: { type: 'string', enum: ['ok'] } },
+    required: ['claim'],
+    additionalProperties: false,
+  };
   assert.deepEqual(Object.keys(procedures.outputs({ do: 'agent' }, schema).properties), ['response', 'cleanup']);
   assert.equal(procedures.outputs({ do: 'agent' }, schema).properties.response, schema);
-  assert.deepEqual(procedures.outputs({ do: 'check' }).properties.evidence.properties, { command: { type: 'string' }, output: { type: 'string' } });
-  assert.deepEqual(procedures.outputs({ do: 'commit' }).properties, { files: { type: 'array', items: { type: 'string' } } });
+  assert.deepEqual(procedures.outputs({ do: 'check' }).properties.evidence.properties, {
+    command: { type: 'string' },
+    output: { type: 'string' },
+  });
+  assert.deepEqual(procedures.outputs({ do: 'commit' }).properties, {
+    files: { type: 'array', items: { type: 'string' } },
+  });
   assert.deepEqual(procedures.outputs({ do: 'push' }).properties, {});
 });

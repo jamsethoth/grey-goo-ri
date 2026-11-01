@@ -11,7 +11,14 @@ import * as run from '../../lib/run.mjs';
 export const TDD_VERTICES = ['red', 'green'];
 
 export const FIRST_VISIT = [
-  ['red', 'red'], ['red', 'red-check'], ['red', 'commit'], ['green', 'green'], ['green', 'test'], ['green', 'commit'], ['green', 'push'], ['green', 'pr'],
+  ['red', 'red'],
+  ['red', 'red-check'],
+  ['red', 'commit'],
+  ['green', 'green'],
+  ['green', 'test'],
+  ['green', 'commit'],
+  ['green', 'push'],
+  ['green', 'pr'],
 ].map(([vertex, action]) => ({ vertex, action, recovery: 0, attempt: 1, outcome: 'ok' }));
 
 export async function firstVisit(t, opts) {
@@ -42,25 +49,33 @@ export function terminalReasonOf(g, { comment = true } = {}) {
 }
 
 export const tddTrace = (g) => golden.trace(g.readEvents()).filter((e) => TDD_VERTICES.includes(e.vertex));
-const isAction = (e, vertex, action, recovery) => e.type === 'action' && e.vertex === vertex && e.action === action && e.recovery === recovery;
-export const actionEvent = (g, vertex, action, recovery = 0) => g.readEvents().find((e) => isAction(e, vertex, action, recovery));
+const isAction = (e, vertex, action, recovery) =>
+  e.type === 'action' && e.vertex === vertex && e.action === action && e.recovery === recovery;
+export const actionEvent = (g, vertex, action, recovery = 0) =>
+  g.readEvents().find((e) => isAction(e, vertex, action, recovery));
 
 // T17's error paths: every non-advance row of the transition table, reached through the interpreter.
 export const WRONG_ADD = 'export const add = () => 0;\n';
 export const GREEN_FAIL_OUTPUT = 'not ok 1 - adds two numbers\n# fail 1';
-export const attemptsOf = (g, vertex, action, recovery = 0) => g.readEvents().filter((e) => isAction(e, vertex, action, recovery));
+export const attemptsOf = (g, vertex, action, recovery = 0) =>
+  g.readEvents().filter((e) => isAction(e, vertex, action, recovery));
 
 export const ok = (files) => ({ files, response: golden.greenResponse });
 
 // The suite passes only once lib/add.mjs really adds, so a wrong green fails the Green Check.
 export async function greenSetup(t, responses, integrity, git) {
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
+  const g = await golden.setup(t, {
+    responses: { ...structuredClone(golden.firstVisitResponses), ...responses },
+    integrity,
+    git,
+  });
   g.options.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
       if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
       return readFileSync(file, 'utf8').includes('a + b')
-        ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
+        ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
+        : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
     },
   };
   return g;
@@ -79,7 +94,10 @@ export function stopReason(g, { vertex, action, recovery = 0, outcome, rule, com
 // The Ticket branch as the injected git holds it: commit messages since the base, oldest first, and their subjects.
 export async function branchMessages(g) {
   const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);
-  return log.filter((c) => c.sha !== g.base).map((c) => c.message).reverse();
+  return log
+    .filter((c) => c.sha !== g.base)
+    .map((c) => c.message)
+    .reverse();
 }
 export const subjects = async (g) => (await branchMessages(g)).map((m) => m.split('\n')[0]);
 export const headSha = (g) => g.options.git.headSha(g.worktree);
@@ -90,7 +108,13 @@ export const originSha = (g, git = g.options.git) => git.remoteSha(g.mainRoot, g
 export const REVIEWER_PERSONA = '# reviewer\nJudge the diff.\n';
 export const finding = (severity, file, issue) => ({ severity, file, issue, fix: 'Make it right.' });
 export const review = (claim, findings = [], extra = {}) => ({
-  claim, summary: `The review says ${claim}.`, dodMet: true, tddEvidenceOk: true, findings, diagnosis: '', ...extra,
+  claim,
+  summary: `The review says ${claim}.`,
+  dodMet: true,
+  tddEvidenceOk: true,
+  findings,
+  diagnosis: '',
+  ...extra,
 });
 export const reviewed = (response, files = {}) => ({ files, response });
 export const fixed = (files) => ({ files, response: { ...golden.greenResponse, summary: 'Address the findings.' } });
@@ -105,7 +129,8 @@ export async function reviewSetup(t, responses, opts) {
   g.result = await interpreter.runExecution(g.options);
   g.events = g.readEvents();
   g.actions = g.events.filter((e) => e.type === 'action' && e.procedure);
-  g.at = (vertex, visit, action, recovery = 0) => g.actions.filter((e) => e.visit === visit && isAction(e, vertex, action, recovery));
+  g.at = (vertex, visit, action, recovery = 0) =>
+    g.actions.filter((e) => e.visit === visit && isAction(e, vertex, action, recovery));
   return g;
 }
 
@@ -119,18 +144,40 @@ export const FIX_INPUTS = {
 
 // `configure`, when given, edits the review configuration further.
 export async function reviewFlow(t, responses, { exec, integrity, git, configure } = {}) {
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...responses }, integrity, git });
+  const g = await golden.setup(t, {
+    responses: { ...structuredClone(golden.firstVisitResponses), ...responses },
+    integrity,
+    git,
+  });
   golden.configure(g, (c) => {
     c.files['reviewer.md'] = golden.layerFile(REVIEWER_PERSONA);
     c.agents.reviewer = { ...golden.implementerAgent('reviewer.md'), model: 'model-r', access: 'read-only' };
     const { vertices } = c.flows.golden.ticket;
     vertices.green.route = { ok: 'reviewer' };
-    vertices.reviewer = { use: 'reviewer', procedure: 'review', inputs: REVIEW_INPUTS,
-      route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } },
-        repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } } } };
-    vertices['implementer-fix'] = { use: 'implementer', procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } };
-    vertices['senior-dev'] = { use: 'implementer', procedure: 'fix', max: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS,
-      route: { ok: 'reviewer' } };
+    vertices.reviewer = {
+      use: 'reviewer',
+      procedure: 'review',
+      inputs: REVIEW_INPUTS,
+      route: {
+        ok: 'publish',
+        changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } },
+        repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } },
+      },
+    };
+    vertices['implementer-fix'] = {
+      use: 'implementer',
+      procedure: 'fix',
+      inputs: FIX_INPUTS,
+      route: { ok: 'reviewer' },
+    };
+    vertices['senior-dev'] = {
+      use: 'implementer',
+      procedure: 'fix',
+      max: 1,
+      exhausted: { end: 'needs-human' },
+      inputs: FIX_INPUTS,
+      route: { ok: 'reviewer' },
+    };
     vertices.publish.inputs = REVIEW_INPUTS;
   });
   if (configure) golden.configure(g, configure);
@@ -138,7 +185,8 @@ export async function reviewFlow(t, responses, { exec, integrity, git, configure
   return g;
 }
 
-export const prReviewComments = (g) => g.gh.comments.filter((c) => c.number === g.gh.pr()?.number && /### gg review/.test(c.body));
+export const prReviewComments = (g) =>
+  g.gh.comments.filter((c) => c.number === g.gh.pr()?.number && /### gg review/.test(c.body));
 export const ticketComments = (g) => g.gh.comments.filter((c) => c.target === 'issue' && c.number === golden.TICKET);
 
 // A review or fix stop ends with one Terminal Reason in the record, on ticket_end and in exactly one ticket comment.
@@ -155,7 +203,11 @@ export function reviewStopReason(g) {
 // #67: agent Attempts are write-ahead, and each record transition saves with its Event.
 export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKET);
 // The saved row read without awaiting, for a getter that cannot await.
-export const ticketRow = (g) => JSON.parse(record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET).json);
+export const ticketRow = (g) =>
+  JSON.parse(
+    record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET)
+      .json,
+  );
 export const attemptMarker = (g, ...at) => golden.markerOf(g.rec, ...at);
 
 // #66: GitHub writes and push retry recognised transient failures inside the Action, through the marker lookup.
@@ -195,18 +247,28 @@ export function contendRepoLock(t, commonDir, during) {
     return attempt();
   });
   t.after(() => locks.setAttemptWrapper(previous));
-  return { arm: () => { state = 'armed'; }, state: () => state };
+  return {
+    arm: () => {
+      state = 'armed';
+    },
+    state: () => state,
+  };
 }
 
 // The golden Execution on the orchestrator's locked git; `after(verb, n)` runs after the nth raw call of a verb.
 export function lockedSetup(g, after) {
   const counts = {};
-  const raw = Object.fromEntries(['writeTree', 'commitStaged', 'push'].map((verb) => [verb, async (...args) => {
-    const out = await git[verb](...args);
-    counts[verb] = (counts[verb] ?? 0) + 1;
-    after(verb, counts[verb]);
-    return out;
-  }]));
+  const raw = Object.fromEntries(
+    ['writeTree', 'commitStaged', 'push'].map((verb) => [
+      verb,
+      async (...args) => {
+        const out = await git[verb](...args);
+        counts[verb] = (counts[verb] ?? 0) + 1;
+        after(verb, counts[verb]);
+        return out;
+      },
+    ]),
+  );
   const git = g.options.git;
   g.options.git = run.lockedGit({ ...git, ...raw }, g.commonDir);
   return counts;

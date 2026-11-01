@@ -15,11 +15,14 @@ function buildTemplate() {
   process.on('exit', () => rmSync(root, { recursive: true, force: true }));
   sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
   const origin = join(root, 'origin.git');
-  sh(origin, 'config', 'maintenance.auto', 'false'); sh(origin, 'config', 'gc.auto', '0');
+  sh(origin, 'config', 'maintenance.auto', 'false');
+  sh(origin, 'config', 'gc.auto', '0');
   sh(root, 'clone', '-q', 'origin.git', 'main');
   const mainRoot = join(root, 'main');
-  sh(mainRoot, 'config', 'maintenance.auto', 'false'); sh(mainRoot, 'config', 'gc.auto', '0');
-  sh(mainRoot, 'config', 'user.name', 't'); sh(mainRoot, 'config', 'user.email', 't@t');
+  sh(mainRoot, 'config', 'maintenance.auto', 'false');
+  sh(mainRoot, 'config', 'gc.auto', '0');
+  sh(mainRoot, 'config', 'user.name', 't');
+  sh(mainRoot, 'config', 'user.email', 't@t');
   writeFileSync(join(mainRoot, 'package.json'), TEMPLATE_PACKAGE);
   sh(mainRoot, 'add', '-A');
   sh(mainRoot, 'commit', '-q', '-m', 'init');
@@ -35,7 +38,8 @@ export function seedRepos(dir) {
   const config = join(dir, 'main', '.git', 'config');
   const text = readFileSync(config, 'utf8');
   const url = `${template.url.slice(0, -`${basename(template.root)}/origin.git`.length)}${basename(dir)}/origin.git`;
-  if (dirname(dir) !== dirname(template.root) || text.split(template.url).length !== 2) throw new Error(`cannot point ${config} at ${url}`);
+  if (dirname(dir) !== dirname(template.root) || text.split(template.url).length !== 2)
+    throw new Error(`cannot point ${config} at ${url}`);
   writeFileSync(config, text.replace(template.url, url));
   return template.base;
 }

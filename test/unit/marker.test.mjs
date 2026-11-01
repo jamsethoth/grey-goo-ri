@@ -7,12 +7,31 @@ const parts = { execution: 'e1', vertex: 'implement', visit: 2, action: 'test', 
 const asText = (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, String(v)]));
 
 test('a marker carries the action id and recovery number', () => {
-  const m = marker.formatMarker({ execution: '142.4f9e21', vertex: 'needs-human', visit: 1, action: 'hold-comment', recovery: 0, run: 'r1', attempt: 1 });
+  const m = marker.formatMarker({
+    execution: '142.4f9e21',
+    vertex: 'needs-human',
+    visit: 1,
+    action: 'hold-comment',
+    recovery: 0,
+    run: 'r1',
+    attempt: 1,
+  });
   assert.equal(m, 'gg:142.4f9e21:needs-human:1:hold-comment:0:r1:1');
-  assert.deepEqual(marker.parseMarker(marker.markerComment(m)),
-    { execution: '142.4f9e21', vertex: 'needs-human', visit: '1', action: 'hold-comment', recovery: '0', run: 'r1', attempt: '1' });
+  assert.deepEqual(marker.parseMarker(marker.markerComment(m)), {
+    execution: '142.4f9e21',
+    vertex: 'needs-human',
+    visit: '1',
+    action: 'hold-comment',
+    recovery: '0',
+    run: 'r1',
+    attempt: '1',
+  });
   assert.deepEqual(asText(marker.partsOf(marker.formatMarker(parts))), asText(parts));
-  assert.equal(marker.actionKeyOf(parts), 'implement/2/test/1', 'the retry key is the Action identity without the Attempt');
+  assert.equal(
+    marker.actionKeyOf(parts),
+    'implement/2/test/1',
+    'the retry key is the Action identity without the Attempt',
+  );
 });
 
 test('marker round-trips through the commit trailer', () => {

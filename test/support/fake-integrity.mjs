@@ -9,7 +9,8 @@ export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
   const TREE = '0'.repeat(40);
   const worktrees = new Map();
   const state = (worktree) => {
-    if (!worktrees.has(worktree)) worktrees.set(worktree, { head, headTree: TREE, index: TREE, tree: TREE, written: [], from: 0 });
+    if (!worktrees.has(worktree))
+      worktrees.set(worktree, { head, headTree: TREE, index: TREE, tree: TREE, written: [], from: 0 });
     return worktrees.get(worktree);
   };
   const snapshot = async (worktree) => {
@@ -17,12 +18,15 @@ export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
     return { head: h, index, tree };
   };
   const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
-  const isProtected = (p, protectedPaths) => protectedPaths.some((q) => {
-    const bare = fold(q.replace(/\/+$/, ''));
-    return fold(p) === bare || fold(p).startsWith(`${bare}/`);
-  });
+  const isProtected = (p, protectedPaths) =>
+    protectedPaths.some((q) => {
+      const bare = fold(q.replace(/\/+$/, ''));
+      return fold(p) === bare || fold(p).startsWith(`${bare}/`);
+    });
   const diff = (worktree, before, after, surfaces) =>
-    surfaces.filter((s) => before[s] !== after[s]).map((surface) => ({ worktree, surface, before: before[surface], after: after[surface] }));
+    surfaces
+      .filter((s) => before[s] !== after[s])
+      .map((surface) => ({ worktree, surface, before: before[surface], after: after[surface] }));
 
   const integrity = {
     snapshot,
@@ -43,11 +47,23 @@ export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
     // Protected writes count from the last begin: an Attempt's end always follows its own begin.
     async end({ baseline, record: rec, others, access, protectedPaths }) {
       const worktree = rec.worktree;
-      const violations = diff(worktree, baseline.own, await snapshot(worktree), access === 'read-only' ? ['head', 'index', 'tree'] : ['head', 'index']);
-      const touched = [...new Set(state(worktree).written.slice(state(worktree).from).filter((p) => isProtected(p, protectedPaths)))].sort();
+      const violations = diff(
+        worktree,
+        baseline.own,
+        await snapshot(worktree),
+        access === 'read-only' ? ['head', 'index', 'tree'] : ['head', 'index'],
+      );
+      const touched = [
+        ...new Set(
+          state(worktree)
+            .written.slice(state(worktree).from)
+            .filter((p) => isProtected(p, protectedPaths)),
+        ),
+      ].sort();
       if (touched.length) violations.push({ worktree, surface: 'protected', before: null, after: touched });
       for (const other of others) {
-        if (baseline.idle[other]) violations.push(...diff(other, baseline.idle[other].snap, await snapshot(other), ['head', 'index', 'tree']));
+        if (baseline.idle[other])
+          violations.push(...diff(other, baseline.idle[other].snap, await snapshot(other), ['head', 'index', 'tree']));
       }
       return { violations };
     },

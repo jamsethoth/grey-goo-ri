@@ -10,8 +10,15 @@ import { fakeGit } from '../support/fake-git.mjs';
 
 function newExecution(commonDir, ticket, worktree) {
   return record.createExecution({
-    commonDir, ticket, epic: 1, flow: { name: 'default', entry: 'implement' }, configHash: 'abc123', run: 'run-1',
-    worktree, branch: `ticket/${ticket}`, base: 'main',
+    commonDir,
+    ticket,
+    epic: 1,
+    flow: { name: 'default', entry: 'implement' },
+    configHash: 'abc123',
+    run: 'run-1',
+    worktree,
+    branch: `ticket/${ticket}`,
+    base: 'main',
   });
 }
 
@@ -43,7 +50,7 @@ test('markBusy and markIdle bump the generation and save', async (t) => {
   assert.deepEqual((await record.load(commonDir, 'ticket', 1)).activity, { busy: false, generation: 2 });
 });
 
-test('readActivity reads another ticket\'s record from disk', async (t) => {
+test("readActivity reads another ticket's record from disk", async (t) => {
   const { root, other, commonDir } = await twoRecords(t);
   assert.deepEqual(await integrity.readActivity(commonDir, other), { busy: false, generation: 0 });
   await integrity.markBusy(await otherProcessRecord(commonDir));
@@ -76,7 +83,19 @@ test('a workflow file change is an integrity violation', async (t) => {
   mkdirSync(join(mainRoot, '.github', 'actions', 'setup'), { recursive: true });
   writeFileSync(join(mainRoot, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
 
-  const { violations } = await real.end({ baseline, record: rec, others: [], access: 'read-write', protectedPaths: interpreter.protectedFiles({}) });
-  assert.deepEqual(violations, [{ worktree: mainRoot, surface: 'protected', before: null,
-    after: ['.github/actions/setup/action.yml', '.github/workflows/ci.yml'] }]);
+  const { violations } = await real.end({
+    baseline,
+    record: rec,
+    others: [],
+    access: 'read-write',
+    protectedPaths: interpreter.protectedFiles({}),
+  });
+  assert.deepEqual(violations, [
+    {
+      worktree: mainRoot,
+      surface: 'protected',
+      before: null,
+      after: ['.github/actions/setup/action.yml', '.github/workflows/ci.yml'],
+    },
+  ]);
 });
