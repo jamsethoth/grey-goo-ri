@@ -362,7 +362,14 @@ test('provenance counts one call per Attempt and a resumed Session once', () => 
     writeAheadLog: [
       ...call(at('red', 'red', 0, 1), usage(100, 10, 10)),
       ...call(at('red', 'red', 1, 1), usage(30, 0, 3)),
-      { step: 'intent', marker: at('red', 'commit', 1, 1), action: 'commit' },
+      // A commit's evidence is not a call's, so it counts nothing.
+      {
+        step: 'evidence',
+        actionMarker: at('red', 'commit', 1, 1),
+        effect: 'commit',
+        payload: null,
+        evidence: { sha: 'abc' },
+      },
       // A parse retry: two Attempts of one Action, each one call.
       ...call(at('green', 'green', 0, 1), usage(50, 0, 5)),
       ...call(at('green', 'green', 0, 2), usage(60, 0, 6)),

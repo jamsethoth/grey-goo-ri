@@ -1782,6 +1782,61 @@ test('the Action Cap ends the Ticket at needs-human', async (t) => {
   assert.equal(reason.text, 'The Execution reached its Action Cap of 4 Attempts, so test at green did not run.');
 });
 
+// JSON drops a key whose value is undefined, so a saved record must hold none.
+const undefinedPaths = (value, path = 'record') =>
+  value === undefined
+    ? [path]
+    : value && typeof value === 'object'
+      ? Object.entries(value).flatMap(([key, item]) => undefinedPaths(item, `${path}.${key}`))
+      : [];
+
+test('a stop a Visit decides saves a Terminal stop and Check runs that declare every field', async (t) => {
+  const saved = [];
+  const previous = record.setSaveHook((next) => {
+    const { commonDir, ...persisted } = next;
+    saved.push(structuredClone(persisted));
+  });
+  t.after(() => record.setSaveHook(previous));
+  const g = await cappedSetup(t);
+  const result = await interpreter.runExecution(g.options);
+  assert.equal(result.outcome, 'needs-human');
+
+  const { terminalStop } = await loadTicket(g);
+  assert.deepEqual(Object.keys(terminalStop), [
+    'outcome',
+    'response',
+    'actionRef',
+    'held',
+    'abandoned',
+    'inProgress',
+    'fresh',
+    'stopped',
+    'comment',
+    'advice',
+    'detail',
+    'error',
+    'failureClass',
+    'runStop',
+    'interrupted',
+  ]);
+  assert.deepEqual(terminalStop.actionRef, {
+    vertex: 'green',
+    visit: 1,
+    procedure: 'implement',
+    action: 'test',
+    recovery: 0,
+  });
+  assert.equal(terminalStop.comment, null);
+  const redCheck = saved.findLast((next) => next.visitState?.runs['red-check'])?.visitState.runs['red-check'];
+  assert.deepEqual(Object.keys(redCheck ?? {}), ['output', 'reason', 'failure', 'recoverable']);
+  assert.equal(redCheck.reason, null, 'a command Check gives no reason');
+  assert.deepEqual(
+    saved.flatMap((next) => undefinedPaths(next)),
+    [],
+    'no save holds an undefined value',
+  );
+});
+
 test('an Attempt retry counts toward the Action Cap', async (t) => {
   const g = await golden.setup(t, {
     responses: { ...structuredClone(golden.firstVisitResponses), 'red/1/red/1': { response: null } },
