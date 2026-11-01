@@ -103,7 +103,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 ## Examples to copy
 
-- A new module: `lib/paths.mjs` (one concept, a why-comment per rule) and `scripts/run-suite.mjs` (a closed set of
+- A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.mjs` (a closed set of
   inputs, a usage error that prints the usage).
 - A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
