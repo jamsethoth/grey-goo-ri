@@ -152,7 +152,7 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
 });
 
 test('a transient failure is retried within budget honouring retryAfterMs', async (t) => {
-  const failed = { files: {}, response: null, failure: { class: 'transient', retryAfterMs: 5 } };
+  const failed = { files: {}, response: null, failure: { failureClass: 'transient', retryAfterMs: 5 } };
   const g = await golden.setup(t, {
     responses: {
       'red/1/red/1': failed,
@@ -197,7 +197,7 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
 
 test('an auth failure stops the run with its class', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const result = await interpreter.runExecution(g.options);
 
@@ -218,7 +218,7 @@ test('an auth failure stops the run with its class', async (t) => {
 
 test('an auth failure keeps its run stop when the terminal comment fails', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   g.options.gh = {
     ...g.options.gh,
@@ -237,7 +237,7 @@ const terminalMarker = (g, action) => golden.markerOf(g.rec, 'needs-human', 1, a
 
 test('a fault interrupting a Terminal comment posts its own comment with the error and the interrupted Terminal Reason', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const real = g.options.gh.commentIssue;
   let calls = 0;
@@ -263,13 +263,13 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   assert.ok(posted.body.includes(terminalMarker(g, 'fault-comment')), 'the fault report has its own Action Marker');
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.marker),
+    record.openIntents(rec).map((e) => e.actionMarker),
     [terminalMarker(g, 'end-comment')],
     'the intent of the interrupted comment stays open, and the fault report never replays it',
   );
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
   assert.equal(end.interrupted.terminal, 'needs-human');
-  assert.match(end.interrupted.reason.text, /auth/, 'ticket_end keeps the interrupted Terminal Reason too');
+  assert.match(end.interrupted.terminalReason.text, /auth/, 'ticket_end keeps the interrupted Terminal Reason too');
 });
 
 test('a hold over an interrupted blocked terminal posts its own comment', async (t) => {
@@ -293,7 +293,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
       advice: 'Commit, stash or remove these changes in the worktree.',
       detail: ' human.txt (untracked)\n',
     },
@@ -311,12 +311,12 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(rec.state, 'held');
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.marker),
+    record.openIntents(rec).map((e) => e.actionMarker),
     [blocked],
     'the interrupted blocked intent stays open, untouched',
   );
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
-  assert.equal(end.reason.decidedBy.hold, 'dirty-worktree');
+  assert.equal(end.terminalReason.decidedBy.hold, 'dirty-worktree');
 });
 
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
@@ -331,17 +331,17 @@ test('a crash inside the fault report replays its comment once on resume', async
   assert.equal(posted.length, 1, 'posted exactly once');
   assert.match(posted[0].body, /harness exploded/);
   assert.doesNotMatch(posted[0].body, /Interrupted/, 'a fault inside a Visit interrupted no Terminal');
-  assert.ok(!('interrupted' in g.readEvents().find((e) => e.type === 'ticket_end')));
+  assert.equal(g.readEvents().find((e) => e.type === 'ticket_end').interrupted, null);
   // The faulted Attempt never completed, so its intent stays open on the finished record.
   assert.deepEqual(
-    record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)).map((e) => e.action),
+    record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)).map((e) => e.effect),
     ['call'],
   );
 });
 
 test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const real = g.options.gh.commentIssue;
   let calls = 0;
@@ -381,7 +381,7 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
 
 test('an unknown failure goes to needs-human without retry', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'unknown' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
   });
   const result = await interpreter.runExecution(g.options);
 

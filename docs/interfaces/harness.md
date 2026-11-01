@@ -59,10 +59,11 @@ The Harness receives the Persona bytes, never a path.
 - `response`: the unvalidated Structured Response object, or `null` when the agent returned none or unparsable output
   (the malformed case). The orchestrator validates it.
 - `result`: the Harness Result `{ status: 'completed' | 'failed' | 'timed-out' | 'killed', sessionId,
-  usage: { cumulative, delta }, transcriptPath, exitCode, signal, finalEventSubtype,
-  init: { plugins, pluginErrors, mcpServers, mcpServerErrors, capabilities }, permissionDenials, commandsRun }`.
+  usage: { cumulative, delta }, transcriptPath, exitCode, exitSignal, finalEventSubtype,
+  sessionInit: { plugins, pluginErrors, mcpServers, mcpServerErrors, capabilities }, permissionDenials, commandsRun }`.
+  `exitSignal` is the OS signal that ended the process, or null.
   `commandsRun` is diagnostic only. Outcomes are classified from the final event, not the exit code.
-- `failure`: for `failed`, `{ class: 'auth' | 'quota' | 'budget' | 'rate-limited' | 'transient' | 'unknown',
+- `failure`: for `failed`, `{ failureClass: 'auth' | 'quota' | 'budget' | 'rate-limited' | 'transient' | 'unknown',
   retryAfterMs, message }`; otherwise `null`.
 
 A Harness never throws or rejects for an expected failure; a rejection is an unexpected fault.

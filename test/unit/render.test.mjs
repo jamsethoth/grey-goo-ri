@@ -340,18 +340,18 @@ test('provenance counts one call per Attempt and a resumed Session once', () => 
   const usage = (input, cached, output) => ({ input, cached, output });
   // Each Attempt's completion saves its own usage.delta; the Session keeps only the last cumulative usage.
   const call = (m, delta) => [
-    { step: 'intent', marker: m, action: 'call' },
-    { step: 'evidence', marker: m, action: 'call', evidence: { usage: delta } },
-    { step: 'complete', marker: m, action: 'call' },
+    { step: 'intent', actionMarker: m, effect: 'call', payload: {}, evidence: null },
+    { step: 'evidence', actionMarker: m, effect: 'call', payload: null, evidence: { usageDelta: delta } },
+    { step: 'complete', actionMarker: m, effect: 'call', payload: null, evidence: null },
   ];
   const session = (vertex, cumulative) => ({
     vertex,
     harness: 'claude',
     model: 'opus',
     effort: 'high',
-    persona: 'tdd.md',
+    personaName: 'tdd.md',
     personaHash: 'abcdef0123456789',
-    usage: cumulative,
+    cumulativeUsage: cumulative,
   });
   const rec = {
     sessions: {
@@ -359,10 +359,17 @@ test('provenance counts one call per Attempt and a resumed Session once', () => 
       'red/1/red': session('red', usage(130, 10, 13)),
       'green/1/green': session('green', usage(60, 0, 6)),
     },
-    log: [
+    writeAheadLog: [
       ...call(at('red', 'red', 0, 1), usage(100, 10, 10)),
       ...call(at('red', 'red', 1, 1), usage(30, 0, 3)),
-      { step: 'intent', marker: at('red', 'commit', 1, 1), action: 'commit' },
+      // A commit's evidence is not a call's, so it counts nothing.
+      {
+        step: 'evidence',
+        actionMarker: at('red', 'commit', 1, 1),
+        effect: 'commit',
+        payload: null,
+        evidence: { sha: 'abc' },
+      },
       // A parse retry: two Attempts of one Action, each one call.
       ...call(at('green', 'green', 0, 1), usage(50, 0, 5)),
       ...call(at('green', 'green', 0, 2), usage(60, 0, 6)),
@@ -515,7 +522,7 @@ test(`the review comment template matches its builder's output`, async () => {
 });
 
 test(`the Terminal Reason comment template matches its builder's output`, async () => {
-  const interrupted = { terminal: 'ready-for-qa', reason: { text: 'PR #3 is ready.' } };
+  const interrupted = { terminal: 'ready-for-qa', terminalReason: { text: 'PR #3 is ready.' } };
   assert.equal(
     await render.terminalComment(
       'needs-human',
@@ -701,7 +708,7 @@ for (const [name, build] of [
         reason,
         m,
         'TOKEN detail',
-        { terminal: 'TOKEN done', reason: { text: 'TOKEN earlier' } },
+        { terminal: 'TOKEN done', terminalReason: { text: 'TOKEN earlier' } },
         redact,
       ),
   ],

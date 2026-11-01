@@ -19,6 +19,7 @@ import {
   lastRun,
   EPIC,
   epicOf,
+  loadTicket,
 } from '../support/run.mjs';
 
 const LABEL_SETUPS = [
@@ -364,4 +365,44 @@ test('an Agent naming no harness still exits 2 naming the example Layers', async
   ]);
   assert.equal(err.exitCode, 2);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
+});
+
+test('an admission hold saves an admission stop that declares every field', async (t) => {
+  const f = fixture(t);
+  await record.save(
+    record.createExecution({
+      commonDir: f.commonDir,
+      ticket: TICKET,
+      epic: null,
+      flow: { name: 'default', entry: 'red' },
+      configHash: 'x',
+      run: 'seed',
+      worktree: f.worktree,
+      branch: 'ticket/99-other',
+      base: 'main',
+    }),
+  );
+  const saved = [];
+  const previous = record.setSaveHook((next) => saved.push(structuredClone(next)));
+  t.after(() => record.setSaveHook(previous));
+
+  const results = await run.runTarget(f.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  const admissionStop = saved.find((next) => next.admissionStop)?.admissionStop;
+  assert.ok(admissionStop, 'admission saved the hold it decided');
+  const expected = {
+    kind: 'hold',
+    name: 'branch-mismatch',
+    terminalReasonText: admissionStop.terminalReasonText,
+    fresh: false,
+    advice: admissionStop.advice,
+    detail: null,
+    inProgress: false,
+    error: null,
+  };
+  assert.deepEqual(admissionStop, expected);
+  assert.deepEqual(Object.keys(admissionStop), Object.keys(expected));
+  assert.equal(typeof admissionStop.terminalReasonText, 'string');
+  assert.equal(typeof admissionStop.advice, 'string');
+  assert.equal((await loadTicket(f)).admissionStop, null, 'its Terminal retires it');
 });

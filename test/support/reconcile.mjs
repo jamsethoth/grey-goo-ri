@@ -5,9 +5,9 @@ import * as marker from '../../lib/marker.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from './golden.mjs';
 
-export const resetEntries = (rec) => rec.log.filter((e) => e.action === 'reset').map((e) => e.step);
+export const resetEntries = (rec) => rec.writeAheadLog.filter((e) => e.effect === 'reset').map((e) => e.step);
 
-export const stepsOf = (rec, m) => rec.log.filter((e) => e.marker === m).map((e) => e.step);
+export const stepsOf = (rec, m) => rec.writeAheadLog.filter((e) => e.actionMarker === m).map((e) => e.step);
 // Read through the git the case runs on, real or fake. The messages are the branch's commits since base, newest first.
 export async function branchMessages(g) {
   const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);

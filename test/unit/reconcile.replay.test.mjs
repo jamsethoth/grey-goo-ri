@@ -57,7 +57,7 @@ for (const point of Object.keys(POINTS)) {
     const final = await loadTicket(g);
     assert.equal(final.state, 'needs-replan');
     assert.deepEqual(
-      final.log.map((e) => `${actionOf(e.marker)} ${e.action} ${e.step}`),
+      final.writeAheadLog.map((e) => `${actionOf(e.actionMarker)} ${e.effect} ${e.step}`),
       REPLAN_LOG,
       'one intent, one evidence and one completion per Action',
     );
@@ -125,7 +125,8 @@ async function crashedLabel(t) {
 }
 
 // A found effect has its evidence saved; the interpreter completes it with its Event.
-const evidenced = async (g, m) => (await loadTicket(g)).log.some((e) => e.marker === m && e.step === 'evidence');
+const evidenced = async (g, m) =>
+  (await loadTicket(g)).writeAheadLog.some((e) => e.actionMarker === m && e.step === 'evidence');
 const terminalEffects = async (g, m) =>
   (
     await reconcile.terminalEffects(await loadTicket(g), {

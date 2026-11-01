@@ -191,10 +191,10 @@ A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes
 - Every end carries a Terminal Reason, `ready-for-qa` included: `decidedBy` (the Vertex, Visit, Action id and Recovery
   Number of the Action whose Outcome took the Edge, or `{ hold: <name> }` when the Execution stopped before any Action, such as
   `dirty-worktree`), `outcome` and `rule` from that Action (null for a hold), and `text`, one sentence for a human
-  saying why it succeeded or stopped. It is stored in the Execution Record beside the state, is the `reason` of the
-  ticket end event, and its text and Action Marker are posted on the ticket with the Terminal's label change, through
-  the write-ahead log (a stop token's comment carries it rather than a second comment). It points to the deciding
-  Action's event for the full Signals rather than copying them.
+  saying why it succeeded or stopped. It is stored in the Execution Record beside the state, is the `terminalReason`
+  of the ticket end event, and its text and Action Marker are posted on the ticket with the Terminal's label change,
+  through the write-ahead log (a stop token's comment carries it rather than a second comment). It points to the
+  deciding Action's event for the full Signals rather than copying them.
 - Edges: `route: { <outcome>: <vertex | {end} | {to, max, exhausted}> }`; a Flow's default `routes`, `"*"`
   included, apply to every Vertex that does not route the Outcome itself. Every back edge has `max` and
   `exhausted`. A vertex may have its own `max` and `exhausted`, counting its visits; every cycle contains an edge or

@@ -74,7 +74,7 @@ test('retry-after is honoured on the fake clock', async (t) => {
   assert.deepEqual(g.sleeps, [7_000]);
   assert.deepEqual(
     seen?.saved,
-    { count: 1, class: 'rate-limited', nextEligibleAt: seen?.now + 7_000, started: false },
+    { count: 1, failureClass: 'rate-limited', nextEligibleAt: seen?.now + 7_000, started: false },
     'the retry is saved before the sleep',
   );
   assert.equal(
@@ -99,7 +99,7 @@ test('an accepted write whose call errored is found by marker, not reposted', as
   const final = await loadTicket(g);
   assert.deepEqual(steps(final, m), ['intent', 'evidence', 'complete']);
   assert.equal(
-    final.log.find((e) => e.marker === m && e.step === 'evidence').evidence.id,
+    final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence.id,
     posted.id,
     'the found comment is the evidence',
   );
@@ -315,7 +315,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
     },
   });
   assert.equal(first.fault, true, JSON.stringify(first));

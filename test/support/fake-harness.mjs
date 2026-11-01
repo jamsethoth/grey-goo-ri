@@ -99,7 +99,7 @@ export function fakeHarness({
     s.cumulative = addUsage(s.cumulative, delta);
 
     const failure = script.failure ? { retryAfterMs: null, message: '', ...script.failure } : null;
-    const { usage: _usage, init, ...overrides } = script.result ?? {};
+    const { usage: _usage, sessionInit, ...overrides } = script.result ?? {};
     const outcome = (status) => ({
       response: script.response ?? null,
       result: {
@@ -108,9 +108,9 @@ export function fakeHarness({
         usage: { cumulative: { ...s.cumulative }, delta },
         transcriptPath: s.transcriptPath,
         exitCode: status === 'completed' ? 0 : 1,
-        signal: status === 'killed' ? 'SIGTERM' : null,
+        exitSignal: status === 'killed' ? 'SIGTERM' : null,
         finalEventSubtype: status === 'completed' ? 'success' : null,
-        init: { ...emptyInit(), ...init },
+        sessionInit: { ...emptyInit(), ...sessionInit },
         permissionDenials: [],
         commandsRun: 0,
         ...(status === 'killed' ? {} : overrides),

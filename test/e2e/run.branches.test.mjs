@@ -301,8 +301,8 @@ for (const row of SIBLINGS) {
     assert.equal(red?.outcome, 'integrity-violation');
     assert.deepEqual(red.rule, { table: 'fixed', row: 'integrity-violation' });
     assert.ok(
-      red.violations.some((v) => pathKey(v.worktree) === pathKey(sibling) && v.surface === 'tree'),
-      JSON.stringify(red.violations),
+      red.integrityViolations.some((v) => pathKey(v.worktree) === pathKey(sibling) && v.surface === 'tree'),
+      JSON.stringify(red.integrityViolations),
     );
     assert.equal(f.harness.calls.length, 1, 'no agent call after the violation');
     assert.equal(
@@ -428,7 +428,7 @@ test('an unexpected branch query failure faults before recovery', async (t) => {
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'fault');
   assert.deepEqual(
-    record.openIntents(final).filter((e) => e.action === 'commit'),
+    record.openIntents(final).filter((e) => e.effect === 'commit'),
     record.openIntents(seeded),
   );
 });

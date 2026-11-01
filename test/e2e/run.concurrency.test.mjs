@@ -220,8 +220,8 @@ test('a stray write into an idle worktree is attributed to the running action', 
   const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === 21 && e.action === 'red' && e.agent);
   assert.equal(red?.outcome, 'integrity-violation', JSON.stringify(results));
   assert.ok(
-    red.violations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'),
-    JSON.stringify(red.violations),
+    red.integrityViolations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'),
+    JSON.stringify(red.integrityViolations),
   );
 });
 
@@ -260,7 +260,7 @@ test("a busy worktree is never attributed to another ticket's action", { timeout
     ],
     JSON.stringify(results),
   );
-  const flagged = f.readEvents().filter((e) => e.type === 'action' && e.ticket === 21 && e.violations);
+  const flagged = f.readEvents().filter((e) => e.type === 'action' && e.ticket === 21 && e.integrityViolations);
   assert.deepEqual(flagged, [], 'no Action of A carries a violation');
 });
 

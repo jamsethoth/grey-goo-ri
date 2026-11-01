@@ -202,7 +202,7 @@ test('an auth failure stops every active ticket and records the class on run_end
   });
   // A's red call fails with auth while B is inside its own red call; B's call returns once A has ended.
   ticketHarnesses(f, [21, 22], {
-    responses: { 21: { 'red/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
+    responses: { 21: { 'red/1/red/1': { failure: { failureClass: 'auth', message: 'Not logged in' } } } },
     before: async (n, call) => {
       if (call.phase !== 'red') return;
       if (n === 21) await bInCall.wait();
@@ -232,7 +232,7 @@ test('an auth failure stops every active ticket and records the class on run_end
   );
   const bEnd = evs.find((e) => e.type === 'ticket_end' && e.ticket === 22);
   assert.equal(bEnd.outcome, 'needs-human');
-  assert.match(bEnd.reason.text, /#21\b.*\bauth\b/, 'the reason of B names the run-stopping failure');
+  assert.match(bEnd.terminalReason.text, /#21\b.*\bauth\b/, 'the reason of B names the run-stopping failure');
   const ends = evs.filter((e) => e.type === 'run_end');
   assert.equal(ends.length, 1);
   assert.equal(ends[0].failureClass, 'auth');
@@ -301,7 +301,7 @@ test('a run stop skips queued tickets without admitting them', { timeout: 120_00
   f.options.target = EPIC;
   f.options.config.maxParallel = 1;
   const fakes = ticketHarnesses(f, [21, 22], {
-    responses: { 21: { 'red/1/red/1': { failure: { class: 'auth', message: 'Not logged in' } } } },
+    responses: { 21: { 'red/1/red/1': { failure: { failureClass: 'auth', message: 'Not logged in' } } } },
   });
 
   const results = await run.runTarget(f.options);

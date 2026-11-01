@@ -37,7 +37,7 @@ test('a hold label failure leaves its label intent open for the next Run', async
   assert.equal(mid?.terminalStop?.held, true, 'the hold is decided');
   assert.notEqual(mid.state, 'held', 'a hold whose label is pending is not held');
   assert.deepEqual(
-    record.openIntents(mid).map((e) => e.action),
+    record.openIntents(mid).map((e) => e.effect),
     ['label'],
     'the label intent stays open',
   );
@@ -67,7 +67,7 @@ test('a seeded hold label failure is finished on the next Run', async (t) => {
   assert.equal(mid?.terminalStop?.held, true, 'the hold is decided');
   assert.notEqual(mid.state, 'held', 'a hold whose label is pending is not held');
   assert.deepEqual(
-    record.openIntents(mid).map((e) => e.action),
+    record.openIntents(mid).map((e) => e.effect),
     ['commit', 'label'],
     'the label intent stays open beside the seeded commit',
   );
@@ -92,7 +92,7 @@ async function overriddenPendingHold(t) {
   const failing = failComment(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
-  const [holdComment] = record.openIntents(mid).filter((e) => e.action === 'comment');
+  const [holdComment] = record.openIntents(mid).filter((e) => e.effect === 'comment');
   failing.on = false;
   f.gh.labels.add(NEEDS_HUMAN);
   const inner = f.gh.gh;
@@ -130,18 +130,18 @@ test('human override abandons a pending hold before any label cleanup', async (t
   const ends = endsOf(f, final.execution);
   assert.equal(ends.length, 1);
   assert.equal(ends[0].outcome, 'abandoned');
-  assert.deepEqual(ends[0].reason, final.terminalReason);
+  assert.deepEqual(ends[0].terminalReason, final.terminalReason);
   assert.ok(
-    record.openIntents(final).some((e) => e.marker === holdComment.marker),
+    record.openIntents(final).some((e) => e.actionMarker === holdComment.actionMarker),
     'the hold comment intent stays open, never replayed',
   );
   assert.deepEqual(
-    record.openIntents(final).filter((e) => e.action === 'commit'),
+    record.openIntents(final).filter((e) => e.effect === 'commit'),
     record.openIntents(seededRec),
     'the older intent is kept',
   );
   assert.deepEqual(
-    final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
+    final.writeAheadLog.filter((e) => e.step === 'intent' && e.effect === 'label').map((e) => e.payload),
     [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
     'the cleanup is one write-ahead label Action',
   );
@@ -177,18 +177,18 @@ test('human override of a pending hold is decided durably when its label cleanup
   const ends = endsOf(f, final.execution);
   assert.equal(ends.length, 1);
   assert.equal(ends[0].outcome, 'abandoned');
-  assert.deepEqual(ends[0].reason, final.terminalReason);
+  assert.deepEqual(ends[0].terminalReason, final.terminalReason);
   assert.ok(
-    record.openIntents(final).some((e) => e.marker === holdComment.marker),
+    record.openIntents(final).some((e) => e.actionMarker === holdComment.actionMarker),
     'the hold comment intent stays open, never replayed',
   );
   assert.deepEqual(
-    record.openIntents(final).filter((e) => e.action === 'commit'),
+    record.openIntents(final).filter((e) => e.effect === 'commit'),
     record.openIntents(seededRec),
     'the older intent is kept',
   );
   assert.deepEqual(
-    final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
+    final.writeAheadLog.filter((e) => e.step === 'intent' && e.effect === 'label').map((e) => e.payload),
     [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
     'the cleanup is one write-ahead label Action',
   );
@@ -220,7 +220,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
 
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
-  const [open] = record.openIntents(mid ?? { log: [] }).filter((e) => e.action === 'comment');
+  const [open] = record.openIntents(mid ?? { writeAheadLog: [] }).filter((e) => e.effect === 'comment');
   assert.ok(open, 'the landed fault comment waits for its completion');
   assert.equal(f.comments().length, 1);
 
@@ -240,7 +240,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   assert.equal(f.comments().length, 1, 'the marker found the landed comment');
   const final = await loadTicket(f);
   assert.deepEqual(
-    final.log.filter((e) => e.marker === open.marker).map((e) => e.step),
+    final.writeAheadLog.filter((e) => e.actionMarker === open.actionMarker).map((e) => e.step),
     ['intent', 'evidence', 'complete'],
   );
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the label lands');
@@ -274,13 +274,13 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
 test('a crash between admission and its hold keeps the decision and its one ticket_start', async (t) => {
   const { f } = await dirtyTicket(t, false);
   // Every update carrying a Terminal stop fails, as if gg died once admission had saved the new record.
-  const restore = golden.failSaves(t, (saved, next) => saved !== undefined && next.terminalStop !== undefined);
+  const restore = golden.failSaves(t, (saved, next) => saved !== undefined && next.terminalStop != null);
   const first = await run.runTarget(f.options);
   restore();
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
   const mid = await loadTicket(f);
   assert.ok(mid, 'admission saved the record');
-  assert.equal(mid.terminalStop, undefined, 'the hold was never saved');
+  assert.equal(mid.terminalStop, null, 'the hold was never saved');
   assert.equal(f.comments().length, 0);
 
   const second = await run.runTarget(f.options);
@@ -365,18 +365,18 @@ test('a human needs-human label before the first Visit prevents admission effect
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
   assert.deepEqual(final.visits, {});
   assert.deepEqual(
-    final.log.map((e) => `${e.step} ${e.action}`),
+    final.writeAheadLog.map((e) => `${e.step} ${e.effect}`),
     ['intent label', 'evidence label', 'complete label'],
     'the cleanup is one write-ahead Action',
   );
-  assert.deepEqual(final.log[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
+  assert.deepEqual(final.writeAheadLog[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
   assert.deepEqual(
     evs.map((e) => e.type),
     ['ticket_start', 'action', 'ticket_end'],
   );
   assert.equal(evs.at(-1).outcome, 'abandoned');
-  assert.deepEqual(evs.at(-1).reason, final.terminalReason);
+  assert.deepEqual(evs.at(-1).terminalReason, final.terminalReason);
 });
 
 test('a human needs-human label before the first Visit prevents admission effects in a dirty worktree', async (t) => {
@@ -403,18 +403,18 @@ test('a human needs-human label before the first Visit prevents admission effect
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
   assert.deepEqual(final.visits, {});
   assert.deepEqual(
-    final.log.map((e) => `${e.step} ${e.action}`),
+    final.writeAheadLog.map((e) => `${e.step} ${e.effect}`),
     ['intent label', 'evidence label', 'complete label'],
     'the cleanup is one write-ahead Action',
   );
-  assert.deepEqual(final.log[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
+  assert.deepEqual(final.writeAheadLog[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
   assert.deepEqual(
     evs.map((e) => e.type),
     ['ticket_start', 'action', 'ticket_end'],
   );
   assert.equal(evs.at(-1).outcome, 'abandoned');
-  assert.deepEqual(evs.at(-1).reason, final.terminalReason);
+  assert.deepEqual(evs.at(-1).terminalReason, final.terminalReason);
 });
 
 test('a human needs-human label prevents admission effects without a record', async (t) => {

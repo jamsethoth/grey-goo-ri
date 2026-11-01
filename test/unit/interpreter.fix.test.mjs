@@ -43,7 +43,7 @@ test('a recovery pass after fix resumes the fix session', async (t) => {
   const fixCall = g.at('implementer-fix', 1, 'fix', 0)[0];
   const testFix = g.at('implementer-fix', 1, 'fix', 1)[0];
   assert.ok(testFix, 'the recovery pass runs after the failing Green Check');
-  assert.equal(testFix.lineage, 'fix', 'the recovery pass resumes the fix Phase');
+  assert.equal(testFix.sessionLineage, 'fix', 'the recovery pass resumes the fix Phase');
   const call = g.harness.calls.find((c) => c.marker === golden.markerOf(g.rec, 'implementer-fix', 1, 'fix', 1));
   assert.equal(call.resume, fixCall.sessionId, 'the recovery pass resumes the fix session');
   assert.ok(call.brief.includes(GREEN_FAIL_OUTPUT));

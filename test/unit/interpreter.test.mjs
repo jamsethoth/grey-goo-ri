@@ -49,7 +49,7 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.ok(session, 'green session recorded under green/1/green');
   assert.equal(session.sessionId, 'fake-session-2');
   assert.match(session.transcriptPath, /fake-session-2\.jsonl$/);
-  assert.equal(session.usage.input, 200);
+  assert.equal(session.cumulativeUsage.input, 200);
   assert.equal(g.rec.sessions['red/1/red'].sessionId, 'fake-session-1');
 });
 
@@ -72,7 +72,7 @@ test('a Persona from the repository Layer is pinned with its hash', async (t) =>
   assert.equal(red.personaBytes, '# repo implementer\n');
   assert.equal(red.personaHash, '906646d8774b848deba8dffcf8c2b5961d3f249ca95cc4b5f025d299d66036e1');
   assert.equal(green.personaHash, red.personaHash);
-  assert.equal(g.rec.sessions['red/1/red'].persona, 'repo-implementer.md');
+  assert.equal(g.rec.sessions['red/1/red'].personaName, 'repo-implementer.md');
   assert.equal(g.rec.sessions['red/1/red'].personaHash, red.personaHash);
 });
 
@@ -223,7 +223,7 @@ for (const [name, from, to, generation, activity] of [
     assert.equal(err?.name, 'RecordSaveError', String(err));
     const saved = await loadTicket(g);
     assert.equal(saved.state, 'active', 'no fault is saved');
-    assert.equal(saved.terminalStop ?? null, null, 'nor its Terminal');
+    assert.equal(saved.terminalStop, null, 'nor its Terminal');
     assert.deepEqual(saved.activity, activity, 'the failed flip is not saved by a cleanup');
     assert.equal(g.gh.comments.length, 0, 'no fault report');
     assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
@@ -239,7 +239,7 @@ test('runExecution asks the injected integrity whether an Attempt kept to its ac
   assert.equal(result.outcome, 'needs-human');
   const red = actionEvent(g, 'red', 'red');
   assert.equal(red.outcome, 'integrity-violation');
-  assert.deepEqual(red.violations, [violation]);
+  assert.deepEqual(red.integrityViolations, [violation]);
 });
 
 test('runExecution asks the injected Test Immutability whether the committed tests still match', async (t) => {
@@ -250,7 +250,7 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   assert.equal(result.outcome, 'needs-human');
   const call = actionEvent(g, 'green', 'green');
   assert.equal(call.outcome, 'integrity-violation');
-  assert.deepEqual(call.violations, [
+  assert.deepEqual(call.integrityViolations, [
     { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
   ]);
   assert.equal(actionEvent(g, 'green', 'test'), undefined, 'decided at the agent Action, before any Check');
@@ -330,7 +330,7 @@ test("a hold's label is set after its comment, each under its own marker", async
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
     },
   });
 
@@ -338,13 +338,13 @@ test("a hold's label is set after its comment, each under its own marker", async
   const rec = await loadTicket(g);
   const [comment, label] = ['hold-comment', 'hold-label'].map((a) => reportMarker(g, 'needs-human', a));
   assert.deepEqual(
-    rec.log.filter((e) => e.step === 'intent').map((e) => [e.action, e.marker]),
+    rec.writeAheadLog.filter((e) => e.step === 'intent').map((e) => [e.effect, e.actionMarker]),
     [
       ['comment', comment],
       ['label', label],
     ],
   );
-  const order = rec.log.map((e) => `${e.step} ${e.marker}`);
+  const order = rec.writeAheadLog.map((e) => `${e.step} ${e.actionMarker}`);
   assert.ok(
     order.indexOf(`complete ${comment}`) < order.indexOf(`intent ${label}`),
     'the label is intended once the comment completed',
@@ -372,7 +372,7 @@ test("a fault during an end does not replay the end's open reporting Action", as
   const rec = await loadTicket(g);
   const ended = reportMarker(g, 'ready-for-qa', 'end-comment');
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.marker),
+    record.openIntents(rec).map((e) => e.actionMarker),
     [ended],
     "the end's comment stays open",
   );
@@ -383,9 +383,13 @@ test("a fault during an end does not replay the end's open reporting Action", as
     posted.body.includes(marker.markerComment(reportMarker(g, 'needs-human', 'fault-comment'))),
     'the fault reports under its own marker',
   );
-  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'needs-human', 'fault-label')));
   assert.ok(
-    rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'publish', 'pr-ready')),
+    rec.writeAheadLog.some(
+      (e) => e.step === 'complete' && e.actionMarker === reportMarker(g, 'needs-human', 'fault-label'),
+    ),
+  );
+  assert.ok(
+    rec.writeAheadLog.some((e) => e.step === 'complete' && e.actionMarker === reportMarker(g, 'publish', 'pr-ready')),
     "publish's pr-ready completed first",
   );
 });
@@ -571,7 +575,10 @@ test('no "*" catches an unroutable Outcome', async (t) => {
 function pinnedInputs(t) {
   const seen = {};
   const previous = record.setSaveHook((r) => {
-    if (r.snapshot) seen[`${r.snapshot.vertex}/${r.snapshot.visit}`] = structuredClone(r.snapshot.inputs);
+    if (r.configurationSnapshot)
+      seen[`${r.configurationSnapshot.vertex}/${r.configurationSnapshot.visit}`] = structuredClone(
+        r.configurationSnapshot.inputs,
+      );
   });
   t.after(() => record.setSaveHook(previous));
   return seen;
@@ -591,6 +598,7 @@ test("green reads red's committed tests through an input", async (t) => {
     vertex: 'red',
     visit: 1,
     action: 'commit',
+    absent: false,
   });
   assert.equal(pinned['green/1'].red.vertex, 'red');
   assert.equal(pinned['green/1'].red.action, 'red-check');
@@ -628,8 +636,81 @@ test('an absent optional input renders empty in the Brief', async (t) => {
   });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(pinned['green/1'].tests, { absent: true });
+  assert.deepEqual(pinned['green/1'].tests, { value: null, vertex: null, visit: null, action: null, absent: true });
   assert.match(briefOf(g, 'green', 1), /## Committed tests\n\nThe orchestrator committed/, 'the list renders empty');
+});
+
+test('a Visit saves a state and inputs that declare every field', async (t) => {
+  const saved = [];
+  const previous = record.setSaveHook((next) => saved.push(structuredClone(next)));
+  t.after(() => record.setSaveHook(previous));
+  const g = await golden.setup(t);
+  golden.configure(g, (c) => {
+    c.flows.golden.ticket.vertices.green.inputs = {
+      ...golden.GREEN_INPUTS,
+      tests: { from: 'green.commit.files', optional: true },
+    };
+  });
+  const { outcome } = await interpreter.runExecution(g.options);
+  assert.equal(outcome, 'ready-for-qa');
+
+  const green = saved.find((next) => next.configurationSnapshot?.vertex === 'green');
+  assert.ok(green, 'a record was saved with the green Visit pinned');
+  const { inputs } = green.configurationSnapshot;
+  const inputKeys = ['value', 'vertex', 'visit', 'action', 'absent'];
+  assert.deepEqual(inputs.tests, { value: null, vertex: null, visit: null, action: null, absent: true });
+  assert.deepEqual(Object.keys(inputs.tests), inputKeys);
+  assert.deepEqual(Object.keys(inputs.red), inputKeys);
+  assert.equal(inputs.red.absent, false);
+
+  const states = saved.filter((next) => next.visitState).map((next) => next.visitState);
+  assert.ok(states.length > 0, 'a Visit state was saved');
+  for (const state of states)
+    assert.deepEqual(Object.keys(state), [
+      'recovery',
+      'firstAttemptBaseline',
+      'call',
+      'response',
+      'runs',
+      'checks',
+      'checkFollows',
+      'settled',
+    ]);
+  const { settled } = states.findLast((state) => state.settled);
+  assert.deepEqual(Object.keys(settled), ['action', 'recovery', 'resolution']);
+});
+
+test('a held Execution saves a Terminal stop that declares every field', async (t) => {
+  const g = await golden.setup(t);
+  const result = await interpreter.runExecution({
+    ...g.options,
+    admission: {
+      kind: 'hold',
+      name: 'dirty-worktree',
+      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+    },
+  });
+  assert.equal(result.held, true, JSON.stringify(result));
+  const { terminalStop } = await loadTicket(g);
+  const expected = {
+    outcome: 'needs-human',
+    response: null,
+    actionRef: null,
+    held: true,
+    abandoned: false,
+    inProgress: false,
+    fresh: false,
+    stopped: false,
+    commentTemplate: null,
+    advice: null,
+    detail: null,
+    error: null,
+    failureClass: null,
+    runStopFailureClass: null,
+    interrupted: null,
+  };
+  assert.deepEqual(terminalStop, expected);
+  assert.deepEqual(Object.keys(terminalStop), Object.keys(expected));
 });
 
 test('a shipped Brief names its inputs directly', async (t) => {
@@ -668,7 +749,7 @@ test('a template names its own outputs and inputs directly', async (t) => {
   });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  const green = intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === 'green').payload.body;
+  const green = intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.actionMarker).vertex === 'green').payload.body;
   assert.ok(green.startsWith(`green: ${golden.GREEN_OUTPUT}\nred: ${golden.RED_OUTPUT}\n`), green);
   assert.deepEqual(
     g.gh.comments.filter((c) => c.body.startsWith('review: ')).map((c) => c.body.split('\n')[0]),
@@ -695,6 +776,7 @@ test('pick projects findings to file paths', async (t) => {
     vertex: 'reviewer',
     visit: 1,
     action: 'review',
+    absent: false,
   });
   assert.deepEqual(pinned['implementer-fix/1'].findings.value, [MAJOR, named]);
 });
@@ -727,7 +809,7 @@ test("each draft PR body renders its own Vertex's report and Green Evidence", as
   assert.equal(g.result.outcome, 'ready-for-qa');
   // The body each Vertex's pr-upsert saved in its intent, before a later Vertex re-rendered it.
   const bodyOf = (vertex) =>
-    intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === vertex).payload.body;
+    intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.actionMarker).vertex === vertex).payload.body;
   const greenSection = (body) => body.slice(body.indexOf('**Green**'), body.indexOf('## QA instructions'));
 
   const green = bodyOf('green');
@@ -1190,8 +1272,9 @@ function scriptedImmutability(g, results) {
   return baselines;
 }
 const commitOf = (g, vertex) =>
-  g.rec.log.find((e) => e.step === 'evidence' && e.action === 'commit' && marker.partsOf(e.marker).vertex === vertex)
-    .evidence.sha;
+  g.rec.writeAheadLog.find(
+    (e) => e.step === 'evidence' && e.effect === 'commit' && marker.partsOf(e.actionMarker).vertex === vertex,
+  ).evidence.sha;
 
 test('the interpreter names no Procedure, Action or Check', async (t) => {
   const g = await golden.setup(t, {
@@ -1264,13 +1347,16 @@ test('a Vertex with no access set runs read-only', async (t) => {
   assert.equal(g.harness.calls[0].access, 'read-only');
   const red = actionEvent(g, 'red', 'red');
   assert.equal(red.outcome, 'integrity-violation');
-  assert.equal(red.violations[0].surface, 'tree');
+  assert.equal(red.integrityViolations[0].surface, 'tree');
 });
 
 test("the Visit snapshot pins the Procedure's name and hash", async (t) => {
   const seen = {};
   const previous = record.setSaveHook((r) => {
-    if (r.snapshot) seen[`${r.snapshot.vertex}/${r.snapshot.visit}`] = structuredClone(r.snapshot.procedure);
+    if (r.configurationSnapshot)
+      seen[`${r.configurationSnapshot.vertex}/${r.configurationSnapshot.visit}`] = structuredClone(
+        r.configurationSnapshot.procedure,
+      );
   });
   t.after(() => record.setSaveHook(previous));
   const g = await golden.setup(t);
@@ -1356,7 +1442,7 @@ test('Test Immutability is asserted after an agent Attempt of a write Vertex wit
   assert.deepEqual(baselines, [commitOf(g, 'red')], "asserted once, against red's commit");
   const green = actionEvent(g, 'green', 'green');
   assert.equal(green.outcome, 'integrity-violation');
-  assert.deepEqual(green.violations.at(-1).after, ['test/add.test.mjs']);
+  assert.deepEqual(green.integrityViolations.at(-1).after, ['test/add.test.mjs']);
   assert.equal(actionEvent(g, 'green', 'commit'), undefined, 'green committed nothing');
 });
 
@@ -1694,6 +1780,77 @@ test('the Action Cap ends the Ticket at needs-human', async (t) => {
     rule: { table: 'fixed', row: 'action-cap' },
   });
   assert.equal(reason.text, 'The Execution reached its Action Cap of 4 Attempts, so test at green did not run.');
+});
+
+test("the Red Check compares untracked tests with the Visit's first baseline", async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files = {};
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  // Build output under a test glob, ignored and left from before the Visit; red writes no test, in either pass.
+  writeFileSync(join(g.worktree, '.gitignore'), 'test/cache/\n');
+  mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'recover', 'no test changed is recoverable (K7)');
+  assert.deepEqual(g.shells, [], 'the file was there at the baseline, so the test command never ran');
+});
+
+// JSON drops a key whose value is undefined, so a saved record must hold none.
+const undefinedPaths = (value, path = 'record') =>
+  value === undefined
+    ? [path]
+    : value && typeof value === 'object'
+      ? Object.entries(value).flatMap(([key, item]) => undefinedPaths(item, `${path}.${key}`))
+      : [];
+
+test('a stop a Visit decides saves a Terminal stop and Check runs that declare every field', async (t) => {
+  const saved = [];
+  const previous = record.setSaveHook((next) => {
+    const { commonDir, ...persisted } = next;
+    saved.push(structuredClone(persisted));
+  });
+  t.after(() => record.setSaveHook(previous));
+  const g = await cappedSetup(t);
+  const result = await interpreter.runExecution(g.options);
+  assert.equal(result.outcome, 'needs-human');
+
+  const { terminalStop } = await loadTicket(g);
+  assert.deepEqual(Object.keys(terminalStop), [
+    'outcome',
+    'response',
+    'actionRef',
+    'held',
+    'abandoned',
+    'inProgress',
+    'fresh',
+    'stopped',
+    'commentTemplate',
+    'advice',
+    'detail',
+    'error',
+    'failureClass',
+    'runStopFailureClass',
+    'interrupted',
+  ]);
+  assert.deepEqual(terminalStop.actionRef, {
+    vertex: 'green',
+    visit: 1,
+    procedure: 'implement',
+    action: 'test',
+    recovery: 0,
+  });
+  assert.equal(terminalStop.commentTemplate, null);
+  const redCheck = saved.findLast((next) => next.visitState?.runs['red-check'])?.visitState.runs['red-check'];
+  assert.deepEqual(Object.keys(redCheck ?? {}), ['output', 'reason', 'failure', 'recoverable']);
+  assert.equal(redCheck.reason, null, 'a command Check gives no reason');
+  assert.deepEqual(
+    saved.flatMap((next) => undefinedPaths(next)),
+    [],
+    'no save holds an undefined value',
+  );
 });
 
 test('an Attempt retry counts toward the Action Cap', async (t) => {

@@ -33,7 +33,7 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
   };
   const seeded = await seedExecution(f, { git });
   assert.deepEqual(
-    record.openIntents(seeded).map((e) => e.action),
+    record.openIntents(seeded).map((e) => e.effect),
     ['reset'],
     'the record holds the decided reset',
   );
@@ -181,7 +181,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   const seeded = await seedExecution(f, { git, integrity: crashing });
   assert.ok(!existsSync(join(f.worktree, '.claude', 'settings.local.json')), 'the crash came mid-restore');
   assert.deepEqual(
-    record.openIntents(seeded).map((e) => e.action),
+    record.openIntents(seeded).map((e) => e.effect),
     ['reset'],
   );
 
@@ -196,7 +196,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
     final.history.map((h) => h.kind),
     ['integrity violation'],
   );
-  const reset1 = final.log.filter((e) => e.action === 'reset').map((e) => e.step);
+  const reset1 = final.writeAheadLog.filter((e) => e.effect === 'reset').map((e) => e.step);
   assert.deepEqual(reset1, ['intent', 'evidence', 'complete']);
 });
 
@@ -216,7 +216,7 @@ async function assertAdmissionHoldEvents(f, results, hold) {
     'one Execution and Run throughout',
   );
   assert.equal(evs.at(-1).outcome, 'needs-human');
-  assert.deepEqual(evs.at(-1).reason, rec.terminalReason);
+  assert.deepEqual(evs.at(-1).terminalReason, rec.terminalReason);
   assert.doesNotMatch(
     rec.terminalReason.text,
     /re-run|DELETE FROM/,

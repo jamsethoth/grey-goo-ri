@@ -7,9 +7,9 @@ const completed = { status: 'completed', response: { claim: 'ok' }, failure: nul
 const failed = (cls, retryAfterMs = null) => ({
   status: 'failed',
   response: null,
-  failure: { class: cls, retryAfterMs },
+  failure: { failureClass: cls, retryAfterMs },
 });
-const claim = (token) => ({ valid: true, claim: token });
+const claim = (token) => ({ valid: true, token });
 const check = (name, passed, integrity = false) => ({
   name,
   passed,
@@ -157,7 +157,7 @@ test('a policy overrides the retry budgets', () => {
 });
 
 for (const [status, failure] of [
-  ['failed', { class: 'transient', retryAfterMs: null }],
+  ['failed', { failureClass: 'transient', retryAfterMs: null }],
   ['timed-out', null],
   ['killed', null],
 ]) {

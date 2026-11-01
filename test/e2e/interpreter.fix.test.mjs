@@ -35,7 +35,7 @@ test('a fix that changes an unnamed test is an integrity violation', async (t) =
   assert.equal(g.result.outcome, 'needs-human');
   const call = g.at('implementer-fix', 1, 'fix', 0)[0];
   assert.equal(call?.outcome, 'integrity-violation');
-  assert.deepEqual(call.violations, [
+  assert.deepEqual(call.integrityViolations, [
     { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
   ]);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)'], 'no fix commit');
@@ -66,10 +66,10 @@ test('a fix that changes a named test moves the immutability baseline', async (t
   assert.equal(g.result.outcome, 'ready-for-qa');
   const first = g.at('implementer-fix', 1, 'test', 0)[0];
   assert.equal(first?.outcome, 'ok', `fix visit 1: ${first?.rule}`);
-  assert.equal(first.violations, undefined, 'fix visit 1 has no violations');
+  assert.equal(first.integrityViolations, null, 'fix visit 1 has no violations');
   const second = g.at('implementer-fix', 2, 'test', 0)[0];
   assert.equal(second?.outcome, 'ok', `fix visit 2: ${second?.rule}`);
-  assert.equal(second.violations, undefined, 'fix visit 2 has no violations');
+  assert.equal(second.integrityViolations, null, 'fix visit 2 has no violations');
   assert.deepEqual(
     (await subjects(g)).map((s) => s.split(':')[0]),
     ['test', 'feat', 'fix', 'fix'],
@@ -140,8 +140,8 @@ test('a review that changes the tree is an integrity violation', async (t) => {
   const call = g.at('reviewer', 1, 'review', 0)[0];
   assert.equal(call?.outcome, 'integrity-violation');
   assert.ok(
-    call.violations.some((v) => v.surface === 'tree'),
-    JSON.stringify(call.violations),
+    call.integrityViolations.some((v) => v.surface === 'tree'),
+    JSON.stringify(call.integrityViolations),
   );
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
   // The reset checks the file out again, so core.autocrlf may give it CRLF line endings on Windows.

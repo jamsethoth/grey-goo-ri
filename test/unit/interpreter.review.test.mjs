@@ -92,7 +92,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   assert.equal(fix.resume, null, 'fix never resumes');
   assert.ok(fix.brief.includes(MAJOR.issue), 'the Findings are in the fix Brief');
   assert.equal(fix.access, 'workspace-write');
-  assert.equal(g.at('implementer-fix', 1, 'fix', 0)[0].lineage, null);
+  assert.equal(g.at('implementer-fix', 1, 'fix', 0)[0].sessionLineage, null);
   assert.equal(review2.access, 'read-only');
 
   const messages = await branchMessages(g);
@@ -228,7 +228,7 @@ test('golden: a review ok without evidence routes as changes through the passed 
 
   const checked = g.at('reviewer', 1, 'review-pass', 0);
   assert.equal(checked.length, 1, 'review-pass is evaluated once on the Structured Response');
-  assert.equal(checked[0].signals.claim.claim, 'ok', 'the agent claimed ok');
+  assert.equal(checked[0].signals.claim.token, 'ok', 'the agent claimed ok');
   assert.deepEqual(checked[0].signals.checks, [{ id: 'review-pass', kind: 'response', state: 'failed', tree: null }]);
   // No Claim requires review-pass (P5a), so the review still comments and updates the PR.
   assert.equal(checked[0].outcome, 'ok');
@@ -297,7 +297,7 @@ test('the review lists the test files changed since red under the testPaths pinn
 
   assert.equal(outcome, 'ready-for-qa');
   assert.deepEqual(
-    g.rec.snapshot.testPaths,
+    g.rec.configurationSnapshot.testPaths,
     ['test/**'],
     'publish, the last Visit, pinned the edited testPaths at its own entry',
   );
@@ -359,7 +359,7 @@ test('a comment Action with target ticket posts on the Ticket', async (t) => {
   const posted = g.gh.comments.filter((c) => c.number === golden.TICKET && c.body.includes(marker.markerComment(m)));
   assert.equal(posted.length, 1);
   assert.match(posted[0].body, /### gg review/);
-  assert.deepEqual(g.rec.log.find((e) => e.marker === m && e.step === 'intent').payload.target, {
+  assert.deepEqual(g.rec.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'intent').payload.target, {
     kind: 'issue',
     number: golden.TICKET,
   });

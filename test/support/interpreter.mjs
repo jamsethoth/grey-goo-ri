@@ -28,8 +28,8 @@ export async function firstVisit(t, opts) {
   return g;
 }
 
-export const intents = (rec, action) => rec.log.filter((e) => e.step === 'intent' && e.action === action);
-export const steps = (rec, m) => rec.log.filter((e) => e.marker === m).map((e) => e.step);
+export const intents = (rec, effect) => rec.writeAheadLog.filter((e) => e.step === 'intent' && e.effect === effect);
+export const steps = (rec, m) => rec.writeAheadLog.filter((e) => e.actionMarker === m).map((e) => e.step);
 export const actionMarker = (g, vertex, action, recovery = 0) => golden.markerOf(g.rec, vertex, 1, action, recovery);
 
 // The Terminal Reason must agree in the record and on ticket_end, and (unless the caller checks its own comment) be
@@ -37,7 +37,7 @@ export const actionMarker = (g, vertex, action, recovery = 0) => golden.markerOf
 export function terminalReasonOf(g, { comment = true } = {}) {
   const reason = g.rec.terminalReason;
   assert.ok(reason, 'the record holds a Terminal Reason');
-  assert.deepEqual(g.readEvents().at(-1).reason, reason, 'ticket_end carries the same Terminal Reason');
+  assert.deepEqual(g.readEvents().at(-1).terminalReason, reason, 'ticket_end carries the same Terminal Reason');
   assert.equal(typeof reason.text, 'string');
   if (comment) {
     const posted = g.gh.comments.filter((c) => c.body.includes(`**Terminal Reason:** ${reason.text}`));
@@ -193,7 +193,7 @@ export const ticketComments = (g) => g.gh.comments.filter((c) => c.target === 'i
 export function reviewStopReason(g) {
   const reason = g.rec.terminalReason;
   assert.ok(reason, 'the record holds a Terminal Reason');
-  assert.deepEqual(g.events.at(-1).reason, reason, 'ticket_end carries the same Terminal Reason');
+  assert.deepEqual(g.events.at(-1).terminalReason, reason, 'ticket_end carries the same Terminal Reason');
   const posted = ticketComments(g).filter((c) => c.body.includes(`**Terminal Reason:** ${reason.text}`));
   assert.equal(posted.length, 1, 'the Terminal Reason is posted once on the ticket');
   assert.match(posted[0].body, /^<!-- gg-action gg:\S+ -->$/m);

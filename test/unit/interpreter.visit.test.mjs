@@ -26,7 +26,7 @@ const DONE = ['intent', 'evidence', 'complete'];
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
   const g = await firstVisit(t);
   assert.deepEqual(
-    g.rec.log.filter((e) => e.step === 'intent').map((i) => [i.action, steps(g.rec, i.marker)]),
+    g.rec.writeAheadLog.filter((e) => e.step === 'intent').map((i) => [i.effect, steps(g.rec, i.actionMarker)]),
     [
       ['call', DONE],
       ['commit', DONE],
@@ -46,7 +46,7 @@ test('every side-effect action leaves intent, evidence and completion with the f
   // which a resume reads back from the State Database.
   const calls = intents(g.rec, 'call');
   assert.deepEqual(
-    calls.map((c) => c.marker),
+    calls.map((c) => c.actionMarker),
     [actionMarker(g, 'red', 'red'), actionMarker(g, 'green', 'green')],
   );
   const saved = intents(await loadTicket(g), 'call');
@@ -60,16 +60,16 @@ test('every side-effect action leaves intent, evidence and completion with the f
   const commits = intents(g.rec, 'commit');
   assert.equal(commits.length, 2);
   assert.deepEqual(Object.keys(commits[0].payload).sort(), ['message', 'parent', 'tree']);
-  assert.ok(commits[0].payload.message.includes(`Gg-Action: ${commits[0].marker}`), commits[0].payload.message);
+  assert.ok(commits[0].payload.message.includes(`Gg-Action: ${commits[0].actionMarker}`), commits[0].payload.message);
   assert.deepEqual(Object.keys(commits[1].payload).sort(), ['message', 'parent', 'tree']);
-  assert.ok(commits[1].payload.message.includes(`Gg-Action: ${commits[1].marker}`), commits[1].payload.message);
+  assert.ok(commits[1].payload.message.includes(`Gg-Action: ${commits[1].actionMarker}`), commits[1].payload.message);
   const head = await headSha(g);
-  const evidenceOf = (m) => g.rec.log.find((e) => e.marker === m && e.step === 'evidence').evidence;
-  assert.equal(evidenceOf(commits[1].marker).sha, head);
+  const evidenceOf = (m) => g.rec.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence;
+  assert.equal(evidenceOf(commits[1].actionMarker).sha, head);
 
   const [push] = intents(g.rec, 'push');
   assert.deepEqual(push.payload, { branch: golden.BRANCH, sha: head });
-  assert.equal(evidenceOf(push.marker).remoteSha, head);
+  assert.equal(evidenceOf(push.actionMarker).remoteSha, head);
 
   // publish's re-render is the PR body GitHub shows.
   const pr = intents(g.rec, 'pr-upsert').at(-1);
@@ -78,7 +78,7 @@ test('every side-effect action leaves intent, evidence and completion with the f
   assert.equal(pr.payload.title, 'Add two numbers');
   assert.equal(pr.payload.body, g.gh.pr().body, 'the PR intent holds the body itself');
   assert.equal(typeof pr.payload.bodyHash, 'string');
-  assert.deepEqual(evidenceOf(pr.marker), { number: 7, url: 'https://github.com/o/r/pull/7' });
+  assert.deepEqual(evidenceOf(pr.actionMarker), { number: 7, url: 'https://github.com/o/r/pull/7' });
 
   // pr-ready's saved target: the pushed commit and the tree publish's Check passed on.
   assert.deepEqual(
@@ -107,7 +107,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   g.options.exec = {
     runShell: (command, opts) => {
       commands.push(command);
-      if (g.rec.cursor.vertex === 'green') pinned = structuredClone(g.rec.snapshot);
+      if (g.rec.cursor.vertex === 'green') pinned = structuredClone(g.rec.configurationSnapshot);
       return runShell(command, opts);
     },
   };
@@ -221,7 +221,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
 
   const check = actionEvent(g, 'green', 'test');
   assert.ok(check, 'the Green Check runs and is recorded');
-  assert.equal(check.signals.claim.claim, 'blocked');
+  assert.equal(check.signals.claim.token, 'blocked');
   assert.deepEqual(
     check.signals.checks.map((c) => [c.id, c.state]),
     [['test', 'passed']],

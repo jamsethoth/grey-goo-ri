@@ -13,6 +13,7 @@ import {
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import * as checks from '../../lib/checks.mjs';
 import * as git from '../../lib/git.mjs';
 import * as integrity from '../../lib/integrity.mjs';
 import * as record from '../../lib/record.mjs';
@@ -543,4 +544,29 @@ test('the fake integrity reports what the real one reports for each scenario', a
       assert.deepEqual(await attempt(fake.integrity, () => s.fake(fake, w)), real);
     });
   }
+});
+
+// The Red Check diffs untracked tests against the baseline's, so the fake's must be the real one's.
+test('the fake integrity records the untracked tests the real one records', async (t) => {
+  const { fakeIntegrity } = await import('../support/fake-integrity.mjs');
+  const { own, ownRecord } = await twoWorktrees(t);
+  // An untracked test, an ignored one under a test glob, and an untracked file outside the test paths.
+  writeFileSync(join(own, '.git', 'info', 'exclude'), 'test/cache/\n');
+  mkdirSync(join(own, 'test', 'cache'), { recursive: true });
+  writeFileSync(join(own, 'test', 'new.test.mjs'), 'new\n');
+  writeFileSync(join(own, 'test', 'cache', 'out.json'), '{}\n');
+  writeFileSync(join(own, 'notes.txt'), 'notes\n');
+  const beginArguments = {
+    record: ownRecord,
+    others: [],
+    access: 'read-write',
+    protectedPaths: PROTECTED,
+    testPaths: checks.testPathSet(checks.DEFAULT_TEST_GLOBS),
+    git,
+  };
+  const real = await integrity.begin(beginArguments);
+  const fake = await fakeIntegrity({ git }).integrity.begin(beginArguments);
+
+  assert.deepEqual(Object.keys(real.tests).sort(), ['test/cache/out.json', 'test/new.test.mjs']);
+  assert.deepEqual(fake.tests, real.tests);
 });

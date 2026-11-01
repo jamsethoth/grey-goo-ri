@@ -1,8 +1,12 @@
 // Integrity and Test Immutability without git, for tests whose subject is not git behaviour. A snapshot is fixed values;
 // `write` and `commit` stand in for an agent changing a worktree, so a test can script a violation. test/integrity.test.mjs
 // runs one scenario table against this and lib/integrity.mjs, so the violations it reports keep the real shape.
+// Given the fake (or real) git, a baseline also records the untracked tests on disk, as lib/integrity.mjs does, so the Red
+// Check compares against the Visit's first baseline in the unit tier too.
+import * as integrityModule from '../../lib/integrity.mjs';
+
 // Every worktree starts at `head`, so a rollback to a baseline head resets to a real commit when `head` is one.
-export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
+export function fakeIntegrity({ head = 'f'.repeat(40), git = null } = {}) {
   let n = 0;
   // Object names in git's form, so nothing that checks one tells the fake apart.
   const next = () => (++n).toString(16).padStart(40, '0');
@@ -37,12 +41,13 @@ export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
     untrackedFiles: async () => ({}),
     ignoredFiles: async () => ({}),
     restoreUntracked: async () => {},
-    async begin({ record: rec, others }) {
+    async begin({ record: rec, others, testPaths }) {
       const own = await snapshot(rec.worktree);
       const idle = {};
-      for (const other of others) idle[other] = { generation: 0, snap: await snapshot(other) };
+      for (const other of others) idle[other] = { generation: 0, snapshot: await snapshot(other) };
       state(rec.worktree).from = state(rec.worktree).written.length;
-      return { head: own.head, own, idle, untracked: {}, tests: {} };
+      const tests = git ? await integrityModule.untrackedFiles(rec.worktree, testPaths, git) : {};
+      return { head: own.head, own, idle, untracked: {}, tests };
     },
     // Protected writes count from the last begin: an Attempt's end always follows its own begin.
     async end({ baseline, record: rec, others, access, protectedPaths }) {
@@ -63,7 +68,9 @@ export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
       if (touched.length) violations.push({ worktree, surface: 'protected', before: null, after: touched });
       for (const other of others) {
         if (baseline.idle[other])
-          violations.push(...diff(other, baseline.idle[other].snap, await snapshot(other), ['head', 'index', 'tree']));
+          violations.push(
+            ...diff(other, baseline.idle[other].snapshot, await snapshot(other), ['head', 'index', 'tree']),
+          );
       }
       return { violations };
     },

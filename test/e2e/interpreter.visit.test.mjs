@@ -19,7 +19,8 @@ test('commits match the recorded intent tree', async (t) => {
   const g = await firstVisit(t, { git: 'real' });
   const commits = intents(g.rec, 'commit');
   assert.equal(commits.length, 2);
-  const shaOf = (c) => g.rec.log.find((e) => e.marker === c.marker && e.step === 'evidence').evidence.sha;
+  const shaOf = (c) =>
+    g.rec.writeAheadLog.find((e) => e.actionMarker === c.actionMarker && e.step === 'evidence').evidence.sha;
   const [testCommit, featCommit] = commits;
   assert.equal(golden.sh(g.worktree, 'rev-parse', `${shaOf(testCommit)}^{tree}`), testCommit.payload.tree);
   assert.equal(golden.sh(g.worktree, 'rev-parse', `${shaOf(testCommit)}^`), testCommit.payload.parent);
@@ -70,7 +71,7 @@ test('a green call that changes the committed test is an integrity violation', a
   const greenCall = g.readEvents().find((e) => e.type === 'action' && e.vertex === 'green' && e.action === 'green');
   assert.equal(greenCall.outcome, 'integrity-violation');
   assert.equal(greenCall.direction, 'stop');
-  assert.deepEqual(greenCall.violations, [
+  assert.deepEqual(greenCall.integrityViolations, [
     { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
   ]);
   assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'no feat commit after the violation');

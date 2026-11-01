@@ -177,7 +177,7 @@ test('a commit interrupted before it landed is admitted and replayed', async (t)
   const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
   const seeded = await crashBeforeCommit(f);
   assert.deepEqual(
-    record.openIntents(seeded).map((e) => e.action),
+    record.openIntents(seeded).map((e) => e.effect),
     ['commit'],
     'the record holds the intended commit',
   );

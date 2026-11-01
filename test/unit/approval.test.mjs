@@ -38,7 +38,7 @@ test('two requests for one visit are different pending instances', () => {
 test('one authorised decision with a matching digest is consumed', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('one-decision'),
     digest: approval.digest(approved),
     permissions,
@@ -52,7 +52,7 @@ test('one authorised decision with a matching digest is consumed', () => {
 test('a decision before the request is ignored', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('decision-before-request'),
     digest: approval.digest(approved),
     permissions,
@@ -63,7 +63,7 @@ test('a decision before the request is ignored', () => {
 test('an undone decide label is ignored', () => {
   const read = approval.read({
     issueLabels: awaiting,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('undone-decision'),
     digest: approval.digest(approved),
     permissions,
@@ -74,7 +74,7 @@ test('an undone decide label is ignored', () => {
 test('a triage-only actor is ignored', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('triage-decision'),
     digest: approval.digest(approved),
     permissions,
@@ -85,7 +85,7 @@ test('a triage-only actor is ignored', () => {
 test('an actor in approvers is authorised below write permission', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('triage-decision'),
     digest: approval.digest(approved),
     permissions,
@@ -100,7 +100,7 @@ test('an actor in approvers is authorised below write permission', () => {
 test('two surviving decisions are ambiguous', () => {
   const read = approval.read({
     issueLabels: ['gg:await:qa-approval', 'gg:decide:qa-approval:approved', 'gg:decide:qa-approval:rejected'],
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('two-decisions'),
     digest: approval.digest(approved),
     permissions,
@@ -119,7 +119,7 @@ test('a changed branch HEAD makes the request stale', () => {
   assert.deepEqual(
     approval.read({
       issueLabels: awaitingApproved,
-      pending: pending(),
+      approvalRequest: pending(),
       timeline: timeline('one-decision'),
       digest,
       permissions,
@@ -133,7 +133,7 @@ test('a changed ticket body makes the request stale', () => {
   assert.deepEqual(
     approval.read({
       issueLabels: awaitingApproved,
-      pending: pending(),
+      approvalRequest: pending(),
       timeline: timeline('one-decision'),
       digest,
       permissions,
@@ -147,7 +147,7 @@ test('a changed config hash makes the request stale', () => {
   assert.deepEqual(
     approval.read({
       issueLabels: awaitingApproved,
-      pending: pending(),
+      approvalRequest: pending(),
       timeline: timeline('one-decision'),
       digest,
       permissions,
@@ -159,7 +159,7 @@ test('a changed config hash makes the request stale', () => {
 test('no pending instance is missing', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: null,
+    approvalRequest: null,
     timeline: timeline('one-decision'),
     digest: approval.digest(approved),
     permissions,
@@ -170,7 +170,7 @@ test('no pending instance is missing', () => {
 test('a pending instance without its Await Label event is missing', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('no-request'),
     digest: approval.digest(approved),
     permissions,
@@ -181,7 +181,7 @@ test('a pending instance without its Await Label event is missing', () => {
 test('a mixed-case decide label gives a lowercase outcome', () => {
   const read = approval.read({
     issueLabels: ['gg:await:qa-approval', 'GG:Decide:QA-Approval:Approved'],
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('mixed-case-decision'),
     digest: approval.digest(approved),
     permissions,
@@ -195,7 +195,7 @@ test('a mixed-case decide label gives a lowercase outcome', () => {
 test('a removed Await Label is missing', () => {
   const read = approval.read({
     issueLabels: ['gg:decide:qa-approval:approved'],
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('removed-request'),
     digest: approval.digest(approved),
     permissions,
@@ -206,7 +206,7 @@ test('a removed Await Label is missing', () => {
 test("an actor's permission is found whatever the case of its login", () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('one-decision'),
     digest: approval.digest(approved),
     permissions: { OWNER: 'admin' },
@@ -220,7 +220,7 @@ test("an actor's permission is found whatever the case of its login", () => {
 test('a mixed-case actor login finds its permission', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('mixed-case-actor'),
     digest: approval.digest(approved),
     permissions,
@@ -234,7 +234,7 @@ test('a mixed-case actor login finds its permission', () => {
 test('events are read in time order, not list order', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('out-of-order'),
     digest: approval.digest(approved),
     permissions,
@@ -248,7 +248,7 @@ test('events are read in time order, not list order', () => {
 test('events in one second keep their listed order', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('same-second-decision-first'),
     digest: approval.digest(approved),
     permissions,
@@ -259,7 +259,7 @@ test('events in one second keep their listed order', () => {
 test('a request listed before its retirement in the same second is still the request', () => {
   const read = approval.read({
     issueLabels: ['gg:await:qa-approval', 'gg:decide:qa-approval:approved', 'gg:decide:qa-approval:needs-changes'],
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('same-second-retire'),
     digest: approval.digest(approved),
     permissions,
@@ -273,7 +273,7 @@ test('a request listed before its retirement in the same second is still the req
 test('a decide label removed in the same second, listed first, is ignored', () => {
   const read = approval.read({
     issueLabels: awaiting,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('same-second-undo'),
     digest: approval.digest(approved),
     permissions,
@@ -284,7 +284,7 @@ test('a decide label removed in the same second, listed first, is ignored', () =
 test('a decide label removed and applied again is one decision', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('reapplied-decision'),
     digest: approval.digest(approved),
     permissions,
@@ -298,7 +298,7 @@ test('a decide label removed and applied again is one decision', () => {
 test('an Await Label removal is never the request', () => {
   const read = approval.read({
     issueLabels: awaitingApproved,
-    pending: pending(),
+    approvalRequest: pending(),
     timeline: timeline('only-removed-request'),
     digest: approval.digest(approved),
     permissions,
