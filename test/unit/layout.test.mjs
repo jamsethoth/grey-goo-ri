@@ -262,6 +262,13 @@ test('package.json keeps type module', async () => {
   assert.equal(pkg.type, 'module');
 });
 
+// tsc checks the code against @types/node, so its major must be the Node gg runs on (ADR 0020).
+test('the @types/node major in package.json is the engines.node major', async () => {
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  const major = (range) => range.match(/\d+/)[0];
+  assert.equal(major(pkg.devDependencies['@types/node']), major(pkg.engines.node));
+});
+
 test('every module in the converted list is TypeScript', () => {
   for (const path of CONVERTED) {
     assert.ok(existsSync(root + path), `${path} exists`);
