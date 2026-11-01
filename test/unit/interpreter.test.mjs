@@ -9,6 +9,7 @@ import * as record from '../../lib/record.mjs';
 import * as render from '../../lib/render.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
+import { fakeHarness } from '../support/fake-harness.mjs';
 import { firstVisit, intents, actionEvent, attemptsOf, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD,
   finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, subjects, tddTrace, headSha, GREEN_FAIL_OUTPUT, stopReason } from '../support/interpreter.mjs';
 
@@ -1390,10 +1391,14 @@ test('worked example: retries and a recovery pass count toward the cap, which wi
 });
 
 // The repeat Check compares a review only with earlier Visits of the same Vertex in the same Execution (request 3.3, R4c).
+// Each matching list sits at another Visit number than the review asserted, so the scope, not the Visit, keeps it out.
 test("a repeat Check ignores another Vertex's identical findings", async (t) => {
   const minor = [finding('minor', 'lib/add.mjs', 'name the parameters')];
+  // reviewer/2 and reviewer-2/1 give the same findings.
   const g = await reviewFlow(t, {
-    'reviewer/1/review/1': reviewed(review('ok', minor)),
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok', minor)),
     'reviewer-2/1/review/1': reviewed(review('ok', minor)),
   }, { configure: (c) => {
     const { vertices } = c.flows.golden.ticket;
@@ -1405,18 +1410,19 @@ test("a repeat Check ignores another Vertex's identical findings", async (t) => 
   assert.equal(result.outcome, 'ready-for-qa');
   const repeat = g.readEvents().find((e) => e.type === 'action' && e.vertex === 'reviewer-2' && e.action === 'repeat');
   assert.deepEqual(repeat.signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
-    "reviewer's findings are not reviewer-2's");
+    "reviewer's second review is not reviewer-2's first");
 });
 
 test("a repeat Check ignores an earlier Execution's identical findings", async (t) => {
-  // Ticket 15's Execution ends at ready-for-qa after a changes review of MAJOR. Ticket 16 then runs in the same
-  // repository and State Database, on its own worktree, with the same scripted Visits: its first review of MAJOR is new.
-  const responses = {
-    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
-    'reviewer/2/review/1': reviewed(review('ok')),
-  };
-  const g = await reviewSetup(t, responses);
+  // Ticket 15's second review reports MAJOR, and its Execution ends at ready-for-qa. Ticket 16 then runs in the same
+  // repository and State Database, on its own worktree and Harness script: its first review reports MAJOR too.
+  const g = await reviewSetup(t, {
+    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
+    'reviewer/2/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/2/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/3/review/1': reviewed(review('ok')),
+  });
   assert.equal(g.result.outcome, 'ready-for-qa');
 
   const branch = 'ticket/16-add-again';
@@ -1425,13 +1431,19 @@ test("a repeat Check ignores an earlier Execution's identical findings", async (
   const next = record.createExecution({ commonDir: g.commonDir, ticket: 16, epic: 1, flow: { name: g.flow.name, entry: g.flow.ticket.entry },
     configHash: 'cfg-hash', run: g.rec.run, worktree, branch, base: 'main' });
   await record.save(next);
-  const result = await interpreter.runExecution({ ...g.options, record: next,
+  const harness = fakeHarness({ transcriptDir: join(g.root, 'transcripts-16'), capabilities: { cost: false, reasoningTokens: false }, responses: {
+    ...structuredClone(golden.firstVisitResponses),
+    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    'reviewer/2/review/1': reviewed(review('ok')),
+  } });
+  const result = await interpreter.runExecution({ ...g.options, record: next, harness,
     ticket: { number: 16, title: 'Add two numbers again', body: 'Add `add(a, b)` again.', branch } });
 
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   const repeat = g.readEvents().find((e) => e.type === 'action' && e.execution === next.execution && e.vertex === 'reviewer'
     && e.visit === 1 && e.action === 'repeat');
   assert.deepEqual(repeat.signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
-    "ticket 15's review is not ticket 16's");
+    "ticket 15's second review is not ticket 16's first");
   assert.deepEqual(next.traversals, { 'reviewer->implementer-fix:changes': 1 }, 'the review routes as changes, not repeat');
 });
