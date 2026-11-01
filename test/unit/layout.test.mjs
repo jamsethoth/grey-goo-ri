@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -17,7 +17,7 @@ const MEDIUM = [
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true }).map((f) => f.split('\\').join('/'))
-  .filter((f) => f.endsWith('.test.mjs') && f !== 'layout.test.mjs');
+  .filter((f) => /\.test\.(?:mjs|ts)$/.test(f) && f !== 'layout.test.mjs');
 
 const marked = [
   ["import { spawn } from 'node:child_process';", 'imports node:child_process'],
@@ -46,7 +46,7 @@ const modules = [
   'lib/procedures.mjs', 'lib/briefs.mjs', 'lib/outcome.mjs', 'lib/rules.mjs', 'lib/checks.mjs', 'lib/integrity.mjs',
   'lib/record.mjs', 'lib/marker.mjs', 'lib/reconcile.mjs', 'lib/events.mjs', 'lib/labels.mjs',
   'lib/approval.mjs', 'lib/locks.mjs', 'lib/harnesses/contract.mjs', 'lib/harnesses/claude.mjs',
-  'lib/harnesses/codex.mjs', 'lib/exec.mjs', 'lib/git.mjs', 'lib/paths.mjs', 'lib/github.mjs', 'lib/render.mjs',
+  'lib/harnesses/codex.mjs', 'lib/exec.mjs', 'lib/git.mjs', 'lib/paths.ts', 'lib/github.mjs', 'lib/render.mjs',
   'lib/work.mjs', 'lib/trace.mjs', 'lib/stats.mjs', 'lib/doctor.mjs', 'lib/plan.mjs', 'lib/publish.mjs',
 ];
 
@@ -78,4 +78,74 @@ test('no module outside lib/git.mjs passes git a command line', async () => {
     const text = await readFile(root + path, 'utf8');
     for (const [re, what] of raw) assert.doesNotMatch(text, re, `${path} builds ${what}`);
   }
+});
+
+// ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
+const CONVERTED = ['lib/paths.ts'];
+// Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
+const LEGACY_MJS = [
+  'bin/gg.mjs', 'eslint.config.mjs', 'lib/approval.mjs', 'lib/briefs.mjs', 'lib/checks.mjs', 'lib/config.mjs',
+  'lib/doctor.mjs', 'lib/effects.mjs', 'lib/events.mjs', 'lib/exec.mjs', 'lib/flow.mjs', 'lib/git.mjs',
+  'lib/github.mjs', 'lib/harnesses/claude.mjs', 'lib/harnesses/codex.mjs', 'lib/harnesses/contract.mjs',
+  'lib/harnesses/shipped.mjs', 'lib/integrity.mjs', 'lib/interpreter.mjs', 'lib/labels.mjs', 'lib/locks.mjs',
+  'lib/marker.mjs', 'lib/opts.mjs', 'lib/outcome.mjs', 'lib/plan.mjs', 'lib/procedures.mjs', 'lib/publish.mjs',
+  'lib/reconcile.mjs', 'lib/record.mjs', 'lib/refs.mjs', 'lib/render.mjs', 'lib/rules.mjs', 'lib/run.mjs',
+  'lib/stats.mjs', 'lib/terminal.mjs', 'lib/trace.mjs', 'lib/validate.mjs', 'lib/work.mjs', 'scripts/run-suite.mjs',
+  'test/contract/exec/exec.test.mjs', 'test/contract/git/git.test.mjs', 'test/contract/git/template-repos.test.mjs',
+  'test/contract/harness/harnesses-contract.test.mjs', 'test/contract/sqlite/events.test.mjs',
+  'test/contract/sqlite/integrity.test.mjs', 'test/contract/sqlite/locks.test.mjs',
+  'test/contract/sqlite/record.test.mjs', 'test/e2e/checks.test.mjs', 'test/e2e/gg.test.mjs',
+  'test/e2e/integrity.test.mjs', 'test/e2e/interpreter.backoff.test.mjs', 'test/e2e/interpreter.faults.test.mjs',
+  'test/e2e/interpreter.fix.test.mjs', 'test/e2e/interpreter.retry.test.mjs', 'test/e2e/interpreter.test.mjs',
+  'test/e2e/interpreter.visit.test.mjs', 'test/e2e/interpreter.write-ahead.test.mjs',
+  'test/e2e/reconcile.crash.test.mjs', 'test/e2e/reconcile.holds.test.mjs', 'test/e2e/reconcile.replay.test.mjs',
+  'test/e2e/reconcile.test.mjs', 'test/e2e/run-suite.test.mjs', 'test/e2e/run.admission.test.mjs',
+  'test/e2e/run.branches.test.mjs', 'test/e2e/run.concurrency.test.mjs', 'test/e2e/run.recovery.test.mjs',
+  'test/e2e/run.resume.test.mjs', 'test/support/db-opener.mjs', 'test/support/event-appender.mjs',
+  'test/support/fake-git.mjs', 'test/support/fake-harness.mjs', 'test/support/fake-integrity.mjs',
+  'test/support/golden.mjs', 'test/support/interpreter.mjs', 'test/support/lock-contender.mjs',
+  'test/support/lock-stress.mjs', 'test/support/open-stress.mjs', 'test/support/reconcile.mjs',
+  'test/support/record-saver.mjs', 'test/support/repo-lock-writer.mjs', 'test/support/run.mjs',
+  'test/support/template-repos.mjs', 'test/support/write-lock-holder.mjs', 'test/unit/approval.test.mjs',
+  'test/unit/briefs.test.mjs', 'test/unit/checks.test.mjs', 'test/unit/config.test.mjs',
+  'test/unit/defaults.test.mjs', 'test/unit/doctor.test.mjs', 'test/unit/events.test.mjs',
+  'test/unit/fake-harness.test.mjs', 'test/unit/flow.test.mjs', 'test/unit/github.test.mjs',
+  'test/unit/harness-boundary.test.mjs', 'test/unit/integrity.test.mjs', 'test/unit/interpreter.backoff.test.mjs',
+  'test/unit/interpreter.faults.test.mjs', 'test/unit/interpreter.fix.test.mjs',
+  'test/unit/interpreter.retry.test.mjs', 'test/unit/interpreter.review.test.mjs', 'test/unit/interpreter.test.mjs',
+  'test/unit/interpreter.visit.test.mjs', 'test/unit/interpreter.write-ahead.test.mjs', 'test/unit/labels.test.mjs',
+  'test/unit/layout.test.mjs', 'test/unit/marker.test.mjs', 'test/unit/opts.test.mjs', 'test/unit/outcome.test.mjs',
+  'test/unit/personas.test.mjs', 'test/unit/procedures.test.mjs', 'test/unit/reconcile.crash.test.mjs',
+  'test/unit/reconcile.holds.test.mjs', 'test/unit/reconcile.replay.test.mjs', 'test/unit/reconcile.test.mjs',
+  'test/unit/record.test.mjs', 'test/unit/refs.test.mjs', 'test/unit/render.test.mjs', 'test/unit/rules.test.mjs',
+  'test/unit/run-suite.test.mjs', 'test/unit/run.admission.test.mjs', 'test/unit/run.branches.test.mjs',
+  'test/unit/run.concurrency.test.mjs', 'test/unit/run.holds.test.mjs', 'test/unit/run.recovery.test.mjs',
+  'test/unit/run.resume.test.mjs', 'test/unit/run.test.mjs', 'test/unit/validate.test.mjs',
+];
+const SKIPPED = new Set(['.git', 'node_modules']);
+function repoFiles(dir = '') {
+  return readdirSync(root + dir, { withFileTypes: true }).flatMap((entry) => {
+    if (SKIPPED.has(entry.name)) return [];
+    const path = dir + entry.name;
+    return entry.isDirectory() ? repoFiles(`${path}/`) : [path];
+  });
+}
+const unlistedMjs = (files) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
+
+test('package.json keeps type module', async () => {
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  assert.equal(pkg.type, 'module');
+});
+
+test('every module in the converted list is TypeScript', () => {
+  for (const path of CONVERTED) {
+    assert.ok(existsSync(root + path), `${path} exists`);
+    assert.ok(!existsSync(root + path.replace(/\.ts$/, '.mjs')), `${path} has no .mjs twin`);
+  }
+});
+
+test('a new .mjs file fails the layout test', () => {
+  assert.deepEqual(unlistedMjs([...LEGACY_MJS, 'lib/new.mjs']), ['lib/new.mjs']);
+  assert.deepEqual(unlistedMjs(repoFiles()), [], 'write a new module as .ts (ADR 0018)');
+  assert.deepEqual(LEGACY_MJS.filter((path) => !existsSync(root + path)), [], 'a converted file leaves LEGACY_MJS');
 });
