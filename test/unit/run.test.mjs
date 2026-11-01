@@ -393,7 +393,7 @@ test('an admission hold saves an admission stop that declares every field', asyn
   const expected = {
     kind: 'hold',
     name: 'branch-mismatch',
-    text: admissionStop.text,
+    terminalReasonText: admissionStop.terminalReasonText,
     fresh: false,
     advice: admissionStop.advice,
     detail: null,
@@ -402,7 +402,7 @@ test('an admission hold saves an admission stop that declares every field', asyn
   };
   assert.deepEqual(admissionStop, expected);
   assert.deepEqual(Object.keys(admissionStop), Object.keys(expected));
-  assert.equal(typeof admissionStop.text, 'string');
+  assert.equal(typeof admissionStop.terminalReasonText, 'string');
   assert.equal(typeof admissionStop.advice, 'string');
   assert.equal((await loadTicket(f)).admissionStop, null, 'its Terminal retires it');
 });
