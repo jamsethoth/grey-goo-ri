@@ -207,7 +207,7 @@ A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes
   survive a restart because they live in the execution record and are checked before the action runs, so a restart at
   a boundary routes the same way. The `repeat` Check compares normalised findings with earlier reviews by the same
   Vertex within the same execution only. One worked example with nested retries, a cap boundary
-  and a restart ships with the validator tests.
+  and a restart ships with the interpreter tests, since the validator never runs a flow.
 - Per-ticket graphs are sequential. Parallelism is across tickets only.
 - Two sections: `plan` (epic level, used by `gg plan`) and `ticket` (used by `gg run`). The planner is never a ticket
   vertex. The small flow sets `plan` to null.
