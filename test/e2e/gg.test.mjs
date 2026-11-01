@@ -15,7 +15,8 @@ function gg(...args) {
 
 function assertUsage(text) {
   for (const name of commands) assert.match(text, new RegExp(`\\b${name}\\b`), `usage lists ${name}`);
-  for (const verb of ['list', 'resume', 'abandon', 'reset', 'approve']) assert.match(text, new RegExp(`\\b${verb}\\b`), `usage lists work ${verb}`);
+  for (const verb of ['list', 'resume', 'abandon', 'reset', 'approve'])
+    assert.match(text, new RegExp(`\\b${verb}\\b`), `usage lists work ${verb}`);
 }
 
 test('gg with no arguments prints usage and exits 0', () => {
@@ -32,8 +33,12 @@ test('gg --help prints usage and exits 0', () => {
 });
 
 test('usage marks each unimplemented command', () => {
-  const commandLines = gg('--help').stdout.split('\n').filter((line) => line.startsWith('  '));
-  const marked = commandLines.filter((line) => line.endsWith(' (not implemented)')).map((line) => line.trim().split(' ')[0]);
+  const commandLines = gg('--help')
+    .stdout.split('\n')
+    .filter((line) => line.startsWith('  '));
+  const marked = commandLines
+    .filter((line) => line.endsWith(' (not implemented)'))
+    .map((line) => line.trim().split(' ')[0]);
   assert.deepEqual(marked, ['init', 'plan', 'publish', 'work', 'trace', 'stats']);
   assert.match(gg('--help').stdout, /^ {2}doctor {4}validate the configuration and print each Resolved Flow$/m);
 });
@@ -99,7 +104,12 @@ function tempRepo(t, layer) {
     mkdirSync(join(home, '.agents', 'gg'), { recursive: true });
     writeFileSync(join(home, '.agents', 'gg', 'gg.json'), layer);
   }
-  const ggIn = (...args) => spawnSync(process.execPath, [bin, ...args], { cwd: repo, encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home } });
+  const ggIn = (...args) =>
+    spawnSync(process.execPath, [bin, ...args], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+    });
   return { repo, ggIn };
 }
 
@@ -115,8 +125,18 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   const { repo, ggIn } = tempRepo(t);
   const r = ggIn('run', '1');
   assert.equal(r.status, 2, r.stderr);
-  assert.ok(r.stderr.includes('error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer\n'), r.stderr);
-  assert.ok(r.stderr.includes('error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer\n'), r.stderr);
+  assert.ok(
+    r.stderr.includes(
+      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer\n',
+    ),
+    r.stderr,
+  );
+  assert.ok(
+    r.stderr.includes(
+      'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer\n',
+    ),
+    r.stderr,
+  );
   assert.ok(r.stderr.includes(fileURLToPath(new URL('../../examples/claude.json', import.meta.url))), r.stderr);
   assert.ok(r.stderr.includes('into the user Layer at '), r.stderr);
   assert.equal((r.stderr.match(/Merge /g) ?? []).length, 1);
@@ -130,8 +150,21 @@ function exampleLayer(layer) {
   for (const name of ['gg.json', 'red.schema.json', 'implement.schema.json', 'review.schema.json']) {
     writeFileSync(join(layer, name), readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url)));
   }
-  for (const name of ['implementer.md', 'reviewer.md', 'red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md',
-    'test-fix.md', 'blocked.md', 'pr-body.md', 'review-comment.md']) writeFileSync(join(layer, name), `${name}\n`);
+  for (const name of [
+    'implementer.md',
+    'reviewer.md',
+    'red.md',
+    'green.md',
+    'fix.md',
+    'review.md',
+    'recover.md',
+    'still-green.md',
+    'test-fix.md',
+    'blocked.md',
+    'pr-body.md',
+    'review-comment.md',
+  ])
+    writeFileSync(join(layer, name), `${name}\n`);
 }
 
 test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {
@@ -139,7 +172,10 @@ test('gg doctor reads the repository Layer and its schemas and prints the Resolv
   const { repo, ggIn } = tempRepo(t, JSON.stringify({ agents }));
   exampleLayer(join(repo, '.agents', 'gg'));
   const r = ggIn('doctor');
-  assert.ok(r.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'), r.stdout + r.stderr);
+  assert.ok(
+    r.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'),
+    r.stdout + r.stderr,
+  );
   // The defaults Layer still ships its Flow and Procedures until #121; the example's own of the same names replace them
   // whole (P2).
   assert.ok(r.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), r.stdout);

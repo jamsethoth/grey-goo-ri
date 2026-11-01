@@ -10,8 +10,29 @@ import * as render from '../../lib/render.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
 import { fakeHarness } from '../support/fake-harness.mjs';
-import { firstVisit, intents, actionEvent, attemptsOf, loadTicket, branchMessages, greenSetup, ok, WRONG_ADD,
-  finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, subjects, tddTrace, headSha, GREEN_FAIL_OUTPUT, stopReason } from '../support/interpreter.mjs';
+import {
+  firstVisit,
+  intents,
+  actionEvent,
+  attemptsOf,
+  loadTicket,
+  branchMessages,
+  greenSetup,
+  ok,
+  WRONG_ADD,
+  finding,
+  review,
+  reviewed,
+  fixed,
+  MAJOR,
+  reviewSetup,
+  reviewFlow,
+  subjects,
+  tddTrace,
+  headSha,
+  GREEN_FAIL_OUTPUT,
+  stopReason,
+} from '../support/interpreter.mjs';
 
 test('the green call is a fresh session with the full brief', async (t) => {
   const g = await firstVisit(t);
@@ -75,9 +96,15 @@ test('each public field is redacted once and sent exactly as its intent saved it
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].response.summary = 'TOKEN red summary';
   Object.assign(responses['green/1/green/1'].response, {
-    summary: 'TOKEN green summary', dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
-    qa: { setup: 'TOKEN setup', steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
-      edgeCases: ['TOKEN edge'], automated: ['TOKEN automated'], manual: ['TOKEN manual'] },
+    summary: 'TOKEN green summary',
+    dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
+    qa: {
+      setup: 'TOKEN setup',
+      steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
+      edgeCases: ['TOKEN edge'],
+      automated: ['TOKEN automated'],
+      manual: ['TOKEN manual'],
+    },
   });
   const g = await golden.setup(t, { responses });
   g.options.ticket.title = 'Add TOKEN';
@@ -99,7 +126,11 @@ test('each public field is redacted once and sent exactly as its intent saved it
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   const messages = await branchMessages(g);
   const sent = [...g.gh.calls.flatMap((c) => [...c.args, c.input ?? '']), ...messages];
-  assert.deepEqual(sent.filter((text) => /TOKEN(?!\*)|TOKEN\*\*/.test(text)), [], 'nothing is sent unredacted or redacted twice');
+  assert.deepEqual(
+    sent.filter((text) => /TOKEN(?!\*)|TOKEN\*\*/.test(text)),
+    [],
+    'nothing is sent unredacted or redacted twice',
+  );
   const body = g.gh.pr().body;
   assert.ok(body.includes('TOKEN* green summary'), 'TOKEN green summary');
   assert.ok(body.includes('TOKEN* item'), 'TOKEN item');
@@ -117,23 +148,39 @@ test('each public field is redacted once and sent exactly as its intent saved it
   assert.ok(body.includes('| TOKEN*.md@'), '| TOKEN.md@');
   assert.ok(messages[0].includes('Feature-Flow-Stage: red fake/model TOKEN*/TOKEN* effort'), messages[0]);
   assert.ok(messages[1].includes('Feature-Flow-Stage: green fake/model TOKEN*/TOKEN* effort'), messages[1]);
-  assert.ok(g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')), 'the PR title');
-  assert.deepEqual(intents(rec, 'commit').map((e) => e.payload.message.trim()), messages);
+  assert.ok(
+    g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')),
+    'the PR title',
+  );
+  assert.deepEqual(
+    intents(rec, 'commit').map((e) => e.payload.message.trim()),
+    messages,
+  );
   // A comment goes as the JSON body of its gh api POST.
-  const saved = [...intents(rec, 'comment').map((e) => JSON.stringify({ body: e.payload.body })), ...intents(rec, 'pr-upsert').map((e) => e.payload.body)];
-  assert.deepEqual(saved.filter((wire) => !g.gh.calls.some((c) => c.input === wire)), [], 'every comment and PR body is sent as saved');
+  const saved = [
+    ...intents(rec, 'comment').map((e) => JSON.stringify({ body: e.payload.body })),
+    ...intents(rec, 'pr-upsert').map((e) => e.payload.body),
+  ];
+  assert.deepEqual(
+    saved.filter((wire) => !g.gh.calls.some((c) => c.input === wire)),
+    [],
+    'every comment and PR body is sent as saved',
+  );
 });
 
 // The storage cut of a long Check output must not leave the start of a known directory where redaction cannot match it.
 const ALICE = '/home/alice/' + 'n'.repeat(300);
 const longLines = {
   'an overlong': ['/home/alice', '/home/alice/private.txt' + ' '.repeat(65_520)],
-  'a redacted overlong': [ALICE, (() => {
-    const first = `${ALICE}/private.txt `;
-    const kept = first.slice(first.indexOf('alice') + 1);
-    const rest = `${ALICE}/x `.repeat(200);
-    return first + rest + ' '.repeat(65_536 - kept.length - rest.length);
-  })()],
+  'a redacted overlong': [
+    ALICE,
+    (() => {
+      const first = `${ALICE}/private.txt `;
+      const kept = first.slice(first.indexOf('alice') + 1);
+      const rest = `${ALICE}/x `.repeat(200);
+      return first + rest + ' '.repeat(65_536 - kept.length - rest.length);
+    })(),
+  ],
 };
 for (const [kind, [directory, output]] of Object.entries(longLines)) {
   test(`${kind} Check output line publishes no fragment of a known directory`, async (t) => {
@@ -160,9 +207,18 @@ for (const [name, from, to, generation, activity] of [
 ]) {
   test(`a failed ${name} save saves nothing more of that record`, async (t) => {
     const g = await golden.setup(t);
-    golden.failSaves(t, (saved, next) => saved?.activity.busy === from && next.activity.busy === to
-      && next.activity.generation === generation && next.terminalStop == null);
-    const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
+    golden.failSaves(
+      t,
+      (saved, next) =>
+        saved?.activity.busy === from &&
+        next.activity.busy === to &&
+        next.activity.generation === generation &&
+        next.terminalStop == null,
+    );
+    const err = await interpreter.runExecution(g.options).then(
+      () => null,
+      (e) => e,
+    );
 
     assert.equal(err?.name, 'RecordSaveError', String(err));
     const saved = await loadTicket(g);
@@ -194,50 +250,105 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   assert.equal(result.outcome, 'needs-human');
   const call = actionEvent(g, 'green', 'green');
   assert.equal(call.outcome, 'integrity-violation');
-  assert.deepEqual(call.violations, [{ worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] }]);
+  assert.deepEqual(call.violations, [
+    { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
+  ]);
   assert.equal(actionEvent(g, 'green', 'test'), undefined, 'decided at the agent Action, before any Check');
 });
 
 test("the Protected Files are gg's paths plus every shipped Harness's paths", async () => {
   const { HARNESSES } = await import('../../lib/harnesses/shipped.mjs');
   assert.deepEqual(interpreter.protectedFiles({}), ['.agents/', '.github/actions/', '.github/workflows/']);
-  assert.deepEqual(interpreter.protectedFiles(HARNESSES),
-    ['.agents/', '.claude/', '.codex/', '.github/actions/', '.github/workflows/', '.mcp.json', 'AGENTS.md', 'CLAUDE.md']);
-  assert.deepEqual(interpreter.protectedFiles({ a: { protectedPaths: ['.agents/', 'Z.md'] }, b: { protectedPaths: ['.b/'] } }),
-    ['.agents/', '.b/', '.github/actions/', '.github/workflows/', 'Z.md']);
+  assert.deepEqual(interpreter.protectedFiles(HARNESSES), [
+    '.agents/',
+    '.claude/',
+    '.codex/',
+    '.github/actions/',
+    '.github/workflows/',
+    '.mcp.json',
+    'AGENTS.md',
+    'CLAUDE.md',
+  ]);
+  assert.deepEqual(
+    interpreter.protectedFiles({ a: { protectedPaths: ['.agents/', 'Z.md'] }, b: { protectedPaths: ['.b/'] } }),
+    ['.agents/', '.b/', '.github/actions/', '.github/workflows/', 'Z.md'],
+  );
 });
 
-for (const [what, protectedPaths] of [['no paths', undefined], ['a string', '.x/'], ['an empty path', ['.x/', '']], ['a non-string path', [1]]]) {
+for (const [what, protectedPaths] of [
+  ['no paths', undefined],
+  ['a string', '.x/'],
+  ['an empty path', ['.x/', '']],
+  ['a non-string path', [1]],
+]) {
   test(`the Protected Files refuse a Harness that declares ${what}`, () => {
-    assert.throws(() => interpreter.protectedFiles({ ok: { protectedPaths: [] }, broken: { protectedPaths } }),
-      { message: 'harness broken must declare protectedPaths as an array of paths' });
+    assert.throws(() => interpreter.protectedFiles({ ok: { protectedPaths: [] }, broken: { protectedPaths } }), {
+      message: 'harness broken must declare protectedPaths as an array of paths',
+    });
   });
 }
 
 test('runExecution asserts the Protected Files it is given', async (t) => {
   const g = await golden.setup(t);
   const seen = [];
-  const injected = { ...g.options.integrity,
-    begin: (args) => { seen.push(['begin', args.protectedPaths]); return g.options.integrity.begin(args); },
-    end: (args) => { seen.push(['end', args.protectedPaths]); return g.options.integrity.end(args); } };
+  const injected = {
+    ...g.options.integrity,
+    begin: (args) => {
+      seen.push(['begin', args.protectedPaths]);
+      return g.options.integrity.begin(args);
+    },
+    end: (args) => {
+      seen.push(['end', args.protectedPaths]);
+      return g.options.integrity.end(args);
+    },
+  };
   await interpreter.runExecution({ ...g.options, integrity: injected, protectedPaths: ['.x/'] });
-  assert.deepEqual(seen.slice(0, 2), [['begin', ['.x/']], ['end', ['.x/']]]);
-  await assert.rejects(interpreter.runExecution({ ...g.options, protectedPaths: undefined }), { message: 'runExecution needs protectedPaths' });
+  assert.deepEqual(seen.slice(0, 2), [
+    ['begin', ['.x/']],
+    ['end', ['.x/']],
+  ]);
+  await assert.rejects(interpreter.runExecution({ ...g.options, protectedPaths: undefined }), {
+    message: 'runExecution needs protectedPaths',
+  });
 });
 
-const reportMarker = (g, vertex, action) => marker.formatMarker({ execution: g.rec.execution, vertex, visit: 1, action, recovery: 0, run: g.rec.run, attempt: 1 });
+const reportMarker = (g, vertex, action) =>
+  marker.formatMarker({
+    execution: g.rec.execution,
+    vertex,
+    visit: 1,
+    action,
+    recovery: 0,
+    run: g.rec.run,
+    attempt: 1,
+  });
 
 test("a hold's label is set after its comment, each under its own marker", async (t) => {
   const g = await golden.setup(t);
-  const result = await interpreter.runExecution({ ...g.options,
-    admission: { kind: 'hold', name: 'dirty-worktree', text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.' } });
+  const result = await interpreter.runExecution({
+    ...g.options,
+    admission: {
+      kind: 'hold',
+      name: 'dirty-worktree',
+      text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+    },
+  });
 
   assert.equal(result.held, true, JSON.stringify(result));
   const rec = await loadTicket(g);
   const [comment, label] = ['hold-comment', 'hold-label'].map((a) => reportMarker(g, 'needs-human', a));
-  assert.deepEqual(rec.log.filter((e) => e.step === 'intent').map((e) => [e.action, e.marker]), [['comment', comment], ['label', label]]);
+  assert.deepEqual(
+    rec.log.filter((e) => e.step === 'intent').map((e) => [e.action, e.marker]),
+    [
+      ['comment', comment],
+      ['label', label],
+    ],
+  );
   const order = rec.log.map((e) => `${e.step} ${e.marker}`);
-  assert.ok(order.indexOf(`complete ${comment}`) < order.indexOf(`intent ${label}`), 'the label is intended once the comment completed');
+  assert.ok(
+    order.indexOf(`complete ${comment}`) < order.indexOf(`intent ${label}`),
+    'the label is intended once the comment completed',
+  );
   const [posted] = g.gh.comments;
   assert.ok(posted.body.includes(marker.markerComment(comment)), 'the comment carries its own marker');
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
@@ -248,19 +359,35 @@ test("a fault during an end does not replay the end's open reporting Action", as
   const g = await golden.setup(t);
   const real = g.options.gh.commentIssue;
   let calls = 0;
-  g.options.gh = { ...g.options.gh, commentIssue: async (...a) => { if (calls++ === 0) throw new Error('gh comment down'); return real(...a); } };
+  g.options.gh = {
+    ...g.options.gh,
+    commentIssue: async (...a) => {
+      if (calls++ === 0) throw new Error('gh comment down');
+      return real(...a);
+    },
+  };
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.fault, true, JSON.stringify(result));
   const rec = await loadTicket(g);
   const ended = reportMarker(g, 'ready-for-qa', 'end-comment');
-  assert.deepEqual(record.openIntents(rec).map((e) => e.marker), [ended], "the end's comment stays open");
+  assert.deepEqual(
+    record.openIntents(rec).map((e) => e.marker),
+    [ended],
+    "the end's comment stays open",
+  );
   assert.equal(calls, 2, "the end's comment is tried once and the fault's once");
   const [posted, ...rest] = g.gh.comments.filter((c) => c.target === 'issue');
   assert.equal(rest.length, 0);
-  assert.ok(posted.body.includes(marker.markerComment(reportMarker(g, 'needs-human', 'fault-comment'))), 'the fault reports under its own marker');
+  assert.ok(
+    posted.body.includes(marker.markerComment(reportMarker(g, 'needs-human', 'fault-comment'))),
+    'the fault reports under its own marker',
+  );
   assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'needs-human', 'fault-label')));
-  assert.ok(rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'publish', 'pr-ready')), "publish's pr-ready completed first");
+  assert.ok(
+    rec.log.some((e) => e.step === 'complete' && e.marker === reportMarker(g, 'publish', 'pr-ready')),
+    "publish's pr-ready completed first",
+  );
 });
 
 test("the PR's provenance counts a retried Attempt and a resumed Session once each", async (t) => {
@@ -302,7 +429,8 @@ test('pr-ready holds when the worktree changed after its Check passed', async (t
   // A committed file is rewritten once publish's test has passed, so the worktree is no longer the commit it publishes.
   g.options.events = (type, data) => {
     ev(type, data);
-    if (type === 'action' && data.vertex === 'publish' && data.action === 'test') writeFileSync(join(g.worktree, 'lib', 'add.mjs'), 'export const add = (a, b) => b + a;\n');
+    if (type === 'action' && data.vertex === 'publish' && data.action === 'test')
+      writeFileSync(join(g.worktree, 'lib', 'add.mjs'), 'export const add = (a, b) => b + a;\n');
   };
   g.result = await interpreter.runExecution(g.options);
 
@@ -318,7 +446,9 @@ test('pr-ready holds when the worktree changed after its Check passed', async (t
 
 test('pr-ready holds when only the remote PR head moved after the push', async (t) => {
   const moved = 'e'.repeat(40);
-  const g = await publishing(t, (g) => { g.gh.pr().headRefOid = moved; });
+  const g = await publishing(t, (g) => {
+    g.gh.pr().headRefOid = moved;
+  });
 
   assert.equal(g.result.outcome, 'needs-human', JSON.stringify(g.result));
   assert.equal(g.result.held, true);
@@ -327,11 +457,17 @@ test('pr-ready holds when only the remote PR head moved after the push', async (
   const rec = await loadTicket(g);
   assert.deepEqual(rec.terminalReason.decidedBy, { hold: 'unchecked-publish' });
   assert.ok(rec.terminalReason.text.includes(moved), rec.terminalReason.text);
-  assert.equal(await g.options.git.remoteSha(g.mainRoot, golden.BRANCH), await g.options.git.headSha(g.worktree), "gg's push stands");
+  assert.equal(
+    await g.options.git.remoteSha(g.mainRoot, golden.BRANCH),
+    await g.options.git.headSha(g.worktree),
+    "gg's push stands",
+  );
 });
 
-const timedOut = { 'green/1/green/1': { files: {}, response: null, result: { status: 'timed-out' } },
-  'green/1/green/2': { files: {}, response: null, result: { status: 'timed-out' } } };
+const timedOut = {
+  'green/1/green/1': { files: {}, response: null, result: { status: 'timed-out' } },
+  'green/1/green/2': { files: {}, response: null, result: { status: 'timed-out' } },
+};
 
 test('an unrouted harness-timeout ends at needs-human', async (t) => {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...timedOut } });
@@ -347,7 +483,9 @@ test('an unrouted harness-timeout ends at needs-human', async (t) => {
 
 test('a routed harness-timeout takes its route', async (t) => {
   const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), ...timedOut } });
-  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.green.route['harness-timeout'] = { end: 'needs-replan' }; });
+  golden.configure(g, (c) => {
+    c.flows.golden.ticket.vertices.green.route['harness-timeout'] = { end: 'needs-replan' };
+  });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'needs-replan', JSON.stringify(result));
@@ -369,7 +507,10 @@ test('a stop comment replaces the end comment and reaches the Epic at needs-repl
   assert.equal(onTicket.length, 1, 'one comment on the Ticket');
   assert.match(onTicket[0].body, /^### gg: misscoped\n/, 'the stop comment, not the end comment');
   assert.ok(onTicket[0].body.includes(diagnosis));
-  assert.ok(onTicket[0].body.includes(`**Terminal Reason:** ${rec.terminalReason.text}`), 'it carries the Terminal Reason');
+  assert.ok(
+    onTicket[0].body.includes(`**Terminal Reason:** ${rec.terminalReason.text}`),
+    'it carries the Terminal Reason',
+  );
   const onEpic = g.gh.comments.filter((c) => c.number === rec.epic);
   assert.equal(onEpic.length, 1, 'the same comment on the Epic');
   const unmarked = (body) => body.replace(/<!-- gg-action \S+ -->/, '');
@@ -378,24 +519,37 @@ test('a stop comment replaces the end comment and reaches the Epic at needs-repl
 
 test("a stop token's comment names the stopped Visit's own outputs and inputs", async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'blocked', summary: 'SENTINEL green summary' } };
+  responses['green/1/green/1'] = {
+    files: {},
+    response: { ...golden.greenResponse, claim: 'blocked', summary: 'SENTINEL green summary' },
+  };
   const g = await golden.setup(t, { responses });
   golden.configure(g, (c) => {
-    c.files['stop-direct.md'] = golden.layerFile('own: {{green.response.summary}}\ninput: {{inputs.red.output}}\n{{marker}}\n');
+    c.files['stop-direct.md'] = golden.layerFile(
+      'own: {{green.response.summary}}\ninput: {{inputs.red.output}}\n{{marker}}\n',
+    );
     c.procedures.implement.claims.blocked.comment = 'stop-direct.md';
   });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'needs-human');
   const onTicket = g.gh.comments.filter((c) => c.number === golden.TICKET);
   assert.equal(onTicket.length, 1, 'one comment on the Ticket');
-  assert.ok(onTicket[0].body.startsWith(`own: SENTINEL green summary\ninput: ${golden.RED_OUTPUT}\n`), onTicket[0].body);
+  assert.ok(
+    onTicket[0].body.startsWith(`own: SENTINEL green summary\ninput: ${golden.RED_OUTPUT}\n`),
+    onTicket[0].body,
+  );
 });
 
-test("H7: the Flow's route for an Outcome beats the Vertex's \"*\"", async (t) => {
+test('H7: the Flow\'s route for an Outcome beats the Vertex\'s "*"', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: 'Two tickets.' } };
+  responses['green/1/green/1'] = {
+    files: {},
+    response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: 'Two tickets.' },
+  };
   const g = await golden.setup(t, { responses });
-  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.green.route['*'] = { end: 'needs-human' }; });
+  golden.configure(g, (c) => {
+    c.flows.golden.ticket.vertices.green.route['*'] = { end: 'needs-human' };
+  });
   assert.equal((await interpreter.runExecution(g.options)).outcome, 'needs-replan');
 });
 
@@ -406,7 +560,10 @@ test('no "*" catches an unroutable Outcome', async (t) => {
     c.flows.golden.ticket.vertices.red.route['*'] = { end: 'needs-replan' };
   });
   const violation = { worktree: g.worktree, surface: 'head', before: g.base, after: 'a'.repeat(40) };
-  const result = await interpreter.runExecution({ ...g.options, integrity: { ...g.options.integrity, end: async () => ({ violations: [violation] }) } });
+  const result = await interpreter.runExecution({
+    ...g.options,
+    integrity: { ...g.options.integrity, end: async () => ({ violations: [violation] }) },
+  });
   assert.equal(result.outcome, 'needs-human', 'an Integrity Violation is never routed');
 });
 
@@ -419,16 +576,22 @@ function pinnedInputs(t) {
   t.after(() => record.setSaveHook(previous));
   return seen;
 }
-const briefOf = (g, vertex, visit) => g.harness.calls.find((c) => {
-  const at = marker.partsOf(c.marker);
-  return at.vertex === vertex && at.visit === String(visit);
-}).brief;
+const briefOf = (g, vertex, visit) =>
+  g.harness.calls.find((c) => {
+    const at = marker.partsOf(c.marker);
+    return at.vertex === vertex && at.visit === String(visit);
+  }).brief;
 
 test("green reads red's committed tests through an input", async (t) => {
   const pinned = pinnedInputs(t);
   const g = await firstVisit(t);
   assert.equal(g.result.outcome, 'ready-for-qa');
-  assert.deepEqual(pinned['green/1'].tests, { value: ['test/add.test.mjs'], vertex: 'red', visit: 1, action: 'commit' });
+  assert.deepEqual(pinned['green/1'].tests, {
+    value: ['test/add.test.mjs'],
+    vertex: 'red',
+    visit: 1,
+    action: 'commit',
+  });
   assert.equal(pinned['green/1'].red.vertex, 'red');
   assert.equal(pinned['green/1'].red.action, 'red-check');
   assert.match(pinned['green/1'].red.value.output, /Cannot find module 'lib\/add.mjs'/);
@@ -458,7 +621,10 @@ test('an absent optional input renders empty in the Brief', async (t) => {
   const g = await golden.setup(t);
   // A source no route produces: the reviewer's committed files, read before any review.
   golden.configure(g, (c) => {
-    c.flows.golden.ticket.vertices.green.inputs = { ...golden.GREEN_INPUTS, tests: { from: 'green.commit.files', optional: true } };
+    c.flows.golden.ticket.vertices.green.inputs = {
+      ...golden.GREEN_INPUTS,
+      tests: { from: 'green.commit.files', optional: true },
+    };
   });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
@@ -477,7 +643,9 @@ test('a shipped Brief names its inputs directly', async (t) => {
   };
   // The shipped green Brief, then every fixed name its context once carried for an input. Admission rejects those names,
   // so the file changes after it, to show the run itself carries no alias.
-  g.files['templates/green.md'] = golden.layerFile(`${g.files['templates/green.md'].bytes}\n[{{testFiles}}|{{redOutput}}|{{impl}}|{{report}}]`);
+  g.files['templates/green.md'] = golden.layerFile(
+    `${g.files['templates/green.md'].bytes}\n[{{testFiles}}|{{redOutput}}|{{impl}}|{{report}}]`,
+  );
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
   const green = briefOf(g, 'green', 1);
@@ -487,9 +655,13 @@ test('a shipped Brief names its inputs directly', async (t) => {
 });
 
 test('a template names its own outputs and inputs directly', async (t) => {
-  const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(review('ok', [], { summary: 'SENTINEL review summary' })) });
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(review('ok', [], { summary: 'SENTINEL review summary' })),
+  });
   golden.configure(g, (c) => {
-    c.files['pr-direct.md'] = golden.layerFile('green: {{test.evidence.output}}\nred: {{inputs.red.output}}\n{{marker}}\n');
+    c.files['pr-direct.md'] = golden.layerFile(
+      'green: {{test.evidence.output}}\nred: {{inputs.red.output}}\n{{marker}}\n',
+    );
     c.files['comment-direct.md'] = golden.layerFile('review: {{review.response.summary}}\n{{marker}}\n');
     c.procedures.implement.actions[4] = { id: 'pr', do: 'pr-upsert', body: 'pr-direct.md' };
     c.procedures.review.actions[3] = { id: 'comment', do: 'comment', target: 'pr', body: 'comment-direct.md' };
@@ -498,7 +670,10 @@ test('a template names its own outputs and inputs directly', async (t) => {
   assert.equal(outcome, 'ready-for-qa');
   const green = intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === 'green').payload.body;
   assert.ok(green.startsWith(`green: ${golden.GREEN_OUTPUT}\nred: ${golden.RED_OUTPUT}\n`), green);
-  assert.deepEqual(g.gh.comments.filter((c) => c.body.startsWith('review: ')).map((c) => c.body.split('\n')[0]), ['review: SENTINEL review summary']);
+  assert.deepEqual(
+    g.gh.comments.filter((c) => c.body.startsWith('review: ')).map((c) => c.body.split('\n')[0]),
+    ['review: SENTINEL review summary'],
+  );
 });
 
 test('pick projects findings to file paths', async (t) => {
@@ -511,12 +686,16 @@ test('pick projects findings to file paths', async (t) => {
   });
   // The fix's Test Immutability sees the named test changed, which only its `tests: named` input permits.
   const immutability = g.options.testImmutability;
-  g.options.testImmutability = async (...args) => (g.rec.cursor.vertex === 'implementer-fix'
-    ? { ok: false, changed: ['test/add.test.mjs'] } : immutability(...args));
+  g.options.testImmutability = async (...args) =>
+    g.rec.cursor.vertex === 'implementer-fix' ? { ok: false, changed: ['test/add.test.mjs'] } : immutability(...args);
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(pinned['implementer-fix/1'].testFiles,
-    { value: ['lib/add.mjs', 'test/add.test.mjs'], vertex: 'reviewer', visit: 1, action: 'review' });
+  assert.deepEqual(pinned['implementer-fix/1'].testFiles, {
+    value: ['lib/add.mjs', 'test/add.test.mjs'],
+    vertex: 'reviewer',
+    visit: 1,
+    action: 'review',
+  });
   assert.deepEqual(pinned['implementer-fix/1'].findings.value, [MAJOR, named]);
 });
 
@@ -528,8 +707,14 @@ test('a commit with nothing to commit records files: [] and makes no commit', as
   });
   assert.equal(g.result.outcome, 'ready-for-qa');
   const commits = g.rec.outputs.filter((o) => o.action === 'commit');
-  assert.deepEqual(commits.map((o) => [o.vertex, o.visit, o.value.files]),
-    [['red', 1, ['test/add.test.mjs']], ['green', 1, ['lib/add.mjs']], ['implementer-fix', 1, []]]);
+  assert.deepEqual(
+    commits.map((o) => [o.vertex, o.visit, o.value.files]),
+    [
+      ['red', 1, ['test/add.test.mjs']],
+      ['green', 1, ['lib/add.mjs']],
+      ['implementer-fix', 1, []],
+    ],
+  );
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)'], 'no fix commit');
 });
 
@@ -541,18 +726,31 @@ test("each draft PR body renders its own Vertex's report and Green Evidence", as
   });
   assert.equal(g.result.outcome, 'ready-for-qa');
   // The body each Vertex's pr-upsert saved in its intent, before a later Vertex re-rendered it.
-  const bodyOf = (vertex) => intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === vertex).payload.body;
+  const bodyOf = (vertex) =>
+    intents(g.rec, 'pr-upsert').find((e) => marker.partsOf(e.marker).vertex === vertex).payload.body;
   const greenSection = (body) => body.slice(body.indexOf('**Green**'), body.indexOf('## QA instructions'));
 
   const green = bodyOf('green');
   assert.ok(green.includes('Add two numbers.'), `green's body renders green's report:\n${green}`);
-  assert.ok(greenSection(green).includes('✔ adds two numbers (0.8ms)'), `green's Green section shows green's test.evidence:\n${green}`);
-  assert.ok(!greenSection(green).includes('Cannot find module'), `green's Green section does not show the Red Evidence:\n${green}`);
+  assert.ok(
+    greenSection(green).includes('✔ adds two numbers (0.8ms)'),
+    `green's Green section shows green's test.evidence:\n${green}`,
+  );
+  assert.ok(
+    !greenSection(green).includes('Cannot find module'),
+    `green's Green section does not show the Red Evidence:\n${green}`,
+  );
 
   const fix = bodyOf('implementer-fix');
   assert.ok(fix.includes('Address the findings.'), `the fix's body renders the fix's report:\n${fix}`);
-  assert.ok(greenSection(fix).includes('✔ adds two numbers (0.8ms)'), `the fix's Green section shows the fix's test.evidence:\n${fix}`);
-  assert.ok(!greenSection(fix).includes('Cannot find module'), `the fix's Green section does not show the Red Evidence:\n${fix}`);
+  assert.ok(
+    greenSection(fix).includes('✔ adds two numbers (0.8ms)'),
+    `the fix's Green section shows the fix's test.evidence:\n${fix}`,
+  );
+  assert.ok(
+    !greenSection(fix).includes('Cannot find module'),
+    `the fix's Green section does not show the Red Evidence:\n${fix}`,
+  );
 });
 
 // #114: Checks as declared Actions. Their results are the Check signal { id, kind, state, tree }, and a final failure
@@ -566,7 +764,11 @@ test('a failed red at an end leaves its work in place', async (t) => {
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.equal(readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8'), "import { add } from '../lib/add.mjs';\n", 'the test red wrote is still there');
+  assert.equal(
+    readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8'),
+    "import { add } from '../lib/add.mjs';\n",
+    'the test red wrote is still there',
+  );
   assert.equal(await headSha(g), g.base, 'nothing was committed');
   assert.deepEqual(intents(g.rec, 'reset'), [], 'nothing was reset');
   assert.deepEqual(g.rec.history, []);
@@ -587,9 +789,18 @@ test('a final test failure is the Outcome failed naming the Check', async (t) =>
   assert.equal(check.check, 'test');
   const [signal] = check.signals.checks;
   // A failing Check's output reaches its signal and the Terminal comment, never its evidence (N9).
-  assert.deepEqual(signal, { id: 'test', kind: 'command', state: 'failed', tree: signal.tree, output: GREEN_FAIL_OUTPUT });
+  assert.deepEqual(signal, {
+    id: 'test',
+    kind: 'command',
+    state: 'failed',
+    tree: signal.tree,
+    output: GREEN_FAIL_OUTPUT,
+  });
   assert.match(signal.tree, /^[0-9a-f]{40}$/);
-  assert.deepEqual(g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'), []);
+  assert.deepEqual(
+    g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'),
+    [],
+  );
   const reason = g.rec.terminalReason;
   assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
   assert.equal(reason.outcome, 'failed');
@@ -603,7 +814,8 @@ test('a Check result on an older tree does not count', async (t) => {
   // A file appears after green's test passed and before its commit, so the commit sees a tree the Check never saw.
   g.options.events = (type, data) => {
     ev(type, data);
-    if (type === 'action' && data.vertex === 'green' && data.action === 'test') writeFileSync(join(g.worktree, 'lib', 'late.mjs'), 'export {};\n');
+    if (type === 'action' && data.vertex === 'green' && data.action === 'test')
+      writeFileSync(join(g.worktree, 'lib', 'late.mjs'), 'export {};\n');
   };
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -643,7 +855,8 @@ function unrequiredTest(g) {
     c.flows.golden.ticket.vertices.publish.inputs.green.optional = true;
   });
   const { runShell } = g.options.exec;
-  g.options.exec.runShell = async (command, opts) => (command === 'npm run lint' ? LINT_PASSES : runShell(command, opts));
+  g.options.exec.runShell = async (command, opts) =>
+    command === 'npm run lint' ? LINT_PASSES : runShell(command, opts);
 }
 
 // implement with a second required command Check, lint, after test. The lint command answers with `lintRuns` in order.
@@ -653,7 +866,13 @@ const LINT_PASSES = { code: 0, output: '', timedOut: false };
 function withLint(g, lintRuns) {
   golden.configure(g, (c) => {
     c.commands.lint = 'npm run lint';
-    c.procedures.implement.actions.splice(2, 0, { id: 'lint', do: 'check', kind: 'command', command: 'lint', recoverBrief: 'templates/test-fix.md' });
+    c.procedures.implement.actions.splice(2, 0, {
+      id: 'lint',
+      do: 'check',
+      kind: 'command',
+      command: 'lint',
+      recoverBrief: 'templates/test-fix.md',
+    });
     c.procedures.implement.claims.ok = { requires: ['test', 'lint'] };
   });
   const shells = { ...g.options.exec, 'npm run lint': async () => lintRuns.shift() };
@@ -661,7 +880,10 @@ function withLint(g, lintRuns) {
 }
 
 const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
-const greenTrace = (g) => tddTrace(g).filter((e) => e.vertex === 'green').map((e) => `${e.action}/${e.recovery}`);
+const greenTrace = (g) =>
+  tddTrace(g)
+    .filter((e) => e.vertex === 'green')
+    .map((e) => `${e.action}/${e.recovery}`);
 
 // #115: Claim tokens declare `requires` or `stop`, recovery is one per-Visit budget, and the Outcome is decided in one fixed
 // order (Q3, Q3d, T4, W1).
@@ -679,7 +901,10 @@ test("recovery resumes the Session with every failing Check's section", async (t
   assert.ok(recovery.brief.includes(GREEN_FAIL_OUTPUT), `the test Check's section:\n${recovery.brief}`);
   assert.ok(recovery.brief.includes(LINT_OUTPUT), `the lint Check's section:\n${recovery.brief}`);
   const check = actionEvent(g, 'green', 'lint');
-  assert.deepEqual([check.outcome, check.direction, check.rule], ['recover', 'retry', { table: 'fixed', row: 'recover' }]);
+  assert.deepEqual(
+    [check.outcome, check.direction, check.rule],
+    ['recover', 'retry', { table: 'fixed', row: 'recover' }],
+  );
 });
 
 test('every Check runs again after recovery', async (t) => {
@@ -692,7 +917,17 @@ test('every Check runs again after recovery', async (t) => {
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(greenTrace(g), ['green/0', 'test/0', 'lint/0', 'green/1', 'test/1', 'lint/1', 'commit/1', 'push/1', 'pr/1']);
+  assert.deepEqual(greenTrace(g), [
+    'green/0',
+    'test/0',
+    'lint/0',
+    'green/1',
+    'test/1',
+    'lint/1',
+    'commit/1',
+    'push/1',
+    'pr/1',
+  ]);
   assert.deepEqual(lintRuns, [], 'lint passed in the first pass and still ran again');
   assert.doesNotMatch(g.harness.calls[2].brief, /Check lint/, 'a passing Check has no section');
 });
@@ -700,7 +935,10 @@ test('every Check runs again after recovery', async (t) => {
 test('a stop token after recovery stops', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/recover/1': { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' } },
+    'green/1/recover/1': {
+      files: {},
+      response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The test is wrong.' },
+    },
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -739,7 +977,10 @@ test('named tests missing from the output are recovered once, then fail', async 
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery}`), ['red/0', 'red-check/0', 'red/1', 'red-check/1']);
+  assert.deepEqual(
+    tddTrace(g).map((e) => `${e.action}/${e.recovery}`),
+    ['red/0', 'red-check/0', 'red/1', 'red-check/1'],
+  );
   const recovery = g.harness.calls[1];
   assert.equal(recovery.resume, 'fake-session-1', "the recovery pass resumes red's Session");
   assert.match(recovery.brief, /as the runner prints them/);
@@ -759,12 +1000,18 @@ test('a red that changed no test file is recovered once, then fails', async (t) 
 
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(g.shells, [], 'the test command never ran');
-  assert.deepEqual(tddTrace(g).map((e) => `${e.action}/${e.recovery}`), ['red/0', 'red-check/0', 'red/1', 'red-check/1']);
+  assert.deepEqual(
+    tddTrace(g).map((e) => `${e.action}/${e.recovery}`),
+    ['red/0', 'red-check/0', 'red/1', 'red-check/1'],
+  );
   assert.match(g.harness.calls[1].brief, /no-test-needed/, 'the section offers the no-test-needed stop');
-  assert.deepEqual([g.rec.terminalReason.outcome, g.rec.terminalReason.rule], ['failed', { table: 'failed', row: null }]);
+  assert.deepEqual(
+    [g.rec.terminalReason.outcome, g.rec.terminalReason.rule],
+    ['failed', { table: 'failed', row: null }],
+  );
 });
 
-test("a Check that passed and then failed in a recovery pass keeps no evidence of the earlier pass", async (t) => {
+test('a Check that passed and then failed in a recovery pass keeps no evidence of the earlier pass', async (t) => {
   const g = await greenSetup(t, {
     'green/1/green/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
     'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD }),
@@ -779,14 +1026,21 @@ test("a Check that passed and then failed in a recovery pass keeps no evidence o
 
   assert.deepEqual(greenTrace(g).slice(0, 6), ['green/0', 'test/0', 'lint/0', 'green/1', 'test/1', 'lint/1']);
   assert.equal(actionEvent(g, 'green', 'test', 1).signals.checks[0].state, 'failed');
-  assert.equal(g.rec.outputs.find((o) => o.vertex === 'green' && o.action === 'test')?.value.evidence, undefined, 'the first pass evidence is gone (N9)');
+  assert.equal(
+    g.rec.outputs.find((o) => o.vertex === 'green' && o.action === 'test')?.value.evidence,
+    undefined,
+    'the first pass evidence is gone (N9)',
+  );
   assert.ok(g.gh.pr().body.includes('**Green**: the test command has no passing run.\n'), g.gh.pr().body);
 });
 
 test('a command Check that times out is not recovered', async (t) => {
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
   // red's Check fails as red should; green's test command then times out.
-  const runs = [{ code: 1, output: golden.RED_OUTPUT, timedOut: false }, { code: null, output: 'killed after 30 min', timedOut: true }];
+  const runs = [
+    { code: 1, output: golden.RED_OUTPUT, timedOut: false },
+    { code: null, output: 'killed after 30 min', timedOut: true },
+  ];
   g.options.exec.runShell = async () => runs.shift();
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -801,7 +1055,11 @@ test('a failed Check produces no evidence output', async (t) => {
   unrequiredTest(g);
   await interpreter.runExecution(g.options);
 
-  assert.deepEqual(g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'), [], 'a failing test no token requires has no evidence');
+  assert.deepEqual(
+    g.rec.outputs.filter((o) => o.vertex === 'green' && o.action === 'test'),
+    [],
+    'a failing test no token requires has no evidence',
+  );
   assert.ok(g.gh.pr().body.includes('**Green**: the test command has no passing run.\n'), g.gh.pr().body);
   assert.equal(actionEvent(g, 'green', 'test').signals.checks[0].state, 'failed');
   assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed', 'the Execution reached publish');
@@ -810,8 +1068,10 @@ test('a failed Check produces no evidence output', async (t) => {
 test('a tests-fail pass by name match alone carries heuristic: true in its evidence', async (t) => {
   const output = `Error: ${golden.TEST_NAME} threw\n`;
   // The runner prints no per-test statuses, only the test's name.
-  const runShell = async (command, opts) => (existsSync(join(opts.cwd, 'lib', 'add.mjs'))
-    ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output, timedOut: false });
+  const runShell = async (command, opts) =>
+    existsSync(join(opts.cwd, 'lib', 'add.mjs'))
+      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
+      : { code: 1, output, timedOut: false };
   const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) }, { exec: { runShell } });
 
   const red = g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'red-check');
@@ -820,24 +1080,40 @@ test('a tests-fail pass by name match alone carries heuristic: true in its evide
 });
 
 // Declares reuse: tree on each named Procedure's test Check.
-const reuseTree = (...names) => (c) => {
-  for (const name of names) c.procedures[name].actions.find((a) => a.id === 'test').reuse = 'tree';
-};
+const reuseTree =
+  (...names) =>
+  (c) => {
+    for (const name of names) c.procedures[name].actions.find((a) => a.id === 'test').reuse = 'tree';
+  };
 
 test('a reuse: tree command Check reuses a pass for the same tree and command and runs again for another', async (t) => {
-  const g = await reviewSetup(t, {
-    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
-    'reviewer/2/review/1': reviewed(review('ok')),
-  }, { configure: reuseTree('implement', 'fix', 'publish') });
+  const g = await reviewSetup(
+    t,
+    {
+      'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+      'reviewer/2/review/1': reviewed(review('ok')),
+    },
+    { configure: reuseTree('implement', 'fix', 'publish') },
+  );
 
   assert.equal(g.result.outcome, 'ready-for-qa');
-  assert.equal(g.shells.length, 3, "red-check, green's test and the fix's test ran the command; publish reused the fix's pass");
+  assert.equal(
+    g.shells.length,
+    3,
+    "red-check, green's test and the fix's test ran the command; publish reused the fix's pass",
+  );
   const evidence = (vertex) => g.rec.outputs.find((o) => o.vertex === vertex && o.action === 'test').value.evidence;
   assert.equal(evidence('green').output, golden.GREEN_OUTPUT);
-  assert.equal(evidence('implementer-fix').output, golden.GREEN_OUTPUT, 'the fix changed the tree, so its test ran again');
-  assert.equal(evidence('publish').output,
-    `Reused the passing run of ${golden.markerOf(g.rec, 'implementer-fix', 1, 'test')} on this tree.\n${golden.GREEN_OUTPUT}`);
+  assert.equal(
+    evidence('implementer-fix').output,
+    golden.GREEN_OUTPUT,
+    'the fix changed the tree, so its test ran again',
+  );
+  assert.equal(
+    evidence('publish').output,
+    `Reused the passing run of ${golden.markerOf(g.rec, 'implementer-fix', 1, 'test')} on this tree.\n${golden.GREEN_OUTPUT}`,
+  );
 });
 
 test('a failing reuse: tree result is never reused', async (t) => {
@@ -852,7 +1128,11 @@ test('a failing reuse: tree result is never reused', async (t) => {
   };
   await interpreter.runExecution(g.options);
 
-  assert.deepEqual(runs, ['npm test', 'npm test', 'npm run lint', 'npm test'], 'publish ran the test command again on the tree green failed on');
+  assert.deepEqual(
+    runs,
+    ['npm test', 'npm test', 'npm run lint', 'npm test'],
+    'publish ran the test command again on the tree green failed on',
+  );
   assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed');
 });
 
@@ -872,12 +1152,18 @@ test('a deleted test file counts as a change', async (t) => {
   const check = actionEvent(g, 'red', 'red-check');
   assert.equal(check.outcome, 'ok');
   assert.equal(check.signals.checks[0].state, 'passed');
-  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value, { files: ['package.json'] });
+  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value, {
+    files: ['package.json'],
+  });
 });
 
 // #116: Procedures are configuration. These cases declare Procedures of their own, with names gg does not know.
-const PROBE_SCHEMA = JSON.stringify({ type: 'object', properties: { claim: { type: 'string', enum: ['ok', 'blocked'] }, summary: { type: 'string' } },
-  required: ['claim', 'summary'], additionalProperties: false });
+const PROBE_SCHEMA = JSON.stringify({
+  type: 'object',
+  properties: { claim: { type: 'string', enum: ['ok', 'blocked'] }, summary: { type: 'string' } },
+  required: ['claim', 'summary'],
+  additionalProperties: false,
+});
 const probed = (summary, files = {}) => ({ files, response: { claim: 'ok', summary } });
 // The files a declared Procedure below names: a Brief that names nothing and the probe schema.
 function probeFiles(c) {
@@ -903,10 +1189,14 @@ function scriptedImmutability(g, results) {
   };
   return baselines;
 }
-const commitOf = (g, vertex) => g.rec.log.find((e) => e.step === 'evidence' && e.action === 'commit' && marker.partsOf(e.marker).vertex === vertex).evidence.sha;
+const commitOf = (g, vertex) =>
+  g.rec.log.find((e) => e.step === 'evidence' && e.action === 'commit' && marker.partsOf(e.marker).vertex === vertex)
+    .evidence.sha;
 
 test('the interpreter names no Procedure, Action or Check', async (t) => {
-  const g = await golden.setup(t, { responses: { 'build/1/ask/1': probed('Probe the sum.', { 'lib/add.mjs': RIGHT_ADD }) } });
+  const g = await golden.setup(t, {
+    responses: { 'build/1/ask/1': probed('Probe the sum.', { 'lib/add.mjs': RIGHT_ADD }) },
+  });
   golden.configure(g, (c) => {
     c.files['ask.md'] = golden.layerFile('Probe {{ticket.title}}.\n');
     c.files['probe.schema.json'] = golden.layerFile(PROBE_SCHEMA);
@@ -922,15 +1212,28 @@ test('the interpreter names no Procedure, Action or Check', async (t) => {
       ],
       claims: { ok: { requires: ['gate'] }, blocked: { stop: true } },
     };
-    c.flows.golden.ticket = { entry: 'build', routes: { '*': { end: 'needs-human' } },
-      vertices: { build: { use: 'implementer', procedure: 'probe', route: { ok: { end: 'ready-for-qa' } } } } };
+    c.flows.golden.ticket = {
+      entry: 'build',
+      routes: { '*': { end: 'needs-human' } },
+      vertices: { build: { use: 'implementer', procedure: 'probe', route: { ok: { end: 'ready-for-qa' } } } },
+    };
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(golden.trace(g.readEvents()).map((e) => `${e.vertex}/${e.action}/${e.outcome}`),
-    ['build/ask/ok', 'build/gate/ok', 'build/seal/ok', 'build/ship/ok', 'build/post/ok', 'build/done/ok', 'ready-for-qa/end-comment/ok',
-      'ready-for-qa/end-label/ok']);
+  assert.deepEqual(
+    golden.trace(g.readEvents()).map((e) => `${e.vertex}/${e.action}/${e.outcome}`),
+    [
+      'build/ask/ok',
+      'build/gate/ok',
+      'build/seal/ok',
+      'build/ship/ok',
+      'build/post/ok',
+      'build/done/ok',
+      'ready-for-qa/end-comment/ok',
+      'ready-for-qa/end-label/ok',
+    ],
+  );
   assert.equal(g.harness.calls[0].brief, 'Probe Add two numbers.\n');
   assert.deepEqual(await subjects(g), ['chore: Add two numbers (#15)']);
   assert.ok(g.gh.pr().body.startsWith(`Probe the sum.\n${golden.GREEN_OUTPUT}\n`), g.gh.pr().body);
@@ -946,7 +1249,9 @@ test('lib/interpreter.mjs holds no Procedure table, describe, shipped Procedure 
 
 test('a Vertex with no access set runs read-only', async (t) => {
   const g = await golden.setup(t);
-  golden.configure(g, (c) => { delete c.agents.implementer.access; });
+  golden.configure(g, (c) => {
+    delete c.agents.implementer.access;
+  });
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
@@ -992,7 +1297,11 @@ test('a passed row does not count a Check that passed on an older tree', async (
       passed: [{ when: { 'check.gate': 'passed' }, outcome: 'ok' }],
       otherwise: 'stale',
     };
-    c.flows.golden.ticket = { entry: 'look', routes: { '*': { end: 'needs-human' } }, vertices: { look: { use: 'implementer', procedure: 'look' } } };
+    c.flows.golden.ticket = {
+      entry: 'look',
+      routes: { '*': { end: 'needs-human' } },
+      vertices: { look: { use: 'implementer', procedure: 'look' } },
+    };
   });
   // Every command passes; touch also changes the worktree after gate checked it.
   g.options.exec.runShell = async (command) => {
@@ -1011,7 +1320,9 @@ test('a failing Check with no recoverBrief gets a default section', async (t) =>
     'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
     'green/1/recover/1': ok({ 'lib/add.mjs': RIGHT_ADD }),
   });
-  golden.configure(g, (c) => { delete c.procedures.implement.actions[1].recoverBrief; });
+  golden.configure(g, (c) => {
+    delete c.procedures.implement.actions[1].recoverBrief;
+  });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
@@ -1022,7 +1333,9 @@ test('a failing Check with no recoverBrief gets a default section', async (t) =>
 
 test('a Check with recoverable: false is not recovered', async (t) => {
   const g = await greenSetup(t, { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }) });
-  golden.configure(g, (c) => { c.procedures.implement.actions[1].recoverable = false; });
+  golden.configure(g, (c) => {
+    c.procedures.implement.actions[1].recoverable = false;
+  });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -1052,7 +1365,11 @@ test('Test Immutability uses the Execution base before any gg commit', async (t)
   golden.configure(g, (c) => {
     probeFiles(c);
     c.procedures.sealing = sealing('frozen', 'feat');
-    c.flows.golden.ticket = { entry: 'one', routes: { '*': { end: 'needs-human' } }, vertices: { one: { use: 'implementer', procedure: 'sealing' } } };
+    c.flows.golden.ticket = {
+      entry: 'one',
+      routes: { '*': { end: 'needs-human' } },
+      vertices: { one: { use: 'implementer', procedure: 'sealing' } },
+    };
   });
   const baselines = scriptedImmutability(g, [{ ok: true, changed: [] }]);
   await interpreter.runExecution(g.options);
@@ -1061,17 +1378,28 @@ test('Test Immutability uses the Execution base before any gg commit', async (t)
 });
 
 test('every gg commit moves the Test Immutability baseline', async (t) => {
-  const g = await golden.setup(t, { responses: {
-    'one/1/ask/1': probed('One.', { 'lib/add.mjs': RIGHT_ADD }),
-    'two/1/ask/1': probed('Two.', { 'lib/two.mjs': 'export {};\n' }),
-  } });
+  const g = await golden.setup(t, {
+    responses: {
+      'one/1/ask/1': probed('One.', { 'lib/add.mjs': RIGHT_ADD }),
+      'two/1/ask/1': probed('Two.', { 'lib/two.mjs': 'export {};\n' }),
+    },
+  });
   golden.configure(g, (c) => {
     probeFiles(c);
     c.procedures.sealing = sealing('frozen', 'feat');
-    c.flows.golden.ticket = { entry: 'one', routes: { '*': { end: 'needs-human' } },
-      vertices: { one: { use: 'implementer', procedure: 'sealing', route: { ok: 'two' } }, two: { use: 'implementer', procedure: 'sealing' } } };
+    c.flows.golden.ticket = {
+      entry: 'one',
+      routes: { '*': { end: 'needs-human' } },
+      vertices: {
+        one: { use: 'implementer', procedure: 'sealing', route: { ok: 'two' } },
+        two: { use: 'implementer', procedure: 'sealing' },
+      },
+    };
   });
-  const baselines = scriptedImmutability(g, [{ ok: true, changed: [] }, { ok: true, changed: [] }]);
+  const baselines = scriptedImmutability(g, [
+    { ok: true, changed: [] },
+    { ok: true, changed: [] },
+  ]);
   await interpreter.runExecution(g.options);
 
   assert.deepEqual(baselines, [g.base, commitOf(g, 'one')]);
@@ -1079,15 +1407,23 @@ test('every gg commit moves the Test Immutability baseline', async (t) => {
 });
 
 test('a code-only commit does not become the first test commit', async (t) => {
-  const g = await golden.setup(t, { responses: {
-    'one/1/ask/1': probed('Code.', { 'lib/add.mjs': RIGHT_ADD }),
-    'two/1/ask/1': probed('Tests.', { 'test/two.test.mjs': 'export {};\n' }),
-  } });
+  const g = await golden.setup(t, {
+    responses: {
+      'one/1/ask/1': probed('Code.', { 'lib/add.mjs': RIGHT_ADD }),
+      'two/1/ask/1': probed('Tests.', { 'test/two.test.mjs': 'export {};\n' }),
+    },
+  });
   golden.configure(g, (c) => {
     probeFiles(c);
     c.procedures.sealing = sealing('write', 'test');
-    c.flows.golden.ticket = { entry: 'one', routes: { '*': { end: 'needs-human' } },
-      vertices: { one: { use: 'implementer', procedure: 'sealing', route: { ok: 'two' } }, two: { use: 'implementer', procedure: 'sealing' } } };
+    c.flows.golden.ticket = {
+      entry: 'one',
+      routes: { '*': { end: 'needs-human' } },
+      vertices: {
+        one: { use: 'implementer', procedure: 'sealing', route: { ok: 'two' } },
+        two: { use: 'implementer', procedure: 'sealing' },
+      },
+    };
   });
   await interpreter.runExecution(g.options);
 
@@ -1096,7 +1432,10 @@ test('a code-only commit does not become the first test commit', async (t) => {
 
 const blockedGreen = () => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['green/1/green/1'] = { files: {}, response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'SENTINEL diagnosis' } };
+  responses['green/1/green/1'] = {
+    files: {},
+    response: { ...golden.greenResponse, claim: 'blocked', diagnosis: 'SENTINEL diagnosis' },
+  };
   return responses;
 };
 
@@ -1111,7 +1450,9 @@ test('a stop token posts the comment its token names', async (t) => {
 
 test('a stop token that names no comment posts the Terminal Reason comment', async (t) => {
   const g = await golden.setup(t, { responses: blockedGreen() });
-  golden.configure(g, (c) => { delete c.procedures.implement.claims.blocked.comment; });
+  golden.configure(g, (c) => {
+    delete c.procedures.implement.claims.blocked.comment;
+  });
   await interpreter.runExecution(g.options);
 
   const [terminal] = g.gh.comments;
@@ -1124,7 +1465,11 @@ test('a Procedure with no agent Action posts its comment', async (t) => {
   golden.configure(g, (c) => {
     c.files['note.md'] = golden.layerFile('a note\n{{marker}}\n');
     c.procedures.say = { actions: [{ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' }] };
-    c.flows.golden.ticket = { entry: 'say', routes: { '*': { end: 'needs-human' } }, vertices: { say: { procedure: 'say' } } };
+    c.flows.golden.ticket = {
+      entry: 'say',
+      routes: { '*': { end: 'needs-human' } },
+      vertices: { say: { procedure: 'say' } },
+    };
   });
   const result = await interpreter.runExecution(g.options);
 
@@ -1146,33 +1491,73 @@ test('golden: a repeated review escalates', async (t) => {
 
   assert.equal(g.result.outcome, 'ready-for-qa');
   assert.deepEqual(reviewTrace(g), [
-    'red/1/red', 'red/1/red-check', 'red/1/commit',
-    'green/1/green', 'green/1/test', 'green/1/commit', 'green/1/push', 'green/1/pr',
-    'reviewer/1/review', 'reviewer/1/review-pass', 'reviewer/1/repeat', 'reviewer/1/comment', 'reviewer/1/pr',
-    'implementer-fix/1/fix', 'implementer-fix/1/test', 'implementer-fix/1/commit', 'implementer-fix/1/push', 'implementer-fix/1/pr',
-    'reviewer/2/review', 'reviewer/2/review-pass', 'reviewer/2/repeat', 'reviewer/2/comment', 'reviewer/2/pr',
-    'senior-dev/1/fix', 'senior-dev/1/test', 'senior-dev/1/commit', 'senior-dev/1/push', 'senior-dev/1/pr',
-    'reviewer/3/review', 'reviewer/3/review-pass', 'reviewer/3/repeat', 'reviewer/3/comment', 'reviewer/3/pr',
-    'publish/1/test', 'publish/1/pr', 'publish/1/pr-ready',
+    'red/1/red',
+    'red/1/red-check',
+    'red/1/commit',
+    'green/1/green',
+    'green/1/test',
+    'green/1/commit',
+    'green/1/push',
+    'green/1/pr',
+    'reviewer/1/review',
+    'reviewer/1/review-pass',
+    'reviewer/1/repeat',
+    'reviewer/1/comment',
+    'reviewer/1/pr',
+    'implementer-fix/1/fix',
+    'implementer-fix/1/test',
+    'implementer-fix/1/commit',
+    'implementer-fix/1/push',
+    'implementer-fix/1/pr',
+    'reviewer/2/review',
+    'reviewer/2/review-pass',
+    'reviewer/2/repeat',
+    'reviewer/2/comment',
+    'reviewer/2/pr',
+    'senior-dev/1/fix',
+    'senior-dev/1/test',
+    'senior-dev/1/commit',
+    'senior-dev/1/push',
+    'senior-dev/1/pr',
+    'reviewer/3/review',
+    'reviewer/3/review-pass',
+    'reviewer/3/repeat',
+    'reviewer/3/comment',
+    'reviewer/3/pr',
+    'publish/1/test',
+    'publish/1/pr',
+    'publish/1/pr-ready',
   ]);
-  assert.deepEqual(g.at('reviewer', 2, 'repeat')[0].signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'failed', tree: null }]);
-  assert.deepEqual(g.rec.traversals, { 'reviewer->implementer-fix:changes': 1, 'reviewer->senior-dev:repeat': 1 },
-    'the repeat takes its own Edge, not changes');
+  assert.deepEqual(g.at('reviewer', 2, 'repeat')[0].signals.checks, [
+    { id: 'repeat', kind: 'repeat', state: 'failed', tree: null },
+  ]);
+  assert.deepEqual(
+    g.rec.traversals,
+    { 'reviewer->implementer-fix:changes': 1, 'reviewer->senior-dev:repeat': 1 },
+    'the repeat takes its own Edge, not changes',
+  );
   assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 3, 'implementer-fix': 1, 'senior-dev': 1, publish: 1 });
 });
 
 // changes -> implementer-fix (max 2), and implementer-fix has max 1 with its own exhausted target.
-const fixBoundSetup = (t, changes) => reviewFlow(t, {
-  'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
-  'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
-  'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
-  'senior-dev/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
-  'reviewer/3/review/1': reviewed(review('ok')),
-}, { configure: (c) => {
-  const { vertices } = c.flows.golden.ticket;
-  Object.assign(vertices['implementer-fix'], { max: 1, exhausted: 'senior-dev' });
-  Object.assign(vertices.reviewer.route.changes, changes);
-} });
+const fixBoundSetup = (t, changes) =>
+  reviewFlow(
+    t,
+    {
+      'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
+      'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
+      'senior-dev/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+      'reviewer/3/review/1': reviewed(review('ok')),
+    },
+    {
+      configure: (c) => {
+        const { vertices } = c.flows.golden.ticket;
+        Object.assign(vertices['implementer-fix'], { max: 1, exhausted: 'senior-dev' });
+        Object.assign(vertices.reviewer.route.changes, changes);
+      },
+    },
+  );
 const runReview = async (g) => {
   g.result = await interpreter.runExecution(g.options);
   g.events = g.readEvents();
@@ -1185,16 +1570,48 @@ test("golden: a spent Vertex max takes the Vertex's exhausted target", async (t)
 
   assert.equal(g.result.outcome, 'ready-for-qa');
   assert.deepEqual(reviewTrace(g), [
-    'red/1/red', 'red/1/red-check', 'red/1/commit',
-    'green/1/green', 'green/1/test', 'green/1/commit', 'green/1/push', 'green/1/pr',
-    'reviewer/1/review', 'reviewer/1/review-pass', 'reviewer/1/repeat', 'reviewer/1/comment', 'reviewer/1/pr',
-    'implementer-fix/1/fix', 'implementer-fix/1/test', 'implementer-fix/1/commit', 'implementer-fix/1/push', 'implementer-fix/1/pr',
-    'reviewer/2/review', 'reviewer/2/review-pass', 'reviewer/2/repeat', 'reviewer/2/comment', 'reviewer/2/pr',
-    'senior-dev/1/fix', 'senior-dev/1/test', 'senior-dev/1/commit', 'senior-dev/1/push', 'senior-dev/1/pr',
-    'reviewer/3/review', 'reviewer/3/review-pass', 'reviewer/3/repeat', 'reviewer/3/comment', 'reviewer/3/pr',
-    'publish/1/test', 'publish/1/pr', 'publish/1/pr-ready',
+    'red/1/red',
+    'red/1/red-check',
+    'red/1/commit',
+    'green/1/green',
+    'green/1/test',
+    'green/1/commit',
+    'green/1/push',
+    'green/1/pr',
+    'reviewer/1/review',
+    'reviewer/1/review-pass',
+    'reviewer/1/repeat',
+    'reviewer/1/comment',
+    'reviewer/1/pr',
+    'implementer-fix/1/fix',
+    'implementer-fix/1/test',
+    'implementer-fix/1/commit',
+    'implementer-fix/1/push',
+    'implementer-fix/1/pr',
+    'reviewer/2/review',
+    'reviewer/2/review-pass',
+    'reviewer/2/repeat',
+    'reviewer/2/comment',
+    'reviewer/2/pr',
+    'senior-dev/1/fix',
+    'senior-dev/1/test',
+    'senior-dev/1/commit',
+    'senior-dev/1/push',
+    'senior-dev/1/pr',
+    'reviewer/3/review',
+    'reviewer/3/review-pass',
+    'reviewer/3/repeat',
+    'reviewer/3/comment',
+    'reviewer/3/pr',
+    'publish/1/test',
+    'publish/1/pr',
+    'publish/1/pr-ready',
   ]);
-  assert.deepEqual(g.rec.traversals, { 'reviewer->implementer-fix:changes': 1 }, 'an Edge whose Vertex is spent is not traversed');
+  assert.deepEqual(
+    g.rec.traversals,
+    { 'reviewer->implementer-fix:changes': 1 },
+    'an Edge whose Vertex is spent is not traversed',
+  );
   assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 3, 'implementer-fix': 1, 'senior-dev': 1, publish: 1 });
 });
 
@@ -1207,19 +1624,31 @@ test("when an Edge and its Vertex exhaust together the Vertex's exhausted target
 
 test('a spent Bound that ends the Execution names the effective target in the Terminal Reason', async (t) => {
   const g = await fixBoundSetup(t, {});
-  golden.configure(g, (c) => { c.flows.golden.ticket.vertices['implementer-fix'].exhausted = { end: 'needs-human' }; });
+  golden.configure(g, (c) => {
+    c.flows.golden.ticket.vertices['implementer-fix'].exhausted = { end: 'needs-human' };
+  });
   await runReview(g);
 
   assert.equal(g.result.outcome, 'needs-human');
-  assert.equal(g.rec.terminalReason.text, 'reviewer visit 2 completed every review Action with outcome changes, and '
-    + 'implementer-fix had used its Bound of 1 Visit, so the route ended at needs-human.');
-  assert.deepEqual(g.actions.filter((e) => 'exhausted' in e), [], 'no Action Event carries exhausted');
+  assert.equal(
+    g.rec.terminalReason.text,
+    'reviewer visit 2 completed every review Action with outcome changes, and ' +
+      'implementer-fix had used its Bound of 1 Visit, so the route ended at needs-human.',
+  );
+  assert.deepEqual(
+    g.actions.filter((e) => 'exhausted' in e),
+    [],
+    'no Action Event carries exhausted',
+  );
 });
 
 test('a restart at a bound routes the same way', async (t) => {
   const g = await fixBoundSetup(t, {});
   // The save of the route into senior-dev fails, which ends the process, so the restart routes reviewer/2's saved result again.
-  const restore = golden.failSaves(t, (saved, next) => next.cursor.vertex === 'senior-dev' && next.cursor.action === null);
+  const restore = golden.failSaves(
+    t,
+    (saved, next) => next.cursor.vertex === 'senior-dev' && next.cursor.action === null,
+  );
   await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof record.RecordSaveError);
   restore();
   const saved = await loadTicket(g);
@@ -1228,15 +1657,19 @@ test('a restart at a bound routes the same way', async (t) => {
   const calls = g.harness.calls.length;
   const result = await interpreter.runExecution({ ...g.options, record: saved });
   assert.equal(result.outcome, 'ready-for-qa');
-  assert.deepEqual(g.harness.calls.slice(calls).map((c) => c.marker),
-    [golden.markerOf(saved, 'senior-dev', 1, 'fix'), golden.markerOf(saved, 'reviewer', 3, 'review')]);
+  assert.deepEqual(
+    g.harness.calls.slice(calls).map((c) => c.marker),
+    [golden.markerOf(saved, 'senior-dev', 1, 'fix'), golden.markerOf(saved, 'reviewer', 3, 'review')],
+  );
   assert.deepEqual(saved.visits, { red: 1, green: 1, reviewer: 3, 'implementer-fix': 1, 'senior-dev': 1, publish: 1 });
 });
 
 // red's three Actions and green's agent call are the four Attempts of a cap of 4, so green's test Check is refused.
 const cappedSetup = async (t, cap = 4) => {
   const g = await golden.setup(t);
-  golden.configure(g, (c) => { c.flows.golden.actionCap = cap; });
+  golden.configure(g, (c) => {
+    c.flows.golden.actionCap = cap;
+  });
   return g;
 };
 
@@ -1245,16 +1678,31 @@ test('the Action Cap ends the Ticket at needs-human', async (t) => {
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'needs-human');
-  assert.deepEqual(golden.trace(g.readEvents()).filter((e) => e.vertex === 'red' || e.vertex === 'green').map((e) => `${e.vertex}/${e.action}`),
-    ['red/red', 'red/red-check', 'red/commit', 'green/green'], 'no Attempt past the cap runs');
+  assert.deepEqual(
+    golden
+      .trace(g.readEvents())
+      .filter((e) => e.vertex === 'red' || e.vertex === 'green')
+      .map((e) => `${e.vertex}/${e.action}`),
+    ['red/red', 'red/red-check', 'red/commit', 'green/green'],
+    'no Attempt past the cap runs',
+  );
   assert.equal(g.shells.length, 1, "only red's Check ran the tests");
-  const reason = stopReason(g, { vertex: 'green', action: 'test', outcome: 'needs-human', rule: { table: 'fixed', row: 'action-cap' } });
+  const reason = stopReason(g, {
+    vertex: 'green',
+    action: 'test',
+    outcome: 'needs-human',
+    rule: { table: 'fixed', row: 'action-cap' },
+  });
   assert.equal(reason.text, 'The Execution reached its Action Cap of 4 Attempts, so test at green did not run.');
 });
 
 test('an Attempt retry counts toward the Action Cap', async (t) => {
-  const g = await golden.setup(t, { responses: { ...structuredClone(golden.firstVisitResponses), 'red/1/red/1': { response: null } } });
-  golden.configure(g, (c) => { c.flows.golden.actionCap = 1; });
+  const g = await golden.setup(t, {
+    responses: { ...structuredClone(golden.firstVisitResponses), 'red/1/red/1': { response: null } },
+  });
+  golden.configure(g, (c) => {
+    c.flows.golden.actionCap = 1;
+  });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'needs-human');
@@ -1266,8 +1714,14 @@ test('the needs-human report runs after the cap is reached', async (t) => {
   const g = await cappedSetup(t);
   await interpreter.runExecution(g.options);
 
-  assert.deepEqual(golden.trace(g.readEvents()).filter((e) => e.vertex === 'needs-human').map((e) => `${e.action}/${e.outcome}`),
-    ['end-comment/ok', 'end-label/ok'], 'the report is traced');
+  assert.deepEqual(
+    golden
+      .trace(g.readEvents())
+      .filter((e) => e.vertex === 'needs-human')
+      .map((e) => `${e.action}/${e.outcome}`),
+    ['end-comment/ok', 'end-label/ok'],
+    'the report is traced',
+  );
   assert.equal(g.gh.comments.filter((c) => c.number === golden.TICKET).length, 1);
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   assert.equal(g.rec.state, 'needs-human');
@@ -1276,8 +1730,10 @@ test('the needs-human report runs after the cap is reached', async (t) => {
 test('a crash during that report resumes only the report', async (t) => {
   const g = await cappedSetup(t);
   const comment = golden.markerOf(g.rec, 'needs-human', 1, 'end-comment');
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: comment, point: 'after-effect' } }),
-    (err) => err instanceof interpreter.CrashError);
+  await assert.rejects(
+    interpreter.runExecution({ ...g.options, crashAt: { marker: comment, point: 'after-effect' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
   const before = g.readEvents().length;
   const calls = g.harness.calls.length;
   const shells = g.shells.length;
@@ -1286,8 +1742,15 @@ test('a crash during that report resumes only the report', async (t) => {
   assert.equal(result.outcome, 'needs-human');
   assert.equal(g.harness.calls.length, calls, 'no agent runs again');
   assert.equal(g.shells.length, shells, 'no Check runs');
-  assert.deepEqual(g.readEvents().slice(before).filter((e) => e.type === 'action').map((e) => `${e.vertex}/${e.action}`),
-    ['needs-human/end-comment', 'needs-human/end-label'], 'only the report resumes');
+  assert.deepEqual(
+    g
+      .readEvents()
+      .slice(before)
+      .filter((e) => e.type === 'action')
+      .map((e) => `${e.vertex}/${e.action}`),
+    ['needs-human/end-comment', 'needs-human/end-label'],
+    'only the report resumes',
+  );
   assert.equal(g.gh.comments.filter((c) => c.number === golden.TICKET).length, 1, 'the comment is not posted twice');
   assert.equal((await loadTicket(g)).state, 'needs-human');
 });
@@ -1295,48 +1758,75 @@ test('a crash during that report resumes only the report', async (t) => {
 test('a route passes through a chain of spent Vertices to the last exhausted target', async (t) => {
   // review 2 repeats review 1 and escalates to senior-dev; review 3's changes then finds implementer-fix and senior-dev
   // both spent, so the route passes from one exhausted target to the next.
-  const g = await reviewFlow(t, {
-    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
-    'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
-    'senior-dev/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // two\n' }),
-    'reviewer/3/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'third problem')])),
-  }, { configure: (c) => {
-    const { vertices } = c.flows.golden.ticket;
-    Object.assign(vertices['implementer-fix'], { max: 1, exhausted: 'senior-dev' });
-    vertices['senior-dev'].exhausted = { end: 'needs-replan' };
-  } });
+  const g = await reviewFlow(
+    t,
+    {
+      'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
+      'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+      'senior-dev/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // two\n' }),
+      'reviewer/3/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'third problem')])),
+    },
+    {
+      configure: (c) => {
+        const { vertices } = c.flows.golden.ticket;
+        Object.assign(vertices['implementer-fix'], { max: 1, exhausted: 'senior-dev' });
+        vertices['senior-dev'].exhausted = { end: 'needs-replan' };
+      },
+    },
+  );
   await runReview(g);
 
   assert.equal(g.result.outcome, 'needs-replan');
-  assert.equal(g.rec.terminalReason.text, 'reviewer visit 3 completed every review Action with outcome changes, and '
-    + 'implementer-fix had used its Bound of 1 Visit and senior-dev had used its Bound of 1 Visit, so the route ended at needs-replan.');
+  assert.equal(
+    g.rec.terminalReason.text,
+    'reviewer visit 3 completed every review Action with outcome changes, and ' +
+      'implementer-fix had used its Bound of 1 Visit and senior-dev had used its Bound of 1 Visit, so the route ended at needs-replan.',
+  );
 });
 
 test('an ok route into a spent Vertex names the Bound in the Terminal Reason', async (t) => {
-  const g = await reviewFlow(t, {
-    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
-  }, { configure: (c) => { Object.assign(c.flows.golden.ticket.vertices.reviewer, { max: 1, exhausted: { end: 'needs-human' } }); } });
+  const g = await reviewFlow(
+    t,
+    {
+      'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+    },
+    {
+      configure: (c) => {
+        Object.assign(c.flows.golden.ticket.vertices.reviewer, { max: 1, exhausted: { end: 'needs-human' } });
+      },
+    },
+  );
   await runReview(g);
 
   assert.equal(g.result.outcome, 'needs-human');
-  assert.equal(g.rec.terminalReason.text, 'implementer-fix visit 1 completed every fix Action: test passed, and reviewer had used '
-    + 'its Bound of 1 Visit, so the route ended at needs-human.');
+  assert.equal(
+    g.rec.terminalReason.text,
+    'implementer-fix visit 1 completed every fix Action: test passed, and reviewer had used ' +
+      'its Bound of 1 Visit, so the route ended at needs-human.',
+  );
 });
 
 test('a restart does not count the resumed Attempt again toward the Action Cap', async (t) => {
   // red's three Actions are the cap of 3; the process dies inside the third, red's commit, after its effect.
   const g = await cappedSetup(t, 3);
   const commit = golden.markerOf(g.rec, 'red', 1, 'commit');
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: commit, point: 'after-effect' } }),
-    (err) => err instanceof interpreter.CrashError);
+  await assert.rejects(
+    interpreter.runExecution({ ...g.options, crashAt: { marker: commit, point: 'after-effect' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
 
   g.rec = await loadTicket(g);
   const result = await interpreter.runExecution({ ...g.options, record: g.rec });
   assert.equal(result.outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 1, 'only red called the agent');
-  stopReason(g, { vertex: 'green', action: 'green', outcome: 'needs-human', rule: { table: 'fixed', row: 'action-cap' } });
+  stopReason(g, {
+    vertex: 'green',
+    action: 'green',
+    outcome: 'needs-human',
+    rule: { table: 'fixed', row: 'action-cap' },
+  });
 });
 
 // Request 3.3's worked example: nested retries, a cap boundary and a restart in one Execution. red's call is retried
@@ -1345,49 +1835,110 @@ test('a restart does not count the resumed Attempt again toward the Action Cap',
 // senior-dev; the cap of 26 is used by then, so senior-dev's first Attempt is refused and the cap wins over the Bound. The
 // process dies as it saves that route, and the restart routes the same way.
 test('worked example: retries and a recovery pass count toward the cap, which wins over a spent Bound across a restart', async (t) => {
-  const g = await reviewFlow(t, {
-    'red/1/red/1': { response: null },
-    'red/1/red/2': structuredClone(golden.firstVisitResponses['red/1/red/1']),
-    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
-    'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
-    'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
-  }, { configure: (c) => {
-    c.flows.golden.actionCap = 26;
-    c.flows.golden.ticket.vertices.reviewer.route.changes = { to: 'implementer-fix', max: 1, exhausted: 'senior-dev' };
-  } });
+  const g = await reviewFlow(
+    t,
+    {
+      'red/1/red/1': { response: null },
+      'red/1/red/2': structuredClone(golden.firstVisitResponses['red/1/red/1']),
+      'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+      'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // fixed\n' }),
+      'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
+    },
+    {
+      configure: (c) => {
+        c.flows.golden.actionCap = 26;
+        c.flows.golden.ticket.vertices.reviewer.route.changes = {
+          to: 'implementer-fix',
+          max: 1,
+          exhausted: 'senior-dev',
+        };
+      },
+    },
+  );
   // The suite passes only once lib/add.mjs really adds, so green's first test Check fails.
-  g.options.exec = { runShell: async (command, opts) => {
-    const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
-    if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
-    return readFileSync(file, 'utf8').includes('a + b')
-      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false } : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
-  } };
-  const restore = golden.failSaves(t, (saved, next) => next.cursor.vertex === 'senior-dev' && next.cursor.action === null);
+  g.options.exec = {
+    runShell: async (command, opts) => {
+      const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
+      if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
+      return readFileSync(file, 'utf8').includes('a + b')
+        ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
+        : { code: 1, output: GREEN_FAIL_OUTPUT, timedOut: false };
+    },
+  };
+  const restore = golden.failSaves(
+    t,
+    (saved, next) => next.cursor.vertex === 'senior-dev' && next.cursor.action === null,
+  );
   await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof record.RecordSaveError);
   restore();
   g.rec = await loadTicket(g);
-  assert.deepEqual(g.rec.cursor, { vertex: 'reviewer', visit: 2, action: 'pr', recovery: 0, attempt: 1 }, 'the route was not saved');
+  assert.deepEqual(
+    g.rec.cursor,
+    { vertex: 'reviewer', visit: 2, action: 'pr', recovery: 0, attempt: 1 },
+    'the route was not saved',
+  );
 
   const calls = g.harness.calls.length;
   const result = await interpreter.runExecution({ ...g.options, record: g.rec });
   assert.equal(result.outcome, 'needs-human');
   assert.equal(g.harness.calls.length, calls, 'no agent runs after the restart');
-  assert.deepEqual(golden.trace(g.readEvents()).filter((e) => !['needs-human'].includes(e.vertex))
-    .map((e) => `${e.vertex}/${e.action}/${e.recovery}/${e.attempt}`), [
-    'red/red/0/1', 'red/red/0/2', 'red/red-check/0/1', 'red/commit/0/1',
-    'green/green/0/1', 'green/test/0/1', 'green/green/1/1', 'green/test/1/1', 'green/commit/1/1', 'green/push/1/1', 'green/pr/1/1',
-    'reviewer/review/0/1', 'reviewer/review-pass/0/1', 'reviewer/repeat/0/1', 'reviewer/comment/0/1', 'reviewer/pr/0/1',
-    'implementer-fix/fix/0/1', 'implementer-fix/test/0/1', 'implementer-fix/commit/0/1', 'implementer-fix/push/0/1', 'implementer-fix/pr/0/1',
-    'reviewer/review/0/1', 'reviewer/review-pass/0/1', 'reviewer/repeat/0/1', 'reviewer/comment/0/1', 'reviewer/pr/0/1',
-  ], 'the 26 Attempts the cap allows');
-  assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, 'senior-dev': 1 }, 'retries and recovery add no Visit');
+  assert.deepEqual(
+    golden
+      .trace(g.readEvents())
+      .filter((e) => !['needs-human'].includes(e.vertex))
+      .map((e) => `${e.vertex}/${e.action}/${e.recovery}/${e.attempt}`),
+    [
+      'red/red/0/1',
+      'red/red/0/2',
+      'red/red-check/0/1',
+      'red/commit/0/1',
+      'green/green/0/1',
+      'green/test/0/1',
+      'green/green/1/1',
+      'green/test/1/1',
+      'green/commit/1/1',
+      'green/push/1/1',
+      'green/pr/1/1',
+      'reviewer/review/0/1',
+      'reviewer/review-pass/0/1',
+      'reviewer/repeat/0/1',
+      'reviewer/comment/0/1',
+      'reviewer/pr/0/1',
+      'implementer-fix/fix/0/1',
+      'implementer-fix/test/0/1',
+      'implementer-fix/commit/0/1',
+      'implementer-fix/push/0/1',
+      'implementer-fix/pr/0/1',
+      'reviewer/review/0/1',
+      'reviewer/review-pass/0/1',
+      'reviewer/repeat/0/1',
+      'reviewer/comment/0/1',
+      'reviewer/pr/0/1',
+    ],
+    'the 26 Attempts the cap allows',
+  );
+  assert.deepEqual(
+    g.rec.visits,
+    { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, 'senior-dev': 1 },
+    'retries and recovery add no Visit',
+  );
   assert.deepEqual(g.rec.traversals, { 'reviewer->implementer-fix:changes': 1 });
   // The review's comments are write-ahead too, so the Terminal Reason's comment is found on the Ticket.
-  const reason = stopReason(g, { vertex: 'senior-dev', action: 'fix', outcome: 'needs-human', rule: { table: 'fixed', row: 'action-cap' }, comment: false });
+  const reason = stopReason(g, {
+    vertex: 'senior-dev',
+    action: 'fix',
+    outcome: 'needs-human',
+    rule: { table: 'fixed', row: 'action-cap' },
+    comment: false,
+  });
   assert.equal(reason.text, 'The Execution reached its Action Cap of 26 Attempts, so fix at senior-dev did not run.');
-  assert.equal(g.gh.comments.filter((c) => c.number === golden.TICKET && c.body.includes(`**Terminal Reason:** ${reason.text}`)).length, 1);
+  assert.equal(
+    g.gh.comments.filter((c) => c.number === golden.TICKET && c.body.includes(`**Terminal Reason:** ${reason.text}`))
+      .length,
+    1,
+  );
 });
 
 // The repeat Check compares a review only with earlier Visits of the same Vertex in the same Execution (request 3.3, R4c).
@@ -1395,22 +1946,34 @@ test('worked example: retries and a recovery pass count toward the cap, which wi
 test("a repeat Check ignores another Vertex's identical findings", async (t) => {
   const minor = [finding('minor', 'lib/add.mjs', 'name the parameters')];
   // reviewer/2 and reviewer-2/1 give the same findings.
-  const g = await reviewFlow(t, {
-    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
-    'reviewer/2/review/1': reviewed(review('ok', minor)),
-    'reviewer-2/1/review/1': reviewed(review('ok', minor)),
-  }, { configure: (c) => {
-    const { vertices } = c.flows.golden.ticket;
-    vertices['reviewer-2'] = { ...structuredClone(vertices.reviewer), route: { ...vertices.reviewer.route, ok: 'publish' } };
-    vertices.reviewer.route.ok = 'reviewer-2';
-  } });
+  const g = await reviewFlow(
+    t,
+    {
+      'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+      'reviewer/2/review/1': reviewed(review('ok', minor)),
+      'reviewer-2/1/review/1': reviewed(review('ok', minor)),
+    },
+    {
+      configure: (c) => {
+        const { vertices } = c.flows.golden.ticket;
+        vertices['reviewer-2'] = {
+          ...structuredClone(vertices.reviewer),
+          route: { ...vertices.reviewer.route, ok: 'publish' },
+        };
+        vertices.reviewer.route.ok = 'reviewer-2';
+      },
+    },
+  );
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'ready-for-qa');
   const repeat = g.readEvents().find((e) => e.type === 'action' && e.vertex === 'reviewer-2' && e.action === 'repeat');
-  assert.deepEqual(repeat.signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
-    "reviewer's second review is not reviewer-2's first");
+  assert.deepEqual(
+    repeat.signals.checks,
+    [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
+    "reviewer's second review is not reviewer-2's first",
+  );
 });
 
 test("a repeat Check ignores an earlier Execution's identical findings", async (t) => {
@@ -1428,24 +1991,56 @@ test("a repeat Check ignores an earlier Execution's identical findings", async (
   const branch = 'ticket/16-add-again';
   const worktree = join(g.root, 'wt', 'ticket-16');
   await g.options.git.ensureWorktree({ mainRoot: g.mainRoot, path: worktree, branch, base: 'main' });
-  const next = record.createExecution({ commonDir: g.commonDir, ticket: 16, epic: 1, flow: { name: g.flow.name, entry: g.flow.ticket.entry },
-    configHash: 'cfg-hash', run: g.rec.run, worktree, branch, base: 'main' });
+  const next = record.createExecution({
+    commonDir: g.commonDir,
+    ticket: 16,
+    epic: 1,
+    flow: { name: g.flow.name, entry: g.flow.ticket.entry },
+    configHash: 'cfg-hash',
+    run: g.rec.run,
+    worktree,
+    branch,
+    base: 'main',
+  });
   await record.save(next);
-  const harness = fakeHarness({ transcriptDir: join(g.root, 'transcripts-16'), capabilities: { cost: false, reasoningTokens: false }, responses: {
-    ...structuredClone(golden.firstVisitResponses),
-    'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
-    'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
-    'reviewer/2/review/1': reviewed(review('ok')),
-  } });
-  const result = await interpreter.runExecution({ ...g.options, record: next, harness,
-    ticket: { number: 16, title: 'Add two numbers again', body: 'Add `add(a, b)` again.', branch } });
+  const harness = fakeHarness({
+    transcriptDir: join(g.root, 'transcripts-16'),
+    capabilities: { cost: false, reasoningTokens: false },
+    responses: {
+      ...structuredClone(golden.firstVisitResponses),
+      'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
+      'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+      'reviewer/2/review/1': reviewed(review('ok')),
+    },
+  });
+  const result = await interpreter.runExecution({
+    ...g.options,
+    record: next,
+    harness,
+    ticket: { number: 16, title: 'Add two numbers again', body: 'Add `add(a, b)` again.', branch },
+  });
 
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
-  const repeat = g.readEvents().find((e) => e.type === 'action' && e.execution === next.execution && e.vertex === 'reviewer'
-    && e.visit === 1 && e.action === 'repeat');
-  assert.deepEqual(repeat.signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
-    "ticket 15's second review is not ticket 16's first");
-  assert.deepEqual(next.traversals, { 'reviewer->implementer-fix:changes': 1 }, 'the review routes as changes, not repeat');
+  const repeat = g
+    .readEvents()
+    .find(
+      (e) =>
+        e.type === 'action' &&
+        e.execution === next.execution &&
+        e.vertex === 'reviewer' &&
+        e.visit === 1 &&
+        e.action === 'repeat',
+    );
+  assert.deepEqual(
+    repeat.signals.checks,
+    [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
+    "ticket 15's second review is not ticket 16's first",
+  );
+  assert.deepEqual(
+    next.traversals,
+    { 'reviewer->implementer-fix:changes': 1 },
+    'the review routes as changes, not repeat',
+  );
 });
 
 test("a repeat Check rerun in a recovery pass does not match its own Visit's first pass", async (t) => {
@@ -1456,12 +2051,23 @@ test("a repeat Check rerun in a recovery pass does not match its own Visit's fir
     'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
   });
   golden.configure(g, (c) => {
-    c.procedures.implement.actions.splice(2, 0, { id: 'again', do: 'check', kind: 'repeat', list: 'response.dod', fields: ['item'] });
+    c.procedures.implement.actions.splice(2, 0, {
+      id: 'again',
+      do: 'check',
+      kind: 'repeat',
+      list: 'response.dod',
+      fields: ['item'],
+    });
   });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
-  assert.deepEqual(actionEvent(g, 'green', 'again', 0).signals.checks, [{ id: 'again', kind: 'repeat', state: 'passed', tree: null }]);
-  assert.deepEqual(actionEvent(g, 'green', 'again', 1).signals.checks, [{ id: 'again', kind: 'repeat', state: 'passed', tree: null }],
-    'the recovery pass repeats nothing an earlier Visit recorded');
+  assert.deepEqual(actionEvent(g, 'green', 'again', 0).signals.checks, [
+    { id: 'again', kind: 'repeat', state: 'passed', tree: null },
+  ]);
+  assert.deepEqual(
+    actionEvent(g, 'green', 'again', 1).signals.checks,
+    [{ id: 'again', kind: 'repeat', state: 'passed', tree: null }],
+    'the recovery pass repeats nothing an earlier Visit recorded',
+  );
 });

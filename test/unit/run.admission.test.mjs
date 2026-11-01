@@ -20,7 +20,10 @@ test('gg run runs the Declared Commands of its config, not those of AGENTS.md', 
 test('preflight lists every malformed Declared Command and a missing test, naming the repository Layer', async (t) => {
   const f = fixture(t);
   f.options.config.commands = { Test: 'npm test', lint: '' };
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   const file = join(f.mainRoot, '.agents', 'gg', 'gg.json');
   assert.deepEqual(err?.message.split('\n'), [
     '[main] preflight failed:',
@@ -41,8 +44,14 @@ test('preflight lists every malformed Declared Command and a missing test, namin
 test('a Flow with a plan section fails admission before any effect', async (t) => {
   const f = fixture(t);
   f.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
-  assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', 'error: flows.default.plan: plan must be null until Epic planning is built']);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    'error: flows.default.plan: plan must be null until Epic planning is built',
+  ]);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.worktrees(), 1, 'no worktree');
   assert.equal(existsSync(join(f.commonDir, 'gg', 'runs')), false, 'no run directory');
@@ -51,8 +60,14 @@ test('a Flow with a plan section fails admission before any effect', async (t) =
 test('a Flow without a plan key fails admission before any effect', async (t) => {
   const f = fixture(t);
   delete f.options.config.flows.default.plan;
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
-  assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', 'error: flows.default: plan is required: null when the Flow has no Epic-level planning']);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    'error: flows.default: plan is required: null when the Flow has no Epic-level planning',
+  ]);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
 });
 
@@ -72,7 +87,10 @@ test('a ticket reaching done exits 0 and the run events carry the run id and out
   const runDir = join(f.commonDir, 'gg', 'runs', start.run);
   assert.ok(existsSync(join(runDir, 'flow.json')), 'the Resolved Flow is in the run directory');
   assert.ok(existsSync(join(runDir, 'config-hash.txt')), 'the Config Hash is in the run directory');
-  assert.ok(readdirSync(runDir).some((name) => name.endsWith('.log')), 'the run directory has a log file');
+  assert.ok(
+    readdirSync(runDir).some((name) => name.endsWith('.log')),
+    'the run directory has a log file',
+  );
 });
 
 test('a Ticket in a repository reached through a linked directory reaches done and publishes no local path', async (t) => {

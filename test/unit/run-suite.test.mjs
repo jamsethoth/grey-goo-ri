@@ -10,7 +10,10 @@ const launcherUrl = new URL('../../scripts/run-suite.mjs', import.meta.url);
 // The machine's own cap, as the launcher computes it; the cases assert the rest of the command line literally.
 const concurrency = `--test-concurrency=${Math.min(12, Math.max(1, availableParallelism() - 1))}`;
 // ADR 0018: ESLint and tsc run as node plus each package's own bin script, before the tests, in every stage.
-const checks = [['node_modules/eslint/bin/eslint.js', '.'], ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json']];
+const checks = [
+  ['node_modules/eslint/bin/eslint.js', '.'],
+  ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
+];
 
 test('the full stage runs node --test over the whole suite in the repo root, at most twelve files at once', async () => {
   const runSuite = await import(launcherUrl);
@@ -27,20 +30,32 @@ test('the full stage runs lint and the type check before the tests', async () =>
 
 test('the fast stage runs lint and the type check before the tests', async () => {
   const runSuite = await import(launcherUrl);
-  assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps, [...checks, ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}']]);
+  assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps, [
+    ...checks,
+    ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}'],
+  ]);
 });
 
 test('the fast stage runs only test/unit and the contract suites it is given', async () => {
   const runSuite = await import(launcherUrl);
   const cmd = runSuite.suiteCommand({}, ['fast', 'sqlite', 'git']);
-  assert.deepEqual(cmd.steps.at(-1), ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}', 'test/contract/sqlite/**/*.test.{mjs,ts}',
-    'test/contract/git/**/*.test.{mjs,ts}']);
+  assert.deepEqual(cmd.steps.at(-1), [
+    '--test',
+    concurrency,
+    'test/unit/**/*.test.{mjs,ts}',
+    'test/contract/sqlite/**/*.test.{mjs,ts}',
+    'test/contract/git/**/*.test.{mjs,ts}',
+  ]);
   assert.equal(resolve(cmd.cwd), resolve(root));
 });
 
 test('the fast stage with no boundary runs only test/unit', async () => {
   const runSuite = await import(launcherUrl);
-  assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps.at(-1), ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}']);
+  assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps.at(-1), [
+    '--test',
+    concurrency,
+    'test/unit/**/*.test.{mjs,ts}',
+  ]);
 });
 
 // ADR 0016: anything outside the closed set stops the launcher before it runs anything.
@@ -57,20 +72,36 @@ const refused = [
 for (const [what, argv] of refused) {
   test(`the launcher refuses ${what}`, async () => {
     const runSuite = await import(launcherUrl);
-    assert.throws(() => runSuite.suiteCommand({}, argv), { name: 'UsageError', message: /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/ });
+    assert.throws(() => runSuite.suiteCommand({}, argv), {
+      name: 'UsageError',
+      message: /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/,
+    });
   });
 }
 
 test('suiteCommand drops NODE_OPTIONS, NODE_PATH and npm_config_* and keeps the rest', async () => {
   const runSuite = await import(launcherUrl);
-  const { env } = runSuite.suiteCommand({ NODE_OPTIONS: '--import=x', NODE_PATH: 'p', npm_config_node_options: '--import=x', KEEP: '1' }, []);
+  const { env } = runSuite.suiteCommand(
+    { NODE_OPTIONS: '--import=x', NODE_PATH: 'p', npm_config_node_options: '--import=x', KEEP: '1' },
+    [],
+  );
   assert.deepEqual(env, { KEEP: '1' });
 });
 
 test('the launcher is not a default node --test file', async () => {
   await readFile(launcherUrl);
-  const patterns = ['**/*.test.{cjs,mjs,js}', '**/*-test.{cjs,mjs,js}', '**/*_test.{cjs,mjs,js}', '**/test-*.{cjs,mjs,js}', '**/test.{cjs,mjs,js}', '**/test/**/*.{cjs,mjs,js}'];
-  assert.deepEqual(patterns.filter((pattern) => matchesGlob('scripts/run-suite.mjs', pattern)), []);
+  const patterns = [
+    '**/*.test.{cjs,mjs,js}',
+    '**/*-test.{cjs,mjs,js}',
+    '**/*_test.{cjs,mjs,js}',
+    '**/test-*.{cjs,mjs,js}',
+    '**/test.{cjs,mjs,js}',
+    '**/test/**/*.{cjs,mjs,js}',
+  ];
+  assert.deepEqual(
+    patterns.filter((pattern) => matchesGlob('scripts/run-suite.mjs', pattern)),
+    [],
+  );
 });
 
 test('the codex rule allows only node scripts/run-suite.mjs and has no BOM', async () => {

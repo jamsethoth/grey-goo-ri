@@ -39,12 +39,24 @@ test('parse rejects labels outside the state, await and decide families of its p
 
 // GitHub matches label names case-insensitively, so a human's differently cased label is the same label (request 3.5).
 for (const name of [
-  'gg:state:in-progress', 'gg:state:needs-human', 'gg:state:ready-for-qa', 'gg:state:needs-replan',
-  'gg:await:plan-approval', 'gg:decide:qa-approval:needs-changes',
-  'Gg:state:in-progress', 'Gg:state:needs-human', 'Gg:state:ready-for-qa', 'Gg:state:needs-replan',
-  'Gg:await:plan-approval', 'Gg:decide:qa-approval:needs-changes',
-  'X:state:in-progress', 'X:state:needs-human', 'X:state:ready-for-qa', 'X:state:needs-replan',
-  'X:await:plan-approval', 'X:decide:qa-approval:needs-changes',
+  'gg:state:in-progress',
+  'gg:state:needs-human',
+  'gg:state:ready-for-qa',
+  'gg:state:needs-replan',
+  'gg:await:plan-approval',
+  'gg:decide:qa-approval:needs-changes',
+  'Gg:state:in-progress',
+  'Gg:state:needs-human',
+  'Gg:state:ready-for-qa',
+  'Gg:state:needs-replan',
+  'Gg:await:plan-approval',
+  'Gg:decide:qa-approval:needs-changes',
+  'X:state:in-progress',
+  'X:state:needs-human',
+  'X:state:ready-for-qa',
+  'X:state:needs-replan',
+  'X:await:plan-approval',
+  'X:decide:qa-approval:needs-changes',
 ]) {
   test(`label membership of ${name} ignores case and keeps the names' spelling`, () => {
     const shown = [name.toUpperCase(), 'unrelated'];
@@ -89,7 +101,11 @@ for (const prefix of ['gg', 'Gg']) {
   test(`parse with prefix ${prefix} recognises mixed-case prefixes and families without rewriting identifiers`, () => {
     const l = labels.labels(prefix);
     assert.deepEqual(l.parse('gG:Await:Plan-Approval'), { family: 'await', vertex: 'Plan-Approval' });
-    assert.deepEqual(l.parse('GG:DECIDE:QA-Approval:Needs-Changes'), { family: 'decide', vertex: 'QA-Approval', outcome: 'Needs-Changes' });
+    assert.deepEqual(l.parse('GG:DECIDE:QA-Approval:Needs-Changes'), {
+      family: 'decide',
+      vertex: 'QA-Approval',
+      outcome: 'Needs-Changes',
+    });
     assert.equal(l.parse('X:STATE:IN-PROGRESS'), null);
     assert.equal(l.parse('IN-PROGRESS'), null);
     assert.equal(l.parse('GG:OTHER:thing'), null);
@@ -101,7 +117,13 @@ for (const prefix of ['gg', 'Gg']) {
 // A narrow guard: these are the comparison forms the case-insensitive fix replaced.
 test('production label comparisons use the shared helper', () => {
   const lib = new URL('../../lib/', import.meta.url);
-  const banned = [/issueLabels\.includes\(/, /labelNames\([^)]*\)\.includes\(/, /busy\.includes\(/, /payload\.add\.includes\(/, /\.label\??\.name\s*===/];
+  const banned = [
+    /issueLabels\.includes\(/,
+    /labelNames\([^)]*\)\.includes\(/,
+    /busy\.includes\(/,
+    /payload\.add\.includes\(/,
+    /\.label\??\.name\s*===/,
+  ];
   for (const file of readdirSync(lib).filter((f) => f.endsWith('.mjs'))) {
     const source = readFileSync(new URL(file, lib), 'utf8');
     for (const pattern of banned) assert.doesNotMatch(source, pattern, file);

@@ -9,13 +9,18 @@ import { fakeGit } from '../support/fake-git.mjs';
 const fixture = (name) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
 
 test('red check: a timed-out run is rejected even if it printed the test name', () => {
-  const r = checks.redCheck({ code: null, timedOut: true, output: 'not ok - rejects bad input' }, ['rejects bad input']);
+  const r = checks.redCheck({ code: null, timedOut: true, output: 'not ok - rejects bad input' }, [
+    'rejects bad input',
+  ]);
   assert.equal(r.ok, false);
   assert.match(r.reason, /timed out/i);
 });
 
 test('red check: runner-not-found is rejected', () => {
-  const r = checks.redCheck({ code: 127, output: 'rejects bad input\n[ff: could not start command (win32 error 2)]\n' }, ['rejects bad input']);
+  const r = checks.redCheck(
+    { code: 127, output: 'rejects bad input\n[ff: could not start command (win32 error 2)]\n' },
+    ['rejects bad input'],
+  );
   assert.equal(r.ok, false);
   assert.match(r.reason, /could not start|not found/i);
 });
@@ -27,7 +32,9 @@ test('red check: nonzero exit without the reported test names is rejected', () =
 });
 
 test('red check: nonzero exit naming a reported failing test is accepted', () => {
-  assert.deepEqual(checks.redCheck({ code: 1, output: 'not ok 1 - rejects bad input' }, ['rejects bad input']), { ok: true });
+  assert.deepEqual(checks.redCheck({ code: 1, output: 'not ok 1 - rejects bad input' }, ['rejects bad input']), {
+    ok: true,
+  });
 });
 
 test('red check requires the named test to be failing where the runner reports per-test status', () => {
@@ -43,7 +50,8 @@ test('red check requires the named test to be failing where the runner reports p
 
 test('red check reads coloured node:test spec output', () => {
   // As printed by node --test with FORCE_COLOR=1.
-  const output = '\x1b[32m✔ rejects bad input \x1b[90m(0.93ms)\x1b[39m\x1b[39m\n\x1b[31m✖ old unrelated test \x1b[90m(1.55ms)\x1b[39m\x1b[39m\n';
+  const output =
+    '\x1b[32m✔ rejects bad input \x1b[90m(0.93ms)\x1b[39m\x1b[39m\n\x1b[31m✖ old unrelated test \x1b[90m(1.55ms)\x1b[39m\x1b[39m\n';
   const r = checks.redCheck({ code: 1, output }, ['rejects bad input']);
   assert.equal(r.ok, false);
   assert.ok(!r.heuristic);
@@ -52,8 +60,14 @@ test('red check reads coloured node:test spec output', () => {
 });
 
 test('red check matches a full pytest identifier', () => {
-  assert.deepEqual(checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_rejects_bad_input']), { ok: true });
-  assert.equal(checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_accepts_good_input']).ok, false);
+  assert.deepEqual(
+    checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_rejects_bad_input']),
+    { ok: true },
+  );
+  assert.equal(
+    checks.redCheck({ code: 1, output: fixture('pytest.txt') }, ['tests/test_parse.py::test_accepts_good_input']).ok,
+    false,
+  );
 });
 
 // tap-directives.txt is as printed by node --test --test-reporter=tap: only "old unrelated test" causes the nonzero exit.
@@ -76,11 +90,15 @@ test('red check takes a lone TAP TODO line as per-test status, not grounds for t
 });
 
 test('red check decodes an escaped hash in a failing TAP test name', () => {
-  assert.deepEqual(checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['rejects issue #123']), { ok: true });
+  assert.deepEqual(checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['rejects issue #123']), {
+    ok: true,
+  });
 });
 
 test('red check decodes an escaped backslash and hash in a passing TAP test name', () => {
-  const passing = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['passes with \\ backslash and # hash']);
+  const passing = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, [
+    'passes with \\ backslash and # hash',
+  ]);
   assert.equal(passing.ok, false);
   assert.match(passing.reason, /pass/i);
 });
@@ -116,7 +134,8 @@ test('red check does not take a jest test named inside a failure message or cons
 });
 
 test('red check reads a jest suite named Console and excludes only the bare Console heading', () => {
-  const consoleSuite = '  ● Console › logs on failure\n\n    expect(received).toBe(true)\n\n  ● Console\n\n    console.log\n      hello\n';
+  const consoleSuite =
+    '  ● Console › logs on failure\n\n    expect(received).toBe(true)\n\n  ● Console\n\n    console.log\n      hello\n';
   assert.deepEqual(checks.redCheck({ code: 1, output: consoleSuite }, ['logs on failure']), { ok: true });
   const quiet = checks.redCheck({ code: 1, output: consoleSuite }, ['hello']);
   assert.equal(quiet.ok, false);
@@ -130,8 +149,16 @@ const FAILURE_LINES = [
 ];
 for (const [file, failing, passing] of FAILURE_LINES) {
   test(`red check reads ${file} failure lines`, () => {
-    assert.deepEqual(checks.redCheck({ code: 1, output: fixture(file) }, [failing]), { ok: true }, `${file} is a recognised format`);
-    assert.equal(checks.redCheck({ code: 1, output: fixture(file) }, [passing]).ok, false, 'a passing test is not red evidence');
+    assert.deepEqual(
+      checks.redCheck({ code: 1, output: fixture(file) }, [failing]),
+      { ok: true },
+      `${file} is a recognised format`,
+    );
+    assert.equal(
+      checks.redCheck({ code: 1, output: fixture(file) }, [passing]).ok,
+      false,
+      'a passing test is not red evidence',
+    );
   });
 }
 
@@ -156,22 +183,39 @@ test('findings hash changes with severity', () => {
   assert.notEqual(checks.findingsHash(f('major')), checks.findingsHash(f('minor')));
 });
 
-const review = { claim: 'ok', summary: '', dodMet: true, tddEvidenceOk: true, findings: [{ severity: 'minor', file: 'a', issue: 'nit', fix: '' }], diagnosis: '' };
+const review = {
+  claim: 'ok',
+  summary: '',
+  dodMet: true,
+  tddEvidenceOk: true,
+  findings: [{ severity: 'minor', file: 'a', issue: 'nit', fix: '' }],
+  diagnosis: '',
+};
 
 // The shipped review's review-pass Check (P5d).
-const REVIEW_PASS = { 'all-of': [
-  { field: 'dodMet', is: true },
-  { field: 'tddEvidenceOk', is: true },
-  { none: 'findings', where: { severity: ['blocker', 'major'] } },
-] };
+const REVIEW_PASS = {
+  'all-of': [
+    { field: 'dodMet', is: true },
+    { field: 'tddEvidenceOk', is: true },
+    { none: 'findings', where: { severity: ['blocker', 'major'] } },
+  ],
+};
 
 test('review-pass passes a review with dodMet, tddEvidenceOk and only a minor finding', () => {
   assert.deepEqual(checks.responseCheck(review, REVIEW_PASS), { passed: true, reasons: [] });
 });
 
 const REVIEW_FAILS = [
-  ['a major finding', { ...review, findings: [{ severity: 'major', file: 'a', issue: 'bug', fix: '' }] }, 'findings has 1 of 1 items where severity is blocker or major; expected none'],
-  ['a blocker finding', { ...review, findings: [{ severity: 'blocker', file: 'a', issue: 'bug', fix: '' }] }, 'findings has 1 of 1 items where severity is blocker or major; expected none'],
+  [
+    'a major finding',
+    { ...review, findings: [{ severity: 'major', file: 'a', issue: 'bug', fix: '' }] },
+    'findings has 1 of 1 items where severity is blocker or major; expected none',
+  ],
+  [
+    'a blocker finding',
+    { ...review, findings: [{ severity: 'blocker', file: 'a', issue: 'bug', fix: '' }] },
+    'findings has 1 of 1 items where severity is blocker or major; expected none',
+  ],
   ['dodMet false', { ...review, dodMet: false }, 'dodMet is false, expected true'],
   ['tddEvidenceOk false', { ...review, tddEvidenceOk: false }, 'tddEvidenceOk is false, expected true'],
 ];
@@ -183,7 +227,10 @@ for (const [name, response, reason] of REVIEW_FAILS) {
 
 test('green check reports a timeout as failed', async () => {
   const calls = [];
-  const runShell = async (command, opts) => { calls.push([command, opts]); return { code: null, timedOut: true, output: 'still running' }; };
+  const runShell = async (command, opts) => {
+    calls.push([command, opts]);
+    return { code: null, timedOut: true, output: 'still running' };
+  };
   const r = await checks.greenCheck('npm test', 'C:/repo', { runShell });
   assert.equal(r.timedOut, true);
   assert.equal(r.passed, false);
@@ -232,8 +279,14 @@ test('test immutability covers a declared test path outside the default globs', 
   writeFileSync(join(mainRoot, 'spec', 'cart.mjs'), 'a weakened\n');
   writeFileSync(join(mainRoot, 'lib', 'cart.mjs'), 'x changed\n');
 
-  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: ['spec/**'], git: fake.git }), { ok: false, changed: ['spec/cart.mjs'] });
-  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: checks.DEFAULT_TEST_GLOBS, git: fake.git }), { ok: true, changed: [] });
+  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: ['spec/**'], git: fake.git }), {
+    ok: false,
+    changed: ['spec/cart.mjs'],
+  });
+  assert.deepEqual(await checks.testImmutability(mainRoot, base, { globs: checks.DEFAULT_TEST_GLOBS, git: fake.git }), {
+    ok: true,
+    changed: [],
+  });
 });
 
 test('a test path glob ignores ASCII case only, as git icase pathspecs do', () => {
@@ -271,20 +324,29 @@ test('the fake git reads a ? in a glob as the test path matcher does, literally'
 });
 
 test('a response Check with all-of names each failed condition', () => {
-  const response = { dodMet: false, tddEvidenceOk: true, findings: [
-    { severity: 'blocker', file: 'lib/a.mjs', issue: 'Throws', fix: '' },
-    { severity: 'minor', file: 'lib/b.mjs', issue: 'Naming', fix: '' },
-    { severity: 'major', file: 'lib/c.mjs', issue: 'Off by one', fix: '' },
-  ] };
-  const result = checks.responseCheck(response, { 'all-of': [
-    { field: 'dodMet', is: true },
-    { field: 'tddEvidenceOk', is: true },
-    { none: 'findings', where: { severity: ['blocker', 'major'] } },
-  ] });
-  assert.deepEqual(result, { passed: false, reasons: [
-    'dodMet is false, expected true',
-    'findings has 2 of 3 items where severity is blocker or major; expected none',
-  ] });
+  const response = {
+    dodMet: false,
+    tddEvidenceOk: true,
+    findings: [
+      { severity: 'blocker', file: 'lib/a.mjs', issue: 'Throws', fix: '' },
+      { severity: 'minor', file: 'lib/b.mjs', issue: 'Naming', fix: '' },
+      { severity: 'major', file: 'lib/c.mjs', issue: 'Off by one', fix: '' },
+    ],
+  };
+  const result = checks.responseCheck(response, {
+    'all-of': [
+      { field: 'dodMet', is: true },
+      { field: 'tddEvidenceOk', is: true },
+      { none: 'findings', where: { severity: ['blocker', 'major'] } },
+    ],
+  });
+  assert.deepEqual(result, {
+    passed: false,
+    reasons: [
+      'dodMet is false, expected true',
+      'findings has 2 of 3 items where severity is blocker or major; expected none',
+    ],
+  });
 });
 
 test('a response condition without where names its list alone', () => {

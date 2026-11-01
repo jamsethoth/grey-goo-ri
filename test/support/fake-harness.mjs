@@ -3,28 +3,50 @@ import { dirname, join } from 'node:path';
 import * as contract from '../../lib/harnesses/contract.mjs';
 
 const DEFAULT_CAPABILITIES = {
-  skills: 'exact', mcp: 'exact', plugins: 'exact', access: 'exact', network: 'exact', contextBudget: 'exact',
-  interactive: false, background: false, resume: { supported: true, preconditions: [] }, structuredOutput: true,
-  sandbox: 'none', confinement: 'none', peakContext: true, cost: true, turns: true, toolCalls: true,
-  reasoningTokens: true, backgroundWork: 'none',
+  skills: 'exact',
+  mcp: 'exact',
+  plugins: 'exact',
+  access: 'exact',
+  network: 'exact',
+  contextBudget: 'exact',
+  interactive: false,
+  background: false,
+  resume: { supported: true, preconditions: [] },
+  structuredOutput: true,
+  sandbox: 'none',
+  confinement: 'none',
+  peakContext: true,
+  cost: true,
+  turns: true,
+  toolCalls: true,
+  reasoningTokens: true,
+  backgroundWork: 'none',
 };
 
 const emptyInit = () => ({ plugins: [], pluginErrors: [], mcpServers: [], mcpServerErrors: [], capabilities: [] });
 
 // Scripted stand-in for a Harness. Never spawns anything; tests drive it through `responses`.
 export function fakeHarness({
-  name = 'fake', capabilities, protectedPaths = [], responses = {}, transcriptDir,
-  validate = () => ({ ok: true, errors: [] }), resolveTools = (agent) => agent?.tools ?? {},
+  name = 'fake',
+  capabilities,
+  protectedPaths = [],
+  responses = {},
+  transcriptDir,
+  validate = () => ({ ok: true, errors: [] }),
+  resolveTools = (agent) => agent?.tools ?? {},
 } = {}) {
   const caps = { ...DEFAULT_CAPABILITIES, ...capabilities };
   const sessions = new Map();
   const hung = [];
   const calls = [];
 
-  const addUsage = (total, delta) => Object.fromEntries(contract.USAGE_FIELDS.map((field) => {
-    if (delta[field] === null) return [field, null];
-    return [field, field === 'peakContext' ? Math.max(total[field], delta[field]) : total[field] + delta[field]];
-  }));
+  const addUsage = (total, delta) =>
+    Object.fromEntries(
+      contract.USAGE_FIELDS.map((field) => {
+        if (delta[field] === null) return [field, null];
+        return [field, field === 'peakContext' ? Math.max(total[field], delta[field]) : total[field] + delta[field]];
+      }),
+    );
 
   async function session(resume) {
     if (resume) {
@@ -42,9 +64,16 @@ export function fakeHarness({
 
   async function run(call) {
     calls.push({
-      marker: call.marker, brief: call.brief, resume: call.resume, tools: call.tools, cwd: call.cwd,
-      access: call.access, network: call.network, personaHash: call.persona?.hash,
-      personaBytes: call.persona?.bytes, schema: call.schema,
+      marker: call.marker,
+      brief: call.brief,
+      resume: call.resume,
+      tools: call.tools,
+      cwd: call.cwd,
+      access: call.access,
+      network: call.network,
+      personaHash: call.persona?.hash,
+      personaBytes: call.persona?.bytes,
+      schema: call.schema,
     });
     const key = `${call.vertex}/${call.visit}/${call.phase}/${call.attempt}`;
     const script = responses[key];
@@ -61,8 +90,12 @@ export function fakeHarness({
 
     const s = await session(call.resume);
     const empty = contract.emptyUsage(caps);
-    const delta = Object.fromEntries(Object.entries(empty).map(([field, zero]) =>
-      [field, zero === null ? null : script.result?.usage?.delta?.[field] ?? zero]));
+    const delta = Object.fromEntries(
+      Object.entries(empty).map(([field, zero]) => [
+        field,
+        zero === null ? null : (script.result?.usage?.delta?.[field] ?? zero),
+      ]),
+    );
     s.cumulative = addUsage(s.cumulative, delta);
 
     const failure = script.failure ? { retryAfterMs: null, message: '', ...script.failure } : null;
@@ -70,10 +103,17 @@ export function fakeHarness({
     const outcome = (status) => ({
       response: script.response ?? null,
       result: {
-        status, sessionId: s.id, usage: { cumulative: { ...s.cumulative }, delta }, transcriptPath: s.transcriptPath,
-        exitCode: status === 'completed' ? 0 : 1, signal: status === 'killed' ? 'SIGTERM' : null,
-        finalEventSubtype: status === 'completed' ? 'success' : null, init: { ...emptyInit(), ...init },
-        permissionDenials: [], commandsRun: 0, ...(status === 'killed' ? {} : overrides),
+        status,
+        sessionId: s.id,
+        usage: { cumulative: { ...s.cumulative }, delta },
+        transcriptPath: s.transcriptPath,
+        exitCode: status === 'completed' ? 0 : 1,
+        signal: status === 'killed' ? 'SIGTERM' : null,
+        finalEventSubtype: status === 'completed' ? 'success' : null,
+        init: { ...emptyInit(), ...init },
+        permissionDenials: [],
+        commandsRun: 0,
+        ...(status === 'killed' ? {} : overrides),
       },
       failure: status === 'killed' ? null : failure,
     });
@@ -97,6 +137,8 @@ export function fakeHarness({
     doctor: () => ({ ok: true, checks: [] }),
     calls,
     // Test-only: resolves every hung call as killed.
-    cancel: () => { for (const resolve of hung.splice(0)) resolve(); },
+    cancel: () => {
+      for (const resolve of hung.splice(0)) resolve();
+    },
   };
 }

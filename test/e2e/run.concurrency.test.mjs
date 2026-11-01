@@ -11,14 +11,28 @@ import { pathKey } from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import {
-  BRANCH, IN_PROGRESS, NEEDS_HUMAN, sh, fixture, holdLock, epicOf, EPIC, worktreeOf, addsLabel, gate, ticketHarnesses, hookGh,
+  BRANCH,
+  IN_PROGRESS,
+  NEEDS_HUMAN,
+  sh,
+  fixture,
+  holdLock,
+  epicOf,
+  EPIC,
+  worktreeOf,
+  addsLabel,
+  gate,
+  ticketHarnesses,
+  hookGh,
 } from '../support/run.mjs';
 
 // Resolves once `n` first attempts at the repo lock have found it taken: each of `n` waiters is then waiting.
 function refusedFirstAttempts(t, n) {
   let refused = 0;
   let all;
-  const allRefused = new Promise((resolve) => { all = resolve; });
+  const allRefused = new Promise((resolve) => {
+    all = resolve;
+  });
   const previous = locks.setAttemptWrapper(async (lock, attempt) => {
     const handle = await attempt();
     if (lock.name === 'repo' && !lock.waited && !handle && ++refused === n) all();
@@ -32,9 +46,28 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
   const f = fixture(t);
   const holder = await holdLock(t, f.commonDir, 'repo');
   const called = [];
-  const verbs = ['ensureWorktree', 'stageAll', 'writeTree', 'commitStaged', 'commitTree', 'push', 'remoteSha', 'resetTo'];
+  const verbs = [
+    'ensureWorktree',
+    'stageAll',
+    'writeTree',
+    'commitStaged',
+    'commitTree',
+    'push',
+    'remoteSha',
+    'resetTo',
+  ];
   const waiting = refusedFirstAttempts(t, verbs.length);
-  const git = run.lockedGit(Object.fromEntries(verbs.map((v) => [v, async () => { called.push(v); }])), f.commonDir);
+  const git = run.lockedGit(
+    Object.fromEntries(
+      verbs.map((v) => [
+        v,
+        async () => {
+          called.push(v);
+        },
+      ]),
+    ),
+    f.commonDir,
+  );
   const pending = verbs.map((v) => git[v]());
   // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
   // And every write ends before that cleanup, so a late one cannot recreate the lock directory it removed.
@@ -55,7 +88,9 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   const holder = await holdLock(t, f.commonDir, 'repo');
   let settled = false;
   const waiting = refusedFirstAttempts(t, 1);
-  const pending = integrity.snapshot(f.mainRoot, f.options.git).finally(() => { settled = true; });
+  const pending = integrity.snapshot(f.mainRoot, f.options.git).finally(() => {
+    settled = true;
+  });
   // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
   try {
     await Promise.race([waiting, pending.catch(() => {})]);
@@ -71,18 +106,25 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
   // The competing lock is taken during the red call, after the worktree exists.
   let holder = null;
   let held;
-  const holding = new Promise((resolve) => { held = resolve; });
+  const holding = new Promise((resolve) => {
+    held = resolve;
+  });
   const { run: call } = f.harness;
-  f.options.harnesses.fake = { ...f.harness, run: async (c) => {
-    if (!holder) {
-      holder = await holdLock(t, f.commonDir, 'repo');
-      held();
-    }
-    return call(c);
-  } };
+  f.options.harnesses.fake = {
+    ...f.harness,
+    run: async (c) => {
+      if (!holder) {
+        holder = await holdLock(t, f.commonDir, 'repo');
+        held();
+      }
+      return call(c);
+    },
+  };
   // While the holder has the lock no locked write runs, so the probe below never attempts it: a refusal is the run's.
   let refused;
-  const waiting = new Promise((resolve) => { refused = resolve; });
+  const waiting = new Promise((resolve) => {
+    refused = resolve;
+  });
   const previous = locks.setAttemptWrapper(async (lock, attempt) => {
     const handle = await attempt();
     if (holder && lock.name === 'repo' && !handle) refused();
@@ -92,20 +134,33 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
   // The snapshot after the call waits on the holder too, so each commit-path write must itself run inside the repo lock.
   const unlocked = [];
   const git = f.options.git;
-  f.options.git = { ...git, ...Object.fromEntries(['stageAll', 'writeTree', 'commitStaged', 'push', 'remoteSha'].map((v) => [v, async (...args) => {
-    const probe = await locks.tryAcquire(f.commonDir, 'repo');
-    if (probe) {
-      unlocked.push(v);
-      await locks.release(probe);
-    }
-    return git[v](...args);
-  }])) };
+  f.options.git = {
+    ...git,
+    ...Object.fromEntries(
+      ['stageAll', 'writeTree', 'commitStaged', 'push', 'remoteSha'].map((v) => [
+        v,
+        async (...args) => {
+          const probe = await locks.tryAcquire(f.commonDir, 'repo');
+          if (probe) {
+            unlocked.push(v);
+            await locks.release(probe);
+          }
+          return git[v](...args);
+        },
+      ]),
+    ),
+  };
   const commits = () => {
-    const r = spawnSync('git', ['rev-list', '--count', `main..refs/heads/${BRANCH}`], { cwd: f.mainRoot, encoding: 'utf8' });
+    const r = spawnSync('git', ['rev-list', '--count', `main..refs/heads/${BRANCH}`], {
+      cwd: f.mainRoot,
+      encoding: 'utf8',
+    });
     return r.status === 0 ? Number(r.stdout.trim()) : 0;
   };
   let settled = false;
-  const running = run.runTarget(f.options).finally(() => { settled = true; });
+  const running = run.runTarget(f.options).finally(() => {
+    settled = true;
+  });
   // Ended before the case ends, pass or fail, so it never writes through the next case's fakes.
   try {
     await Promise.race([holding, running.catch(() => {})]);
@@ -141,25 +196,36 @@ test('a stray write into an idle worktree is attributed to the running action', 
   t.after(() => locks.setAttemptWrapper(previous));
   // A runs its Execution while B is admitted and idle, and B goes on only once A has ended.
   hookGh(f, async (args) => {
-    if (addsLabel(args, 21, IN_PROGRESS)) { aAdmitted.open(); await bIdle.wait(); }
-    if (addsLabel(args, 22, IN_PROGRESS)) { bIdle.open(); await aEnded.wait(); }
+    if (addsLabel(args, 21, IN_PROGRESS)) {
+      aAdmitted.open();
+      await bIdle.wait();
+    }
+    if (addsLabel(args, 22, IN_PROGRESS)) {
+      bIdle.open();
+      await aEnded.wait();
+    }
     if (addsLabel(args, 21, NEEDS_HUMAN)) aEnded.open();
   });
   let bActivity;
-  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
-    if (n !== 21 || call.phase !== 'red') return;
-    bActivity = (await record.load(f.commonDir, 'ticket', 22))?.activity;
-    writeFileSync(join(worktreeOf(f, 22), 'package.json'), '{ "stray": true }\n');
-  } });
+  ticketHarnesses(f, [21, 22], {
+    before: async (n, call) => {
+      if (n !== 21 || call.phase !== 'red') return;
+      bActivity = (await record.load(f.commonDir, 'ticket', 22))?.activity;
+      writeFileSync(join(worktreeOf(f, 22), 'package.json'), '{ "stray": true }\n');
+    },
+  });
 
   const results = await run.runTarget(f.options);
   assert.deepEqual(bActivity, { busy: false, generation: 0 }, 'B was admitted and idle during the red call of A');
   const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === 21 && e.action === 'red' && e.agent);
   assert.equal(red?.outcome, 'integrity-violation', JSON.stringify(results));
-  assert.ok(red.violations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'), JSON.stringify(red.violations));
+  assert.ok(
+    red.violations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'),
+    JSON.stringify(red.violations),
+  );
 });
 
-test('a busy worktree is never attributed to another ticket\'s action', { timeout: 120_000 }, async (t) => {
+test("a busy worktree is never attributed to another ticket's action", { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real' });
   f.options.target = EPIC;
   const bBusy = gate();
@@ -170,21 +236,30 @@ test('a busy worktree is never attributed to another ticket\'s action', { timeou
     if (addsLabel(args, 21, 'gg:state:ready-for-qa')) aEnded.open();
   });
   let bActivity;
-  ticketHarnesses(f, [21, 22], { before: async (n, call) => {
-    if (call.phase !== 'red') return;
-    if (n === 22) {
-      bBusy.open();
-      await aEnded.wait();
-      return;
-    }
-    // B's own Action changes its worktree during A's.
-    bActivity = (await record.load(f.commonDir, 'ticket', 22))?.activity;
-    writeFileSync(join(worktreeOf(f, 22), 'b-at-work.txt'), 'B at work\n');
-  } });
+  ticketHarnesses(f, [21, 22], {
+    before: async (n, call) => {
+      if (call.phase !== 'red') return;
+      if (n === 22) {
+        bBusy.open();
+        await aEnded.wait();
+        return;
+      }
+      // B's own Action changes its worktree during A's.
+      bActivity = (await record.load(f.commonDir, 'ticket', 22))?.activity;
+      writeFileSync(join(worktreeOf(f, 22), 'b-at-work.txt'), 'B at work\n');
+    },
+  });
 
   const results = await run.runTarget(f.options);
   assert.equal(bActivity?.busy, true, 'B was busy during the red call of A');
-  assert.deepEqual(results.map((r) => [r.ticket, r.outcome]), [[21, 'ready-for-qa'], [22, 'ready-for-qa']], JSON.stringify(results));
+  assert.deepEqual(
+    results.map((r) => [r.ticket, r.outcome]),
+    [
+      [21, 'ready-for-qa'],
+      [22, 'ready-for-qa'],
+    ],
+    JSON.stringify(results),
+  );
   const flagged = f.readEvents().filter((e) => e.type === 'action' && e.ticket === 21 && e.violations);
   assert.deepEqual(flagged, [], 'no Action of A carries a violation');
 });
@@ -197,18 +272,31 @@ test('two processes serialise orchestrator git writes on the repo lock', { timeo
   log('run_start');
   writeFileSync(join(f.mainRoot, 'parent.txt'), 'parent\n');
   sh(f.mainRoot, 'add', 'parent.txt');
-  const child = spawn(process.execPath, [repoLockWriter, f.commonDir, f.mainRoot, 'child'], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'], shell: false });
+  const child = spawn(process.execPath, [repoLockWriter, f.commonDir, f.mainRoot, 'child'], {
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    shell: false,
+  });
   const exited = new Promise((resolve) => child.on('exit', resolve));
   t.after(() => child.kill());
-  const message = () => new Promise((resolve, reject) => {
-    child.once('message', resolve);
-    child.once('exit', (code) => reject(new Error(`the writer exited ${code} before reporting`)));
-  });
+  const message = () =>
+    new Promise((resolve, reject) => {
+      child.once('message', resolve);
+      child.once('exit', (code) => reject(new Error(`the writer exited ${code} before reporting`)));
+    });
 
   const { sha: childSha } = await message();
   // The child holds the repo lock now; the parent's commit is called while it does.
   let started = null;
-  const git = run.lockedGit({ ...f.options.git, commitStaged: (...args) => { started = Date.now(); return f.options.git.commitStaged(...args); } }, f.commonDir);
+  const git = run.lockedGit(
+    {
+      ...f.options.git,
+      commitStaged: (...args) => {
+        started = Date.now();
+        return f.options.git.commitStaged(...args);
+      },
+    },
+    f.commonDir,
+  );
   const committing = git.commitStaged(f.mainRoot, 'parent commit');
   const released = message();
   child.send('release');
@@ -218,14 +306,33 @@ test('two processes serialise orchestrator git writes on the repo lock', { timeo
   assert.equal(await exited, 0, 'the writer exits cleanly');
   log('run_end');
 
-  assert.ok(started >= releasing, `the parent's commit started at ${started}, after the child's release at ${releasing}`);
+  assert.ok(
+    started >= releasing,
+    `the parent's commit started at ${started}, after the child's release at ${releasing}`,
+  );
   assert.ok(committed >= releasing, 'and landed after it');
   assert.ok(parentSha, 'the parent commit landed without an index error');
   assert.equal(sh(f.mainRoot, 'rev-parse', `${parentSha}^`), childSha, 'the parent commit sits on the child commit');
-  assert.deepEqual(sh(f.mainRoot, 'rev-list', 'main').split('\n').slice(0, 2), [parentSha, childSha], 'both shas are on the branch');
+  assert.deepEqual(
+    sh(f.mainRoot, 'rev-list', 'main').split('\n').slice(0, 2),
+    [parentSha, childSha],
+    'both shas are on the branch',
+  );
   const evs = f.readEvents();
-  assert.deepEqual(evs.map((e) => [e.run, e.type]), [['parent', 'run_start'], ['child', 'run_start'], ['child', 'run_end'], ['parent', 'run_end']],
-    'both processes appended to the one events table, in insertion order');
-  const rows = record.openDb(f.commonDir).prepare('SELECT json FROM events ORDER BY id').all().map((r) => JSON.parse(r.json));
+  assert.deepEqual(
+    evs.map((e) => [e.run, e.type]),
+    [
+      ['parent', 'run_start'],
+      ['child', 'run_start'],
+      ['child', 'run_end'],
+      ['parent', 'run_end'],
+    ],
+    'both processes appended to the one events table, in insertion order',
+  );
+  const rows = record
+    .openDb(f.commonDir)
+    .prepare('SELECT json FROM events ORDER BY id')
+    .all()
+    .map((r) => JSON.parse(r.json));
   assert.deepEqual(evs, rows);
 });

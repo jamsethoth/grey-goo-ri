@@ -24,10 +24,12 @@ async function check(config, files = schemas(), templates) {
       if (!Object.hasOwn(files, name)) throw new Error('no such file');
       return files[name];
     },
-    ...(templates && { readTemplate: (name) => {
-      if (!Object.hasOwn(templates, name)) throw new Error('no such file');
-      return templates[name];
-    } }),
+    ...(templates && {
+      readTemplate: (name) => {
+        if (!Object.hasOwn(templates, name)) throw new Error('no such file');
+        return templates[name];
+      },
+    }),
   });
 }
 
@@ -38,26 +40,59 @@ test('the example Flow resolves with no errors', async () => {
   assert.deepEqual(errors, []);
 });
 
-test('the example Flow warns only of the review table\'s two intended overlaps', async () => {
+test("the example Flow warns only of the review table's two intended overlaps", async () => {
   const { warnings } = await check(example());
-  assert.deepEqual(warnings.map((w) => w.at), ['procedures.review.passed', 'procedures.review.passed']);
-  assert.match(warnings[0].message, /^rule table review\.passed: row 2 \(check\.repeat = failed\) is partly taken by row 1 /);
-  assert.match(warnings[1].message, /^rule table review\.passed: row 3 \(response\.needsTest = true\) is partly taken by row 1 .*, row 2 /);
+  assert.deepEqual(
+    warnings.map((w) => w.at),
+    ['procedures.review.passed', 'procedures.review.passed'],
+  );
+  assert.match(
+    warnings[0].message,
+    /^rule table review\.passed: row 2 \(check\.repeat = failed\) is partly taken by row 1 /,
+  );
+  assert.match(
+    warnings[1].message,
+    /^rule table review\.passed: row 3 \(response\.needsTest = true\) is partly taken by row 1 .*, row 2 /,
+  );
 });
 
-test('the Resolved Flow carries each Vertex\'s Agent, Procedure, access, tests and Outcomes', async () => {
+test("the Resolved Flow carries each Vertex's Agent, Procedure, access, tests and Outcomes", async () => {
   const { flows } = await check(example());
   assert.equal(flows.default.actionCap, 180);
   assert.equal(flows.default.plan, null);
   assert.equal(flows.default.ticket.entry, 'baseline');
   const red = flows.default.ticket.vertices.red;
-  assert.deepEqual(red.agent, { persona: 'implementer.md', access: 'workspace-write', harness: 'fake', model: null, effort: null });
+  assert.deepEqual(red.agent, {
+    persona: 'implementer.md',
+    access: 'workspace-write',
+    harness: 'fake',
+    model: null,
+    effort: null,
+  });
   assert.equal(red.procedure, 'tests-fail');
   assert.equal(red.access, 'workspace-write');
   assert.equal(red.tests, 'write');
-  assert.deepEqual(red.outcomes, ['ok', 'failed', 'misscoped', 'no-test', 'blocked', 'harness-timeout', 'harness-transient', 'harness-unparsed']);
-  assert.deepEqual(flows.default.ticket.vertices.reviewer.outcomes,
-    ['ok', 'repeat', 'retest', 'changes', 'misscoped', 'blocked', 'harness-timeout', 'harness-transient', 'harness-unparsed']);
+  assert.deepEqual(red.outcomes, [
+    'ok',
+    'failed',
+    'misscoped',
+    'no-test',
+    'blocked',
+    'harness-timeout',
+    'harness-transient',
+    'harness-unparsed',
+  ]);
+  assert.deepEqual(flows.default.ticket.vertices.reviewer.outcomes, [
+    'ok',
+    'repeat',
+    'retest',
+    'changes',
+    'misscoped',
+    'blocked',
+    'harness-timeout',
+    'harness-transient',
+    'harness-unparsed',
+  ]);
   assert.deepEqual(flows.default.ticket.vertices.publish.outcomes, ['ok', 'failed']);
 });
 
@@ -71,7 +106,10 @@ test("a Procedure's hash is the sha256 of its canonical JSON as declared, whatev
   };
   const { errors, flows } = await check(config);
   assert.deepEqual(errors, []);
-  assert.equal(flows.default.procedures['base-check'].hash, '4929e4d499e9975dfedf3bd83b200523d9cb06c8f5b9d30416a9fbf924226e79');
+  assert.equal(
+    flows.default.procedures['base-check'].hash,
+    '4929e4d499e9975dfedf3bd83b200523d9cb06c8f5b9d30416a9fbf924226e79',
+  );
 });
 
 test('a Procedure with no agent Action has the implicit Claim ok requiring every Check', async () => {
@@ -83,10 +121,13 @@ test('a Procedure with no agent Action has the implicit Claim ok requiring every
 test('a Procedure with no agent Action that declares claims is an error', async () => {
   const config = example();
   config.procedures['base-check'].claims = { ok: { requires: ['test'] } };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.base-check.claims',
-    message: 'a Procedure with no agent Action declares no claims: its implicit Claim ok requires every Check it declares',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.base-check.claims',
+      message:
+        'a Procedure with no agent Action declares no claims: its implicit Claim ok requires every Check it declares',
+    },
+  ]);
 });
 
 test('access: read-only on the Procedure caps the Agent', async () => {
@@ -105,8 +146,14 @@ test('a Claim token named failed or harness-timeout is an error', async () => {
   const files = schemas();
   files['red.schema.json'].properties.claim.enum = ['ok', 'blocked', 'failed', 'harness-timeout'];
   assert.deepEqual((await check(config, files)).errors, [
-    { at: 'procedures.tests-fail.claims.failed', message: 'Claim token "failed" is reserved for the engine: failed, an end name or harness-*' },
-    { at: 'procedures.tests-fail.claims.harness-timeout', message: 'Claim token "harness-timeout" is reserved for the engine: failed, an end name or harness-*' },
+    {
+      at: 'procedures.tests-fail.claims.failed',
+      message: 'Claim token "failed" is reserved for the engine: failed, an end name or harness-*',
+    },
+    {
+      at: 'procedures.tests-fail.claims.harness-timeout',
+      message: 'Claim token "harness-timeout" is reserved for the engine: failed, an end name or harness-*',
+    },
   ]);
 });
 
@@ -115,8 +162,14 @@ test('a table outcome or otherwise named after an end is an error', async () => 
   config.procedures.review.otherwise = 'needs-replan';
   config.procedures['tests-fail'].stopped[0].outcome = 'needs-human';
   assert.deepEqual((await check(config)).errors, [
-    { at: 'procedures.tests-fail.stopped[0]', message: 'outcome "needs-human" is reserved for the engine: failed, an end name or harness-*' },
-    { at: 'procedures.review.otherwise', message: 'otherwise "needs-replan" is reserved for the engine: failed, an end name or harness-*' },
+    {
+      at: 'procedures.tests-fail.stopped[0]',
+      message: 'outcome "needs-human" is reserved for the engine: failed, an end name or harness-*',
+    },
+    {
+      at: 'procedures.review.otherwise',
+      message: 'otherwise "needs-replan" is reserved for the engine: failed, an end name or harness-*',
+    },
   ]);
 });
 
@@ -127,7 +180,9 @@ test('a Vertex named __proto__ is an error, never dropped', async () => {
   const { vertices } = config.flows.default.ticket;
   // JSON.parse and spread make __proto__ an own key, as a Layer's JSON does; assignment would set the prototype.
   config.flows.default.ticket.vertices = { ...vertices, ...JSON.parse('{"__proto__": {"procedure": "base-check"}}') };
-  assert.deepEqual((await check(config)).errors, [{ at: `${V}.__proto__`, message: `Vertex id "__proto__" ${INHERITED}` }]);
+  assert.deepEqual((await check(config)).errors, [
+    { at: `${V}.__proto__`, message: `Vertex id "__proto__" ${INHERITED}` },
+  ]);
 });
 
 test('a name of an Object.prototype property is reserved wherever the configuration names something', async () => {
@@ -148,7 +203,11 @@ test('a name of an Object.prototype property is reserved wherever the configurat
       entry: 'valueOf',
       routes: { toString: { end: 'needs-human' } },
       vertices: {
-        valueOf: { procedure: 'gate', inputs: { constructor: { from: 'valueOf.rescue', optional: true } }, route: { __lookupGetter__: { end: 'needs-human' } } },
+        valueOf: {
+          procedure: 'gate',
+          inputs: { constructor: { from: 'valueOf.rescue', optional: true } },
+          route: { __lookupGetter__: { end: 'needs-human' } },
+        },
       },
     },
   };
@@ -171,64 +230,79 @@ test('a name of an Object.prototype property is reserved wherever the configurat
 test('a Claim enum that differs from the declared tokens is an error', async () => {
   const config = example();
   config.procedures['tests-fail'].claims.stuck = { stop: true };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.tests-fail.claims',
-    message: 'red.schema.json: claim: enum "ok" | "blocked" does not equal the declared tokens "ok" | "blocked" | "stuck"',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.tests-fail.claims',
+      message:
+        'red.schema.json: claim: enum "ok" | "blocked" does not equal the declared tokens "ok" | "blocked" | "stuck"',
+    },
+  ]);
 });
 
 test('a schema outside the strict subset is an error naming the file', async () => {
   const files = schemas();
   files['review.schema.json'].properties.summary = { type: 'string', minLength: 1 };
-  assert.deepEqual((await check(example(), files)).errors, [{
-    at: 'procedures.review.actions[0]',
-    message: 'review.schema.json: (root).summary: keyword "minLength" is outside the strict subset',
-  }]);
+  assert.deepEqual((await check(example(), files)).errors, [
+    {
+      at: 'procedures.review.actions[0]',
+      message: 'review.schema.json: (root).summary: keyword "minLength" is outside the strict subset',
+    },
+  ]);
 });
 
 test('a schema that cannot be read is an error naming the file', async () => {
   const files = schemas();
   delete files['review.schema.json'];
-  assert.deepEqual((await check(example(), files)).errors, [{
-    at: 'procedures.review.actions[0]',
-    message: 'schema review.schema.json cannot be read: no such file',
-  }]);
+  assert.deepEqual((await check(example(), files)).errors, [
+    {
+      at: 'procedures.review.actions[0]',
+      message: 'schema review.schema.json cannot be read: no such file',
+    },
+  ]);
 });
 
 test('an undeclared command is an error naming the Check', async () => {
   const config = example();
   config.procedures.implement.actions[1].command = 'lint';
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.implement.actions[1]',
-    message: 'Check test names command "lint", which the repository Layer does not declare',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.implement.actions[1]',
+      message: 'Check test names command "lint", which the repository Layer does not declare',
+    },
+  ]);
 });
 
 test('an Action id with a colon is an error', async () => {
   const config = example();
   config.procedures['base-check'].actions[0].id = 'te:st';
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.base-check.actions[0]',
-    message: 'Action id "te:st" must be non-empty with no ":", "." or whitespace',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.base-check.actions[0]',
+      message: 'Action id "te:st" must be non-empty with no ":", "." or whitespace',
+    },
+  ]);
 });
 
 test('an Action id with whitespace is an error', async () => {
   const config = example();
   config.procedures['base-check'].actions[0].id = 'te st';
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.base-check.actions[0]',
-    message: 'Action id "te st" must be non-empty with no ":", "." or whitespace',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.base-check.actions[0]',
+      message: 'Action id "te st" must be non-empty with no ":", "." or whitespace',
+    },
+  ]);
 });
 
 test('a configuration without a Flow names the example document, not gg init', async () => {
   const config = example();
   delete config.flows;
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'flows',
-    message: 'no Flow is declared; docs/research/user-defined-procedures-example-flow.md has an example Flow',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'flows',
+      message: 'no Flow is declared; docs/research/user-defined-procedures-example-flow.md has an example Flow',
+    },
+  ]);
 });
 
 test('a repeated Action id is an error', async () => {
@@ -237,13 +311,17 @@ test('a repeated Action id is an error', async () => {
   config.procedures.publish.actions[1].do = 'push';
   delete config.procedures.publish.actions[1].body;
   delete config.procedures.publish.actions[1].with;
-  assert.deepEqual((await check(config)).errors, [{ at: 'procedures.publish.actions[1]', message: 'Action id "test" is repeated' }]);
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'procedures.publish.actions[1]', message: 'Action id "test" is repeated' },
+  ]);
 });
 
 test('a second agent Action in a Procedure is an error', async () => {
   const config = example();
   config.procedures.review.actions.push({ id: 'again', do: 'agent', brief: 'review.md', schema: 'review.schema.json' });
-  assert.deepEqual((await check(config)).errors, [{ at: 'procedures.review.actions[5]', message: 'a Procedure has at most one agent Action' }]);
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'procedures.review.actions[5]', message: 'a Procedure has at most one agent Action' },
+  ]);
 });
 
 test('an unknown key is an error naming it', async () => {
@@ -261,15 +339,23 @@ test('an unknown Action kind or Check kind is an error', async () => {
   config.procedures.publish.actions[2].do = 'merge';
   config.procedures['base-check'].actions[0].kind = 'changes';
   assert.deepEqual((await check(config)).errors, [
-    { at: 'procedures.base-check.actions[0]', message: 'Check kind "changes" is not one of command, tests-fail, response, repeat' },
-    { at: 'procedures.publish.actions[2]', message: 'do "merge" is not one of agent, check, commit, push, pr-upsert, pr-ready, comment, await-approval' },
+    {
+      at: 'procedures.base-check.actions[0]',
+      message: 'Check kind "changes" is not one of command, tests-fail, response, repeat',
+    },
+    {
+      at: 'procedures.publish.actions[2]',
+      message: 'do "merge" is not one of agent, check, commit, push, pr-upsert, pr-ready, comment, await-approval',
+    },
   ]);
 });
 
 test('a token requiring an Action that is not a Check is an error', async () => {
   const config = example();
   config.procedures.implement.claims.ok.requires = ['commit'];
-  assert.deepEqual((await check(config)).errors, [{ at: 'procedures.implement.claims.ok', message: 'requires "commit", which is not a Check of this Procedure' }]);
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'procedures.implement.claims.ok', message: 'requires "commit", which is not a Check of this Procedure' },
+  ]);
 });
 
 test('a Vertex naming an undeclared Procedure or Agent is an error', async () => {
@@ -302,7 +388,7 @@ test('an Agent with no harness or an unregistered one is an error', async () => 
   ]);
 });
 
-test('an Agent with no harness is one error at the Agent, which a Vertex\'s own harness does not excuse', async () => {
+test("an Agent with no harness is one error at the Agent, which a Vertex's own harness does not excuse", async () => {
   const config = example();
   delete config.agents.reviewer.harness;
   delete config.agents.senior.harness;
@@ -341,10 +427,13 @@ test('an Agent no Vertex uses is a warning', async () => {
   config.agents.spare = { persona: 'implementer.md', harness: 'fake' };
   const { errors, warnings } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.filter((w) => w.at.startsWith('agents.')), [{ at: 'agents.spare', message: 'agent spare is used by no Vertex' }]);
+  assert.deepEqual(
+    warnings.filter((w) => w.at.startsWith('agents.')),
+    [{ at: 'agents.spare', message: 'agent spare is used by no Vertex' }],
+  );
 });
 
-test('an Agent\'s error is reported once however many Vertices use it', async () => {
+test("an Agent's error is reported once however many Vertices use it", async () => {
   const config = example();
   config.agents.senior.harness = 'other';
   config.flows.default.ticket.vertices['senior-dev'].harness = 'missing';
@@ -371,7 +460,10 @@ test('an end naming done or no end is an error', async () => {
   config.flows.default.ticket.vertices.publish.route.ok = { end: 'done' };
   config.flows.default.ticket.routes['*'] = { end: 'merged' };
   assert.deepEqual((await check(config)).errors, [
-    { at: 'flows.default.ticket.routes.*', message: 'end "merged" is not one of ready-for-qa, needs-human, needs-replan' },
+    {
+      at: 'flows.default.ticket.routes.*',
+      message: 'end "merged" is not one of ready-for-qa, needs-human, needs-replan',
+    },
     { at: `${V}.publish.route.ok`, message: 'end "done" is the human-only end, which no route may name' },
   ]);
 });
@@ -396,7 +488,11 @@ test('a Flow without plan: null or a positive actionCap is an error', async () =
   const config = example();
   delete config.flows.default.plan;
   config.flows.default.actionCap = 0;
-  config.flows.light = { plan: 'epic', actionCap: 20, ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check' } } } };
+  config.flows.light = {
+    plan: 'epic',
+    actionCap: 20,
+    ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check' } } },
+  };
   assert.deepEqual((await check(config)).errors, [
     { at: 'flows.default', message: 'plan is required: null when the Flow has no Epic-level planning' },
     { at: 'flows.default.actionCap', message: 'actionCap must be a positive integer' },
@@ -414,7 +510,7 @@ test('a reference to a field the schema lacks is an error', async () => {
   ]);
 });
 
-test('a reference through an Action the Vertex\'s Procedure lacks is an error', async () => {
+test("a reference through an Action the Vertex's Procedure lacks is an error", async () => {
   const config = example();
   config.flows.default.ticket.vertices.green.inputs.tests.from = ['red.commits.files', 'senior-red.commit.files'];
   assert.deepEqual((await check(config)).errors, [
@@ -436,27 +532,40 @@ test('a malformed reference path is the same error in a rule field and an input'
 test('a list input with sources of different types is an error', async () => {
   const config = example();
   config.flows.default.ticket.vertices.reviewer.inputs.report.from = ['green.green.response', 'red.red.response'];
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.reviewer.inputs.report`,
-    message: 'sources "green.green.response" and "red.red.response" have different types',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.reviewer.inputs.report`,
+      message: 'sources "green.green.response" and "red.red.response" have different types',
+    },
+  ]);
 });
 
 test('pick on a source that is not a list of objects is an error', async () => {
   const config = example();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles = { from: 'reviewer.review.response.summary', pick: 'file' };
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.implementer-fix.inputs.testFiles`,
-    message: 'pick needs a list of objects; "reviewer.review.response.summary" is {"kind":"string"}',
-  }]);
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles = {
+    from: 'reviewer.review.response.summary',
+    pick: 'file',
+  };
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.implementer-fix.inputs.testFiles`,
+      message: 'pick needs a list of objects; "reviewer.review.response.summary" is {"kind":"string"}',
+    },
+  ]);
 });
 
 test('tests: named reading anything but a list of strings is an error', async () => {
   const config = example();
   config.procedures.fix.tests.named = 'inputs.findings';
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.implementer-fix (procedure fix).tests`, message: 'tests: named must read a list of strings; "inputs.findings" is {"kind":"list","of":{"kind":"object"}}' },
-    { at: `${V}.senior-dev (procedure fix).tests`, message: 'tests: named must read a list of strings; "inputs.findings" is {"kind":"list","of":{"kind":"object"}}' },
+    {
+      at: `${V}.implementer-fix (procedure fix).tests`,
+      message: 'tests: named must read a list of strings; "inputs.findings" is {"kind":"list","of":{"kind":"object"}}',
+    },
+    {
+      at: `${V}.senior-dev (procedure fix).tests`,
+      message: 'tests: named must read a list of strings; "inputs.findings" is {"kind":"list","of":{"kind":"object"}}',
+    },
   ]);
 });
 
@@ -465,7 +574,10 @@ test('a Check parameter of the wrong type is an error', async () => {
   config.procedures['tests-fail'].actions[1].names = 'response.summary';
   config.procedures.review.actions[2].fields = ['file', 'line'];
   assert.deepEqual((await check(config)).errors, [
-    { at: 'procedures.tests-fail.actions[1]', message: 'names must read a list of strings; "response.summary" is {"kind":"string"}' },
+    {
+      at: 'procedures.tests-fail.actions[1]',
+      message: 'names must read a list of strings; "response.summary" is {"kind":"string"}',
+    },
     { at: 'procedures.review.actions[2]', message: 'fields: "line" is not a field of the list\'s items' },
   ]);
 });
@@ -476,103 +588,215 @@ test('a response Check condition outside the schema or its values is an error', 
   config.procedures.review.actions[1]['all-of'][2].where = { severity: ['blocker', 'critical'] };
   assert.deepEqual((await check(config)).errors, [
     { at: 'procedures.review.actions[1]', message: 'all-of[0]: "dodMet" is a boolean, so is must be true or false' },
-    { at: 'procedures.review.actions[1]', message: 'all-of[2]: where "severity": "critical" is not one of blocker | major | minor' },
+    {
+      at: 'procedures.review.actions[1]',
+      message: 'all-of[2]: where "severity": "critical" is not one of blocker | major | minor',
+    },
   ]);
 });
 
 test('a rule on a free-text field is an error', async () => {
   const config = example();
   config.procedures['tests-fail'].stopped[0].when = { 'response.summary': 'x' };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.tests-fail.stopped[0]',
-    message: 'rule field "response.summary" is {"kind":"string"}; rules match only enum, boolean and integer fields',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.tests-fail.stopped[0]',
+      message: 'rule field "response.summary" is {"kind":"string"}; rules match only enum, boolean and integer fields',
+    },
+  ]);
 });
 
 test('a malformed rule condition is an error', async () => {
   const config = example();
   config.procedures.review.passed[1].when = { 'check.repeat': { '!=': 'passed' } };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.review.passed[1]',
-    message: 'condition on "check.repeat" must be a string, boolean or integer, or an object of <, <=, >, >=, = with integers',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.review.passed[1]',
+      message:
+        'condition on "check.repeat" must be a string, boolean or integer, or an object of <, <=, >, >=, = with integers',
+    },
+  ]);
 });
 
 test('a condition that does not fit its field is an error', async () => {
   const config = example();
   config.procedures.implement.passed = [{ when: { pass: 'two' }, outcome: 'ok' }];
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.implement.passed[0]',
-    message: 'condition "two" on "pass" does not fit its field, which is {"kind":"integer","min":1,"max":2}',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.implement.passed[0]',
+      message: 'condition "two" on "pass" does not fit its field, which is {"kind":"integer","min":1,"max":2}',
+    },
+  ]);
 });
 
 test('a row that never fires is an error from the rule table analysis', async () => {
   const config = example();
   config.procedures['tests-fail'].stopped.push({ when: { 'response.reason': 'misscoped' }, outcome: 'again' });
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.tests-fail.stopped',
-    message: 'rule table tests-fail.stopped: row 3 (again) never fires: earlier rows match every input it matches',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.tests-fail.stopped',
+      message: 'rule table tests-fail.stopped: row 3 (again) never fires: earlier rows match every input it matches',
+    },
+  ]);
 });
 
 test('a passed row on a required Check failing is unreachable', async () => {
   const config = example();
   config.procedures.implement.passed = [{ when: { 'check.test': 'failed' }, outcome: 'odd' }];
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.implement.passed',
-    message: 'rule table implement.passed: row 1 (odd) is unreachable: it matches no input',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.implement.passed',
+      message: 'rule table implement.passed: row 1 (odd) is unreachable: it matches no input',
+    },
+  ]);
 });
 
 test('a failed table in a Procedure whose tokens require no Check is an error', async () => {
   const config = example();
   config.procedures.review.failed = [{ when: { 'check.repeat': 'failed' }, outcome: 'repeat' }];
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.review.failed',
-    message: 'no Claim token requires a Check, so the failed table never applies',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.review.failed',
+      message: 'no Claim token requires a Check, so the failed table never applies',
+    },
+  ]);
 });
 
 test('a rule on an input is typed at each Vertex using the Procedure', async () => {
   const config = example();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.needsTest = { from: 'reviewer.review.response.needsTest', optional: true };
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.needsTest = {
+    from: 'reviewer.review.response.needsTest',
+    optional: true,
+  };
   config.procedures.fix.passed = [{ when: { 'inputs.needsTest': true }, outcome: 'ok' }];
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.senior-dev (procedure fix).passed[0]`,
-    message: '"inputs.needsTest" is not defined',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.senior-dev (procedure fix).passed[0]`,
+      message: '"inputs.needsTest" is not defined',
+    },
+  ]);
 });
 
 for (const [what, mutate, errors] of [
-  ['a Procedure that is null', (c) => { c.procedures.publish = null; },
-    [{ at: 'procedures.publish', message: 'a Procedure must be an object' }]],
-  ['actions that are a number', (c) => { c.procedures.publish.actions = 3; },
-    [{ at: 'procedures.publish', message: 'actions must be a non-empty list' }]],
-  ['requires that is a number', (c) => { c.procedures.implement.claims.ok.requires = 3; },
-    [{ at: 'procedures.implement.claims.ok', message: 'a Claim token is { requires: [<check ids>] } or { stop: true, comment?: <file> }' }]],
-  ['repeat fields that are a boolean', (c) => { c.procedures.review.actions[2].fields = true; },
-    [{ at: 'procedures.review.actions[2]', message: 'fields must be a non-empty list of field names' }]],
-  ['a table row that is null', (c) => { c.procedures.review.passed[0] = null; },
-    [{ at: 'procedures.review.passed[0]', message: 'a row is { when: { <field>: <condition> }, outcome: <name> }' }]],
-  ['routes that are a list', (c) => { c.flows.default.ticket.routes = []; },
-    [{ at: 'flows.default.ticket.routes', message: 'routes must be an object from Outcome to target' }]],
-  ['inputs that are a number', (c) => { c.flows.default.ticket.vertices.red.inputs = 12; },
-    [{ at: `${V}.red.inputs`, message: 'inputs must be an object from name to { from, optional?, pick? }' }]],
-  ['an Agent that is a string', (c) => { c.agents.reviewer = 'reviewer.md'; },
-    [{ at: 'agents.reviewer', message: 'an Agent must be an object' }]],
-  ['flows given as a list', (c) => { c.flows = []; },
-    [{ at: 'flows', message: 'flows must be an object from name to Flow' }]],
-  ['an Action kind given as a list', (c) => { c.procedures.publish.actions[2] = { id: 'ready', do: ['pr-ready'] }; },
-    [{ at: 'procedures.publish.actions[2]', message: 'do ["pr-ready"] is not one of agent, check, commit, push, pr-upsert, pr-ready, comment, await-approval' }]],
-  ['a Check kind given as a list', (c) => { c.procedures['base-check'].actions[0].kind = ['command']; },
-    [{ at: 'procedures.base-check.actions[0]', message: 'Check kind ["command"] is not one of command, tests-fail, response, repeat' }]],
-  ['a command given as a list', (c) => { c.procedures['base-check'].actions[0].command = ['test']; },
-    [{ at: 'procedures.base-check.actions[0]', message: 'Check test names command ["test"], which the repository Layer does not declare' }]],
-  ['a Procedure name given as a list', (c) => { c.flows.default.ticket.vertices.publish.procedure = ['publish']; },
-    [{ at: `${V}.publish`, message: 'procedure ["publish"] is not declared' }]],
-  ['a harness given as a list', (c) => { c.agents.reviewer.harness = ['fake']; },
-    [{ at: 'agents.reviewer', message: 'agent reviewer names harness ["fake"], which is not registered' }]],
+  [
+    'a Procedure that is null',
+    (c) => {
+      c.procedures.publish = null;
+    },
+    [{ at: 'procedures.publish', message: 'a Procedure must be an object' }],
+  ],
+  [
+    'actions that are a number',
+    (c) => {
+      c.procedures.publish.actions = 3;
+    },
+    [{ at: 'procedures.publish', message: 'actions must be a non-empty list' }],
+  ],
+  [
+    'requires that is a number',
+    (c) => {
+      c.procedures.implement.claims.ok.requires = 3;
+    },
+    [
+      {
+        at: 'procedures.implement.claims.ok',
+        message: 'a Claim token is { requires: [<check ids>] } or { stop: true, comment?: <file> }',
+      },
+    ],
+  ],
+  [
+    'repeat fields that are a boolean',
+    (c) => {
+      c.procedures.review.actions[2].fields = true;
+    },
+    [{ at: 'procedures.review.actions[2]', message: 'fields must be a non-empty list of field names' }],
+  ],
+  [
+    'a table row that is null',
+    (c) => {
+      c.procedures.review.passed[0] = null;
+    },
+    [{ at: 'procedures.review.passed[0]', message: 'a row is { when: { <field>: <condition> }, outcome: <name> }' }],
+  ],
+  [
+    'routes that are a list',
+    (c) => {
+      c.flows.default.ticket.routes = [];
+    },
+    [{ at: 'flows.default.ticket.routes', message: 'routes must be an object from Outcome to target' }],
+  ],
+  [
+    'inputs that are a number',
+    (c) => {
+      c.flows.default.ticket.vertices.red.inputs = 12;
+    },
+    [{ at: `${V}.red.inputs`, message: 'inputs must be an object from name to { from, optional?, pick? }' }],
+  ],
+  [
+    'an Agent that is a string',
+    (c) => {
+      c.agents.reviewer = 'reviewer.md';
+    },
+    [{ at: 'agents.reviewer', message: 'an Agent must be an object' }],
+  ],
+  [
+    'flows given as a list',
+    (c) => {
+      c.flows = [];
+    },
+    [{ at: 'flows', message: 'flows must be an object from name to Flow' }],
+  ],
+  [
+    'an Action kind given as a list',
+    (c) => {
+      c.procedures.publish.actions[2] = { id: 'ready', do: ['pr-ready'] };
+    },
+    [
+      {
+        at: 'procedures.publish.actions[2]',
+        message:
+          'do ["pr-ready"] is not one of agent, check, commit, push, pr-upsert, pr-ready, comment, await-approval',
+      },
+    ],
+  ],
+  [
+    'a Check kind given as a list',
+    (c) => {
+      c.procedures['base-check'].actions[0].kind = ['command'];
+    },
+    [
+      {
+        at: 'procedures.base-check.actions[0]',
+        message: 'Check kind ["command"] is not one of command, tests-fail, response, repeat',
+      },
+    ],
+  ],
+  [
+    'a command given as a list',
+    (c) => {
+      c.procedures['base-check'].actions[0].command = ['test'];
+    },
+    [
+      {
+        at: 'procedures.base-check.actions[0]',
+        message: 'Check test names command ["test"], which the repository Layer does not declare',
+      },
+    ],
+  ],
+  [
+    'a Procedure name given as a list',
+    (c) => {
+      c.flows.default.ticket.vertices.publish.procedure = ['publish'];
+    },
+    [{ at: `${V}.publish`, message: 'procedure ["publish"] is not declared' }],
+  ],
+  [
+    'a harness given as a list',
+    (c) => {
+      c.agents.reviewer.harness = ['fake'];
+    },
+    [{ at: 'agents.reviewer', message: 'agent reviewer names harness ["fake"], which is not registered' }],
+  ],
 ]) {
   test(`malformed configuration is an error, never a throw: ${what}`, async () => {
     const config = example();
@@ -588,19 +812,23 @@ test('a passed row on a Check its token requires failing is unreachable even whe
   const files = schemas();
   files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
   config.procedures.fix.claims.partial = { requires: [] };
-  assert.deepEqual((await check(config, files)).errors, [{
-    at: 'procedures.implement.passed',
-    message: 'rule table implement.passed: row 1 (odd) is unreachable: it matches no input',
-  }]);
+  assert.deepEqual((await check(config, files)).errors, [
+    {
+      at: 'procedures.implement.passed',
+      message: 'rule table implement.passed: row 1 (odd) is unreachable: it matches no input',
+    },
+  ]);
 });
 
-test('a failed row on its token\'s only required Check passing is unreachable', async () => {
+test("a failed row on its token's only required Check passing is unreachable", async () => {
   const config = example();
   config.procedures.implement.failed = [{ when: { 'check.test': 'passed' }, outcome: 'odd' }];
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'procedures.implement.failed',
-    message: 'rule table implement.failed: row 1 (odd) is unreachable: it matches no input',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'procedures.implement.failed',
+      message: 'rule table implement.failed: row 1 (odd) is unreachable: it matches no input',
+    },
+  ]);
 });
 
 test('a token whose every passing case a row maps away is not an Outcome', async () => {
@@ -613,27 +841,44 @@ test('a token whose every passing case a row maps away is not an Outcome', async
   config.flows.default.ticket.routes['done-ish'] = 'reviewer';
   const { errors, flows } = await check(config, files);
   assert.deepEqual(errors, []);
-  assert.deepEqual(flows.default.ticket.vertices.green.outcomes,
-    ['done-ish', 'partial', 'failed', 'misscoped', 'bad-test', 'blocked', 'harness-timeout', 'harness-transient', 'harness-unparsed']);
+  assert.deepEqual(flows.default.ticket.vertices.green.outcomes, [
+    'done-ish',
+    'partial',
+    'failed',
+    'misscoped',
+    'bad-test',
+    'blocked',
+    'harness-timeout',
+    'harness-transient',
+    'harness-unparsed',
+  ]);
 });
 
 test('engine outputs have their fields: rescue, evidence and cleanup', async () => {
   const config = example();
   config.flows.default.ticket.vertices.green.inputs.previous.from = 'green.rescue.ref';
-  config.flows.default.ticket.vertices.green.inputs.red.from = ['red.red-check.evidence.output', 'senior-red.red-check.cleanup.confirmed'];
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.green.inputs.red`,
-    message: 'sources "red.red-check.evidence.output" and "senior-red.red-check.cleanup.confirmed" have different types',
-  }]);
+  config.flows.default.ticket.vertices.green.inputs.red.from = [
+    'red.red-check.evidence.output',
+    'senior-red.red-check.cleanup.confirmed',
+  ];
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.green.inputs.red`,
+      message:
+        'sources "red.red-check.evidence.output" and "senior-red.red-check.cleanup.confirmed" have different types',
+    },
+  ]);
 });
 
-test('a rescue and a Check\'s evidence are different types', async () => {
+test("a rescue and a Check's evidence are different types", async () => {
   const config = example();
   config.flows.default.ticket.vertices.green.inputs.previous.from = ['green.rescue', 'green.test.evidence'];
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.green.inputs.previous`,
-    message: 'sources "green.rescue" and "green.test.evidence" have different types',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.green.inputs.previous`,
+      message: 'sources "green.rescue" and "green.test.evidence" have different types',
+    },
+  ]);
 });
 
 test('schemas that differ only in the order of required or enum are one type', async () => {
@@ -648,11 +893,14 @@ test('schemas that differ only in the order of required or enum are one type', a
 
 test('a configuration that is not an object is one error, not a throw', async () => {
   const validate = await import('../../lib/validate.mjs');
-  assert.deepEqual(validate.validate(null, { harnesses: {}, readSchema: () => ({}) }),
-    { flows: {}, errors: [{ at: '(root)', message: 'the configuration must be an object' }], warnings: [] });
+  assert.deepEqual(validate.validate(null, { harnesses: {}, readSchema: () => ({}) }), {
+    flows: {},
+    errors: [{ at: '(root)', message: 'the configuration must be an object' }],
+    warnings: [],
+  });
 });
 
-test('a Check\'s evidence and a response object of the same fields are one type', async () => {
+test("a Check's evidence and a response object of the same fields are one type", async () => {
   const config = example();
   config.procedures.fix.actions[0].schema = 'fix.schema.json';
   const files = schemas();
@@ -664,8 +912,14 @@ test('a Check\'s evidence and a response object of the same fields are one type'
     additionalProperties: false,
   };
   files['fix.schema.json'].required.push('output');
-  config.flows.default.ticket.vertices.green.inputs.red.from = ['red.red-check.evidence', 'implementer-fix.fix.response.output'];
-  config.flows.default.ticket.vertices.reviewer.inputs.report.from = ['green.green.response', 'senior-green.green.response'];
+  config.flows.default.ticket.vertices.green.inputs.red.from = [
+    'red.red-check.evidence',
+    'implementer-fix.fix.response.output',
+  ];
+  config.flows.default.ticket.vertices.reviewer.inputs.report.from = [
+    'green.green.response',
+    'senior-green.green.response',
+  ];
   config.flows.default.ticket.vertices['implementer-fix'].inputs.report.from = ['green.green.response'];
   config.flows.default.ticket.vertices['senior-dev'].inputs.report.from = ['green.green.response'];
   config.flows.default.ticket.vertices.publish.inputs.report.from = ['green.green.response'];
@@ -678,7 +932,7 @@ test('an unrouted Outcome is an error', async () => {
   config.flows.default.ticket.routes.blocked = { end: 'needs-human' };
   delete config.flows.default.ticket.vertices.reviewer.route.repeat;
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.reviewer`, message: 'Outcome repeat is not routed by the Vertex or the Flow\'s routes' },
+    { at: `${V}.reviewer`, message: "Outcome repeat is not routed by the Vertex or the Flow's routes" },
   ]);
 });
 
@@ -688,33 +942,53 @@ test('the engine Outcomes default to end: needs-human', async () => {
   config.flows.default.ticket.routes.blocked = { end: 'needs-human' };
   const { errors, flows } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(flows.default.ticket.vertices.red.routing.failed,
-    { target: { end: 'needs-human' }, by: 'engine default', work: 'left in place' });
-  assert.deepEqual(flows.default.ticket.vertices.reviewer.routing['harness-timeout'],
-    { target: { end: 'needs-human' }, by: 'engine default', work: null });
+  assert.deepEqual(flows.default.ticket.vertices.red.routing.failed, {
+    target: { end: 'needs-human' },
+    by: 'engine default',
+    work: 'left in place',
+  });
+  assert.deepEqual(flows.default.ticket.vertices.reviewer.routing['harness-timeout'], {
+    target: { end: 'needs-human' },
+    by: 'engine default',
+    work: null,
+  });
 });
 
 test('a cycle bounded only by the Action Cap is an error', async () => {
   const config = example();
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'flows.default.ticket',
-    message: 'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound a cycle',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'flows.default.ticket',
+      message:
+        'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound a cycle',
+    },
+  ]);
 });
 
-test('a cycle through an edge\'s exhausted target is not bounded by that edge\'s max', async () => {
+test("a cycle through an edge's exhausted target is not bounded by that edge's max", async () => {
   const config = example();
-  config.flows.default.ticket.vertices.reviewer.route.changes = { to: 'implementer-fix', max: 2, exhausted: 'implementer-fix' };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'flows.default.ticket',
-    message: 'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound a cycle',
-  }]);
+  config.flows.default.ticket.vertices.reviewer.route.changes = {
+    to: 'implementer-fix',
+    max: 2,
+    exhausted: 'implementer-fix',
+  };
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'flows.default.ticket',
+      message:
+        'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound a cycle',
+    },
+  ]);
 });
 
 test('a self-edge with max is a bounded cycle', async () => {
   const config = example();
-  config.flows.default.ticket.vertices.baseline.route.failed = { to: 'baseline', max: 2, exhausted: { end: 'needs-human' } };
+  config.flows.default.ticket.vertices.baseline.route.failed = {
+    to: 'baseline',
+    max: 2,
+    exhausted: { end: 'needs-human' },
+  };
   assert.deepEqual((await check(config)).errors, []);
 });
 
@@ -729,7 +1003,11 @@ test('a path to ready-for-qa without pr-ready is an error', async () => {
   const config = example();
   config.flows.default.ticket.vertices.reviewer.route.ok = { end: 'ready-for-qa' };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.reviewer`, message: 'Outcome ok reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so route it through the Vertex that runs pr-ready' },
+    {
+      at: `${V}.reviewer`,
+      message:
+        'Outcome ok reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so route it through the Vertex that runs pr-ready',
+    },
   ]);
 });
 
@@ -737,7 +1015,10 @@ test('pr-ready in a Procedure whose token requires no Check is an error', async 
   const config = example();
   config.procedures.publish.actions.shift();
   assert.deepEqual((await check(config)).errors, [
-    { at: 'procedures.publish.actions[1]', message: 'pr-ready publishes only after passing Checks, but Claim token ok requires none' },
+    {
+      at: 'procedures.publish.actions[1]',
+      message: 'pr-ready publishes only after passing Checks, but Claim token ok requires none',
+    },
   ]);
 });
 
@@ -745,8 +1026,16 @@ test('a passing write path without a commit is an error', async () => {
   const config = example();
   config.procedures.implement.actions.splice(2, 1);
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.green`, message: 'Vertex green writes, so it must commit on every passing path, but procedure implement has no commit Action' },
-    { at: `${V}.senior-green`, message: 'Vertex senior-green writes, so it must commit on every passing path, but procedure implement has no commit Action' },
+    {
+      at: `${V}.green`,
+      message:
+        'Vertex green writes, so it must commit on every passing path, but procedure implement has no commit Action',
+    },
+    {
+      at: `${V}.senior-green`,
+      message:
+        'Vertex senior-green writes, so it must commit on every passing path, but procedure implement has no commit Action',
+    },
   ]);
 });
 
@@ -754,8 +1043,14 @@ test('a write Vertex whose committing token requires no Check is an error', asyn
   const config = example();
   config.procedures.fix.claims.ok.requires = [];
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.implementer-fix`, message: 'Vertex implementer-fix writes, so its committing Claim token ok must require a Check' },
-    { at: `${V}.senior-dev`, message: 'Vertex senior-dev writes, so its committing Claim token ok must require a Check' },
+    {
+      at: `${V}.implementer-fix`,
+      message: 'Vertex implementer-fix writes, so its committing Claim token ok must require a Check',
+    },
+    {
+      at: `${V}.senior-dev`,
+      message: 'Vertex senior-dev writes, so its committing Claim token ok must require a Check',
+    },
   ]);
 });
 
@@ -763,7 +1058,11 @@ test('a required input missing on one path is an error', async () => {
   const config = example();
   delete config.flows.default.ticket.vertices.green.inputs.tests.optional;
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.green.inputs.tests`, message: 'input tests is required, but some route to green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.green.inputs.tests`,
+      message:
+        'input tests is required, but some route to green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
@@ -772,7 +1071,11 @@ test('an optional input no route produces is a warning', async () => {
   config.flows.default.ticket.vertices['implementer-fix'].inputs.previous = { from: 'publish.rescue', optional: true };
   const { errors, warnings } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), { at: `${V}.implementer-fix.inputs.previous`, message: 'input previous is optional, but no route to implementer-fix is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs' });
+  assert.deepEqual(warnings.at(-1), {
+    at: `${V}.implementer-fix.inputs.previous`,
+    message:
+      'input previous is optional, but no route to implementer-fix is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
+  });
 });
 
 test('an unreachable Vertex is a warning', async () => {
@@ -783,7 +1086,7 @@ test('an unreachable Vertex is a warning', async () => {
   assert.deepEqual(warnings.at(-1), { at: `${V}.orphan`, message: 'Vertex orphan is not reachable from the entry' });
 });
 
-test('the example\'s routing reproduces its admission summary', async () => {
+test("the example's routing reproduces its admission summary", async () => {
   const { errors, warnings, flows } = await check(example());
   const v = flows.default.ticket.vertices;
   assert.deepEqual(errors, []);
@@ -791,12 +1094,26 @@ test('the example\'s routing reproduces its admission summary', async () => {
   assert.deepEqual(v.baseline.routing.failed, { target: { end: 'needs-human' }, by: 'Flow "*"', work: null });
   assert.deepEqual(v.red.routing.blocked, { target: { end: 'needs-human' }, by: 'Flow "*"', work: 'left in place' });
   assert.deepEqual(v.red.routing['no-test'], { target: 'green', by: 'Vertex route', work: 'rescued' });
-  assert.deepEqual(v.green.routing.failed, { target: 'senior-green', by: 'Vertex route', work: 'rescued, or left in place once exhausted' });
-  assert.deepEqual(v.green.routing['bad-test'], {
-    target: { to: 'red', max: 1, exhausted: { end: 'needs-human' } }, by: 'Vertex route', work: 'rescued, or left in place once exhausted',
+  assert.deepEqual(v.green.routing.failed, {
+    target: 'senior-green',
+    by: 'Vertex route',
+    work: 'rescued, or left in place once exhausted',
   });
-  assert.deepEqual(v['implementer-fix'].routing.failed, { target: 'senior-dev', by: 'Vertex route', work: 'rescued, or left in place once exhausted' });
-  assert.deepEqual(v['senior-red'].routing['no-test'], { target: 'senior-dev', by: 'Vertex route', work: 'rescued, or left in place once exhausted' });
+  assert.deepEqual(v.green.routing['bad-test'], {
+    target: { to: 'red', max: 1, exhausted: { end: 'needs-human' } },
+    by: 'Vertex route',
+    work: 'rescued, or left in place once exhausted',
+  });
+  assert.deepEqual(v['implementer-fix'].routing.failed, {
+    target: 'senior-dev',
+    by: 'Vertex route',
+    work: 'rescued, or left in place once exhausted',
+  });
+  assert.deepEqual(v['senior-red'].routing['no-test'], {
+    target: 'senior-dev',
+    by: 'Vertex route',
+    work: 'rescued, or left in place once exhausted',
+  });
   assert.deepEqual(v.reviewer.routing.misscoped, { target: { end: 'needs-replan' }, by: 'Flow routes', work: null });
   assert.deepEqual(v.publish.routing.ok, { target: { end: 'ready-for-qa' }, by: 'Vertex route', work: null });
   assert.deepEqual(v.publish.routing.failed, { target: { end: 'needs-human' }, by: 'Flow "*"', work: null });
@@ -808,9 +1125,16 @@ test('the graph checks wait until no other check fails', async () => {
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
   const { errors, flows } = await check(config);
   assert.deepEqual(errors, [
-    { at: 'procedures.implement.actions[1]', message: 'Check test names command "lint", which the repository Layer does not declare' },
+    {
+      at: 'procedures.implement.actions[1]',
+      message: 'Check test names command "lint", which the repository Layer does not declare',
+    },
   ]);
-  assert.deepEqual(flows.default.ticket.vertices.reviewer.routing.changes, { target: 'implementer-fix', by: 'Vertex route', work: null });
+  assert.deepEqual(flows.default.ticket.vertices.reviewer.routing.changes, {
+    target: 'implementer-fix',
+    by: 'Vertex route',
+    work: null,
+  });
 });
 
 test('malformed routing is an error, never a throw, in the graph checks', async () => {
@@ -819,8 +1143,14 @@ test('malformed routing is an error, never a throw, in the graph checks', async 
   config.flows.default.ticket.vertices.reviewer.route.retest = { to: 'red', max: 2, exhausted: 7 };
   config.flows.default.ticket.vertices['senior-dev'].max = 'one';
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.senior-green.exhausted`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
-    { at: `${V}.reviewer.route.retest`, message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }' },
+    {
+      at: `${V}.senior-green.exhausted`,
+      message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }',
+    },
+    {
+      at: `${V}.reviewer.route.retest`,
+      message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }',
+    },
     { at: `${V}.senior-dev.max`, message: 'max must be a positive integer' },
   ]);
 });
@@ -835,7 +1165,10 @@ test('a required list input is met when each passing token produces a different 
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
       { id: 'b', do: 'check', kind: 'command', command: 'test' },
     ],
-    passed: [{ when: { claim: 'ok' }, outcome: 'go' }, { when: { claim: 'changes' }, outcome: 'go' }],
+    passed: [
+      { when: { claim: 'ok' }, outcome: 'go' },
+      { when: { claim: 'changes' }, outcome: 'go' },
+    ],
   };
   config.flows.default.ticket = {
     entry: 'judge',
@@ -848,7 +1181,7 @@ test('a required list input is met when each passing token produces a different 
   assert.deepEqual((await check(config)).errors, []);
 });
 
-test('the map gives a row\'s Outcome to every Claim token of its table', async () => {
+test("the map gives a row's Outcome to every Claim token of its table", async () => {
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
@@ -868,11 +1201,15 @@ test('the map gives a row\'s Outcome to every Claim token of its table', async (
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.consumer.inputs.evidence`,
+      message:
+        'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
-test('the map counts a Vertex\'s exhausted target from its first entry', async () => {
+test("the map counts a Vertex's exhausted target from its first entry", async () => {
   const config = example();
   config.flows.default.ticket = {
     entry: 'start',
@@ -884,11 +1221,15 @@ test('the map counts a Vertex\'s exhausted target from its first entry', async (
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.consumer.inputs.evidence`,
+      message:
+        'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
-test('the map counts an edge\'s exhausted target from its first traversal', async () => {
+test("the map counts an edge's exhausted target from its first traversal", async () => {
   const config = example();
   config.flows.default.ticket = {
     entry: 'start',
@@ -900,7 +1241,11 @@ test('the map counts an edge\'s exhausted target from its first traversal', asyn
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.consumer.inputs.evidence`,
+      message:
+        'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
@@ -916,10 +1261,14 @@ test('a failed Claim guarantees no evidence, so an optional input reading only i
   };
   const { errors, warnings } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs' });
+  assert.deepEqual(warnings.at(-1), {
+    at: `${V}.consumer.inputs.evidence`,
+    message:
+      'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
+  });
 });
 
-test('a Vertex\'s exhausted target is a landing of every route into it', async () => {
+test("a Vertex's exhausted target is a landing of every route into it", async () => {
   const config = example();
   config.flows.default.ticket = {
     entry: 'q',
@@ -930,7 +1279,11 @@ test('a Vertex\'s exhausted target is a landing of every route into it', async (
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: 'flows.default.ticket.vertices.q', message: 'Outcome ok reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so route it through the Vertex that runs pr-ready' },
+    {
+      at: 'flows.default.ticket.vertices.q',
+      message:
+        'Outcome ok reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so route it through the Vertex that runs pr-ready',
+    },
   ]);
 });
 
@@ -947,7 +1300,11 @@ test('the map counts a Vertex max above 1 as spent from the first entry', async 
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.consumer.inputs.evidence`,
+      message:
+        'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
@@ -961,7 +1318,10 @@ test('the map gives a row taken by an earlier row its Outcome for every token', 
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
       { id: 'b', do: 'check', kind: 'command', command: 'test' },
     ],
-    passed: [{ when: { claim: 'ok' }, outcome: 'a-go' }, { when: {}, outcome: 'b-go' }],
+    passed: [
+      { when: { claim: 'ok' }, outcome: 'a-go' },
+      { when: {}, outcome: 'b-go' },
+    ],
   };
   config.flows.default.ticket = {
     entry: 'judge',
@@ -972,7 +1332,11 @@ test('the map gives a row taken by an earlier row its Outcome for every token', 
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.consumer.inputs.evidence`,
+      message:
+        'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
@@ -994,7 +1358,11 @@ test('a failed Claim guarantees no evidence of a later required Check, so an opt
   };
   const { errors, warnings } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs' });
+  assert.deepEqual(warnings.at(-1), {
+    at: `${V}.consumer.inputs.evidence`,
+    message:
+      'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
+  });
 });
 
 test('the map takes no evidence from the stopped table, whatever a row names', async () => {
@@ -1017,7 +1385,11 @@ test('the map takes no evidence from the stopped table, whatever a row names', a
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.consumer.inputs.evidence`,
+      message:
+        'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
@@ -1042,7 +1414,11 @@ test('a stopped Claim guarantees no evidence, so an optional input reading it is
   };
   const { errors, warnings } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs' });
+  assert.deepEqual(warnings.at(-1), {
+    at: `${V}.consumer.inputs.evidence`,
+    message:
+      'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
+  });
 });
 
 test('the map takes no evidence from stopped rows, even when each needs a different Check passed', async () => {
@@ -1055,7 +1431,10 @@ test('the map takes no evidence from stopped rows, even when each needs a differ
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
       { id: 'b', do: 'check', kind: 'command', command: 'test' },
     ],
-    stopped: [{ when: { 'check.a': 'passed' }, outcome: 'go' }, { when: { 'check.b': 'passed' }, outcome: 'go' }],
+    stopped: [
+      { when: { 'check.a': 'passed' }, outcome: 'go' },
+      { when: { 'check.b': 'passed' }, outcome: 'go' },
+    ],
   };
   config.flows.default.ticket = {
     entry: 'judge',
@@ -1066,22 +1445,33 @@ test('the map takes no evidence from stopped rows, even when each needs a differ
     },
   };
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.consumer.inputs.evidence`, message: 'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional' },
+    {
+      at: `${V}.consumer.inputs.evidence`,
+      message:
+        'input evidence is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
   ]);
 });
 
 test('a row partly taken only across Claim tokens is warned once', async () => {
   const config = example();
   // In token ok's inputs row 1 takes all of row 2; in token changes' row 2 is free. Together it is partly taken.
-  config.procedures.review.passed = [{ when: { claim: 'ok' }, outcome: 'ok' }, { when: {}, outcome: 'other' }];
+  config.procedures.review.passed = [
+    { when: { claim: 'ok' }, outcome: 'ok' },
+    { when: {}, outcome: 'other' },
+  ];
   // The reviewer still loops back, so the Flow's inputs keep a producing path; with no changes, implementer-fix is cut off.
   config.flows.default.ticket.vertices.reviewer.route.other = { to: 'red', max: 2, exhausted: 'senior-red' };
   const { errors, warnings } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings, [{
-    at: 'procedures.review.passed',
-    message: 'rule table review.passed: row 2 (no conditions) is partly taken by row 1 (claim = ok), for example {"claim":"ok"}',
-  }, { at: `${V}.implementer-fix`, message: 'Vertex implementer-fix is not reachable from the entry' }]);
+  assert.deepEqual(warnings, [
+    {
+      at: 'procedures.review.passed',
+      message:
+        'rule table review.passed: row 2 (no conditions) is partly taken by row 1 (claim = ok), for example {"claim":"ok"}',
+    },
+    { at: `${V}.implementer-fix`, message: 'Vertex implementer-fix is not reachable from the entry' },
+  ]);
 });
 
 test('an explicit Flow route beats the Vertex\'s "*"', async () => {
@@ -1089,8 +1479,16 @@ test('an explicit Flow route beats the Vertex\'s "*"', async () => {
   config.flows.default.ticket.vertices.red.route['*'] = { end: 'needs-human' };
   const { errors, flows } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(flows.default.ticket.vertices.red.routing.misscoped, { target: { end: 'needs-replan' }, by: 'Flow routes', work: 'left in place' });
-  assert.deepEqual(flows.default.ticket.vertices.red.routing.blocked, { target: { end: 'needs-human' }, by: 'Vertex "*"', work: 'left in place' });
+  assert.deepEqual(flows.default.ticket.vertices.red.routing.misscoped, {
+    target: { end: 'needs-replan' },
+    by: 'Flow routes',
+    work: 'left in place',
+  });
+  assert.deepEqual(flows.default.ticket.vertices.red.routing.blocked, {
+    target: { end: 'needs-human' },
+    by: 'Vertex "*"',
+    work: 'left in place',
+  });
 });
 
 test('a bound without an exhausted target is an error', async () => {
@@ -1122,7 +1520,10 @@ test('an optional input that only some ways of an Outcome produce is warned', as
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
     ],
-    passed: [{ when: { claim: 'ok' }, outcome: 'go' }, { when: { claim: 'changes' }, outcome: 'go' }],
+    passed: [
+      { when: { claim: 'ok' }, outcome: 'go' },
+      { when: { claim: 'changes' }, outcome: 'go' },
+    ],
   };
   config.flows.default.ticket = {
     entry: 'judge',
@@ -1136,7 +1537,8 @@ test('an optional input that only some ways of an Outcome produce is warned', as
   assert.deepEqual(errors, []);
   assert.deepEqual(warnings.at(-1), {
     at: `${V}.consumer.inputs.evidence`,
-    message: 'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
+    message:
+      'input evidence is optional, but no route to consumer is sure to produce any of its sources; admission checks routes, not runs, so it may still arrive on some runs',
   });
 });
 
@@ -1155,10 +1557,13 @@ test('a harness failure leaves no response', async () => {
       consumer: { procedure: 'base-check', inputs: { report: { from: 'judge.judge.response' } } },
     },
   };
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.consumer.inputs.report`,
-    message: 'input report is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.consumer.inputs.report`,
+      message:
+        'input report is required, but some route to consumer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
+  ]);
 });
 
 test('pr-ready counts only from the passed table', async () => {
@@ -1175,39 +1580,58 @@ test('pr-ready counts only from the passed table', async () => {
   config.flows.default.ticket = {
     entry: 'ship',
     routes: { '*': { end: 'needs-human' } },
-    vertices: { ship: { use: 'reviewer', procedure: 'ship', route: { ok: { end: 'ready-for-qa' }, blocked: { end: 'ready-for-qa' } } } },
+    vertices: {
+      ship: {
+        use: 'reviewer',
+        procedure: 'ship',
+        route: { ok: { end: 'ready-for-qa' }, blocked: { end: 'ready-for-qa' } },
+      },
+    },
   };
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.ship`,
-    message: 'Outcome blocked reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so route it through the Vertex that runs pr-ready',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.ship`,
+      message:
+        'Outcome blocked reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, so route it through the Vertex that runs pr-ready',
+    },
+  ]);
 });
 
 test('a passing Outcome leaves no rescue', async () => {
   const config = example();
   config.flows.default.ticket.vertices.reviewer.inputs.previous = { from: 'green.rescue' };
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.reviewer.inputs.previous`,
-    message: 'input previous is required, but some route to reviewer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.reviewer.inputs.previous`,
+      message:
+        'input previous is required, but some route to reviewer may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
+  ]);
 });
 
 test('a read-only Vertex leaves no rescue', async () => {
   const config = example();
   config.flows.default.ticket.vertices.green.access = 'read-only';
   delete config.flows.default.ticket.vertices['senior-green'].inputs.previous.optional;
-  assert.deepEqual((await check(config)).errors, [{
-    at: `${V}.senior-green.inputs.previous`,
-    message: 'input previous is required, but some route to senior-green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: `${V}.senior-green.inputs.previous`,
+      message:
+        'input previous is required, but some route to senior-green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+    },
+  ]);
 });
 
-test('a Vertex\'s own route for an Outcome beats the Flow\'s', async () => {
+test("a Vertex's own route for an Outcome beats the Flow's", async () => {
   const config = example();
   config.flows.default.ticket.vertices.red.route.misscoped = { end: 'needs-human' };
   const { errors, flows } = await check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(flows.default.ticket.vertices.red.routing.misscoped, { target: { end: 'needs-human' }, by: 'Vertex route', work: 'left in place' });
+  assert.deepEqual(flows.default.ticket.vertices.red.routing.misscoped, {
+    target: { end: 'needs-human' },
+    by: 'Vertex route',
+    work: 'left in place',
+  });
 });
 
 test('a loop of exhausted targets is an error', async () => {
@@ -1221,10 +1645,12 @@ test('a loop of exhausted targets is an error', async () => {
       y: { procedure: 'base-check', max: 1, exhausted: 'x', route: { ok: 'x' } },
     },
   };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'flows.default.ticket',
-    message: 'the exhausted targets of x, y form a loop: once their Visits reach max, no Vertex is ever entered',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'flows.default.ticket',
+      message: 'the exhausted targets of x, y form a loop: once their Visits reach max, no Vertex is ever entered',
+    },
+  ]);
 });
 
 test('an exhausted target without a bound is an error', async () => {
@@ -1237,29 +1663,53 @@ test('an exhausted target without a bound is an error', async () => {
   ]);
 });
 
-test('a Flow\'s graph checks wait only for its own errors and those outside every Flow, in either order', async () => {
-  const unrouted = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
-  const misspelt = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check', rout: {}, route: { ok: { end: 'needs-human' } } } } } };
+test("a Flow's graph checks wait only for its own errors and those outside every Flow, in either order", async () => {
+  const unrouted = {
+    plan: null,
+    actionCap: 20,
+    ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
+  };
+  const misspelt = {
+    plan: null,
+    actionCap: 20,
+    ticket: {
+      entry: 'gate',
+      vertices: { gate: { procedure: 'base-check', rout: {}, route: { ok: { end: 'needs-human' } } } },
+    },
+  };
   const first = example();
   first.flows = { unrouted, misspelt };
   assert.deepEqual((await check(first)).errors, [
-    { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
+    {
+      at: 'flows.unrouted.ticket.vertices.gate',
+      message: "Outcome ok is not routed by the Vertex or the Flow's routes",
+    },
     { at: 'flows.misspelt.ticket.vertices.gate', message: 'unknown key "rout"' },
   ]);
   const second = example();
   second.flows = { misspelt, unrouted };
   assert.deepEqual((await check(second)).errors, [
     { at: 'flows.misspelt.ticket.vertices.gate', message: 'unknown key "rout"' },
-    { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
+    {
+      at: 'flows.unrouted.ticket.vertices.gate',
+      message: "Outcome ok is not routed by the Vertex or the Flow's routes",
+    },
   ]);
 });
 
-test('an error outside every Flow holds every Flow\'s graph checks', async () => {
+test("an error outside every Flow holds every Flow's graph checks", async () => {
   const config = example();
   config.procedures['base-check'].actions[0].command = 'lint';
-  config.flows.light = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
+  config.flows.light = {
+    plan: null,
+    actionCap: 20,
+    ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
+  };
   assert.deepEqual((await check(config)).errors, [
-    { at: 'procedures.base-check.actions[0]', message: 'Check test names command "lint", which the repository Layer does not declare' },
+    {
+      at: 'procedures.base-check.actions[0]',
+      message: 'Check test names command "lint", which the repository Layer does not declare',
+    },
   ]);
 });
 
@@ -1270,10 +1720,12 @@ test('a Vertex whose exhausted target is itself is a loop', async () => {
     routes: { '*': { end: 'needs-human' } },
     vertices: { x: { procedure: 'base-check', max: 1, exhausted: 'x', route: { ok: { end: 'needs-human' } } } },
   };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'flows.default.ticket',
-    message: 'the exhausted targets of x form a loop: once their Visits reach max, no Vertex is ever entered',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'flows.default.ticket',
+      message: 'the exhausted targets of x form a loop: once their Visits reach max, no Vertex is ever entered',
+    },
+  ]);
 });
 
 test('a loop of exhausted targets reached through a tail names only the loop, once', async () => {
@@ -1288,65 +1740,114 @@ test('a loop of exhausted targets reached through a tail names only the loop, on
       b: { procedure: 'base-check', max: 1, exhausted: 'a', route: { ok: 'a' } },
     },
   };
-  assert.deepEqual((await check(config)).errors, [{
-    at: 'flows.default.ticket',
-    message: 'the exhausted targets of a, b form a loop: once their Visits reach max, no Vertex is ever entered',
-  }]);
+  assert.deepEqual((await check(config)).errors, [
+    {
+      at: 'flows.default.ticket',
+      message: 'the exhausted targets of a, b form a loop: once their Visits reach max, no Vertex is ever entered',
+    },
+  ]);
 });
 
-test('an Agent\'s error holds the graph checks of the Flows that use it, and only them', async () => {
+test("an Agent's error holds the graph checks of the Flows that use it, and only them", async () => {
   const config = example();
   config.agents.senior.harness = 'other';
   config.agents.spare = { persona: 'implementer.md', harness: 'other' };
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
-  config.flows.unrouted = { plan: null, actionCap: 20, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
+  config.flows.unrouted = {
+    plan: null,
+    actionCap: 20,
+    ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
+  };
   assert.deepEqual((await check(config)).errors, [
     { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
     { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
-    { at: 'flows.unrouted.ticket.vertices.gate', message: 'Outcome ok is not routed by the Vertex or the Flow\'s routes' },
+    {
+      at: 'flows.unrouted.ticket.vertices.gate',
+      message: "Outcome ok is not routed by the Vertex or the Flow's routes",
+    },
   ]);
 });
 
 // #116 (Y20, L2): every name a template reads resolves in the scope of each Vertex that uses it.
 // The example's templates, each naming nothing, with `changes` in place of one.
 const templates = (changes = {}) => ({
-  ...Object.fromEntries(['red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md', 'test-fix.md', 'blocked.md', 'pr-body.md',
-    'review-comment.md'].map((name) => [name, `${name}\n`])),
+  ...Object.fromEntries(
+    [
+      'red.md',
+      'green.md',
+      'fix.md',
+      'review.md',
+      'recover.md',
+      'still-green.md',
+      'test-fix.md',
+      'blocked.md',
+      'pr-body.md',
+      'review-comment.md',
+    ].map((name) => [name, `${name}\n`]),
+  ),
   ...changes,
 });
 
 test('a template that names an undeclared input is an error at its Action', async () => {
-  const { errors } = await check(example(), schemas(), templates({ 'green.md': 'tests: {{#inputs.tests}}{{.}}{{/inputs.tests}}\n{{inputs.nope}}\n' }));
+  const { errors } = await check(
+    example(),
+    schemas(),
+    templates({ 'green.md': 'tests: {{#inputs.tests}}{{.}}{{/inputs.tests}}\n{{inputs.nope}}\n' }),
+  );
   assert.deepEqual(errors, [
-    { at: `${V}.green (procedure implement).actions[0]`, message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined' },
-    { at: `${V}.senior-green (procedure implement).actions[0]`, message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined' },
+    {
+      at: `${V}.green (procedure implement).actions[0]`,
+      message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined',
+    },
+    {
+      at: `${V}.senior-green (procedure implement).actions[0]`,
+      message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined',
+    },
   ]);
 });
 
 test('a template may name gg context, own outputs, inputs and with aliases', async () => {
-  const { errors } = await check(example(), schemas(), templates({
-    'green.md': '{{ticket.title}} {{base}} {{#commands}}{{name}}: {{command}}{{/commands}} {{#history}}{{text}}{{/history}} {{diff}}\n'
-      + '{{#inputs.tests}}{{.}}{{/inputs.tests}} {{inputs.red.output}} {{#inputs.findings}}{{file}} {{severity}}{{/inputs.findings}}\n'
-      + '{{green.response.summary}} {{test.evidence.output}} {{claim}} {{pass}} {{check.test}} {{#inputs.findings.length}}n{{/inputs.findings.length}}\n',
-    'pr-body.md': '{{report.summary}} {{#report.dod}}{{item}} {{#met}}y{{/met}}{{/report.dod}} {{red.output}} {{redReport.summary}} {{ticket.number}} '
-      + '{{#provenance}}{{vertex}}{{/provenance}} {{marker}}\n',
-    'review-comment.md': '{{review.response.summary}} {{#review.response.findings}}{{issue}}{{/review.response.findings}} {{agent.model}} {{marker}}\n',
-    'blocked.md': '{{response.summary}} {{outcome}} {{end}} {{reason}} {{marker}}\n',
-    'test-fix.md': '{{id}} {{kind}} {{command}} {{output}} {{#failure.passed}}p{{/failure.passed}}\n',
-    'recover.md': '{{#sections}}{{.}}{{/sections}} {{ticket.branch}}\n',
-  }));
+  const { errors } = await check(
+    example(),
+    schemas(),
+    templates({
+      'green.md':
+        '{{ticket.title}} {{base}} {{#commands}}{{name}}: {{command}}{{/commands}} {{#history}}{{text}}{{/history}} {{diff}}\n' +
+        '{{#inputs.tests}}{{.}}{{/inputs.tests}} {{inputs.red.output}} {{#inputs.findings}}{{file}} {{severity}}{{/inputs.findings}}\n' +
+        '{{green.response.summary}} {{test.evidence.output}} {{claim}} {{pass}} {{check.test}} {{#inputs.findings.length}}n{{/inputs.findings.length}}\n',
+      'pr-body.md':
+        '{{report.summary}} {{#report.dod}}{{item}} {{#met}}y{{/met}}{{/report.dod}} {{red.output}} {{redReport.summary}} {{ticket.number}} ' +
+        '{{#provenance}}{{vertex}}{{/provenance}} {{marker}}\n',
+      'review-comment.md':
+        '{{review.response.summary}} {{#review.response.findings}}{{issue}}{{/review.response.findings}} {{agent.model}} {{marker}}\n',
+      'blocked.md': '{{response.summary}} {{outcome}} {{end}} {{reason}} {{marker}}\n',
+      'test-fix.md': '{{id}} {{kind}} {{command}} {{output}} {{#failure.passed}}p{{/failure.passed}}\n',
+      'recover.md': '{{#sections}}{{.}}{{/sections}} {{ticket.branch}}\n',
+    }),
+  );
   assert.deepEqual(errors, []);
 });
 
 test('a template path that steps into a list of objects is an error, as rendering reads none', async () => {
-  const { errors } = await check(example(), schemas(), templates({
-    'fix.md': '{{#inputs.findings}}{{file}}{{/inputs.findings}} {{inputs.findings.length}} {{inputs.findings.file}}\n',
-  }));
+  const { errors } = await check(
+    example(),
+    schemas(),
+    templates({
+      'fix.md':
+        '{{#inputs.findings}}{{file}}{{/inputs.findings}} {{inputs.findings.length}} {{inputs.findings.file}}\n',
+    }),
+  );
   assert.deepEqual(errors, [
-    { at: `${V}.implementer-fix (procedure fix).actions[0]`,
-      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}' },
-    { at: `${V}.senior-dev (procedure fix).actions[0]`,
-      message: 'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}' },
+    {
+      at: `${V}.implementer-fix (procedure fix).actions[0]`,
+      message:
+        'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}',
+    },
+    {
+      at: `${V}.senior-dev (procedure fix).actions[0]`,
+      message:
+        'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index; read its items in a section, {{#inputs.findings}}',
+    },
   ]);
 });
 
@@ -1354,7 +1855,12 @@ test('a comment of a Procedure with no agent Action may not name the Agent', asy
   const config = example();
   config.procedures['base-check'].actions.push({ id: 'note', do: 'comment', target: 'ticket', body: 'note.md' });
   const { errors } = await check(config, schemas(), templates({ 'note.md': '{{agent.model}} {{marker}}\n' }));
-  assert.deepEqual(errors, [{ at: `${V}.baseline (procedure base-check).actions[1]`, message: 'body note.md: {{agent.model}}: "agent.model": "agent" is not defined' }]);
+  assert.deepEqual(errors, [
+    {
+      at: `${V}.baseline (procedure base-check).actions[1]`,
+      message: 'body note.md: {{agent.model}}: "agent.model": "agent" is not defined',
+    },
+  ]);
 });
 
 // A pass is the agent Action and the Checks after it (T4, R1a): every Check runs before any effect, so a commit or
@@ -1364,8 +1870,13 @@ test('a Check after an effect Action is an error', async () => {
   const { actions } = config.procedures.implement;
   config.procedures.implement.actions = [actions[0], actions[2], actions[1], ...actions.slice(3)];
   const { errors } = await check(config);
-  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[2]',
-    message: 'Check test comes after commit Action commit; every Check comes before any effect, so no effect runs before its pass is decided' }]);
+  assert.deepEqual(errors, [
+    {
+      at: 'procedures.implement.actions[2]',
+      message:
+        'Check test comes after commit Action commit; every Check comes before any effect, so no effect runs before its pass is decided',
+    },
+  ]);
 });
 
 test('an agent Action after a Check is an error', async () => {
@@ -1373,7 +1884,12 @@ test('an agent Action after a Check is an error', async () => {
   const { actions } = config.procedures.implement;
   config.procedures.implement.actions = [actions[1], actions[0], ...actions.slice(2)];
   const { errors } = await check(config);
-  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[1]', message: 'the agent Action comes first, so a recovery pass runs every Check again after it' }]);
+  assert.deepEqual(errors, [
+    {
+      at: 'procedures.implement.actions[1]',
+      message: 'the agent Action comes first, so a recovery pass runs every Check again after it',
+    },
+  ]);
 });
 
 // A reference gg reads at run time is typed as it is read (refs.read): into a list only by length or an index.
@@ -1382,57 +1898,114 @@ test('a with alias that steps into a list of objects is an error', async () => {
   config.procedures.fix.actions[4].with.files = 'inputs.findings.file';
   const { errors } = await check(config, schemas(), templates());
   assert.deepEqual(errors, [
-    { at: `${V}.implementer-fix (procedure fix).actions[4]`, message: '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index' },
-    { at: `${V}.senior-dev (procedure fix).actions[4]`, message: '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index' },
+    {
+      at: `${V}.implementer-fix (procedure fix).actions[4]`,
+      message:
+        '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index',
+    },
+    {
+      at: `${V}.senior-dev (procedure fix).actions[4]`,
+      message:
+        '"inputs.findings.file": "inputs.findings" is a list, so a path reads only its length or an item by index',
+    },
   ]);
 });
 
 test('an input source that steps into a list of objects is an error', async () => {
   const config = example();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles = { from: 'reviewer.review.response.findings.file' };
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.testFiles = {
+    from: 'reviewer.review.response.findings.file',
+  };
   const { errors } = await check(config);
-  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.testFiles`,
-    message: '"reviewer.review.response.findings.file": "reviewer.review.response.findings" is a list, so a path reads only its length or an item by index' }]);
+  assert.deepEqual(errors, [
+    {
+      at: `${V}.implementer-fix.inputs.testFiles`,
+      message:
+        '"reviewer.review.response.findings.file": "reviewer.review.response.findings" is a list, so a path reads only its length or an item by index',
+    },
+  ]);
 });
 
 test('a comment between the agent Action and its Checks is an error', async () => {
   const config = example();
   const { actions } = config.procedures.implement;
-  config.procedures.implement.actions = [actions[0], { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' }, ...actions.slice(1)];
+  config.procedures.implement.actions = [
+    actions[0],
+    { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' },
+    ...actions.slice(1),
+  ];
   const { errors } = await check(config);
-  assert.deepEqual(errors, [{ at: 'procedures.implement.actions[2]',
-    message: 'Check test comes after comment Action note; every Check comes before any effect, so no effect runs before its pass is decided' }]);
+  assert.deepEqual(errors, [
+    {
+      at: 'procedures.implement.actions[2]',
+      message:
+        'Check test comes after comment Action note; every Check comes before any effect, so no effect runs before its pass is decided',
+    },
+  ]);
 });
 
 test('a commit in a Procedure with no agent Action is an error', async () => {
   const config = example();
   config.procedures['base-check'].actions.push({ id: 'commit', do: 'commit', type: 'chore' });
   const { errors } = await check(config);
-  assert.deepEqual(errors, [{ at: 'procedures.base-check.actions[1]', message: "a commit carries the agent Action's summary, which this Procedure lacks" }]);
+  assert.deepEqual(errors, [
+    {
+      at: 'procedures.base-check.actions[1]',
+      message: "a commit carries the agent Action's summary, which this Procedure lacks",
+    },
+  ]);
 });
 
 // The review schema with an object and a list of objects inside each finding.
 function nestedFindings() {
   const files = schemas();
   const { items } = files['review.schema.json'].properties.findings;
-  items.properties.detail = { type: 'object', properties: { severity: { type: 'string', enum: ['major', 'minor'] } }, required: ['severity'],
-    additionalProperties: false };
-  items.properties.details = { type: 'array', items: { type: 'object', properties: { file: { type: 'string' } }, required: ['file'],
-    additionalProperties: false } };
+  items.properties.detail = {
+    type: 'object',
+    properties: { severity: { type: 'string', enum: ['major', 'minor'] } },
+    required: ['severity'],
+    additionalProperties: false,
+  };
+  items.properties.details = {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: { file: { type: 'string' } },
+      required: ['file'],
+      additionalProperties: false,
+    },
+  };
   items.required.push('detail', 'details');
   return files;
 }
 
 test('a response condition list that steps into a list of objects is an error', async () => {
   const config = example();
-  config.procedures.review.actions[1] = { id: 'review-pass', do: 'check', kind: 'response', none: 'findings.detail', where: { severity: 'major' } };
+  config.procedures.review.actions[1] = {
+    id: 'review-pass',
+    do: 'check',
+    kind: 'response',
+    none: 'findings.detail',
+    where: { severity: 'major' },
+  };
   const { errors } = await check(config, nestedFindings());
-  assert.deepEqual(errors, [{ at: 'procedures.review.actions[1]', message: '"findings.detail": "findings" is a list, so a path reads only its length or an item by index' }]);
+  assert.deepEqual(errors, [
+    {
+      at: 'procedures.review.actions[1]',
+      message: '"findings.detail": "findings" is a list, so a path reads only its length or an item by index',
+    },
+  ]);
 });
 
 test('a where field or repeat field is one field of each item, not a path', async () => {
   const config = example();
-  config.procedures.review.actions[1] = { id: 'review-pass', do: 'check', kind: 'response', none: 'findings', where: { 'detail.severity': 'major' } };
+  config.procedures.review.actions[1] = {
+    id: 'review-pass',
+    do: 'check',
+    kind: 'response',
+    none: 'findings',
+    where: { 'detail.severity': 'major' },
+  };
   config.procedures.review.actions[2].fields = ['file', 'detail.severity'];
   const { errors } = await check(config, nestedFindings());
   assert.deepEqual(errors, [
@@ -1443,9 +2016,17 @@ test('a where field or repeat field is one field of each item, not a path', asyn
 
 test('a pick that steps into a list inside each item is an error', async () => {
   const config = example();
-  config.flows.default.ticket.vertices['implementer-fix'].inputs.details = { from: 'reviewer.review.response.findings', pick: 'details.file' };
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.details = {
+    from: 'reviewer.review.response.findings',
+    pick: 'details.file',
+  };
   const { errors } = await check(config, nestedFindings());
-  assert.deepEqual(errors, [{ at: `${V}.implementer-fix.inputs.details`, message: 'pick: "details.file": "details" is a list, so a path reads only its length or an item by index' }]);
+  assert.deepEqual(errors, [
+    {
+      at: `${V}.implementer-fix.inputs.details`,
+      message: 'pick: "details.file": "details" is a list, so a path reads only its length or an item by index',
+    },
+  ]);
 });
 
 test("a Vertex's maxVisits is an unknown key: its Bound is max, as on an edge", async () => {

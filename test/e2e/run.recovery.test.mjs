@@ -8,7 +8,16 @@ import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, sh, fixture, seedExecution, conflict, lastRun, loadTicket,
+  TICKET,
+  BRANCH,
+  IN_PROGRESS,
+  NEEDS_HUMAN,
+  sh,
+  fixture,
+  seedExecution,
+  conflict,
+  lastRun,
+  loadTicket,
 } from '../support/run.mjs';
 
 test('agent-made dirty state proven by the record is discarded', async (t) => {
@@ -16,9 +25,18 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = {
+    ...f.options.git,
+    resetTo: async () => {
+      throw new interpreter.CrashError('crash before reset');
+    },
+  };
   const seeded = await seedExecution(f, { git });
-  assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['reset'], 'the record holds the decided reset');
+  assert.deepEqual(
+    record.openIntents(seeded).map((e) => e.action),
+    ['reset'],
+    'the record holds the decided reset',
+  );
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), "the agent's test is still in the worktree");
 
   await run.runTarget(f.options);
@@ -27,7 +45,10 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.notEqual(final.state, 'held', 'the Ticket is not held for its own agent changes');
   assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its Integrity Violation');
-  assert.deepEqual(final.history.map((h) => h.kind), ['integrity violation']);
+  assert.deepEqual(
+    final.history.map((h) => h.kind),
+    ['integrity violation'],
+  );
   assert.deepEqual(record.openIntents(final), []);
 });
 
@@ -36,7 +57,12 @@ test('changes made after an interrupted reset are held, not discarded', async (t
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = {
+    ...f.options.git,
+    resetTo: async () => {
+      throw new interpreter.CrashError('crash before reset');
+    },
+  };
   await seedExecution(f, { git });
   // A human works in the worktree after the crash, on top of what the agent left.
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
@@ -46,7 +72,10 @@ test('changes made after an interrupted reset are held, not discarded', async (t
   assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n', 'the human file is untouched');
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
-  assert.ok(f.comments().some((b) => b.includes('human.txt')), `a comment carries the diff stat: ${JSON.stringify(f.comments())}`);
+  assert.ok(
+    f.comments().some((b) => b.includes('human.txt')),
+    `a comment carries the diff stat: ${JSON.stringify(f.comments())}`,
+  );
   assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded red');
 });
 
@@ -55,7 +84,12 @@ test('an ignored test added after an interrupted reset is held, not deleted', as
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = {
+    ...f.options.git,
+    resetTo: async () => {
+      throw new interpreter.CrashError('crash before reset');
+    },
+  };
   await seedExecution(f, { git });
   // An ignored file leaves HEAD and the tree as the agent left them, so only the saved ignored files can tell it apart.
   writeFileSync(join(f.commonDir, 'info', 'exclude'), 'test/human.test.mjs\n');
@@ -63,7 +97,11 @@ test('an ignored test added after an interrupted reset is held, not deleted', as
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2);
-  assert.equal(readFileSync(join(f.worktree, 'test', 'human.test.mjs'), 'utf8'), 'mine\n', 'the human file is untouched');
+  assert.equal(
+    readFileSync(join(f.worktree, 'test', 'human.test.mjs'), 'utf8'),
+    'mine\n',
+    'the human file is untouched',
+  );
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
   assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded red');
 });
@@ -73,7 +111,12 @@ test('a human change staged after an interrupted reset is held, not discarded', 
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = {
+    ...f.options.git,
+    resetTo: async () => {
+      throw new interpreter.CrashError('crash before reset');
+    },
+  };
   await seedExecution(f, { git });
   // Staged, then the working-tree bytes put back: HEAD and the worktree match what the agent left, only the index differs.
   const pkg = join(f.worktree, 'package.json');
@@ -94,7 +137,12 @@ test('an interrupted reset whose intent predates the index fingerprint is held',
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
-  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const git = {
+    ...f.options.git,
+    resetTo: async () => {
+      throw new interpreter.CrashError('crash before reset');
+    },
+  };
   const seeded = await seedExecution(f, { git });
   delete record.openIntents(seeded)[0].payload.left.index;
   await record.save(seeded);
@@ -108,19 +156,34 @@ test('an interrupted reset whose intent predates the index fingerprint is held',
 test('a Run resumes a partial restore without repeating the agent call', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   // The agent changes an ignored Protected File and adds another: an Integrity Violation, whose rollback restores both.
-  Object.assign(responses['red/1/red/1'].files, { '.claude/settings.local.json': '{"agent":true}\n', '.claude/agent.json': '{}\n' });
+  Object.assign(responses['red/1/red/1'].files, {
+    '.claude/settings.local.json': '{"agent":true}\n',
+    '.claude/agent.json': '{}\n',
+  });
   const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   mkdirSync(join(f.worktree, '.claude'));
   writeFileSync(join(f.worktree, '.claude', '.gitignore'), '*\n');
   writeFileSync(join(f.worktree, '.claude', 'settings.local.json'), '{"owner":true}\n');
   let reset = false;
-  const git = { ...f.options.git, resetTo: async (...args) => { await f.options.git.resetTo(...args); reset = true; } };
+  const git = {
+    ...f.options.git,
+    resetTo: async (...args) => {
+      await f.options.git.resetTo(...args);
+      reset = true;
+    },
+  };
   // Crashed after the extra is removed and the changed file deleted, before its rewrite.
-  const crashing = integrity.withGit(git, golden.crashFs(f.worktree, () => reset, { op: 'rm', n: 2, after: true }));
+  const crashing = integrity.withGit(
+    git,
+    golden.crashFs(f.worktree, () => reset, { op: 'rm', n: 2, after: true }),
+  );
   const seeded = await seedExecution(f, { git, integrity: crashing });
   assert.ok(!existsSync(join(f.worktree, '.claude', 'settings.local.json')), 'the crash came mid-restore');
-  assert.deepEqual(record.openIntents(seeded).map((e) => e.action), ['reset']);
+  assert.deepEqual(
+    record.openIntents(seeded).map((e) => e.action),
+    ['reset'],
+  );
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
@@ -129,7 +192,10 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   assert.ok(!existsSync(join(f.worktree, '.claude', 'agent.json')), 'the extra stays removed');
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its Integrity Violation');
-  assert.deepEqual(final.history.map((h) => h.kind), ['integrity violation']);
+  assert.deepEqual(
+    final.history.map((h) => h.kind),
+    ['integrity violation'],
+  );
   const reset1 = final.log.filter((e) => e.action === 'reset').map((e) => e.step);
   assert.deepEqual(reset1, ['intent', 'evidence', 'complete']);
 });
@@ -141,12 +207,21 @@ async function assertAdmissionHoldEvents(f, results, hold) {
   assert.equal(rec?.terminalReason?.decidedBy.hold, hold);
   assert.equal(rec.state, 'held');
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
-  assert.deepEqual(evs.map((e) => (e.type === 'action' ? `${e.vertex} ${e.action} ${e.recovery}` : e.type)),
-    ['ticket_start', 'needs-human hold-comment 0', 'needs-human hold-label 0', 'ticket_end']);
-  assert.ok(evs.every((e) => e.execution === rec.execution && e.run === lastRun(f)), 'one Execution and Run throughout');
+  assert.deepEqual(
+    evs.map((e) => (e.type === 'action' ? `${e.vertex} ${e.action} ${e.recovery}` : e.type)),
+    ['ticket_start', 'needs-human hold-comment 0', 'needs-human hold-label 0', 'ticket_end'],
+  );
+  assert.ok(
+    evs.every((e) => e.execution === rec.execution && e.run === lastRun(f)),
+    'one Execution and Run throughout',
+  );
   assert.equal(evs.at(-1).outcome, 'needs-human');
   assert.deepEqual(evs.at(-1).reason, rec.terminalReason);
-  assert.doesNotMatch(rec.terminalReason.text, /re-run|DELETE FROM/, 'the Terminal Reason is one sentence; the advice is in the comment');
+  assert.doesNotMatch(
+    rec.terminalReason.text,
+    /re-run|DELETE FROM/,
+    'the Terminal Reason is one sentence; the advice is in the comment',
+  );
   assert.equal(f.harness.calls.length, 0, 'no agent started');
 }
 

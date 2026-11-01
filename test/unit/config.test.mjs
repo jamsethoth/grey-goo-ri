@@ -13,9 +13,16 @@ const personaPath = (name) => join(repoRoot, 'defaults', 'personas', name);
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 // Rebuilds an object with every key in reverse order, so only key order differs.
-const reversed = (value) => Array.isArray(value) ? value.map(reversed)
-  : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, reversed(v)]))
-    : value;
+const reversed = (value) =>
+  Array.isArray(value)
+    ? value.map(reversed)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value)
+            .reverse()
+            .map(([k, v]) => [k, reversed(v)]),
+        )
+      : value;
 
 test('loadDefaults reads the shipped flow', () => {
   assert.equal(config.loadDefaults().flows.default.ticket.entry, 'red');
@@ -44,8 +51,12 @@ test('loadConfig reads the Layer identified by layerPath', (t) => {
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
   const defaults = config.loadDefaults();
   const base = {
-    flow: defaults.flows.default, files: defaults.files, harnesses: { claude: {} }, launchProfile: null,
-    commands: { test: 'npm test' }, testPaths: ['test/**'],
+    flow: defaults.flows.default,
+    files: defaults.files,
+    harnesses: { claude: {} },
+    launchProfile: null,
+    commands: { test: 'npm test' },
+    testPaths: ['test/**'],
   };
   const hash = config.configHash(base);
   assert.match(hash, /^[0-9a-f]{64}$/);
@@ -91,7 +102,9 @@ test('asset bytes change the Config Hash but installation paths do not', async (
   assert.ok(!one.input.includes(one.root), 'no install path in the hashed input');
   assert.ok(!two.input.includes(two.root), 'no install path in the hashed input');
   assert.equal(one.hash, two.hash);
-  const edited = await installed(t, 'edited', (root) => writeFileSync(join(root, 'defaults', 'personas', 'reviewer.md'), '# reviewer, edited\n'));
+  const edited = await installed(t, 'edited', (root) =>
+    writeFileSync(join(root, 'defaults', 'personas', 'reviewer.md'), '# reviewer, edited\n'),
+  );
   assert.notEqual(edited.hash, one.hash, 'a shipped Persona byte changes the hash');
 });
 
@@ -118,15 +131,43 @@ test('loadConfig reads each file from the Layer that declares its name', (t) => 
     home: '{"procedures":{"probe":{"actions":[{"id":"ask","do":"agent","brief":"ask.md","schema":"ask.schema.json"},{"id":"pr","do":"pr-upsert","body":"body.md"}],"recover":{"max":1,"brief":"again.md"},"claims":{"halt":{"stop":true,"comment":"stopped.md"}}}}}',
   });
   beside(repo, { 'repo-implementer.md': '# repo implementer\n' });
-  beside(home, { 'ask.md': 'ask', 'ask.schema.json': '{}', 'body.md': 'body', 'again.md': 'again', 'stopped.md': 'stopped' });
+  beside(home, {
+    'ask.md': 'ask',
+    'ask.schema.json': '{}',
+    'body.md': 'body',
+    'again.md': 'again',
+    'stopped.md': 'stopped',
+  });
   const { files } = config.loadConfig(repo, home);
-  assert.deepEqual(files['repo-implementer.md'], { bytes: '# repo implementer\n', hash: '906646d8774b848deba8dffcf8c2b5961d3f249ca95cc4b5f025d299d66036e1' });
-  assert.deepEqual(files['ask.md'], { bytes: 'ask', hash: '2f2fc7f2e9ce13b09b84f63d54d0b4a59f4dbd46aea41da67023817e2d0c5e59' });
-  assert.deepEqual(files['ask.schema.json'], { bytes: '{}', hash: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a' });
-  assert.deepEqual(files['body.md'], { bytes: 'body', hash: '230d8358dc8e8890b4c58deeb62912ee2f20357ae92a5cc861b98e68fe31acb5' });
-  assert.deepEqual(files['again.md'], { bytes: 'again', hash: 'b4c9e14061c2fd453b36700e3b0da008db2189c711ac629f0f583089164e267d' });
-  assert.deepEqual(files['stopped.md'], { bytes: 'stopped', hash: '8322e87d24582952e5c996da182de0eca66dd2bf58fba5ec56a325c656f21b38' });
-  assert.equal(files['personas/implementer.md'].bytes, readFileSync(personaPath('implementer.md'), 'utf8'), 'the defaults keep their own files');
+  assert.deepEqual(files['repo-implementer.md'], {
+    bytes: '# repo implementer\n',
+    hash: '906646d8774b848deba8dffcf8c2b5961d3f249ca95cc4b5f025d299d66036e1',
+  });
+  assert.deepEqual(files['ask.md'], {
+    bytes: 'ask',
+    hash: '2f2fc7f2e9ce13b09b84f63d54d0b4a59f4dbd46aea41da67023817e2d0c5e59',
+  });
+  assert.deepEqual(files['ask.schema.json'], {
+    bytes: '{}',
+    hash: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+  });
+  assert.deepEqual(files['body.md'], {
+    bytes: 'body',
+    hash: '230d8358dc8e8890b4c58deeb62912ee2f20357ae92a5cc861b98e68fe31acb5',
+  });
+  assert.deepEqual(files['again.md'], {
+    bytes: 'again',
+    hash: 'b4c9e14061c2fd453b36700e3b0da008db2189c711ac629f0f583089164e267d',
+  });
+  assert.deepEqual(files['stopped.md'], {
+    bytes: 'stopped',
+    hash: '8322e87d24582952e5c996da182de0eca66dd2bf58fba5ec56a325c656f21b38',
+  });
+  assert.equal(
+    files['personas/implementer.md'].bytes,
+    readFileSync(personaPath('implementer.md'), 'utf8'),
+    'the defaults keep their own files',
+  );
 });
 
 test('an inherited file reference keeps its declaring Layer', (t) => {
@@ -143,11 +184,16 @@ test('an inherited file reference keeps its declaring Layer', (t) => {
 });
 
 test('an inline Vertex persona loads from its declaring Layer', (t) => {
-  const { repo, home } = layers(t, { repo: '{"flows":{"default":{"ticket":{"vertices":{"red":{"persona":"red-persona.md"}}}}}}' });
+  const { repo, home } = layers(t, {
+    repo: '{"flows":{"default":{"ticket":{"vertices":{"red":{"persona":"red-persona.md"}}}}}}',
+  });
   beside(repo, { 'red-persona.md': '# red only\n' });
   const c = config.loadConfig(repo, home);
   assert.equal(c.flows.default.ticket.vertices.red.persona, 'red-persona.md');
-  assert.deepEqual(c.files['red-persona.md'], { bytes: '# red only\n', hash: '3313d3429e16c51e825e1913e361874833f523924d91c9f303f616a03540243a' });
+  assert.deepEqual(c.files['red-persona.md'], {
+    bytes: '# red only\n',
+    hash: '3313d3429e16c51e825e1913e361874833f523924d91c9f303f616a03540243a',
+  });
 });
 
 test('a name two Layers declare for different files is a load error naming both', (t) => {
@@ -164,7 +210,9 @@ test('a name two Layers declare for different files is a load error naming both'
 
 test('a declared file that does not exist is a load error naming the Layer file and the name', (t) => {
   const { repo, home } = layers(t, { repo: '{"agents":{"implementer":{"persona":"missing.md"}}}' });
-  assert.throws(() => config.loadConfig(repo, home), { message: `${config.layerPath(repo)} names file "missing.md", which cannot be read (ENOENT)` });
+  assert.throws(() => config.loadConfig(repo, home), {
+    message: `${config.layerPath(repo)} names file "missing.md", which cannot be read (ENOENT)`,
+  });
 });
 
 test('a Flow or Procedure a later Layer declares replaces the earlier one of its name whole', (t) => {
@@ -173,12 +221,19 @@ test('a Flow or Procedure a later Layer declares replaces the earlier one of its
   });
   const c = config.loadConfig(repo, home);
   assert.deepEqual(c.procedures.review, { actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }] });
-  assert.deepEqual(c.flows.default, { plan: null, actionCap: 5, ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } } });
+  assert.deepEqual(c.flows.default, {
+    plan: null,
+    actionCap: 5,
+    ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } },
+  });
   assert.equal(c.procedures.implement.actions[0].id, 'green', 'a Procedure the Layer does not declare stays');
 });
 
 test('loadConfig takes Declared Commands whole from the repository Layer', (t) => {
-  const { repo, home } = layers(t, { repo: '{"commands":{"test":"npm test","lint-js":"npm run lint"}}', home: '{"baseBranch":"dev"}' });
+  const { repo, home } = layers(t, {
+    repo: '{"commands":{"test":"npm test","lint-js":"npm run lint"}}',
+    home: '{"baseBranch":"dev"}',
+  });
   const c = config.loadConfig(repo, home);
   assert.deepEqual(c.commands, { test: 'npm test', 'lint-js': 'npm run lint' });
   assert.equal(c.baseBranch, 'dev');
@@ -192,16 +247,24 @@ test('loadConfig reads no Declared Commands from AGENTS.md', (t) => {
 });
 
 test('a commands key in the user Layer is a load error naming the file', (t) => {
-  const { repo, home } = layers(t, { repo: '{"commands":{"test":"npm test"}}', home: '{"commands":{"test":"npm test"}}' });
-  assert.throws(() => config.loadConfig(repo, home), (err) => {
-    assert.equal(err.message, `${config.layerPath(home)}: commands may be set only in a repository Layer`);
-    return true;
+  const { repo, home } = layers(t, {
+    repo: '{"commands":{"test":"npm test"}}',
+    home: '{"commands":{"test":"npm test"}}',
   });
+  assert.throws(
+    () => config.loadConfig(repo, home),
+    (err) => {
+      assert.equal(err.message, `${config.layerPath(home)}: commands may be set only in a repository Layer`);
+      return true;
+    },
+  );
 });
 
 test('a testPaths key in the user Layer is a load error naming the file', (t) => {
   const { repo, home } = layers(t, { repo: '{"testPaths":["test/**"]}', home: '{"testPaths":["spec/**"]}' });
-  assert.throws(() => config.loadConfig(repo, home), { message: `${config.layerPath(home)}: testPaths may be set only in a repository Layer` });
+  assert.throws(() => config.loadConfig(repo, home), {
+    message: `${config.layerPath(home)}: testPaths may be set only in a repository Layer`,
+  });
 });
 
 test('a testPaths key in the defaults Layer is a load error naming the file', async (t) => {
@@ -217,11 +280,13 @@ test('a testPaths key in the defaults Layer is a load error naming the file', as
 
 test('a Layer with a duplicate key in one object is a load error naming the file and key', (t) => {
   const repoDup = layers(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
-  assert.throws(() => config.loadConfig(repoDup.repo, repoDup.home),
-    { message: `${config.layerPath(repoDup.repo)}: key "test" appears twice in one object` });
+  assert.throws(() => config.loadConfig(repoDup.repo, repoDup.home), {
+    message: `${config.layerPath(repoDup.repo)}: key "test" appears twice in one object`,
+  });
   const userDup = layers(t, { home: '{"agents":{"implementer":{"model":"a","model":"b"}}}' });
-  assert.throws(() => config.loadConfig(userDup.repo, userDup.home),
-    { message: `${config.layerPath(userDup.home)}: key "model" appears twice in one object` });
+  assert.throws(() => config.loadConfig(userDup.repo, userDup.home), {
+    message: `${config.layerPath(userDup.home)}: key "model" appears twice in one object`,
+  });
   // Equal keys in sibling objects, in array elements and inside a string value are not duplicates.
   const fine = layers(t, { repo: '{"a":{"k":1},"b":{"k":"\\"k\\": 2"},"c":[{"k":1},{"k":2}],"d":{"k\\"":1,"k":2}}' });
   assert.deepEqual(config.loadConfig(fine.repo, fine.home).b, { k: '"k": 2' });
@@ -233,44 +298,87 @@ test('commandProblems accepts a valid set and names each malformed entry', () =>
   const missing = `${layerFile} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
   assert.deepEqual(config.commandProblems({ test: 'npm test', 'lint-js': 'x' }, layerFile), []);
   assert.deepEqual(config.commandProblems(undefined, layerFile), [missing]);
-  assert.deepEqual(config.commandProblems({ Test: 'npm test' }, layerFile), [`${layerFile}: command name "Test" must match [a-z][a-z0-9-]*`, missing]);
+  assert.deepEqual(config.commandProblems({ Test: 'npm test' }, layerFile), [
+    `${layerFile}: command name "Test" must match [a-z][a-z0-9-]*`,
+    missing,
+  ]);
 });
 
 for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) {
   test(`commandProblems names a test command of ${JSON.stringify(bad)} as malformed`, () => {
-    assert.deepEqual(config.commandProblems({ test: bad }, layerFile), [`${layerFile}: command test must be a non-empty single-line string`]);
+    assert.deepEqual(config.commandProblems({ test: bad }, layerFile), [
+      `${layerFile}: command test must be a non-empty single-line string`,
+    ]);
   });
 }
 
 for (const bad of [['npm test'], 'npm test', null]) {
   test(`commandProblems names commands of ${JSON.stringify(bad)} as not an object`, () => {
-    assert.deepEqual(config.commandProblems(bad, layerFile), [`${layerFile}: commands must be an object from name to command line`]);
+    assert.deepEqual(config.commandProblems(bad, layerFile), [
+      `${layerFile}: commands must be an object from name to command line`,
+    ]);
   });
 }
 
 test('testPathsProblems names a missing, empty or malformed testPaths', () => {
   const notAList = `${layerFile}: testPaths must be a non-empty list of glob strings`;
-  const entry = (shown) => `${layerFile}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] ? \\ : or control character`;
+  const entry = (shown) =>
+    `${layerFile}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] ? \\ : or control character`;
   assert.deepEqual(config.testPathsProblems(['test/**', '**/*.spec.*'], layerFile), []);
-  assert.deepEqual(config.testPathsProblems(undefined, layerFile), [`${layerFile} declares no testPaths; merge {"testPaths":["<glob>"]} into it`]);
+  assert.deepEqual(config.testPathsProblems(undefined, layerFile), [
+    `${layerFile} declares no testPaths; merge {"testPaths":["<glob>"]} into it`,
+  ]);
   assert.deepEqual(config.testPathsProblems([], layerFile), [notAList]);
   assert.deepEqual(config.testPathsProblems('test/**', layerFile), [notAList]);
   assert.deepEqual(config.testPathsProblems({ globs: ['test/**'] }, layerFile), [notAList]);
-  assert.deepEqual(config.testPathsProblems(['test/**', 1, '', ' ', 'a\nb', null], layerFile),
-    [entry('1'), entry('""'), entry('" "'), entry('"a\\nb"'), entry('null')]);
+  assert.deepEqual(config.testPathsProblems(['test/**', 1, '', ' ', 'a\nb', null], layerFile), [
+    entry('1'),
+    entry('""'),
+    entry('" "'),
+    entry('"a\\nb"'),
+    entry('null'),
+  ]);
 });
 
 // Git rejects a pathspec outside the repository only when the first Attempt lists its tests, after admission's effects,
 // and reads brackets, backslashes, a partial "**" and "?" (one byte of a UTF-8 name) differently from Test Immutability,
 // so preflight refuses them.
 test('testPathsProblems names a testPaths entry git would reject or read differently from Test Immutability', () => {
-  const entry = (shown) => `${layerFile}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] ? \\ : or control character`;
-  assert.deepEqual(config.testPathsProblems(['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs'], layerFile), []);
-  assert.deepEqual(config.testPathsProblems(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], layerFile),
-    [entry('"../tests/**"'), entry('"/abs/**"'), entry('"C:/x/**"'), entry('"./test/**"'), entry('"test//x"'), entry('"test/"')]);
-  assert.deepEqual(config.testPathsProblems(['spec/[ab].mjs', 'spec\\a.mjs', '**.test.mjs', 'deep**', 'a/***/b', 'a\u0000b', 'spec/a?.mjs'], layerFile),
-    [entry('"spec/[ab].mjs"'), entry('"spec\\\\a.mjs"'), entry('"**.test.mjs"'), entry('"deep**"'), entry('"a/***/b"'), entry('"a\\u0000b"'),
-      entry('"spec/a?.mjs"')]);
+  const entry = (shown) =>
+    `${layerFile}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] ? \\ : or control character`;
+  assert.deepEqual(
+    config.testPathsProblems(
+      ['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs'],
+      layerFile,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    config.testPathsProblems(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], layerFile),
+    [
+      entry('"../tests/**"'),
+      entry('"/abs/**"'),
+      entry('"C:/x/**"'),
+      entry('"./test/**"'),
+      entry('"test//x"'),
+      entry('"test/"'),
+    ],
+  );
+  assert.deepEqual(
+    config.testPathsProblems(
+      ['spec/[ab].mjs', 'spec\\a.mjs', '**.test.mjs', 'deep**', 'a/***/b', 'a\u0000b', 'spec/a?.mjs'],
+      layerFile,
+    ),
+    [
+      entry('"spec/[ab].mjs"'),
+      entry('"spec\\\\a.mjs"'),
+      entry('"**.test.mjs"'),
+      entry('"deep**"'),
+      entry('"a/***/b"'),
+      entry('"a\\u0000b"'),
+      entry('"spec/a?.mjs"'),
+    ],
+  );
 });
 
 test('this repository Layer declares the default test globs as its testPaths', (t) => {
@@ -283,7 +391,9 @@ test('this repository AGENTS.md Commands line matches its repository Layer', (t)
   const md = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8');
   const [, list] = md.match(/^## Commands\n\n((?:- .+\n)+)/m);
   // A bullet whose name is a valid command name declares that command; `fast stage` is a usage note.
-  const listed = Object.fromEntries([...list.matchAll(/^- ([a-z][a-z0-9-]*): `([^`]+)`/gm)].map(([, name, line]) => [name, line]));
+  const listed = Object.fromEntries(
+    [...list.matchAll(/^- ([a-z][a-z0-9-]*): `([^`]+)`/gm)].map(([, name, line]) => [name, line]),
+  );
   assert.equal(listed.test, 'node scripts/run-suite.mjs');
   const { home } = layers(t);
   assert.deepEqual(config.loadConfig(repoRoot, home).commands, listed);

@@ -97,10 +97,17 @@ test('a killed holder frees the lock', { timeout: 120_000 }, async (t) => {
 
 // Runs an ES module script in a node child started with `flags`, resolving with its exit code, stdout and stderr.
 function runScript(flags, script) {
-  const child = spawn(process.execPath, [...flags, '--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '', err = '';
-  child.stdout.setEncoding('utf8').on('data', (chunk) => { out += chunk; });
-  child.stderr.setEncoding('utf8').on('data', (chunk) => { err += chunk; });
+  const child = spawn(process.execPath, [...flags, '--input-type=module', '-e', script], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let out = '',
+    err = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk) => {
+    out += chunk;
+  });
+  child.stderr.setEncoding('utf8').on('data', (chunk) => {
+    err += chunk;
+  });
   return new Promise((resolve) => child.on('close', (code) => resolve({ code, out, err })));
 }
 
@@ -116,7 +123,11 @@ process.stdout.write(JSON.stringify({ owns: !!handle?.db, second }));
 await locks.release(handle);`;
   const { code, out, err } = await runScript(['--expose-gc'], script);
   assert.deepEqual({ code, err }, { code: 0, err: '' });
-  assert.deepEqual(JSON.parse(out), { owns: true, second: null }, 'the handle owns the connection, and after a collection the lock is still held');
+  assert.deepEqual(
+    JSON.parse(out),
+    { owns: true, second: null },
+    'the handle owns the connection, and after a collection the lock is still held',
+  );
 });
 
 test('the lock module needs no experimental flag for node:sqlite', async (t) => {
@@ -126,7 +137,11 @@ test('the lock module needs no experimental flag for node:sqlite', async (t) => 
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo'));`;
   const { code, err } = await runScript([], script);
-  assert.deepEqual({ code, err }, { code: 0, err: '' }, 'taking a lock in a flagless node prints no ExperimentalWarning');
+  assert.deepEqual(
+    { code, err },
+    { code: 0, err: '' },
+    'taking a lock in a flagless node prints no ExperimentalWarning',
+  );
 });
 
 // Times the case's lock waits on a clock whose sleeps pass at once, moving its time on and running `during` first.
@@ -139,7 +154,14 @@ const timedLocks = (t, during = () => {}) => {
   let ended = false;
   const sleeps = [];
   const open = { holder: null, waits: [] };
-  const previous = locks.setClock({ now: () => (ended ? Infinity : now), sleep: async (ms) => { sleeps.push(ms); await during(); now += ms; } });
+  const previous = locks.setClock({
+    now: () => (ended ? Infinity : now),
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      await during();
+      now += ms;
+    },
+  });
   t.after(async () => {
     ended = true;
     locks.setClock(previous);
@@ -149,7 +171,10 @@ const timedLocks = (t, during = () => {}) => {
   return {
     sleeps,
     holding: (handle) => (open.holder = handle),
-    waiting: (promise) => { open.waits.push(promise); return promise; },
+    waiting: (promise) => {
+      open.waits.push(promise);
+      return promise;
+    },
   };
 };
 
@@ -182,18 +207,32 @@ test('withLock forwards its acquisition timeout without invoking the callback', 
   const commonDir = await tempCommonDir(t);
   const first = timed.holding(await locks.acquire(commonDir, 'repo'));
   let ran = false;
-  await assert.rejects(timed.waiting(locks.withLock(commonDir, 'repo', async () => { ran = true; }, { timeoutMs: 150, pollMs: 20 })),
-    (err) => err instanceof locks.LockTimeoutError && err.message.includes('150ms'));
+  await assert.rejects(
+    timed.waiting(
+      locks.withLock(
+        commonDir,
+        'repo',
+        async () => {
+          ran = true;
+        },
+        { timeoutMs: 150, pollMs: 20 },
+      ),
+    ),
+    (err) => err instanceof locks.LockTimeoutError && err.message.includes('150ms'),
+  );
   assert.equal(ran, false, 'the callback never runs without the lock');
   await locks.release(first);
 });
 
 test('withLock releases on throw', async (t) => {
   const commonDir = await tempCommonDir(t);
-  await assert.rejects(locks.withLock(commonDir, 'epic-1', async () => {
-    assert.equal(await locks.tryAcquire(commonDir, 'epic-1'), null, 'held inside fn');
-    throw new Error('boom');
-  }), /boom/);
+  await assert.rejects(
+    locks.withLock(commonDir, 'epic-1', async () => {
+      assert.equal(await locks.tryAcquire(commonDir, 'epic-1'), null, 'held inside fn');
+      throw new Error('boom');
+    }),
+    /boom/,
+  );
   const handle = await locks.tryAcquire(commonDir, 'epic-1');
   assert.ok(handle, 'released after throw');
   await locks.release(handle);
@@ -205,7 +244,9 @@ test('withLock releases on throw', async (t) => {
 test('contending processes never throw and grant at most one owner', { timeout: 120_000 }, async (t) => {
   const commonDir = await tempCommonDir(t);
   const children = Array.from({ length: 6 }, () => {
-    const child = spawn(process.execPath, [contender, commonDir, 'repo', 'barrier'], { stdio: ['pipe', 'pipe', 'inherit'] });
+    const child = spawn(process.execPath, [contender, commonDir, 'repo', 'barrier'], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+    });
     t.after(() => child.kill());
     const exited = new Promise((resolve) => child.on('exit', resolve));
     return { child, exited, lines: createInterface({ input: child.stdout })[Symbol.asyncIterator]() };
@@ -216,7 +257,11 @@ test('contending processes never throw and grant at most one owner', { timeout: 
   const outputs = await Promise.all(children.map(async ({ lines }) => JSON.parse((await lines.next()).value)));
   for (const { child } of children) child.stdin.end();
   await Promise.all(children.map(({ exited }) => exited));
-  assert.deepEqual(outputs.filter((o) => o.error), [], 'no contender throws');
+  assert.deepEqual(
+    outputs.filter((o) => o.error),
+    [],
+    'no contender throws',
+  );
   const won = outputs.filter((o) => o.handle).length;
   assert.ok(won <= 1, `at most one owner, got ${won}`);
   const handle = await acquireWhenFreed(t, commonDir);

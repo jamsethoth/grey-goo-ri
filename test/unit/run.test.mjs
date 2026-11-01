@@ -10,13 +10,30 @@ import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, fixture, ticketResult, failComment, lastRun, EPIC, epicOf,
+  TICKET,
+  BRANCH,
+  IN_PROGRESS,
+  fixture,
+  ticketResult,
+  failComment,
+  lastRun,
+  EPIC,
+  epicOf,
 } from '../support/run.mjs';
 
 const LABEL_SETUPS = [
-  { repoLabels: [], created: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'] },
-  { repoLabels: ['gg:state:in-progress'], created: ['gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'] },
-  { repoLabels: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'], created: [] },
+  {
+    repoLabels: [],
+    created: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
+  },
+  {
+    repoLabels: ['gg:state:in-progress'],
+    created: ['gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
+  },
+  {
+    repoLabels: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
+    created: [],
+  },
 ];
 for (const { repoLabels, created } of LABEL_SETUPS) {
   test(`a Run ensures missing State Labels once immediately before its first label edit: ${repoLabels.length} of 4 present`, async (t) => {
@@ -26,10 +43,17 @@ for (const { repoLabels, created } of LABEL_SETUPS) {
     assert.equal(reads.length, 1, 'one repository label read per Run');
     const creates = f.gh.calls.filter((c) => c.args[0] === 'label');
     assert.deepEqual(creates.map((c) => c.args[2]).sort(), created);
-    assert.deepEqual(creates.filter((c) => c.args.includes('--force')), [], 'no create forces');
+    assert.deepEqual(
+      creates.filter((c) => c.args.includes('--force')),
+      [],
+      'no create forces',
+    );
     const firstEdit = f.gh.calls.findIndex((c) => c.args[0] === 'issue' && c.args[1] === 'edit');
-    assert.deepEqual(f.gh.calls.slice(firstEdit - 1 - created.length, firstEdit), [reads[0], ...creates],
-      'the label read and its creates immediately precede the first label edit');
+    assert.deepEqual(
+      f.gh.calls.slice(firstEdit - 1 - created.length, firstEdit),
+      [reads[0], ...creates],
+      'the label read and its creates immediately precede the first label edit',
+    );
   });
 }
 
@@ -38,10 +62,21 @@ test('a State Label creation failure uses the label-failure log, Event and exit 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1);
   assert.equal(ticketResult(results).labelFailed, true);
-  assert.ok(f.logs.some((l) => l.includes('label creation denied')), JSON.stringify(f.logs));
-  assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET && e.error.includes('label creation denied')));
+  assert.ok(
+    f.logs.some((l) => l.includes('label creation denied')),
+    JSON.stringify(f.logs),
+  );
+  assert.ok(
+    f
+      .readEvents()
+      .some((e) => e.type === 'label_failed' && e.ticket === TICKET && e.error.includes('label creation denied')),
+  );
   // Each failed create is confirmed by one more read before the setup fails, and the next label write repeats both.
-  assert.equal(f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length, 4, 'a failed setup is retried at the next label write');
+  assert.equal(
+    f.gh.calls.filter((c) => c.args[0] === 'api' && c.args.at(-1).includes('/labels')).length,
+    4,
+    'a failed setup is retried at the next label write',
+  );
 });
 
 test('a concurrent State Label create does not fail the Run', async (t) => {
@@ -82,7 +117,15 @@ test('a transient State Label setup failure is retried by the later label write'
 
 const NOT_READY = [
   [{ state: 'CLOSED' }, 'closed'],
-  [{ blockedBy: [{ number: 3, state: 'OPEN' }, { number: 5, state: 'OPEN' }] }, 'blocked by #3, #5'],
+  [
+    {
+      blockedBy: [
+        { number: 3, state: 'OPEN' },
+        { number: 5, state: 'OPEN' },
+      ],
+    },
+    'blocked by #3, #5',
+  ],
   [{ labels: [{ name: 'gg:state:ready-for-qa' }] }, 'carries State Label gg:state:ready-for-qa'],
 ];
 for (const [issue, reason] of NOT_READY) {
@@ -90,46 +133,93 @@ for (const [issue, reason] of NOT_READY) {
     const f = fixture(t, { issue });
     assert.equal(ticketResult(await run.runTarget(f.options)).outcome, 'skipped');
     assert.ok(f.logs.includes(`[main] #${TICKET} skipped: it is not ready: ${reason}`), JSON.stringify(f.logs));
-    assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']]);
+    assert.deepEqual(
+      f.gh.calls.map((c) => c.args.slice(0, 2)),
+      [['issue', 'view']],
+    );
   });
 }
 
 test('every line a Run prints names its repository, in the terminal and in run.log', async (t) => {
   // A fault whose report gets HTTP 502 and whose label edit fails logs from run, the interpreter and github.
   const f = fixture(t, { labels: [IN_PROGRESS], failEdit: true });
-  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
-    configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  const rec = record.createExecution({
+    commonDir: f.commonDir,
+    ticket: TICKET,
+    epic: null,
+    flow: { name: 'default', entry: 'red' },
+    configHash: 'x',
+    run: '20261016T000000Z-seed00',
+    worktree: f.worktree,
+    branch: BRANCH,
+    base: 'main',
+  });
   await record.save(rec);
-  f.options.git = { ...f.options.git, ensureWorktree: async () => { throw new Error('worktree add failed'); } };
+  f.options.git = {
+    ...f.options.git,
+    ensureWorktree: async () => {
+      throw new Error('worktree add failed');
+    },
+  };
   failComment(f);
 
   await run.runTarget(f.options);
   const prefix = `[${basename(f.mainRoot)}] `;
-  assert.ok(f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} ERROR worktree add failed`)), `the admission error: ${JSON.stringify(f.logs)}`);
-  assert.ok(f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} fault report failed:`)), `the report failure: ${JSON.stringify(f.logs)}`);
-  assert.ok(f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} ERROR label update`)), `the label failure: ${JSON.stringify(f.logs)}`);
-  assert.ok(f.logs.some((l) => l.startsWith(prefix) && /failure, retry 1 of/.test(l)), `the retry line: ${JSON.stringify(f.logs)}`);
-  assert.deepEqual(f.logs.filter((l) => !l.startsWith(prefix)), [], 'every line names the repository');
+  assert.ok(
+    f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} ERROR worktree add failed`)),
+    `the admission error: ${JSON.stringify(f.logs)}`,
+  );
+  assert.ok(
+    f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} fault report failed:`)),
+    `the report failure: ${JSON.stringify(f.logs)}`,
+  );
+  assert.ok(
+    f.logs.some((l) => l.startsWith(`${prefix}#${TICKET} ERROR label update`)),
+    `the label failure: ${JSON.stringify(f.logs)}`,
+  );
+  assert.ok(
+    f.logs.some((l) => l.startsWith(prefix) && /failure, retry 1 of/.test(l)),
+    `the retry line: ${JSON.stringify(f.logs)}`,
+  );
+  assert.deepEqual(
+    f.logs.filter((l) => !l.startsWith(prefix)),
+    [],
+    'every line names the repository',
+  );
   const runLog = readFileSync(join(f.commonDir, 'gg', 'runs', lastRun(f), 'run.log'), 'utf8');
-  assert.equal(runLog.replace(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z /gm, ''), f.logs.map((m) => `${m}\n`).join(''), 'run.log holds every line, after its timestamp');
+  assert.equal(
+    runLog.replace(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z /gm, ''),
+    f.logs.map((m) => `${m}\n`).join(''),
+    'run.log holds every line, after its timestamp',
+  );
 });
 
 test('every error a Run throws names its repository', async (t) => {
   const p = fixture(t);
   p.options.config.agents.implementer.harness = 'nope';
-  const preflight = await run.runTarget(p.options).then(() => null, (e) => e);
+  const preflight = await run.runTarget(p.options).then(
+    () => null,
+    (e) => e,
+  );
   assert.ok(preflight?.message.startsWith('[main] preflight failed:'), preflight?.message);
 
   const v = fixture(t);
-  github.setGh(async (args) => { throw new Error(`gh ${args.join(' ')} exited 1\nHTTP 404: Not Found`); });
-  const view = await run.runTarget(v.options).then(() => null, (e) => e);
+  github.setGh(async (args) => {
+    throw new Error(`gh ${args.join(' ')} exited 1\nHTTP 404: Not Found`);
+  });
+  const view = await run.runTarget(v.options).then(
+    () => null,
+    (e) => e,
+  );
   assert.ok(view?.message.startsWith(`[main] gh issue view ${TICKET} `), view?.message);
 
   const f = fixture(t, { issues: epicOf([21], { 21: { state: 'CLOSED' } }) });
   f.options.target = EPIC;
-  const epic = await run.runTarget(f.options).then(() => null, (e) => e);
+  const epic = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   assert.ok(epic?.message.startsWith(`[main] #${EPIC}: nothing ready`), epic?.message);
-
 });
 
 test('preflight names every failing vertex in one error, before any gh call, worktree or run directory', async (t) => {
@@ -137,11 +227,17 @@ test('preflight names every failing vertex in one error, before any gh call, wor
   f.options.config.agents.implementer.harness = 'nope';
   f.options.config.agents.reviewer.harness = 'claude';
   f.options.harnesses.claude = await import('../../lib/harnesses/claude.mjs');
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   assert.ok(err, 'preflight rejects the run');
   assert.match(err.message, /implementer[^]*nope|nope[^]*implementer/, 'the unknown harness is named with its vertex');
   assert.match(err.message, /reviewer/);
-  assert.equal(err.message.split('\n').find((l) => l.startsWith('vertex reviewer')), 'vertex reviewer: harness claude: not implemented');
+  assert.equal(
+    err.message.split('\n').find((l) => l.startsWith('vertex reviewer')),
+    'vertex reviewer: harness claude: not implemented',
+  );
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.worktrees(), 1, 'no worktree');
   assert.equal(existsSync(join(f.root, 'wt')), false, 'no worktree root');
@@ -152,7 +248,10 @@ test('preflight names every failing vertex in one error, before any gh call, wor
 test('preflight rejects a repository Layer without testPaths', async (t) => {
   const f = fixture(t);
   delete f.options.config.testPaths;
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   const file = config.layerPath(f.mainRoot);
   assert.deepEqual(err?.message.split('\n'), [
     '[main] preflight failed:',
@@ -167,7 +266,10 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
   const f = fixture(t, { fullFlow: true });
   f.options.config.agents.implementer.harness = null;
   f.options.config.agents.reviewer.harness = null;
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   assert.equal(err.exitCode, 2);
   const examples = fileURLToPath(new URL('../../examples/', import.meta.url));
   assert.deepEqual(err.message.split('\n'), [
@@ -185,10 +287,17 @@ test('preflight names an unset harness and an unknown harness in one error', asy
   const f = fixture(t, { fullFlow: true });
   f.options.config.agents.implementer.harness = null;
   f.options.config.agents.reviewer.harness = 'nope';
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   assert.ok(err, 'preflight rejects the run');
   assert.match(err.message, /agent implementer names no harness/);
-  assert.match(err.message, /agent reviewer names harness "nope", which is not registered/, 'the unknown harness is named with its Agent');
+  assert.match(
+    err.message,
+    /agent reviewer names harness "nope", which is not registered/,
+    'the unknown harness is named with its Agent',
+  );
   assert.equal(err.exitCode, 2, 'an unset harness exits 2');
   assert.deepEqual(f.gh.calls, [], 'no gh call');
 });
@@ -197,10 +306,14 @@ test('preflight names an unset harness and an unknown harness in one error', asy
 test('gg run rejects a Flow gg doctor rejects, with the same message', async (t) => {
   const f = fixture(t);
   f.options.config.procedures.implement.actions[1].command = 'lint';
-  const line = 'error: procedures.implement.actions[1]: Check test names command "lint", which the repository Layer does not declare';
+  const line =
+    'error: procedures.implement.actions[1]: Check test names command "lint", which the repository Layer does not declare';
   const { text } = doctor.doctor({ config: f.options.config, harnesses: f.options.harnesses });
   assert.ok(text.includes(`\n${line}\n`), text);
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', line]);
   assert.equal(err.exitCode, 1);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
@@ -209,9 +322,14 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
 test('gg run rejects a required input that a route may not produce', async (t) => {
   const f = fixture(t);
   f.options.config.flows.default.ticket.vertices.green.inputs.previous = { from: 'green.commit.files' };
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
-  assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:',
-    'error: flows.default.ticket.vertices.green.inputs.previous: input previous is required, but some route to green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional']);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    'error: flows.default.ticket.vertices.green.inputs.previous: input previous is required, but some route to green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+  ]);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.harness.calls.length, 0, 'no Visit');
 });
@@ -219,9 +337,14 @@ test('gg run rejects a required input that a route may not produce', async (t) =
 test('gg run rejects pick over a value that is not a list of objects', async (t) => {
   const f = fixture(t);
   f.options.config.flows.default.ticket.vertices.green.inputs.names = { from: 'red.commit.files', pick: 'name' };
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
-  assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:',
-    'error: flows.default.ticket.vertices.green.inputs.names: pick needs a list of objects; "red.commit.files" is {"kind":"list","of":{"kind":"string"}}']);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    'error: flows.default.ticket.vertices.green.inputs.names: pick needs a list of objects; "red.commit.files" is {"kind":"list","of":{"kind":"string"}}',
+  ]);
   assert.deepEqual(f.gh.calls, [], 'no gh call');
   assert.equal(f.harness.calls.length, 0, 'no Visit');
 });
@@ -229,7 +352,10 @@ test('gg run rejects pick over a value that is not a list of objects', async (t)
 test('an Agent naming no harness still exits 2 naming the example Layers', async (t) => {
   const f = fixture(t);
   f.options.config.agents.implementer.harness = null;
-  const err = await run.runTarget(f.options).then(() => null, (e) => e);
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
   const examples = fileURLToPath(new URL('../../examples/', import.meta.url));
   assert.deepEqual(err?.message.split('\n'), [
     '[main] preflight failed:',

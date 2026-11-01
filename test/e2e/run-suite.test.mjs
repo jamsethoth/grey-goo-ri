@@ -31,15 +31,22 @@ function launcherCopy(t, { eslint = 0, tsc = 0, installed = true } = {}) {
     writeFileSync(join(root, 'node_modules', 'eslint', 'bin', 'eslint.js'), step('eslint', eslint));
     writeFileSync(join(root, 'node_modules', 'typescript', 'bin', 'tsc'), step('tsc', tsc));
   }
-  writeFileSync(join(root, 'test', 'unit', 'steps.test.mjs'), "import { appendFileSync } from 'node:fs';\nappendFileSync('steps.log', 'tests\\n');\n");
+  writeFileSync(
+    join(root, 'test', 'unit', 'steps.test.mjs'),
+    "import { appendFileSync } from 'node:fs';\nappendFileSync('steps.log', 'tests\\n');\n",
+  );
   // The runner running this file sets NODE_TEST_CONTEXT, which would make the copy's own node --test run no file.
   const { NODE_TEST_CONTEXT, ...env } = process.env;
-  const run = (argv) => spawnSync(process.execPath, [join(root, 'scripts', 'run-suite.mjs'), ...argv], { encoding: 'utf8', env });
+  const run = (argv) =>
+    spawnSync(process.execPath, [join(root, 'scripts', 'run-suite.mjs'), ...argv], { encoding: 'utf8', env });
   const steps = () => (existsSync(join(root, 'steps.log')) ? readFileSync(join(root, 'steps.log'), 'utf8') : '');
   return { run, steps };
 }
 
-for (const [stage, argv] of [['full', []], ['fast', ['fast']]]) {
+for (const [stage, argv] of [
+  ['full', []],
+  ['fast', ['fast']],
+]) {
   test(`the ${stage} stage runs lint, the type check and the tests in that order and exits 0`, (t) => {
     const copy = launcherCopy(t);
     const r = copy.run(argv);
@@ -63,7 +70,10 @@ for (const [stage, argv] of [['full', []], ['fast', ['fast']]]) {
     const copy = launcherCopy(t, { installed: false });
     const r = copy.run(argv);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /node_modules\/eslint\/bin\/eslint\.js and node_modules\/typescript\/bin\/tsc not found: run npm ci first/);
+    assert.match(
+      r.stderr,
+      /node_modules\/eslint\/bin\/eslint\.js and node_modules\/typescript\/bin\/tsc not found: run npm ci first/,
+    );
     assert.equal(copy.steps(), '');
   });
 }

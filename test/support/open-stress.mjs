@@ -12,17 +12,24 @@ import { fileURLToPath } from 'node:url';
 if (!process.env.NODE_TEST_CONTEXT) {
   const [rounds = 30] = process.argv.slice(2).map(Number);
   const saver = fileURLToPath(new URL('./record-saver.mjs', import.meta.url));
-  const saveOnce = (commonDir, ticket) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.on('close', (code) => resolve({ ticket, code, err }));
-  });
+  const saveOnce = (commonDir, ticket) =>
+    new Promise((resolve) => {
+      const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let err = '';
+      child.stderr.on('data', (chunk) => {
+        err += chunk;
+      });
+      child.on('close', (code) => resolve({ ticket, code, err }));
+    });
   const root = mkdtempSync(join(tmpdir(), 'gg-open-stress-'));
   let failed = 0;
   for (let round = 0; round < rounds; round++) {
     const commonDir = join(root, String(round));
-    const bad = (await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map((ticket) => saveOnce(commonDir, ticket)))).filter((e) => e.code !== 0);
+    const bad = (await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map((ticket) => saveOnce(commonDir, ticket)))).filter(
+      (e) => e.code !== 0,
+    );
     const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
     const mode = db.prepare('PRAGMA journal_mode').get().journal_mode;
     db.close();

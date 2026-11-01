@@ -35,10 +35,14 @@ const call = (cwd, overrides = {}) => ({
   ...overrides,
 });
 
-const pendingAfterTurn = (promise) => Promise.race([
-  promise.then(() => 'settled', () => 'settled'),
-  new Promise((resolve) => setImmediate(() => resolve('pending'))),
-]);
+const pendingAfterTurn = (promise) =>
+  Promise.race([
+    promise.then(
+      () => 'settled',
+      () => 'settled',
+    ),
+    new Promise((resolve) => setImmediate(() => resolve('pending'))),
+  ]);
 
 test('a scripted response is returned and files are written into cwd', async () => {
   const { harness, cwd } = await setup({
@@ -72,7 +76,18 @@ test('calls record brief, resume, tools and persona bytes', async () => {
 });
 
 test('a new session has a transcript file and resume keeps it', async () => {
-  const usage = { input: 10, cached: 0, cacheWrite: 0, output: 5, reasoning: 0, costUsd: 0.01, peakContext: 10, turns: 1, toolCalls: 1, compactions: 0 };
+  const usage = {
+    input: 10,
+    cached: 0,
+    cacheWrite: 0,
+    output: 5,
+    reasoning: 0,
+    costUsd: 0.01,
+    peakContext: 10,
+    turns: 1,
+    toolCalls: 1,
+    compactions: 0,
+  };
   const { harness, cwd } = await setup({
     responses: {
       'implement/1/red/1': { response: {}, result: { usage: { delta: usage } } },
@@ -82,7 +97,9 @@ test('a new session has a transcript file and resume keeps it', async () => {
   const first = await harness.run(call(cwd));
   assert.match(first.result.sessionId, /^fake-session-\d+$/);
   assert.ok((await stat(first.result.transcriptPath)).isFile());
-  const second = await harness.run(call(cwd, { phase: 'green', marker: 'gg:1:implement/1/green/1', resume: first.result.sessionId }));
+  const second = await harness.run(
+    call(cwd, { phase: 'green', marker: 'gg:1:implement/1/green/1', resume: first.result.sessionId }),
+  );
   assert.equal(second.result.sessionId, first.result.sessionId);
   assert.equal(second.result.transcriptPath, first.result.transcriptPath);
   assert.ok(second.result.usage.cumulative.input >= first.result.usage.cumulative.input);
@@ -94,14 +111,12 @@ test('concurrent new sessions get distinct ids, transcripts and usage', async ()
   const delta = (input) => ({ result: { usage: { delta: { input } } }, response: {} });
   const { harness, cwd } = await setup({
     responses: {
-      'a/1/red/1': delta(1), 'b/1/red/1': delta(100),
+      'a/1/red/1': delta(1),
+      'b/1/red/1': delta(100),
       'a/1/green/1': delta(1),
     },
   });
-  const [a, b] = await Promise.all([
-    harness.run(call(cwd, { vertex: 'a' })),
-    harness.run(call(cwd, { vertex: 'b' })),
-  ]);
+  const [a, b] = await Promise.all([harness.run(call(cwd, { vertex: 'a' })), harness.run(call(cwd, { vertex: 'b' }))]);
   assert.notEqual(a.result.sessionId, b.result.sessionId);
   assert.notEqual(a.result.transcriptPath, b.result.transcriptPath);
   const resumed = await harness.run(call(cwd, { vertex: 'a', phase: 'green', resume: a.result.sessionId }));
@@ -161,5 +176,8 @@ test('usage is null where the cost capability is absent', async () => {
 
 test('an unscripted key throws naming it', async () => {
   const { harness, cwd } = await setup({ responses: {} });
-  await assert.rejects(async () => harness.run(call(cwd, { vertex: 'review', phase: 'review' })), /review\/1\/review\/1/);
+  await assert.rejects(
+    async () => harness.run(call(cwd, { vertex: 'review', phase: 'review' })),
+    /review\/1\/review\/1/,
+  );
 });
