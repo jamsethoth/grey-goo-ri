@@ -556,7 +556,7 @@ test('the fake integrity records the untracked tests the real one records', asyn
   writeFileSync(join(own, 'test', 'new.test.mjs'), 'new\n');
   writeFileSync(join(own, 'test', 'cache', 'out.json'), '{}\n');
   writeFileSync(join(own, 'notes.txt'), 'notes\n');
-  const args = {
+  const beginArguments = {
     record: ownRecord,
     others: [],
     access: 'read-write',
@@ -564,8 +564,8 @@ test('the fake integrity records the untracked tests the real one records', asyn
     testPaths: checks.testPathSet(checks.DEFAULT_TEST_GLOBS),
     git,
   };
-  const real = await integrity.begin(args);
-  const fake = await fakeIntegrity({ git }).integrity.begin(args);
+  const real = await integrity.begin(beginArguments);
+  const fake = await fakeIntegrity({ git }).integrity.begin(beginArguments);
 
   assert.deepEqual(Object.keys(real.tests).sort(), ['test/cache/out.json', 'test/new.test.mjs']);
   assert.deepEqual(fake.tests, real.tests);
