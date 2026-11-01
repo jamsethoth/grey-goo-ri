@@ -1447,3 +1447,21 @@ test("a repeat Check ignores an earlier Execution's identical findings", async (
     "ticket 15's second review is not ticket 16's first");
   assert.deepEqual(next.traversals, { 'reviewer->implementer-fix:changes': 1 }, 'the review routes as changes, not repeat');
 });
+
+test("a repeat Check rerun in a recovery pass does not match its own Visit's first pass", async (t) => {
+  // green's first pass fails its test Check, so a recovery pass reruns every Check of the Visit, the repeat Check
+  // included, while the first pass's hash of the same list is already saved for this Visit.
+  const g = await greenSetup(t, {
+    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
+    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+  });
+  golden.configure(g, (c) => {
+    c.procedures.implement.actions.splice(2, 0, { id: 'again', do: 'check', kind: 'repeat', list: 'response.dod', fields: ['item'] });
+  });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
+  assert.deepEqual(actionEvent(g, 'green', 'again', 0).signals.checks, [{ id: 'again', kind: 'repeat', state: 'passed', tree: null }]);
+  assert.deepEqual(actionEvent(g, 'green', 'again', 1).signals.checks, [{ id: 'again', kind: 'repeat', state: 'passed', tree: null }],
+    'the recovery pass repeats nothing an earlier Visit recorded');
+});
