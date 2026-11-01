@@ -80,6 +80,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | T3: a Vertex's own `route` before the Flow's `routes` | H7: explicit Outcome names before either `"*"` |
 | V4: engine Outcome names are reserved | H10: so are the names of `Object.prototype`'s properties |
 | V3: every cycle has an edge with `max` or a Vertex with `maxVisits` | H12: and no loop is made of exhausted targets alone |
+| Request 3.3, V3: a Vertex's Bound is `maxVisits` | O1: `max`, the same key as an edge's |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -1198,6 +1199,16 @@ interpreter could not run as T4, R1 and Q3 describe. Each rule below follows H1.
   nothing. This covers template names (Y20 in the round 5 review), `with`, input sources, Check parameters,
   `tests: named`, rule fields, response conditions and `pick`. A `where` or a repeat Check's field names one key of
   each item, not a path. A template reads a list's items through a section. Issue #116.
+
+## Bound keys (2026-10-31)
+
+Taken by the owner in PR #191 (#117), before `gg init` writes the example into other repositories (#120), while no
+repository but this one declares a Flow.
+
+- O1. A Vertex's Bound is written `max` and `exhausted`, the same keys as an edge's `{ to, max, exhausted }`. One
+  meaning gets one word: how many times, then where to go. Where the key sits says what is counted: an edge counts
+  its traversals, a Vertex its Visits. `maxVisits` is no longer a key; the validator reports it as unknown. The
+  Resolved Flow's Vertex field is `max` too. Decisions written before this one keep the word `maxVisits`. Issue #117.
 
 ## Open
 

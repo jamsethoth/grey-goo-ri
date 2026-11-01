@@ -263,7 +263,7 @@ flows:
         senior-green:                        # V6: tests the implementer could not pass go to the stronger model once
           use: senior
           procedure: implement
-          maxVisits: 1
+          max: 1
           exhausted: { end: needs-human }
           inputs:
             tests:    { from: [red.commit.files, senior-red.commit.files], optional: true }
@@ -294,7 +294,7 @@ flows:
         senior-red:                          # U11: the stronger model writes the failing test; green makes it pass
           use: senior
           procedure: tests-fail
-          maxVisits: 1
+          max: 1
           exhausted: { end: needs-human }
           inputs:
             findings: { from: reviewer.review.response.findings }
@@ -318,7 +318,7 @@ flows:
         senior-dev:
           use: senior
           procedure: fix
-          maxVisits: 1                       # T5
+          max: 1                             # T5, O1
           exhausted: { end: needs-human }
           inputs:
             <<: *impl
@@ -357,7 +357,7 @@ flows:
   red`, M2).
 - **Bounds** (I3, T5, V3): `red → green → reviewer → red` is bounded by `retest`'s `max: 2`;
   `reviewer → implementer-fix → reviewer` by `changes`' `max: 2`; every path into `senior-red`, `senior-green` and
-  `senior-dev` by their `maxVisits: 1`; each cycle back to `red` through
+  `senior-dev` by their `max: 1`; each cycle back to `red` through
   a `bad-test` edge by that edge's `max: 1` (M2); the Ticket's Action Cap over all of them. The cap covers the longest
   bounded path: three passes of red, green and review (13 Attempts each, two `retest` loops), then `senior-red`,
   `green`, `senior-green`, review, two `changes` loops, `senior-dev`, review and `publish`, about 90 Attempts; the two

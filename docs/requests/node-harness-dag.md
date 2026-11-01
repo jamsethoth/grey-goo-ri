@@ -197,17 +197,17 @@ A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes
   Action's event for the full Signals rather than copying them.
 - Edges: `route: { <outcome>: <vertex | {end} | {to, max, exhausted}> }`; a Flow's default `routes`, `"*"`
   included, apply to every Vertex that does not route the Outcome itself. Every back edge has `max` and
-  `exhausted`. A vertex may have `maxVisits` with its own `exhausted`; every cycle contains an edge with `max` or a
-  vertex with `maxVisits`, and every ticket has an action cap, which does not count as a cycle's bound. Loops exist
+  `exhausted`. A vertex may have its own `max` and `exhausted`, counting its visits; every cycle contains an edge or
+  a vertex with `max`, and every ticket has an action cap, which does not count as a cycle's bound. Loops exist
   only as bounded back edges.
 - Counting semantics, so tests are deterministic: an edge `max` counts traversals of that edge per ticket; a vertex
-  `maxVisits` counts entries per ticket; recovery passes (`recover`) and Attempt retries count
+  `max` counts entries per ticket; recovery passes (`recover`) and Attempt retries count
   toward the ticket action cap but not toward edge or vertex counts; when an edge and a vertex exhaust on the same
   action the vertex `exhausted` wins; the ticket action cap exhausting goes to needs-human and wins over both; counts
   survive a restart because they live in the execution record and are checked before the action runs, so a restart at
   a boundary routes the same way. The `repeat` Check compares normalised findings with earlier reviews by the same
   Vertex within the same execution only. One worked example with nested retries, a cap boundary
-  and a restart ships with the validator tests.
+  and a restart ships with the interpreter tests, since the validator never runs a flow.
 - Per-ticket graphs are sequential. Parallelism is across tickets only.
 - Two sections: `plan` (epic level, used by `gg plan`) and `ticket` (used by `gg run`). The planner is never a ticket
   vertex. The small flow sets `plan` to null.
@@ -222,10 +222,10 @@ Illustration only (shape, not syntax):
 
 ```
 red(tests-fail) -> green(implement) -> reviewer(review)
-green: failed -> senior-green(implement, maxVisits 1, exhausted end: needs-human) -> reviewer
+green: failed -> senior-green(implement, max 1, exhausted end: needs-human) -> reviewer
 reviewer: ok -> publish, changes -> {to: implementer-fix, max: 2, exhausted: senior-dev}, repeat -> senior-dev
 implementer-fix = use implementer, procedure fix -> reviewer
-senior-dev(fix, maxVisits 1, exhausted end: needs-human) -> reviewer
+senior-dev(fix, max 1, exhausted end: needs-human) -> reviewer
 publish(no agent: test Check, pr-ready) -> end: ready-for-qa
 ```
 
