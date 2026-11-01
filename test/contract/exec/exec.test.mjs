@@ -192,6 +192,13 @@ test('runShell: a command outliving timeoutMs returns within budget, flagged as 
   assert.equal(res.timedOut, true);
 });
 
+test('a timeout note names gg', CASE, async () => {
+  const p = script('sleep-note.mjs', `setInterval(() => {}, 60000);`);
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 500 });
+  assert.match(res.output, /\n\[gg: timed out after 500 ms\]/);
+  assert.doesNotMatch(res.output, /\[ff:/);
+});
+
 test(
   'runShell: a timed-out command returns code null and the output it printed before the timeout',
   CASE,

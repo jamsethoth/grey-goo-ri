@@ -775,3 +775,25 @@ test('marker-shaped agent text does not displace the rendered marker', async () 
   );
   assert.deepEqual(asText(marker.parseMarker(comment)), asText(parts));
 });
+
+// A section item is a scope only when it is an object, as the validator types it (#198).
+test('a section over a list of lists does not take the inner list as its scope', async () => {
+  const out = await render.template('{{#rows}}{{length}};{{/rows}}', { rows: [['a', 'b']], length: 'outer' });
+  assert.equal(out, 'outer;');
+});
+
+test('the commit trailer carries the Vertex and the harness under its gg name', () => {
+  const message = render.commitMessage({
+    kind: 'feat',
+    title: 'Add the cart total',
+    ticket: 7,
+    summary: 'Sums line items.',
+    vertex: 'implement',
+    harness: 'claude',
+    model: 'opus',
+    effort: 'high',
+    marker: marker.formatMarker(parts),
+  });
+  assert.match(message, /^Gg-Vertex: implement claude\/opus\/high$/m);
+  assert.doesNotMatch(message, /Feature-Flow/i);
+});

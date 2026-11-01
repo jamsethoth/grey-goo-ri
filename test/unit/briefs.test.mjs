@@ -699,3 +699,10 @@ test("an excerpt limit applies only to a name the Brief's own context holds", as
   });
   assert.equal(out, `${'x'.repeat(3000)}|${item}`);
 });
+
+// An untyped value, such as a History entry's list, prints as JSON, never as [object Object] (#198).
+test('an untyped list of objects renders as JSON', async () => {
+  const items = [{ file: 'a.mjs', line: 3 }];
+  const out = await briefs.brief('own.md', '{{items}}', { items });
+  assert.equal(out, JSON.stringify(items, null, 2));
+});
