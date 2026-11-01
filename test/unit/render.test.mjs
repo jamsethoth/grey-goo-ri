@@ -351,7 +351,7 @@ test('provenance counts one call per Attempt and a resumed Session once', () => 
     effort: 'high',
     personaName: 'tdd.md',
     personaHash: 'abcdef0123456789',
-    usage: cumulative,
+    cumulativeUsage: cumulative,
   });
   const rec = {
     sessions: {

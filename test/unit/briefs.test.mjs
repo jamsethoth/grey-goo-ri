@@ -182,12 +182,13 @@ test('an integer property is inside the strict subset', () => {
 });
 
 test('validateResponse accepts an integer where an integer is declared', () => {
-  assert.deepEqual(briefs.validateResponse(withCount, { count: 3 }), { valid: true, token: null });
+  assert.deepEqual(briefs.validateResponse(withCount, { count: 3 }), { valid: true, token: null, reason: null });
 });
 
 test('validateResponse rejects a fraction where an integer is declared', () => {
   assert.deepEqual(briefs.validateResponse(withCount, { count: 1.5 }), {
     valid: false,
+    token: null,
     reason: 'count must be an integer',
   });
 });
@@ -195,6 +196,7 @@ test('validateResponse rejects a fraction where an integer is declared', () => {
 test('validateResponse rejects a numeric string where an integer is declared', () => {
   assert.deepEqual(briefs.validateResponse(withCount, { count: '3' }), {
     valid: false,
+    token: null,
     reason: 'count must be an integer',
   });
 });
@@ -203,6 +205,7 @@ test('validateResponse rejects an extra property where the object declares no pr
   const empty = { type: 'object', required: [], additionalProperties: false };
   assert.deepEqual(briefs.validateResponse(empty, { extra: 1 }), {
     valid: false,
+    token: null,
     reason: 'extra is not in the schema',
   });
 });
@@ -473,10 +476,11 @@ for (const [what, schema, path, error] of [
 }
 
 test('validateResponse accepts exactly one lowercase enum token as the claim', () => {
-  assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, validRed), { valid: true, token: 'ok' });
+  assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, validRed), { valid: true, token: 'ok', reason: null });
   assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, { ...validRed, claim: 'misscoped' }), {
     valid: true,
     token: 'misscoped',
+    reason: null,
   });
   assert.deepEqual(SCHEMAS.RED_SCHEMA.properties.claim.enum, ['ok', 'blocked', 'misscoped']);
   assert.deepEqual(SCHEMAS.IMPLEMENT_SCHEMA.properties.claim.enum, ['ok', 'blocked', 'misscoped']);
@@ -508,6 +512,7 @@ for (const [what, response] of [
 test('validateResponse rejects a null response', () => {
   assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, null), {
     valid: false,
+    token: null,
     reason: 'no structured response',
   });
 });
