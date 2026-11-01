@@ -262,6 +262,26 @@ test('package.json keeps type module', async () => {
   assert.equal(pkg.type, 'module');
 });
 
+// Only the range forms package.json uses: a bound like `<27` or a union has no single major to compare.
+const rangeMajor = (range) => {
+  const match = /^(?:\^|~|>=)(\d+)(?:\.\d+){0,2}$/.exec(range);
+  assert.ok(match, `${range} is a ^, ~ or >= range`);
+  return match[1];
+};
+
+// tsc checks the code against @types/node, so its major must be the Node gg runs on (ADR 0020).
+test('the @types/node major in package.json is the engines.node major', async () => {
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  assert.equal(rangeMajor(pkg.devDependencies['@types/node']), rangeMajor(pkg.engines.node));
+});
+
+test('the major check reads ^, ~ and >= ranges and fails on any other', () => {
+  assert.deepEqual(['^26.6.6', '~26.6', '>=26.13', '>=26'].map(rangeMajor), ['26', '26', '26', '26']);
+  for (const range of ['<27', '*', '26.x || 27.x', '>=26 <28']) {
+    assert.throws(() => rangeMajor(range), /a \^, ~ or >= range/, range);
+  }
+});
+
 test('every module in the converted list is TypeScript', () => {
   for (const path of CONVERTED) {
     assert.ok(existsSync(root + path), `${path} exists`);

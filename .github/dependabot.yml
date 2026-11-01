@@ -11,6 +11,7 @@ updates:
     commit-message:
       prefix: ci
   # The dev dependencies (ADR 0018). typescript stays below 6.1 while typescript-eslint supports nothing newer.
+  # A new @types/node major waits for a decision about the Node floor, which it must match (ADR 0020).
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -21,5 +22,7 @@ updates:
     ignore:
       - dependency-name: typescript
         versions: ['>=6.1']
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     commit-message:
       prefix: deps
