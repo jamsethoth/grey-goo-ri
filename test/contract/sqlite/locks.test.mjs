@@ -132,7 +132,7 @@ await locks.release(handle);`;
 
 test('the lock module needs no experimental flag for node:sqlite', async (t) => {
   const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.engines.node, '>=24.15');
+  assert.equal(pkg.engines.node, '>=26.13');
   const commonDir = await tempCommonDir(t);
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo'));`;
