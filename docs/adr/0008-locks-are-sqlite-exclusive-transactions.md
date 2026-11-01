@@ -25,7 +25,7 @@ means the lock is held; any other error is thrown.
 
 - The Node floor is 22.13, the first line where `node:sqlite` loads without `--experimental-sqlite`. Node 20 is
   end of life. `node:sqlite` is Stability 1.1 (active development), so its API may still change. Superseded by
-  ADR 0012: the floor is Node 24 LTS, 24.15 or later.
+  ADR 0012, then ADR 0020: the floor is Node 26 LTS, 26.13 or later.
 - The lock holds no holder identity: nothing records which pid holds it. Add a sidecar when `gg doctor` or stuck
   detection needs one.
 - The handle must keep its `DatabaseSync` referenced; a collected connection releases the lock.

@@ -16,7 +16,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 ## Conventions
 
-- Plain Node ESM (`.mjs`), Node 24 LTS (24.15 or later, where `node:sqlite` loads without a warning; ADR 0012), must
+- Plain Node ESM (`.mjs`), Node 26 LTS (26.13 or later, where `node:sqlite` loads without a warning; ADR 0020), must
   run on stock Node on native Windows. npm dependencies are allowed when they earn their place; prefer node
   built-ins. Never adopt an agentic workflow framework (ADR 0001).
 - TypeScript on Node's type stripping, no build step (ADR 0018): new and converted modules and tests are `.ts`, and no

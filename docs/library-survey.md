@@ -3,7 +3,7 @@
 Which hand-rolled behaviour a well-vetted npm package or Node built-in would delete, decided item by item with the
 owner before epic 1 continued with #19 to #23. Constraints: AGENTS.md at ddd552d (dependencies allowed when they earn
 their place, built-ins preferred, never an agentic workflow framework per ADR 0001), native Windows, Node 22.13+
-(since raised to 24.15, ADR 0012), and the Codex Windows sandbox, which cannot build native addons. Line counts are
+(since raised to 26.13, ADR 0020), and the Codex Windows sandbox, which cannot build native addons. Line counts are
 from the repository at ddd552d.
 
 | Behaviour | Where | Lines | Candidate | Risk | Windows and sandbox | Decision |
@@ -22,7 +22,7 @@ from the repository at ddd552d.
 | Reconciliation | #19 | git log and gh lookups | none applicable | | | **Hand-rolled** |
 | Pool | #22; ff `lib/run.mjs:17-27` | 10 | `p-limit` | a dependency for ten tested lines | none | **Hand-rolled** |
 | Two gg processes on one repository | #22 | | already serialised by the SQLite locks | | | **No change**; #22 gains the shared `events` table in its DoD |
-| Test glob to regex | `lib/checks.mjs:63` | 6 | `picomatch`; `path.matchesGlob` | `path.matchesGlob` is experimental on the 22.13 floor; stable on the 24.15 floor (ADR 0012) | none | **Hand-rolled**; revisit when the floor makes `matchesGlob` stable |
+| Test glob to regex | `lib/checks.mjs:63` | 6 | `picomatch`; `path.matchesGlob` | `path.matchesGlob` is experimental on the 22.13 floor; stable from 24.8, below every floor since ADR 0012 | none | **Hand-rolled**; revisit when the floor makes `matchesGlob` stable |
 | Process tree kill and job object | `lib/exec.mjs`, `lib/winjob.ps1` | 239 + script | `tree-kill`, `execa` | `tree-kill` is `taskkill /T`, which exec already has as fallback; job objects need a native addon | the sandbox cannot build addons | **Kept** |
 | Version compare for `gg doctor` | slice 2 | ~5 | `semver` | none | none | **Hand-rolled** unless prerelease tags appear |
 | Retry on git index lock with backoff | request 3.5 | ~8 | `p-retry` | none | none | **Hand-rolled** |
@@ -41,7 +41,7 @@ ESLint and tsc run in every suite stage.
 | Package | Version | Reason | Decision |
 | --- | --- | --- | --- |
 | `typescript` | `~6.0.3` | `tsc --noEmit` checks the `.ts` modules Node runs by stripping types | **Adopted**; held below 6.1, the newest typescript-eslint 8.72 supports, and TypeScript 7's native compiler waits for it |
-| `@types/node` | `^24.19.2` | without it tsc resolves no `node:` module; major 24 matches the Node floor (ADR 0012) | **Adopted**, named in `types` since TypeScript 6 loads no `@types` package unlisted |
+| `@types/node` | `^26.6.6` | without it tsc resolves no `node:` module; major 26 matches the Node floor (ADR 0020) | **Adopted**, named in `types` since TypeScript 6 loads no `@types` package unlisted |
 | `eslint` | `^10.14.0` | the epic's rules (names, lengths, nesting, imports, module state), each failure at its line | **Adopted**; a hand-rolled checker would be an AST walker gg would own |
 | `typescript-eslint` | `^8.72.1` | the parser ESLint needs to read `.ts`; no type-aware rules | **Adopted**, parser only |
 | `@stylistic/eslint-plugin` | `^5.10.0` | `max-len` and `max-statements-per-line`, which left ESLint core | **Adopted** |

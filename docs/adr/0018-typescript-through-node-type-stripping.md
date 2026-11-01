@@ -12,7 +12,7 @@ the exact line is cheaper feedback than any of them. Prose rules in AGENTS.md ar
 readability rules of grey-goo-ri epic #193 belong in tools whose failures an agent sees. grey-goo-ri issue #190 asked
 for type checking; this ADR settles it and the epic closes it.
 
-We write gg in TypeScript that Node runs directly. Node 24.15 strips erasable type syntax from `.ts` files with no flag
+We write gg in TypeScript that Node runs directly. Node 26.13 strips erasable type syntax from `.ts` files with no flag
 and no warning, so there is no build step: `node bin/gg.mjs` and `node --test` run the sources as they are. Modules
 convert from `.mjs` to `.ts` one at a time, in the epic's dependency order, starting with `lib/paths.ts`; no new `.mjs`
 file may be added (`test/unit/layout.test.mjs` holds the list of converted files, which only grows, and the list of
@@ -26,8 +26,8 @@ legacy `.mjs` files, which only shrinks).
 - `verbatimModuleSyntax`, so a type-only import is written `import type` and stripping leaves no dangling import.
 - `erasableSyntaxOnly`: Node strips types but does not transform code, so enums, namespaces and parameter properties
   are errors. A string-literal union or an `as const` object takes an enum's place.
-- `types: ["node"]`: TypeScript 6 loads no `@types` package unless it is listed, and without `@types/node` (major 24,
-  matching the Node floor of ADR 0012) tsc cannot resolve `node:test` or any built-in module.
+- `types: ["node"]`: TypeScript 6 loads no `@types` package unless it is listed, and without `@types/node` (major 26,
+  matching the Node floor of ADR 0020) tsc cannot resolve `node:test` or any built-in module.
 - `allowJs` with `checkJs: false`, until the last module converts: a `.ts` module can import an `.mjs` one, and the
   legacy files are parsed but not checked. Leaving `checkJs` unset cost 9 to 13 s of check time on 23,000 lines of
   JavaScript, against under 1 s with it set to `false`, though neither reports an error in a `.mjs` file.

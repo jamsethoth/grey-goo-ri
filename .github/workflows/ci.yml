@@ -11,7 +11,7 @@ permissions: {}
 
 env:
   # The one Node CI proves: the current LTS, pinned exactly. Bump by PR; Dependabot does not update it.
-  NODE_VERSION: 24.22.0
+  NODE_VERSION: 26.13.0
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
