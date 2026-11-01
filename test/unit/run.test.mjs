@@ -223,6 +223,25 @@ test('every error a Run throws names its repository', async (t) => {
   assert.ok(epic?.message.startsWith(`[main] #${EPIC}: nothing ready`), epic?.message);
 });
 
+test('a case with several run fixtures leaves gh as it found it', async (t) => {
+  const currentGh = () => {
+    const gh = github.setGh(null);
+    github.setGh(gh);
+    return gh;
+  };
+  const before = currentGh();
+  await t.test('a case that swaps gh between its fixtures', (inner) => {
+    fixture(inner);
+    github.setGh(async () => {
+      throw new Error('the stub the case installed');
+    });
+    fixture(inner);
+  });
+  const after = currentGh();
+  github.setGh(before);
+  assert.equal(after, before, 'gh is the transport from before the case');
+});
+
 test('preflight names every failing vertex in one error, before any gh call, worktree or run directory', async (t) => {
   const f = fixture(t, { fullFlow: true });
   f.options.config.agents.implementer.harness = 'nope';

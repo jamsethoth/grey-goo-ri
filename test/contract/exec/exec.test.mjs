@@ -359,6 +359,19 @@ function psStandIn(t, name, body) {
   caseEnv(t, { PATH: `${dir}:${process.env.PATH}` });
 }
 
+test("a case's environment variables are restored after the case even when it fails", async (t) => {
+  caseEnv(t, { FF_TEST_ENV_PROBE: 'before' });
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  // The inner case times out while its body still runs, as a hung runShell case would.
+  await t.test('a case that times out', { timeout: 50, todo: 'times out on purpose' }, () =>
+    withEnv({ FF_TEST_ENV_PROBE: 'during' }, () => held),
+  );
+  const after = process.env.FF_TEST_ENV_PROBE;
+  release();
+  assert.equal(after, 'before', 'the variable holds its value from before the case');
+});
+
 const POSIX_CASE = {
   ...CASE,
   skip:
