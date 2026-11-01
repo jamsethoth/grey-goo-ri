@@ -1782,6 +1782,22 @@ test('the Action Cap ends the Ticket at needs-human', async (t) => {
   assert.equal(reason.text, 'The Execution reached its Action Cap of 4 Attempts, so test at green did not run.');
 });
 
+test("the Red Check compares untracked tests with the Visit's first baseline", async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files = {};
+  responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
+  const g = await golden.setup(t, { responses });
+  // Build output under a test glob, ignored and left from before the Visit; red writes no test, in either pass.
+  writeFileSync(join(g.worktree, '.gitignore'), 'test/cache/\n');
+  mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
+  writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'needs-human');
+  assert.equal(actionEvent(g, 'red', 'red-check').outcome, 'recover', 'no test changed is recoverable (K7)');
+  assert.deepEqual(g.shells, [], 'the file was there at the baseline, so the test command never ran');
+});
+
 // JSON drops a key whose value is undefined, so a saved record must hold none.
 const undefinedPaths = (value, path = 'record') =>
   value === undefined

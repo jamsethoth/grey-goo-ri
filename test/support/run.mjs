@@ -82,7 +82,7 @@ export function fixture(
     rmSync(real, { recursive: true, force: true });
   });
   const { base, git, fakeGit } = golden.seedGit(real, which);
-  const fakeIntegrity = golden.fakeOf(integrity, base);
+  const fakeIntegrity = golden.fakeOf(integrity, base, git);
 
   const fake = golden.fakeGh({ branch, repoLabels, headOf: (b) => git.remoteSha(mainRoot, b) });
   for (const l of labels) fake.labels.add(l);

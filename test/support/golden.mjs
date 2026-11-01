@@ -157,7 +157,8 @@ export const markerOf = (rec, vertex, visit, action, recovery = 0, attempt = 1) 
 export const PROTECTED_PATHS = interpreter.protectedFiles(shipped.HARNESSES);
 
 // The fake integrity, or null for the real one, and the options that inject it into runExecution or gg run.
-export const fakeOf = (integrity, head) => (integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head }));
+export const fakeOf = (integrity, head, git = null) =>
+  integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head, git });
 export const injected = (fake) => (fake ? { integrity: fake.integrity, testImmutability: fake.testImmutability } : {});
 
 // The template's repos, in real git or in a fake git, and the git module to inject. Returns main's SHA.
@@ -186,7 +187,7 @@ export async function setup(
     });
 
   const { base, git, fakeGit } = seedGit(root, which);
-  const fake = fakeOf(integrity, base);
+  const fake = fakeOf(integrity, base, git);
   const mainRoot = join(root, 'main');
   const worktree = join(root, 'wt', 'ticket-15');
   if (which === 'real') sh(mainRoot, 'worktree', 'add', '-q', '-b', BRANCH, worktree, 'main');
