@@ -353,7 +353,6 @@ export function ghError(args, { status, headers = {}, body, stderr }) {
   return Object.assign(new Error(`${err}\ngh ${args.join(' ')}`), { code: 1, stdout, stderr: err });
 }
 
-// The cases whose gh restore is registered.
 const restoresGh = new WeakSet();
 
 // Installs gh as the transport until the case ends. Only the case's first install registers the restore: node:test runs
