@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Bumps the SHA pins in .github/workflows. No npm entry: package.json has no dependencies; add one with the first.
+  # Bumps the SHA pins in .github/workflows.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -10,3 +10,16 @@ updates:
         patterns: ['*']
     commit-message:
       prefix: ci
+  # The dev dependencies (ADR 0018). typescript stays below 6.1 while typescript-eslint supports nothing newer.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev:
+        patterns: ['*']
+    ignore:
+      - dependency-name: typescript
+        versions: ['>=6.1']
+    commit-message:
+      prefix: deps

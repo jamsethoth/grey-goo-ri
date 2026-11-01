@@ -33,6 +33,20 @@ from the repository at ddd552d.
 | Rescue Ref and workspace snapshot | ADR 0011 | | `isomorphic-git`, Jujutsu | a second git implementation or binary | | **git plumbing** (2026-10-18): temporary index, `write-tree`, `commit-tree`, `update-ref` |
 | Retry of file removal on Windows locks | `lib/integrity.mjs` | | `fs.rm` `maxRetries` (built-in) | none | retries EBUSY and EPERM | **Built-in**, in the Interrupted Attempt ticket (ADR 0011) |
 
+## Toolchain, 2026-10-31
+
+The first dependencies, all dev, for grey-goo-ri epic #193's rules (ADR 0018). None ships with gg or runs in a Run;
+ESLint and tsc run in every suite stage.
+
+| Package | Version | Reason | Decision |
+| --- | --- | --- | --- |
+| `typescript` | `~6.0.3` | `tsc --noEmit` checks the `.ts` modules Node runs by stripping types | **Adopted**; held below 6.1, the newest typescript-eslint 8.72 supports, and TypeScript 7's native compiler waits for it |
+| `@types/node` | `^24.19.2` | without it tsc resolves no `node:` module; major 24 matches the Node floor (ADR 0012) | **Adopted**, named in `types` since TypeScript 6 loads no `@types` package unlisted |
+| `eslint` | `^10.14.0` | the epic's rules (names, lengths, nesting, imports, module state), each failure at its line | **Adopted**; a hand-rolled checker would be an AST walker gg would own |
+| `typescript-eslint` | `^8.72.1` | the parser ESLint needs to read `.ts`; no type-aware rules | **Adopted**, parser only |
+| `@stylistic/eslint-plugin` | `^5.10.0` | `max-len` and `max-statements-per-line`, which left ESLint core | **Adopted** |
+| `prettier` | `^3.9.10` | one formatting, so diffs and reviews carry no style noise | **Adopted**; configured here, run and checked from grey-goo-ri issue #196 |
+
 ## Retention of the state database
 
 Agreed with the owner: nothing is purged automatically. `gg work archive --before <date>` (slice 6) exports and

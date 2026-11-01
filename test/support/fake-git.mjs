@@ -7,7 +7,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, wr
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
 import * as gitModule from '../../lib/git.mjs';
-import { canonical, pathKey } from '../../lib/paths.mjs';
+import { canonical, pathKey } from '../../lib/paths.ts';
 
 const sha1 = (data) => createHash('sha1').update(data).digest('hex');
 const sorted = (paths) => [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));

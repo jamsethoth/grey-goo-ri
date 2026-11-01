@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as gitModule from '../../../lib/git.mjs';
-import { pathKey } from '../../../lib/paths.mjs';
+import { pathKey } from '../../../lib/paths.ts';
 import * as templateRepos from '../../support/template-repos.mjs';
 
 const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();

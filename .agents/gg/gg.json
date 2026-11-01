@@ -1,6 +1,8 @@
 {
   "commands": {
-    "test": "node scripts/run-suite.mjs"
+    "test": "node scripts/run-suite.mjs",
+    "lint": "node node_modules/eslint/bin/eslint.js .",
+    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json"
   },
   "testPaths": ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/fixtures/**"]
 }

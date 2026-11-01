@@ -4,7 +4,21 @@
   "description": "Configurable bounded workflow graph of persona Agents on agentic harnesses: tickets to reviewed PRs with gates, tracing and usage metrics",
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "bin": { "gg": "bin/gg.mjs" },
-  "engines": { "node": ">=24.15" },
-  "scripts": { "test": "node scripts/run-suite.mjs" }
+  "bin": {
+    "gg": "bin/gg.mjs"
+  },
+  "engines": {
+    "node": ">=24.15"
+  },
+  "scripts": {
+    "test": "node scripts/run-suite.mjs"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
 }

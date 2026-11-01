@@ -281,8 +281,10 @@ test('this repository Layer declares the default test globs as its testPaths', (
 // Until the cutover (grey-goo-ri issue #97): feature-flow builds this repository and reads its AGENTS.md line.
 test('this repository AGENTS.md Commands line matches its repository Layer', (t) => {
   const md = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8');
-  const [, line] = md.match(/^## Commands\n\n- test: `([^`]+)`/m);
-  assert.equal(line, 'node scripts/run-suite.mjs');
+  const [, list] = md.match(/^## Commands\n\n((?:- .+\n)+)/m);
+  // A bullet whose name is a valid command name declares that command; `fast stage` is a usage note.
+  const listed = Object.fromEntries([...list.matchAll(/^- ([a-z][a-z0-9-]*): `([^`]+)`/gm)].map(([, name, line]) => [name, line]));
+  assert.equal(listed.test, 'node scripts/run-suite.mjs');
   const { home } = layers(t);
-  assert.deepEqual(config.loadConfig(repoRoot, home).commands, { test: line });
+  assert.deepEqual(config.loadConfig(repoRoot, home).commands, listed);
 });
