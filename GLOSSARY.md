@@ -49,20 +49,10 @@ The running work is an Attempt in a Session; lowercase "agent" in its ordinary s
 _Avoid_: stage, role, node (for the declaration)
 
 **Vertex**:
-A placement in a Flow that an Execution can occupy. Three kinds: Persona Vertex, Gate Vertex, Approval Vertex.
-_Avoid_: step, state, node (for the placement)
-
-**Persona Vertex**:
-A Vertex that runs an Agent through a Procedure.
-_Avoid_: agent vertex
-
-**Gate Vertex**:
-A Vertex that runs one Declared Command and routes on pass or fail.
-_Avoid_: gate (alone), check vertex
-
-**Approval Vertex**:
-A Vertex that pauses an Execution until a human gives a Decision.
-_Avoid_: human gate, pause
+A placement in a Flow that an Execution can occupy, running one Procedure. Vertices have no kinds (ADR 0014): a
+Vertex whose Procedure has no agent Action is described as a gate, and one whose Procedure ends in an
+`await-approval` Action asks for a Decision.
+_Avoid_: step, state, node (for the placement); Persona Vertex, Gate Vertex, Approval Vertex (there are no kinds)
 
 **Visit**:
 One entry of a Vertex during an Execution.
@@ -107,7 +97,7 @@ the named hold that stopped the Execution before any Action), its Outcome and ru
 _Avoid_: rationale, cause, end reason
 
 **Escalation**:
-Routing to a Persona Vertex with a stronger Agent after a Bound is exhausted. It is automatic; needs-human is not.
+Routing to a Vertex with a stronger Agent after a Bound is exhausted. It is automatic; needs-human is not.
 _Avoid_: fallback, hand-off
 
 ### Procedure
@@ -297,9 +287,9 @@ as diagnosis, never as Evidence. Not an OS signal.
 _Avoid_: hint, flag
 
 **Outcome**:
-The value the interpreter derives for a Vertex that selects its Edge: from the Signals of a Persona Vertex, from
-the command result of a Gate Vertex, from the Decision of an Approval Vertex. A required Check that fails with no
-recovery left gives the engine Outcome `failed`, routable like any other.
+The value the interpreter derives for a Vertex that selects its Edge: from its Procedure's Claim and Checks, or from
+the Decision an `await-approval` Action asked for. A required Check that fails with no recovery left gives the engine
+Outcome `failed`, routable like any other.
 _Avoid_: result, status, decision (reserved for humans), verdict (reserved for reviewers)
 
 **Direction**:
@@ -382,7 +372,7 @@ continues.
 _Avoid_: sync, repair
 
 **Pending**:
-An Execution waiting for a Decision at an Approval Vertex. Healthy, not Stuck.
+An Execution waiting for a Decision an `await-approval` Action asked for. Healthy, not Stuck.
 _Avoid_: blocked, paused, waiting
 
 **Held**:
@@ -403,7 +393,7 @@ A GitHub label gg writes to mirror an Execution's state.
 _Avoid_: status label, lifecycle label
 
 **Await Label**:
-A GitHub label gg writes to ask for a Decision at an Approval Vertex.
+A GitHub label gg writes to ask for a Decision, from an `await-approval` Action.
 _Avoid_: request label, pending label
 
 **Decide Label**:
@@ -411,7 +401,7 @@ A GitHub label a human writes to give a Decision.
 _Avoid_: approval label, outcome label
 
 **Decision**:
-A human's answer at an Approval Vertex, read from the issue's event timeline; its value becomes the Vertex's Outcome.
+A human's answer to an Approval Request, read from the issue's event timeline; its value becomes the Vertex's Outcome.
 _Avoid_: sign-off
 
 **Approval Request**:

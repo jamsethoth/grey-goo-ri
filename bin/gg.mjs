@@ -11,14 +11,14 @@ import * as run from '../lib/run.mjs';
 const usage = `Usage: gg <command>
 
 Commands:
-  init      set up a repository for gg
-  doctor    check the environment and configuration
-  plan      produce the Plan for an Epic; plan --finish <planId> finishes one
-  publish   publish Tickets from a Plan
+  init      set up a repository for gg (not implemented)
+  doctor    validate the configuration and print each Resolved Flow
+  plan      produce the Plan for an Epic; plan --finish <planId> finishes one (not implemented)
+  publish   publish Tickets from a Plan (not implemented)
   run       carry Tickets through their Flow
-  work      list, resume, abandon, reset, approve
-  trace     export a Trajectory
-  stats     show usage and outcome statistics
+  work      list, resume, abandon, reset, approve (not implemented)
+  trace     export a Trajectory (not implemented)
+  stats     show usage and outcome statistics (not implemented)
 `;
 
 const SPECS = {

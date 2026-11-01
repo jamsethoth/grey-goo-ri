@@ -5,16 +5,26 @@ it lives and runs. AGENTS.md's Tests section holds the file conventions; this do
 that adds or changes tests follows both.
 
 Owner decisions of 2026-10-24 and 2026-10-25, from the suite-speed work behind grey-goo-ri PR #141 and the research
-under [Sources](#sources), and the #145 audit's decisions D1-D5 (grey-goo-ri issue #145). The test seams in `lib/`
-for the clock, failure injection and fs are grey-goo-ri issue #153.
+under [Sources](#sources), and the owner's decisions D1-D5 on the #145 audit
+([grey-goo-ri issue #145, comment of 2026-10-25](https://github.com/jamsethoth/grey-goo-ri/issues/145#issuecomment-6406602493)).
+The test seams in `lib/` for the clock, failure injection and fs are grey-goo-ri issue #153.
 
 ## Rules for a test
 
-1. **Tests are deterministic.** The same tree and command give the same result (decisions file, J1-J3). A failure
-   that does not reproduce is a defect in the test or the environment, diagnosed and fixed at its root, never
-   re-run past. A test waits on the event it asserts on (a PID file written, a lock taken, a run settled), never on
-   a fixed duration; a wait may be bounded only by the case's own timeout (#143). Time-dependent logic takes the
-   injected clock (`{ now, sleep }`), not the wall clock.
+1. **Tests are deterministic.** The same tree and command give the same result
+   (`docs/research/user-defined-procedures-decisions.md`, J1-J3). A failure that does not reproduce is a defect in
+   the test or the environment, diagnosed and fixed at its root, never re-run past. A test waits on the event it
+   asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
+   only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
+   wall clock. Three cases measure real time, recorded as exceptions because their subject is real time across
+   processes, which no injected clock reaches:
+   - `test/contract/sqlite/record.test.mjs`, `a save waits out another process that holds the write lock for longer
+     than 5 s`: a save waiting past the 5 s busy timeout ADR 0015 replaced is the behaviour.
+   - `test/contract/exec/exec.test.mjs`, `runShell: when the job cannot be set up, a slow taskkill still takes down
+     the process tree`: its taskkill takes 31 s, longer than the 30 s ceiling `runShell` once had, to show no ceiling
+     is left.
+   - `test/e2e/run.concurrency.test.mjs`, `two processes serialise orchestrator git writes on the repo lock`: the
+     wall clock is the only clock two processes share, so it orders one's release before the other's commit.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
    Tests), not its private helpers or internal shapes. A refactor that keeps behaviour must not break a test.
 3. **Assert state, not interactions.** Check the result (the record, the events, the worktree, the labels), not
@@ -23,8 +33,10 @@ for the clock, failure injection and fs are grey-goo-ri issue #153.
 4. **One behaviour per case, named for it.** The name says what happens and what follows: `a failed save ends the
    record`, not `test saveRetry`. Several asserts are fine when they state one behaviour.
 5. **Straight-line test code.** No loops, branches or computed expectations in a case; write the expected value
-   out. Prefer a little duplication over a helper that hides what the case depends on (DAMP over DRY). A shared
-   helper sets up or checks one conceptual thing, and a case's essential inputs stay visible in the case.
+   out. DAMP over DRY, with the line drawn here: the inputs and expected values that make a case different stay in
+   the case; setup unrelated to the case's subject (fixtures, record seeding, transport wrappers) lives in
+   `test/support/`, and a setup block that appears in three or more cases moves there. A shared helper sets up or
+   checks one conceptual thing.
 6. **Clear failures.** A failing assert says what was expected, what happened, and the inputs that matter.
 7. **Tests change only when behaviour does.** A test edited by a refactor is a sign it tested implementation
    detail; fix the test's coupling, not just its expectation.
@@ -65,7 +77,10 @@ gg's doubles:
 | fake integrity (#140) | integrity snapshots and Test Immutability | real/fake scenario table (#140) |
 | fake git (#144), `test/support/fake-git.mjs` | `lib/git.mjs` | `test/contract/git/` (#144) |
 
-#144 keeps one of the fake integrity and the real integrity over the fake git, measured, and deletes the other.
+#144 kept both integrities: the fake one for tests whose subject is not git behaviour, because it is faster, and
+the real one over real git for tests whose subject is git behaviour, because it is what they check. The third option,
+the real integrity over the fake git, was measured slower (221 s against 181 s) and failed three cases on ignored
+Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152).
 
 The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers:
 
@@ -133,7 +148,7 @@ runner image), run the full stage.
 ## Considered and deferred
 
 - **Selecting tests by the import graph** (run only the medium tests whose imports reach a changed module).
-  Deferred: Google and Meta select tests because they have millions; gg has under 50 files, and after #140 and
+  Deferred: Google and Meta select tests because they have millions; gg has under 100 test files, and after #140 and
   #144 the full stage is expected to take minutes. Revisit if the full stage stays slow after #145; CI still runs
   everything.
 - **A runtime guard for `test/unit/`**: the launcher would `--import` a checked-in guard that makes every

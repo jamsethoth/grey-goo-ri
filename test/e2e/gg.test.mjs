@@ -71,7 +71,7 @@ test('gg run rejects an unknown option with a usage error', () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /unknown option --bogus/);
   assertUsage(r.stderr);
-  assert.doesNotMatch(r.stderr, /not implemented/);
+  assert.doesNotMatch(r.stderr, /gg run: not implemented/);
 });
 
 for (const [name, flag, error] of [
