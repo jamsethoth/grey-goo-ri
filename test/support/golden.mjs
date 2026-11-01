@@ -251,8 +251,7 @@ export async function setup(
   );
 
   const gh = fakeGh({ branch: BRANCH, observe, headOf: (branch) => git.remoteSha(mainRoot, branch) });
-  const previousGh = github.setGh(gh.gh);
-  t.after(() => github.setGh(previousGh));
+  useGh(t, gh.gh);
 
   const logs = [];
   const ev = events.eventLog(commonDir);
@@ -352,6 +351,18 @@ export function ghError(args, { status, headers = {}, body, stderr }) {
   const err = stderr ?? `gh: ${message} (HTTP ${status})`;
   const stdout = args.includes('--include') && status ? included(status, headers, body ?? { message }) : '';
   return Object.assign(new Error(`${err}\ngh ${args.join(' ')}`), { code: 1, stdout, stderr: err });
+}
+
+// The cases whose gh restore is registered.
+const restoresGh = new WeakSet();
+
+// Installs gh as the transport until the case ends. Only the case's first install registers the restore: node:test runs
+// a case's t.after hooks first in, first out, so a later restore would put back what an earlier install replaced.
+export function useGh(t, gh) {
+  const previous = github.setGh(gh);
+  if (restoresGh.has(t)) return;
+  restoresGh.add(t);
+  t.after(() => github.setGh(previous));
 }
 
 // A stand-in for the gh executable: records every argv and answers with canned JSON. `fail(f)` queues a failure: the

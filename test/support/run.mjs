@@ -113,8 +113,7 @@ export function fixture(
     }
     return inner(args, cwd, input);
   };
-  const previousGh = github.setGh(fake.gh);
-  t.after(() => github.setGh(previousGh));
+  golden.useGh(t, fake.gh);
 
   const harness = fakeHarness({
     transcriptDir: join(root, 'transcripts'),

@@ -364,9 +364,10 @@ test("a case's environment variables are restored after the case even when it fa
   let release;
   const held = new Promise((resolve) => (release = resolve));
   // The inner case times out while its body still runs, as a hung runShell case would.
-  await t.test('a case that times out', { timeout: 50, todo: 'times out on purpose' }, () =>
-    withEnv({ FF_TEST_ENV_PROBE: 'during' }, () => held),
-  );
+  await t.test('a case that times out', { timeout: 50, todo: 'times out on purpose' }, (inner) => {
+    caseEnv(inner, { FF_TEST_ENV_PROBE: 'during' });
+    return held;
+  });
   const after = process.env.FF_TEST_ENV_PROBE;
   release();
   assert.equal(after, 'before', 'the variable holds its value from before the case');
@@ -652,15 +653,6 @@ Start-Sleep ${LIVES_MS / 1000}
   },
 );
 
-const withEnv = async (env, fn) => {
-  Object.assign(process.env, env);
-  try {
-    return await fn();
-  } finally {
-    for (const k of Object.keys(env)) delete process.env[k];
-  }
-};
-
 // A shell whose child writes pidFile; the child starts delayMs after the shell.
 function linkedChild(name, { delayMs = 0 } = {}) {
   const pidFile = join(tmp, `${name}.pid`);
@@ -683,9 +675,8 @@ test(
   },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob');
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
-      timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal),
-    );
+    caseEnv(t, { FF_TEST_NOJOB: '1' });
+    const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal);
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
     try {
       assert.equal(res.timedOut, true);
@@ -712,9 +703,8 @@ test(
   },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-sandboxed');
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
-      timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal),
-    );
+    caseEnv(t, { FF_TEST_NOJOB: '1' });
+    const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal);
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
     try {
       assert.equal(res.timedOut, true);
@@ -746,13 +736,12 @@ test(
       'slow-taskkill.mjs',
       `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 31000);`,
     );
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
-      timeOutWhen(
-        cmd,
-        { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] },
-        () => existsSync(pidFile),
-        t.signal,
-      ),
+    caseEnv(t, { FF_TEST_NOJOB: '1' });
+    const { res, ready } = await timeOutWhen(
+      cmd,
+      { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] },
+      () => existsSync(pidFile),
+      t.signal,
     );
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
     try {
@@ -778,13 +767,12 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-denied');
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
-      timeOutWhen(
-        cmd,
-        { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
-        () => existsSync(pidFile),
-        t.signal,
-      ),
+    caseEnv(t, { FF_TEST_NOJOB: '1' });
+    const { res, ready } = await timeOutWhen(
+      cmd,
+      { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
+      () => existsSync(pidFile),
+      t.signal,
     );
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
     try {
@@ -816,13 +804,12 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-late', { delayMs: 4500 });
-    const { res } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
-      timeOutWhen(
-        cmd,
-        { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
-        () => existsSync(pidFile),
-        t.signal,
-      ),
+    caseEnv(t, { FF_TEST_NOJOB: '1' });
+    const { res } = await timeOutWhen(
+      cmd,
+      { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
+      () => existsSync(pidFile),
+      t.signal,
     );
     // taskkill is refused, so the top process lives on and starts the child even when the timeout came first
     await waitFor(() => existsSync(pidFile), t.signal);
@@ -950,9 +937,8 @@ test(
       });
       helper.on('exit', () => setImmediate(late.release));
     };
-    const res = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () =>
-      exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, timers, onHelper }),
-    );
+    caseEnv(t, { FF_TEST_QUERYFAIL: '1' });
+    const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, timers, onHelper });
     assert.ok(
       res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)),
       JSON.stringify(res.cleanupErrors),
@@ -1018,13 +1004,12 @@ test(
 test(
   'runShell: a helper that never starts and cannot be killed is reported, and does not keep ff waiting',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
-  async () => {
-    const res = await withEnv({ FF_TEST_STALL: '1' }, () =>
-      exec.runShell(`"${process.execPath}" -e "1"`, {
-        timeoutMs: 800,
-        taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']],
-      }),
-    );
+  async (t) => {
+    caseEnv(t, { FF_TEST_STALL: '1' });
+    const res = await exec.runShell(`"${process.execPath}" -e "1"`, {
+      timeoutMs: 800,
+      taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']],
+    });
     try {
       assert.equal(res.timedOut, true);
       assert.ok(res.cleanupErrors.length > 0, JSON.stringify(res));
@@ -1048,8 +1033,12 @@ test(
   async (t) => {
     const pidFile = join(tmp, 'queryfail.pid');
     const p = script('queryfail.mjs', writesPid, [pidFile]);
-    const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () =>
-      timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 3000 }, () => existsSync(pidFile), t.signal),
+    caseEnv(t, { FF_TEST_QUERYFAIL: '1' });
+    const { res } = await timeOutWhen(
+      `"${process.execPath}" "${p}"`,
+      { timeoutMs: 3000 },
+      () => existsSync(pidFile),
+      t.signal,
     );
     assert.equal(res.timedOut, true);
     assert.ok(
@@ -1068,9 +1057,8 @@ test(
   'runShell: job membership larger than the first query buffer is still listed in full',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
-    const { res, pid } = await withEnv({ FF_TEST_BUF: '1' }, () =>
-      timedOutOrphan(t, 'smallbuf', { denyTerminate: true }),
-    );
+    caseEnv(t, { FF_TEST_BUF: '1' });
+    const { res, pid } = await timedOutOrphan(t, 'smallbuf', { denyTerminate: true });
     try {
       assert.ok(res.survivors.length >= 3, JSON.stringify(res.survivors)); // shell, top and grandchild: more than the 1-entry buffer
       assert.ok(
