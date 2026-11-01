@@ -9,8 +9,9 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const launcherUrl = new URL('../../scripts/run-suite.mjs', import.meta.url);
 // The machine's own cap, as the launcher computes it; the cases assert the rest of the command line literally.
 const concurrency = `--test-concurrency=${Math.min(12, Math.max(1, availableParallelism() - 1))}`;
-// ADR 0018: ESLint and tsc run as node plus each package's own bin script, before the tests, in every stage.
+// ADR 0018: Prettier, ESLint and tsc run as node plus each package's own bin script, before the tests, in every stage.
 const checks = [
+  ['node_modules/prettier/bin/prettier.cjs', '--check', '.'],
   ['node_modules/eslint/bin/eslint.js', '.'],
   ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
 ];
@@ -23,12 +24,12 @@ test('the full stage runs node --test over the whole suite in the repo root, at 
   assert.equal(resolve(cmd.cwd), resolve(root));
 });
 
-test('the full stage runs lint and the type check before the tests', async () => {
+test('the full stage runs the format check, lint and the type check before the tests', async () => {
   const runSuite = await import(launcherUrl);
   assert.deepEqual(runSuite.suiteCommand({}, []).steps, [...checks, ['--test', concurrency]]);
 });
 
-test('the fast stage runs lint and the type check before the tests', async () => {
+test('the fast stage runs the format check, lint and the type check before the tests', async () => {
   const runSuite = await import(launcherUrl);
   assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps, [
     ...checks,

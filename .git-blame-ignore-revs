@@ -1,0 +1,6 @@
+# Commits that change only layout, which git blame skips. GitHub reads this file; locally run
+# git config blame.ignoreRevsFile .git-blame-ignore-revs
+# Each sha is the commit as it landed on main.
+
+# Prettier formats every code file (#196)
+46d1bc50c1ec6ee6964fcffe07888aa972745a83

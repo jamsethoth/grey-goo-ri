@@ -10,8 +10,10 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const USAGE = `usage: node scripts/run-suite.mjs [fast [boundary ...]]
   no arguments: the full suite
   fast: test/unit/, plus test/contract/<boundary>/ for each boundary named`;
-// ADR 0018: each runs as node plus the package's own bin script, never through a shell or an npm .cmd shim.
+// ADR 0018: each runs as node plus the package's own bin script, never through a shell or an npm .cmd shim. The format
+// check runs first, so lint judges formatted code.
 const CHECKS = [
+  ['node_modules/prettier/bin/prettier.cjs', '--check', '.'],
   ['node_modules/eslint/bin/eslint.js', '.'],
   ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
 ];
@@ -71,7 +73,7 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     console.error(`${missing.join(' and ')} not found: run npm ci first`);
     process.exit(1);
   }
-  // Steps run in order and the first failure stops the stage, so a lint or type error is the last thing printed.
+  // Steps run in order and the first failure stops the stage, so a format, lint or type error is the last thing printed.
   for (const args of cmd.steps) {
     const code = await new Promise((done) => {
       const child = spawn(cmd.command, args, { cwd: cmd.cwd, env: cmd.env, stdio: 'inherit', shell: false });

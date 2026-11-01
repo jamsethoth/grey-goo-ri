@@ -142,9 +142,10 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 - fast stage: `node scripts/run-suite.mjs fast [boundary ...]` runs `test/unit/` and the named `test/contract/` suites
 - lint: `node node_modules/eslint/bin/eslint.js .`
 - typecheck: `node node_modules/typescript/bin/tsc -p tsconfig.json`
+- format: `node node_modules/prettier/bin/prettier.cjs --check .` (`--write` in place of `--check` fixes the format)
 
-Run `npm ci` once in a new checkout or worktree: every stage runs lint and the type check before its tests, and stops at
-the first failure.
+Run `npm ci` once in a new checkout or worktree: every stage runs the format check, lint and the type check before its
+tests, and stops at the first failure.
 
 gg reads Declared Commands from `.agents/gg/gg.json` (ADR 0013). This section stays, equal to it, for feature-flow
 until the cutover (grey-goo-ri issue #97).

@@ -145,8 +145,8 @@ Two stages, ordered by speed:
 
 | Stage | Runs | When |
 | --- | --- | --- |
-| **Fast** | ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.mjs fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
-| **Full** | ESLint and `tsc`, then every test: `node scripts/run-suite.mjs` | before a PR is marked ready, and in CI on every PR |
+| **Fast** | `prettier --check`, ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.mjs fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
+| **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.mjs` | before a PR is marked ready, and in CI on every PR |
 
 The full stage always runs every contract suite, even when no boundary file changed. A contract also depends on
 things outside the repository, such as the installed git, Node, Windows behaviour or the CI image, and the
