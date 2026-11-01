@@ -234,15 +234,15 @@ test('a cooldown raised while a retry looks for its effect is waited out before 
   const g = await reviewFlow(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   const runState = { stop: null, remoteNotBefore: 0 };
-  const { prComments } = g.options.gh;
+  const { comments } = g.options.gh;
   let raised = false;
   // Another Ticket backs off while this retry's lookup is in flight.
   g.options.gh = {
     ...g.options.gh,
-    prComments: async (...args) => {
+    comments: async (...args) => {
       if (!raised) runState.remoteNotBefore = g.clock.now() + 10_000;
       raised = true;
-      return prComments(...args);
+      return comments(...args);
     },
   };
   // A human sets needs-human during that second wait.

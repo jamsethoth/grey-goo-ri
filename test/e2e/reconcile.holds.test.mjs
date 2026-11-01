@@ -104,7 +104,9 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   let looked = 0;
   const gh = {
     ...g.options.gh,
-    prComments: async () => {
+    // One read serves an issue and a PR, so only the PR's is counted.
+    comments: async (n, cwd) => {
+      if (n !== 7) return g.options.gh.comments(n, cwd);
       looked++;
       throw new Error('gh api exited 1\nHTTP 502: Bad Gateway');
     },

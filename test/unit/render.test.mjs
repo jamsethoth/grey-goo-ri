@@ -259,7 +259,7 @@ for (const [kind, subject] of [
     assert.equal(lines[0], subject);
     assert.match(message, /Sums line items\./);
     assert.deepEqual(lines.slice(-2), [
-      'Feature-Flow-Stage: implement claude/opus/high',
+      'Gg-Vertex: implement claude/opus/high',
       'Gg-Action: gg:e1:implement:1:commit:0:r1:1',
     ]);
     assert.deepEqual(asText(marker.parseMarker(message)), asText(parts));

@@ -136,7 +136,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   assert.equal(seen.recover.persona.bytes, golden.PERSONA);
   assert.equal(pinned.agent.effort, 'high', 'a harness mutating its call does not reach the snapshot');
   assert.equal(pinned.access, 'workspace-write');
-  assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: green fake\/model-x\/high/);
+  assert.match((await branchMessages(g)).at(-1), /Gg-Vertex: green fake\/model-x\/high/);
   assert.equal(outcome, 'ready-for-qa', 'routing follows the entry snapshot');
   assert.deepEqual(
     [
@@ -260,7 +260,7 @@ test('the Terminal Reason is saved before any Terminal side effect, so a crash p
   // A CrashError, since any other throw is now an unexpected fault handled inside runExecution.
   g.options.gh = {
     ...g.options.gh,
-    commentIssue: async () => {
+    comment: async () => {
       throw new interpreter.CrashError('crash');
     },
   };

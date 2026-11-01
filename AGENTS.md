@@ -93,8 +93,6 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 - The stubs marked in Layout: `gg init`, `plan`, `publish`, `work`, `trace` and `stats` print "not implemented".
 - The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
-- feature-flow leftovers until #198: `FF_*` variables, `FFJOB` lines and `[ff: ...]` notes in `lib/exec.mjs` and
-  `lib/winjob.ps1`, and the `Feature-Flow-Stage:` commit trailer in `lib/render.mjs`.
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
 - `test/support/interpreter.mjs`, `run.mjs` and `reconcile.mjs` share lib module names but are test helpers.
 - Two seam styles until #199: module-level setters (`github.setGh`, `git.setSleep`, `locks.setClock`,

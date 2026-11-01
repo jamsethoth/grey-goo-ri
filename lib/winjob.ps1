@@ -1,14 +1,14 @@
-# Windows helper for lib/exec.mjs runShell: runs $env:FF_CMD in a job object so every descendant, including
+# Windows helper for lib/exec.mjs runShell: runs $env:GG_CMD in a job object so every descendant, including
 # orphans, is killed together. Control: a byte on stdin (or stdin EOF) terminates the job. Exit code: the command's.
-# Diagnostics go to stderr as lines prefixed with \x01FFJOB so exec.mjs can strip and parse them.
-if ($env:FF_TEST_STALL -eq '1') { Start-Sleep 600 } # test seam: a helper that never gets as far as starting the command, longer than any test case
+# Diagnostics go to stderr as lines prefixed with \x01GGJOB so exec.mjs can strip and parse them.
+if ($env:GG_TEST_STALL -eq '1') { Start-Sleep 600 } # test seam: a helper that never gets as far as starting the command, longer than any test case
 $source = @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-public static class FFJob {
+public static class GgJob {
   [StructLayout(LayoutKind.Sequential)] struct SA { public int n; public IntPtr d; public int inherit; }
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct SI { public int cb; public string r, desk, title; public int x, y, xs, ys, xc, yc, fill, flags; public short show, r2; public IntPtr r2p, hin, hout, herr; }
   [StructLayout(LayoutKind.Sequential)] struct PI { public IntPtr hp, ht; public int pid, tid; }
@@ -50,22 +50,22 @@ public static class FFJob {
     return new List<int>(found);
   }
 
-  static void Note(string s) { Console.Error.Write("\n\u0001FFJOB " + s + "\n"); Console.Error.Flush(); }
+  static void Note(string s) { Console.Error.Write("\n\u0001GGJOB " + s + "\n"); Console.Error.Flush(); }
 
   // The last thing the helper writes, on both streams: exec.mjs has every note, and all of the command's output written
   // before it finished, once it has read this from each, however late a loaded machine delivers them.
   public static void Done() {
-    Console.Out.Write("\n\u0001FFJOB done\n"); Console.Out.Flush();
-    Console.Error.Write("\n\u0001FFJOB done\n"); Console.Error.Flush();
+    Console.Out.Write("\n\u0001GGJOB done\n"); Console.Out.Flush();
+    Console.Error.Write("\n\u0001GGJOB done\n"); Console.Error.Flush();
   }
 
   // PIDs in the job, or null (with err set) when the query fails: an unknown membership must not read as an empty job.
-  // Grows the buffer on ERROR_MORE_DATA. FF_TEST_BUF (entries) and FF_TEST_QUERYFAIL are test seams.
+  // Grows the buffer on ERROR_MORE_DATA. GG_TEST_BUF (entries) and GG_TEST_QUERYFAIL are test seams.
   static List<int> Members(IntPtr job, out int err) {
     err = 0;
-    if (Environment.GetEnvironmentVariable("FF_TEST_QUERYFAIL") == "1") { err = 5; return null; }
+    if (Environment.GetEnvironmentVariable("GG_TEST_QUERYFAIL") == "1") { err = 5; return null; }
     int cap;
-    if (!int.TryParse(Environment.GetEnvironmentVariable("FF_TEST_BUF"), out cap) || cap < 1) cap = 512;
+    if (!int.TryParse(Environment.GetEnvironmentVariable("GG_TEST_BUF"), out cap) || cap < 1) cap = 512;
     for (int attempt = 0; attempt < 6; attempt++, cap *= 4) {
       int size = 8 + IntPtr.Size * cap;
       IntPtr buf = Marshal.AllocHGlobal(size);
@@ -92,10 +92,10 @@ public static class FFJob {
     if (!deny) ext.basic.flags = 0x2000 | 0x800;
     else ext.basic.flags = 0x800;
     bool jobOk = job != IntPtr.Zero && SetInformationJobObject(job, 9, ref ext, Marshal.SizeOf(typeof(EXT)));
-    if (Environment.GetEnvironmentVariable("FF_TEST_NOJOB") == "1") jobOk = false; // test seam: pretend the job could not be set up
+    if (Environment.GetEnvironmentVariable("GG_TEST_NOJOB") == "1") jobOk = false; // test seam: pretend the job could not be set up
     if (!jobOk) Note("nojob " + Marshal.GetLastWin32Error());
 
-    // the control pipe must not leak into the command or its descendants, or ff would never see EOF/close
+    // the control pipe must not leak into the command or its descendants, or gg would never see EOF/close
     SetHandleInformation(GetStdHandle(-10), 1, 0);
     var sa = new SA(); sa.n = Marshal.SizeOf(typeof(SA)); sa.inherit = 1;
     IntPtr nul = CreateFile("NUL", 0x80000000, 3, ref sa, 3, 0, IntPtr.Zero);
@@ -125,7 +125,7 @@ public static class FFJob {
 
     bool ended = false;
     if (!deny) {
-      // without a job leave the root alive: ff's taskkill /T needs its pid to find the children it still links to,
+      // without a job leave the root alive: gg's taskkill /T needs its pid to find the children it still links to,
       // and list those children now, while the links exist, so they can be named if the kill is refused
       if (!jobOk) { int le; var kids = Linked(pi.pid, out le); Note(kids == null ? "linkedfail " + le : "linked " + string.Join(",", kids)); }
       if (jobOk && !TerminateJobObject(job, 1)) Note("termfail " + Marshal.GetLastWin32Error());
@@ -147,10 +147,10 @@ public static class FFJob {
   }
 }
 '@
-# FFJob comes from a compiled copy cached beside this script, named for the hashes of $source and of its own bytes, and
+# GgJob comes from a compiled copy cached beside this script, named for the hashes of $source and of its own bytes, and
 # is compiled, and cached, only when no intact copy is there. Only gg's install is searched: an agent that could write
 # there could rewrite this script too (ADR 0017). The loaded or compiled note says which happened.
-function Note($s) { [Console]::Error.Write("`n$([char]1)FFJOB $s`n"); [Console]::Error.Flush() }
+function Note($s) { [Console]::Error.Write("`n$([char]1)GGJOB $s`n"); [Console]::Error.Flush() }
 $sha = [Security.Cryptography.SHA256]::Create()
 function Hash($bytes) { [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant() }
 $cache = Join-Path $PSScriptRoot 'winjob-cache'
@@ -180,6 +180,6 @@ if (-not $how) {
   if (-not $how) { Add-Type -TypeDefinition $source; $how = 'compiled' } # an install gg cannot write to compiles every time
 }
 Note $how
-$code = [FFJob]::Run($env:FF_CMD, $(if ($env:FF_CWD) { $env:FF_CWD }), $env:FF_DENY -eq '1')
-[FFJob]::Done()
+$code = [GgJob]::Run($env:GG_CMD, $(if ($env:GG_CWD) { $env:GG_CWD }), $env:GG_DENY -eq '1')
+[GgJob]::Done()
 exit $code
