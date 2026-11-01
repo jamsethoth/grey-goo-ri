@@ -11,7 +11,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   competing names for a defined concept, not words in their ordinary technical sense.
 - Behaviours marked "ported" in the request document have their source in `C:\dev\projects\feature-flow` at
   commit 89e1d67, with line references in `C:\dev\ff-review-work\design-vetting-code.md` section 1. A port ticket
-  names its source lines; "port unchanged" without a source is not a complete ticket.
+  names its source lines; "port unchanged" without a source is not a complete ticket. A ported file may rename
+  identifiers and feature-flow strings; its case names and assertions otherwise stay.
 
 ## Conventions
 
@@ -28,7 +29,17 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   admission's dirty, conflict and branch checks, Reconciliation against git state, the repo lock), and a few end-to-end
   runs.
 - Codex output schemas are strict: every property required, `additionalProperties: false`.
-- Comments only for the non-obvious why.
+- Comments only for the non-obvious why. A comment that carries a spec code starts with a plain-language clause and
+  puts the code after it: `// A Hold needs an Await Label (R11f)`. Codes resolve in `docs/requests/node-harness-dag.md`
+  and in `docs/research/user-defined-procedures-decisions.md` and its siblings.
+- Names: a domain concept takes its full GLOSSARY.md term in camelCase (`executionRecord`, not `rec`; `actionRef`, not
+  `at`). Single letters only within about 10 lines of scope. Abbreviations only from `id`, `url`, `sha`, `err`, `gh`,
+  `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out` and the like.
+- `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
+  test for either.
+- Seams: the target is one `deps` object (git, gh, State Database, events, clock, integrity, shell) built at the entry
+  point and passed down. #199 moves the code there; until then, new code takes what it needs as a parameter and adds
+  no module-level `set*` function or `let`.
 
 ## Layout
 
@@ -36,7 +47,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | --- | --- |
 | `bin/gg.mjs` | `gg` entry point: usage and command dispatch |
 | `lib/opts.mjs` | option parsing |
-| `lib/config.mjs` | Layers, merge, migration table, Config Hash, the Layer files each Layer names, Declared Command loading |
+| `lib/config.mjs` | Layers, merge, Config Hash, the Layer files each Layer names, Declared Command loading |
 | `lib/flow.mjs` | the Resolved Flow and Config Hash written to a Run's directory |
 | `lib/validate.mjs` | the Flow validator, which `gg doctor` and `gg run` admission share: the configuration's agents, procedures, flows and the names each template reads checked, giving each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/refs.mjs` | the one reference-path resolver: parse, read and type every dotted reference path |
@@ -48,7 +59,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/briefs.mjs` | Brief context and rendering, Structured Response schema and response validation |
 | `lib/outcome.mjs` | the transition table and Resolution Policy |
 | `lib/rules.mjs` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
-| `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, review-pass |
+| `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
 | `lib/integrity.mjs` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) |
 | `lib/record.mjs` | Execution Record, Epic Record and Pinned Configuration persistence in the State Database, and the write-ahead log |
 | `lib/marker.mjs` | Action Marker format and parse |
@@ -59,23 +70,51 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/locks.mjs` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.mjs` | the Harness contract check and shared Usage shape |
 | `lib/harnesses/shipped.mjs` | the shipped Harnesses by name; the only module outside a Harness that names one |
-| `lib/harnesses/claude.mjs` | the Claude Code Harness |
-| `lib/harnesses/codex.mjs` | the Codex Harness |
+| `lib/harnesses/claude.mjs` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
+| `lib/harnesses/codex.mjs` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.mjs` | process spawn and job-object runner (ported) |
+| `lib/winjob.ps1` | the Windows job-object helper `lib/exec.mjs` runs, which caches its compiled assembly beside itself (ADR 0017) |
 | `lib/git.mjs` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
 | `lib/render.mjs` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
 | `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the parse-retry nudge and the default recovery section |
-| `defaults/` | the defaults Layer: `gg.json` (the shipped Agents, Procedures and Flow) and the files it names, under `personas/`, `templates/` and `schemas/` |
-| `lib/work.mjs` | `gg work` and the Registry |
-| `lib/trace.mjs` | Trajectory export and `gg trace` |
-| `lib/stats.mjs` | `gg stats` |
-| `lib/doctor.mjs` | `gg doctor` and `gg init` |
-| `lib/plan.mjs` | `gg plan` |
-| `lib/publish.mjs` | `gg publish` (ported) |
+| `defaults/` | the defaults Layer: `gg.json` (today it ships Agents `implementer` and `reviewer`, five Procedures and the `default` Flow; ADR 0014's "no shipped Flow" lands with #121) and the files it names, under `personas/`, `templates/` and `schemas/` |
+| `lib/work.mjs` | **stub** (`export {}`): `gg work` and the Registry |
+| `lib/trace.mjs` | **stub** (`export {}`): Trajectory export and `gg trace` |
+| `lib/stats.mjs` | **stub** (`export {}`): `gg stats` |
+| `lib/doctor.mjs` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex. `gg init` is not built (#120) |
+| `lib/plan.mjs` | **stub** (`export {}`): `gg plan` |
+| `lib/publish.mjs` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.mjs` | the suite launcher Codex may run outside its sandbox (ADR 0010) |
 | `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Agents |
+
+## Misleading areas
+
+- The stubs marked in Layout: `gg init`, `plan`, `publish`, `work`, `trace` and `stats` print "not implemented".
+- The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
+- feature-flow leftovers until #198: `FF_*` variables, `FFJOB` lines and `[ff: ...]` notes in `lib/exec.mjs` and
+  `lib/winjob.ps1`, and the `Feature-Flow-Stage:` commit trailer in `lib/render.mjs`.
+- `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
+- `test/support/interpreter.mjs`, `run.mjs` and `reconcile.mjs` share lib module names but are test helpers.
+- Two seam styles until #199: module-level setters (`github.setGh`, `git.setSleep`, `locks.setClock`,
+  `locks.setAttemptWrapper`, `record.setSaveHook`, `events.setAppendHook`) and injected parameters (`runTarget`'s
+  `git`, `gh` and `exec`, `integrity.withGit`). New code follows the Seams convention.
+
+## Examples to copy
+
+- A new module: `lib/paths.mjs` (one concept, a why-comment per rule) and `scripts/run-suite.mjs` (a closed set of
+  inputs, a usage error that prints the usage).
+- A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
+  named for it, state asserted, the inputs that matter visible in the case).
+- A contract suite and its fake: `test/contract/git/git.test.mjs` and `test/support/fake-git.mjs`.
+
+## Do not copy
+
+Each is rewritten by its ticket; until then, do not take its patterns:
+
+- `lib/validate.mjs` (#206), `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210),
+  `test/unit/run.holds.test.mjs` (#211), `test/contract/exec/exec.test.mjs` (#212), `test/support/run.mjs` (#208).
 
 ## Tests
 
@@ -90,7 +129,7 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 - Tests import modules as namespaces (`import * as record from '../../lib/record.mjs'`) and call `record.fn()`, so a
   missing export fails inside the case.
 - A test for a module that does not exist yet uses `await import()` inside the case.
-- Ported test files keep their case names and assertions but rewrite static named imports to namespace imports.
+- Ported test files follow the port rule above and rewrite static named imports to namespace imports.
 - A fake's contract suite lives under `test/contract/<boundary>/` and runs its cases against the real module and the fake;
   `lib/git.mjs`'s is `test/contract/git/`.
 - Fixtures live under `test/fixtures/` as JSON or text.

@@ -31,6 +31,13 @@ test('gg --help prints usage and exits 0', () => {
   assert.equal(r.stdout, gg().stdout);
 });
 
+test('usage marks each unimplemented command', () => {
+  const commandLines = gg('--help').stdout.split('\n').filter((line) => line.startsWith('  '));
+  const marked = commandLines.filter((line) => line.endsWith(' (not implemented)')).map((line) => line.trim().split(' ')[0]);
+  assert.deepEqual(marked, ['init', 'plan', 'publish', 'work', 'trace', 'stats']);
+  assert.match(gg('--help').stdout, /^ {2}doctor {4}validate the configuration and print each Resolved Flow$/m);
+});
+
 test('gg with an unknown command prints usage to stderr and exits 1', () => {
   const r = gg('bogus');
   assert.equal(r.status, 1);
@@ -64,7 +71,7 @@ test('gg run rejects an unknown option with a usage error', () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /unknown option --bogus/);
   assertUsage(r.stderr);
-  assert.doesNotMatch(r.stderr, /not implemented/);
+  assert.doesNotMatch(r.stderr, /gg run: not implemented/);
 });
 
 for (const [name, flag, error] of [
