@@ -322,7 +322,10 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
   const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   const m = terminalMarker(g, 'fault-comment');
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-effect' } }));
+  await assert.rejects(
+    interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-effect' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
   const mid = await record.load(g.commonDir, 'ticket', golden.TICKET);
   const result = await interpreter.runExecution({ ...g.options, record: mid });
 

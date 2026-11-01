@@ -1,11 +1,13 @@
-// Integrity and Test Immutability without git, for tests whose subject is not git behaviour. A snapshot is fixed values;
-// `write` and `commit` stand in for an agent changing a worktree, so a test can script a violation. test/integrity.test.mjs
-// runs one scenario table against this and lib/integrity.mjs, so the violations it reports keep the real shape.
-// Given the fake (or real) git, a baseline also records the untracked tests on disk, as lib/integrity.mjs does, so the Red
-// Check compares against the Visit's first baseline in the unit tier too.
+// Integrity snapshots without fingerprinting, for tests whose subject is not git behaviour. A snapshot is fixed values;
+// `write` and `commit` stand in for an agent changing a worktree, so a test can script a violation. What reads only files
+// and git (the untracked files a baseline records and a rollback restores, and Test Immutability) is lib's own over the
+// given git, the fake git in the unit tier. test/contract/integrity/ runs this and lib/integrity.mjs against the same
+// cases, so the violations it reports keep the real shape.
+import * as checks from '../../lib/checks.mjs';
 import * as integrityModule from '../../lib/integrity.mjs';
 
-// Every worktree starts at `head`, so a rollback to a baseline head resets to a real commit when `head` is one.
+// Every worktree starts at `head`, so a rollback to a baseline head resets to a real commit when `head` is one. `git` is
+// the git the case runs on.
 export function fakeIntegrity({ head = 'f'.repeat(40), git }) {
   let n = 0;
   // Object names in git's form, so nothing that checks one tells the fake apart.
@@ -38,15 +40,15 @@ export function fakeIntegrity({ head = 'f'.repeat(40), git }) {
       const s = state(worktree);
       return s.tree === s.headTree && s.index === s.headTree;
     },
-    untrackedFiles: async () => ({}),
-    ignoredFiles: async () => ({}),
-    restoreUntracked: async () => {},
+    untrackedFiles: (worktree, within) => integrityModule.untrackedFiles(worktree, within, git),
+    ignoredFiles: (worktree, within) => integrityModule.ignoredFiles(worktree, within, git),
+    restoreUntracked: (worktree, set) => integrityModule.restoreUntracked(worktree, set, git),
     async begin({ record: rec, others, testPaths }) {
       const own = await snapshot(rec.worktree);
       const idle = {};
       for (const other of others) idle[other] = { generation: 0, snapshot: await snapshot(other) };
       state(rec.worktree).from = state(rec.worktree).written.length;
-      const tests = git ? await integrityModule.untrackedFiles(rec.worktree, testPaths, git) : {};
+      const tests = await integrityModule.untrackedFiles(rec.worktree, testPaths, git);
       return { head: own.head, own, idle, untracked: {}, tests };
     },
     // Protected writes count from the last begin: an Attempt's end always follows its own begin.
@@ -77,7 +79,7 @@ export function fakeIntegrity({ head = 'f'.repeat(40), git }) {
   };
   return {
     integrity,
-    testImmutability: async () => ({ ok: true, changed: [] }),
+    testImmutability: (cwd, baseline, globs) => checks.testImmutability(cwd, baseline, { globs, git }),
     // A file written into the worktree, tracked or not: the flag-aware tree changes.
     write: (worktree, path) => {
       const s = state(worktree);

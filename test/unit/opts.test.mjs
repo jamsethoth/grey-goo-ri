@@ -44,7 +44,7 @@ test('parseOpts: unknown flags are rejected', () => {
 test('parseOpts: --flag=value is parsed, also for empty and = containing values', () => {
   assert.deepEqual(opts.parseOpts(['--runs=3', 'a.json'], EVAL_SPEC), { _: ['a.json'], runs: '3' });
   assert.deepEqual(opts.parseOpts(['--reset=a=b'], EVAL_SPEC), { _: [], reset: 'a=b' });
-  assert.throws(() => opts.parseOpts(['--bg=yes'], PLAN_SPEC), /--bg/);
+  assert.deepEqual(opts.parseOpts(['--reset='], EVAL_SPEC), { _: [], reset: '' });
 });
 
 test('parseOpts: a value flag with no value is an error', () => {

@@ -87,7 +87,7 @@ test('a workflow file change is an integrity violation', async (t) => {
     baseline,
     record: rec,
     others: [],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: interpreter.protectedFiles({}),
   });
   assert.deepEqual(violations, [
