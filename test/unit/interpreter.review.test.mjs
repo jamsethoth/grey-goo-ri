@@ -228,7 +228,7 @@ test('golden: a review ok without evidence routes as changes through the passed 
 
   const checked = g.at('reviewer', 1, 'review-pass', 0);
   assert.equal(checked.length, 1, 'review-pass is evaluated once on the Structured Response');
-  assert.equal(checked[0].signals.claim.claim, 'ok', 'the agent claimed ok');
+  assert.equal(checked[0].signals.claim.token, 'ok', 'the agent claimed ok');
   assert.deepEqual(checked[0].signals.checks, [{ id: 'review-pass', kind: 'response', state: 'failed', tree: null }]);
   // No Claim requires review-pass (P5a), so the review still comments and updates the PR.
   assert.equal(checked[0].outcome, 'ok');

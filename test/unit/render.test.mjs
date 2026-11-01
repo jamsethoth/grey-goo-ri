@@ -341,7 +341,7 @@ test('provenance counts one call per Attempt and a resumed Session once', () => 
   // Each Attempt's completion saves its own usage.delta; the Session keeps only the last cumulative usage.
   const call = (m, delta) => [
     { step: 'intent', actionMarker: m, effect: 'call', payload: {}, evidence: null },
-    { step: 'evidence', actionMarker: m, effect: 'call', payload: null, evidence: { usage: delta } },
+    { step: 'evidence', actionMarker: m, effect: 'call', payload: null, evidence: { usageDelta: delta } },
     { step: 'complete', actionMarker: m, effect: 'call', payload: null, evidence: null },
   ];
   const session = (vertex, cumulative) => ({

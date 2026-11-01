@@ -152,7 +152,7 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
 });
 
 test('a transient failure is retried within budget honouring retryAfterMs', async (t) => {
-  const failed = { files: {}, response: null, failure: { class: 'transient', retryAfterMs: 5 } };
+  const failed = { files: {}, response: null, failure: { failureClass: 'transient', retryAfterMs: 5 } };
   const g = await golden.setup(t, {
     responses: {
       'red/1/red/1': failed,
@@ -197,7 +197,7 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
 
 test('an auth failure stops the run with its class', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const result = await interpreter.runExecution(g.options);
 
@@ -218,7 +218,7 @@ test('an auth failure stops the run with its class', async (t) => {
 
 test('an auth failure keeps its run stop when the terminal comment fails', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   g.options.gh = {
     ...g.options.gh,
@@ -237,7 +237,7 @@ const terminalMarker = (g, action) => golden.markerOf(g.rec, 'needs-human', 1, a
 
 test('a fault interrupting a Terminal comment posts its own comment with the error and the interrupted Terminal Reason', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const real = g.options.gh.commentIssue;
   let calls = 0;
@@ -341,7 +341,7 @@ test('a crash inside the fault report replays its comment once on resume', async
 
 test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const real = g.options.gh.commentIssue;
   let calls = 0;
@@ -381,7 +381,7 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
 
 test('an unknown failure goes to needs-human without retry', async (t) => {
   const g = await golden.setup(t, {
-    responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'unknown' } } },
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
   });
   const result = await interpreter.runExecution(g.options);
 

@@ -49,7 +49,7 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.ok(session, 'green session recorded under green/1/green');
   assert.equal(session.sessionId, 'fake-session-2');
   assert.match(session.transcriptPath, /fake-session-2\.jsonl$/);
-  assert.equal(session.usage.input, 200);
+  assert.equal(session.cumulativeUsage.input, 200);
   assert.equal(g.rec.sessions['red/1/red'].sessionId, 'fake-session-1');
 });
 
@@ -668,7 +668,7 @@ test('a Visit saves a state and inputs that declare every field', async (t) => {
   for (const state of states)
     assert.deepEqual(Object.keys(state), [
       'recovery',
-      'first',
+      'firstAttemptBaseline',
       'call',
       'response',
       'runs',
@@ -701,12 +701,12 @@ test('a held Execution saves a Terminal stop that declares every field', async (
     inProgress: false,
     fresh: false,
     stopped: false,
-    comment: null,
+    commentTemplate: null,
     advice: null,
     detail: null,
     error: null,
     failureClass: null,
-    runStop: null,
+    runStopFailureClass: null,
     interrupted: null,
   };
   assert.deepEqual(terminalStop, expected);
@@ -1811,12 +1811,12 @@ test('a stop a Visit decides saves a Terminal stop and Check runs that declare e
     'inProgress',
     'fresh',
     'stopped',
-    'comment',
+    'commentTemplate',
     'advice',
     'detail',
     'error',
     'failureClass',
-    'runStop',
+    'runStopFailureClass',
     'interrupted',
   ]);
   assert.deepEqual(terminalStop.actionRef, {
@@ -1826,7 +1826,7 @@ test('a stop a Visit decides saves a Terminal stop and Check runs that declare e
     action: 'test',
     recovery: 0,
   });
-  assert.equal(terminalStop.comment, null);
+  assert.equal(terminalStop.commentTemplate, null);
   const redCheck = saved.findLast((next) => next.visitState?.runs['red-check'])?.visitState.runs['red-check'];
   assert.deepEqual(Object.keys(redCheck ?? {}), ['output', 'reason', 'failure', 'recoverable']);
   assert.equal(redCheck.reason, null, 'a command Check gives no reason');

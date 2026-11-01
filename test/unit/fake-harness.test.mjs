@@ -125,11 +125,11 @@ test('concurrent new sessions get distinct ids, transcripts and usage', async ()
 
 test('a scripted failure is a failed result, not a rejection', async () => {
   const { harness, cwd } = await setup({
-    responses: { 'implement/1/red/1': { failure: { class: 'transient', retryAfterMs: 5 } } },
+    responses: { 'implement/1/red/1': { failure: { failureClass: 'transient', retryAfterMs: 5 } } },
   });
   const { result, failure } = await harness.run(call(cwd));
   assert.equal(result.status, 'failed');
-  assert.equal(failure.class, 'transient');
+  assert.equal(failure.failureClass, 'transient');
   assert.equal(failure.retryAfterMs, 5);
 });
 

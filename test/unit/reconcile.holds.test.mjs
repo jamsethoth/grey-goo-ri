@@ -66,7 +66,7 @@ for (const point of Object.keys(POINTS)) {
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of the run stop needs-human label keeps the run stop classification`, async (t) => {
     const g = await golden.setup(t, {
-      responses: { 'red/1/red/1': { files: {}, response: null, failure: { class: 'auth' } } },
+      responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
     });
     await crashed(g, ['needs-human', 1, 'end-label', 0], point);
 

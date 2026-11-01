@@ -40,7 +40,7 @@ export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
     async begin({ record: rec, others }) {
       const own = await snapshot(rec.worktree);
       const idle = {};
-      for (const other of others) idle[other] = { generation: 0, snap: await snapshot(other) };
+      for (const other of others) idle[other] = { generation: 0, snapshot: await snapshot(other) };
       state(rec.worktree).from = state(rec.worktree).written.length;
       return { head: own.head, own, idle, untracked: {}, tests: {} };
     },
@@ -63,7 +63,9 @@ export function fakeIntegrity({ head = 'f'.repeat(40) } = {}) {
       if (touched.length) violations.push({ worktree, surface: 'protected', before: null, after: touched });
       for (const other of others) {
         if (baseline.idle[other])
-          violations.push(...diff(other, baseline.idle[other].snap, await snapshot(other), ['head', 'index', 'tree']));
+          violations.push(
+            ...diff(other, baseline.idle[other].snapshot, await snapshot(other), ['head', 'index', 'tree']),
+          );
       }
       return { violations };
     },

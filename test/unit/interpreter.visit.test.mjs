@@ -221,7 +221,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
 
   const check = actionEvent(g, 'green', 'test');
   assert.ok(check, 'the Green Check runs and is recorded');
-  assert.equal(check.signals.claim.claim, 'blocked');
+  assert.equal(check.signals.claim.token, 'blocked');
   assert.deepEqual(
     check.signals.checks.map((c) => [c.id, c.state]),
     [['test', 'passed']],

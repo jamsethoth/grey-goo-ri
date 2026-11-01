@@ -182,7 +182,7 @@ test('an integer property is inside the strict subset', () => {
 });
 
 test('validateResponse accepts an integer where an integer is declared', () => {
-  assert.deepEqual(briefs.validateResponse(withCount, { count: 3 }), { valid: true, claim: undefined });
+  assert.deepEqual(briefs.validateResponse(withCount, { count: 3 }), { valid: true, token: null });
 });
 
 test('validateResponse rejects a fraction where an integer is declared', () => {
@@ -473,10 +473,10 @@ for (const [what, schema, path, error] of [
 }
 
 test('validateResponse accepts exactly one lowercase enum token as the claim', () => {
-  assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, validRed), { valid: true, claim: 'ok' });
+  assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, validRed), { valid: true, token: 'ok' });
   assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, { ...validRed, claim: 'misscoped' }), {
     valid: true,
-    claim: 'misscoped',
+    token: 'misscoped',
   });
   assert.deepEqual(SCHEMAS.RED_SCHEMA.properties.claim.enum, ['ok', 'blocked', 'misscoped']);
   assert.deepEqual(SCHEMAS.IMPLEMENT_SCHEMA.properties.claim.enum, ['ok', 'blocked', 'misscoped']);
