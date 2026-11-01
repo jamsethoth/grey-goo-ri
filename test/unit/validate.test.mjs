@@ -227,7 +227,7 @@ test('a configuration without a Flow names the example document, not gg init', a
   delete config.flows;
   assert.deepEqual((await check(config)).errors, [{
     at: 'flows',
-    message: 'no Flow is declared; docs/research/user-defined-procedures-example-flow.md has an example to copy',
+    message: 'no Flow is declared; docs/research/user-defined-procedures-example-flow.md has an example Flow',
   }]);
 });
 

@@ -44,7 +44,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | --- | --- |
 | `bin/gg.mjs` | `gg` entry point: usage and command dispatch |
 | `lib/opts.mjs` | option parsing |
-| `lib/config.mjs` | Layers, merge, migration table, Config Hash, the Layer files each Layer names, Declared Command loading |
+| `lib/config.mjs` | Layers, merge, Config Hash, the Layer files each Layer names, Declared Command loading |
 | `lib/flow.mjs` | the Resolved Flow and Config Hash written to a Run's directory |
 | `lib/validate.mjs` | the Flow validator, which `gg doctor` and `gg run` admission share: the configuration's agents, procedures, flows and the names each template reads checked, giving each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/refs.mjs` | the one reference-path resolver: parse, read and type every dotted reference path |
