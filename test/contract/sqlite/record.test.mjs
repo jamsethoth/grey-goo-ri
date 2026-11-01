@@ -185,7 +185,8 @@ test('openers of a new database queue while the open lock is held and all succee
   const switchedAt = (out) => [...out.matchAll(/^switching (\d+)$/gm)].map(([, ms]) => Number(ms));
   const switchedEarly = exits.filter(({ out }) => switchedAt(out).some((ms) => ms < releasedAt));
   assert.deepEqual(switchedEarly, [], 'no opener gets past a held open lock');
-  assert.deepEqual(exits.map(({ code, err }) => ({ code, err })), tickets.map(() => ({ code: 0, err: '' })));
+  assert.deepEqual(exits.map(({ code, err }) => ({ code, err })), tickets.map(() => ({ code: 0, err: '' })),
+    `every opener opens once the lock is released: ${JSON.stringify(exits)}`);
   assert.equal(journalMode(commonDir), 'wal');
 });
 
