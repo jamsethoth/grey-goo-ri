@@ -15,10 +15,13 @@ async function crashedViolation(t, when) {
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const g = await golden.setup(t, { responses, integrity: 'real' });
   const git = g.options.git;
-  g.options.git = { ...git, resetTo: async (...args) => {
-    if (when === 'after reset') await git.resetTo(...args);
-    throw new interpreter.CrashError('crash');
-  } };
+  g.options.git = {
+    ...git,
+    resetTo: async (...args) => {
+      if (when === 'after reset') await git.resetTo(...args);
+      throw new interpreter.CrashError('crash');
+    },
+  };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
   g.git = git;
@@ -48,8 +51,15 @@ test('a crash before the reset is finished by Reconciliation while the worktree 
   assert.notEqual(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the agent changes are still in the worktree');
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.git }), 'continue');
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', "the record proves the changes the agent's, so they are discarded");
-  assert.deepEqual(g.loaded.history.map((h) => h.kind), ['integrity violation']);
+  assert.equal(
+    golden.sh(g.worktree, 'status', '--porcelain'),
+    '',
+    "the record proves the changes the agent's, so they are discarded",
+  );
+  assert.deepEqual(
+    g.loaded.history.map((h) => h.kind),
+    ['integrity violation'],
+  );
   assert.deepEqual(resetEntries(g.loaded), ['intent', 'evidence', 'complete']);
 });
 
@@ -61,7 +71,11 @@ test('a crash before the reset holds the Execution and discards nothing once a h
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
   assert.deepEqual(g.loaded.history, []);
-  assert.equal(record.openIntents(g.loaded)[0].payload.history.kind, 'integrity violation', 'the reason waits in the open intent');
+  assert.equal(
+    record.openIntents(g.loaded)[0].payload.history.kind,
+    'integrity violation',
+    'the reason waits in the open intent',
+  );
 });
 
 test('an assume-unchanged edit left at the baseline does not prove the reset done', async (t) => {
@@ -83,7 +97,11 @@ test('an ignored test added after an interrupted reset holds the restore and is 
   writeFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'mine\n');
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
-  assert.equal(readFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'utf8'), 'mine\n', 'the human file is untouched');
+  assert.equal(
+    readFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'utf8'),
+    'mine\n',
+    'the human file is untouched',
+  );
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 });
 
@@ -100,10 +118,13 @@ test('a crash between the reset and the Protected File restore of an integrity v
     return out;
   };
   const git = g.options.git;
-  g.options.git = { ...git, resetTo: async (...args) => {
-    await git.resetTo(...args);
-    throw new interpreter.CrashError('crash');
-  } };
+  g.options.git = {
+    ...git,
+    resetTo: async (...args) => {
+      await git.resetTo(...args);
+      throw new interpreter.CrashError('crash');
+    },
+  };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
   assert.equal(readFileSync(local, 'utf8'), '{"agent":true}\n', 'the crash came before the restore');
 
@@ -118,8 +139,16 @@ test('Reconciliation uses an injected integrity', async (t) => {
   const g = await crashedViolation(t, 'after reset');
   // The real worktree is clean at the reset's baseline, so only the injected integrity can make it look a human's.
   const elsewhere = { head: 'elsewhere', index: 'elsewhere', tree: 'elsewhere' };
-  const integrity = { snapshot: async () => elsewhere, isCleanAt: async () => false, untrackedFiles: async () => ({}), ignoredFiles: async () => ({}) };
+  const integrity = {
+    snapshot: async () => elsewhere,
+    isCleanAt: async () => false,
+    untrackedFiles: async () => ({}),
+    ignoredFiles: async () => ({}),
+  };
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git, integrity }), 'held');
-  assert.deepEqual(await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree, integrity }), { conflicts: [], stat: '' });
+  assert.deepEqual(await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree, integrity }), {
+    conflicts: [],
+    stat: '',
+  });
   assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'continue');
 });

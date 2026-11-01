@@ -11,13 +11,20 @@ export const passed = (code, signal, out) =>
 if (!process.env.NODE_TEST_CONTEXT) {
   const [copies = 4, rounds = 25] = process.argv.slice(2).map(Number);
   const suite = fileURLToPath(new URL('../contract/sqlite/locks.test.mjs', import.meta.url));
-  const runOnce = () => new Promise((resolve) => {
-    const child = spawn(process.execPath, ['--test', '--test-reporter=tap', suite], { stdio: ['ignore', 'pipe', 'inherit'] });
-    let out = '';
-    child.stdout.on('data', (chunk) => { out += chunk; });
-    child.on('error', (error) => resolve({ ok: false, out: `${out}spawn error: ${error.message}` }));
-    child.on('close', (code, signal) => resolve({ ok: passed(code, signal, out), out: `${out}exit ${code}, signal ${signal}` }));
-  });
+  const runOnce = () =>
+    new Promise((resolve) => {
+      const child = spawn(process.execPath, ['--test', '--test-reporter=tap', suite], {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      });
+      let out = '';
+      child.stdout.on('data', (chunk) => {
+        out += chunk;
+      });
+      child.on('error', (error) => resolve({ ok: false, out: `${out}spawn error: ${error.message}` }));
+      child.on('close', (code, signal) =>
+        resolve({ ok: passed(code, signal, out), out: `${out}exit ${code}, signal ${signal}` }),
+      );
+    });
   let clean = 0;
   for (let round = 0; round < rounds; round++) {
     const results = await Promise.all(Array.from({ length: copies }, runOnce));

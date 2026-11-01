@@ -5,9 +5,7 @@ import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
 import * as golden from '../support/golden.mjs';
-import {
-  originSha, loadTicket, EFFECTS, crashed, NEEDS_HUMAN, reconcileArgs,
-} from '../support/reconcile.mjs';
+import { originSha, loadTicket, EFFECTS, crashed, NEEDS_HUMAN, reconcileArgs } from '../support/reconcile.mjs';
 
 test('an amended commit with the marker holds the ticket', async (t) => {
   const g = await golden.setup(t, { git: 'real' });
@@ -65,7 +63,11 @@ test('a crash before the commit replays the intended tree, not a human edit', as
   assert.equal(result.outcome, 'needs-human');
   const final = await loadTicket(g);
   assert.deepEqual(final.terminalReason.decidedBy, { hold: 'unchecked-publish' });
-  assert.match(final.terminalReason.text, /its Check passed on tree \w+, not on tree \w+ of commit/, 'the Check ran with the human file in the tree');
+  assert.match(
+    final.terminalReason.text,
+    /its Check passed on tree \w+, not on tree \w+ of commit/,
+    'the Check ran with the human file in the tree',
+  );
   assert.equal(g.gh.pr().isDraft, true);
   const { payload } = final.log.find((e) => e.marker === m && e.step === 'intent');
   const { sha } = final.log.find((e) => e.marker === m && e.step === 'evidence').evidence;

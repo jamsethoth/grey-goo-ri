@@ -5,8 +5,22 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  steps, actionMarker, reviewFlow, prReviewComments, ticketComments, loadTicket, ticketRow, attemptMarker,
-  PR, okReview, REVIEW_COMMENT, commentPosts, onPr, crashPost, originSha, headSha,
+  steps,
+  actionMarker,
+  reviewFlow,
+  prReviewComments,
+  ticketComments,
+  loadTicket,
+  ticketRow,
+  attemptMarker,
+  PR,
+  okReview,
+  REVIEW_COMMENT,
+  commentPosts,
+  onPr,
+  crashPost,
+  originSha,
+  headSha,
 } from '../support/interpreter.mjs';
 
 // #83: the pr-upsert, pr-ready and push paths of the in-Action retry, end to end.
@@ -16,8 +30,12 @@ const PR_READY = 'publish/1/pr-ready/0';
 const isPr = (verb) => (args) => args[0] === 'pr' && args[1] === verb;
 const prCalls = (g, verb) => g.gh.calls.filter((c) => isPr(verb)(c.args));
 // A failed push as git reports it: only its text carries the status, with no headers to say how long to wait.
-const pushError = () => Object.assign(new Error('git push exited 128'),
-  { code: 128, stdout: '', stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 503" });
+const pushError = () =>
+  Object.assign(new Error('git push exited 128'), {
+    code: 128,
+    stdout: '',
+    stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 503",
+  });
 
 // The golden Execution on the orchestrator's locked git, whose nth raw push runs `push(n, real)`; returns the count.
 function pushThrough(g, push) {
@@ -54,7 +72,9 @@ test('a transient pr-upsert failure is retried and opens one PR', async (t) => {
   const g = await golden.setup(t);
   g.gh.fail({ matches: isPr('create'), status: 502 });
   let during;
-  g.clock.onSleep = async () => { during = (await loadTicket(g)).pr; };
+  g.clock.onSleep = async () => {
+    during = (await loadTicket(g)).pr;
+  };
   const result = await interpreter.runExecution(g.options);
 
   const final = await retriedOnce(g, result, PR_UPSERT, attemptMarker(g, 'green', 1, 'pr', 0));
@@ -74,10 +94,17 @@ test('an accepted pr-upsert whose call errored is found, not repeated', async (t
   const final = await retriedOnce(g, result, PR_UPSERT, m);
   assert.equal(prCalls(g, 'create').length, 1, 'never created again');
   assert.equal(prCalls(g, 'edit').length, 1, "edited only by publish's re-render");
-  assert.deepEqual(final.log.find((e) => e.marker === m && e.step === 'evidence').evidence, { number: PR, url: g.gh.pr().url });
+  assert.deepEqual(final.log.find((e) => e.marker === m && e.step === 'evidence').evidence, {
+    number: PR,
+    url: g.gh.pr().url,
+  });
   assert.equal(g.rec.pr, PR, 'restored from the found PR');
   assert.equal(final.pr, PR, 'and saved');
-  assert.deepEqual(prCalls(g, 'ready').map((c) => c.args[2]), [String(PR)], 'the found PR is the one made ready');
+  assert.deepEqual(
+    prCalls(g, 'ready').map((c) => c.args[2]),
+    [String(PR)],
+    'the found PR is the one made ready',
+  );
 });
 
 test('a transient pr-ready failure is retried and the PR ends ready', async (t) => {
@@ -123,7 +150,9 @@ test('a push that landed but whose call errored is found on origin, not pushed a
     if (n === 1) throw pushError();
   });
   let during;
-  g.clock.onSleep = async () => { during = await originSha(g, unlocked); };
+  g.clock.onSleep = async () => {
+    during = await originSha(g, unlocked);
+  };
   const result = await interpreter.runExecution(g.options);
 
   const m = actionMarker(g, 'green', 'push');
@@ -135,18 +164,32 @@ test('a push that landed but whose call errored is found on origin, not pushed a
 });
 
 for (const [name, key, inject, text] of [
-  ['pr-upsert', PR_UPSERT, (g) => {
-    g.gh.fail({ matches: isPr('create'), status: 502 });
-    g.gh.fail({ matches: isPr('create'), status: 502 });
-    g.gh.fail({ matches: isPr('create'), status: 502 });
-  }, 'A transient GitHub failure (HTTP 502) at pr persisted after 2 retries; the error is in this comment and on ticket_end.'],
-  ['pr-ready', PR_READY, (g) => {
-    g.gh.fail({ matches: isPr('ready'), status: 502 });
-    g.gh.fail({ matches: isPr('ready'), status: 502 });
-    g.gh.fail({ matches: isPr('ready'), status: 502 });
-  }, 'A transient GitHub failure (HTTP 502) at pr-ready persisted after 2 retries; the error is in this comment and on ticket_end.'],
-  ['push', PUSH, (g) => pushThrough(g, () => Promise.reject(pushError())),
-    'A transient push failure (HTTP 503) at push persisted after 2 retries; the error is in this comment and on ticket_end.'],
+  [
+    'pr-upsert',
+    PR_UPSERT,
+    (g) => {
+      g.gh.fail({ matches: isPr('create'), status: 502 });
+      g.gh.fail({ matches: isPr('create'), status: 502 });
+      g.gh.fail({ matches: isPr('create'), status: 502 });
+    },
+    'A transient GitHub failure (HTTP 502) at pr persisted after 2 retries; the error is in this comment and on ticket_end.',
+  ],
+  [
+    'pr-ready',
+    PR_READY,
+    (g) => {
+      g.gh.fail({ matches: isPr('ready'), status: 502 });
+      g.gh.fail({ matches: isPr('ready'), status: 502 });
+      g.gh.fail({ matches: isPr('ready'), status: 502 });
+    },
+    'A transient GitHub failure (HTTP 502) at pr-ready persisted after 2 retries; the error is in this comment and on ticket_end.',
+  ],
+  [
+    'push',
+    PUSH,
+    (g) => pushThrough(g, () => Promise.reject(pushError())),
+    'A transient push failure (HTTP 503) at push persisted after 2 retries; the error is in this comment and on ticket_end.',
+  ],
 ]) {
   test(`a ${name} whose retries run out holds with the exhausted reason`, async (t) => {
     const g = await golden.setup(t);
@@ -156,7 +199,10 @@ for (const [name, key, inject, text] of [
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.deepEqual(g.sleeps, [60_000, 120_000]);
     assert.equal(g.rec.terminalReason.text, text);
-    assert.ok(g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)), g.logs.join('\n'));
+    assert.ok(
+      g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)),
+      g.logs.join('\n'),
+    );
     const final = await loadTicket(g);
     assert.equal(final.retries[key].remote.count, 2);
     assert.equal(final.state, 'fault');
@@ -165,12 +211,27 @@ for (const [name, key, inject, text] of [
 }
 
 for (const [name, key, inject, text] of [
-  ['pr-upsert', PR_UPSERT, (g) => crashPr(g, 'create'),
-    'A transient GitHub failure at pr persisted after 2 retries; the error is in this comment and on ticket_end.'],
-  ['pr-ready', PR_READY, (g) => crashPr(g, 'ready'),
-    'A transient GitHub failure at pr-ready persisted after 2 retries; the error is in this comment and on ticket_end.'],
-  ['push', PUSH, (g) => pushThrough(g, (n) => Promise.reject(n === 3 ? new interpreter.CrashError('crash as the push launched') : pushError())),
-    'A transient push failure at push persisted after 2 retries; the error is in this comment and on ticket_end.'],
+  [
+    'pr-upsert',
+    PR_UPSERT,
+    (g) => crashPr(g, 'create'),
+    'A transient GitHub failure at pr persisted after 2 retries; the error is in this comment and on ticket_end.',
+  ],
+  [
+    'pr-ready',
+    PR_READY,
+    (g) => crashPr(g, 'ready'),
+    'A transient GitHub failure at pr-ready persisted after 2 retries; the error is in this comment and on ticket_end.',
+  ],
+  [
+    'push',
+    PUSH,
+    (g) =>
+      pushThrough(g, (n) =>
+        Promise.reject(n === 3 ? new interpreter.CrashError('crash as the push launched') : pushError()),
+      ),
+    'A transient push failure at push persisted after 2 retries; the error is in this comment and on ticket_end.',
+  ],
 ]) {
   test(`a ${name} that crashes after launch spends its saved budget on resume`, async (t) => {
     const g = await golden.setup(t);
@@ -187,7 +248,10 @@ for (const [name, key, inject, text] of [
     const final = await loadTicket(g);
     assert.equal(final.retries[key].remote.count, 2, 'the budget is not refilled');
     assert.equal(final.terminalReason.text, text);
-    assert.ok(g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)), g.logs.join('\n'));
+    assert.ok(
+      g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)),
+      g.logs.join('\n'),
+    );
     assert.equal(final.state, 'fault');
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   });
@@ -195,14 +259,20 @@ for (const [name, key, inject, text] of [
 
 // #85: a backoff is bounded, stops with the Run, and leaves its worktree idle while it waits.
 const HOUR = 3_600_000;
-const rateLimitedFor = (ms) => onPr({ status: 403, headers: { 'Retry-After': String(ms / 1000) },
-  body: { message: 'You have exceeded a secondary rate limit.' } });
+const rateLimitedFor = (ms) =>
+  onPr({
+    status: 403,
+    headers: { 'Retry-After': String(ms / 1000) },
+    body: { message: 'You have exceeded a secondary rate limit.' },
+  });
 
 test('a backoff longer than the timer limit sleeps in bounded chunks', async (t) => {
   const g = await reviewFlow(t, okReview);
   g.gh.fail(rateLimitedFor(30 * 24 * HOUR));
   const calls = new Set();
-  g.clock.onSleep = () => { calls.add(g.gh.calls.length); };
+  g.clock.onSleep = () => {
+    calls.add(g.gh.calls.length);
+  };
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
@@ -215,7 +285,9 @@ test('a backoff keeps one idle generation across timer chunks', async (t) => {
   const g = await reviewFlow(t, okReview);
   g.gh.fail(rateLimitedFor(2 * HOUR));
   const seen = [];
-  g.clock.onSleep = async () => { seen.push((await loadTicket(g)).activity); };
+  g.clock.onSleep = async () => {
+    seen.push((await loadTicket(g)).activity);
+  };
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
@@ -234,8 +306,10 @@ for (const [name, deadline, shown] of [
     const g = await reviewFlow(t, okReview);
     const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
     g.gh.fail(onPr({ status: 502 }));
-    await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-retry-saved' } }),
-      (err) => err instanceof interpreter.CrashError);
+    await assert.rejects(
+      interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-retry-saved' } }),
+      (err) => err instanceof interpreter.CrashError,
+    );
     const mid = await loadTicket(g);
     mid.retries[REVIEW_COMMENT].remote.nextEligibleAt = deadline(g.clock.now());
     const saved = structuredClone(mid.retries[REVIEW_COMMENT].remote);
@@ -244,8 +318,12 @@ for (const [name, deadline, shown] of [
     assert.equal(result.held, true, JSON.stringify(result));
     assert.deepEqual(g.sleeps, [], 'never waited');
     assert.equal(commentPosts(g).length, 1, 'never retried');
-    assert.ok(g.logs.includes(`#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline ${shown} is not a time within 31 days, so it is held`),
-      g.logs.join('\n'));
+    assert.ok(
+      g.logs.includes(
+        `#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline ${shown} is not a time within 31 days, so it is held`,
+      ),
+      g.logs.join('\n'),
+    );
     const final = await loadTicket(g);
     assert.equal(final.state, 'held');
     assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the saved retry is kept');
@@ -260,8 +338,12 @@ test('a wait over 31 days from GitHub is held without reserving a retry', async 
   assert.equal(result.held, true, JSON.stringify(result));
   assert.deepEqual(g.sleeps, [], 'never waited');
   assert.equal(commentPosts(g).length, 1, 'never retried');
-  assert.ok(g.logs.includes(`#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline 2026-11-24T00:00:00.000Z is not a time within 31 days, so it is held`),
-    g.logs.join('\n'));
+  assert.ok(
+    g.logs.includes(
+      `#${golden.TICKET} ${REVIEW_COMMENT}: retry deadline 2026-11-24T00:00:00.000Z is not a time within 31 days, so it is held`,
+    ),
+    g.logs.join('\n'),
+  );
   const final = await loadTicket(g);
   assert.equal(final.state, 'held');
   assert.equal(final.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is spent');
@@ -286,9 +368,15 @@ test('a run stop during a backoff ends the Execution at needs-human', async (t) 
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[REVIEW_COMMENT].remote, saved, 'the retry stays as saved');
-  assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
-    + 'Execution stopped while waiting to retry comment; its retry is kept as saved.');
-  assert.ok(ticketComments(g).some((c) => c.body.includes(final.terminalReason.text)), 'the needs-human comment says so');
+  assert.equal(
+    final.terminalReason.text,
+    'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this ' +
+      'Execution stopped while waiting to retry comment; its retry is kept as saved.',
+  );
+  assert.ok(
+    ticketComments(g).some((c) => c.body.includes(final.terminalReason.text)),
+    'the needs-human comment says so',
+  );
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 });
 
@@ -302,7 +390,12 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
   assert.equal(saved.started, true, 'the first retry launched');
   // Another Ticket stops the run once this Action is under way, after the Visit's own check.
   let stop = null;
-  const runState = { remoteNotBefore: 0, get stop() { return (stop ??= ticketRow(g).activity.busy ? { failureClass: 'auth', ticket: 21 } : null); } };
+  const runState = {
+    remoteNotBefore: 0,
+    get stop() {
+      return (stop ??= ticketRow(g).activity.busy ? { failureClass: 'auth', ticket: 21 } : null);
+    },
+  };
   const result = await interpreter.runExecution({ ...g.options, record: mid, runState });
 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
@@ -314,8 +407,10 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
 
 test('a rate-limited push keeps the fallback without a probe', async (t) => {
   const g = await golden.setup(t);
-  const limited = () => Object.assign(pushError(),
-    { stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429" });
+  const limited = () =>
+    Object.assign(pushError(), {
+      stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429",
+    });
   const pushes = pushThrough(g, (n, push) => (n === 1 ? Promise.reject(limited()) : push()));
   const result = await interpreter.runExecution(g.options);
 
@@ -343,15 +438,21 @@ test('a run stop during a pr-ready backoff ends at needs-human without marking r
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[PR_READY].remote, saved, 'the retry stays as saved');
-  assert.equal(final.terminalReason.text, 'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this '
-    + 'Execution stopped while waiting to retry pr-ready; its retry is kept as saved.');
+  assert.equal(
+    final.terminalReason.text,
+    'The harness call of Ticket #21 failed with class auth, which stops the whole run, so this ' +
+      'Execution stopped while waiting to retry pr-ready; its retry is kept as saved.',
+  );
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 });
 
 test('a run stop during the ready-for-qa comment backoff ends at needs-human after pr-ready', async (t) => {
   const g = await golden.setup(t);
   const DONE_COMMENT = 'ready-for-qa/1/end-comment/0';
-  g.gh.fail({ matches: (args) => golden.isCommentPost(args, golden.TICKET) && prCalls(g, 'ready').length > 0, status: 502 });
+  g.gh.fail({
+    matches: (args) => golden.isCommentPost(args, golden.TICKET) && prCalls(g, 'ready').length > 0,
+    status: 502,
+  });
   const runState = { stop: null, remoteNotBefore: 0 };
   let saved;
   g.clock.onSleep = async () => {
@@ -369,7 +470,10 @@ test('a run stop during the ready-for-qa comment backoff ends at needs-human aft
   assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[DONE_COMMENT].remote, saved, 'the retry stays as saved');
   assert.ok(!ticketComments(g).some((c) => c.body.startsWith('### gg: ready-for-qa')), 'no ready-for-qa comment lands');
-  assert.ok(ticketComments(g).some((c) => c.body.startsWith('### gg: needs-human')), 'the needs-human comment lands');
+  assert.ok(
+    ticketComments(g).some((c) => c.body.startsWith('### gg: needs-human')),
+    'the needs-human comment lands',
+  );
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human'], 'needs-human, and not ready-for-qa');
 });
 
@@ -377,13 +481,17 @@ test('a run stop during a resume lookup backoff ends at needs-human', async (t) 
   const g = await reviewFlow(t, okReview);
   const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
   g.gh.fail(onPr({ status: 502 }));
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-retry-saved' } }),
-    (err) => err instanceof interpreter.CrashError);
+  await assert.rejects(
+    interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-retry-saved' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
   const mid = await loadTicket(g);
   const saved = structuredClone(mid.retries[REVIEW_COMMENT].remote);
   const runState = { stop: null, remoteNotBefore: 0 };
   // Reconciliation's lookup waits out the saved retry; another Ticket stops the run meanwhile.
-  g.clock.onSleep = () => { runState.stop = { failureClass: 'auth', ticket: 21 }; };
+  g.clock.onSleep = () => {
+    runState.stop = { failureClass: 'auth', ticket: 21 };
+  };
   const result = await interpreter.runExecution({ ...g.options, record: mid, runState });
 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
@@ -400,14 +508,20 @@ test('a run stop during a resume lookup backoff ends at needs-human', async (t) 
 async function failActivitySave(t, from, to) {
   const g = await reviewFlow(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
-  golden.failSaves(t, (saved, next) => saved?.activity.busy === from && next.activity.busy === to
-    && next.retries[REVIEW_COMMENT]?.remote?.count === 1);
+  golden.failSaves(
+    t,
+    (saved, next) =>
+      saved?.activity.busy === from && next.activity.busy === to && next.retries[REVIEW_COMMENT]?.remote?.count === 1,
+  );
   return g;
 }
 
 test('a failed idle save before a backoff allows no later save or effect', async (t) => {
   const g = await failActivitySave(t, true, false);
-  const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
+  const err = await interpreter.runExecution(g.options).then(
+    () => null,
+    (e) => e,
+  );
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
   assert.deepEqual(g.sleeps, [], 'never waited');
@@ -425,8 +539,13 @@ test('a failed idle save before a backoff allows no later save or effect', async
 test('a failed busy save after a backoff allows no later save or effect', async (t) => {
   const g = await failActivitySave(t, false, true);
   let before;
-  g.clock.onSleep = () => { before = g.gh.calls.length; };
-  const err = await interpreter.runExecution(g.options).then(() => null, (e) => e);
+  g.clock.onSleep = () => {
+    before = g.gh.calls.length;
+  };
+  const err = await interpreter.runExecution(g.options).then(
+    () => null,
+    (e) => e,
+  );
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
   assert.deepEqual(g.sleeps, [60_000]);

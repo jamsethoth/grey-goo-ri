@@ -10,8 +10,18 @@ import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  TICKET, BRANCH, IN_PROGRESS, NEEDS_HUMAN, fixture, seedExecution, ticketResult, failComment,
-  endsOf, loadTicket, dirtyTicket, failHoldLabel,
+  TICKET,
+  BRANCH,
+  IN_PROGRESS,
+  NEEDS_HUMAN,
+  fixture,
+  seedExecution,
+  ticketResult,
+  failComment,
+  endsOf,
+  loadTicket,
+  dirtyTicket,
+  failHoldLabel,
 } from '../support/run.mjs';
 
 test('a hold label failure leaves its label intent open for the next Run', async (t) => {
@@ -19,11 +29,18 @@ test('a hold label failure leaves its label intent open for the next Run', async
   const failing = failHoldLabel(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   assert.equal(f.comments().length, 1);
-  assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET), 'the label failure is an Event');
+  assert.ok(
+    f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET),
+    'the label failure is an Event',
+  );
   const mid = await loadTicket(f);
   assert.equal(mid?.terminalStop?.held, true, 'the hold is decided');
   assert.notEqual(mid.state, 'held', 'a hold whose label is pending is not held');
-  assert.deepEqual(record.openIntents(mid).map((e) => e.action), ['label'], 'the label intent stays open');
+  assert.deepEqual(
+    record.openIntents(mid).map((e) => e.action),
+    ['label'],
+    'the label intent stays open',
+  );
   assert.equal(endsOf(f, mid.execution).length, 0);
 
   failing.on = false;
@@ -42,11 +59,18 @@ test('a seeded hold label failure is finished on the next Run', async (t) => {
   const failing = failHoldLabel(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   assert.equal(f.comments().length, 1);
-  assert.ok(f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET), 'the label failure is an Event');
+  assert.ok(
+    f.readEvents().some((e) => e.type === 'label_failed' && e.ticket === TICKET),
+    'the label failure is an Event',
+  );
   const mid = await loadTicket(f);
   assert.equal(mid?.terminalStop?.held, true, 'the hold is decided');
   assert.notEqual(mid.state, 'held', 'a hold whose label is pending is not held');
-  assert.deepEqual(record.openIntents(mid).map((e) => e.action), ['commit', 'label'], 'the label intent stays open beside the seeded commit');
+  assert.deepEqual(
+    record.openIntents(mid).map((e) => e.action),
+    ['commit', 'label'],
+    'the label intent stays open beside the seeded commit',
+  );
   assert.equal(endsOf(f, mid.execution).length, 0);
 
   failing.on = false;
@@ -96,7 +120,10 @@ test('human override abandons a pending hold before any label cleanup', async (t
   assert.deepEqual(states, [true], 'abandoned before the label cleanup');
   assert.deepEqual(f.comments(), [], 'the pending hold comment is not replayed');
   assert.deepEqual(f.labelAdds(), [], 'no label is added');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the human hold remains: ${[...f.gh.labels]}`);
+  assert.ok(
+    f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS),
+    `the human hold remains: ${[...f.gh.labels]}`,
+  );
   const final = await loadTicket(f);
   assert.equal(final.state, 'abandoned');
   assert.match(final.terminalReason.text, /needs-human/);
@@ -104,10 +131,20 @@ test('human override abandons a pending hold before any label cleanup', async (t
   assert.equal(ends.length, 1);
   assert.equal(ends[0].outcome, 'abandoned');
   assert.deepEqual(ends[0].reason, final.terminalReason);
-  assert.ok(record.openIntents(final).some((e) => e.marker === holdComment.marker), 'the hold comment intent stays open, never replayed');
-  assert.deepEqual(record.openIntents(final).filter((e) => e.action === 'commit'), record.openIntents(seededRec), 'the older intent is kept');
-  assert.deepEqual(final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
-    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }], 'the cleanup is one write-ahead label Action');
+  assert.ok(
+    record.openIntents(final).some((e) => e.marker === holdComment.marker),
+    'the hold comment intent stays open, never replayed',
+  );
+  assert.deepEqual(
+    record.openIntents(final).filter((e) => e.action === 'commit'),
+    record.openIntents(seededRec),
+    'the older intent is kept',
+  );
+  assert.deepEqual(
+    final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
+    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
+    'the cleanup is one write-ahead label Action',
+  );
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
 });
@@ -130,7 +167,10 @@ test('human override of a pending hold is decided durably when its label cleanup
   assert.deepEqual(states, [true, true], 'abandoned before every label cleanup');
   assert.deepEqual(f.comments(), [], 'the pending hold comment is not replayed');
   assert.deepEqual(f.labelAdds(), [], 'no label is added');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the human hold remains: ${[...f.gh.labels]}`);
+  assert.ok(
+    f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS),
+    `the human hold remains: ${[...f.gh.labels]}`,
+  );
   const final = await loadTicket(f);
   assert.equal(final.state, 'abandoned');
   assert.match(final.terminalReason.text, /needs-human/);
@@ -138,17 +178,32 @@ test('human override of a pending hold is decided durably when its label cleanup
   assert.equal(ends.length, 1);
   assert.equal(ends[0].outcome, 'abandoned');
   assert.deepEqual(ends[0].reason, final.terminalReason);
-  assert.ok(record.openIntents(final).some((e) => e.marker === holdComment.marker), 'the hold comment intent stays open, never replayed');
-  assert.deepEqual(record.openIntents(final).filter((e) => e.action === 'commit'), record.openIntents(seededRec), 'the older intent is kept');
-  assert.deepEqual(final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
-    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }], 'the cleanup is one write-ahead label Action');
+  assert.ok(
+    record.openIntents(final).some((e) => e.marker === holdComment.marker),
+    'the hold comment intent stays open, never replayed',
+  );
+  assert.deepEqual(
+    record.openIntents(final).filter((e) => e.action === 'commit'),
+    record.openIntents(seededRec),
+    'the older intent is kept',
+  );
+  assert.deepEqual(
+    final.log.filter((e) => e.step === 'intent' && e.action === 'label').map((e) => e.payload),
+    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
+    'the cleanup is one write-ahead label Action',
+  );
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
 });
 
 test('a pending fault report whose comment lookup fails stays pending and posts no second comment', async (t) => {
   const f = fixture(t);
-  f.options.git = { ...f.options.git, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
+  f.options.git = {
+    ...f.options.git,
+    ensureWorktree: async () => {
+      throw new Error('worktree add failed\nfatal: disk full');
+    },
+  };
   const inner = f.gh.gh;
   let mode = 'crash';
   github.setGh(async (args, cwd, input) => {
@@ -184,7 +239,10 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   assert.equal(run.runExitCode(third), 1, 'a fault exits 1');
   assert.equal(f.comments().length, 1, 'the marker found the landed comment');
   const final = await loadTicket(f);
-  assert.deepEqual(final.log.filter((e) => e.marker === open.marker).map((e) => e.step), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(
+    final.log.filter((e) => e.marker === open.marker).map((e) => e.step),
+    ['intent', 'evidence', 'complete'],
+  );
   assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the label lands');
   assert.equal(final.state, 'fault');
   assert.equal(endsOf(f, final.execution).length, 1);
@@ -201,7 +259,8 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   assert.equal(mid.terminalStop?.held, true, 'the decided hold waits for the next Run');
   assert.equal(endsOf(f, mid.execution).length, 0);
   restore();
-  const effects = () => f.gh.calls.filter((c) => golden.isCommentPost(c.args) || (c.args[0] === 'issue' && c.args[1] === 'edit')).length;
+  const effects = () =>
+    f.gh.calls.filter((c) => golden.isCommentPost(c.args) || (c.args[0] === 'issue' && c.args[1] === 'edit')).length;
   const done = effects();
 
   const second = await run.runTarget(f.options);
@@ -227,7 +286,11 @@ test('a crash between admission and its hold keeps the decision and its one tick
   const second = await run.runTarget(f.options);
   assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
   const starts = f.readEvents().filter((e) => e.type === 'ticket_start' && e.ticket === TICKET);
-  assert.deepEqual(starts.map((e) => e.execution), [mid.execution], 'one ticket_start for the Execution');
+  assert.deepEqual(
+    starts.map((e) => e.execution),
+    [mid.execution],
+    'one ticket_start for the Execution',
+  );
   const final = await loadTicket(f);
   assert.equal(final.state, 'held');
   assert.equal(final.terminalStop.fresh, true, 'the hold is still the fresh one admission decided');
@@ -238,7 +301,10 @@ test('a crash between admission and its hold keeps the decision and its one tick
 });
 
 test('an Interrupted Attempt hold warns before its record is deleted, then and on the next Run', async (t) => {
-  const responses = { ...golden.firstVisitResponses, 'red/1/red/1': { throw: new interpreter.CrashError('gg died during the call') } };
+  const responses = {
+    ...golden.firstVisitResponses,
+    'red/1/red/1': { throw: new interpreter.CrashError('gg died during the call') },
+  };
   const f = fixture(t, { responses, labels: [IN_PROGRESS] });
   await seedExecution(f);
   const warning = /including ignored Protected Files\. Check them[^]*before deleting the record/;
@@ -251,15 +317,29 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
   await run.runTarget(f.options);
   const skipped = f.logs.findLast((l) => l.includes('skipped')) ?? '';
   assert.match(skipped, warning, 'the held-record skip warns too');
-  assert.ok(skipped.search(warning) < skipped.indexOf('DELETE FROM records'), `the warning comes before the delete: ${skipped}`);
+  assert.ok(
+    skipped.search(warning) < skipped.indexOf('DELETE FROM records'),
+    `the warning comes before the delete: ${skipped}`,
+  );
 });
 
 // An Execution saved before its first Visit, under a human needs-human label.
 async function overriddenBeforeFirstVisit(t) {
   const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-  await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
-    configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
+  await record.save(
+    record.createExecution({
+      commonDir: f.commonDir,
+      ticket: TICKET,
+      epic: null,
+      flow: { name: 'default', entry: 'red' },
+      configHash: 'x',
+      run: '20261016T000000Z-seed00',
+      worktree: f.worktree,
+      branch: BRANCH,
+      base: 'main',
+    }),
+  );
   return f;
 }
 
@@ -271,17 +351,30 @@ test('a human needs-human label before the first Visit prevents admission effect
   assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
   assert.equal(run.runExitCode(results), 2, 'a human needs-human label exits 2');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view'], ['issue', 'edit']], 'only the in-progress label is removed');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [
+      ['issue', 'view'],
+      ['issue', 'edit'],
+    ],
+    'only the in-progress label is removed',
+  );
   assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
   const final = await loadTicket(f);
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
   assert.deepEqual(final.visits, {});
-  assert.deepEqual(final.log.map((e) => `${e.step} ${e.action}`), ['intent label', 'evidence label', 'complete label'],
-    'the cleanup is one write-ahead Action');
+  assert.deepEqual(
+    final.log.map((e) => `${e.step} ${e.action}`),
+    ['intent label', 'evidence label', 'complete label'],
+    'the cleanup is one write-ahead Action',
+  );
   assert.deepEqual(final.log[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
-  assert.deepEqual(evs.map((e) => e.type), ['ticket_start', 'action', 'ticket_end']);
+  assert.deepEqual(
+    evs.map((e) => e.type),
+    ['ticket_start', 'action', 'ticket_end'],
+  );
   assert.equal(evs.at(-1).outcome, 'abandoned');
   assert.deepEqual(evs.at(-1).reason, final.terminalReason);
 });
@@ -295,18 +388,31 @@ test('a human needs-human label before the first Visit prevents admission effect
   assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
   assert.equal(run.runExitCode(results), 2, 'a human needs-human label exits 2');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view'], ['issue', 'edit']], 'only the in-progress label is removed');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [
+      ['issue', 'view'],
+      ['issue', 'edit'],
+    ],
+    'only the in-progress label is removed',
+  );
   assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
   assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n');
   const final = await loadTicket(f);
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
   assert.deepEqual(final.visits, {});
-  assert.deepEqual(final.log.map((e) => `${e.step} ${e.action}`), ['intent label', 'evidence label', 'complete label'],
-    'the cleanup is one write-ahead Action');
+  assert.deepEqual(
+    final.log.map((e) => `${e.step} ${e.action}`),
+    ['intent label', 'evidence label', 'complete label'],
+    'the cleanup is one write-ahead Action',
+  );
   assert.deepEqual(final.log[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
-  assert.deepEqual(evs.map((e) => e.type), ['ticket_start', 'action', 'ticket_end']);
+  assert.deepEqual(
+    evs.map((e) => e.type),
+    ['ticket_start', 'action', 'ticket_end'],
+  );
   assert.equal(evs.at(-1).outcome, 'abandoned');
   assert.deepEqual(evs.at(-1).reason, final.terminalReason);
 });
@@ -316,7 +422,11 @@ test('a human needs-human label prevents admission effects without a record', as
 
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2, 'needs-human exits 2 without a record');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write or comment');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [['issue', 'view']],
+    'no label write or comment',
+  );
   assert.equal(f.worktrees(), 1, 'no worktree created');
   assert.equal(f.loadRow(), undefined, 'no record is written');
 });
@@ -325,9 +435,17 @@ test('a human needs-human label prevents admission effects with a corrupt record
   const f = fixture(t, { labels: [NEEDS_HUMAN] });
   record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
 
-  assert.equal(run.runExitCode(await run.runTarget(f.options)), 2, 'needs-human exits 2 even without a readable record');
+  assert.equal(
+    run.runExitCode(await run.runTarget(f.options)),
+    2,
+    'needs-human exits 2 even without a readable record',
+  );
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write or comment');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [['issue', 'view']],
+    'no label write or comment',
+  );
   assert.equal(f.worktrees(), 1, 'no worktree created');
   assert.equal(f.loadRow(), '{', 'the record is untouched');
 });
@@ -345,8 +463,19 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
   test(`mixed-case human needs-human wins before any label write: ${labels.join(', ')}`, async (t) => {
     const f = fixture(t, { labels });
     await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-    await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
-      configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
+    await record.save(
+      record.createExecution({
+        commonDir: f.commonDir,
+        ticket: TICKET,
+        epic: null,
+        flow: { name: 'default', entry: 'red' },
+        configHash: 'x',
+        run: '20261016T000000Z-seed00',
+        worktree: f.worktree,
+        branch: BRANCH,
+        base: 'main',
+      }),
+    );
     const inner = f.gh.gh;
     const states = [];
     github.setGh(async (args, cwd, input) => {
@@ -358,8 +487,11 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
     assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
     assert.equal(run.runExitCode(results), 2);
     assert.equal(f.harness.calls.length, 0, 'no agent started');
-    assert.deepEqual(f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').map((c) => c.args.slice(3)), edits,
-      'only the in-progress label is removed');
+    assert.deepEqual(
+      f.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').map((c) => c.args.slice(3)),
+      edits,
+      'only the in-progress label is removed',
+    );
     assert.deepEqual(states, expectedStates, 'the record is abandoned before the label write');
     assert.deepEqual(f.comments(), [], 'no comment posted');
     assert.deepEqual([...f.gh.labels], [HUMAN_NEEDS_HUMAN], 'the human hold keeps its spelling');
@@ -374,7 +506,11 @@ test('mixed-case needs-human skips without a record', async (t) => {
   assert.equal(ticketResult(results).state, 'needs-human');
   assert.equal(run.runExitCode(results), 2);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write or comment');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [['issue', 'view']],
+    'no label write or comment',
+  );
   assert.equal(f.worktrees(), 1, 'no worktree created');
   assert.equal(f.loadRow(), undefined, 'no record is written');
 });
@@ -387,7 +523,11 @@ test('mixed-case needs-human skips with a corrupt record', async (t) => {
   assert.equal(ticketResult(results).state, 'needs-human');
   assert.equal(run.runExitCode(results), 2);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write or comment');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [['issue', 'view']],
+    'no label write or comment',
+  );
   assert.equal(f.worktrees(), 1, 'no worktree created');
   assert.equal(f.loadRow(), '{', 'the record is untouched');
 });
@@ -406,7 +546,11 @@ test('mixed-case needs-human skips with a held ticket lock', async (t) => {
   assert.equal(ticketResult(results).state, 'needs-human');
   assert.equal(run.runExitCode(results), 2);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no label write or comment');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [['issue', 'view']],
+    'no label write or comment',
+  );
   assert.equal(f.worktrees(), 1, 'no worktree created');
   assert.equal(f.loadRow(), undefined, 'no record is written');
 });
@@ -414,23 +558,35 @@ test('mixed-case needs-human skips with a held ticket lock', async (t) => {
 test('admission does not re-add differently cased in-progress', async (t) => {
   const f = fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
   f.options.config.labelPrefix = 'Gg';
-  await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }) });
+  await seedExecution(f, {
+    crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }),
+  });
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
   assert.equal(f.harness.calls.length, 2, 'the Execution resumes at its cursor');
   assert.equal((await loadTicket(f)).state, 'ready-for-qa');
   assert.deepEqual(f.labelAdds(), ['Gg:state:ready-for-qa'], 'in-progress is not added again');
-  assert.ok(![...f.gh.labels].some((l) => l.toLowerCase() === IN_PROGRESS), `the Terminal removes it: ${[...f.gh.labels]}`);
+  assert.ok(
+    ![...f.gh.labels].some((l) => l.toLowerCase() === IN_PROGRESS),
+    `the Terminal removes it: ${[...f.gh.labels]}`,
+  );
 });
 
 test('a differently cased in-progress without a record is left for Stuck handling', async (t) => {
   const f = fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
   f.options.config.labelPrefix = 'Gg';
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 0);
-  assert.ok(f.logs.some((l) => l.includes('with no Execution Record behind it')), JSON.stringify(f.logs));
+  assert.ok(
+    f.logs.some((l) => l.includes('with no Execution Record behind it')),
+    JSON.stringify(f.logs),
+  );
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.deepEqual(f.gh.calls.map((c) => c.args.slice(0, 2)), [['issue', 'view']], 'no write on a Stuck Ticket');
+  assert.deepEqual(
+    f.gh.calls.map((c) => c.args.slice(0, 2)),
+    [['issue', 'view']],
+    'no write on a Stuck Ticket',
+  );
   assert.equal(f.worktrees(), 1, 'no worktree');
   assert.ok(f.gh.labels.has(SHOUTED_IN_PROGRESS), 'the State Label is left for Stuck handling');
 });
@@ -438,8 +594,16 @@ test('a differently cased in-progress without a record is left for Stuck handlin
 test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
   const f = fixture(t, { labels: [NEEDS_HUMAN] });
   // red's Attempt breaks an Integrity Assertion, and gg dies before its reset.
-  const integrity = { ...f.options.integrity, end: async () => ({ violations: [{ worktree: f.worktree, surface: 'head', before: null, after: 'a'.repeat(40) }] }) };
-  const git = { ...f.options.git, resetTo: async () => { throw new interpreter.CrashError('crash before reset'); } };
+  const integrity = {
+    ...f.options.integrity,
+    end: async () => ({ violations: [{ worktree: f.worktree, surface: 'head', before: null, after: 'a'.repeat(40) }] }),
+  };
+  const git = {
+    ...f.options.git,
+    resetTo: async () => {
+      throw new interpreter.CrashError('crash before reset');
+    },
+  };
   await seedExecution(f, { git, integrity });
 
   await run.runTarget(f.options);
@@ -454,11 +618,16 @@ const NOT_READY = [{ blockedBy: [{ number: 3, state: 'OPEN' }] }, { state: 'CLOS
 for (const issue of NOT_READY) {
   test(`a resumed execution still needs its ticket open and unblocked: ${JSON.stringify(issue)}`, async (t) => {
     const f = fixture(t, { labels: [IN_PROGRESS], issue });
-    await seedExecution(f, { crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }) });
+    await seedExecution(f, {
+      crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }),
+    });
     const row = f.loadRow();
     await run.runTarget(f.options);
     assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
     assert.equal(f.loadRow(), row, 'the record is not resumed');
-    assert.ok(f.logs.some((l) => l.includes(`#${TICKET}`) && /not ready/.test(l)), `the skip is logged: ${JSON.stringify(f.logs)}`);
+    assert.ok(
+      f.logs.some((l) => l.includes(`#${TICKET}`) && /not ready/.test(l)),
+      `the skip is logged: ${JSON.stringify(f.logs)}`,
+    );
   });
 }

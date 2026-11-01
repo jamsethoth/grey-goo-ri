@@ -37,9 +37,17 @@ async function runCommand(opts) {
   const target = positiveInt(opts._[0], 'ticket');
   const { mainRoot } = await git.repoInfo(process.cwd());
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.mjs');
-  const results = await run.runTarget({ target, config: loadConfig(mainRoot), harnesses,
-    protectedPaths: interpreter.protectedFiles(harnesses), gh, git, exec, cwd: mainRoot,
-    log: (m) => process.stdout.write(`${m}\n`) });
+  const results = await run.runTarget({
+    target,
+    config: loadConfig(mainRoot),
+    harnesses,
+    protectedPaths: interpreter.protectedFiles(harnesses),
+    gh,
+    git,
+    exec,
+    cwd: mainRoot,
+    log: (m) => process.stdout.write(`${m}\n`),
+  });
   process.exitCode = run.runExitCode(results);
 }
 

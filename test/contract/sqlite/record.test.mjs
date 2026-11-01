@@ -38,15 +38,21 @@ function openInChild(commonDir, { gated = false } = {}) {
   const child = spawn(process.execPath, [opener, commonDir, ...(gated ? ['gated'] : [])], {
     stdio: [gated ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
-  let out = '', err = '';
-  child.stdout.setEncoding('utf8').on('data', (chunk) => { out += chunk; });
-  child.stderr.setEncoding('utf8').on('data', (chunk) => { err += chunk; });
-  const exit = new Promise((resolve) => child.on('close', (code) => resolve({ code, out, err })));
-  const said = (text) => new Promise((resolve, reject) => {
-    const check = () => (out.includes(text) ? resolve() : child.stdout.once('data', check));
-    check();
-    exit.then((exited) => reject(new Error(`the opener closed without printing ${text}: ${JSON.stringify(exited)}`)));
+  let out = '',
+    err = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk) => {
+    out += chunk;
   });
+  child.stderr.setEncoding('utf8').on('data', (chunk) => {
+    err += chunk;
+  });
+  const exit = new Promise((resolve) => child.on('close', (code) => resolve({ code, out, err })));
+  const said = (text) =>
+    new Promise((resolve, reject) => {
+      const check = () => (out.includes(text) ? resolve() : child.stdout.once('data', check));
+      check();
+      exit.then((exited) => reject(new Error(`the opener closed without printing ${text}: ${JSON.stringify(exited)}`)));
+    });
   return { child, said, exit, go: () => child.stdin.end('go\n') };
 }
 
@@ -73,7 +79,9 @@ test('an open that finds no tables waits for the first opener, not for its saves
     lock.exec('BEGIN EXCLUSIVE');
     db.exec('BEGIN IMMEDIATE');
     const { child, said, exit } = openInChild(commonDir);
-    t.after(() => { if (child.exitCode === null) child.kill(); });
+    t.after(() => {
+      if (child.exitCode === null) child.kill();
+    });
     await said('locking'); // it has read the empty version and waits for the open lock
     db.exec(`CREATE TABLE records (kind TEXT NOT NULL, n INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (kind, n));
       CREATE TABLE configs (hash TEXT PRIMARY KEY, json TEXT NOT NULL, firstSeen TEXT NOT NULL);
@@ -95,22 +103,43 @@ test('an open that finds no tables waits for the first opener, not for its saves
 
 test('two processes save different records concurrently without loss', async (t) => {
   const commonDir = await tempCommonDir(t);
-  const exits = await Promise.all([1, 2].map((ticket) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.on('close', (code) => resolve({ ticket, code, err }));
-  })));
-  assert.deepEqual(exits, [{ ticket: 1, code: 0, err: '' }, { ticket: 2, code: 0, err: '' }]);
+  const exits = await Promise.all(
+    [1, 2].map(
+      (ticket) =>
+        new Promise((resolve) => {
+          const child = spawn(process.execPath, [saver, commonDir, String(ticket), '200'], {
+            stdio: ['ignore', 'ignore', 'pipe'],
+          });
+          let err = '';
+          child.stderr.on('data', (chunk) => {
+            err += chunk;
+          });
+          child.on('close', (code) => resolve({ ticket, code, err }));
+        }),
+    ),
+  );
+  assert.deepEqual(exits, [
+    { ticket: 1, code: 0, err: '' },
+    { ticket: 2, code: 0, err: '' },
+  ]);
   withDb(commonDir, (db) => {
-    const rows = db.prepare('SELECT kind, n FROM records ORDER BY n').all().map((row) => ({ ...row }));
-    assert.deepEqual(rows, [{ kind: 'ticket', n: 1 }, { kind: 'ticket', n: 2 }]);
+    const rows = db
+      .prepare('SELECT kind, n FROM records ORDER BY n')
+      .all()
+      .map((row) => ({ ...row }));
+    assert.deepEqual(rows, [
+      { kind: 'ticket', n: 1 },
+      { kind: 'ticket', n: 2 },
+    ]);
   });
   const all = (await record.loadAll(commonDir, 'ticket')).sort((a, b) => a.ticket - b.ticket);
-  assert.deepEqual(all.map((r) => [r.ticket, r.activity]), [
-    [1, { busy: false, generation: 200 }],
-    [2, { busy: false, generation: 200 }],
-  ]);
+  assert.deepEqual(
+    all.map((r) => [r.ticket, r.activity]),
+    [
+      [1, { busy: false, generation: 200 }],
+      [2, { busy: false, generation: 200 }],
+    ],
+  );
 });
 
 // SQLite's busy handler is not fair, so on a loaded Windows runner another process's burst of writes held a save off
@@ -120,16 +149,28 @@ test('a save waits out another process that holds the write lock for longer than
   const commonDir = await tempCommonDir(t);
   record.openDb(commonDir);
   const holder = spawn(process.execPath, [holderScript, commonDir, '8000'], { stdio: ['ignore', 'pipe', 'inherit'] });
-  t.after(() => { if (holder.exitCode === null) holder.kill(); });
+  t.after(() => {
+    if (holder.exitCode === null) holder.kill();
+  });
   await new Promise((resolve) => holder.stdout.once('data', resolve));
   const r = record.createExecution({
-    commonDir, ticket: 1, epic: 1, flow: { name: 'default', entry: 'implement' }, configHash: 'abc123',
-    run: 'run-1', worktree: `${commonDir}/wt-1`, branch: 'ticket/1', base: 'main',
+    commonDir,
+    ticket: 1,
+    epic: 1,
+    flow: { name: 'default', entry: 'implement' },
+    configHash: 'abc123',
+    run: 'run-1',
+    worktree: `${commonDir}/wt-1`,
+    branch: 'ticket/1',
+    base: 'main',
   });
   const started = Date.now();
   await record.save(r);
   assert.ok(Date.now() - started > 5000, `the save did not wait past 5 s: ${Date.now() - started} ms`);
-  assert.deepEqual((await record.loadAll(commonDir, 'ticket')).map((saved) => saved.ticket), [1]);
+  assert.deepEqual(
+    (await record.loadAll(commonDir, 'ticket')).map((saved) => saved.ticket),
+    [1],
+  );
 });
 
 const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -137,9 +178,13 @@ const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
 // Another gg process opening the State Database and saving one record, resolving with its exit.
 function saveOnce(commonDir, ticket) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
     let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.stderr.on('data', (chunk) => {
+      err += chunk;
+    });
     child.on('close', (code) => resolve({ ticket, code, err }));
   });
 }
@@ -155,40 +200,47 @@ test('eight processes creating one new database at once all open it in WAL mode'
   assert.equal(journalMode(commonDir), 'wal');
 });
 
-test('openers of a new database queue while the open lock is held and all succeed once it is released', CASE, async (t) => {
-  // node:test skips later after hooks once one throws, and removing the temp directory throws while the open lock is
-  // held, so this hook comes first: it kills the openers, since a gated one waits for go forever, and frees the lock.
-  const openers = [];
-  let openLock;
-  t.after(async () => {
-    const running = openers.filter(({ child }) => child.exitCode === null);
-    for (const { child } of running) child.kill();
-    await Promise.all(running.map(({ exit }) => exit));
-    if (openLock?.db.isOpen) await locks.release(openLock);
-  });
-  const commonDir = await tempCommonDir(t);
-  openLock = await locks.tryAcquire(commonDir, 'open');
-  assert.ok(openLock);
-  for (const _ of tickets) openers.push(openInChild(commonDir, { gated: true }));
-  // Each opener's 5 s busy timeout starts at its `locking`. Under load eight Node start-ups spread over more than that
-  // (grey-goo-ri issue #188), so the openers start their waits together once all have loaded.
-  await Promise.all(openers.map(({ said }) => said('ready')));
-  for (const { go } of openers) go();
-  await Promise.all(openers.map(({ said }) => said('locking')));
-  // An opener that got past the held lock switches to WAL within milliseconds of its `locking`, as fast as this process
-  // could release, so the lock stays held a while longer to let one show itself; its own clock then says it switched
-  // before the release. A queued opener switches only once it holds the lock.
-  await sleep(1000);
-  const releasedAt = Date.now();
-  await locks.release(openLock);
-  const exits = await Promise.all(openers.map(({ exit }) => exit));
-  const switchedAt = (out) => [...out.matchAll(/^switching (\d+)$/gm)].map(([, ms]) => Number(ms));
-  const switchedEarly = exits.filter(({ out }) => switchedAt(out).some((ms) => ms < releasedAt));
-  assert.deepEqual(switchedEarly, [], 'no opener gets past a held open lock');
-  assert.deepEqual(exits.map(({ code, err }) => ({ code, err })), tickets.map(() => ({ code: 0, err: '' })),
-    `every opener opens once the lock is released: ${JSON.stringify(exits)}`);
-  assert.equal(journalMode(commonDir), 'wal');
-});
+test(
+  'openers of a new database queue while the open lock is held and all succeed once it is released',
+  CASE,
+  async (t) => {
+    // node:test skips later after hooks once one throws, and removing the temp directory throws while the open lock is
+    // held, so this hook comes first: it kills the openers, since a gated one waits for go forever, and frees the lock.
+    const openers = [];
+    let openLock;
+    t.after(async () => {
+      const running = openers.filter(({ child }) => child.exitCode === null);
+      for (const { child } of running) child.kill();
+      await Promise.all(running.map(({ exit }) => exit));
+      if (openLock?.db.isOpen) await locks.release(openLock);
+    });
+    const commonDir = await tempCommonDir(t);
+    openLock = await locks.tryAcquire(commonDir, 'open');
+    assert.ok(openLock);
+    for (const _ of tickets) openers.push(openInChild(commonDir, { gated: true }));
+    // Each opener's 5 s busy timeout starts at its `locking`. Under load eight Node start-ups spread over more than that
+    // (grey-goo-ri issue #188), so the openers start their waits together once all have loaded.
+    await Promise.all(openers.map(({ said }) => said('ready')));
+    for (const { go } of openers) go();
+    await Promise.all(openers.map(({ said }) => said('locking')));
+    // An opener that got past the held lock switches to WAL within milliseconds of its `locking`, as fast as this process
+    // could release, so the lock stays held a while longer to let one show itself; its own clock then says it switched
+    // before the release. A queued opener switches only once it holds the lock.
+    await sleep(1000);
+    const releasedAt = Date.now();
+    await locks.release(openLock);
+    const exits = await Promise.all(openers.map(({ exit }) => exit));
+    const switchedAt = (out) => [...out.matchAll(/^switching (\d+)$/gm)].map(([, ms]) => Number(ms));
+    const switchedEarly = exits.filter(({ out }) => switchedAt(out).some((ms) => ms < releasedAt));
+    assert.deepEqual(switchedEarly, [], 'no opener gets past a held open lock');
+    assert.deepEqual(
+      exits.map(({ code, err }) => ({ code, err })),
+      tickets.map(() => ({ code: 0, err: '' })),
+      `every opener opens once the lock is released: ${JSON.stringify(exits)}`,
+    );
+    assert.equal(journalMode(commonDir), 'wal');
+  },
+);
 
 test('an opener of a new database proceeds when the process holding the open lock dies', CASE, async (t) => {
   let holder;
@@ -198,7 +250,9 @@ test('an opener of a new database proceeds when the process holding the open loc
   const report = await new Promise((resolve) => holder.stdout.once('data', (chunk) => resolve(JSON.parse(chunk))));
   assert.ok(report.handle, 'the child holds the open lock');
   const { child, said, exit } = openInChild(commonDir);
-  t.after(() => { if (child.exitCode === null) child.kill(); });
+  t.after(() => {
+    if (child.exitCode === null) child.kill();
+  });
   await said('locking');
   holder.kill();
   const { code, err } = await exit;
@@ -208,14 +262,18 @@ test('an opener of a new database proceeds when the process holding the open loc
 
 // The opener names the statement that gave up: the open lock's BEGIN EXCLUSIVE, which waits under its 5 s busy timeout,
 // not a statement on gg.db, which would wait 60 s. How long it took depends on the machine's load, so it is not checked.
-test('an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released', CASE, async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const openLock = await locks.tryAcquire(commonDir, 'open');
-  const { code, out, err } = await openInChild(commonDir).exit.finally(() => locks.release(openLock));
-  assert.notEqual(code, 0);
-  assert.match(err, /errcode: 5/);
-  assert.match(out, /^failed: BEGIN EXCLUSIVE$/m, `the open lock's wait gave up: ${out}`);
-});
+test(
+  'an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released',
+  CASE,
+  async (t) => {
+    const commonDir = await tempCommonDir(t);
+    const openLock = await locks.tryAcquire(commonDir, 'open');
+    const { code, out, err } = await openInChild(commonDir).exit.finally(() => locks.release(openLock));
+    assert.notEqual(code, 0);
+    assert.match(err, /errcode: 5/);
+    assert.match(out, /^failed: BEGIN EXCLUSIVE$/m, `the open lock's wait gave up: ${out}`);
+  },
+);
 
 test('an opener of an existing WAL database does not wait for the open lock', async (t) => {
   const commonDir = await tempCommonDir(t);

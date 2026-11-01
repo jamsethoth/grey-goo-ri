@@ -11,7 +11,11 @@ import { resetEntries } from '../support/reconcile.mjs';
 
 // The baseline an Integrity Violation's rollback restores: ignored Protected Files, an untracked test git clean removes,
 // and an ignored file outside the rollback, which the agent changes and the restore must leave alone.
-const RESTORED = { '.claude/.gitignore': '*\n', '.claude/settings.local.json': '{"owner":true}\n', 'test/owner.test.mjs': 'owner\n' };
+const RESTORED = {
+  '.claude/.gitignore': '*\n',
+  '.claude/settings.local.json': '{"owner":true}\n',
+  'test/owner.test.mjs': 'owner\n',
+};
 // Where restoreUntracked is crashed: it removes the extra .claude/agent.json (rm 1), then rewrites settings.local.json
 // (rm 2, writeFile 1) and recreates test/owner.test.mjs (rm 3, writeFile 2).
 const RESTORE_CRASHES = {
@@ -44,8 +48,17 @@ async function crashedRestore(t, crash) {
   };
   const git = g.options.git;
   let reset = false;
-  g.options.git = { ...git, resetTo: async (...args) => { await git.resetTo(...args); reset = true; } };
-  g.options.integrity = integrity.withGit(g.options.git, golden.crashFs(g.worktree, () => reset, crash));
+  g.options.git = {
+    ...git,
+    resetTo: async (...args) => {
+      await git.resetTo(...args);
+      reset = true;
+    },
+  };
+  g.options.integrity = integrity.withGit(
+    g.options.git,
+    golden.crashFs(g.worktree, () => reset, crash),
+  );
   await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
   g.git = git;
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
@@ -65,7 +78,10 @@ function assertRestored(g, rec) {
   assert.equal(read(g, '.claude/agent.json'), null, 'the extra is removed');
   assert.equal(read(g, 'scratch.log'), 'agent log\n', 'an ignored file outside the rollback is untouched');
   assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
-  assert.deepEqual(rec.history.map((h) => h.kind), ['integrity violation']);
+  assert.deepEqual(
+    rec.history.map((h) => h.kind),
+    ['integrity violation'],
+  );
   assert.deepEqual(resetEntries(rec), ['intent', 'evidence', 'complete']);
 }
 
@@ -82,8 +98,14 @@ for (const [name, crash] of Object.entries(RESTORE_CRASHES)) {
 
 test('a second crash during restore replay remains resumable', async (t) => {
   const g = await crashedRestore(t, RESTORE_CRASHES['after deleting an extra']);
-  const crashing = integrity.withGit(g.git, golden.crashFs(g.worktree, () => true, { op: 'writeFile', n: 1, after: true }));
-  await assert.rejects(reconcile.resets(g.loaded, { git: g.git, integrity: crashing }), (err) => err instanceof interpreter.CrashError);
+  const crashing = integrity.withGit(
+    g.git,
+    golden.crashFs(g.worktree, () => true, { op: 'writeFile', n: 1, after: true }),
+  );
+  await assert.rejects(
+    reconcile.resets(g.loaded, { git: g.git, integrity: crashing }),
+    (err) => err instanceof interpreter.CrashError,
+  );
   const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(resetEntries(loaded), ['intent']);
   assert.equal(await reconcile.resets(loaded, { git: g.git }), 'continue');
@@ -99,7 +121,11 @@ test('unknown ignored contents hold a partial restore without changing files', a
   const before = paths.map((p) => read(g, p));
 
   assert.equal(await reconcile.resets(g.loaded, { git: g.git }), 'held');
-  assert.deepEqual(paths.map((p) => read(g, p)), before, 'nothing is restored or removed');
+  assert.deepEqual(
+    paths.map((p) => read(g, p)),
+    before,
+    'nothing is restored or removed',
+  );
   assert.deepEqual(g.loaded.history, []);
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 });

@@ -17,13 +17,23 @@ function example() {
   for (const agent of Object.values(config.agents)) agent.harness = 'fake';
   config.files = Object.fromEntries([
     ...['red', 'implement', 'review'].map((p) => [`${p}.schema.json`, file(fixture(`${p}.schema.json`))]),
-    ...['red.md', 'green.md', 'fix.md', 'review.md', 'recover.md', 'still-green.md', 'test-fix.md', 'blocked.md', 'pr-body.md', 'review-comment.md']
-      .map((name) => [name, file(`${name}\n`)]),
+    ...[
+      'red.md',
+      'green.md',
+      'fix.md',
+      'review.md',
+      'recover.md',
+      'still-green.md',
+      'test-fix.md',
+      'blocked.md',
+      'pr-body.md',
+      'review-comment.md',
+    ].map((name) => [name, file(`${name}\n`)]),
   ]);
   return config;
 }
 
-test('gg doctor prints each Vertex\'s Procedure, Checks, tables and Outcomes', () => {
+test("gg doctor prints each Vertex's Procedure, Checks, tables and Outcomes", () => {
   const { text, exitCode } = doctor.doctor({ config: example(), harnesses: { fake: {} } });
   assert.equal(text, fixture('doctor.txt').replaceAll('\r\n', '\n'));
   assert.equal(exitCode, 0);
@@ -35,7 +45,12 @@ test('gg doctor reports a malformed table row rather than throwing', () => {
   const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
   assert.equal(exitCode, 1);
   assert.ok(text.includes('\n  passed:\n    1. no conditions -> undefined\n'), text);
-  assert.ok(text.includes('\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> }\n'), text);
+  assert.ok(
+    text.includes(
+      '\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> }\n',
+    ),
+    text,
+  );
 });
 
 test('gg doctor exits non-zero on an error', () => {
@@ -43,7 +58,10 @@ test('gg doctor exits non-zero on an error', () => {
   config.flows.default.ticket.vertices.red.procedure = 'red';
   const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
   assert.equal(exitCode, 1);
-  assert.ok(text.endsWith('\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared\n1 error, 2 warnings\n'), text);
+  assert.ok(
+    text.endsWith('\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared\n1 error, 2 warnings\n'),
+    text,
+  );
 });
 
 test('gg doctor reports an Outcome named after an Object.prototype property as reserved', () => {
@@ -51,7 +69,10 @@ test('gg doctor reports an Outcome named after an Object.prototype property as r
   config.procedures['tests-fail'].stopped[0].outcome = 'toString';
   const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
   assert.equal(exitCode, 1);
-  assert.equal(text, 'error: procedures.tests-fail.stopped[0]: outcome "toString" is reserved: every object inherits a property of that name from Object.prototype\n1 error\n');
+  assert.equal(
+    text,
+    'error: procedures.tests-fail.stopped[0]: outcome "toString" is reserved: every object inherits a property of that name from Object.prototype\n1 error\n',
+  );
 });
 
 test('gg doctor reads schemas from the loaded Layer files', () => {
@@ -61,7 +82,12 @@ test('gg doctor reads schemas from the loaded Layer files', () => {
   config.files['review.schema.json'] = file(JSON.stringify(schema));
   const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
   assert.equal(exitCode, 1);
-  assert.ok(text.includes('\nerror: procedures.review.claims: review.schema.json: claim: enum "ok" | "changes" does not equal the declared tokens "ok" | "changes" | "blocked"\n'), text);
+  assert.ok(
+    text.includes(
+      '\nerror: procedures.review.claims: review.schema.json: claim: enum "ok" | "changes" does not equal the declared tokens "ok" | "changes" | "blocked"\n',
+    ),
+    text,
+  );
 });
 
 test('gg doctor accepts the shipped defaults once a harness is set', () => {
@@ -72,8 +98,13 @@ test('gg doctor accepts the shipped defaults once a harness is set', () => {
   const { text, exitCode } = doctor.doctor({ config: shipped, harnesses: { fake: {} } });
   assert.ok(text.startsWith('flow default\n  plan: null\n  actionCap: 180\n  entry: red\n'), text);
   // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.
-  assert.ok(text.endsWith('\nwarning: procedures.review.passed: rule table review.passed: row 2 (check.repeat = failed) is partly taken by '
-    + 'row 1 (claim = ok and check.review-pass = passed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}}\n'
-    + '0 errors, 1 warning\n'), text);
+  assert.ok(
+    text.endsWith(
+      '\nwarning: procedures.review.passed: rule table review.passed: row 2 (check.repeat = failed) is partly taken by ' +
+        'row 1 (claim = ok and check.review-pass = passed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}}\n' +
+        '0 errors, 1 warning\n',
+    ),
+    text,
+  );
   assert.equal(exitCode, 0);
 });

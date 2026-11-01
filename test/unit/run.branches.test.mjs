@@ -7,7 +7,12 @@ import { TICKET, BRANCH, IN_PROGRESS, fixture, ticketResult } from '../support/r
 // An Execution that cannot be admitted, fresh or active, is marked as a fault, never left to retry.
 test('sibling discovery failure prevents agent execution: a fresh Ticket', async (t) => {
   const f = fixture(t);
-  f.options.git = { ...f.options.git, listWorktrees: async () => { throw new Error('fatal: cannot list worktrees'); } };
+  f.options.git = {
+    ...f.options.git,
+    listWorktrees: async () => {
+      throw new Error('fatal: cannot list worktrees');
+    },
+  };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
@@ -19,9 +24,25 @@ test('sibling discovery failure prevents agent execution: a fresh Ticket', async
 test('sibling discovery failure prevents agent execution: an active Execution', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
-  await record.save(record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
-    configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' }));
-  f.options.git = { ...f.options.git, listWorktrees: async () => { throw new Error('fatal: cannot list worktrees'); } };
+  await record.save(
+    record.createExecution({
+      commonDir: f.commonDir,
+      ticket: TICKET,
+      epic: null,
+      flow: { name: 'default', entry: 'red' },
+      configHash: 'x',
+      run: '20261016T000000Z-seed00',
+      worktree: f.worktree,
+      branch: BRANCH,
+      base: 'main',
+    }),
+  );
+  f.options.git = {
+    ...f.options.git,
+    listWorktrees: async () => {
+      throw new Error('fatal: cannot list worktrees');
+    },
+  };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
@@ -32,14 +53,35 @@ test('sibling discovery failure prevents agent execution: an active Execution', 
 
 test('a fault before the first visit still records its action events', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  const rec = record.createExecution({ commonDir: f.commonDir, ticket: TICKET, epic: null, flow: { name: 'default', entry: 'red' },
-    configHash: 'x', run: '20261016T000000Z-seed00', worktree: f.worktree, branch: BRANCH, base: 'main' });
+  const rec = record.createExecution({
+    commonDir: f.commonDir,
+    ticket: TICKET,
+    epic: null,
+    flow: { name: 'default', entry: 'red' },
+    configHash: 'x',
+    run: '20261016T000000Z-seed00',
+    worktree: f.worktree,
+    branch: BRANCH,
+    base: 'main',
+  });
   await record.save(rec);
-  f.options.git = { ...f.options.git, ensureWorktree: async () => { throw new Error('worktree add failed\nfatal: disk full'); } };
+  f.options.git = {
+    ...f.options.git,
+    ensureWorktree: async () => {
+      throw new Error('worktree add failed\nfatal: disk full');
+    },
+  };
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 1);
   const actions = f.readEvents().filter((e) => e.type === 'action' && e.ticket === TICKET);
-  assert.deepEqual(actions.map((e) => e.action), ['fault-comment', 'fault-label'], 'the comment and the label each record an Event');
-  assert.ok(!f.logs.some((l) => /fault report failed/.test(l)), `no reporting failure is logged: ${JSON.stringify(f.logs)}`);
+  assert.deepEqual(
+    actions.map((e) => e.action),
+    ['fault-comment', 'fault-label'],
+    'the comment and the label each record an Event',
+  );
+  assert.ok(
+    !f.logs.some((l) => /fault report failed/.test(l)),
+    `no reporting failure is logged: ${JSON.stringify(f.logs)}`,
+  );
 });

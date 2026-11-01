@@ -21,7 +21,9 @@ test('readActivity reads a record another process saved', async (t) => {
   const exit = await new Promise((resolve) => {
     const child = spawn(process.execPath, [saver, commonDir, '2', '3', other], { stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.stderr.on('data', (chunk) => {
+      err += chunk;
+    });
     child.on('close', (code) => resolve({ code, err }));
   });
   assert.deepEqual(exit, { code: 0, err: '' });

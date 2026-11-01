@@ -6,26 +6,55 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  firstVisit, intents, steps, actionMarker, terminalReasonOf, actionEvent, loadTicket, branchMessages, subjects, headSha,
-  greenSetup, ok, WRONG_ADD,
+  firstVisit,
+  intents,
+  steps,
+  actionMarker,
+  terminalReasonOf,
+  actionEvent,
+  loadTicket,
+  branchMessages,
+  subjects,
+  headSha,
+  greenSetup,
+  ok,
+  WRONG_ADD,
 } from '../support/interpreter.mjs';
 
 const DONE = ['intent', 'evidence', 'complete'];
 
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
   const g = await firstVisit(t);
-  assert.deepEqual(g.rec.log.filter((e) => e.step === 'intent').map((i) => [i.action, steps(g.rec, i.marker)]), [
-    ['call', DONE], ['commit', DONE], ['call', DONE], ['commit', DONE], ['push', DONE], ['pr-upsert', DONE], ['pr-upsert', DONE],
-    ['pr-ready', DONE], ['comment', DONE], ['label', DONE],
-  ]);
+  assert.deepEqual(
+    g.rec.log.filter((e) => e.step === 'intent').map((i) => [i.action, steps(g.rec, i.marker)]),
+    [
+      ['call', DONE],
+      ['commit', DONE],
+      ['call', DONE],
+      ['commit', DONE],
+      ['push', DONE],
+      ['pr-upsert', DONE],
+      ['pr-upsert', DONE],
+      ['pr-ready', DONE],
+      ['comment', DONE],
+      ['label', DONE],
+    ],
+  );
   assert.deepEqual(record.openIntents(g.rec), []);
 
   // Each agent Attempt is write-ahead too, its intent carrying the baseline the Integrity Assertion compares against,
   // which a resume reads back from the State Database.
   const calls = intents(g.rec, 'call');
-  assert.deepEqual(calls.map((c) => c.marker), [actionMarker(g, 'red', 'red'), actionMarker(g, 'green', 'green')]);
+  assert.deepEqual(
+    calls.map((c) => c.marker),
+    [actionMarker(g, 'red', 'red'), actionMarker(g, 'green', 'green')],
+  );
   const saved = intents(await loadTicket(g), 'call');
-  assert.deepEqual(saved.map((c) => c.payload.baseline), calls.map((c) => c.payload.baseline), 'each baseline reads back as it was taken');
+  assert.deepEqual(
+    saved.map((c) => c.payload.baseline),
+    calls.map((c) => c.payload.baseline),
+    'each baseline reads back as it was taken',
+  );
   assert.equal(saved[0].payload.baseline.head, g.base, 'red compares against the base');
 
   const commits = intents(g.rec, 'commit');
@@ -52,10 +81,16 @@ test('every side-effect action leaves intent, evidence and completion with the f
   assert.deepEqual(evidenceOf(pr.marker), { number: 7, url: 'https://github.com/o/r/pull/7' });
 
   // pr-ready's saved target: the pushed commit and the tree publish's Check passed on.
-  assert.deepEqual(intents(g.rec, 'pr-ready').map((r) => r.payload), [{ number: 7, sha: head, tree: await g.options.git.treeOf(g.worktree, head) }]);
+  assert.deepEqual(
+    intents(g.rec, 'pr-ready').map((r) => r.payload),
+    [{ number: 7, sha: head, tree: await g.options.git.treeOf(g.worktree, head) }],
+  );
 
-  assert.deepEqual(intents(g.rec, 'label').map((l) => l.payload),
-    [{ ticket: golden.TICKET, add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }], 'the ready-for-qa label write goes through the log');
+  assert.deepEqual(
+    intents(g.rec, 'label').map((l) => l.payload),
+    [{ ticket: golden.TICKET, add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }],
+    'the ready-for-qa label write goes through the log',
+  );
 });
 
 // green's Visit has two calls when the first fails the Green Check: green, then its recovery pass.
@@ -69,11 +104,13 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   const commands = [];
   // green's own snapshot, as its last Check saw it: publish pins its own after.
   let pinned;
-  g.options.exec = { runShell: (command, opts) => {
-    commands.push(command);
-    if (g.rec.cursor.vertex === 'green') pinned = structuredClone(g.rec.snapshot);
-    return runShell(command, opts);
-  } };
+  g.options.exec = {
+    runShell: (command, opts) => {
+      commands.push(command);
+      if (g.rec.cursor.vertex === 'green') pinned = structuredClone(g.rec.snapshot);
+      return runShell(command, opts);
+    },
+  };
   const vertex = g.flow.ticket.vertices.green;
   const run = g.harness.run;
   const seen = {};
@@ -101,8 +138,22 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   assert.equal(pinned.access, 'workspace-write');
   assert.match((await branchMessages(g)).at(-1), /Feature-Flow-Stage: green fake\/model-x\/high/);
   assert.equal(outcome, 'ready-for-qa', 'routing follows the entry snapshot');
-  assert.deepEqual([...new Set(g.readEvents().filter((e) => e.type === 'action' && e.vertex === 'green').map((e) => e.procedure))], ['implement']);
-  assert.deepEqual(commands, ['npm test', 'npm test', 'npm test', 'npm run other'], "green's Checks ran its pinned command; publish pins the edited one");
+  assert.deepEqual(
+    [
+      ...new Set(
+        g
+          .readEvents()
+          .filter((e) => e.type === 'action' && e.vertex === 'green')
+          .map((e) => e.procedure),
+      ),
+    ],
+    ['implement'],
+  );
+  assert.deepEqual(
+    commands,
+    ['npm test', 'npm test', 'npm test', 'npm run other'],
+    "green's Checks ran its pinned command; publish pins the edited one",
+  );
   assert.deepEqual(pinned.route, { ok: 'publish' });
   assert.equal(pinned.commands.test, 'npm test');
   assert.deepEqual(pinned.testPaths, ['test/**']);
@@ -115,7 +166,9 @@ test('the red commit records a non-ASCII test path unquoted', async (t) => {
   const g = await golden.setup(t, { responses });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value.files, ['test/añadir.test.mjs']);
+  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value.files, [
+    'test/añadir.test.mjs',
+  ]);
 });
 
 test('ready-for-qa removes in-progress and adds its label', async (t) => {
@@ -147,7 +200,11 @@ test('ready-for-qa counts the files under the pinned testPaths as tests in its d
 
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
-  responses['green/1/green/1'].response = { ...golden.greenResponse, claim: 'blocked', diagnosis: 'The ticket contradicts itself.' };
+  responses['green/1/green/1'].response = {
+    ...golden.greenResponse,
+    claim: 'blocked',
+    diagnosis: 'The ticket contradicts itself.',
+  };
   const g = await golden.setup(t, { responses });
   g.gh.labels.add('gg:state:in-progress');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -165,7 +222,10 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   const check = actionEvent(g, 'green', 'test');
   assert.ok(check, 'the Green Check runs and is recorded');
   assert.equal(check.signals.claim.claim, 'blocked');
-  assert.deepEqual(check.signals.checks.map((c) => [c.id, c.state]), [['test', 'passed']]);
+  assert.deepEqual(
+    check.signals.checks.map((c) => [c.id, c.state]),
+    [['test', 'passed']],
+  );
   assert.deepEqual(check.rule, { table: 'stopped', row: null });
   assert.equal(check.outcome, 'blocked');
 
@@ -198,7 +258,12 @@ test("agent-reported test names stay out of a failed red's Terminal Reason and a
 test('the Terminal Reason is saved before any Terminal side effect, so a crash posting the end comment keeps it', async (t) => {
   const g = await golden.setup(t);
   // A CrashError, since any other throw is now an unexpected fault handled inside runExecution.
-  g.options.gh = { ...g.options.gh, commentIssue: async () => { throw new interpreter.CrashError('crash'); } };
+  g.options.gh = {
+    ...g.options.gh,
+    commentIssue: async () => {
+      throw new interpreter.CrashError('crash');
+    },
+  };
   await assert.rejects(interpreter.runExecution(g.options), /crash/);
 
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
@@ -213,7 +278,10 @@ test('ready-for-qa carries a Terminal Reason naming the passed Checks and the re
   assert.deepEqual(reason.decidedBy, { vertex: 'publish', visit: 1, action: 'pr-ready', recovery: 0 });
   assert.equal(reason.outcome, 'ok');
   assert.deepEqual(reason.rule, { table: 'passed', row: null }, 'no passed row matched, so the token ok');
-  assert.equal(reason.text, `publish visit 1 completed every publish Action: test passed. PR #${g.rec.pr} is ready for review.`);
+  assert.equal(
+    reason.text,
+    `publish visit 1 completed every publish Action: test passed. PR #${g.rec.pr} is ready for review.`,
+  );
 });
 
 // ff's red-gate e2e cases on the fake harness: red writes test/fail.test.mjs, the runner answers with `run`,
@@ -227,9 +295,10 @@ async function redGate(t, { tests, run }) {
   responses['red/1/recover/1'] = { files: {}, response: { ...golden.redResponse, tests } };
   const g = await golden.setup(t, { responses });
   g.options.exec = {
-    runShell: async (command, opts) => existsSync(join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs'))
-      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
-      : { timedOut: false, ...run },
+    runShell: async (command, opts) =>
+      existsSync(join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs'))
+        ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
+        : { timedOut: false, ...run },
   };
   g.result = await interpreter.runExecution(g.options);
   return g;
@@ -238,7 +307,10 @@ async function redGate(t, { tests, run }) {
 const FAIL_OUTPUT = 'not ok 1 - rejects bad input\n# fail 1';
 
 test('a red run whose runner cannot start is not committed and fails with the reason', async (t) => {
-  const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 127, output: 'ff-no-such-runner-xyz: command not found' } });
+  const g = await redGate(t, {
+    tests: ['rejects bad input'],
+    run: { code: 127, output: 'ff-no-such-runner-xyz: command not found' },
+  });
   assert.deepEqual(await subjects(g), [], 'no test: commit');
   const check = actionEvent(g, 'red', 'red-check');
   assert.equal(check.outcome, 'failed');

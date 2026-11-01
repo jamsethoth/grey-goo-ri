@@ -19,7 +19,10 @@ const CHECKS = [
 ];
 
 export class UsageError extends Error {
-  constructor() { super(USAGE); this.name = 'UsageError'; }
+  constructor() {
+    super(USAGE);
+    this.name = 'UsageError';
+  }
 }
 
 // No arguments is the full stage. `fast` is test/unit/ plus the named contract suites, whose paths are built from the
@@ -27,12 +30,17 @@ export class UsageError extends Error {
 function stage(argv) {
   if (argv.length === 0) return [];
   if (argv[0] !== 'fast') throw new UsageError();
-  const boundaries = readdirSync(join(root, 'test', 'contract'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
-  return ['test/unit/**/*.test.{mjs,ts}', ...argv.slice(1).map((arg) => {
-    const name = boundaries.find((b) => b === arg);
-    if (!name) throw new UsageError();
-    return `test/contract/${name}/**/*.test.{mjs,ts}`;
-  })];
+  const boundaries = readdirSync(join(root, 'test', 'contract'), { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+  return [
+    'test/unit/**/*.test.{mjs,ts}',
+    ...argv.slice(1).map((arg) => {
+      const name = boundaries.find((b) => b === arg);
+      if (!name) throw new UsageError();
+      return `test/contract/${name}/**/*.test.{mjs,ts}`;
+    }),
+  ];
 }
 
 export function suiteCommand(env, argv) {
@@ -69,7 +77,10 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
   for (const args of cmd.steps) {
     const code = await new Promise((done) => {
       const child = spawn(cmd.command, args, { cwd: cmd.cwd, env: cmd.env, stdio: 'inherit', shell: false });
-      child.on('error', (err) => { console.error(err.message); done(1); });
+      child.on('error', (err) => {
+        console.error(err.message);
+        done(1);
+      });
       child.on('exit', (exitCode, signal) => done(signal ? 1 : exitCode));
     });
     if (code !== 0) process.exit(code);

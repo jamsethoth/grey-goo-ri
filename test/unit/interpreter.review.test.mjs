@@ -6,8 +6,19 @@ import * as marker from '../../lib/marker.mjs';
 import * as checks from '../../lib/checks.mjs';
 import * as golden from '../support/golden.mjs';
 import {
-  REVIEWER_PERSONA, finding, review, reviewed, fixed, MAJOR, reviewSetup, reviewFlow, prReviewComments,
-  reviewStopReason, branchMessages, originSha, headSha,
+  REVIEWER_PERSONA,
+  finding,
+  review,
+  reviewed,
+  fixed,
+  MAJOR,
+  reviewSetup,
+  reviewFlow,
+  prReviewComments,
+  reviewStopReason,
+  branchMessages,
+  originSha,
+  headSha,
 } from '../support/interpreter.mjs';
 
 test('golden: a changes verdict routes into the fix vertex and back to review, then publish to ready-for-qa', async (t) => {
@@ -18,20 +29,56 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   });
 
   assert.equal(g.result.outcome, 'ready-for-qa');
-  assert.deepEqual(g.actions.map((e) => `${e.vertex}/${e.visit}/${e.action}/${e.recovery}`), [
-    'red/1/red/0', 'red/1/red-check/0', 'red/1/commit/0',
-    'green/1/green/0', 'green/1/test/0', 'green/1/commit/0', 'green/1/push/0', 'green/1/pr/0',
-    'reviewer/1/review/0', 'reviewer/1/review-pass/0', 'reviewer/1/repeat/0', 'reviewer/1/comment/0', 'reviewer/1/pr/0',
-    'implementer-fix/1/fix/0', 'implementer-fix/1/test/0', 'implementer-fix/1/commit/0', 'implementer-fix/1/push/0', 'implementer-fix/1/pr/0',
-    'reviewer/2/review/0', 'reviewer/2/review-pass/0', 'reviewer/2/repeat/0', 'reviewer/2/comment/0', 'reviewer/2/pr/0',
-    'publish/1/test/0', 'publish/1/pr/0', 'publish/1/pr-ready/0',
-  ]);
-  assert.deepEqual(g.actions.filter((e) => e.attempt !== 1), [], 'every Action is its first Attempt');
-  assert.deepEqual(g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure),
-    ['review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review']);
-  assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure), ['fix', 'fix', 'fix', 'fix', 'fix']);
+  assert.deepEqual(
+    g.actions.map((e) => `${e.vertex}/${e.visit}/${e.action}/${e.recovery}`),
+    [
+      'red/1/red/0',
+      'red/1/red-check/0',
+      'red/1/commit/0',
+      'green/1/green/0',
+      'green/1/test/0',
+      'green/1/commit/0',
+      'green/1/push/0',
+      'green/1/pr/0',
+      'reviewer/1/review/0',
+      'reviewer/1/review-pass/0',
+      'reviewer/1/repeat/0',
+      'reviewer/1/comment/0',
+      'reviewer/1/pr/0',
+      'implementer-fix/1/fix/0',
+      'implementer-fix/1/test/0',
+      'implementer-fix/1/commit/0',
+      'implementer-fix/1/push/0',
+      'implementer-fix/1/pr/0',
+      'reviewer/2/review/0',
+      'reviewer/2/review-pass/0',
+      'reviewer/2/repeat/0',
+      'reviewer/2/comment/0',
+      'reviewer/2/pr/0',
+      'publish/1/test/0',
+      'publish/1/pr/0',
+      'publish/1/pr-ready/0',
+    ],
+  );
+  assert.deepEqual(
+    g.actions.filter((e) => e.attempt !== 1),
+    [],
+    'every Action is its first Attempt',
+  );
+  assert.deepEqual(
+    g.actions.filter((e) => e.vertex === 'reviewer').map((e) => e.procedure),
+    ['review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review', 'review'],
+  );
+  assert.deepEqual(
+    g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure),
+    ['fix', 'fix', 'fix', 'fix', 'fix'],
+  );
   assert.equal(g.at('reviewer', 1, 'review', 0)[0].outcome, 'changes');
-  assert.deepEqual(g.at('reviewer', 1, 'review', 0)[0].rule, { table: 'fixed', row: 'claimed' }, 'a changes claim is handed to the review tables');
+  assert.deepEqual(
+    g.at('reviewer', 1, 'review', 0)[0].rule,
+    { table: 'fixed', row: 'claimed' },
+    'a changes claim is handed to the review tables',
+  );
   assert.equal(g.at('reviewer', 2, 'review', 0)[0].outcome, 'ok');
 
   // The review is a read-only call with the diff and the captured Red and Green Evidence in its Brief.
@@ -49,7 +96,10 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   assert.equal(review2.access, 'read-only');
 
   const messages = await branchMessages(g);
-  assert.deepEqual(messages.map((m) => m.split(':')[0]), ['test', 'feat', 'fix']);
+  assert.deepEqual(
+    messages.map((m) => m.split(':')[0]),
+    ['test', 'feat', 'fix'],
+  );
   assert.match(messages.at(-1), /Feature-Flow-Stage: implementer-fix fake\/model-x\/high/);
   assert.equal(await originSha(g), await headSha(g), 'fix/4 pushed');
 
@@ -57,12 +107,22 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   assert.equal(comments.length, 2, 'two review comments on the PR');
   assert.match(comments[0].body, /^<!-- gg-action gg:\S+ -->$/m);
   assert.match(comments[1].body, /^<!-- gg-action gg:\S+ -->$/m);
-  assert.match(g.gh.pr().body, /^\| reviewer \| fake \| model-r \| high \| /m, 'the PR body carries the reviewer provenance row');
+  assert.match(
+    g.gh.pr().body,
+    /^\| reviewer \| fake \| model-r \| high \| /m,
+    'the PR body carries the reviewer provenance row',
+  );
   assert.equal(g.gh.pr().isDraft, false);
 
   assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1);
   assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
-  assert.deepEqual(g.rec.outputs.filter((o) => o.action === 'repeat').map((o) => [o.vertex, o.visit]), [['reviewer', 1], ['reviewer', 2]]);
+  assert.deepEqual(
+    g.rec.outputs.filter((o) => o.action === 'repeat').map((o) => [o.vertex, o.visit]),
+    [
+      ['reviewer', 1],
+      ['reviewer', 2],
+    ],
+  );
   assert.equal(g.events.at(-1).type, 'ticket_end');
   assert.equal(g.events.at(-1).outcome, 'ready-for-qa');
 });
@@ -73,10 +133,15 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/2/review/1': reviewed(review('ok')),
   });
-  golden.configure(g, (c) => { c.flows.golden.ticket.vertices.reviewer.route.changes.max = 1; });
+  golden.configure(g, (c) => {
+    c.flows.golden.ticket.vertices.reviewer.route.changes.max = 1;
+  });
   // Before the fix Attempt's intent: one interrupted after it would be held instead.
   const fix = golden.markerOf(g.rec, 'implementer-fix', 1, 'fix');
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: fix, point: 'before-intent' } }), /crash/);
+  await assert.rejects(
+    interpreter.runExecution({ ...g.options, crashAt: { marker: fix, point: 'before-intent' } }),
+    /crash/,
+  );
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
   assert.equal(saved.cursor.vertex, 'implementer-fix');
@@ -84,8 +149,11 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
   const before = g.harness.calls.length;
   const result = await interpreter.runExecution({ ...g.options, record: saved });
   assert.equal(result.outcome, 'ready-for-qa');
-  assert.deepEqual(g.harness.calls.slice(before).map((c) => (c.brief.startsWith('FIX VISIT') ? 'fix' : c.access)), ['fix', 'read-only'],
-    'the restart runs the pending fix, then review, not the entry');
+  assert.deepEqual(
+    g.harness.calls.slice(before).map((c) => (c.brief.startsWith('FIX VISIT') ? 'fix' : c.access)),
+    ['fix', 'read-only'],
+    'the restart runs the pending fix, then review, not the entry',
+  );
   assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
   assert.deepEqual(saved.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
 });
@@ -98,12 +166,19 @@ test('two reviewer vertices keep their own sessions and provenance rows', async 
   golden.configure(g, (c) => {
     const { vertices } = c.flows.golden.ticket;
     vertices.reviewer.route.ok = 'reviewer-2';
-    vertices['reviewer-2'] = { ...structuredClone(vertices.reviewer), model: 'model-s', route: { ...vertices.reviewer.route, ok: 'publish' } };
+    vertices['reviewer-2'] = {
+      ...structuredClone(vertices.reviewer),
+      model: 'model-s',
+      route: { ...vertices.reviewer.route, ok: 'publish' },
+    };
   });
   g.result = await interpreter.runExecution(g.options);
 
   assert.equal(g.result.outcome, 'ready-for-qa');
-  assert.ok(g.rec.sessions['reviewer/1/review'] && g.rec.sessions['reviewer-2/1/review'], JSON.stringify(Object.keys(g.rec.sessions)));
+  assert.ok(
+    g.rec.sessions['reviewer/1/review'] && g.rec.sessions['reviewer-2/1/review'],
+    JSON.stringify(Object.keys(g.rec.sessions)),
+  );
   assert.match(g.gh.pr().body, /^\| reviewer \| fake \| model-r \| high \| /m, 'the first reviewer row survives');
   assert.match(g.gh.pr().body, /^\| reviewer-2 \| fake \| model-s \| high \| /m);
 });
@@ -118,19 +193,30 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
   });
 
   assert.equal(g.result.outcome, 'needs-human');
-  assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 2, 'two changes verdicts traverse the edge twice');
+  assert.equal(
+    g.rec.traversals['reviewer->implementer-fix:changes'],
+    2,
+    'two changes verdicts traverse the edge twice',
+  );
   assert.equal(g.rec.visits['implementer-fix'], 2);
   assert.equal(g.rec.visits.reviewer, 3);
   assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX VISIT')).length, 2, 'no third fix call');
-  assert.deepEqual(g.actions.filter((e) => e.vertex === 'implementer-fix' && e.visit === 3), [], 'no third fix Visit');
+  assert.deepEqual(
+    g.actions.filter((e) => e.vertex === 'implementer-fix' && e.visit === 3),
+    [],
+    'no third fix Visit',
+  );
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 
   const reason = reviewStopReason(g);
   assert.equal(reason.decidedBy.vertex, 'reviewer');
   assert.equal(reason.decidedBy.visit, 3);
   assert.equal(reason.outcome, 'changes');
-  assert.equal(reason.text, 'reviewer visit 3 completed every review Action with outcome changes, and its Edge to implementer-fix '
-    + 'had used its Bound of 2 traversals, so the route ended at needs-human.');
+  assert.equal(
+    reason.text,
+    'reviewer visit 3 completed every review Action with outcome changes, and its Edge to implementer-fix ' +
+      'had used its Bound of 2 traversals, so the route ended at needs-human.',
+  );
 });
 
 test('golden: a review ok without evidence routes as changes through the passed table', async (t) => {
@@ -155,7 +241,10 @@ test('golden: a review ok without evidence routes as changes through the passed 
 
 test('a repeated findings hash is flagged', async (t) => {
   const same = [MAJOR, finding('major', 'test/add.test.mjs', 'the test   misses negatives on line 3')];
-  const reworded = [finding('major', 'test/add.test.mjs', 'the test misses negatives on line 9'), { ...MAJOR, issue: 'add ignores non-number input at line 7' }];
+  const reworded = [
+    finding('major', 'test/add.test.mjs', 'the test misses negatives on line 9'),
+    { ...MAJOR, issue: 'add ignores non-number input at line 7' },
+  ];
   const g = await reviewSetup(t, {
     'reviewer/1/review/1': reviewed(review('changes', same)),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // tried\n' }),
@@ -169,9 +258,21 @@ test('a repeated findings hash is flagged', async (t) => {
   assert.equal(first.value.findingsHash, checks.findingsHash(same));
   assert.equal(second.value.findingsHash, first.value.findingsHash, 'normalised Findings hash the same');
   const hashed = (visit) => g.at('reviewer', visit, 'repeat', 0)[0];
-  assert.deepEqual(hashed(1).signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }], 'the first review is not a repeat');
-  assert.deepEqual(hashed(2).signals.checks, [{ id: 'repeat', kind: 'repeat', state: 'failed', tree: null }], 'the second review is a repeat');
-  assert.deepEqual(g.rec.traversals, { 'reviewer->implementer-fix:changes': 1, 'reviewer->senior-dev:repeat': 1 }, 'the repeat routes as repeat');
+  assert.deepEqual(
+    hashed(1).signals.checks,
+    [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
+    'the first review is not a repeat',
+  );
+  assert.deepEqual(
+    hashed(2).signals.checks,
+    [{ id: 'repeat', kind: 'repeat', state: 'failed', tree: null }],
+    'the second review is a repeat',
+  );
+  assert.deepEqual(
+    g.rec.traversals,
+    { 'reviewer->implementer-fix:changes': 1, 'reviewer->senior-dev:repeat': 1 },
+    'the repeat routes as repeat',
+  );
   assert.equal(g.result.outcome, 'ready-for-qa');
 });
 
@@ -179,41 +280,78 @@ test('the review lists the test files changed since red under the testPaths pinn
   const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
   g.options.testPaths = ['test/**', 'lib/**'];
   // Test Immutability always passes here, and classifies what the Execution changed by the globs it is given.
-  g.options.testImmutability = async (cwd, baseline, globs) =>
-    ({ ok: true, changed: ['lib/add.mjs', 'test/add.test.mjs'].filter(checks.testPathMatcher(globs)) });
+  g.options.testImmutability = async (cwd, baseline, globs) => ({
+    ok: true,
+    changed: ['lib/add.mjs', 'test/add.test.mjs'].filter(checks.testPathMatcher(globs)),
+  });
   // The live testPaths drop lib/** after the reviewer's Visit pinned them, just before its changed-test list is read.
   const { branchDiff } = g.options.git;
-  g.options.git = { ...g.options.git, branchDiff: (...args) => { g.options.testPaths.splice(1); return branchDiff(...args); } };
+  g.options.git = {
+    ...g.options.git,
+    branchDiff: (...args) => {
+      g.options.testPaths.splice(1);
+      return branchDiff(...args);
+    },
+  };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(g.rec.snapshot.testPaths, ['test/**'], 'publish, the last Visit, pinned the edited testPaths at its own entry');
+  assert.deepEqual(
+    g.rec.snapshot.testPaths,
+    ['test/**'],
+    'publish, the last Visit, pinned the edited testPaths at its own entry',
+  );
   const [, , reviewCall] = g.harness.calls;
   assert.equal(reviewCall.access, 'read-only');
-  assert.match(reviewCall.brief, /## Test files changed since the red commit\n- lib\/add\.mjs\n- test\/add\.test\.mjs\n/);
+  assert.match(
+    reviewCall.brief,
+    /## Test files changed since the red commit\n- lib\/add\.mjs\n- test\/add\.test\.mjs\n/,
+  );
 });
 
 test('the branch diff and changed test files are read for the review Brief and not again for its nudge', async (t) => {
-  const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(null), 'reviewer/1/review/2': reviewed(review('ok')) });
+  const g = await reviewFlow(t, {
+    'reviewer/1/review/1': reviewed(null),
+    'reviewer/1/review/2': reviewed(review('ok')),
+  });
   // Each read is tagged with how many harness calls came before it: 2 is the Green Check and the review Brief, 3 would
   // be the nudge.
   const reads = [];
   const { branchDiff } = g.options.git;
-  g.options.git = { ...g.options.git, branchDiff: (...args) => { reads.push(`diff ${g.harness.calls.length}`); return branchDiff(...args); } };
+  g.options.git = {
+    ...g.options.git,
+    branchDiff: (...args) => {
+      reads.push(`diff ${g.harness.calls.length}`);
+      return branchDiff(...args);
+    },
+  };
   const { testImmutability } = g.options;
-  g.options.testImmutability = (...args) => { reads.push(`changed tests ${g.harness.calls.length}`); return testImmutability(...args); };
+  g.options.testImmutability = (...args) => {
+    reads.push(`changed tests ${g.harness.calls.length}`);
+    return testImmutability(...args);
+  };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'ready-for-qa');
   assert.equal(g.harness.calls.length, 4, 'red, green, the review and its nudge');
-  assert.deepEqual(reads, ['changed tests 2', 'diff 2', 'changed tests 2'],
-    "green's agent Attempt reads changed tests; the review Brief reads the diff and changed tests; the nudge reads nothing");
+  assert.deepEqual(
+    reads,
+    ['changed tests 2', 'diff 2', 'changed tests 2'],
+    "green's agent Attempt reads changed tests; the review Brief reads the diff and changed tests; the nudge reads nothing",
+  );
 });
 
 // W5: a comment Action with `target: ticket` posts on the Ticket, under its own marker, not on the PR.
 test('a comment Action with target ticket posts on the Ticket', async (t) => {
-  const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) },
-    { configure: (c) => { c.procedures.review.actions[3].target = 'ticket'; } });
+  const g = await reviewSetup(
+    t,
+    { 'reviewer/1/review/1': reviewed(review('ok')) },
+    {
+      configure: (c) => {
+        c.procedures.review.actions[3].target = 'ticket';
+      },
+    },
+  );
 
   assert.equal(g.result.outcome, 'ready-for-qa');
   assert.deepEqual(prReviewComments(g), [], 'nothing on the PR');
@@ -221,5 +359,8 @@ test('a comment Action with target ticket posts on the Ticket', async (t) => {
   const posted = g.gh.comments.filter((c) => c.number === golden.TICKET && c.body.includes(marker.markerComment(m)));
   assert.equal(posted.length, 1);
   assert.match(posted[0].body, /### gg review/);
-  assert.deepEqual(g.rec.log.find((e) => e.marker === m && e.step === 'intent').payload.target, { kind: 'issue', number: golden.TICKET });
+  assert.deepEqual(g.rec.log.find((e) => e.marker === m && e.step === 'intent').payload.target, {
+    kind: 'issue',
+    number: golden.TICKET,
+  });
 });

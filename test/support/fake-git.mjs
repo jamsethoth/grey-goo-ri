@@ -17,21 +17,43 @@ const fail = (message) => Object.assign(new Error(message), { stderr: `${message
 // stay within a path segment and `**` crosses them.
 // shortcut: only the worktree root's .gitignore, without `!` negation; tests whose ignore rules need more stay on real git.
 function ignoreRules(text) {
-  return text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((line) => {
-    const dirOnly = line.endsWith('/');
-    const body = line.replace(/^\//, '').replace(/\/$/, '');
-    return { re: globRe(body), dirOnly, anchored: line.slice(0, -1).includes('/') };
-  });
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'))
+    .map((line) => {
+      const dirOnly = line.endsWith('/');
+      const body = line.replace(/^\//, '').replace(/\/$/, '');
+      return { re: globRe(body), dirOnly, anchored: line.slice(0, -1).includes('/') };
+    });
 }
 const isIgnored = (rules, path) => {
   const parts = path.split('/');
-  return rules.some(({ re, dirOnly, anchored }) => parts.some((_, i) =>
-    !(dirOnly && i === parts.length - 1) && re.test(anchored ? parts.slice(0, i + 1).join('/') : parts[i])));
+  return rules.some(({ re, dirOnly, anchored }) =>
+    parts.some(
+      (_, i) => !(dirOnly && i === parts.length - 1) && re.test(anchored ? parts.slice(0, i + 1).join('/') : parts[i]),
+    ),
+  );
 };
 
-const globRe = (glob, flags = '') => new RegExp(`^${glob.split(/(\*\*\/|\*\*|\*|\?)/).map((part) =>
-  part === '**/' ? '(?:.*/)?' : part === '**' ? '.*' : part === '*' ? '[^/]*' : part === '?' ? '[^/]'
-    : part.replace(/[.+^${}()|[\]\\]/g, '\\$&')).join('')}$`, flags);
+const globRe = (glob, flags = '') =>
+  new RegExp(
+    `^${glob
+      .split(/(\*\*\/|\*\*|\*|\?)/)
+      .map((part) =>
+        part === '**/'
+          ? '(?:.*/)?'
+          : part === '**'
+            ? '.*'
+            : part === '*'
+              ? '[^/]*'
+              : part === '?'
+                ? '[^/]'
+                : part.replace(/[.+^${}()|[\]\\]/g, '\\$&'),
+      )
+      .join('')}$`,
+    flags,
+  );
 
 // `within` as lib/git.mjs reads it: { paths, globs, exclude }, where a path matches itself and what is under it, folding
 // case on Windows, and with only exclusions everything else matches; or the pathspecs a reset intent saved before #144.
@@ -44,21 +66,30 @@ function withinMatcher(within) {
   // (test/e2e/checks.test.mjs shows it), so the fake reads every glob with that matcher.
   const globbed = checks.testPathMatcher(within.globs ?? []);
   const excluded = checks.testPathMatcher(within.exclude ?? []);
-  const included = (p) => (!under.length && !within.globs?.length)
-    || under.some((b) => fold(p) === b || fold(p).startsWith(`${b}/`)) || globbed(p);
+  const included = (p) =>
+    (!under.length && !within.globs?.length) ||
+    under.some((b) => fold(p) === b || fold(p).startsWith(`${b}/`)) ||
+    globbed(p);
   return (p) => included(p) && !excluded(p);
 }
 
 // A saved pathspec: a literal path matches itself and what is under it, `icase` folds case, `glob` is a glob and
 // `exclude` removes matches; with only exclusions everything else matches.
 function pathspecMatcher(specs) {
-  const include = [], exclude = [];
+  const include = [],
+    exclude = [];
   for (const spec of specs) {
     const [, magic = '', body] = spec.match(/^(?::\(([a-z,]+)\))?(.*)$/);
     const words = magic.split(',');
     const fold = words.includes('icase') ? (s) => s.toLowerCase() : (s) => s;
-    const test = words.includes('glob') ? ((re) => (p) => re.test(p))(globRe(body))
-      : body === '.' ? () => true : (p) => fold(p) === fold(body) || fold(p).startsWith(`${fold(body)}/`);
+    const test = words.includes('glob')
+      ? (
+          (re) => (p) =>
+            re.test(p)
+        )(globRe(body))
+      : body === '.'
+        ? () => true
+        : (p) => fold(p) === fold(body) || fold(p).startsWith(`${fold(body)}/`);
     (words.includes('exclude') ? exclude : include).push(test);
   }
   return (p) => (!include.length || include.some((t) => t(p))) && !exclude.some((t) => t(p));
@@ -87,7 +118,11 @@ export function fakeGit() {
   let n = 0;
 
   const putTree = (files) => {
-    const id = sha1(`tree\0${sorted(files.keys()).map((p) => `${p}\0${sha1(files.get(p))}`).join('\0')}`);
+    const id = sha1(
+      `tree\0${sorted(files.keys())
+        .map((p) => `${p}\0${sha1(files.get(p))}`)
+        .join('\0')}`,
+    );
     if (!trees.has(id)) trees.set(id, new Map(files));
     return id;
   };
@@ -104,7 +139,8 @@ export function fakeGit() {
       for (const wt of repo.worktrees) {
         if (pathKey(wt.path) !== pathKey(cwd)) continue;
         const marker = join(cwd, '.git');
-        if (wt.main ? existsSync(marker) : existsSync(marker) && readFileSync(marker, 'utf8') === wt.marker) return { repo, wt };
+        if (wt.main ? existsSync(marker) : existsSync(marker) && readFileSync(marker, 'utf8') === wt.marker)
+          return { repo, wt };
       }
     }
     throw fail(`fatal: not a git repository: ${cwd}`);
@@ -116,7 +152,8 @@ export function fakeGit() {
   };
   const move = ({ repo, wt }, sha) => (wt.branch ? repo.branches.set(wt.branch, sha) : (wt.head = sha));
   const commitOf = (repo, rev) => {
-    const sha = repo.branches.get(rev) ?? (rev.startsWith('origin/') ? repo.tracking.get(rev.slice(7)) : undefined) ?? rev;
+    const sha =
+      repo.branches.get(rev) ?? (rev.startsWith('origin/') ? repo.tracking.get(rev.slice(7)) : undefined) ?? rev;
     if (!commits.has(sha)) throw fail(`fatal: bad revision '${rev}'`);
     return sha;
   };
@@ -157,7 +194,8 @@ export function fakeGit() {
   const pruneEmpty = (dir, top = true) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (top && entry.name === '.git') continue;
-      if (entry.isDirectory() && !lstatSync(join(dir, entry.name)).isSymbolicLink()) pruneEmpty(join(dir, entry.name), false);
+      if (entry.isDirectory() && !lstatSync(join(dir, entry.name)).isSymbolicLink())
+        pruneEmpty(join(dir, entry.name), false);
     }
     if (!top && readdirSync(dir).length === 0) rmSync(dir, { recursive: true });
   };
@@ -177,13 +215,17 @@ export function fakeGit() {
     return [...ancestors(b)].filter((s) => of.has(s)).sort((x, y) => commits.get(y).n - commits.get(x).n)[0];
   };
   // Paths whose content differs between two file maps, sorted.
-  const differing = (from, to) => sorted(new Set([...from.keys(), ...to.keys()])).filter((p) => {
-    const [a, b] = [from.get(p), to.get(p)];
-    return !(a && b && a.equals(b));
-  });
+  const differing = (from, to) =>
+    sorted(new Set([...from.keys(), ...to.keys()])).filter((p) => {
+      const [a, b] = [from.get(p), to.get(p)];
+      return !(a && b && a.equals(b));
+    });
   const sinceBase = (ctx, base) => {
     const head = headOf(ctx);
-    return { from: trees.get(commits.get(mergeBase(commitOf(ctx.repo, base), head)).tree), to: trees.get(commits.get(head).tree) };
+    return {
+      from: trees.get(commits.get(mergeBase(commitOf(ctx.repo, base), head)).tree),
+      to: trees.get(commits.get(head).tree),
+    };
   };
 
   const git = {
@@ -200,9 +242,15 @@ export function fakeGit() {
       const { repo } = at(mainRoot);
       if (existsSync(path)) {
         let found = null;
-        try { found = at(path); } catch { /* not a worktree */ }
+        try {
+          found = at(path);
+        } catch {
+          /* not a worktree */
+        }
         if (!found || found.repo !== repo || !found.wt.branch?.startsWith('ticket/')) {
-          throw new Error(`${path} exists but is not a git worktree of this repo on a ticket/ branch; remove or move it and re-run`);
+          throw new Error(
+            `${path} exists but is not a git worktree of this repo on a ticket/ branch; remove or move it and re-run`,
+          );
         }
         return { path, branch: found.wt.branch };
       }
@@ -219,8 +267,10 @@ export function fakeGit() {
       return { path, branch };
     },
     // git lists worktrees by their canonical paths, with forward slashes on Windows too.
-    listWorktrees: async (mainRoot) => at(mainRoot).repo.worktrees.filter((w) => w.branch)
-      .map((w) => ({ path: canonical(w.path).replaceAll('\\', '/'), branch: w.branch })),
+    listWorktrees: async (mainRoot) =>
+      at(mainRoot)
+        .repo.worktrees.filter((w) => w.branch)
+        .map((w) => ({ path: canonical(w.path).replaceAll('\\', '/'), branch: w.branch })),
     currentBranch: async (cwd) => at(cwd).wt.branch ?? null,
 
     async stageAll(cwd) {
@@ -244,7 +294,8 @@ export function fakeGit() {
       if (!trees.has(tree)) throw fail(`fatal: ${tree} is not a valid 'tree' object`);
       const sha = putCommit(tree, [parent], message);
       const head = headOf(ctx);
-      if (head !== parent) throw fail(`fatal: update-ref: cannot lock ref 'HEAD': is at ${head} but expected ${parent}`);
+      if (head !== parent)
+        throw fail(`fatal: update-ref: cannot lock ref 'HEAD': is at ${head} but expected ${parent}`);
       move(ctx, sha);
       return sha;
     },
@@ -266,7 +317,8 @@ export function fakeGit() {
       const commit = resolve(ctx, sha);
       if (!ctx.repo.reachable) throw fail(`fatal: '${ctx.repo.url}' does not appear to be a git repository`);
       const theirs = ctx.repo.origin.get(branch);
-      if (theirs && !ancestors(commit).has(theirs)) throw fail(` ! [rejected]        ${sha} -> ${branch} (non-fast-forward)`);
+      if (theirs && !ancestors(commit).has(theirs))
+        throw fail(` ! [rejected]        ${sha} -> ${branch} (non-fast-forward)`);
       ctx.repo.origin.set(branch, commit);
       ctx.repo.tracking.set(branch, commit);
     },
@@ -287,13 +339,22 @@ export function fakeGit() {
     hasTree: async (cwd, tree) => (at(cwd), trees.has(tree)),
     async commitLog(cwd, branch) {
       const ctx = at(cwd);
-      return [...ancestors(commitOf(ctx.repo, branch))].sort((a, b) => commits.get(b).n - commits.get(a).n)
-        .map((sha) => ({ sha, parents: commits.get(sha).parents, tree: commits.get(sha).tree, message: commits.get(sha).message.replace(/\n+$/, '') }));
+      return [...ancestors(commitOf(ctx.repo, branch))]
+        .sort((a, b) => commits.get(b).n - commits.get(a).n)
+        .map((sha) => ({
+          sha,
+          parents: commits.get(sha).parents,
+          tree: commits.get(sha).tree,
+          message: commits.get(sha).message.replace(/\n+$/, ''),
+        }));
     },
     async treeDiff(cwd, from, to) {
       const ctx = at(cwd);
       const [a, b] = [treeFiles(ctx, from), treeFiles(ctx, to)];
-      return differing(a, b).map((path) => ({ path, change: !a.has(path) ? 'added' : !b.has(path) ? 'deleted' : 'modified' }));
+      return differing(a, b).map((path) => ({
+        path,
+        change: !a.has(path) ? 'added' : !b.has(path) ? 'deleted' : 'modified',
+      }));
     },
     // Renames as git detects them by default, but only exact ones: the deleted path of a moved file is not listed.
     async changedPaths(cwd, from, to, within) {
@@ -320,23 +381,31 @@ export function fakeGit() {
       const { wt } = at(cwd);
       const rules = rulesOf(wt);
       const match = withinMatcher(within);
-      const keep = { unignored: (p) => !isIgnored(rules, p), ignored: (p) => isIgnored(rules, p), all: () => true }[include];
+      const keep = { unignored: (p) => !isIgnored(rules, p), ignored: (p) => isIgnored(rules, p), all: () => true }[
+        include
+      ];
       return sorted([...disk(wt).keys()].filter((p) => !wt.index.has(p) && keep(p) && match(p)));
     },
     // shortcut: the fake makes no merges, so nothing is ever conflicted; conflict tests stay on real git.
     conflictedPaths: async (cwd) => (at(cwd), []),
     async diffSummary(cwd) {
       const changed = await git.changedSince(cwd, 'HEAD');
-      return changed.length ? `${changed.map((p) => ` ${p} | changed\n`).join('')} ${changed.length} files changed\n` : '';
+      return changed.length
+        ? `${changed.map((p) => ` ${p} | changed\n`).join('')} ${changed.length} files changed\n`
+        : '';
     },
     async branchDiff(cwd, base) {
       const { from, to } = sinceBase(at(cwd), base);
-      return differing(from, to).map((p) => {
-        const [a, b] = [from.get(p), to.get(p)];
-        if (isBinary(a) || isBinary(b)) return `diff --git a/${p} b/${p}\nBinary files differ\n`;
-        const body = [...(a ? lines(a).map((l) => `-${l}`) : []), ...(b ? lines(b).map((l) => `+${l}`) : [])].join('');
-        return `diff --git a/${p} b/${p}\n--- ${a ? `a/${p}` : '/dev/null'}\n+++ ${b ? `b/${p}` : '/dev/null'}\n${body}`;
-      }).join('');
+      return differing(from, to)
+        .map((p) => {
+          const [a, b] = [from.get(p), to.get(p)];
+          if (isBinary(a) || isBinary(b)) return `diff --git a/${p} b/${p}\nBinary files differ\n`;
+          const body = [...(a ? lines(a).map((l) => `-${l}`) : []), ...(b ? lines(b).map((l) => `+${l}`) : [])].join(
+            '',
+          );
+          return `diff --git a/${p} b/${p}\n--- ${a ? `a/${p}` : '/dev/null'}\n+++ ${b ? `b/${p}` : '/dev/null'}\n${body}`;
+        })
+        .join('');
     },
     // A minimal line diff's counts, which are git's whatever path its diff takes.
     async diffStats(cwd, base) {
@@ -363,8 +432,15 @@ export function fakeGit() {
     mkdirSync(commonDir, { recursive: true });
     const tree = putTree(new Map(Object.entries(files).map(([p, c]) => [p, Buffer.from(c)])));
     const base = putCommit(tree, [], message);
-    const repo = { commonDir, url: join(root, 'origin.git'), reachable: true, branches: new Map([['main', base]]),
-      origin: new Map([['main', base]]), tracking: new Map([['main', base]]), worktrees: [] };
+    const repo = {
+      commonDir,
+      url: join(root, 'origin.git'),
+      reachable: true,
+      branches: new Map([['main', base]]),
+      origin: new Map([['main', base]]),
+      tracking: new Map([['main', base]]),
+      worktrees: [],
+    };
     repo.worktrees.push({ path: mainRoot, branch: 'main', index: new Map(trees.get(tree)), main: true });
     repos.push(repo);
     writeFiles(mainRoot, trees.get(tree));

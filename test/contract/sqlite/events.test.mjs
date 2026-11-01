@@ -25,7 +25,10 @@ function tempDir(t) {
 function rows(commonDir) {
   const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
   try {
-    return db.prepare('SELECT id, ts, type, run, execution, ticket, json FROM events ORDER BY id').all().map((row) => ({ ...row }));
+    return db
+      .prepare('SELECT id, ts, type, run, execution, ticket, json FROM events ORDER BY id')
+      .all()
+      .map((row) => ({ ...row }));
   } finally {
     db.close();
   }
@@ -33,13 +36,23 @@ function rows(commonDir) {
 
 test('two processes append to the same table without loss', async (t) => {
   const dir = tempDir(t);
-  const exits = await Promise.all(['a', 'b'].map((run) => new Promise((resolve) => {
-    const child = spawn(process.execPath, [appender, dir, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.on('close', (code) => resolve({ run, code, err }));
-  })));
-  assert.deepEqual(exits, [{ run: 'a', code: 0, err: '' }, { run: 'b', code: 0, err: '' }]);
+  const exits = await Promise.all(
+    ['a', 'b'].map(
+      (run) =>
+        new Promise((resolve) => {
+          const child = spawn(process.execPath, [appender, dir, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
+          let err = '';
+          child.stderr.on('data', (chunk) => {
+            err += chunk;
+          });
+          child.on('close', (code) => resolve({ run, code, err }));
+        }),
+    ),
+  );
+  assert.deepEqual(exits, [
+    { run: 'a', code: 0, err: '' },
+    { run: 'b', code: 0, err: '' },
+  ]);
   assert.equal(rows(dir).length, 400);
   const read = events.readEvents(dir);
   assert.equal(read.length, 400);

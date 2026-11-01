@@ -11,7 +11,12 @@ export const stepsOf = (rec, m) => rec.log.filter((e) => e.marker === m).map((e)
 // Read through the git the case runs on, real or fake. The messages are the branch's commits since base, newest first.
 export async function branchMessages(g) {
   const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);
-  return log.slice(0, log.findIndex((c) => c.sha === g.base)).map((c) => c.message);
+  return log
+    .slice(
+      0,
+      log.findIndex((c) => c.sha === g.base),
+    )
+    .map((c) => c.message);
 }
 export const originSha = (g) => g.options.git.remoteSha(g.mainRoot, golden.BRANCH);
 export const withMarker = (bodies, m) => bodies.filter((b) => b.includes(marker.markerComment(m)));
@@ -37,24 +42,48 @@ export const EFFECTS = {
   },
   comment: {
     at: ['ready-for-qa', 1, 'end-comment', 0],
-    happened: (g, m) => withMarker(g.gh.comments.map((c) => c.body), m).length > 0,
+    happened: (g, m) =>
+      withMarker(
+        g.gh.comments.map((c) => c.body),
+        m,
+      ).length > 0,
   },
 };
 
 export const POINTS = {
-  'before-effect': { name: (a) => `golden: crash before the ${a} effect resumes by redoing it`, happened: false, steps: ['intent'] },
-  'after-effect': { name: (a) => `golden: crash after the ${a} effect resumes by completing it`, happened: true, steps: ['intent'] },
-  'after-completion': { name: (a) => `golden: crash after ${a} completion resumes past it`, happened: true, steps: ['intent', 'evidence', 'complete'] },
+  'before-effect': {
+    name: (a) => `golden: crash before the ${a} effect resumes by redoing it`,
+    happened: false,
+    steps: ['intent'],
+  },
+  'after-effect': {
+    name: (a) => `golden: crash after the ${a} effect resumes by completing it`,
+    happened: true,
+    steps: ['intent'],
+  },
+  'after-completion': {
+    name: (a) => `golden: crash after ${a} completion resumes past it`,
+    happened: true,
+    steps: ['intent', 'evidence', 'complete'],
+  },
 };
 
 // Runs the golden Execution until crashAt fires at `point` of the Action at `at`, and returns the freshly loaded record.
 export async function crashed(g, at, point) {
   const m = golden.markerOf(g.rec, ...at);
-  await assert.rejects(interpreter.runExecution({ ...g.options, crashAt: { marker: m, point } }),
-    (err) => err instanceof interpreter.CrashError);
+  await assert.rejects(
+    interpreter.runExecution({ ...g.options, crashAt: { marker: m, point } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
   return { m, loaded: await loadTicket(g) };
 }
 
 export const NEEDS_HUMAN = 'gg:state:needs-human';
-export const reconcileArgs = (g, rec, flow = g.flow) =>
-  ({ record: rec, flow, git: g.options.git, gh: g.options.gh, labelPrefix: 'gg', cwd: g.mainRoot });
+export const reconcileArgs = (g, rec, flow = g.flow) => ({
+  record: rec,
+  flow,
+  git: g.options.git,
+  gh: g.options.gh,
+  labelPrefix: 'gg',
+  cwd: g.mainRoot,
+});

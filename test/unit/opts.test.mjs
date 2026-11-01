@@ -6,19 +6,35 @@ const PLAN_SPEC = { values: ['name', 'session'], bools: ['bg'] };
 const EVAL_SPEC = { values: ['plan', 'runs', 'reset'], bools: [] };
 
 test('parseOpts: boolean flags never swallow the next argument', () => {
-  assert.deepEqual(opts.parseOpts(['--bg', 'x', '--name=n', '--', '--not-a-flag'], { bools: ['bg'], values: ['name'] }), { _: ['x', '--not-a-flag'], bg: true, name: 'n' });
-  assert.deepEqual(opts.parseOpts(['42', '--refresh', '--label', 'A'], { bools: ['refresh'], values: ['label'] }), { _: ['42'], refresh: true, label: 'A' });
+  assert.deepEqual(
+    opts.parseOpts(['--bg', 'x', '--name=n', '--', '--not-a-flag'], { bools: ['bg'], values: ['name'] }),
+    { _: ['x', '--not-a-flag'], bg: true, name: 'n' },
+  );
+  assert.deepEqual(opts.parseOpts(['42', '--refresh', '--label', 'A'], { bools: ['refresh'], values: ['label'] }), {
+    _: ['42'],
+    refresh: true,
+    label: 'A',
+  });
 });
 
 test('parseOpts: --finish needs a value', () => {
   const spec = { bools: ['bg'], values: ['name', 'session', 'replan', 'finish'] };
-  assert.throws(() => opts.parseOpts(['--finish'], spec), (e) => e instanceof opts.UsageError && e.message === '--finish needs a value');
+  assert.throws(
+    () => opts.parseOpts(['--finish'], spec),
+    (e) => e instanceof opts.UsageError && e.message === '--finish needs a value',
+  );
   assert.deepEqual(opts.parseOpts(['--finish', 'abc'], spec), { _: [], finish: 'abc' });
 });
 
 test('parseOpts: a boolean flag given a value is a usage error', () => {
-  assert.throws(() => opts.parseOpts(['--bg=yes'], PLAN_SPEC), (e) => e instanceof opts.UsageError && e.message === '--bg does not take a value');
-  assert.throws(() => opts.parseOpts(['--bogus'], PLAN_SPEC), (e) => e instanceof opts.UsageError && e.message === 'unknown option --bogus');
+  assert.throws(
+    () => opts.parseOpts(['--bg=yes'], PLAN_SPEC),
+    (e) => e instanceof opts.UsageError && e.message === '--bg does not take a value',
+  );
+  assert.throws(
+    () => opts.parseOpts(['--bogus'], PLAN_SPEC),
+    (e) => e instanceof opts.UsageError && e.message === 'unknown option --bogus',
+  );
 });
 
 test('parseOpts: unknown flags are rejected', () => {
@@ -37,7 +53,10 @@ test('parseOpts: a value flag with no value is an error', () => {
 });
 
 test('parseOpts: -- ends option parsing', () => {
-  assert.deepEqual(opts.parseOpts(['--bg', '--', '--weird', '--bgg'], PLAN_SPEC), { _: ['--weird', '--bgg'], bg: true });
+  assert.deepEqual(opts.parseOpts(['--bg', '--', '--weird', '--bgg'], PLAN_SPEC), {
+    _: ['--weird', '--bgg'],
+    bg: true,
+  });
 });
 
 test('parseOpts: inherited property names are not flags', () => {

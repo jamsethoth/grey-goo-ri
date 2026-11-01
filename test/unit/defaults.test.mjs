@@ -29,9 +29,18 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
   assert.deepEqual(Object.keys(gg.agents).sort(), ['implementer', 'reviewer']);
   const intents = { implementer: 'workspace-write', reviewer: 'read-only' };
   for (const [name, access] of Object.entries(intents)) {
-    assert.deepEqual(gg.agents[name], {
-      persona: `personas/${name}.md`, skills: [], mcp: [], plugins: [], access, network: false,
-    }, `${name} names no harness, model or effort`);
+    assert.deepEqual(
+      gg.agents[name],
+      {
+        persona: `personas/${name}.md`,
+        skills: [],
+        mcp: [],
+        plugins: [],
+        access,
+        network: false,
+      },
+      `${name} names no harness, model or effort`,
+    );
     assert.ok(existsSync(`${defaultsDir}personas/${name}.md`), `${name}.md ships in defaults/personas`);
   }
 
@@ -45,12 +54,24 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
         red: { use: 'implementer', procedure: 'tests-fail', route: { ok: 'green' } },
         green: { use: 'implementer', procedure: 'implement', inputs: GREEN_INPUTS, route: { ok: 'reviewer' } },
         reviewer: {
-          use: 'reviewer', procedure: 'review', inputs: IMPL_INPUTS,
-          route: { ok: 'publish', changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } },
-            repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } } },
+          use: 'reviewer',
+          procedure: 'review',
+          inputs: IMPL_INPUTS,
+          route: {
+            ok: 'publish',
+            changes: { to: 'implementer-fix', max: 2, exhausted: { end: 'needs-human' } },
+            repeat: { to: 'senior-dev', max: 1, exhausted: { end: 'needs-human' } },
+          },
         },
         'implementer-fix': { use: 'implementer', procedure: 'fix', inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
-        'senior-dev': { use: 'implementer', procedure: 'fix', max: 1, exhausted: { end: 'needs-human' }, inputs: FIX_INPUTS, route: { ok: 'reviewer' } },
+        'senior-dev': {
+          use: 'implementer',
+          procedure: 'fix',
+          max: 1,
+          exhausted: { end: 'needs-human' },
+          inputs: FIX_INPUTS,
+          route: { ok: 'reviewer' },
+        },
         publish: { procedure: 'publish', inputs: IMPL_INPUTS, route: { ok: { end: 'ready-for-qa' } } },
       },
     },
@@ -63,19 +84,41 @@ test("defaults/gg.json declares the shipped Procedures in the validator's shape"
   c.agents.implementer.harness = 'fake';
   c.agents.reviewer.harness = 'fake';
   c.commands = { test: 'npm test' };
-  const { flows, errors } = validate(c, { harnesses: { fake: {} }, readSchema: (name) => JSON.parse(config.layerFile(c.files, name)),
-    readTemplate: (name) => config.layerFile(c.files, name) });
+  const { flows, errors } = validate(c, {
+    harnesses: { fake: {} },
+    readSchema: (name) => JSON.parse(config.layerFile(c.files, name)),
+    readTemplate: (name) => config.layerFile(c.files, name),
+  });
   assert.deepEqual(errors, []);
   const { procedures } = flows.default;
-  assert.deepEqual(procedures['tests-fail'].actions.map((a) => [a.id, a.do].join(':')), ['red:agent', 'red-check:check', 'commit:commit']);
-  assert.deepEqual(procedures.implement.actions.map((a) => [a.id, a.do].join(':')), ['green:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert']);
-  assert.deepEqual(procedures.fix.actions.map((a) => [a.id, a.do].join(':')), ['fix:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert']);
-  assert.deepEqual(procedures.review.actions.map((a) => [a.id, a.do].join(':')),
-    ['review:agent', 'review-pass:check', 'repeat:check', 'comment:comment', 'pr:pr-upsert']);
-  assert.deepEqual(procedures.publish.actions.map((a) => [a.id, a.do].join(':')), ['test:check', 'pr:pr-upsert', 'pr-ready:pr-ready']);
+  assert.deepEqual(
+    procedures['tests-fail'].actions.map((a) => [a.id, a.do].join(':')),
+    ['red:agent', 'red-check:check', 'commit:commit'],
+  );
+  assert.deepEqual(
+    procedures.implement.actions.map((a) => [a.id, a.do].join(':')),
+    ['green:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert'],
+  );
+  assert.deepEqual(
+    procedures.fix.actions.map((a) => [a.id, a.do].join(':')),
+    ['fix:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert'],
+  );
+  assert.deepEqual(
+    procedures.review.actions.map((a) => [a.id, a.do].join(':')),
+    ['review:agent', 'review-pass:check', 'repeat:check', 'comment:comment', 'pr:pr-upsert'],
+  );
+  assert.deepEqual(
+    procedures.publish.actions.map((a) => [a.id, a.do].join(':')),
+    ['test:check', 'pr:pr-upsert', 'pr-ready:pr-ready'],
+  );
   assert.deepEqual(procedures.implement.claims, {
-    ok: { requires: ['test'] }, blocked: { stop: true, comment: 'templates/stop.md' }, misscoped: { stop: true, comment: 'templates/stop.md' },
+    ok: { requires: ['test'] },
+    blocked: { stop: true, comment: 'templates/stop.md' },
+    misscoped: { stop: true, comment: 'templates/stop.md' },
   });
   assert.deepEqual(procedures.publish.claims, { ok: { requires: ['test'] } });
-  assert.deepEqual([procedures['tests-fail'].tests, procedures.fix.tests, procedures.review.access], ['write', { named: 'inputs.testFiles' }, 'read-only']);
+  assert.deepEqual(
+    [procedures['tests-fail'].tests, procedures.fix.tests, procedures.review.access],
+    ['write', { named: 'inputs.testFiles' }, 'read-only'],
+  );
 });

@@ -36,14 +36,24 @@ export const PERSONA = '# implementer\nWrite the smallest change.\n';
 export const layerFile = (bytes) => ({ bytes, hash: createHash('sha256').update(bytes).digest('hex') });
 
 export const redResponse = {
-  claim: 'ok', summary: 'Failing test for add.', tests: [TEST_NAME], notes: 'add does not exist yet', diagnosis: '',
+  claim: 'ok',
+  summary: 'Failing test for add.',
+  tests: [TEST_NAME],
+  notes: 'add does not exist yet',
+  diagnosis: '',
 };
 
 export const greenResponse = {
   claim: 'ok',
   summary: 'Add two numbers.',
   dod: [{ item: 'add returns the sum', met: true, evidence: 'test/add.test.mjs' }],
-  qa: { setup: 'npm test', steps: [{ action: 'run npm test', expected: 'it passes' }], edgeCases: ['negative numbers'], automated: ['adds two numbers'], manual: [] },
+  qa: {
+    setup: 'npm test',
+    steps: [{ action: 'run npm test', expected: 'it passes' }],
+    edgeCases: ['negative numbers'],
+    automated: ['adds two numbers'],
+    manual: [],
+  },
   diagnosis: '',
   notes: '',
 };
@@ -63,7 +73,15 @@ export const firstVisitResponses = {
 
 // The Agent every golden Vertex but a reviewer uses.
 export const implementerAgent = (persona) => ({
-  harness: 'fake', model: 'model-x', effort: 'high', persona, skills: [], mcp: [], plugins: [], access: 'workspace-write', network: false,
+  harness: 'fake',
+  model: 'model-x',
+  effort: 'high',
+  persona,
+  skills: [],
+  mcp: [],
+  plugins: [],
+  access: 'workspace-write',
+  network: false,
 });
 
 // The inputs the shipped Flow declares: green reads red's committed tests and Red Evidence; a reviewer or publish reads
@@ -96,7 +114,8 @@ export const redGreenFlow = () => ({
 export function goldenConfig() {
   const defaults = config.loadDefaults();
   return {
-    commands: { test: 'npm test' }, testPaths: [...checks.DEFAULT_TEST_GLOBS],
+    commands: { test: 'npm test' },
+    testPaths: [...checks.DEFAULT_TEST_GLOBS],
     agents: { implementer: implementerAgent('implementer.md') },
     procedures: defaults.procedures,
     flows: { golden: redGreenFlow() },
@@ -106,9 +125,13 @@ export function goldenConfig() {
 
 // The golden Flow as admission resolves it; a configuration the validator rejects fails the case.
 export function resolve(c) {
-  const { flows, errors } = validate.validate(c, { harnesses: { fake: {} },
-    readSchema: (name) => JSON.parse(config.layerFile(c.files, name)), readTemplate: (name) => config.layerFile(c.files, name) });
-  if (errors.length) throw new Error(`the golden configuration is invalid:\n${errors.map((e) => `${e.at}: ${e.message}`).join('\n')}`);
+  const { flows, errors } = validate.validate(c, {
+    harnesses: { fake: {} },
+    readSchema: (name) => JSON.parse(config.layerFile(c.files, name)),
+    readTemplate: (name) => config.layerFile(c.files, name),
+  });
+  if (errors.length)
+    throw new Error(`the golden configuration is invalid:\n${errors.map((e) => `${e.at}: ${e.message}`).join('\n')}`);
   return flows.golden;
 }
 
@@ -121,8 +144,10 @@ export function configure(g, edit) {
 }
 
 // Reduces Action Events to what a golden trace asserts.
-export const trace = (evs) => evs.filter((e) => e.type === 'action')
-  .map(({ vertex, action, recovery, attempt, outcome }) => ({ vertex, action, recovery, attempt, outcome }));
+export const trace = (evs) =>
+  evs
+    .filter((e) => e.type === 'action')
+    .map(({ vertex, action, recovery, attempt, outcome }) => ({ vertex, action, recovery, attempt, outcome }));
 
 // The Action Marker of an Attempt of the record's Execution, in the Run that wrote it.
 export const markerOf = (rec, vertex, visit, action, recovery = 0, attempt = 1) =>
@@ -139,18 +164,26 @@ export const injected = (fake) => (fake ? { integrity: fake.integrity, testImmut
 export function seedGit(root, which) {
   if (which === 'real') return { base: templateRepos.seedRepos(root), git: gitModule, fakeGit: null };
   const fake = fakeGitModule.fakeGit();
-  return { base: fake.init(root, { files: { 'package.json': templateRepos.TEMPLATE_PACKAGE } }).base, git: fake.git, fakeGit: fake };
+  return {
+    base: fake.init(root, { files: { 'package.json': templateRepos.TEMPLATE_PACKAGE } }).base,
+    git: fake.git,
+    fakeGit: fake,
+  };
 }
 
 // git and integrity are fakes unless `git` or `integrity` is 'real', for a test whose subject is git behaviour; real
 // integrity runs over real git unless `git` says otherwise.
-export async function setup(t, { responses = firstVisitResponses, integrity = 'fake', git: which = integrity === 'real' ? 'real' : 'fake' } = {}) {
+export async function setup(
+  t,
+  { responses = firstVisitResponses, integrity = 'fake', git: which = integrity === 'real' ? 'real' : 'fake' } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), 'gg-golden-'));
   if (process.env.GG_KEEP_TEMP) t.diagnostic(`golden temp repo: ${root}`);
-  else t.after(() => {
-    record.close(join(root, 'main', '.git'));
-    rmSync(root, { recursive: true, force: true });
-  });
+  else
+    t.after(() => {
+      record.close(join(root, 'main', '.git'));
+      rmSync(root, { recursive: true, force: true });
+    });
 
   const { base, git, fakeGit } = seedGit(root, which);
   const fake = fakeOf(integrity, base);
@@ -165,8 +198,15 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   const flow = resolve(cfg);
 
   const rec = record.createExecution({
-    commonDir, ticket: TICKET, epic: 1, flow: { name: flow.name, entry: flow.ticket.entry }, configHash: 'cfg-hash',
-    run: '20261015T000000Z-abc123', worktree, branch: BRANCH, base: 'main',
+    commonDir,
+    ticket: TICKET,
+    epic: 1,
+    flow: { name: flow.name, entry: flow.ticket.entry },
+    configHash: 'cfg-hash',
+    run: '20261015T000000Z-abc123',
+    worktree,
+    branch: BRANCH,
+    base: 'main',
   });
   await record.save(rec);
 
@@ -175,9 +215,16 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   const activity = [];
   const observe = (what) => activity.push({ what, ...JSON.parse(read.get(TICKET).json).activity });
 
-  const harness = fakeHarness({ transcriptDir: join(root, 'transcripts'), responses, capabilities: { cost: false, reasoningTokens: false } });
+  const harness = fakeHarness({
+    transcriptDir: join(root, 'transcripts'),
+    responses,
+    capabilities: { cost: false, reasoningTokens: false },
+  });
   const run = harness.run;
-  harness.run = (call) => { observe('harness'); return run(call); };
+  harness.run = (call) => {
+    observe('harness');
+    return run(call);
+  };
 
   const shells = [];
   const exec = {
@@ -190,8 +237,17 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   };
 
   // Every git verb is observed, including the ones lib modules call on their own (integrity snapshots).
-  const observedGit = Object.fromEntries(Object.entries(git).map(([verb, fn]) =>
-    [verb, typeof fn === 'function' ? (...args) => { observe(`git ${verb}`); return fn(...args); } : fn]));
+  const observedGit = Object.fromEntries(
+    Object.entries(git).map(([verb, fn]) => [
+      verb,
+      typeof fn === 'function'
+        ? (...args) => {
+            observe(`git ${verb}`);
+            return fn(...args);
+          }
+        : fn,
+    ]),
+  );
 
   const gh = fakeGh({ branch: BRANCH, observe, headOf: (branch) => git.remoteSha(mainRoot, branch) });
   const previousGh = github.setGh(gh.gh);
@@ -205,32 +261,89 @@ export async function setup(t, { responses = firstVisitResponses, integrity = 'f
   // `beat()` runs what is due on `every`, as a heartbeat timer firing.
   const beats = new Set();
   const clock = {
-    now: () => now, sleep: async (ms) => { sleeps.push(ms); await clock.onSleep?.(ms); now += ms; },
-    every: (ms, fn) => { beats.add(fn); return () => beats.delete(fn); },
-    beat: () => { for (const fn of beats) fn(); },
+    now: () => now,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      await clock.onSleep?.(ms);
+      now += ms;
+    },
+    every: (ms, fn) => {
+      beats.add(fn);
+      return () => beats.delete(fn);
+    },
+    beat: () => {
+      for (const fn of beats) fn();
+    },
   };
 
   const options = {
-    flow, record: rec, harness, gh: github, git: observedGit, exec, events: ev, log: (m) => logs.push(m), cwd: mainRoot,
-    commands: cfg.commands, testPaths: cfg.testPaths, ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
-    base: 'main', labelPrefix: 'gg', others: [], clock, protectedPaths: PROTECTED_PATHS, files, ...injected(fake),
+    flow,
+    record: rec,
+    harness,
+    gh: github,
+    git: observedGit,
+    exec,
+    events: ev,
+    log: (m) => logs.push(m),
+    cwd: mainRoot,
+    commands: cfg.commands,
+    testPaths: cfg.testPaths,
+    ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
+    base: 'main',
+    labelPrefix: 'gg',
+    others: [],
+    clock,
+    protectedPaths: PROTECTED_PATHS,
+    files,
+    ...injected(fake),
   };
   return {
-    root, mainRoot, worktree, commonDir, base, flow, rec, harness, gh, shells, activity, logs, options, config: cfg, files, clock, sleeps, fake, fakeGit,
+    root,
+    mainRoot,
+    worktree,
+    commonDir,
+    base,
+    flow,
+    rec,
+    harness,
+    gh,
+    shells,
+    activity,
+    logs,
+    options,
+    config: cfg,
+    files,
+    clock,
+    sleeps,
+    fake,
+    fakeGit,
     readEvents: () => events.readEvents(commonDir),
   };
 }
 
 // A comment POST through `gh api`, on issue or PR `n` when given.
-export const isCommentPost = (args, n) => args[0] === 'api' && args.includes('POST')
-  && args.some((a) => (n === undefined ? /issues\/\d+\/comments$/ : new RegExp(`issues/${n}/comments$`)).test(a));
-export const isCommentRead = (args, n) => args[0] === 'api' && !args.includes('POST')
-  && args.some((a) => (n === undefined ? /issues\/\d+\/comments$/ : new RegExp(`issues/${n}/comments$`)).test(a));
+export const isCommentPost = (args, n) =>
+  args[0] === 'api' &&
+  args.includes('POST') &&
+  args.some((a) => (n === undefined ? /issues\/\d+\/comments$/ : new RegExp(`issues/${n}/comments$`)).test(a));
+export const isCommentRead = (args, n) =>
+  args[0] === 'api' &&
+  !args.includes('POST') &&
+  args.some((a) => (n === undefined ? /issues\/\d+\/comments$/ : new RegExp(`issues/${n}/comments$`)).test(a));
 
 // `gh api --include` stdout: the status line and headers, a blank line, then the body.
 export const included = (status, headers, body) =>
-  `HTTP/2.0 ${status} ${STATUS_TEXT[status] ?? ''}\r\n${Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join('')}\r\n${JSON.stringify(body)}`;
-const STATUS_TEXT = { 201: 'Created', 401: 'Unauthorized', 403: 'Forbidden', 422: 'Unprocessable Entity', 429: 'Too Many Requests', 502: 'Bad Gateway' };
+  `HTTP/2.0 ${status} ${STATUS_TEXT[status] ?? ''}\r\n${Object.entries(headers)
+    .map(([k, v]) => `${k}: ${v}\r\n`)
+    .join('')}\r\n${JSON.stringify(body)}`;
+const STATUS_TEXT = {
+  201: 'Created',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  422: 'Unprocessable Entity',
+  429: 'Too Many Requests',
+  502: 'Bad Gateway',
+};
 
 // A failed gh call as exec.run rejects it: the message and stderr carry gh's reason, stdout what `--include` printed.
 export function ghError(args, { status, headers = {}, body, stderr }) {
@@ -243,7 +356,13 @@ export function ghError(args, { status, headers = {}, body, stderr }) {
 // A stand-in for the gh executable: records every argv and answers with canned JSON. `fail(f)` queues a failure: the
 // first unspent one whose `matches(args)` holds fails that call, after its effect when `afterEffect` is set. A PR's head
 // commit is what `headOf(branch)` says origin has, unless a test sets the PR's `headRefOid`.
-export function fakeGh({ branch, ticket = TICKET, observe = () => {}, headOf = async () => null, repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state) }) {
+export function fakeGh({
+  branch,
+  ticket = TICKET,
+  observe = () => {},
+  headOf = async () => null,
+  repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state),
+}) {
   const calls = [];
   const comments = [];
   const failures = [];
@@ -275,20 +394,38 @@ export function fakeGh({ branch, ticket = TICKET, observe = () => {}, headOf = a
     if (noun === 'pr' && verb === 'list') return JSON.stringify(prs.has(head) ? [prs.get(head)] : []);
     if (noun === 'pr' && verb === 'create') {
       const number = 7 + prs.size;
-      prs.set(head, { number, state: 'OPEN', isDraft: args.includes('--draft'), url: `https://github.com/o/r/pull/${number}`, body: input, headRefName: head });
+      prs.set(head, {
+        number,
+        state: 'OPEN',
+        isDraft: args.includes('--draft'),
+        url: `https://github.com/o/r/pull/${number}`,
+        body: input,
+        headRefName: head,
+      });
       return `${prs.get(head).url}\n`;
     }
-    if (noun === 'pr' && verb === 'edit') { prOf(Number(args[2])).body = input; return ''; }
+    if (noun === 'pr' && verb === 'edit') {
+      prOf(Number(args[2])).body = input;
+      return '';
+    }
     if (noun === 'pr' && verb === 'view') {
       const pr = prOf(Number(args[2]));
-      return JSON.stringify(pr && { ...pr, isCrossRepository: false, headRefOid: pr.headRefOid ?? await headOf(pr.headRefName) });
+      return JSON.stringify(
+        pr && { ...pr, isCrossRepository: false, headRefOid: pr.headRefOid ?? (await headOf(pr.headRefName)) },
+      );
     }
-    if (noun === 'pr' && verb === 'ready') { prOf(Number(args[2])).isDraft = false; return ''; }
+    if (noun === 'pr' && verb === 'ready') {
+      prOf(Number(args[2])).isDraft = false;
+      return '';
+    }
     if (isCommentPost(args)) {
       const n = Number(args.join(' ').match(/issues\/(\d+)\/comments/)[1]);
       const id = post(n, JSON.parse(input).body);
-      return included(201, { 'Content-Type': 'application/json; charset=utf-8' },
-        { id, html_url: `https://github.com/o/r/issues/${n}#issuecomment-${id}` });
+      return included(
+        201,
+        { 'Content-Type': 'application/json; charset=utf-8' },
+        { id, html_url: `https://github.com/o/r/issues/${n}#issuecomment-${id}` },
+      );
     }
     if (noun === 'api') {
       if (args.at(-1).includes('/labels')) return JSON.stringify([[...available].map((name) => ({ name }))]);
@@ -296,8 +433,15 @@ export function fakeGh({ branch, ticket = TICKET, observe = () => {}, headOf = a
       return JSON.stringify([comments.filter((c) => c.number === n)]);
     }
     if (noun === 'issue' && verb === 'view') {
-      return JSON.stringify({ number: Number(args[2]), title: '', body: '', state: 'OPEN',
-        labels: [...labelsOf(Number(args[2]))].map((name) => ({ name })), blockedBy: [], subIssues: [] });
+      return JSON.stringify({
+        number: Number(args[2]),
+        title: '',
+        body: '',
+        state: 'OPEN',
+        labels: [...labelsOf(Number(args[2]))].map((name) => ({ name })),
+        blockedBy: [],
+        subIssues: [],
+      });
     }
     // GitHub resolves label names case-insensitively and keeps the repository's spelling.
     if (noun === 'issue' && verb === 'edit') {
@@ -309,25 +453,38 @@ export function fakeGh({ branch, ticket = TICKET, observe = () => {}, headOf = a
       return '';
     }
     if (noun === 'label' && verb === 'create') {
-      if (named(available, args[2])) throw new Error(`label with name "${args[2]}" already exists; use --force to update its color and description`);
+      if (named(available, args[2]))
+        throw new Error(`label with name "${args[2]}" already exists; use --force to update its color and description`);
       available.add(args[2]);
       return '';
     }
     throw new Error(`fake gh has no answer for ${args.join(' ')}`);
   };
   // `labels` are the fixture Ticket's.
-  return { gh, calls, comments, labels: labelsOf(ticket), labelsOf, repoLabels: available, pr: () => prs.get(branch) ?? null, fail: (f) => failures.push({ ...f }) };
+  return {
+    gh,
+    calls,
+    comments,
+    labels: labelsOf(ticket),
+    labelsOf,
+    repoLabels: available,
+    pr: () => prs.get(branch) ?? null,
+    fail: (f) => failures.push({ ...f }),
+  };
 }
 
 // The fs a restore uses (integrity.withGit's), crashing the `n`th `op` (rm or writeFile) on a path under `root` once
 // `active()` holds, after the call has run when `after` is set.
 export function crashFs(root, active, { op, n, after = false }) {
   let calls = 0;
-  return { ...fsPromises, [op]: async (path, ...rest) => {
-    if (!active() || !String(path).startsWith(root) || ++calls !== n) return fsPromises[op](path, ...rest);
-    if (after) await fsPromises[op](path, ...rest);
-    throw new interpreter.CrashError(`crash at ${op} ${n}`);
-  } };
+  return {
+    ...fsPromises,
+    [op]: async (path, ...rest) => {
+      if (!active() || !String(path).startsWith(root) || ++calls !== n) return fsPromises[op](path, ...rest);
+      if (after) await fsPromises[op](path, ...rest);
+      throw new interpreter.CrashError(`crash at ${op} ${n}`);
+    },
+  };
 }
 
 // Fails each save whose record, and the row saved for it so far (or undefined), match `when(saved, next)`, as a disk
@@ -346,7 +503,9 @@ export function failSaves(t, when) {
 // Fails each Event insert that matches `when(event)`, as a disk error would. Undone by the returned function or when
 // the test ends.
 export function failAppends(t, when) {
-  const previous = events.setAppendHook((event) => { if (when(event)) throw new Error('disk I/O error'); });
+  const previous = events.setAppendHook((event) => {
+    if (when(event)) throw new Error('disk I/O error');
+  });
   const restore = () => events.setAppendHook(previous);
   t.after(restore);
   return restore;
