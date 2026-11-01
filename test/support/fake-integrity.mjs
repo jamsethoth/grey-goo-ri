@@ -6,7 +6,7 @@
 import * as integrityModule from '../../lib/integrity.mjs';
 
 // Every worktree starts at `head`, so a rollback to a baseline head resets to a real commit when `head` is one.
-export function fakeIntegrity({ head = 'f'.repeat(40), git = null } = {}) {
+export function fakeIntegrity({ head = 'f'.repeat(40), git }) {
   let n = 0;
   // Object names in git's form, so nothing that checks one tells the fake apart.
   const next = () => (++n).toString(16).padStart(40, '0');
