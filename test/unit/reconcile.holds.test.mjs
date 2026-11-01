@@ -38,7 +38,7 @@ for (const point of Object.keys(POINTS)) {
     assert.equal((await loadTicket(g)).state, 'held');
     const ends = g.readEvents().filter((e) => e.type === 'ticket_end');
     assert.equal(ends.length, 1);
-    assert.match(ends[0].reason.text, /Vertex green/);
+    assert.match(ends[0].terminalReason.text, /Vertex green/);
   });
 }
 
@@ -267,7 +267,7 @@ const badGateway = () =>
 test('a failed lookup is unknown, not absent', async (t) => {
   const g = await golden.setup(t);
   const { m, loaded } = await crashed(g, EFFECTS.comment.at, 'after-effect');
-  const entry = record.openIntents(loaded).find((e) => e.marker === m);
+  const entry = record.openIntents(loaded).find((e) => e.actionMarker === m);
   const down = {
     ...g.options.gh,
     issueComments: async () => {

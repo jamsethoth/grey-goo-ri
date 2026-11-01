@@ -216,19 +216,19 @@ test('the write-ahead log records intent, evidence and completion per marker', a
   await record.evidence(r, 'm1', { sha: 'deadbeef' });
   await record.complete(r, 'm1');
   assert.deepEqual(
-    r.log.map(({ ts, ...e }) => e),
+    r.writeAheadLog.map(({ time, ...e }) => e),
     [
-      { step: 'intent', marker: 'm1', action: 'commit', payload: { message: 'red' } },
-      { step: 'evidence', marker: 'm1', action: 'commit', evidence: { sha: 'deadbeef' } },
-      { step: 'complete', marker: 'm1', action: 'commit' },
+      { step: 'intent', actionMarker: 'm1', effect: 'commit', payload: { message: 'red' }, evidence: null },
+      { step: 'evidence', actionMarker: 'm1', effect: 'commit', payload: null, evidence: { sha: 'deadbeef' } },
+      { step: 'complete', actionMarker: 'm1', effect: 'commit', payload: null, evidence: null },
     ],
   );
   assert.deepEqual(
-    r.log.map((e) => typeof e.ts),
+    r.writeAheadLog.map((e) => typeof e.time),
     ['string', 'string', 'string'],
   );
   const loaded = await record.load(commonDir, 'ticket', 8);
-  assert.deepEqual(loaded.log, r.log, 'each step saves');
+  assert.deepEqual(loaded.writeAheadLog, r.writeAheadLog, 'each step saves');
 });
 
 test('a record transition and its event commit together', async (t) => {
@@ -277,7 +277,7 @@ test('openIntents lists intents without completion oldest first', async (t) => {
   const r = newExecution(commonDir);
   await record.intent(r, 'm1', 'commit', {});
   assert.deepEqual(
-    record.openIntents(r).map((e) => e.marker ?? e),
+    record.openIntents(r).map((e) => e.actionMarker ?? e),
     ['m1'],
   );
   await record.intent(r, 'm2', 'push', {});
@@ -285,7 +285,7 @@ test('openIntents lists intents without completion oldest first', async (t) => {
   await record.evidence(r, 'm2', { ok: true });
   await record.complete(r, 'm2');
   assert.deepEqual(
-    record.openIntents(r).map((e) => e.marker ?? e),
+    record.openIntents(r).map((e) => e.actionMarker ?? e),
     ['m1', 'm3'],
   );
   await record.complete(r, 'm1');

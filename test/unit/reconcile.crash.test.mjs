@@ -92,7 +92,7 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
         ACTED,
       );
       assert.deepEqual(
-        final.log.map((e) => `${actionOf(e.marker)} ${e.action} ${e.step}`),
+        final.writeAheadLog.map((e) => `${actionOf(e.actionMarker)} ${e.effect} ${e.step}`),
         FINAL_LOG,
       );
 
@@ -109,11 +109,11 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
 
       assert.equal(g.gh.calls.filter((c) => c.args[0] === 'pr' && c.args[1] === 'create').length, 1, 'exactly one PR');
       // publish's re-render is the last PR body.
-      const upsert = final.log.findLast((e) => e.action === 'pr-upsert' && e.step === 'intent');
-      assert.ok(g.gh.pr().body.includes(marker.markerComment(upsert.marker)), 'the PR body carries the marker');
+      const upsert = final.writeAheadLog.findLast((e) => e.effect === 'pr-upsert' && e.step === 'intent');
+      assert.ok(g.gh.pr().body.includes(marker.markerComment(upsert.actionMarker)), 'the PR body carries the marker');
       assert.equal(g.gh.pr().isDraft, false, 'the PR ends ready');
       assert.deepEqual(
-        final.log.find((e) => e.action === 'pr-ready' && e.step === 'intent').payload,
+        final.writeAheadLog.find((e) => e.effect === 'pr-ready' && e.step === 'intent').payload,
         {
           number: g.gh.pr().number,
           sha: await g.options.git.headSha(g.worktree),
@@ -129,7 +129,10 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
         done,
       );
       assert.equal(posted.length, 1, 'exactly one comment with the marker');
-      assert.equal(sha256(posted[0]), final.log.find((e) => e.marker === done && e.step === 'intent').payload.bodyHash);
+      assert.equal(
+        sha256(posted[0]),
+        final.writeAheadLog.find((e) => e.actionMarker === done && e.step === 'intent').payload.bodyHash,
+      );
     });
   }
 }

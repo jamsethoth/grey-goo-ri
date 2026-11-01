@@ -98,7 +98,7 @@ for (const [name, agentWrites] of [
     assert.equal(final.state, 'held');
     const red = actionMarker(g, 'red', 'red');
     assert.deepEqual(
-      record.openIntents(final).map((e) => [e.action, e.marker]),
+      record.openIntents(final).map((e) => [e.effect, e.actionMarker]),
       [['call', red]],
       'the Attempt intent stays open',
     );
@@ -158,7 +158,7 @@ test('the terminal stop survives a crash before the first terminal action', asyn
   };
   const g = await golden.setup(t, { responses });
   // Every save carrying a Terminal stop fails, as if gg died once the Terminal cursor was saved.
-  const restore = golden.failSaves(t, (saved, next) => next.terminalStop !== undefined);
+  const restore = golden.failSaves(t, (saved, next) => next.terminalStop != null);
   await assert.rejects(interpreter.runExecution(g.options));
   restore();
   assert.equal(ticketComments(g).length, 0);
@@ -240,9 +240,9 @@ test('a label update whose failure was saved before its completion is retried on
   const label = attemptMarker(g, 'ready-for-qa', 1, 'end-label', 0);
   const mid = await loadTicket(g);
   assert.deepEqual(
-    mid.log.filter((e) => e.marker === label).map((e) => [e.step, e.evidence]),
+    mid.writeAheadLog.filter((e) => e.actionMarker === label).map((e) => [e.step, e.evidence]),
     [
-      ['intent', undefined],
+      ['intent', null],
       ['evidence', { ok: false }],
     ],
   );
@@ -280,9 +280,9 @@ for (const [name, dropTranscript, resume] of [
     );
     // Reshaped as an earlier gg saved it: no call intents, evidence or settled results, and no heartbeat.
     const legacy = await loadTicket(g);
-    legacy.log = legacy.log.filter((e) => e.action !== 'call');
-    delete legacy.visitState.settled;
-    delete legacy.heartbeat;
+    legacy.writeAheadLog = legacy.writeAheadLog.filter((e) => e.effect !== 'call');
+    legacy.visitState.settled = null;
+    legacy.heartbeat = null;
     assert.equal(legacy.cursor.attempt, 2);
     assert.deepEqual(legacy.retries['red/1/red/0'], { timeout: 1 });
     await record.save(legacy);
@@ -302,7 +302,7 @@ for (const [kind, opts, state] of [
   ['fault', { fault: new Error('admission broke') }, 'fault'],
   [
     'abandonment',
-    { admission: { kind: 'abandon', reason: 'A human set needs-human.', inProgress: true } },
+    { admission: { kind: 'abandon', terminalReasonText: 'A human set needs-human.', inProgress: true } },
     'abandoned',
   ],
 ]) {

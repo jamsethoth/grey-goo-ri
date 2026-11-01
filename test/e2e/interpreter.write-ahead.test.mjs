@@ -20,6 +20,6 @@ test('a completed call with an integrity violation still rolls back under its ow
   assert.deepEqual(steps(g.rec, actionMarker(g, 'red', 'red')), ['intent', 'evidence', 'complete']);
   const [reset] = intents(g.rec, 'reset');
   // An Action of its own, keeping the Attempt.
-  assert.equal(reset.marker, actionMarker(g, 'red', 'reset'));
-  assert.deepEqual(steps(g.rec, reset.marker), ['intent', 'evidence', 'complete']);
+  assert.equal(reset.actionMarker, actionMarker(g, 'red', 'reset'));
+  assert.deepEqual(steps(g.rec, reset.actionMarker), ['intent', 'evidence', 'complete']);
 });

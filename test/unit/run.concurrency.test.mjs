@@ -232,7 +232,7 @@ test('an auth failure stops every active ticket and records the class on run_end
   );
   const bEnd = evs.find((e) => e.type === 'ticket_end' && e.ticket === 22);
   assert.equal(bEnd.outcome, 'needs-human');
-  assert.match(bEnd.reason.text, /#21\b.*\bauth\b/, 'the reason of B names the run-stopping failure');
+  assert.match(bEnd.terminalReason.text, /#21\b.*\bauth\b/, 'the reason of B names the run-stopping failure');
   const ends = evs.filter((e) => e.type === 'run_end');
   assert.equal(ends.length, 1);
   assert.equal(ends[0].failureClass, 'auth');

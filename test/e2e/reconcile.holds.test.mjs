@@ -49,7 +49,7 @@ for (const point of Object.keys(POINTS)) {
       (err) => err instanceof interpreter.CrashError,
     );
     const mid = await loadTicket(g);
-    const older = record.openIntents(mid).filter((e) => e.action === 'commit');
+    const older = record.openIntents(mid).filter((e) => e.effect === 'commit');
     assert.equal(older.length, 1);
     const git = new Proxy(
       {},
@@ -116,7 +116,7 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   const final = await loadTicket(g);
   assert.equal(final.state, 'held');
   assert.ok(
-    record.openIntents(final).some((e) => e.marker === older),
+    record.openIntents(final).some((e) => e.actionMarker === older),
     'the older intent stays open, untouched',
   );
   assert.equal(

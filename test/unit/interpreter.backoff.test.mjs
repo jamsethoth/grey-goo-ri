@@ -94,7 +94,7 @@ test('an accepted pr-upsert whose call errored is found, not repeated', async (t
   const final = await retriedOnce(g, result, PR_UPSERT, m);
   assert.equal(prCalls(g, 'create').length, 1, 'never created again');
   assert.equal(prCalls(g, 'edit').length, 1, "edited only by publish's re-render");
-  assert.deepEqual(final.log.find((e) => e.marker === m && e.step === 'evidence').evidence, {
+  assert.deepEqual(final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence, {
     number: PR,
     url: g.gh.pr().url,
   });
@@ -160,7 +160,9 @@ test('a push that landed but whose call errored is found on origin, not pushed a
   const head = await headSha(g);
   assert.equal(during, head, 'origin had the commit during the backoff');
   assert.equal(pushes(), 1, 'never pushed again');
-  assert.deepEqual(final.log.find((e) => e.marker === m && e.step === 'evidence').evidence, { remoteSha: head });
+  assert.deepEqual(final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence, {
+    remoteSha: head,
+  });
 });
 
 for (const [name, key, inject, text] of [
@@ -527,7 +529,7 @@ test('a failed idle save before a backoff allows no later save or effect', async
   assert.deepEqual(g.sleeps, [], 'never waited');
   const saved = await loadTicket(g);
   assert.equal(saved.state, 'active', 'no fault is saved');
-  assert.equal(saved.terminalStop ?? null, null, 'nor its Terminal');
+  assert.equal(saved.terminalStop, null, 'nor its Terminal');
   assert.equal(saved.cursor.vertex, 'reviewer');
   assert.equal(saved.activity.busy, true, 'the failed transition is not saved by a cleanup');
   assert.equal(saved.retries[REVIEW_COMMENT].remote.count, 1);
@@ -551,7 +553,7 @@ test('a failed busy save after a backoff allows no later save or effect', async 
   assert.deepEqual(g.sleeps, [60_000]);
   const saved = await loadTicket(g);
   assert.equal(saved.state, 'active', 'no fault is saved');
-  assert.equal(saved.terminalStop ?? null, null, 'nor its Terminal');
+  assert.equal(saved.terminalStop, null, 'nor its Terminal');
   assert.equal(saved.cursor.vertex, 'reviewer');
   assert.equal(saved.activity.busy, false, 'the failed transition is not saved by a cleanup');
   assert.equal(saved.retries[REVIEW_COMMENT].remote.count, 1);

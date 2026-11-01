@@ -263,13 +263,13 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   assert.ok(posted.body.includes(terminalMarker(g, 'fault-comment')), 'the fault report has its own Action Marker');
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.marker),
+    record.openIntents(rec).map((e) => e.actionMarker),
     [terminalMarker(g, 'end-comment')],
     'the intent of the interrupted comment stays open, and the fault report never replays it',
   );
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
   assert.equal(end.interrupted.terminal, 'needs-human');
-  assert.match(end.interrupted.reason.text, /auth/, 'ticket_end keeps the interrupted Terminal Reason too');
+  assert.match(end.interrupted.terminalReason.text, /auth/, 'ticket_end keeps the interrupted Terminal Reason too');
 });
 
 test('a hold over an interrupted blocked terminal posts its own comment', async (t) => {
@@ -293,7 +293,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
-      text: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
+      terminalReasonText: 'The worktree has uncommitted changes gg did not make, so the Ticket is held.',
       advice: 'Commit, stash or remove these changes in the worktree.',
       detail: ' human.txt (untracked)\n',
     },
@@ -311,12 +311,12 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(rec.state, 'held');
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.marker),
+    record.openIntents(rec).map((e) => e.actionMarker),
     [blocked],
     'the interrupted blocked intent stays open, untouched',
   );
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
-  assert.equal(end.reason.decidedBy.hold, 'dirty-worktree');
+  assert.equal(end.terminalReason.decidedBy.hold, 'dirty-worktree');
 });
 
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
@@ -331,10 +331,10 @@ test('a crash inside the fault report replays its comment once on resume', async
   assert.equal(posted.length, 1, 'posted exactly once');
   assert.match(posted[0].body, /harness exploded/);
   assert.doesNotMatch(posted[0].body, /Interrupted/, 'a fault inside a Visit interrupted no Terminal');
-  assert.ok(!('interrupted' in g.readEvents().find((e) => e.type === 'ticket_end')));
+  assert.equal(g.readEvents().find((e) => e.type === 'ticket_end').interrupted, null);
   // The faulted Attempt never completed, so its intent stays open on the finished record.
   assert.deepEqual(
-    record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)).map((e) => e.action),
+    record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)).map((e) => e.effect),
     ['call'],
   );
 });

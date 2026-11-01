@@ -284,8 +284,8 @@ test('truncated Check output does not expose fragments of local paths', async (t
     [],
     'a truncated path exposed the temp directory name',
   );
-  const intents = (await record.load(f.commonDir, 'ticket', TICKET)).log.filter(
-    (e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.action),
+  const intents = (await record.load(f.commonDir, 'ticket', TICKET)).writeAheadLog.filter(
+    (e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.effect),
   );
   assert.deepEqual(
     intents.filter((e) => e.payload.bodyHash !== sha256(e.payload.body)),
@@ -318,8 +318,8 @@ test('truncated long Check output does not expose fragments of local paths', asy
     [],
     'a truncated path exposed the temp directory name',
   );
-  const intents = (await record.load(f.commonDir, 'ticket', TICKET)).log.filter(
-    (e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.action),
+  const intents = (await record.load(f.commonDir, 'ticket', TICKET)).writeAheadLog.filter(
+    (e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.effect),
   );
   assert.deepEqual(
     intents.filter((e) => e.payload.bodyHash !== sha256(e.payload.body)),
@@ -346,8 +346,8 @@ test('truncated fault output does not expose fragments of local paths', async (t
     [],
     'a truncated path exposed the temp directory name',
   );
-  const intents = (await record.load(f.commonDir, 'ticket', TICKET)).log.filter(
-    (e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.action),
+  const intents = (await record.load(f.commonDir, 'ticket', TICKET)).writeAheadLog.filter(
+    (e) => e.step === 'intent' && ['comment', 'pr-upsert'].includes(e.effect),
   );
   assert.deepEqual(
     intents.filter((e) => e.payload.bodyHash !== sha256(e.payload.body)),

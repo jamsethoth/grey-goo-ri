@@ -16,7 +16,7 @@ test('a reset whose evidence was saved but not its completion is completed witho
   const g = await golden.setup(t);
   await interpreter.runExecution({ ...g.options, integrity: violating(g) });
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
-  rec.log = rec.log.filter((e) => !(e.action === 'reset' && e.step === 'complete'));
+  rec.writeAheadLog = rec.writeAheadLog.filter((e) => !(e.effect === 'reset' && e.step === 'complete'));
 
   assert.equal(await reconcile.resets(rec, { git: g.options.git }), 'continue');
   assert.equal(rec.history.length, 1);

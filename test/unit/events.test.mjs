@@ -113,7 +113,7 @@ const agentRequired = [
   'failureClass',
 ];
 
-test('an action event carries schema 2 and every required field', (t) => {
+test('an action event carries schema version 2 and every required field', (t) => {
   const dir = tempDir(t);
   const log = events.eventLog(dir, { run: 'r1' });
   const event = events.actionEvent(actionFields());
@@ -121,23 +121,23 @@ test('an action event carries schema 2 and every required field', (t) => {
   log('run_end', events.lifecycleEvent('run_end', { run: 'r1' }));
   const lines = rows(dir).map((row) => row.json);
   assert.deepEqual(
-    lines.map((line) => line.slice(0, 11)),
-    ['{"schema":2', '{"schema":2'],
+    lines.map((line) => line.slice(0, 18)),
+    ['{"schemaVersion":2', '{"schemaVersion":2'],
   );
   const back = JSON.parse(lines[0]);
-  assert.equal(back.schema, 2);
+  assert.equal(back.schemaVersion, 2);
   assert.equal(back.type, 'action');
-  assert.equal(typeof back.ts, 'string');
+  assert.equal(typeof back.time, 'string');
   assert.deepEqual(Object.keys(back), [
-    'schema',
-    'ts',
+    'schemaVersion',
+    'time',
     'type',
-    'run',
     'flow',
     'configHash',
     'launchProfile',
     'confinement',
     'ticket',
+    'run',
     'execution',
     'vertex',
     'visit',
@@ -152,22 +152,26 @@ test('an action event carries schema 2 and every required field', (t) => {
     'rule',
     'agent',
     'harness',
-    'cliVersion',
+    'agentCliVersion',
     'model',
     'effort',
     'personaHash',
     'tools',
-    'init',
+    'sessionInit',
     'sessionId',
-    'lineage',
+    'sessionLineage',
     'transcriptPath',
     'usage',
     'exitCode',
-    'signal',
+    'exitSignal',
     'finalEventSubtype',
     'permissionDenials',
     'commandsRun',
     'failureClass',
+    'check',
+    'integrityViolations',
+    'retryAfterMs',
+    'error',
   ]);
   assert.equal(back.launchProfile, null);
   assert.equal(back.confinement, null);
@@ -312,15 +316,15 @@ test('eventLog validates every event before appending it', (t) => {
   const log = events.eventLog(dir);
   assert.throws(() => log('action', {}), /\bflow\b/);
   assert.throws(() => log('stage_call', { run: 'r1' }), /\bstage_call\b/);
-  assert.throws(() => log('run_start', { run: 'r1', schema: 1 }), /\bschema\b/);
-  assert.throws(() => log('run_start', { run: 'r1', ts: 'then' }), /\bts\b/);
+  assert.throws(() => log('run_start', { run: 'r1', schemaVersion: 1 }), /\bschemaVersion\b/);
+  assert.throws(() => log('run_start', { run: 'r1', time: 'then' }), /\btime\b/);
   assert.throws(() => log('run_start', { run: 'r1', type: 'run_end' }), /\btype\b/);
-  assert.throws(() => events.eventLog(dir, { ts: 'then' })('run_start', { run: 'r1' }), /\bts\b/);
+  assert.throws(() => events.eventLog(dir, { time: 'then' })('run_start', { run: 'r1' }), /\btime\b/);
   assert.deepEqual(events.readEvents(dir), []);
   events.eventLog(dir, { run: 'r1' })('run_start');
   const [row] = rows(dir);
   const back = JSON.parse(row.json);
-  assert.equal(back.schema, 2);
+  assert.equal(back.schemaVersion, 2);
   assert.equal(back.type, 'run_start');
   assert.equal(back.run, 'r1');
 });
@@ -355,10 +359,17 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
   const [row, ...rest] = rows(dir);
   assert.equal(rest.length, 0);
   const event = JSON.parse(row.json);
-  assert.deepEqual(event, { schema: 2, ts: event.ts, type: 'ticket_start', run: 'r1', execution: 'e1', ticket: 7 });
+  assert.deepEqual(event, {
+    schemaVersion: 2,
+    time: event.time,
+    type: 'ticket_start',
+    run: 'r1',
+    execution: 'e1',
+    ticket: 7,
+  });
   assert.deepEqual(
     { ts: row.ts, type: row.type, run: row.run, execution: row.execution, ticket: row.ticket },
-    { ts: event.ts, type: 'ticket_start', run: 'r1', execution: 'e1', ticket: 7 },
+    { ts: event.time, type: 'ticket_start', run: 'r1', execution: 'e1', ticket: 7 },
   );
 
   events.eventLog(dir)('label_failed', { ticket: 8, change: 'add gg:ready', error: 'gh 502' });

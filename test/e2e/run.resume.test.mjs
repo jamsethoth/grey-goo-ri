@@ -16,7 +16,7 @@ test('an in-progress ticket with a recoverable record is resumed', async (t) => 
   });
   assert.equal(rec.state, 'active');
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.action),
+    record.openIntents(rec).map((e) => e.effect),
     ['push'],
     'the push is the open intent',
   );
@@ -64,7 +64,7 @@ test('local paths in captured Check output and agent text do not reach PR bodies
     'pushed commit messages contain no local root',
   );
   const rec = await record.load(f.commonDir, 'ticket', TICKET);
-  const commits = rec.log.filter((e) => e.step === 'intent' && e.action === 'commit');
+  const commits = rec.writeAheadLog.filter((e) => e.step === 'intent' && e.effect === 'commit');
   assert.equal(commits.length, 2);
   assert.ok(
     commits.every((e) => !e.payload.message.includes(f.root)),

@@ -25,14 +25,14 @@ const deterministic = (vertex, action, row) => {
   return {
     action,
     recovery: 0,
-    schema: 2,
+    schemaVersion: 2,
     vertex,
     visit: 1,
     procedure,
     attempt: 1,
     direction: 'advance',
     rule: { table: 'fixed', row },
-    agent: undefined,
+    agent: false,
   };
 };
 
@@ -66,17 +66,17 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
   assert.deepEqual(
     g.events.filter((e) => e.type === 'action' && e.vertex === 'publish').map((e) => [e.action, e.agent, e.procedure]),
     [
-      ['test', undefined, 'publish'],
-      ['pr', undefined, 'publish'],
-      ['pr-ready', undefined, 'publish'],
+      ['test', false, 'publish'],
+      ['pr', false, 'publish'],
+      ['pr-ready', false, 'publish'],
     ],
   );
   assert.equal(g.shells.length, 3, 'publish runs the test command again, on the tree pr-ready publishes');
 
-  const fields = ({ action, recovery, schema, vertex, visit, procedure, attempt, direction, rule, agent }) => ({
+  const fields = ({ action, recovery, schemaVersion, vertex, visit, procedure, attempt, direction, rule, agent }) => ({
     action,
     recovery,
-    schema,
+    schemaVersion,
     vertex,
     visit,
     procedure,
@@ -104,14 +104,14 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
 
   const red = actionEvent(g, 'red', 'red');
   assert.equal(red.sessionId, 'fake-session-1');
-  assert.equal(red.lineage, null, 'red starts a fresh session');
+  assert.equal(red.sessionLineage, null, 'red starts a fresh session');
   assert.match(red.transcriptPath, /fake-session-1\.jsonl$/);
   assert.equal(red.usage.cumulative.costUsd, null, 'red: absent cost capability is null');
   assert.equal(red.usage.cumulative.reasoning, null, 'red: absent reasoning capability is null');
   assert.equal(typeof red.usage.cumulative.input, 'number');
   const green = actionEvent(g, 'green', 'green');
   assert.equal(green.sessionId, 'fake-session-2');
-  assert.equal(green.lineage, null, 'green starts a fresh session');
+  assert.equal(green.sessionLineage, null, 'green starts a fresh session');
   assert.match(green.transcriptPath, /fake-session-2\.jsonl$/);
   assert.equal(green.usage.cumulative.costUsd, null, 'green: absent cost capability is null');
   assert.equal(green.usage.cumulative.reasoning, null, 'green: absent reasoning capability is null');

@@ -69,8 +69,8 @@ test('a crash before the commit replays the intended tree, not a human edit', as
     'the Check ran with the human file in the tree',
   );
   assert.equal(g.gh.pr().isDraft, true);
-  const { payload } = final.log.find((e) => e.marker === m && e.step === 'intent');
-  const { sha } = final.log.find((e) => e.marker === m && e.step === 'evidence').evidence;
+  const { payload } = final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'intent');
+  const { sha } = final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence;
   assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^{tree}`), payload.tree, 'the commit has the intended tree');
   assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^`), payload.parent, 'and the intended parent');
   assert.equal(readFileSync(join(g.worktree, 'notes.txt'), 'utf8'), 'a human note\n', 'the human edit is kept');
