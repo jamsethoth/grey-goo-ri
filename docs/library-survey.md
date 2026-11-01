@@ -47,6 +47,14 @@ ESLint and tsc run in every suite stage.
 | `@stylistic/eslint-plugin` | `^5.10.0` | `max-len` and `max-statements-per-line`, which left ESLint core | **Adopted** |
 | `prettier` | `^3.9.10` | one formatting, so diffs and reviews carry no style noise | **Adopted**; configured here, run and checked from grey-goo-ri issue #196 |
 
+`npm audit` reports GHSA-g3hv-75wg-m249 (CVE-2026-118764, moderate) in minimatch 10.2.6. It is a denial of service that
+needs an attacker-supplied glob pattern, and is fixed only in minimatch 11.0.1. `eslint`, `@eslint/config-array` and
+`@typescript-eslint/typescript-estree` all require `^10`. The only patterns minimatch sees here are the repository's
+own config globs and the launcher's `.`, and it never runs during a gg Run, so the owner chose to wait (2026-11-01)
+rather than force minimatch 11 with an npm `overrides` entry. That entry was probed: it cleared the audit, and ESLint
+linted the same 131 files with identical results. The fixes upstream are eslint/eslint#21476, eslint/rewrite#532 and
+typescript-eslint/typescript-eslint#13125; Dependabot's weekly npm update picks them up when they ship.
+
 ## Retention of the state database
 
 Agreed with the owner: nothing is purged automatically. `gg work archive --before <date>` (slice 6) exports and
