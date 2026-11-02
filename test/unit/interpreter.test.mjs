@@ -256,6 +256,19 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   assert.equal(actionEvent(g, 'green', 'test'), undefined, 'decided at the agent Action, before any Check');
 });
 
+// R3, through the fake integrity: a green agent that rewrites a test red committed is held, not merged.
+test('a green agent that rewrites a committed test is an integrity violation', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'].files['test/add.test.mjs'] = '// weakened\n';
+  const g = await golden.setup(t, { responses });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'needs-human');
+  assert.deepEqual(actionEvent(g, 'green', 'green').integrityViolations, [
+    { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
+  ]);
+});
+
 test("the Protected Files are gg's paths plus every shipped Harness's paths", async () => {
   const { HARNESSES } = await import('../../lib/harnesses/shipped.mjs');
   assert.deepEqual(interpreter.protectedFiles({}), ['.agents/', '.github/actions/', '.github/workflows/']);

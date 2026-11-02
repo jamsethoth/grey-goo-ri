@@ -152,7 +152,7 @@ test('a resume after the commit of a recovery pass continues at its push', async
       ...g.options,
       crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'commit', 1), point: 'after-completion' },
     }),
-    /crash/,
+    (err) => err instanceof interpreter.CrashError,
   );
   const loaded = await loadTicket(g);
   assert.deepEqual(
@@ -175,7 +175,7 @@ test('a missing transcript starts the phase fresh', async (t) => {
       ...g.options,
       crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'green', 1), point: 'before-intent' },
     }),
-    /crash/,
+    (err) => err instanceof interpreter.CrashError,
   );
   const loaded = await loadTicket(g);
   assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['green', 1], 'the recovery pass');

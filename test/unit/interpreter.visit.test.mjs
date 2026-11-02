@@ -188,14 +188,16 @@ test('ready-for-qa removes in-progress and adds its label', async (t) => {
 });
 
 test('ready-for-qa counts the files under the pinned testPaths as tests in its diff stats', async (t) => {
-  const g = await golden.setup(t);
-  g.options.testPaths = ['test/**', 'lib/**'];
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['red/1/red/1'].files['checks/add.mjs'] = "import { add } from '../lib/add.mjs';\n";
+  const g = await golden.setup(t, { responses });
+  g.options.testPaths = ['test/**', 'checks/**'];
   await interpreter.runExecution(g.options);
 
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
   assert.equal(end.outcome, 'ready-for-qa');
-  assert.equal(end.diffStats.files, 2);
-  assert.equal(end.diffStats.testFiles, 2, 'lib/add.mjs counts as a test because the pinned testPaths name lib/');
+  assert.equal(end.diffStats.files, 3);
+  assert.equal(end.diffStats.testFiles, 2, 'checks/add.mjs counts as a test because the pinned testPaths name checks/');
 });
 
 test('golden: a blocked claim with passing tests stops at needs-human', async (t) => {
@@ -264,7 +266,7 @@ test('the Terminal Reason is saved before any Terminal side effect, so a crash p
       throw new interpreter.CrashError('crash');
     },
   };
-  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
 
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(saved.cursor.vertex, 'ready-for-qa');

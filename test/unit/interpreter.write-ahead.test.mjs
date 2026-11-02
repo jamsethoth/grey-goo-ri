@@ -129,7 +129,11 @@ test('the repeat Check appends once per visit across a crash', async (t) => {
     }
     return ev(type, data);
   };
-  await assert.rejects(interpreter.runExecution({ ...g.options, events }));
+  await assert.rejects(
+    interpreter.runExecution({ ...g.options, events }),
+    // The Event is appended in the save's transaction, so the crash surfaces as a failed save.
+    (err) => err instanceof record.RecordSaveError && err.cause instanceof interpreter.CrashError,
+  );
   const result = await interpreter.runExecution({ ...g.options, events, record: await loadTicket(g) });
 
   assert.equal(result.outcome, 'ready-for-qa');
@@ -159,7 +163,10 @@ test('the terminal stop survives a crash before the first terminal action', asyn
   const g = await golden.setup(t, { responses });
   // Every save carrying a Terminal stop fails, as if gg died once the Terminal cursor was saved.
   const restore = golden.failSaves(t, (saved, next) => next.terminalStop != null);
-  await assert.rejects(interpreter.runExecution(g.options));
+  await assert.rejects(
+    interpreter.runExecution(g.options),
+    (err) => err instanceof record.RecordSaveError && err.cause.message === 'disk I/O error',
+  );
   restore();
   assert.equal(ticketComments(g).length, 0);
   const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
@@ -236,6 +243,7 @@ test('a label update whose failure was saved before its completion is retried on
   };
   await assert.rejects(
     interpreter.runExecution({ ...g.options, events, gh: { ...g.options.gh, setLabels: async () => false } }),
+    (err) => err instanceof record.RecordSaveError && err.cause instanceof interpreter.CrashError,
   );
   const label = attemptMarker(g, 'ready-for-qa', 1, 'end-label', 0);
   const mid = await loadTicket(g);

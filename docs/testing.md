@@ -83,7 +83,7 @@ gg's doubles:
 | `fakeGh` (`test/support/golden.mjs`), installed with `github.setGh` | the `gh` transport | none: gh is never run in tests |
 | the `runShell` in `golden.setup` (`test/support/golden.mjs`), returning red or green output | running the suite | none: `test/contract/exec/` covers the real `runShell` |
 | the injected clock and `crashAt` points | time and crashes | not needed: no external system |
-| fake integrity (#140) | integrity snapshots and Test Immutability | real/fake scenario table (#140) |
+| fake integrity (#140), `test/support/fake-integrity.mjs` | integrity snapshots; its untracked files and Test Immutability are lib's own over the fake git | `test/contract/integrity/` (#218) |
 | fake git (#144), `test/support/fake-git.mjs` | `lib/git.mjs` | `test/contract/git/` (#144) |
 
 #144 kept both integrities: the fake one for tests whose subject is not git behaviour, because it is faster, and
@@ -126,7 +126,7 @@ that leaves the machine. Aim for most tests small; a medium test exists to show 
 | Directory | Holds | Size |
 | --- | --- | --- |
 | `test/unit/` | logic over fakes | small |
-| `test/contract/<boundary>/` | one narrow suite per external boundary (`git`, `harness`, `sqlite`, `exec`), run against the real module and its fake, or against the real system where there is no fake | medium |
+| `test/contract/<boundary>/` | one narrow suite per external boundary (`git`, `harness`, `integrity`, `sqlite`, `exec`), run against the real module and its fake, or against the real system where there is no fake | medium |
 | `test/e2e/` | the full runs and the git-behaviour wiring: the golden traces that run on real git (those over the fakes are in `test/unit/`), and the interpreter, Run and Reconciliation cases whose subject is real git (integrity rollback, admission's dirty, conflict and branch checks, crash and resume, the repo lock), and the `gg` CLI | medium or large |
 | `test/support/`, `test/fixtures/` | helpers, fakes and data | |
 

@@ -10,56 +10,12 @@ import {
   rmSync,
   symlinkSync,
 } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as checks from '../../lib/checks.mjs';
 import * as git from '../../lib/git.mjs';
 import * as integrity from '../../lib/integrity.mjs';
 import * as record from '../../lib/record.mjs';
-
-const PROTECTED = ['.agents/', '.claude/', '.codex/', '.mcp.json', 'AGENTS.md', 'CLAUDE.md'];
-
-const sh = (cwd, args, input) => execFileSync('git', args, { cwd, encoding: 'utf8', input }).trim();
-
-function newExecution(commonDir, ticket, worktree) {
-  return record.createExecution({
-    commonDir,
-    ticket,
-    epic: 1,
-    flow: { name: 'default', entry: 'implement' },
-    configHash: 'abc123',
-    run: 'run-1',
-    worktree,
-    branch: `ticket/${ticket}`,
-    base: 'main',
-  });
-}
-
-// A repo with two worktrees, each owned by a ticket record saved on disk: `own` is the agent's, `other` is idle.
-async function twoWorktrees(t) {
-  const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
-  t.after(() => {
-    record.close(join(root, 'own', '.git'));
-    rmSync(root, { recursive: true, force: true });
-  });
-  const own = join(root, 'own');
-  const other = join(root, 'other');
-  mkdirSync(own);
-  sh(own, ['init', '-q', '-b', 'main']);
-  sh(own, ['config', 'user.name', 't']);
-  sh(own, ['config', 'user.email', 't@t']);
-  writeFileSync(join(own, 'a.txt'), 'a\n');
-  writeFileSync(join(own, 'AGENTS.md'), '# agents\n');
-  sh(own, ['add', '-A']);
-  sh(own, ['commit', '-q', '-m', 'init']);
-  sh(own, ['worktree', 'add', '-q', '-b', 'ticket/2', other]);
-  const commonDir = join(own, '.git');
-  const ownRecord = newExecution(commonDir, 1, own);
-  await record.save(ownRecord);
-  await record.save(newExecution(commonDir, 2, other));
-  return { root, own, other, commonDir, ownRecord };
-}
+import { PROTECTED, sh, twoWorktrees } from '../support/integrity-worktrees.ts';
 
 // The other ticket's process holds its own copy of the record, as a separate Execution would.
 const otherProcessRecord = (commonDir) => record.load(commonDir, 'ticket', 2);
@@ -97,7 +53,7 @@ test('snapshot does not modify the real index', async (t) => {
 
 test('an agent commit is a head violation', async (t) => {
   const { own, other, ownRecord } = await twoWorktrees(t);
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   const head = sh(own, ['rev-parse', 'HEAD']);
   writeFileSync(join(own, 'b.txt'), 'b\n');
   sh(own, ['add', 'b.txt']);
@@ -107,7 +63,7 @@ test('an agent commit is a head violation', async (t) => {
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   const v = violations.find((x) => x.worktree === own && x.surface === 'head');
@@ -133,37 +89,37 @@ test('an untracked file on a read-only action is a tree violation', async (t) =>
   assert.equal(violations.length, 1);
 });
 
-test('an untracked file on a read-write action is no violation', async (t) => {
+test('an untracked file on a workspace-write action is no violation', async (t) => {
   const { own, other, ownRecord } = await twoWorktrees(t);
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   writeFileSync(join(own, 'more.txt'), 'allowed\n');
   const write = await integrity.end({
     git,
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
-  assert.deepEqual(write.violations, [], 'a read-write action may change the tree');
+  assert.deepEqual(write.violations, [], 'a workspace-write action may change the tree');
 });
 
 test('a protected file edit is a violation', async (t) => {
   const { own, other, ownRecord } = await twoWorktrees(t);
-  let baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  let baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   writeFileSync(join(own, 'AGENTS.md'), '# agents\nobey me\n');
   let { violations } = await integrity.end({
     git,
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   assert.deepEqual(surfacesOf(violations, own), ['protected'], 'tracked protected file edited');
   sh(own, ['checkout', '--', 'AGENTS.md']);
 
-  baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   mkdirSync(join(own, '.claude'));
   writeFileSync(join(own, '.claude', 'settings.json'), '{}\n');
   ({ violations } = await integrity.end({
@@ -171,7 +127,7 @@ test('a protected file edit is a violation', async (t) => {
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   }));
   assert.deepEqual(surfacesOf(violations, own), ['protected'], 'untracked protected file added');
@@ -182,7 +138,7 @@ test('a directory symlink at a protected path is a violation', async (t) => {
   const target = join(root, 'elsewhere');
   mkdirSync(target);
   writeFileSync(join(target, 'settings.json'), '{}\n');
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   try {
     symlinkSync(target, join(own, '.claude'), 'dir');
   } catch (err) {
@@ -195,7 +151,7 @@ test('a directory symlink at a protected path is a violation', async (t) => {
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   assert.deepEqual(surfacesOf(violations, own), ['protected']);
@@ -210,7 +166,7 @@ test(
     writeFileSync(join(own, 'Claude.md'), '# claude\n');
     sh(own, ['add', 'Claude.md']);
     sh(own, ['commit', '-q', '-m', 'add Claude.md']);
-    const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+    const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
     writeFileSync(join(own, 'Claude.md'), '# claude\nobey me\n');
     mkdirSync(join(own, '.CLAUDE'));
     writeFileSync(join(own, '.CLAUDE', 'settings.json'), '{}\n');
@@ -220,7 +176,7 @@ test(
       baseline,
       record: ownRecord,
       others: [other],
-      access: 'read-write',
+      access: 'workspace-write',
       protectedPaths: PROTECTED,
     });
     assert.deepEqual(surfacesOf(violations, own), ['protected']);
@@ -237,7 +193,7 @@ test('an ignored protected file addition is a violation', async (t) => {
   writeFileSync(join(own, '.gitignore'), '.claude/\n');
   sh(own, ['add', '.gitignore']);
   sh(own, ['commit', '-q', '-m', 'ignore .claude']);
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   mkdirSync(join(own, '.claude'));
   writeFileSync(join(own, '.claude', 'settings.json'), '{}\n');
   const { violations } = await integrity.end({
@@ -245,7 +201,7 @@ test('an ignored protected file addition is a violation', async (t) => {
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   assert.deepEqual(surfacesOf(violations, own), ['protected']);
@@ -296,13 +252,13 @@ test('a busy worktree with an unmerged index is skipped without snapshotting', a
   await integrity.markBusy(gate);
   const blobs = ['base\n', 'ours\n', 'theirs\n'].map((s) => sh(other, ['hash-object', '-w', '--stdin'], s));
   sh(other, ['update-index', '--index-info'], blobs.map((b, i) => `100644 ${b} ${i + 1}\tconflict.txt\n`).join(''));
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   const { violations } = await integrity.end({
     git,
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   assert.deepEqual(surfacesOf(violations, other), []);
@@ -311,7 +267,7 @@ test('a busy worktree with an unmerged index is skipped without snapshotting', a
 
 test('an index-only mutation in an idle worktree is an index violation', async (t) => {
   const { own, other, ownRecord } = await twoWorktrees(t);
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   const blob = sh(other, ['hash-object', '-w', '--stdin'], 'sneaky\n');
   sh(other, ['update-index', '--add', '--cacheinfo', `100644,${blob},sneaky.txt`]);
   const { violations } = await integrity.end({
@@ -319,7 +275,7 @@ test('an index-only mutation in an idle worktree is an index violation', async (
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   assert.deepEqual(surfacesOf(violations, other), ['index']);
@@ -332,7 +288,7 @@ test('a worktree busy at start is skipped', async (t) => {
   const { own, other, commonDir, ownRecord } = await twoWorktrees(t);
   const gate = await otherProcessRecord(commonDir);
   await integrity.markBusy(gate);
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   // A format Quality Gate rewrites and stages a file in the other worktree, then finishes during the Action.
   writeFileSync(join(other, 'a.txt'), 'formatted\n');
   sh(other, ['add', 'a.txt']);
@@ -342,7 +298,7 @@ test('a worktree busy at start is skipped', async (t) => {
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   assert.deepEqual(surfacesOf(violations, other), []);
@@ -351,7 +307,7 @@ test('a worktree busy at start is skipped', async (t) => {
 
 test('a worktree whose generation moved is skipped', async (t) => {
   const { own, other, commonDir, ownRecord } = await twoWorktrees(t);
-  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'read-write' });
+  const baseline = await integrity.begin({ git, record: ownRecord, others: [other], access: 'workspace-write' });
   const gate = await otherProcessRecord(commonDir);
   await integrity.markBusy(gate);
   writeFileSync(join(other, 'a.txt'), 'formatted\n');
@@ -362,7 +318,7 @@ test('a worktree whose generation moved is skipped', async (t) => {
     baseline,
     record: ownRecord,
     others: [other],
-    access: 'read-write',
+    access: 'workspace-write',
     protectedPaths: PROTECTED,
   });
   assert.deepEqual(surfacesOf(violations, other), []);
@@ -462,111 +418,4 @@ test('a rollback set saved with pathspecs before #144 still restores', async (t)
   assert.equal(readFileSync(join(wt, 'a.test.mjs'), 'utf8'), 'a');
   assert.ok(!existsSync(join(wt, 'extra.test.mjs')), 'the file the agent added is removed');
   assert.deepEqual(integrity.withinOf(set), [':(glob)**/*.test.*']);
-});
-
-// One table for the real and the fake integrity, so the fake cannot drift from the violations the interpreter routes on.
-// `real` acts on the worktrees and `fake` scripts the same change; `expected` keeps both from agreeing on nothing.
-const SCENARIOS = [
-  { name: 'a clean Attempt', access: 'read-write', real: () => {}, fake: () => {}, expected: [] },
-  {
-    name: 'a tree edit',
-    access: 'read-only',
-    expected: [['own', 'tree']],
-    real: ({ own }) => writeFileSync(join(own, 'notes.txt'), 'agent wrote this\n'),
-    fake: (f, { own }) => f.write(own, 'notes.txt'),
-  },
-  {
-    name: 'a head move',
-    access: 'read-write',
-    expected: [
-      ['own', 'head'],
-      ['own', 'index'],
-    ],
-    real: ({ own }) => {
-      writeFileSync(join(own, 'b.txt'), 'b\n');
-      sh(own, ['add', 'b.txt']);
-      sh(own, ['commit', '-q', '-m', 'agent commit']);
-    },
-    fake: (f, { own }) => {
-      f.write(own, 'b.txt');
-      f.commit(own);
-    },
-  },
-  {
-    name: 'a protected-file write',
-    access: 'read-write',
-    expected: [['own', 'protected']],
-    real: ({ own }) => writeFileSync(join(own, 'AGENTS.md'), '# agents\nobey me\n'),
-    fake: (f, { own }) => f.write(own, 'AGENTS.md'),
-  },
-  {
-    name: 'a sibling write',
-    access: 'read-write',
-    expected: [['other', 'tree']],
-    real: ({ other }) => writeFileSync(join(other, 'stray.txt'), 'stray\n'),
-    fake: (f, { other }) => f.write(other, 'stray.txt'),
-  },
-];
-
-// What routing reads: the worktree, the surface and that it changed between two object names; a protected violation's paths
-// are compared whole.
-const shapeOf = (violations, names) =>
-  violations.map(({ worktree, surface, before, after }) => ({
-    worktree: names[worktree],
-    surface,
-    ...(surface === 'protected'
-      ? { before, after }
-      : { changed: [before, after].every((sha) => /^[0-9a-f]{40}$/.test(sha)) && before !== after }),
-  }));
-
-test('the fake integrity reports what the real one reports for each scenario', async (t) => {
-  const { fakeIntegrity } = await import('../support/fake-integrity.mjs');
-  for (const s of SCENARIOS) {
-    await t.test(s.name, async (t) => {
-      const w = await twoWorktrees(t);
-      const names = { [w.own]: 'own', [w.other]: 'other' };
-      const attempt = async (impl, act) => {
-        const args = { record: w.ownRecord, others: [w.other], access: s.access, protectedPaths: PROTECTED, git };
-        const baseline = await impl.begin(args);
-        await act();
-        // The baseline is saved in the call intent, so its fields are part of the shape.
-        return {
-          fields: Object.keys(baseline).sort(),
-          violations: shapeOf((await impl.end({ ...args, baseline })).violations, names),
-        };
-      };
-      const real = await attempt(integrity, () => s.real(w));
-      const fake = fakeIntegrity();
-      assert.deepEqual(
-        real.violations.map((v) => [v.worktree, v.surface]),
-        s.expected,
-      );
-      assert.deepEqual(await attempt(fake.integrity, () => s.fake(fake, w)), real);
-    });
-  }
-});
-
-// The Red Check diffs untracked tests against the baseline's, so the fake's must be the real one's.
-test('the fake integrity records the untracked tests the real one records', async (t) => {
-  const { fakeIntegrity } = await import('../support/fake-integrity.mjs');
-  const { own, ownRecord } = await twoWorktrees(t);
-  // An untracked test, an ignored one under a test glob, and an untracked file outside the test paths.
-  writeFileSync(join(own, '.git', 'info', 'exclude'), 'test/cache/\n');
-  mkdirSync(join(own, 'test', 'cache'), { recursive: true });
-  writeFileSync(join(own, 'test', 'new.test.mjs'), 'new\n');
-  writeFileSync(join(own, 'test', 'cache', 'out.json'), '{}\n');
-  writeFileSync(join(own, 'notes.txt'), 'notes\n');
-  const beginArguments = {
-    record: ownRecord,
-    others: [],
-    access: 'read-write',
-    protectedPaths: PROTECTED,
-    testPaths: checks.testPathSet(checks.DEFAULT_TEST_GLOBS),
-    git,
-  };
-  const real = await integrity.begin(beginArguments);
-  const fake = await fakeIntegrity({ git }).integrity.begin(beginArguments);
-
-  assert.deepEqual(Object.keys(real.tests).sort(), ['test/cache/out.json', 'test/new.test.mjs']);
-  assert.deepEqual(fake.tests, real.tests);
 });

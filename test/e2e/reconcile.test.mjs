@@ -22,7 +22,7 @@ async function crashedViolation(t, when) {
       throw new interpreter.CrashError('crash');
     },
   };
-  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
   g.loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);
   g.git = git;
   return g;
@@ -125,7 +125,7 @@ test('a crash between the reset and the Protected File restore of an integrity v
       throw new interpreter.CrashError('crash');
     },
   };
-  await assert.rejects(interpreter.runExecution(g.options), /crash/);
+  await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
   assert.equal(readFileSync(local, 'utf8'), '{"agent":true}\n', 'the crash came before the restore');
 
   const loaded = await record.load(g.commonDir, 'ticket', golden.TICKET);

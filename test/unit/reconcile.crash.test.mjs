@@ -4,16 +4,8 @@ import { createHash } from 'node:crypto';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
-import {
-  stepsOf,
-  branchMessages,
-  originSha,
-  withMarker,
-  loadTicket,
-  EFFECTS,
-  POINTS,
-  crashed,
-} from '../support/reconcile.mjs';
+import { branchMessages } from '../support/interpreter.mjs';
+import { stepsOf, originSha, withMarker, loadTicket, EFFECTS, POINTS, crashed } from '../support/reconcile.mjs';
 
 // T18: crash-and-resume golden traces. Each side-effect Action of the one-Vertex Flow is crashed at one of three points
 // by runExecution's test-only crashAt, then resumed by a second runExecution on a freshly loaded record.
@@ -98,7 +90,7 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
 
       assert.deepEqual(
         (await branchMessages(g)).map((b) => marker.formatMarker(marker.parseMarker(b))),
-        [golden.markerOf(g.rec, 'green', 1, 'commit', 0), golden.markerOf(g.rec, 'red', 1, 'commit', 0)],
+        [golden.markerOf(g.rec, 'red', 1, 'commit', 0), golden.markerOf(g.rec, 'green', 1, 'commit', 0)],
         'one commit per commit intent',
       );
       assert.equal(
