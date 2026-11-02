@@ -639,3 +639,28 @@ test("a remote auth failure in a Terminal's report latches the run stop and faul
       'comment and on ticket_end.',
   );
 });
+
+test('a remote run stop whose own report fails becomes a fault that keeps the run stop', async (t) => {
+  const g = await golden.setup(t);
+  pushThrough(g, () => Promise.reject(refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")));
+  g.gh.fail({
+    matches: (args) => golden.isCommentPost(args, golden.TICKET),
+    status: 401,
+    body: { message: 'Bad credentials' },
+  });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.equal(result.runStop?.failureClass, 'auth');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'fault');
+  assert.ok(
+    g.readEvents().some((e) => e.type === 'ticket_end'),
+    'the Execution landed',
+  );
+  assert.match(
+    ticketComments(g).at(-1).body,
+    /\*\*Interrupted:\*\* the needs-human Terminal, whose Terminal Reason was: The push at push failed with class auth/,
+  );
+});
