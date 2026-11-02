@@ -126,7 +126,8 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
   but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an area file.
 - Tests import modules as namespaces (`import * as record from '../../lib/record.mjs'`) and call `record.fn()`, so a
   missing export fails inside the case.
-- A test for a module that does not exist yet uses `await import()` inside the case.
+- A test for a module that does not exist yet imports a stub module: its exports with their final signatures, each
+  returning a wrong value.
 - Ported test files follow the port rule above and rewrite static named imports to namespace imports.
 - A fake's contract suite lives under `test/contract/<boundary>/` and runs its cases against the real module and the fake;
   `lib/git.mjs`'s is `test/contract/git/`.
