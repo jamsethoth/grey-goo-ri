@@ -57,21 +57,22 @@ test('a repeat Check gives its Findings Hash', () => {
 });
 
 // The request lists each kind's keys for a Layer's author; this keeps the tables and the declared keys one list (#229).
-test("the request lists every Action kind's and Check kind's keys", () => {
-  const request = readFileSync(new URL('../../docs/requests/node-harness-dag.md', import.meta.url), 'utf8');
-  // A row's cells split on its unescaped pipes; a key counts only as a whole token inside a code span of the Keys cell.
-  const rows = request
-    .split('\n')
-    .filter((line) => line.startsWith('| '))
-    .map((line) => line.split(/(?<!\\)\|/));
-  const keysOf = (kind) => {
-    const row = rows.find((cells) => cells[1].includes(`\`${kind}\``));
-    const spans = row?.[2].match(/`[^`]+`/g) ?? [];
-    return row && new Set(spans.flatMap((span) => span.match(/[A-Za-z][\w-]*|<=|>=|<|>|=/g) ?? []));
-  };
-  for (const [kind, keys] of [...Object.entries(procedures.ACTION_KEYS), ...Object.entries(procedures.CHECK_KEYS)]) {
-    const documented = keysOf(kind);
-    assert.ok(documented, `the request has a row for ${kind}`);
-    for (const key of keys) assert.ok(documented.has(key), `the ${kind} row names ${key}`);
+// A table's Keys column holds only key names, each a code span, so it reads both ways: no key missing, none extra.
+const requestTable = (header) => {
+  const lines = readFileSync(new URL('../../docs/requests/node-harness-dag.md', import.meta.url), 'utf8').split('\n');
+  const start = lines.findIndex((line) => line.startsWith(`| ${header} | Keys |`));
+  assert.ok(start >= 0, `the request has the table headed ${header}`);
+  const rows = [];
+  for (const line of lines.slice(start + 2)) {
+    if (!line.startsWith('| ')) break;
+    rows.push(line.split(/(?<!\\)\|/));
   }
+  const spans = (cell) => (cell.match(/`[^`]+`/g) ?? []).map((span) => span.slice(1, -1));
+  return Object.fromEntries(rows.flatMap((cells) => spans(cells[1]).map((kind) => [kind, spans(cells[2]).sort()])));
+};
+const sortedKeys = (table) => Object.fromEntries(Object.entries(table).map(([kind, keys]) => [kind, [...keys].sort()]));
+
+test("the request's tables list exactly each Action kind's and Check kind's keys", () => {
+  assert.deepEqual(requestTable('`do`'), sortedKeys(procedures.ACTION_KEYS));
+  assert.deepEqual(requestTable('Check kind'), sortedKeys(procedures.CHECK_KEYS));
 });

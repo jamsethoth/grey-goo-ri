@@ -272,22 +272,22 @@ Sessions never cross Vertices. gg ships no Procedure; the example `gg init` writ
 Every Action declares `id` (its Action id) and `do` (its kind), and only its kind's keys; any other key fails
 admission (`lib/procedures.mjs` holds the lists):
 
-| `do` | Keys |
-|---|---|
-| `agent` | `brief` (the Brief template), `schema` (the Structured Response schema) |
-| `check` | `kind` (the Check kind), `recoverBrief` (optional: the recovery Brief section for a failure), `recoverable` (optional: `false` opts out of recovery), and the Check kind's keys below |
-| `commit` | `type` (the commit type, such as `test`, `feat` or `fix`) |
-| `push`, `pr-ready` | none |
-| `pr-upsert` | `body` (the PR body template), `with` (optional: a name for each reference path the body reads) |
-| `comment` | `target` (`pr` or `ticket`), `body` (the comment template) |
-| `await-approval` | `decisions` (the Decision values it accepts) |
+| `do` | Keys | What each key takes |
+|---|---|---|
+| `agent` | `brief`, `schema` | the Brief template; the Structured Response schema |
+| `check` | `kind`, `recoverBrief`, `recoverable`, and the Check kind's keys below | the Check kind; optional, the recovery Brief section for a failure; optional, `false` opts out of recovery |
+| `commit` | `type` | the commit type, such as `test`, `feat` or `fix` |
+| `push`, `pr-ready` | none | |
+| `pr-upsert` | `body`, `with` | the PR body template; optional, a name for each reference path the body reads |
+| `comment` | `target`, `body` | `pr` or `ticket`; the comment template |
+| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3); #119 builds the Action and its default, and until then admission requires the list |
 
-| Check kind | Keys |
-|---|---|
-| `command` | `command` (a Declared Command's name), `reuse` (optional: `tree` reuses a pass recorded for the same tree) |
-| `tests-fail` | `command` (a Declared Command's name), `testNames` (the reference path to the test names the agent wrote) |
-| `response` | one condition: `{ field, is }`, `{ none \| any \| all: <list>, where }` or `{ count: <list>, where, <op>: <integer> }`, with `<op>` one of `<`, `<=`, `>`, `>=`, `=`; or `allOf: [<condition>, ...]`, passing when every one holds |
-| `repeat` | `list` (the reference path to a list of objects), `fields` (the item fields its Findings Hash covers) |
+| Check kind | Keys | What each key takes |
+|---|---|---|
+| `command` | `command`, `reuse` | a Declared Command's name; optional, `tree` reuses a pass recorded for the same tree |
+| `tests-fail` | `command`, `testNames` | a Declared Command's name; the reference path to the test names the agent wrote |
+| `response` | `field`, `is`, `none`, `any`, `all`, `count`, `where`, `<`, `<=`, `>`, `>=`, `=`, `allOf` | one condition: `{ field, is }`, `{ none \| any \| all: <list>, where }` or `{ count: <list>, where, <op>: <integer> }`, with `<op>` one of the comparison keys; or `allOf: [<condition>, ...]`, passing when every one holds |
+| `repeat` | `list`, `fields` | the reference path to a list of objects; the item fields its Findings Hash covers |
 
 Validation prints each Vertex's effective Procedure, Checks, rule tables and Outcomes, so nothing a Procedure
 verifies is hidden in code.
