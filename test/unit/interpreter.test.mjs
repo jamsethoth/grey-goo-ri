@@ -601,6 +601,11 @@ const briefOf = (g, vertex, visit) =>
     return at.vertex === vertex && at.visit === String(visit);
   }).brief;
 
+test('a Brief names the base branch the Ticket branch was created from', async (t) => {
+  const g = await firstVisit(t);
+  assert.match(briefOf(g, 'green', 1), /, created from main\. Work only here\./);
+});
+
 test("green reads red's committed tests through an input", async (t) => {
   const pinned = pinnedInputs(t);
   const g = await firstVisit(t);
