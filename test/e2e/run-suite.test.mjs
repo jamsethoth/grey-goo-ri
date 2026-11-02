@@ -58,6 +58,19 @@ function launcherCopy(t, { prettier = 0, eslint = 0, tsc = 0, installed = true }
   return { run, steps };
 }
 
+test('the check stage runs the format check, lint and the type check in that order, no tests, and exits 0', (t) => {
+  const copy = launcherCopy(t);
+  const r = copy.run(['check']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(copy.steps(), 'prettier\neslint\ntsc\n');
+});
+
+test('a failing lint step stops the check stage with its exit code before the type check', (t) => {
+  const copy = launcherCopy(t, { eslint: 3 });
+  assert.equal(copy.run(['check']).status, 3);
+  assert.equal(copy.steps(), 'prettier\neslint\n');
+});
+
 for (const [stage, argv] of [
   ['full', []],
   ['fast', ['fast']],
