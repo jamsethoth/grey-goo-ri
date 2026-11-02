@@ -60,7 +60,7 @@ _Avoid_: round, iteration
 
 **Vertex input**:
 A named value a Vertex reads from an Action output of an earlier Visit, declared `from` one reference
-`<vertex>.<action id>.<field>` or a list of them, where the latest Visit that produced any wins. It is resolved and
+`<vertex>.<action id>.<output>` or a list of them, where the latest Visit that produced any wins. It is resolved and
 snapshotted at Visit entry with the Vertex, Visit and Action that produced it; an `optional` input none produced is
 absent, and `pick` projects a list of objects to one field. Everything one Vertex hands another passes this way.
 _Avoid_: parameter, dependency, upstream output

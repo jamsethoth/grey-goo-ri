@@ -189,7 +189,7 @@ admission (`lib/validate.mjs` holds the lists):
 | `ticket` | `entry`, `routes`, `vertices` | the id of the first Vertex; the Flow-wide routes, from Outcome to target, for an Outcome a Vertex's own route does not name, where `*` catches any Outcome no route names and no Vertex's `*` caught; the Vertices by id |
 | `vertices.<id>` | `use`, `procedure`, `inputs`, `route`, `max`, `exhausted`, and any Agent key (3.1) | the Agent it uses, whose keys it may override; the Procedure it runs (3.4); its Vertex inputs by name; its routes, from Outcome to target, where `*` catches any Outcome named in neither the Vertex's nor the Flow's routes; optional, the Bound on its Visits and the target when that Bound is exhausted |
 | `route.<outcome>` | `to`, `max`, `exhausted` | a target is a Vertex id, `{ end: <end> }`, or this edge: the Vertex to go to; optional, the Bound on its traversals and the target when that Bound is exhausted, required with it |
-| `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<field>` or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
+| `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
 
 - Vertex: a `procedure` (3.4), an agent (3.1) when the Procedure has an agent Action, `inputs` read from earlier
   Vertices, and edges. A gate is a Vertex whose Procedure has no agent Action and a `command` Check.
@@ -617,7 +617,11 @@ naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry over by
 `contextBudget.byModel`. Eval variants are config layers and may change flow structure. Declared Commands are a
 `commands` object in the repo Layer only: a `commands` key in the defaults or user Layer is a load error, as is a
 Layer file with a duplicate key, and preflight checks each name and command line (ADR 0013). `flows`, `procedures` and `testPaths` are
-repo-Layer-only too, and `testPaths` is required (ADR 0014).
+repo-Layer-only too, and `testPaths` is required (ADR 0014). Each file a Layer names (a Persona, Brief, template or
+schema) resolves beside that Layer's `gg.json`, and one name names one file across the Layers: a Layer that reuses a
+name another Layer declares for a different file fails to load. Until #121 the defaults Layer declares its own
+(`personas/implementer.md`, `schemas/implement.schema.json` and the rest), so a user or repository Layer gives its
+files other names.
 
 ## 4. Behaviours to port, and deliberate changes
 
