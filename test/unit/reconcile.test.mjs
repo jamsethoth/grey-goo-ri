@@ -4,7 +4,25 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from '../support/golden.mjs';
+import * as interpreterSupport from '../support/interpreter.mjs';
 import { resetEntries } from '../support/reconcile.mjs';
+
+// The Ticket branch's log from its head: two commits since the base, the base, and the commit the base was cut from.
+const branchLog = [
+  { sha: 'c'.repeat(40), message: 'feat: b' },
+  { sha: 'b'.repeat(40), message: 'feat: a' },
+  { sha: 'a'.repeat(40), message: 'base' },
+  { sha: '9'.repeat(40), message: 'before the base' },
+];
+const onBranch = (base) => ({ worktree: '/wt', base, options: { git: { commitLog: async () => branchLog } } });
+
+test('branchMessages lists the commits since the base, oldest first', async () => {
+  assert.deepEqual(await interpreterSupport.branchMessages(onBranch('a'.repeat(40))), ['feat: a', 'feat: b']);
+});
+
+test('branchMessages throws when the base is not in the log', async () => {
+  await assert.rejects(interpreterSupport.branchMessages(onBranch('d'.repeat(40))), /base d{40} is not in the log/);
+});
 
 // An Integrity Violation at red's Attempt, which a reset rolls back.
 const violating = (g) => ({

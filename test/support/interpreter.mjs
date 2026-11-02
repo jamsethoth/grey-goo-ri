@@ -91,11 +91,14 @@ export function stopReason(g, { vertex, action, recovery = 0, outcome, rule, com
   return reason;
 }
 
-// The Ticket branch as the injected git holds it: commit messages since the base, oldest first, and their subjects.
+// The Ticket branch as the injected git, real or fake, holds it: commit messages since the base, oldest first, and their
+// subjects. A base missing from the log throws, so no commit is dropped or added unnoticed.
 export async function branchMessages(g) {
   const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);
+  const since = log.findIndex((c) => c.sha === g.base);
+  if (since < 0) throw new Error(`base ${g.base} is not in the log of ${golden.BRANCH}`);
   return log
-    .filter((c) => c.sha !== g.base)
+    .slice(0, since)
     .map((c) => c.message)
     .reverse();
 }

@@ -152,7 +152,7 @@ test('a resume after the commit of a recovery pass continues at its push', async
       ...g.options,
       crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'commit', 1), point: 'after-completion' },
     }),
-    /crash/,
+    (err) => err instanceof interpreter.CrashError,
   );
   const loaded = await loadTicket(g);
   assert.deepEqual(
@@ -175,7 +175,7 @@ test('a missing transcript starts the phase fresh', async (t) => {
       ...g.options,
       crashAt: { marker: golden.markerOf(g.rec, 'green', 1, 'green', 1), point: 'before-intent' },
     }),
-    /crash/,
+    (err) => err instanceof interpreter.CrashError,
   );
   const loaded = await loadTicket(g);
   assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['green', 1], 'the recovery pass');
@@ -270,7 +270,7 @@ test('a failed lookup is unknown, not absent', async (t) => {
   const entry = record.openIntents(loaded).find((e) => e.actionMarker === m);
   const down = {
     ...g.options.gh,
-    issueComments: async () => {
+    comments: async () => {
       throw badGateway();
     },
   };
@@ -299,9 +299,9 @@ test('a failed lookup in a Run is retried on the Action budget and finds the lan
   let failures = 1;
   const once = {
     ...g.options.gh,
-    issueComments: async (...args) => {
+    comments: async (...args) => {
       if (failures-- > 0) throw badGateway();
-      return g.options.gh.issueComments(...args);
+      return g.options.gh.comments(...args);
     },
   };
 

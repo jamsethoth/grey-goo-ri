@@ -146,8 +146,8 @@ test('each public field is redacted once and sent exactly as its intent saved it
   assert.ok(body.includes('| model TOKEN* |'), '| model TOKEN |');
   assert.ok(body.includes('| TOKEN* effort |'), '| TOKEN effort |');
   assert.ok(body.includes('| TOKEN*.md@'), '| TOKEN.md@');
-  assert.ok(messages[0].includes('Feature-Flow-Stage: red fake/model TOKEN*/TOKEN* effort'), messages[0]);
-  assert.ok(messages[1].includes('Feature-Flow-Stage: green fake/model TOKEN*/TOKEN* effort'), messages[1]);
+  assert.ok(messages[0].includes('Gg-Vertex: red fake/model TOKEN*/TOKEN* effort'), messages[0]);
+  assert.ok(messages[1].includes('Gg-Vertex: green fake/model TOKEN*/TOKEN* effort'), messages[1]);
   assert.ok(
     g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')),
     'the PR title',
@@ -256,6 +256,19 @@ test('runExecution asks the injected Test Immutability whether the committed tes
   assert.equal(actionEvent(g, 'green', 'test'), undefined, 'decided at the agent Action, before any Check');
 });
 
+// R3, through the fake integrity: a green agent that rewrites a test red committed is held, not merged.
+test('a green agent that rewrites a committed test is an integrity violation', async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'].files['test/add.test.mjs'] = '// weakened\n';
+  const g = await golden.setup(t, { responses });
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'needs-human');
+  assert.deepEqual(actionEvent(g, 'green', 'green').integrityViolations, [
+    { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
+  ]);
+});
+
 test("the Protected Files are gg's paths plus every shipped Harness's paths", async () => {
   const { HARNESSES } = await import('../../lib/harnesses/shipped.mjs');
   assert.deepEqual(interpreter.protectedFiles({}), ['.agents/', '.github/actions/', '.github/workflows/']);
@@ -357,11 +370,11 @@ test("a hold's label is set after its comment, each under its own marker", async
 
 test("a fault during an end does not replay the end's open reporting Action", async (t) => {
   const g = await golden.setup(t);
-  const real = g.options.gh.commentIssue;
+  const real = g.options.gh.comment;
   let calls = 0;
   g.options.gh = {
     ...g.options.gh,
-    commentIssue: async (...a) => {
+    comment: async (...a) => {
       if (calls++ === 0) throw new Error('gh comment down');
       return real(...a);
     },

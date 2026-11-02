@@ -18,7 +18,7 @@ test('red check: a timed-out run is rejected even if it printed the test name', 
 
 test('red check: runner-not-found is rejected', () => {
   const r = checks.redCheck(
-    { code: 127, output: 'rejects bad input\n[ff: could not start command (win32 error 2)]\n' },
+    { code: 127, output: 'rejects bad input\n[gg: could not start command (win32 error 2)]\n' },
     ['rejects bad input'],
   );
   assert.equal(r.ok, false);

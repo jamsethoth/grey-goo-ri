@@ -126,10 +126,10 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
     .reverse();
   assert.equal(messages.length, 2);
   assert.match(messages[0], /^test: /);
-  assert.ok(messages[0].includes('Feature-Flow-Stage: red fake/model-x/high'), messages[0]);
+  assert.ok(messages[0].includes('Gg-Vertex: red fake/model-x/high'), messages[0]);
   assert.ok(messages[0].includes(`Gg-Action: ${actionMarker(g, 'red', 'commit')}`), messages[0]);
   assert.match(messages[1], /^feat: /);
-  assert.ok(messages[1].includes('Feature-Flow-Stage: green fake/model-x/high'), messages[1]);
+  assert.ok(messages[1].includes('Gg-Vertex: green fake/model-x/high'), messages[1]);
   assert.ok(messages[1].includes(`Gg-Action: ${actionMarker(g, 'green', 'commit')}`), messages[1]);
   assert.equal(
     golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0],

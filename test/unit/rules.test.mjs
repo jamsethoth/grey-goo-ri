@@ -432,29 +432,38 @@ test('the example review table reports three overlaps in two row warnings', asyn
   assert.equal(rules.evaluate(reviewPassed, result.defaultExample), null);
 });
 
-test('rows that never fire do not cost memory per pair', async () => {
+// The heap is not measured: it moves with garbage collection (docs/testing.md rule 1). What analysis holds per pair of
+// rows is bounded by the work limit, whose cases follow; these two pin that a heavy table's result keeps one entry per
+// row, or one warning per run, and never a list per pair.
+test('rows that never fire are one error each, naming no earlier row', async () => {
   const rules = await load();
   const rows = Array.from({ length: 10_000 }, (_, i) => ({ when: {}, outcome: `o${i}` }));
-  const before = process.memoryUsage().heapUsed;
   const result = rules.analyse({ name: 'heavy.passed', fields: {}, rows });
-  const grown = process.memoryUsage().heapUsed - before;
   assert.equal(result.errors.length, 9_999);
+  assert.deepEqual(result.errors.at(-1), {
+    row: 9_999,
+    message: 'rule table heavy.passed: row 10000 (o9999) never fires: earlier rows match every input it matches',
+  });
   assert.deepEqual(result.warnings, []);
-  assert.ok(grown < 32 * 2 ** 20, `the heap grew by ${grown} bytes`);
 });
 
-test('a long run of overlapping rows is one warning and costs no memory per pair', async () => {
+test('a long run of overlapping rows is one warning naming only its first taker', async () => {
   const rules = await load();
-  const table = ladder('fix.failed', 3_000);
-  const before = process.memoryUsage().heapUsed;
-  const result = rules.analyse(table);
-  const grown = process.memoryUsage().heapUsed - before;
+  const result = rules.analyse(ladder('fix.failed', 3_000));
   assert.deepEqual(result.errors, []);
-  assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.from]),
-    [[[1, 2_999], 0]],
-  );
-  assert.ok(grown < 32 * 2 ** 20, `the heap grew by ${grown} bytes`);
+  assert.deepEqual(result.warnings, [
+    {
+      rows: [1, 2_999],
+      earlier: [[0, 0]],
+      more: 0,
+      from: 0,
+      fields: ['pass'],
+      example: { pass: 3_000 },
+      message:
+        'rule table fix.failed: rows 2-3000 are each partly taken by every earlier firing row, all on pass, ' +
+        'for example {"pass":3000}',
+    },
+  ]);
 });
 
 test('a table just under the work limit is analysed', async () => {
@@ -574,4 +583,25 @@ test('only the boxes with an input no row matches fall', async () => {
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.falls, [1, 2]);
   assert.deepEqual(result.defaultExample, { claim: 'b', response: { flag: false } });
+});
+
+// The validator accepts an operator by its name in the one table, so each one it accepts must also run (#198).
+test('every operator the validator accepts evaluates in a rule and in a count Check', async () => {
+  const rules = await load();
+  const procedures = await import('../../lib/procedures.mjs');
+  const checks = await import('../../lib/checks.mjs');
+  assert.deepEqual(procedures.OPS, Object.keys(procedures.COMPARISONS));
+  for (const op of procedures.OPS) {
+    const table = { name: 'count', rows: [{ when: { 'response.n': { [op]: 1 } }, outcome: 'hit' }] };
+    for (const n of [0, 1, 2]) {
+      const expected = procedures.COMPARISONS[op](n, 1);
+      assert.equal(rules.evaluate(table, { response: { n } }) === 0, expected, `rule ${n} ${op} 1`);
+      const findings = Array.from({ length: n }, () => ({ severity: 'minor' }));
+      assert.equal(
+        checks.responseCheck({ findings }, { count: 'findings', [op]: 1 }).passed,
+        expected,
+        `count ${n} ${op} 1`,
+      );
+    }
+  }
 });

@@ -336,10 +336,10 @@ test('viewPr reads the PR fields through gh pr view', async (t) => {
   ]);
 });
 
-test('prComments reads the PR comments through gh api', async (t) => {
+test("comments reads a PR's comments through gh api", async (t) => {
   const { gh, calls } = commentsGh();
   golden.useGh(t, gh);
-  assert.deepEqual(await github.prComments(12, '/repo'), [
+  assert.deepEqual(await github.comments(12, '/repo'), [
     { id: 101, body: 'first', createdAt: '2026-10-01T00:00:00Z' },
     { id: 102, body: 'second', createdAt: '2026-10-02T00:00:00Z' },
   ]);
@@ -351,10 +351,10 @@ test('prComments reads the PR comments through gh api', async (t) => {
   );
 });
 
-test('issueComments reads the issue comments through gh api', async (t) => {
+test("comments reads an issue's comments through gh api", async (t) => {
   const { gh, calls } = commentsGh();
   golden.useGh(t, gh);
-  assert.deepEqual(await github.issueComments(7, '/repo'), [
+  assert.deepEqual(await github.comments(7, '/repo'), [
     { id: 101, body: 'first', createdAt: '2026-10-01T00:00:00Z' },
     { id: 102, body: 'second', createdAt: '2026-10-02T00:00:00Z' },
   ]);
@@ -464,8 +464,9 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
     golden.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }),
   );
   golden.useGh(t, gh);
-  assert.equal(await github.commentIssue(7, 'a "quoted"\nbody', '/repo'), url);
+  assert.equal(await github.comment(7, 'a "quoted"\nbody', '/repo'), url);
   assert.equal(await github.comment(7, 'on the PR', '/repo'), url);
+  assert.equal(github.commentId(url), 5);
   assert.ok(
     calls.every(({ args }) => golden.isCommentPost(args, 7) && args.includes('--include')),
     JSON.stringify(calls),
@@ -482,7 +483,7 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
       body: { message: 'You have exceeded a secondary rate limit.' },
     });
   });
-  await assert.rejects(github.commentIssue(7, 'b', '/repo'), (err) => {
+  await assert.rejects(github.comment(7, 'b', '/repo'), (err) => {
     assert.deepEqual(err.http, { status: 403, headers: { 'retry-after': '7', 'x-ratelimit-remaining': '12' } });
     assert.match(err.message, /secondary rate limit/);
     return true;

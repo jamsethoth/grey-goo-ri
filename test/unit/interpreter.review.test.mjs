@@ -100,7 +100,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
     messages.map((m) => m.split(':')[0]),
     ['test', 'feat', 'fix'],
   );
-  assert.match(messages.at(-1), /Feature-Flow-Stage: implementer-fix fake\/model-x\/high/);
+  assert.match(messages.at(-1), /Gg-Vertex: implementer-fix fake\/model-x\/high/);
   assert.equal(await originSha(g), await headSha(g), 'fix/4 pushed');
 
   const comments = prReviewComments(g);
@@ -140,7 +140,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
   const fix = golden.markerOf(g.rec, 'implementer-fix', 1, 'fix');
   await assert.rejects(
     interpreter.runExecution({ ...g.options, crashAt: { marker: fix, point: 'before-intent' } }),
-    /crash/,
+    (err) => err instanceof interpreter.CrashError,
   );
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);

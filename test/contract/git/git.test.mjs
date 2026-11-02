@@ -106,7 +106,7 @@ for (const [name, repo] of [
     const { git, mainRoot: dir } = repo;
     const { parent, tree } = await recordTree(repo);
     const sha = await git.commitTree(dir, { message: 'feat: a', tree, parent });
-    await assert.rejects(git.commitTree(dir, { message: 'feat: again', tree, parent }));
+    await assert.rejects(git.commitTree(dir, { message: 'feat: again', tree, parent }), /cannot lock ref 'HEAD'/);
     assert.equal(await git.headSha(dir), sha, 'nothing is overwritten');
   });
 
@@ -267,7 +267,7 @@ for (const [name, repo] of [
       const pushed = commit(dir, 'first');
       await git.push(dir, 'ticket/9-thing');
       const rewritten = amend(dir, 'rewritten');
-      await assert.rejects(git.push(dir, 'ticket/9-thing', rewritten));
+      await assert.rejects(git.push(dir, 'ticket/9-thing', rewritten), /non-fast-forward/);
       assert.equal(await git.remoteSha(dir, 'ticket/9-thing'), pushed);
     },
   );
@@ -291,7 +291,7 @@ for (const [name, repo] of [
 
   contract('branchHead reads a local branch and rejects an unknown one', async ({ git, mainRoot: dir }) => {
     assert.equal(await git.branchHead(dir, 'main'), await git.headSha(dir));
-    await assert.rejects(git.branchHead(dir, 'ticket/9-unknown'));
+    await assert.rejects(git.branchHead(dir, 'ticket/9-unknown'), /unknown revision/);
   });
 
   contract('hasTree tells a stored tree from an unknown one', async ({ git, mainRoot: dir }) => {

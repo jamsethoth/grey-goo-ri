@@ -510,7 +510,7 @@ Fixtures cover a resumed Claude session and a resumed Codex thread.
 Stats: every action event carries the vertex id, visit, action id and recovery; lifecycle events carry only the run or execution they describe; aggregation defaults to procedure and action, with vertex,
 harness and model as further dimensions, so two reviewers on the same procedure stay distinguishable and renaming
 a vertex does not hide escalations. `rounds`, `red_failed` and `blocked` remain derivable. The commit trailer text
-`Feature-Flow-Stage:` is kept, carrying vertex and harness.
+`Gg-Vertex:` (feature-flow's `Feature-Flow-Stage:` under a gg name, grey-goo-ri issue #198) carries vertex and harness.
 
 Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands. It covers the
 pinned configuration only; the repository content digest (3.2) is live and recorded per attempt, outside the hash.

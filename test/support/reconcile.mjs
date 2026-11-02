@@ -4,20 +4,11 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from './golden.mjs';
+import { branchMessages } from './interpreter.mjs';
 
 export const resetEntries = (rec) => rec.writeAheadLog.filter((e) => e.effect === 'reset').map((e) => e.step);
 
 export const stepsOf = (rec, m) => rec.writeAheadLog.filter((e) => e.actionMarker === m).map((e) => e.step);
-// Read through the git the case runs on, real or fake. The messages are the branch's commits since base, newest first.
-export async function branchMessages(g) {
-  const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);
-  return log
-    .slice(
-      0,
-      log.findIndex((c) => c.sha === g.base),
-    )
-    .map((c) => c.message);
-}
 export const originSha = (g) => g.options.git.remoteSha(g.mainRoot, golden.BRANCH);
 export const withMarker = (bodies, m) => bodies.filter((b) => b.includes(marker.markerComment(m)));
 export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKET);
