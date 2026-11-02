@@ -295,7 +295,9 @@ Check again after it; every Check comes before any effect Action (`commit`, `pus
 Reference paths read the Visit, wherever a Procedure or its templates name one (a rule table's `when`, `with`,
 `testNames`, `list`, `tests: { named }`): `response.<field>` (the agent's Structured Response), `inputs.<name>`,
 `<action id>.<output>` (the outputs below), `claim` (the token the agent claimed), `pass` (the pass number) and
-`check.<id>` (`passed`, `failed` or `not-run`). Two start elsewhere: an input's `from` starts at a Vertex
+`check.<id>` (`passed`, `failed` or `not-run`). A stop token's `comment` is the exception: it reads the response,
+`inputs.<name>` and `<action id>.<output>`, and the stop's own `end`, `outcome`, `reason` and `marker`, but not
+`claim`, `pass` or `check.<id>`. Two start elsewhere: an input's `from` starts at a Vertex
 (`<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`), and a `response`
 Check's paths start inside the response (`findings`, not `response.findings`).
 
