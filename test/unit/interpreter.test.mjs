@@ -1449,6 +1449,9 @@ test('Test Immutability is asserted after an agent Attempt of a write Vertex wit
   const g = await golden.setup(t);
   golden.configure(g, (c) => {
     c.procedures.implement.actions[1] = { id: 'test', do: 'check', kind: 'response', field: 'claim', is: 'ok' };
+    // A response Check gives no evidence, so what read the command Check's now reads the Red Evidence.
+    c.procedures.implement.actions[4].with.green = 'inputs.red';
+    c.flows.golden.ticket.vertices.publish.inputs.green = { from: 'red.red-check.evidence' };
   });
   const baselines = scriptedImmutability(g, [{ ok: false, changed: ['test/add.test.mjs'] }]);
   const { outcome } = await interpreter.runExecution(g.options);

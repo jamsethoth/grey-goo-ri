@@ -186,7 +186,7 @@ admission (`lib/validate.mjs` holds the lists):
 | Flow object | Keys | What each key takes |
 |---|---|---|
 | `flows.<name>` | `plan`, `actionCap`, `ticket` | `null` until Epic planning is built; the Action Cap, a positive integer; the ticket section |
-| `ticket` | `entry`, `routes`, `vertices` | the id of the first Vertex; the Flow-wide routes, from Outcome to target, for an Outcome a Vertex's own route does not name; the Vertices by id |
+| `ticket` | `entry`, `routes`, `vertices` | the id of the first Vertex; the Flow-wide routes, from Outcome to target, for an Outcome a Vertex's own route does not name, where `*` catches any Outcome no route names and no Vertex's `*` caught; the Vertices by id |
 | `vertices.<id>` | `use`, `procedure`, `inputs`, `route`, `max`, `exhausted`, and any Agent key (3.1) | the Agent it uses, whose keys it may override; the Procedure it runs (3.4); its Vertex inputs by name; its routes, from Outcome to target, where `*` catches any Outcome named in neither the Vertex's nor the Flow's routes; optional, the Bound on its Visits and the target when that Bound is exhausted |
 | `route.<outcome>` | `to`, `max`, `exhausted` | a target is a Vertex id, `{ end: <end> }`, or this edge: the Vertex to go to; optional, the Bound on its traversals and the target when that Bound is exhausted, required with it |
 | `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<field>` or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
@@ -292,30 +292,40 @@ Order: the agent Action, when a Procedure has one, comes first and is its only o
 Check again after it; every Check comes before any effect Action (`commit`, `push`, `pr-upsert`, `pr-ready`,
 `comment`, `await-approval`), so no effect runs before its pass is decided.
 
-Reference paths read the Visit: `response.<field>` (the agent's Structured Response), `inputs.<name>`,
-`<action id>.<output>`, and in a rule table's `when` also `claim`, `pass` and `check.<id>`. Two start elsewhere: an
-input's `from` starts at a Vertex (`<vertex>.<action id>.<field>`), and a `response` Check's paths start inside the
-response (`findings`, not `response.findings`).
+Reference paths read the Visit, wherever a Procedure or its templates name one (a rule table's `when`, `with`,
+`testNames`, `list`, `tests: { named }`): `response.<field>` (the agent's Structured Response), `inputs.<name>`,
+`<action id>.<output>` (the outputs below), `claim` (the token the agent claimed), `pass` (the pass number) and
+`check.<id>` (`passed`, `failed` or `not-run`). Two start elsewhere: an input's `from` starts at a Vertex
+(`<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`), and a `response`
+Check's paths start inside the response (`findings`, not `response.findings`).
+
+An output is written when its Action completes: `evidence` only when its Check passed, `response` only for a valid
+Claim. `cleanup` (decision L11) and `<vertex>.rescue` (W3, #118) are declared, so a reference to them is admitted,
+but gg does not write them yet.
 
 Every Action declares `id` (its Action id) and `do` (its kind), and only its kind's keys; any other key fails
 admission (`lib/procedures.mjs` holds the lists):
 
-| `do` | Keys | What each key takes |
-|---|---|---|
-| `agent` | `brief`, `schema` | the Brief template; the Structured Response schema |
-| `check` | `kind`, `recoverBrief`, `recoverable`, and the Check kind's keys below | the Check kind; optional, the recovery Brief section for a failure; optional, `false` opts out of recovery |
-| `commit` | `type` | the commit type, such as `test`, `feat` or `fix` |
-| `push`, `pr-ready` | none | |
-| `pr-upsert` | `body`, `with` | the PR body template; optional, a name for each reference path the body reads |
-| `comment` | `target`, `body` | `pr` or `ticket`; the comment template |
-| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3); #119 builds the Action and its default, and until then admission requires the list |
+| `do` | Keys | What each key takes | Outputs |
+|---|---|---|---|
+| `agent` | `brief`, `schema` | the Brief template; the Structured Response schema | `response`, `cleanup` |
+| `check` | `kind`, `recoverBrief`, `recoverable`, and the Check kind's keys below | the Check kind; optional, the recovery Brief section for a failure; optional, `false` opts out of recovery | by its Check kind, below |
+| `commit` | `type` | the commit type, such as `test`, `feat` or `fix` | `files` |
+| `push`, `pr-ready` | none | | none |
+| `pr-upsert` | `body`, `with` | the PR body template; optional, a name for each reference path the body reads | none |
+| `comment` | `target`, `body` | `pr` or `ticket`; the comment template | none |
+| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3); #119 builds the Action and its default, and until then admission requires the list | none |
 
-| Check kind | Keys | What each key takes |
-|---|---|---|
-| `command` | `command`, `reuse` | a Declared Command's name; optional, `tree` reuses a pass recorded for the same tree |
-| `tests-fail` | `command`, `testNames` | a Declared Command's name; the reference path to the test names the agent wrote |
-| `response` | `field`, `is`, `none`, `any`, `all`, `count`, `where`, `<`, `<=`, `>`, `>=`, `=`, `allOf` | one condition: `{ field, is }`, `{ none \| any \| all: <list>, where }` or `{ count: <list>, where, <op>: <integer> }`, with `<op>` one of the comparison keys; or `allOf: [<condition>, ...]`, passing when every one holds |
-| `repeat` | `list`, `fields` | the reference path to a list of objects; the item fields its Findings Hash covers |
+| Check kind | Keys | What each key takes | Outputs |
+|---|---|---|---|
+| `command` | `command`, `reuse` | a Declared Command's name; optional, `tree` reuses a pass recorded for the same tree | `evidence`, `cleanup` |
+| `tests-fail` | `command`, `testNames` | a Declared Command's name; the reference path to the test names the agent wrote | `evidence`, `cleanup` |
+| `response` | `field`, `is`, `none`, `any`, `all`, `count`, `where`, `<`, `<=`, `>`, `>=`, `=`, `allOf` | one condition: `{ field, is }`, `{ none \| any \| all: <list>, where }` or `{ count: <list>, where, <op>: <integer> }`, with `<op>` one of the comparison keys; or `allOf: [<condition>, ...]`, passing when every one holds | none |
+| `repeat` | `list`, `fields` | the reference path to a list of objects; the item fields its Findings Hash covers | `findingsHash` |
+
+A Check's `evidence` is `{ command, output }`, and a `tests-fail` Check's adds `foundByNameOnly`, true when the runner
+printed no per-test statuses and the test was found by its name alone. A `cleanup` is `{ confirmed, survivors }`, and a
+`<vertex>.rescue` is `{ ref, output, diffStat }`.
 
 Validation prints each Vertex's effective Procedure, Checks, rule tables and Outcomes, so nothing a Procedure
 verifies is hidden in code.
