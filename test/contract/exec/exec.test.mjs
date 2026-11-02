@@ -1011,6 +1011,23 @@ test('the result names the containment it used', CASE, async () => {
   }
 });
 
+// cmd.exe reads a gate line before the command runs; an empty line would leave its error level at 1, which a bare
+// `exit /b` or `if errorlevel` in the command reads.
+test(
+  'runShell: the command starts as in a fresh shell, with no error level and no gate variable',
+  { ...CASE, skip: process.platform !== 'win32' && 'the stdin gate is Windows only' },
+  async () => {
+    const line =
+      'if errorlevel 1 (echo LEVEL1) else (echo LEVEL0) & if defined GG_GATE (echo DEFINED) else (echo UNDEFINED) & exit /b';
+    for (const runShell of [exec.runShell, exec.createExec({ kernel32: null }).runShell]) {
+      const res = await runShell(line, { timeoutMs: 60_000 });
+      assert.equal(res.code, 0, res.output);
+      assert.match(res.output, /LEVEL0/);
+      assert.match(res.output, /UNDEFINED/);
+    }
+  },
+);
+
 test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
   const pidFile = join(tmp, 'unrelated.pid');
   const sleeper = script('unrelated-sleeper.mjs', writesPid, [pidFile]);

@@ -173,9 +173,12 @@ export type Started = { child: ChildProcess; job: Job | null; containmentError?:
 
 // Starts commandLine through cmd.exe, which waits on a gate line of stdin, puts cmd.exe in a new job, and then opens
 // the gate, so nothing the command starts is outside the job. The gate swallows any stdin written with it, so the
-// command reads only EOF. With no kernel32, or a job that cannot be set up, the command runs uncontained.
+// command reads only EOF. The gate line is not empty, since an empty one leaves the error level at 1, and the gate
+// variable is cleared, so the command starts as in a fresh cmd.exe. With no kernel32, or a job that cannot be set up,
+// the command runs uncontained.
 export function start(kernel32: Kernel32 | null, commandLine: string, cwd: string | undefined): Started {
-  const child = spawn(`${SYSTEM32}\\cmd.exe`, ['/d', '/s', '/c', `"set /p GG_GATE= & ${commandLine}"`], {
+  const gated = `"set /p GG_GATE= & set "GG_GATE=" & ${commandLine}"`;
+  const child = spawn(`${SYSTEM32}\\cmd.exe`, ['/d', '/s', '/c', gated], {
     cwd,
     windowsHide: true,
     windowsVerbatimArguments: true,
@@ -190,7 +193,7 @@ export function start(kernel32: Kernel32 | null, commandLine: string, cwd: strin
       reason = (err as Error).message;
     }
   child.stdin.on('error', () => {}); // cmd.exe already gone: its exit reports it
-  child.stdin.end('\n');
+  child.stdin.end('go\n');
   if (!reason) return { child, job };
   return { child, job, containmentError: `job object unavailable (${reason}): orphaned descendants are not contained` };
 }

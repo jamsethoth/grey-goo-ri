@@ -22,10 +22,12 @@ created the job, and wrote its answers as `\x01GGJOB` notes into the command's o
 
 `lib/containment.ts` now calls kernel32 through `node:ffi`, in gg's own process:
 
-- `cmd.exe` starts as `cmd.exe /d /s /c "set /p GG_GATE= & <command>"`, waiting on one line of stdin. gg creates a
-  job with kill-on-close and breakaway-OK, assigns `cmd.exe` to it, then writes the gate line and ends stdin. Nothing
-  the command starts is outside the job, and the command reads EOF, as it read NUL before. The gate also swallows
-  any stdin written with the gate line, so this start is only for commands given no stdin.
+- `cmd.exe` starts as `cmd.exe /d /s /c "set /p GG_GATE= & set "GG_GATE=" & <command>"`, waiting on one line of
+  stdin. gg creates a job with kill-on-close and breakaway-OK, assigns `cmd.exe` to it, then writes the gate line `go`
+  and ends stdin. Nothing the command starts is outside the job, and the command reads EOF, as it read NUL before.
+  The gate line is not empty, since `set /p` given an empty line leaves the error level at 1, which a bare `exit /b`
+  or `if errorlevel` in the command would read; the variable is then cleared. The gate also swallows any stdin
+  written with the gate line, so this start is only for commands given no stdin.
 - On timeout gg terminates the job and lists its members until it is empty. A job it cannot read or terminate is
   reported, its processes named as survivors, and its handle kept, so kill-on-close takes them when gg exits.
 - gg holds the job's only handle, so the job's processes also die when gg does. The result names its containment,
