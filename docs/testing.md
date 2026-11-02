@@ -144,10 +144,11 @@ That check reads source text, so it misses a spawn it has no pattern for: a supp
 A slip costs speed, not coverage: the full stage still runs the case, and the fast stage's wall time shows the
 regression. A new support helper that spawns is added to the check's list in the same change.
 
-Two stages, ordered by speed:
+Three stages, ordered by speed:
 
 | Stage | Runs | When |
 | --- | --- | --- |
+| **Check** | `prettier --check`, ESLint and `tsc` (ADR 0018), and no tests: `node scripts/run-suite.mjs check` (ADR 0016) | in CI as its own `check` job beside the suite jobs, so a format, lint or type error shows on its own |
 | **Fast** | `prettier --check`, ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.mjs fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
 | **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.mjs` | before a PR is marked ready, and in CI on every PR |
 
