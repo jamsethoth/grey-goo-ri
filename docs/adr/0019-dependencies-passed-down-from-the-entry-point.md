@@ -24,9 +24,17 @@ Every external dependency of a Run is built once at the entry point and passed d
   of `run.runTarget`, which passes them to `interpreter.runExecution`. The interpreter keeps them in the context it hands
   the write-ahead effects, the Terminals, Reconciliation and the Integrity Assertions; the integrity is built from the
   `git` and `locks` unless the caller passes one.
-- The deps are named options, not one `deps` key: `gh`, `git`, `exec`, `integrity` and `clock` already were, and every
-  test that builds or changes a Run's options names them so. A `deps` key would rename about 250 test lines and change
-  nothing a reader sees; the TypeScript conversions of #204 and #207 can give the fields one named type.
+- The deps become one `deps` key with a `Deps` type, in two steps. Until then they are named options, as `gh`, `git`,
+  `exec`, `integrity` and `clock` already were, so this change renames none of the about 250 test lines that build or
+  change a Run's options. #204, which declares the interpreter's Run context as one type, makes `runExecution` take
+  `deps: Deps` and exports `Deps` from the interpreter; #207 makes `runTarget` take the same `deps` and `bin/gg.ts`
+  build it. Each moves its function's test call sites from `options.git` to `options.deps.git`. With one key, a layer that only
+  passes the deps along does not name each one, so a new dependency touches only where it is built and where it is
+  used, and `tsc` reports a missing one: adding `locks` and `database` here took four edits in `run.mjs` that only
+  passed them along.
+- A dep is something outside the process that a test replaces with a fake or a stub: GitHub, git, the shell, the State
+  Database, the locks and time, and the integrity built from git and the locks. Configuration, the Harnesses, the log
+  and the Ticket are not deps, so `deps` does not become a second options bag.
 - `git`, `locks` and `record` also export the functions of their real instance, for callers that take no seam: `gg
   doctor`, the contract suites and the helper processes tests spawn. `github` does not, so nothing reaches the real `gh`
   without asking for it.
@@ -59,4 +67,5 @@ context, so a hook ends with its case whether it passes or fails.
   state shared by every caller, which `node:test`'s first-in, first-out hook order already made fragile (#217).
 - **Async context** (`AsyncLocalStorage`) to carry the deps without parameters. It hides which dependency a call reaches,
   the problem this ADR removes.
-- **A `deps` key** wrapping the named options: see above.
+- **A `deps` key in this change.** It would rename about 250 test lines now and again when #204 declares the Run
+  context's type; it lands with the types instead, as above.

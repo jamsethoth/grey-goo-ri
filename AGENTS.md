@@ -39,8 +39,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   test for either.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
   built once in `bin/gg.mjs` and passed down as named options of `run.runTarget` and `interpreter.runExecution` (ADR
-  0019). New code takes what it needs from its caller as a parameter; ESLint fails a module-level `let` or an exported
-  `set*` function.
+  0019), until #204 and #207 group them under one `deps` key typed `Deps`. New code takes what it needs from its caller
+  as a parameter; ESLint fails a module-level `let` or an exported `set*` function.
 
 ## Layout
 
