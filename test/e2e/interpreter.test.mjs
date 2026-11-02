@@ -203,7 +203,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   let before;
   let written;
   // Another Ticket stops the run while this one's push waits for the repo lock.
-  const lock = contendRepoLock(t, g.commonDir, () => {
+  const lock = contendRepoLock(g, () => {
     runState.stop = { failureClass: 'auth', ticket: 21 };
     before = g.gh.calls.length;
     written = { ...counts };

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as github from '../../lib/github.mjs';
 import * as run from '../../lib/run.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
@@ -50,7 +51,7 @@ function crashPr(g, verb) {
   let n = 0;
   g.gh.fail({ matches: isPr(verb), status: 502 });
   g.gh.fail({ matches: isPr(verb), status: 502 });
-  g.options.gh.setGh(async (args, cwd, input) => {
+  g.options.gh = github.createGh(async (args, cwd, input) => {
     if (isPr(verb)(args) && ++n === 3) throw new interpreter.CrashError(`crash as pr ${verb} launched`);
     return g.gh.gh(args, cwd, input);
   });
@@ -121,7 +122,7 @@ test('an accepted pr-ready whose call errored is repeated with one state change'
   const g = await golden.setup(t);
   g.gh.fail({ matches: isPr('ready'), status: 502, afterEffect: true });
   const drafts = [];
-  g.options.gh.setGh(async (args, cwd, input) => {
+  g.options.gh = github.createGh(async (args, cwd, input) => {
     if (isPr('ready')(args)) drafts.push(g.gh.pr().isDraft);
     return g.gh.gh(args, cwd, input);
   });

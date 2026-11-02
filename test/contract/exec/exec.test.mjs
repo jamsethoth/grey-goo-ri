@@ -80,7 +80,7 @@ async function timeOutWhen(commandLine, options, ready, signal) {
   const clock = new AbortController();
   let settled = false,
     wasReady = false;
-  const running = exec.runShell(commandLine, { ...options, signal: clock.signal }).finally(() => {
+  const running = exec.runShell(commandLine, shellOptions({ ...options, signal: clock.signal })).finally(() => {
     settled = true;
   });
   try {
@@ -99,6 +99,9 @@ async function timeOutWhen(commandLine, options, ready, signal) {
 
 // A clock that never starts: the command runs in the job, and only its own end ends it.
 const noClock = () => new AbortController().signal;
+
+// runShell's real inputs, and the rest of a case's options as its test hooks.
+const shellOptions = ({ cwd, timeoutMs, ...testHooks } = {}) => ({ cwd, timeoutMs, testHooks });
 
 // runShell's timeout timer, moved by the case: tick(ms) moves the time on and fires the armed timer once it is due.
 // fired() counts the timeouts that fired.
@@ -170,14 +173,20 @@ test('run and runShell read a multi-byte character split across chunks exactly',
 // the owner's approval, from this ported case.
 test('runShell: a command waiting for stdin EOF returns promptly', CASE, async () => {
   const p = script('stdin.mjs', `process.stdin.resume(); process.stdin.on('end', () => console.log('eof'));`);
-  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000, signal: noClock() });
+  const res = await exec.runShell(
+    `"${process.execPath}" "${p}"`,
+    shellOptions({ timeoutMs: 20000, signal: noClock() }),
+  );
   assert.equal(res.timedOut, undefined, res.output);
   assert.match(res.output, /eof/);
 });
 
 test('runShell with a timeout still returns the exit code and output of a command that finishes', CASE, async () => {
   const p = script('exit7.mjs', `console.log('hi'); process.exit(7);`);
-  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 20000, signal: noClock() });
+  const res = await exec.runShell(
+    `"${process.execPath}" "${p}"`,
+    shellOptions({ timeoutMs: 20000, signal: noClock() }),
+  );
   assert.equal(res.code, 7);
   assert.match(res.output, /hi/);
   assert.equal(res.timedOut, undefined, res.output);
@@ -569,7 +578,10 @@ test(
       `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'ignore' }).unref();`,
       [background],
     );
-    const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 20000, signal: noClock() });
+    const res = await exec.runShell(
+      `"${process.execPath}" "${quit}"`,
+      shellOptions({ timeoutMs: 20000, signal: noClock() }),
+    );
     assert.equal(res.code, 0);
     await waitFor(() => existsSync(pidFile), t.signal); // a background process that never starts fails at the case timeout
     const pid = Number(readFileSync(pidFile, 'utf8'));
@@ -594,7 +606,10 @@ test(
       `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'ignore' }).unref();`,
       [background],
     );
-    const res = await exec.runShell(`"${process.execPath}" "${quit}"`, { timeoutMs: 20000, signal: noClock() });
+    const res = await exec.runShell(
+      `"${process.execPath}" "${quit}"`,
+      shellOptions({ timeoutMs: 20000, signal: noClock() }),
+    );
     assert.equal(res.code, 0);
     await waitFor(() => existsSync(pidFile), t.signal); // a background process that never starts fails at the case timeout
     const pid = Number(readFileSync(pidFile, 'utf8'));
@@ -870,12 +885,15 @@ test(
     };
     // A timeout's kill of the helper's pid goes to a process that does nothing.
     const seam = [process.execPath, ['-e', '']];
-    const res = await exec.runShell(`"${process.execPath}" "${quit}"`, {
-      timeoutMs: 1,
-      timers,
-      taskkillCommand: seam,
-      onHelper,
-    });
+    const res = await exec.runShell(
+      `"${process.execPath}" "${quit}"`,
+      shellOptions({
+        timeoutMs: 1,
+        timers,
+        taskkillCommand: seam,
+        onHelper,
+      }),
+    );
     try {
       assert.equal(res.timedOut, undefined, 'a finished command was reported as timed out');
       assert.equal(res.code, 0);
@@ -911,7 +929,7 @@ test(
         if (notes.includes('\u0001GGJOB started')) seen();
       });
     const timers = manualTimers();
-    const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000, timers, onHelper });
+    const running = exec.runShell(`"${process.execPath}" "${p}"`, shellOptions({ timeoutMs: 7000, timers, onHelper }));
     timers.tick(6999);
     await started; // runShell's own listener ran right after this case's
     timers.tick(2);
@@ -945,7 +963,7 @@ test(
       helper.on('exit', () => setImmediate(late.release));
     };
     caseEnv(t, { GG_TEST_QUERYFAIL: '1' });
-    const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, timers, onHelper });
+    const res = await exec.runShell(`"${process.execPath}" "${p}"`, shellOptions({ timeoutMs: 1, timers, onHelper }));
     assert.ok(
       res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)),
       JSON.stringify(res.cleanupErrors),
@@ -972,7 +990,10 @@ test(
       late.hold();
       helper.on('exit', () => setTimeout(late.release, 400));
     };
-    const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, signal: noClock(), onHelper });
+    const res = await exec.runShell(
+      `"${process.execPath}" "${p}"`,
+      shellOptions({ timeoutMs: 1, signal: noClock(), onHelper }),
+    );
     assert.equal(readFileSync(runs, 'utf8'), 'ran\n', 'the command ran more than once');
     assert.equal(res.code, 0);
   },
@@ -994,12 +1015,15 @@ test(
         if (notes.includes('\u0001GGJOB started')) seen();
       });
     const timers = manualTimers();
-    const running = exec.runShell(`"${process.execPath}" "${p}"`, {
-      timeoutMs: 7000,
-      signal: AbortSignal.abort(),
-      timers,
-      onHelper,
-    });
+    const running = exec.runShell(
+      `"${process.execPath}" "${p}"`,
+      shellOptions({
+        timeoutMs: 7000,
+        signal: AbortSignal.abort(),
+        timers,
+        onHelper,
+      }),
+    );
     timers.tick(6999);
     await started; // runShell's own listener ran right after this case's
     timers.tick(2); // 7001 ms after the call
@@ -1013,10 +1037,13 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
     caseEnv(t, { GG_TEST_STALL: '1' });
-    const res = await exec.runShell(`"${process.execPath}" -e "1"`, {
-      timeoutMs: 800,
-      taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']],
-    });
+    const res = await exec.runShell(
+      `"${process.execPath}" -e "1"`,
+      shellOptions({
+        timeoutMs: 800,
+        taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']],
+      }),
+    );
     try {
       assert.equal(res.timedOut, true);
       assert.ok(res.cleanupErrors.length > 0, JSON.stringify(res));
@@ -1157,7 +1184,7 @@ test('a second runShell with a timeout loads the cached helper assembly', WIN_CA
     const onHelper = (helper) => {
       for (const s of [helper.stdout, helper.stderr]) s.on('data', (d) => (raw += d));
     };
-    const res = await exec.runShell(`"${process.execPath}" -e "1"`, { timeoutMs: 60_000, onHelper });
+    const res = await exec.runShell(`"${process.execPath}" -e "1"`, shellOptions({ timeoutMs: 60_000, onHelper }));
     return { res, raw };
   };
   await call();

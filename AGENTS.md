@@ -37,9 +37,10 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out` and the like.
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either.
-- Seams: the target is one `deps` object (git, gh, State Database, events, clock, integrity, shell) built at the entry
-  point and passed down. #199 moves the code there; until then, new code takes what it needs as a parameter and adds
-  no module-level `set*` function or `let`.
+- Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
+  built once in `bin/gg.mjs` and passed down as named options of `run.runTarget` and `interpreter.runExecution` (ADR
+  0019), until #204 and #207 group them under one `deps` key typed `Deps`. New code takes what it needs from its caller
+  as a parameter; ESLint fails a module-level `let` or an exported `set*` function.
 
 ## Layout
 
@@ -95,9 +96,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
 - `test/support/interpreter.mjs`, `run.mjs` and `reconcile.mjs` share lib module names but are test helpers.
-- Two seam styles until #199: module-level setters (`github.setGh`, `git.setSleep`, `locks.setClock`,
-  `locks.setAttemptWrapper`, `record.setSaveHook`, `events.setAppendHook`) and injected parameters (`runTarget`'s
-  `git`, `gh` and `exec`, `integrity.withGit`). New code follows the Seams convention.
+- `git.mjs`, `locks.mjs` and `record.mjs` also export the functions of their real instance, for callers that take no
+  seam (`gg doctor`, contract suites, helper processes); code on a Run's path uses the deps it was passed instead.
 
 ## Examples to copy
 
@@ -126,7 +126,8 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
   but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an area file.
 - Tests import modules as namespaces (`import * as record from '../../lib/record.mjs'`) and call `record.fn()`, so a
   missing export fails inside the case.
-- A test for a module that does not exist yet uses `await import()` inside the case.
+- A test for a module that does not exist yet imports a stub module: its exports with their final signatures, each
+  returning a wrong value.
 - Ported test files follow the port rule above and rewrite static named imports to namespace imports.
 - A fake's contract suite lives under `test/contract/<boundary>/` and runs its cases against the real module and the fake;
   `lib/git.mjs`'s is `test/contract/git/`.

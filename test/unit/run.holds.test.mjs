@@ -98,7 +98,7 @@ async function overriddenPendingHold(t) {
   const inner = f.gh.gh;
   const states = [];
   const cleanup = { fails: false };
-  github.setGh(async (args, cwd, input) => {
+  f.options.gh = github.createGh(async (args, cwd, input) => {
     if (args[0] === 'issue' && args[1] === 'edit') {
       states.push((await loadTicket(f)).terminalStop?.abandoned);
       if (cleanup.fails) {
@@ -206,7 +206,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   };
   const inner = f.gh.gh;
   let mode = 'crash';
-  github.setGh(async (args, cwd, input) => {
+  f.options.gh = github.createGh(async (args, cwd, input) => {
     if (mode === 'crash' && golden.isCommentPost(args)) {
       await inner(args, cwd, input);
       throw new interpreter.CrashError('crash after the fault comment landed');
@@ -478,7 +478,7 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
     );
     const inner = f.gh.gh;
     const states = [];
-    github.setGh(async (args, cwd, input) => {
+    f.options.gh = github.createGh(async (args, cwd, input) => {
       if (args[0] === 'issue' && args[1] === 'edit') states.push((await loadTicket(f)).terminalStop?.abandoned);
       return inner(args, cwd, input);
     });

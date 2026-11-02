@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import * as events from '../../lib/events.mjs';
 import * as integrity from '../../lib/integrity.mjs';
 import * as locks from '../../lib/locks.mjs';
-import { pathKey } from '../../lib/paths.ts';
+import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import {
@@ -30,20 +30,22 @@ import {
 // cases took 89 to 118 s on main and on #218's branch, within 20 s of the 120 s the lighter cases use.
 const FULL_RUN = { timeout: 300_000 };
 
-// Resolves once `n` first attempts at the repo lock have found it taken: each of `n` waiters is then waiting.
-function refusedFirstAttempts(t, n) {
+// Locks whose `allRefused` resolves once `n` first attempts at the repo lock have found it taken: each of `n` waiters is
+// then waiting.
+function refusedFirstAttempts(n) {
   let refused = 0;
   let all;
   const allRefused = new Promise((resolve) => {
     all = resolve;
   });
-  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
-    const handle = await attempt();
-    if (lock.name === 'repo' && !lock.waited && !handle && ++refused === n) all();
-    return handle;
+  const watched = locks.createLocks({
+    wrapAttempt: async (lock, attempt) => {
+      const handle = await attempt();
+      if (lock.name === 'repo' && !lock.waited && !handle && ++refused === n) all();
+      return handle;
+    },
   });
-  t.after(() => locks.setAttemptWrapper(previous));
-  return allRefused;
+  return { locks: watched, allRefused };
 }
 
 test('every orchestrator git write waits for the repo lock', async (t) => {
@@ -60,7 +62,7 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
     'remoteSha',
     'resetTo',
   ];
-  const waiting = refusedFirstAttempts(t, verbs.length);
+  const { locks: watched, allRefused: waiting } = refusedFirstAttempts(verbs.length);
   const git = run.lockedGit(
     Object.fromEntries(
       verbs.map((v) => [
@@ -71,6 +73,7 @@ test('every orchestrator git write waits for the repo lock', async (t) => {
       ]),
     ),
     f.commonDir,
+    { locks: watched },
   );
   const pending = verbs.map((v) => git[v]());
   // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
@@ -91,8 +94,8 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   const f = fixture(t, { git: 'real' });
   const holder = await holdLock(t, f.commonDir, 'repo');
   let settled = false;
-  const waiting = refusedFirstAttempts(t, 1);
-  const pending = integrity.snapshot(f.mainRoot, f.options.git).finally(() => {
+  const { locks: watched, allRefused: waiting } = refusedFirstAttempts(1);
+  const pending = integrity.snapshot(f.mainRoot, f.options.git, watched).finally(() => {
     settled = true;
   });
   // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
@@ -129,12 +132,13 @@ test('an orchestrator commit waits for the repo lock', FULL_RUN, async (t) => {
   const waiting = new Promise((resolve) => {
     refused = resolve;
   });
-  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
-    const handle = await attempt();
-    if (holder && lock.name === 'repo' && !handle) refused();
-    return handle;
+  f.options.locks = locks.createLocks({
+    wrapAttempt: async (lock, attempt) => {
+      const handle = await attempt();
+      if (holder && lock.name === 'repo' && !handle) refused();
+      return handle;
+    },
   });
-  t.after(() => locks.setAttemptWrapper(previous));
   // The snapshot after the call waits on the holder too, so each commit-path write must itself run inside the repo lock.
   const unlocked = [];
   const git = f.options.git;
@@ -193,11 +197,12 @@ test('a stray write into an idle worktree is attributed to the running action', 
   const aEnded = gate();
   // B starts only after A's admission has read the worktree list: B's ticket lock attempt waits for it. So only a
   // worktree list read per Attempt can see B.
-  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
-    if (lock.name === 'ticket-22') await aAdmitted.wait();
-    return attempt();
+  f.options.locks = locks.createLocks({
+    wrapAttempt: async (lock, attempt) => {
+      if (lock.name === 'ticket-22') await aAdmitted.wait();
+      return attempt();
+    },
   });
-  t.after(() => locks.setAttemptWrapper(previous));
   // A runs its Execution while B is admitted and idle, and B goes on only once A has ended.
   hookGh(f, async (args) => {
     if (addsLabel(args, 21, IN_PROGRESS)) {
@@ -224,7 +229,9 @@ test('a stray write into an idle worktree is attributed to the running action', 
   const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === 21 && e.action === 'red' && e.agent);
   assert.equal(red?.outcome, 'integrity-violation', JSON.stringify(results));
   assert.ok(
-    red.integrityViolations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'),
+    red.integrityViolations.some(
+      (v) => paths.pathKey(v.worktree) === paths.pathKey(worktreeOf(f, 22)) && v.surface === 'tree',
+    ),
     JSON.stringify(red.integrityViolations),
   );
 });

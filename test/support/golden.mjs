@@ -209,7 +209,8 @@ export async function setup(
     branch: BRANCH,
     base: 'main',
   });
-  await record.save(rec);
+  const database = caseDatabase(t);
+  await database.save(rec);
 
   // What every launched process saw of the worktree's activity, read from the saved row as another process would.
   const read = record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?");
@@ -251,10 +252,9 @@ export async function setup(
   );
 
   const gh = fakeGh({ branch: BRANCH, observe, headOf: (branch) => git.remoteSha(mainRoot, branch) });
-  useGh(t, gh.gh);
 
   const logs = [];
-  const ev = events.eventLog(commonDir);
+  const ev = events.eventLog(commonDir, {}, database);
   let now = Date.parse('2026-10-15T00:00:00Z');
   // Every sleep is recorded; `onSleep`, when a test sets it, runs before the clock moves on.
   const sleeps = [];
@@ -280,9 +280,10 @@ export async function setup(
     flow,
     record: rec,
     harness,
-    gh: github,
+    gh: github.createGh(gh.gh),
     git: observedGit,
     exec,
+    database,
     events: ev,
     log: (m) => logs.push(m),
     cwd: mainRoot,
@@ -351,17 +352,6 @@ export function ghError(args, { status, headers = {}, body, stderr }) {
   const err = stderr ?? `gh: ${message} (HTTP ${status})`;
   const stdout = args.includes('--include') && status ? included(status, headers, body ?? { message }) : '';
   return Object.assign(new Error(`${err}\ngh ${args.join(' ')}`), { code: 1, stdout, stderr: err });
-}
-
-const restoresGh = new WeakSet();
-
-// Installs gh as the transport until the case ends. Only the case's first install registers the restore: node:test runs
-// a case's t.after hooks first in, first out, so a later restore would put back what an earlier install replaced.
-export function useGh(t, gh) {
-  const previous = github.setGh(gh);
-  if (restoresGh.has(t)) return;
-  restoresGh.add(t);
-  t.after(() => github.setGh(previous));
 }
 
 // A stand-in for the gh executable: records every argv and answers with canned JSON. `fail(f)` queues a failure: the
@@ -498,26 +488,47 @@ export function crashFs(root, active, { op, n, after = false }) {
   };
 }
 
+// The hooks of each case's State Database, keyed by the case's test context: every fixture the case builds writes
+// through them, and they end with the case, so none reaches the next one.
+const caseHooks = new WeakMap();
+function hooksOf(t) {
+  if (!caseHooks.has(t)) caseHooks.set(t, { saves: new Set(), appends: new Set() });
+  return caseHooks.get(t);
+}
+
+// The State Database a case's fixtures write through: each hook `onSave` or `failAppends` added for the case sees every
+// record about to be saved or Event about to be inserted, and may throw to fail that write.
+export function caseDatabase(t) {
+  const hooks = hooksOf(t);
+  return record.stateDatabase({
+    beforeSave: (next) => hooks.saves.forEach((hook) => hook(next)),
+    beforeAppend: (event) => hooks.appends.forEach((hook) => hook(event)),
+  });
+}
+
+// Runs `hook` before each save the case's fixtures make, until the returned function is called.
+export function onSave(t, hook) {
+  const { saves } = hooksOf(t);
+  saves.add(hook);
+  return () => saves.delete(hook);
+}
+
 // Fails each save whose record, and the row saved for it so far (or undefined), match `when(saved, next)`, as a disk
-// error would. Undone by the returned function or when the test ends.
-export function failSaves(t, when) {
-  const previous = record.setSaveHook((next) => {
+// error would. Undone by the returned function or when the case ends.
+export const failSaves = (t, when) =>
+  onSave(t, (next) => {
     const [kind, n] = 'execution' in next ? ['ticket', next.ticket] : ['epic', next.epic];
     const row = record.openDb(next.commonDir).prepare('SELECT json FROM records WHERE kind = ? AND n = ?').get(kind, n);
     if (when(row && JSON.parse(row.json), next)) throw new Error('disk I/O error');
   });
-  const restore = () => record.setSaveHook(previous);
-  t.after(restore);
-  return restore;
-}
 
 // Fails each Event insert that matches `when(event)`, as a disk error would. Undone by the returned function or when
-// the test ends.
+// the case ends.
 export function failAppends(t, when) {
-  const previous = events.setAppendHook((event) => {
+  const { appends } = hooksOf(t);
+  const hook = (event) => {
     if (when(event)) throw new Error('disk I/O error');
-  });
-  const restore = () => events.setAppendHook(previous);
-  t.after(restore);
-  return restore;
+  };
+  appends.add(hook);
+  return () => appends.delete(hook);
 }

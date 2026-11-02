@@ -48,53 +48,78 @@ for (const file of unitFiles) {
     );
   });
 }
-const modules = [
-  'lib/opts.mjs',
-  'lib/config.mjs',
-  'lib/flow.mjs',
-  'lib/run.mjs',
-  'lib/interpreter.mjs',
-  'lib/effects.mjs',
-  'lib/terminal.mjs',
-  'lib/procedures.mjs',
-  'lib/briefs.mjs',
-  'lib/outcome.mjs',
-  'lib/rules.mjs',
-  'lib/checks.mjs',
-  'lib/integrity.mjs',
-  'lib/record.mjs',
-  'lib/marker.mjs',
-  'lib/reconcile.mjs',
-  'lib/events.mjs',
-  'lib/labels.mjs',
-  'lib/approval.mjs',
-  'lib/locks.mjs',
-  'lib/harnesses/contract.mjs',
-  'lib/harnesses/claude.mjs',
-  'lib/harnesses/codex.mjs',
-  'lib/exec.mjs',
-  'lib/git.mjs',
-  'lib/paths.ts',
-  'lib/github.mjs',
-  'lib/render.mjs',
-  'lib/work.mjs',
-  'lib/trace.mjs',
-  'lib/stats.mjs',
-  'lib/doctor.mjs',
-  'lib/plan.mjs',
-  'lib/publish.mjs',
-];
+const SKIPPED = new Set(['.git', 'node_modules']);
+// Not source: the gitignored assembly cache the exec suite writes as it runs (ADR 0017); a winjob-cache elsewhere is.
+const SKIPPED_PATH = 'lib/winjob-cache';
+function repoFiles(dir = '') {
+  return readdirSync(root + dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = dir + entry.name;
+    if (SKIPPED.has(entry.name) || path === SKIPPED_PATH) return [];
+    return entry.isDirectory() ? repoFiles(`${path}/`) : [path];
+  });
+}
+// Every module under lib, so a new one is scanned without joining a list (grey-goo-ri issue #219).
+const modules = repoFiles('lib/').filter((path) => /\.(?:mjs|ts)$/.test(path));
 
-test('every module in the AGENTS.md layout imports', async () => {
+// The paths the AGENTS.md layout table names; a row ending in / covers the files under it.
+const layoutRows = (agents) => {
+  const section = /^## Layout$([\s\S]*?)^## /m.exec(agents)?.[1] ?? '';
+  return [...section.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]);
+};
+const unlistedFiles = (files, rows) =>
+  files.filter((path) => !rows.some((row) => row === path || (row.endsWith('/') && path.startsWith(row))));
+
+test('every module under lib imports', async () => {
   const agents = await readFile(new URL('../../AGENTS.md', import.meta.url), 'utf8');
   assert.match(agents, /^## Layout$/m);
   assert.match(agents, /^## Tests$/m);
   assert.doesNotMatch(agents, /The layout section here grows with the code/);
-  for (const path of [...modules, 'bin/gg.mjs']) assert.ok(agents.includes(`\`${path}\``), `AGENTS.md lists ${path}`);
   for (const path of modules) {
     const mod = await import(pathToFileURL(root + path));
     assert.equal(typeof mod, 'object', path);
   }
+});
+
+test('every file under lib is scanned', () => {
+  const libFiles = repoFiles('lib/');
+  for (const path of ['lib/validate.mjs', 'lib/refs.mjs', 'lib/harnesses/shipped.mjs']) {
+    assert.ok(modules.includes(path), `${path} is scanned`);
+  }
+  // Templates and the job-object script are not modules: they import nothing and run no git.
+  assert.deepEqual(
+    libFiles.filter((path) => !modules.includes(path) && !/\.(?:md|ps1)$/.test(path)),
+    [],
+  );
+});
+
+test('every file under lib has a row in AGENTS.md', async () => {
+  const sampleRows = ['lib/a.mjs', 'lib/templates/'];
+  assert.deepEqual(unlistedFiles(['lib/a.mjs', 'lib/templates/t.md', 'lib/b.mjs'], sampleRows), ['lib/b.mjs']);
+  const rows = layoutRows(await readFile(`${root}AGENTS.md`, 'utf8'));
+  assert.ok(rows.includes('lib/validate.mjs') && rows.includes('bin/gg.mjs'), 'the layout table is read');
+  assert.deepEqual(unlistedFiles(repoFiles('lib/'), rows), [], 'add a row to the AGENTS.md layout table');
+  assert.deepEqual(
+    rows.filter((path) => !existsSync(root + path)),
+    [],
+    'a layout row names a file that exists',
+  );
+});
+
+// A named import from lib at the start of a line; a string that spells one inside a case does not start a line.
+const NAMED_LIB_IMPORT = /^import\s+(?!\*\s*as\s)[^;]*?\sfrom\s+['"](?:\.\.\/)+lib\//m;
+
+test('tests import lib modules as namespaces', () => {
+  assert.equal(NAMED_LIB_IMPORT.test("import { pathKey } from '../../lib/paths.ts';"), true);
+  assert.equal(NAMED_LIB_IMPORT.test("import {\n  a,\n  b,\n} from '../../../lib/git.mjs';"), true);
+  assert.equal(NAMED_LIB_IMPORT.test("import * as paths from '../../lib/paths.ts';"), false);
+  assert.equal(NAMED_LIB_IMPORT.test('  "import { add } from \'../lib/add.mjs\';\\n",'), false);
+  assert.equal(NAMED_LIB_IMPORT.test("import { join } from 'node:path';\nimport * as x from '../lib/x.mjs';"), false);
+  const testFiles = repoFiles('test/').filter((path) => /\.(?:mjs|ts)$/.test(path));
+  assert.deepEqual(
+    testFiles.filter((path) => NAMED_LIB_IMPORT.test(readFileSync(root + path, 'utf8'))),
+    [],
+    'import a lib module as `import * as name`',
+  );
 });
 
 // lib/git.mjs is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
@@ -247,14 +272,6 @@ const LEGACY_MJS = [
   'test/unit/run.test.mjs',
   'test/unit/validate.test.mjs',
 ];
-const SKIPPED = new Set(['.git', 'node_modules']);
-function repoFiles(dir = '') {
-  return readdirSync(root + dir, { withFileTypes: true }).flatMap((entry) => {
-    if (SKIPPED.has(entry.name)) return [];
-    const path = dir + entry.name;
-    return entry.isDirectory() ? repoFiles(`${path}/`) : [path];
-  });
-}
 const unlistedMjs = (files) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
