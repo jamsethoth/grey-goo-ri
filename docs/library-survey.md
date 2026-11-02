@@ -55,6 +55,22 @@ rather than force minimatch 11 with an npm `overrides` entry. That entry was pro
 linted the same 131 files with identical results. The fixes upstream are eslint/eslint#21476, eslint/rewrite#532 and
 typescript-eslint/typescript-eslint#13125; Dependabot's weekly npm update picks them up when they ship.
 
+## Locating a Layer's JSON error, 2026-11-02
+
+gg's first runtime dependency, for grey-goo-ri issue #216. Node's `SyntaxError` from `JSON.parse` carries only
+`message` and `stack`. V8's message names no position for an early end or an unexpected token, such as a trailing
+comma, and quotes the Layer's text with its line breaks. `JSON.parse` still decides what a Layer holds; the package
+only locates the first error once it has thrown. The pattern is the one nx (`packages/nx/src/utils/json.ts`) and
+npm-check-updates (`src/lib/utils/parseJson.ts`) use. Unlike them, gg never returns the package's value: it parses
+leniently, never throws, and sets an object's prototype from a `"__proto__"` key.
+
+| Package | Version | Probe (5,404 texts, 4,659 that `JSON.parse` rejects) | Decision |
+| --- | --- | --- | --- |
+| `jsonc-parser` (Microsoft, VS Code's JSON parser; MIT, no dependencies) | `^3.3.1` | flags every text V8 rejects and none it accepts; its visitor gives line and column, counting CRLF, CR and LF | **Adopted**: `lib/config.mjs` `readLayer` |
+| `@humanwhocodes/momoa` (Apache-2.0, no dependencies) | `3.3.13` | accepts 55 texts V8 rejects (a raw control character in a string); reports every early end at line 1 column 1 | Rejected |
+| `json-parse-even-better-errors` (npm), `parse-json` | | read the position out of V8's message, which has none in the cases above | Rejected |
+| Hand-rolled: binary search over `JSON.parse` prefixes, reading V8's message | | matched V8's position wherever V8 gives one, but read V8's wording, which is no contract | Replaced by `jsonc-parser` |
+
 ## Retention of the state database
 
 Agreed with the owner: nothing is purged automatically. `gg work archive --before <date>` (slice 6) exports and

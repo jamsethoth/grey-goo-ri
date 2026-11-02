@@ -81,13 +81,20 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   assert.notEqual(config.configHash(testPaths), hash, 'a test path changes the hash');
 });
 
-// A copy of gg's lib and defaults installed under its own root, with `edit` applied to the copy, and the Config Hash
-// input and hash it gives the defaults.
+// gg's lib, defaults and runtime dependencies copied under `root`, laid out as an install lays them out.
+function copyInstall(root) {
+  for (const dir of ['lib', 'defaults']) cpSync(join(repoRoot, dir), join(root, dir), { recursive: true });
+  const { dependencies = {} } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+  for (const name of Object.keys(dependencies))
+    cpSync(join(repoRoot, 'node_modules', name), join(root, 'node_modules', name), { recursive: true });
+}
+
+// A copy of gg installed under its own root, with `edit` applied to the copy, and the Config Hash input and hash it
+// gives the defaults.
 async function installed(t, install, edit = () => {}) {
   const root = join(mkdtempSync(join(tmpdir(), `gg-install-${install}-`)), 'gg');
   t.after(() => rmSync(join(root, '..'), { recursive: true, force: true }));
-  cpSync(join(repoRoot, 'lib'), join(root, 'lib'), { recursive: true });
-  cpSync(join(repoRoot, 'defaults'), join(root, 'defaults'), { recursive: true });
+  copyInstall(root);
   edit(root);
   const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
   const defaults = c.loadDefaults();
@@ -270,8 +277,7 @@ test('a testPaths key in the user Layer is a load error naming the file', (t) =>
 test('a testPaths key in the defaults Layer is a load error naming the file', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'gg-install-defaults-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  cpSync(join(repoRoot, 'lib'), join(root, 'lib'), { recursive: true });
-  cpSync(join(repoRoot, 'defaults'), join(root, 'defaults'), { recursive: true });
+  copyInstall(root);
   const file = join(root, 'defaults', 'gg.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testPaths: ['test/**'] }));
   const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
