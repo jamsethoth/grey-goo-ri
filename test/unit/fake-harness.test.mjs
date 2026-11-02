@@ -77,13 +77,13 @@ test('calls record brief, resume, tools and persona bytes', async () => {
 
 test('a new session has a transcript file and resume keeps it', async () => {
   const usage = {
-    input: 10,
-    cached: 0,
-    cacheWrite: 0,
-    output: 5,
-    reasoning: 0,
+    inputTokens: 10,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    outputTokens: 5,
+    reasoningTokens: 0,
     costUsd: 0.01,
-    peakContext: 10,
+    peakContextTokens: 10,
     turns: 1,
     toolCalls: 1,
     compactions: 0,
@@ -102,13 +102,13 @@ test('a new session has a transcript file and resume keeps it', async () => {
   );
   assert.equal(second.result.sessionId, first.result.sessionId);
   assert.equal(second.result.transcriptPath, first.result.transcriptPath);
-  assert.ok(second.result.usage.cumulative.input >= first.result.usage.cumulative.input);
-  assert.ok(second.result.usage.cumulative.output > first.result.usage.cumulative.output);
+  assert.ok(second.result.usage.cumulative.inputTokens >= first.result.usage.cumulative.inputTokens);
+  assert.ok(second.result.usage.cumulative.outputTokens > first.result.usage.cumulative.outputTokens);
   assert.equal(harness.calls[1].resume, first.result.sessionId);
 });
 
 test('concurrent new sessions get distinct ids, transcripts and usage', async () => {
-  const delta = (input) => ({ result: { usage: { delta: { input } } }, response: {} });
+  const delta = (input) => ({ result: { usage: { delta: { inputTokens: input } } }, response: {} });
   const { harness, cwd } = await setup({
     responses: {
       'a/1/red/1': delta(1),
@@ -120,7 +120,7 @@ test('concurrent new sessions get distinct ids, transcripts and usage', async ()
   assert.notEqual(a.result.sessionId, b.result.sessionId);
   assert.notEqual(a.result.transcriptPath, b.result.transcriptPath);
   const resumed = await harness.run(call(cwd, { vertex: 'a', phase: 'green', resume: a.result.sessionId }));
-  assert.equal(resumed.result.usage.cumulative.input, 2);
+  assert.equal(resumed.result.usage.cumulative.inputTokens, 2);
 });
 
 test('a scripted failure is a failed result, not a rejection', async () => {
@@ -166,7 +166,7 @@ test('a null response is a completed result without a structured response', asyn
 
 test('usage is null where the cost capability is absent', async () => {
   const { harness, cwd } = await setup({
-    capabilities: { cost: false },
+    capabilities: { costReporting: false },
     responses: { 'implement/1/red/1': { response: {} } },
   });
   const { result } = await harness.run(call(cwd));

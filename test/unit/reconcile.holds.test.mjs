@@ -201,8 +201,8 @@ test('bounds survive a restart', async (t) => {
     response: {
       claim: 'changes',
       summary: 'The review says changes.',
-      dodMet: true,
-      tddEvidenceOk: true,
+      definitionOfDoneMet: true,
+      redGreenEvidenceOk: true,
       findings,
       diagnosis: '',
     },

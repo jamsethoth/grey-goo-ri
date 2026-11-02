@@ -1,12 +1,12 @@
 ### gg review: **{{review.response.claim}}**
-_{{agent.harness}} {{agent.model}} ({{agent.effort}}), persona {{agent.persona}}@{{agent.hash}}_
+_{{agent.harness}} {{agent.model}} ({{agent.effort}}), persona {{agent.persona}}@{{agent.personaHash}}_
 
 ```
 {{review.response.summary}}
 ```
 
-- Definition of done met: {{#review.response.dodMet}}yes{{/review.response.dodMet}}{{^review.response.dodMet}}no{{/review.response.dodMet}}
-- TDD evidence OK: {{#review.response.tddEvidenceOk}}yes{{/review.response.tddEvidenceOk}}{{^review.response.tddEvidenceOk}}no{{/review.response.tddEvidenceOk}}
+- Definition of done met: {{#review.response.definitionOfDoneMet}}yes{{/review.response.definitionOfDoneMet}}{{^review.response.definitionOfDoneMet}}no{{/review.response.definitionOfDoneMet}}
+- TDD evidence OK: {{#review.response.redGreenEvidenceOk}}yes{{/review.response.redGreenEvidenceOk}}{{^review.response.redGreenEvidenceOk}}no{{/review.response.redGreenEvidenceOk}}
 {{#review.response.findings}}
 
 **{{severity}}**

@@ -69,7 +69,7 @@ vertex green
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
   inputs:
-    tests <- red.commit.files | senior-red.commit.files (optional)
+    testFiles <- red.commit.files | senior-red.commit.files (optional)
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
     findings <- reviewer.review.response.findings (optional)
     previous <- green.rescue (optional)
@@ -99,7 +99,7 @@ vertex senior-green
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
   inputs:
-    tests <- red.commit.files | senior-red.commit.files (optional)
+    testFiles <- red.commit.files | senior-red.commit.files (optional)
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
     findings <- reviewer.review.response.findings (optional)
     previous <- green.rescue (optional)

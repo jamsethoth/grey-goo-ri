@@ -4,9 +4,9 @@ Closes #{{ticket.number}}
 {{report.summary}}
 
 ## Definition of done
-{{#report.dod}}
+{{#report.definitionOfDone}}
 - [{{#met}}x{{/met}}{{^met}} {{/met}}] {{item}}{{#evidence}} — {{evidence}}{{/evidence}}
-{{/report.dod}}
+{{/report.definitionOfDone}}
 
 ## TDD evidence
 **Red** (`{{red.command}}`)
@@ -59,7 +59,7 @@ _none_
 | Vertex | Harness | Model | Effort | Persona | Calls | Tokens in (cached) / out |
 |---|---|---|---|---|---|---|
 {{#provenance}}
-| {{vertex}} | {{harness}} | {{model}} | {{effort}} | {{persona}}@{{hash}} | {{calls}} | {{input}} ({{cached}}) / {{output}} |
+| {{vertex}} | {{harness}} | {{model}} | {{effort}} | {{persona}}@{{personaHash}} | {{calls}} | {{inputTokens}} ({{cacheReadTokens}}) / {{outputTokens}} |
 {{/provenance}}
 
 {{marker}}

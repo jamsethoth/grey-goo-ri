@@ -534,7 +534,7 @@ test('a failed rate-limit probe keeps the 60/120 s fallback', async (t) => {
   assert.match(err?.message ?? '', /API rate limit exceeded/, 'the original error');
   assert.equal(calls.filter(({ args }) => isProbe(args)).length, 1, 'probed once');
   const failure = outcome.classifyRemoteFailure(err);
-  assert.equal(failure.class, 'rate-limited');
+  assert.equal(failure.failureClass, 'rate-limited');
   assert.equal(outcome.remoteRetryDelay(failure, 1, NOW), 60_000);
   assert.equal(outcome.remoteRetryDelay(failure, 2, NOW), 120_000);
 });

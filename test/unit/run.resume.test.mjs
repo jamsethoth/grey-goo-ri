@@ -30,8 +30,8 @@ test('a flow mixing harnesses runs each vertex on its own harness', async (t) =>
       response: {
         claim: 'ok',
         summary: 'The review says ok.',
-        dodMet: true,
-        tddEvidenceOk: true,
+        definitionOfDoneMet: true,
+        redGreenEvidenceOk: true,
         findings: [],
         diagnosis: '',
       },
@@ -42,7 +42,7 @@ test('a flow mixing harnesses runs each vertex on its own harness', async (t) =>
     name: 'other',
     transcriptDir: join(f.root, 'transcripts-other'),
     responses,
-    capabilities: { cost: false, reasoningTokens: false },
+    capabilities: { costReporting: false, reasoningTokenReporting: false },
   });
   f.options.config.agents.reviewer.harness = 'other';
   f.options.harnesses.other = other;

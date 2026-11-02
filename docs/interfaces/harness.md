@@ -29,18 +29,18 @@ plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents us
 
 ## Capability matrix
 
-`CAPABILITY_FIELDS`; names follow Archon's provider contract.
+`CAPABILITY_FIELDS`; names follow Archon's provider contract, whose reporting Capabilities end in `Reporting`.
 
 | Field | Values |
 | --- | --- |
 | `skills`, `mcp`, `plugins`, `access`, `network`, `contextBudget` | `exact` (the Harness enforces it), `hint` (passed as prompt text or best effort, logged as hinted), `unsupported` (an Agent listing it fails preflight) |
 | `interactive` | whether `interactiveArgs` is available |
-| `background` | whether the Harness can run an Attempt in the background |
-| `resume` | whether a Session can be resumed, with its preconditions |
+| `backgroundSessions` | whether the Harness can run a Session in the background |
+| `sessionResume` | whether a Session can be resumed, with its preconditions |
 | `structuredOutput` | whether the Harness enforces the output schema |
 | `sandbox` | `none`, `codex-windows` or `codex-posix` |
 | `confinement` | the non-sandbox confinement mode, such as `trusted-commands` |
-| `peakContext`, `cost`, `turns`, `toolCalls`, `reasoningTokens` | whether the Harness reports that Usage figure |
+| `peakContextReporting`, `costReporting`, `turnCountReporting`, `toolCallReporting`, `reasoningTokenReporting` | whether the Harness reports that Usage figure (`peakContextTokens`, `costUsd`, `turns`, `toolCalls`, `reasoningTokens`) |
 | `backgroundWork` | `reported`, `none` or `unobserved` |
 
 ## `run(call)`
@@ -77,8 +77,10 @@ property and no extras. It is also narrow enough for gg's own validation and pat
 
 ## Usage
 
-`USAGE_FIELDS`: `{ input, cached, cacheWrite, output, reasoning, costUsd, peakContext, turns, toolCalls, compactions }`.
-`input` is uncached input only, `cached` is cache reads, `cacheWrite` is cache creation. Every field whose Capability
-(`reasoningTokens`, `cost`, `peakContext`, `turns`, `toolCalls`) is declared absent is `null`, never `0`;
+`USAGE_FIELDS`: `{ inputTokens, cacheReadTokens, cacheWriteTokens, outputTokens, reasoningTokens, costUsd,
+peakContextTokens, turns, toolCalls, compactions }`. `inputTokens` is uncached input only, `cacheReadTokens` is cache
+reads, `cacheWriteTokens` is cache creation. Every field whose reporting Capability (`reasoningTokenReporting`,
+`costReporting`, `peakContextReporting`, `turnCountReporting`, `toolCallReporting`) is declared absent is `null`, never
+`0`;
 `emptyUsage(capabilities)` builds that shape. On resume `cumulative` is the Session's running total and `delta`
 is this Attempt's share.

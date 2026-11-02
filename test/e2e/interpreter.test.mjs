@@ -107,15 +107,15 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
   assert.equal(red.sessionLineage, null, 'red starts a fresh session');
   assert.match(red.transcriptPath, /fake-session-1\.jsonl$/);
   assert.equal(red.usage.cumulative.costUsd, null, 'red: absent cost capability is null');
-  assert.equal(red.usage.cumulative.reasoning, null, 'red: absent reasoning capability is null');
-  assert.equal(typeof red.usage.cumulative.input, 'number');
+  assert.equal(red.usage.cumulative.reasoningTokens, null, 'red: absent reasoning capability is null');
+  assert.equal(typeof red.usage.cumulative.inputTokens, 'number');
   const green = actionEvent(g, 'green', 'green');
   assert.equal(green.sessionId, 'fake-session-2');
   assert.equal(green.sessionLineage, null, 'green starts a fresh session');
   assert.match(green.transcriptPath, /fake-session-2\.jsonl$/);
   assert.equal(green.usage.cumulative.costUsd, null, 'green: absent cost capability is null');
-  assert.equal(green.usage.cumulative.reasoning, null, 'green: absent reasoning capability is null');
-  assert.equal(typeof green.usage.cumulative.input, 'number');
+  assert.equal(green.usage.cumulative.reasoningTokens, null, 'green: absent reasoning capability is null');
+  assert.equal(typeof green.usage.cumulative.inputTokens, 'number');
 
   // Two commits on the branch, each carrying both trailers.
   const messages = golden

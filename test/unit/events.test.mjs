@@ -32,7 +32,7 @@ function rows(commonDir) {
   }
 }
 
-const usage = () => ({ peakContext: 1200, turns: 3, toolCalls: 4, compactions: 0, costUsd: null });
+const usage = () => ({ peakContextTokens: 1200, turns: 3, toolCalls: 4, compactions: 0, costUsd: null });
 
 const actionFields = () => ({
   flow: 'default',
@@ -296,7 +296,7 @@ const BAD_USAGE = [
   ['a null delta', { cumulative: usage(), delta: null }],
   ['a string count', { cumulative: usage(), delta: { ...usage(), turns: '3' } }],
   [
-    'a cumulative without peakContext',
+    'a cumulative without peakContextTokens',
     { cumulative: { turns: 3, toolCalls: 4, compactions: 0, costUsd: null }, delta: usage() },
   ],
 ];
@@ -307,7 +307,7 @@ for (const [name, value] of BAD_USAGE) {
 }
 
 test('actionEvent accepts Usage members whose counts are all null', () => {
-  const nulls = { peakContext: null, turns: null, toolCalls: null, compactions: null, costUsd: null };
+  const nulls = { peakContextTokens: null, turns: null, toolCalls: null, compactions: null, costUsd: null };
   assert.equal(events.actionEvent({ ...actionFields(), usage: { cumulative: nulls, delta: nulls } }).type, 'action');
 });
 

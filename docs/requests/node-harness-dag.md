@@ -58,7 +58,7 @@ An Agent is a named, declarative unit of work for one Agent CLI. Fields, all wit
 | `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name appears in code; default empty |
 | `mode` | `headless` (default) or `interactive` (the planner) |
 | `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates per surface |
-| `resolution` | per-class retry budgets (3.4); shipped default, overridable. Outcome order is the Procedure's (ADR 0014) |
+| `resolutionPolicy` | per-class retry budgets (3.4); shipped default, overridable. Outcome order is the Procedure's (ADR 0014) |
 | `contextBudget` | optional; translated to the harness compaction threshold; compaction count logged |
 | `timeouts` | optional stall and wall-clock overrides (3.5) |
 
@@ -95,9 +95,10 @@ is passed as prompt text or a best-effort setting and the action is logged as hi
 `unsupported` means an agent that lists the field fails preflight. A harness declares one of the three for `skills`,
 `mcp`, `plugins`, `access`, `network`, `contextBudget`. Current declarations: Claude `plugins` exact, `mcp`
 unsupported (until filtering lands), `skills` hint; Codex `plugins` exact, `mcp` exact for config servers, `skills`
-hint until verified per installed version. The matrix also declares `interactive`, `background`, `resume` with its
-preconditions, `structuredOutput`, `sandbox: none | codex-windows | codex-posix`, `peakContext`, `cost`, `turns`,
-`toolCalls`, `reasoningTokens`, `backgroundWork: reported | none | unobserved`.
+hint until verified per installed version. The matrix also declares `interactive`, `backgroundSessions`, `sessionResume` with its
+preconditions, `structuredOutput`, `sandbox: none | codex-windows | codex-posix`, `peakContextReporting`,
+`costReporting`, `turnCountReporting`, `toolCallReporting`, `reasoningTokenReporting`, `backgroundWork: reported |
+none | unobserved`.
 
 Permission intents are enforced per surface, and the harness states which surface each mechanism covers: shell
 commands, built-in file tools, MCP tools, plugins and hooks, network. A combination the harness cannot enforce on
@@ -115,7 +116,7 @@ equivalent to a sandbox.
 is one field of it),
 the harness result (`completed | failed | timed-out | killed`, session id, normalised usage cumulative and delta,
 transcript path, exit code, signal, final event subtype, init metadata, permission denials, commands-run count as
-diagnostics only), and for `failed` a typed `failure.class` of `auth | quota | budget | rate-limited | transient |
+diagnostics only), and for `failed` a typed `failure.failureClass` of `auth | quota | budget | rate-limited | transient |
 unknown` with `retryAfterMs`. A harness never throws for an expected failure; a throw is an unexpected fault (3.4).
 The orchestrator validates the claim against the schema regardless of harness and derives the outcome from the
 transition table in 3.4. Outcomes are classified from the final event, not the exit code. A reported case where
@@ -323,7 +324,7 @@ Resolution. Fixed, not configurable: an Outcome from the `passed` table needs a 
 claim and every Check the claimed token requires passing on the current tree; an integrity violation always stops;
 publishing runs only on the tree its Vertex's required Checks passed. Which Outcome a Visit takes among the
 legitimate ones is the Procedure's rule tables, first match, analysed at admission for unreachable rows and overlaps
-over the inputs of every Claim token that reaches each table (ADR 0014). Configurable per agent through `resolution`, with a shipped default: per-class retry budgets. Every
+over the inputs of every Claim token that reaches each table (ADR 0014). Configurable per agent through `resolutionPolicy`, with a shipped default: per-class retry budgets. Every
 signal received and the rule that decided (`{ table, row }`) are recorded on the action event.
 
 ### 3.5 Execution record, approvals and work management
@@ -499,10 +500,10 @@ transcript path, usage cumulative and delta, cost delta, peak context, turns, to
 signal, final event subtype, permission denials, commands run (diagnostic), failure class. Deterministic actions record
 events too.
 
-Token rules, the same for both harnesses: `input` is uncached input tokens only; `cached` is cache reads;
-`cacheWrite` is cache creation; `output` is output tokens from the result; `reasoning` where the harness reports it,
-else absent. Peak context is the maximum over the session's requests of `input + cached + cacheWrite` for that
-request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
+Token rules, the same for both harnesses: `inputTokens` is uncached input tokens only; `cacheReadTokens` is cache
+reads; `cacheWriteTokens` is cache creation; `outputTokens` is output tokens from the result; `reasoningTokens` where
+the harness reports it, else absent. `peakContextTokens` is the maximum over the session's requests of `inputTokens +
+cacheReadTokens + cacheWriteTokens` for that request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
 harness reports none, or null, and carries its basis (`reported`, `priced` or null); an Attempt also records the
 subscription quota and credit snapshots its harness saw, or null (decision J13; reports in grey-goo-ri issue #135).
 Fixtures cover a resumed Claude session and a resumed Codex thread.
@@ -598,7 +599,7 @@ Ported as they are:
 Deliberate changes, each with its own regression case:
 
 - Fresh green session with the full brief (ff resumes red).
-- Review `ok` requires the `review-pass` Check: `dodMet`, `tddEvidenceOk` and no blocker or major findings (ff
+- Review `ok` requires the `review-pass` Check: `definitionOfDoneMet`, `redGreenEvidenceOk` and no blocker or major findings (ff
   advances on the verdict alone).
 - Test immutability over `testPaths` after every agent Attempt, the baseline moving only through a Procedure allowed
   to change tests.

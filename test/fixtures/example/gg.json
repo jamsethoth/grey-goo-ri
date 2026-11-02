@@ -22,7 +22,7 @@
       },
       "actions": [
         { "id": "red", "do": "agent", "brief": "red.md", "schema": "red.schema.json" },
-        { "id": "red-check", "do": "check", "kind": "tests-fail", "command": "test", "names": "response.tests",
+        { "id": "red-check", "do": "check", "kind": "tests-fail", "command": "test", "testNames": "response.tests",
           "recoverBrief": "still-green.md" },
         { "id": "commit", "do": "commit", "type": "test" }
       ],
@@ -87,9 +87,9 @@
       "actions": [
         { "id": "review", "do": "agent", "brief": "review.md", "schema": "review.schema.json" },
         { "id": "review-pass", "do": "check", "kind": "response",
-          "all-of": [
-            { "field": "dodMet", "is": true },
-            { "field": "tddEvidenceOk", "is": true },
+          "allOf": [
+            { "field": "definitionOfDoneMet", "is": true },
+            { "field": "redGreenEvidenceOk", "is": true },
             { "none": "findings", "where": { "severity": ["blocker", "major"] } }
           ] },
         { "id": "repeat", "do": "check", "kind": "repeat", "list": "response.findings", "fields": ["file", "severity", "issue"] },
@@ -146,7 +146,7 @@
             "use": "implementer",
             "procedure": "implement",
             "inputs": {
-              "tests": { "from": ["red.commit.files", "senior-red.commit.files"], "optional": true },
+              "testFiles": { "from": ["red.commit.files", "senior-red.commit.files"], "optional": true },
               "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
               "findings": { "from": "reviewer.review.response.findings", "optional": true },
               "previous": { "from": "green.rescue", "optional": true },
@@ -164,7 +164,7 @@
             "max": 1,
             "exhausted": { "end": "needs-human" },
             "inputs": {
-              "tests": { "from": ["red.commit.files", "senior-red.commit.files"], "optional": true },
+              "testFiles": { "from": ["red.commit.files", "senior-red.commit.files"], "optional": true },
               "red": { "from": ["red.red-check.evidence", "senior-red.red-check.evidence"], "optional": true },
               "findings": { "from": "reviewer.review.response.findings", "optional": true },
               "previous": { "from": "green.rescue", "optional": true },

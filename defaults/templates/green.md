@@ -1,6 +1,6 @@
 GREEN PHASE for GitHub issue #{{ticket.number}}: {{ticket.title}}
 
-You are on branch {{ticket.branch}}, created from {{base}}. Work only here.
+You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here.
 
 ## Ticket
 {{ticket.body}}
@@ -19,9 +19,9 @@ You are on branch {{ticket.branch}}, created from {{base}}. Work only here.
 - Stay inside the ticket's scope.
 
 ## Committed tests
-{{#inputs.tests}}
+{{#inputs.testFiles}}
 - {{.}}
-{{/inputs.tests}}
+{{/inputs.testFiles}}
 
 The orchestrator committed these failing tests; the test command failed as expected:
 

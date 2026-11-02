@@ -15,10 +15,10 @@ const ticket = {
 };
 const commands = { test: 'npm test', lint: 'npm run lint' };
 const worktree = 'C:\\dev\\worktrees\\repo\\ticket-7';
-const base = { ticket, base: 'origin/main', commands, worktree, history: [] };
+const base = { ticket, baseBranch: 'origin/main', commands, worktree, history: [] };
 const redOutput = 'not ok 1 - widgets render\n  AssertionError: expected widget';
 const testFiles = ['test/widgets.test.mjs', 'test/support/widget-fixture.mjs'];
-const greenInputs = { tests: testFiles, red: { command: 'npm test', output: redOutput } };
+const greenInputs = { testFiles, red: { command: 'npm test', output: redOutput } };
 const IMMUTABLE = /committed tests must not be changed/i;
 const fixture = (name) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
 
@@ -68,7 +68,7 @@ test("direct input references retain each Brief's excerpt limit", async () => {
   const old = 'old diagnostic '.repeat(100) + '\n';
   const green = await shipped('green.md', {
     ...base,
-    inputs: { tests: testFiles, red: { command: 'npm test', output: old + 'x'.repeat(3980) + '\nlast line' } },
+    inputs: { testFiles: testFiles, red: { command: 'npm test', output: old + 'x'.repeat(3980) + '\nlast line' } },
   });
   const testFix = await shipped('test-fix.md', { ...base, output: old + 'x'.repeat(5980) + '\nlast line' });
   const stillGreen = await shipped('still-green.md', {
@@ -83,7 +83,7 @@ test("direct input references retain each Brief's excerpt limit", async () => {
 });
 
 test('an absent optional input renders empty through a direct reference', async () => {
-  const green = await shipped('green.md', { ...base, inputs: { tests: undefined, red: undefined } });
+  const green = await shipped('green.md', { ...base, inputs: { testFiles: undefined, red: undefined } });
   const fix = await shipped('fix.md', { ...base, inputs: { findings: undefined } });
   const review = await shipped('review.md', {
     ...base,
@@ -112,7 +112,7 @@ const evidencePath = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.
 const storedRed = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n` });
 
 test('stored Check evidence reaches the green Brief unredacted', async () => {
-  const green = await shipped('green.md', { ...base, inputs: { tests: testFiles, red: storedRed } });
+  const green = await shipped('green.md', { ...base, inputs: { testFiles: testFiles, red: storedRed } });
   assert.ok(green.includes(`${evidencePath}:3:4`), green);
   assert.ok(!green.includes('[local]'), green);
 });
@@ -421,7 +421,7 @@ for (const [name, path, kind] of [
   ['implement', 'qa.setup', { kind: 'string' }],
   ['implement', 'qa.steps.expected', { kind: 'list', of: { kind: 'string' } }],
   ['implement', 'qa.edgeCases', { kind: 'list', of: { kind: 'string' } }],
-  ['implement', 'dod.met', { kind: 'list', of: { kind: 'boolean' } }],
+  ['implement', 'definitionOfDone.met', { kind: 'list', of: { kind: 'boolean' } }],
 ]) {
   test(`fieldType types nested objects and arrays of objects (${name} ${path})`, () => {
     assert.deepEqual(briefs.fieldType(example(name), path), kind);
@@ -536,7 +536,7 @@ test('validateResponse and assertStrict catch an empty-named property', () => {
   const impl = {
     claim: 'ok',
     summary: 's',
-    dod: [],
+    definitionOfDone: [],
     qa: { setup: '', steps: [step], edgeCases: [], automated: [], manual: [] },
     diagnosis: '',
     notes: '',

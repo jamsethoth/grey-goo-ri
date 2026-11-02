@@ -512,9 +512,9 @@ test('a reference to a field the schema lacks is an error', async () => {
 
 test("a reference through an Action the Vertex's Procedure lacks is an error", async () => {
   const config = example();
-  config.flows.default.ticket.vertices.green.inputs.tests.from = ['red.commits.files', 'senior-red.commit.files'];
+  config.flows.default.ticket.vertices.green.inputs.testFiles.from = ['red.commits.files', 'senior-red.commit.files'];
   assert.deepEqual((await check(config)).errors, [
-    { at: `${V}.green.inputs.tests`, message: '"red.commits.files": "red.commits" is not defined' },
+    { at: `${V}.green.inputs.testFiles`, message: '"red.commits.files": "red.commits" is not defined' },
   ]);
 });
 
@@ -571,12 +571,12 @@ test('tests: named reading anything but a list of strings is an error', async ()
 
 test('a Check parameter of the wrong type is an error', async () => {
   const config = example();
-  config.procedures['tests-fail'].actions[1].names = 'response.summary';
+  config.procedures['tests-fail'].actions[1].testNames = 'response.summary';
   config.procedures.review.actions[2].fields = ['file', 'line'];
   assert.deepEqual((await check(config)).errors, [
     {
       at: 'procedures.tests-fail.actions[1]',
-      message: 'names must read a list of strings; "response.summary" is {"kind":"string"}',
+      message: 'testNames must read a list of strings; "response.summary" is {"kind":"string"}',
     },
     { at: 'procedures.review.actions[2]', message: 'fields: "line" is not a field of the list\'s items' },
   ]);
@@ -584,13 +584,16 @@ test('a Check parameter of the wrong type is an error', async () => {
 
 test('a response Check condition outside the schema or its values is an error', async () => {
   const config = example();
-  config.procedures.review.actions[1]['all-of'][0] = { field: 'dodMet', is: 'yes' };
-  config.procedures.review.actions[1]['all-of'][2].where = { severity: ['blocker', 'critical'] };
+  config.procedures.review.actions[1].allOf[0] = { field: 'definitionOfDoneMet', is: 'yes' };
+  config.procedures.review.actions[1].allOf[2].where = { severity: ['blocker', 'critical'] };
   assert.deepEqual((await check(config)).errors, [
-    { at: 'procedures.review.actions[1]', message: 'all-of[0]: "dodMet" is a boolean, so is must be true or false' },
     {
       at: 'procedures.review.actions[1]',
-      message: 'all-of[2]: where "severity": "critical" is not one of blocker | major | minor',
+      message: 'allOf[0]: "definitionOfDoneMet" is a boolean, so is must be true or false',
+    },
+    {
+      at: 'procedures.review.actions[1]',
+      message: 'allOf[2]: where "severity": "critical" is not one of blocker | major | minor',
     },
   ]);
 });
@@ -907,8 +910,8 @@ test("a Check's evidence and a response object of the same fields are one type",
   files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
   files['fix.schema.json'].properties.output = {
     type: 'object',
-    properties: { command: { type: 'string' }, output: { type: 'string' }, heuristic: { type: 'boolean' } },
-    required: ['command', 'output', 'heuristic'],
+    properties: { command: { type: 'string' }, output: { type: 'string' }, foundByNameOnly: { type: 'boolean' } },
+    required: ['command', 'output', 'foundByNameOnly'],
     additionalProperties: false,
   };
   files['fix.schema.json'].required.push('output');
@@ -1056,12 +1059,12 @@ test('a write Vertex whose committing token requires no Check is an error', asyn
 
 test('a required input missing on one path is an error', async () => {
   const config = example();
-  delete config.flows.default.ticket.vertices.green.inputs.tests.optional;
+  delete config.flows.default.ticket.vertices.green.inputs.testFiles.optional;
   assert.deepEqual((await check(config)).errors, [
     {
-      at: `${V}.green.inputs.tests`,
+      at: `${V}.green.inputs.testFiles`,
       message:
-        'input tests is required, but some route to green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
+        'input testFiles is required, but some route to green may not produce any of its sources; admission checks routes, not runs, so if every run does produce one, mark the input optional',
     },
   ]);
 });
@@ -1792,7 +1795,7 @@ test('a template that names an undeclared input is an error at its Action', asyn
   const { errors } = await check(
     example(),
     schemas(),
-    templates({ 'green.md': 'tests: {{#inputs.tests}}{{.}}{{/inputs.tests}}\n{{inputs.nope}}\n' }),
+    templates({ 'green.md': 'tests: {{#inputs.testFiles}}{{.}}{{/inputs.testFiles}}\n{{inputs.nope}}\n' }),
   );
   assert.deepEqual(errors, [
     {
@@ -1812,11 +1815,11 @@ test('a template may name gg context, own outputs, inputs and with aliases', asy
     schemas(),
     templates({
       'green.md':
-        '{{ticket.title}} {{base}} {{#commands}}{{name}}: {{command}}{{/commands}} {{#history}}{{text}}{{/history}} {{diff}}\n' +
-        '{{#inputs.tests}}{{.}}{{/inputs.tests}} {{inputs.red.output}} {{#inputs.findings}}{{file}} {{severity}}{{/inputs.findings}}\n' +
+        '{{ticket.title}} {{baseBranch}} {{#commands}}{{name}}: {{command}}{{/commands}} {{#history}}{{text}}{{/history}} {{diff}}\n' +
+        '{{#inputs.testFiles}}{{.}}{{/inputs.testFiles}} {{inputs.red.output}} {{#inputs.findings}}{{file}} {{severity}}{{/inputs.findings}}\n' +
         '{{green.response.summary}} {{test.evidence.output}} {{claim}} {{pass}} {{check.test}} {{#inputs.findings.length}}n{{/inputs.findings.length}}\n',
       'pr-body.md':
-        '{{report.summary}} {{#report.dod}}{{item}} {{#met}}y{{/met}}{{/report.dod}} {{red.output}} {{redReport.summary}} {{ticket.number}} ' +
+        '{{report.summary}} {{#report.definitionOfDone}}{{item}} {{#met}}y{{/met}}{{/report.definitionOfDone}} {{red.output}} {{redReport.summary}} {{ticket.number}} ' +
         '{{#provenance}}{{vertex}}{{/provenance}} {{marker}}\n',
       'review-comment.md':
         '{{review.response.summary}} {{#review.response.findings}}{{issue}}{{/review.response.findings}} {{agent.model}} {{marker}}\n',
@@ -2100,6 +2103,7 @@ test("an input may read a repeat Check's Findings Hash", async () => {
   const config = example();
   config.flows.default.ticket.vertices['implementer-fix'].inputs.findingsHash = {
     from: 'reviewer.repeat.findingsHash',
+    optional: true,
   };
   assert.deepEqual((await check(config)).errors, []);
 });

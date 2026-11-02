@@ -49,7 +49,7 @@ test('the green call is a fresh session with the full brief', async (t) => {
   assert.ok(session, 'green session recorded under green/1/green');
   assert.equal(session.sessionId, 'fake-session-2');
   assert.match(session.transcriptPath, /fake-session-2\.jsonl$/);
-  assert.equal(session.cumulativeUsage.input, 200);
+  assert.equal(session.cumulativeUsage.inputTokens, 200);
   assert.equal(g.rec.sessions['red/1/red'].sessionId, 'fake-session-1');
 });
 
@@ -97,7 +97,7 @@ test('each public field is redacted once and sent exactly as its intent saved it
   responses['red/1/red/1'].response.summary = 'TOKEN red summary';
   Object.assign(responses['green/1/green/1'].response, {
     summary: 'TOKEN green summary',
-    dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
+    definitionOfDone: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
     qa: {
       setup: 'TOKEN setup',
       steps: [{ action: 'TOKEN action', expected: 'TOKEN expected' }],
@@ -408,7 +408,7 @@ test("a fault during an end does not replay the end's open reporting Action", as
 });
 
 test("the PR's provenance counts a retried Attempt and a resumed Session once each", async (t) => {
-  const usage = (input, output) => ({ usage: { delta: { input, output } } });
+  const usage = (input, output) => ({ usage: { delta: { inputTokens: input, outputTokens: output } } });
   const red = golden.firstVisitResponses['red/1/red/1'];
   const g = await greenSetup(t, {
     // A parse retry: two Attempts of red, each one call.
@@ -605,7 +605,7 @@ test("green reads red's committed tests through an input", async (t) => {
   const pinned = pinnedInputs(t);
   const g = await firstVisit(t);
   assert.equal(g.result.outcome, 'ready-for-qa');
-  assert.deepEqual(pinned['green/1'].tests, {
+  assert.deepEqual(pinned['green/1'].testFiles, {
     value: ['test/add.test.mjs'],
     vertex: 'red',
     visit: 1,
@@ -643,12 +643,12 @@ test('an absent optional input renders empty in the Brief', async (t) => {
   golden.configure(g, (c) => {
     c.flows.golden.ticket.vertices.green.inputs = {
       ...golden.GREEN_INPUTS,
-      tests: { from: 'green.commit.files', optional: true },
+      testFiles: { from: 'green.commit.files', optional: true },
     };
   });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(pinned['green/1'].tests, { value: null, vertex: null, visit: null, action: null, absent: true });
+  assert.deepEqual(pinned['green/1'].testFiles, { value: null, vertex: null, visit: null, action: null, absent: true });
   assert.match(briefOf(g, 'green', 1), /## Committed tests\n\nThe orchestrator committed/, 'the list renders empty');
 });
 
@@ -659,7 +659,7 @@ test('a Visit saves a state and inputs that declare every field', async (t) => {
   golden.configure(g, (c) => {
     c.flows.golden.ticket.vertices.green.inputs = {
       ...golden.GREEN_INPUTS,
-      tests: { from: 'green.commit.files', optional: true },
+      testFiles: { from: 'green.commit.files', optional: true },
     };
   });
   const { outcome } = await interpreter.runExecution(g.options);
@@ -669,8 +669,8 @@ test('a Visit saves a state and inputs that declare every field', async (t) => {
   assert.ok(green, 'a record was saved with the green Visit pinned');
   const { inputs } = green.configurationSnapshot;
   const inputKeys = ['value', 'vertex', 'visit', 'action', 'absent'];
-  assert.deepEqual(inputs.tests, { value: null, vertex: null, visit: null, action: null, absent: true });
-  assert.deepEqual(Object.keys(inputs.tests), inputKeys);
+  assert.deepEqual(inputs.testFiles, { value: null, vertex: null, visit: null, action: null, absent: true });
+  assert.deepEqual(Object.keys(inputs.testFiles), inputKeys);
   assert.deepEqual(Object.keys(inputs.red), inputKeys);
   assert.equal(inputs.red.absent, false);
 
@@ -1158,7 +1158,7 @@ test('a failed Check produces no evidence output', async (t) => {
   assert.equal(actionEvent(g, 'publish', 'test').outcome, 'failed', 'the Execution reached publish');
 });
 
-test('a tests-fail pass by name match alone carries heuristic: true in its evidence', async (t) => {
+test('a tests-fail pass by name match alone carries foundByNameOnly: true in its evidence', async (t) => {
   const output = `Error: ${golden.TEST_NAME} threw\n`;
   // The runner prints no per-test statuses, only the test's name.
   const runShell = async (command, opts) =>
@@ -1168,7 +1168,7 @@ test('a tests-fail pass by name match alone carries heuristic: true in its evide
   const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) }, { exec: { runShell } });
 
   const red = g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'red-check');
-  assert.deepEqual(red.value.evidence, { command: 'npm test', output, heuristic: true });
+  assert.deepEqual(red.value.evidence, { command: 'npm test', output, foundByNameOnly: true });
   assert.match(g.harness.calls[2].brief, /found the failing test by its name only/, 'the review Brief shows it');
 });
 
@@ -2171,7 +2171,7 @@ test("a repeat Check ignores an earlier Execution's identical findings", async (
   await record.save(next);
   const harness = fakeHarness({
     transcriptDir: join(g.root, 'transcripts-16'),
-    capabilities: { cost: false, reasoningTokens: false },
+    capabilities: { costReporting: false, reasoningTokenReporting: false },
     responses: {
       ...structuredClone(golden.firstVisitResponses),
       'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
@@ -2221,7 +2221,7 @@ test("a repeat Check rerun in a recovery pass does not match its own Visit's fir
       id: 'again',
       do: 'check',
       kind: 'repeat',
-      list: 'response.dod',
+      list: 'response.definitionOfDone',
       fields: ['item'],
     });
   });

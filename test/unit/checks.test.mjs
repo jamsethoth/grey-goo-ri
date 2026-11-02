@@ -40,7 +40,7 @@ test('red check: nonzero exit naming a reported failing test is accepted', () =>
 test('red check requires the named test to be failing where the runner reports per-test status', () => {
   const accepted = checks.redCheck({ code: 1, output: fixture('node-spec.txt') }, ['rejects bad input']);
   assert.equal(accepted.ok, true);
-  assert.ok(!accepted.heuristic);
+  assert.ok(!accepted.foundByNameOnly);
   // The name appears in the output, but the runner reports that test passing; only an unrelated test failed.
   const r = checks.redCheck({ code: 1, output: fixture('node-spec-counterexample.txt') }, ['rejects bad input']);
   assert.equal(r.ok, false);
@@ -54,7 +54,7 @@ test('red check reads coloured node:test spec output', () => {
     '\x1b[32m✔ rejects bad input \x1b[90m(0.93ms)\x1b[39m\x1b[39m\n\x1b[31m✖ old unrelated test \x1b[90m(1.55ms)\x1b[39m\x1b[39m\n';
   const r = checks.redCheck({ code: 1, output }, ['rejects bad input']);
   assert.equal(r.ok, false);
-  assert.ok(!r.heuristic);
+  assert.ok(!r.foundByNameOnly);
   assert.match(r.reason, /pass/i);
   assert.deepEqual(checks.redCheck({ code: 1, output }, ['old unrelated test']), { ok: true });
 });
@@ -86,7 +86,7 @@ test('red check rejects a test that TAP reports as SKIP', () => {
 test('red check takes a lone TAP TODO line as per-test status, not grounds for the substring fallback', () => {
   const lone = checks.redCheck({ code: 1, output: 'not ok 1 - new test # TODO\n' }, ['new test']);
   assert.equal(lone.ok, false);
-  assert.ok(!lone.heuristic);
+  assert.ok(!lone.foundByNameOnly);
 });
 
 test('red check decodes an escaped hash in a failing TAP test name', () => {
@@ -114,10 +114,10 @@ test('red check keeps a genuine TAP failure whatever order a same-named TODO or 
   assert.match(onlyExcused.reason, /TODO or SKIP/);
 });
 
-test('red check falls back to the substring rule and marks it heuristic', () => {
+test('red check falls back to the substring rule and marks it found by name only', () => {
   const r = checks.redCheck({ code: 1, output: fixture('no-status.txt') }, ['rejects bad input']);
   assert.equal(r.ok, true);
-  assert.equal(r.heuristic, true);
+  assert.equal(r.foundByNameOnly, true);
 });
 
 // Default jest output for several files: no ✓ or ✕ lines, one `● suite › test` heading per failure.
@@ -130,7 +130,7 @@ test('red check reads a jest failure heading by test name or suite path', () => 
 test('red check does not take a jest test named inside a failure message or console block as red evidence', () => {
   const passing = checks.redCheck({ code: 1, output: fixture('jest-multi.txt') }, ['removes item']);
   assert.equal(passing.ok, false);
-  assert.ok(!passing.heuristic, 'headings are per-test status, so the substring rule does not apply');
+  assert.ok(!passing.foundByNameOnly, 'headings are per-test status, so the substring rule does not apply');
 });
 
 test('red check reads a jest suite named Console and excludes only the bare Console heading', () => {
@@ -139,7 +139,7 @@ test('red check reads a jest suite named Console and excludes only the bare Cons
   assert.deepEqual(checks.redCheck({ code: 1, output: consoleSuite }, ['logs on failure']), { ok: true });
   const quiet = checks.redCheck({ code: 1, output: consoleSuite }, ['hello']);
   assert.equal(quiet.ok, false);
-  assert.ok(!quiet.heuristic);
+  assert.ok(!quiet.foundByNameOnly);
 });
 
 const FAILURE_LINES = [
@@ -186,22 +186,22 @@ test('findings hash changes with severity', () => {
 const review = {
   claim: 'ok',
   summary: '',
-  dodMet: true,
-  tddEvidenceOk: true,
+  definitionOfDoneMet: true,
+  redGreenEvidenceOk: true,
   findings: [{ severity: 'minor', file: 'a', issue: 'nit', fix: '' }],
   diagnosis: '',
 };
 
 // The shipped review's review-pass Check (P5d).
 const REVIEW_PASS = {
-  'all-of': [
-    { field: 'dodMet', is: true },
-    { field: 'tddEvidenceOk', is: true },
+  allOf: [
+    { field: 'definitionOfDoneMet', is: true },
+    { field: 'redGreenEvidenceOk', is: true },
     { none: 'findings', where: { severity: ['blocker', 'major'] } },
   ],
 };
 
-test('review-pass passes a review with dodMet, tddEvidenceOk and only a minor finding', () => {
+test('review-pass passes a review with definitionOfDoneMet, redGreenEvidenceOk and only a minor finding', () => {
   assert.deepEqual(checks.responseCheck(review, REVIEW_PASS), { passed: true, reasons: [] });
 });
 
@@ -216,8 +216,12 @@ const REVIEW_FAILS = [
     { ...review, findings: [{ severity: 'blocker', file: 'a', issue: 'bug', fix: '' }] },
     'findings has 1 of 1 items where severity is blocker or major; expected none',
   ],
-  ['dodMet false', { ...review, dodMet: false }, 'dodMet is false, expected true'],
-  ['tddEvidenceOk false', { ...review, tddEvidenceOk: false }, 'tddEvidenceOk is false, expected true'],
+  [
+    'definitionOfDoneMet false',
+    { ...review, definitionOfDoneMet: false },
+    'definitionOfDoneMet is false, expected true',
+  ],
+  ['redGreenEvidenceOk false', { ...review, redGreenEvidenceOk: false }, 'redGreenEvidenceOk is false, expected true'],
 ];
 for (const [name, response, reason] of REVIEW_FAILS) {
   test(`review-pass fails a review with ${name}`, () => {
@@ -323,10 +327,10 @@ test('the fake git reads a ? in a glob as the test path matcher does, literally'
   assert.deepEqual(await fake.git.untrackedPaths(mainRoot, { include: 'all', within: { globs: ['a?c.mjs'] } }), []);
 });
 
-test('a response Check with all-of names each failed condition', () => {
+test('a response Check with allOf names each failed condition', () => {
   const response = {
-    dodMet: false,
-    tddEvidenceOk: true,
+    definitionOfDoneMet: false,
+    redGreenEvidenceOk: true,
     findings: [
       { severity: 'blocker', file: 'lib/a.mjs', issue: 'Throws', fix: '' },
       { severity: 'minor', file: 'lib/b.mjs', issue: 'Naming', fix: '' },
@@ -334,16 +338,16 @@ test('a response Check with all-of names each failed condition', () => {
     ],
   };
   const result = checks.responseCheck(response, {
-    'all-of': [
-      { field: 'dodMet', is: true },
-      { field: 'tddEvidenceOk', is: true },
+    allOf: [
+      { field: 'definitionOfDoneMet', is: true },
+      { field: 'redGreenEvidenceOk', is: true },
       { none: 'findings', where: { severity: ['blocker', 'major'] } },
     ],
   });
   assert.deepEqual(result, {
     passed: false,
     reasons: [
-      'dodMet is false, expected true',
+      'definitionOfDoneMet is false, expected true',
       'findings has 2 of 3 items where severity is blocker or major; expected none',
     ],
   });

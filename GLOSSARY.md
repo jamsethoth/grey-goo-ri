@@ -276,7 +276,10 @@ How an agent process ended: completed, failed with a Failure Class, timed out or
 _Avoid_: exit status, return value
 
 **Failure Class**:
-The typed category of a failed Harness Result: auth, quota, budget, rate-limited, transient or unknown.
+The typed category of a failure gg can act on: of a failed Harness Result (auth, quota, budget, rate-limited, transient
+or unknown) or of a failed remote Action, a gh or git call (rejected, rate-limited, auth, transient, invalid or
+unknown). What a class does depends on its source: a Harness auth, quota or budget stops the Run; a remote failure
+that is not retried faults only its Ticket.
 _Avoid_: error type, error code
 
 **Signal**:

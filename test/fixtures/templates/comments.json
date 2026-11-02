@@ -10,7 +10,7 @@
   },
   "prImpl": {
     "summary": "Adds the cart total.",
-    "dod": [
+    "definitionOfDone": [
       {
         "item": "Total sums items",
         "met": true,
@@ -58,11 +58,11 @@
       "model": "model-x",
       "effort": "high",
       "persona": "implementer",
-      "hash": "abc123",
+      "personaHash": "abc123",
       "calls": 2,
-      "input": 100,
-      "cached": 40,
-      "output": 20
+      "inputTokens": 100,
+      "cacheReadTokens": 40,
+      "outputTokens": 20
     },
     {
       "vertex": "review",
@@ -70,18 +70,18 @@
       "model": null,
       "effort": null,
       "persona": "reviewer",
-      "hash": "def456",
+      "personaHash": "def456",
       "calls": 1,
-      "input": 50,
-      "cached": 0,
-      "output": 10
+      "inputTokens": 50,
+      "cacheReadTokens": 0,
+      "outputTokens": 10
     }
   ],
   "review": {
     "claim": "changes",
     "summary": "Two bugs.",
-    "dodMet": true,
-    "tddEvidenceOk": false,
+    "definitionOfDoneMet": true,
+    "redGreenEvidenceOk": false,
     "diagnosis": "",
     "findings": [
       {
