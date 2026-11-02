@@ -80,8 +80,8 @@ const ACTION = {
 interface AgentFields {
   harness: string;
   agentCliVersion: string | null;
-  model: string;
-  effort: string;
+  model: string | null;
+  effort: string | null;
   personaHash: string;
   tools: unknown;
   sessionInit: unknown;
@@ -177,6 +177,9 @@ export type LifecycleEvent = RunStartEvent | RunEndEvent | TicketStartEvent | Ti
 export type Event = ActionEvent | LifecycleEvent;
 
 type Fields = Record<string, unknown>;
+// An Event as actionEvent and lifecycleEvent build it, before eventLog adds the header's version and time. It
+// distributes over a union, so each member keeps its own fields.
+type EventBody<Built> = Built extends unknown ? Omit<Built, 'schemaVersion' | 'time'> : never;
 type DeclaredShape = Readonly<Record<string, Presence>>;
 const declaredAs = (shape: DeclaredShape, presence: Presence): string[] =>
   Object.keys(shape).filter((field) => shape[field] === presence);
@@ -249,7 +252,7 @@ const ordered = (fields: Fields, required: string[], optional: string[]): Fields
   ]);
 
 // An agent Action's event adds the agent fields; a deterministic Action's has none of them, and `agent: false`.
-export function actionEvent(fields: Fields): Omit<ActionEvent, 'schemaVersion' | 'time'> {
+export function actionEvent(fields: Fields): EventBody<ActionEvent> {
   const agent = fields.agent === true;
   closed('action event', fields, agent ? [...ACTION_REQUIRED, ...AGENT_REQUIRED] : ACTION_REQUIRED, [
     'agent',
@@ -261,7 +264,7 @@ export function actionEvent(fields: Fields): Omit<ActionEvent, 'schemaVersion' |
     ...ordered(fields, ACTION_REQUIRED, []),
     agent,
     ...ordered(fields, agent ? AGENT_REQUIRED : [], ACTION_OPTIONAL),
-  } as Omit<ActionEvent, 'schemaVersion' | 'time'>;
+  } as EventBody<ActionEvent>;
 }
 
 // shortcut: checks only the Usage keys this ticket names, without closing the shape; T8 owns the full Usage shape.
@@ -280,13 +283,13 @@ function checkUsage(usage: unknown, member: string): void {
 export function lifecycleEvent<Type extends LifecycleType>(
   type: Type,
   fields: Fields = {},
-): Omit<LifecycleOf<Type>, 'schemaVersion' | 'time'> {
+): EventBody<LifecycleOf<Type>> {
   const shape: DeclaredShape | undefined = LIFECYCLE[type];
   if (!shape) throw new Error(`unknown lifecycle event type ${type}`);
   const required = declaredAs(shape, 'required');
   const optional = declaredAs(shape, 'optional');
   closed(`${type} event`, fields, required, optional);
-  return { type, ...ordered(fields, required, optional) } as Omit<LifecycleOf<Type>, 'schemaVersion' | 'time'>;
+  return { type, ...ordered(fields, required, optional) } as EventBody<LifecycleOf<Type>>;
 }
 
 // Per-file line counts (git.diffStats; a binary file's are null) -> totals, split into test and non-test files by the

@@ -88,8 +88,8 @@ export interface SessionEntry {
   transcriptPath: string | null;
   cumulativeUsage: unknown;
   vertex: string;
-  model: string;
-  effort: string;
+  model: string | null;
+  effort: string | null;
   personaName: string;
 }
 

@@ -128,7 +128,9 @@ export interface VisitState {
 export interface ConfigurationSnapshot {
   vertex: string;
   visit: number;
-  agent: ({ harness: string; model: string; effort: string; persona: string } & Record<string, unknown>) | null;
+  agent:
+    | ({ harness: string; model: string | null; effort: string | null; persona: string } & Record<string, unknown>)
+    | null;
   access: string;
   procedure: { name: string; hash: string };
   outcomes: unknown;
