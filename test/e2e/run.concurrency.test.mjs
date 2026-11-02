@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +26,9 @@ import {
   hookGh,
 } from '../support/run.mjs';
 
+// The Runs below use the real integrity over the fake git: their subject is the repo lock and which worktree a change is
+// attributed to, not git. Over real git, every git process of every snapshot was theirs, and under a full suite run
+// they took up to ten times their time alone, 295 s for one (#187).
 // Locks whose `allRefused` resolves once `n` first attempts at the repo lock have found it taken: each of `n` waiters is
 // then waiting.
 function refusedFirstAttempts(n) {
@@ -105,7 +108,7 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
 });
 
 test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, async (t) => {
-  const f = fixture(t, { integrity: 'real' });
+  const f = fixture(t, { integrity: 'real', git: 'fake' });
   // The competing lock is taken during the red call, after the worktree exists.
   let holder = null;
   let held;
@@ -154,13 +157,8 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
       ]),
     ),
   };
-  const commits = () => {
-    const r = spawnSync('git', ['rev-list', '--count', `main..refs/heads/${BRANCH}`], {
-      cwd: f.mainRoot,
-      encoding: 'utf8',
-    });
-    return r.status === 0 ? Number(r.stdout.trim()) : 0;
-  };
+  // The commits on the branch past main's one commit.
+  const commits = async () => (await git.commitLog(f.mainRoot, BRANCH)).length - 1;
   let settled = false;
   const running = run.runTarget(f.options).finally(() => {
     settled = true;
@@ -171,13 +169,13 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
     assert.ok(holder, 'the red call ran, so the worktree exists');
     await Promise.race([waiting, running.catch(() => {})]);
     assert.equal(settled, false, 'the run waits while another process holds the repo lock');
-    assert.equal(commits(), 0, 'no commit lands while the repo lock is held');
+    assert.equal(await commits(), 0, 'no commit lands while the repo lock is held');
     assert.equal(f.harness.calls.length, 1, 'the run is waiting at the red commit');
 
     await holder.release();
     const results = await running;
     assert.equal(run.runExitCode(results), 0);
-    assert.ok(commits() >= 2, 'the commits land after release');
+    assert.ok((await commits()) >= 2, 'the commits land after release');
     assert.deepEqual(unlocked, [], 'every commit-path git write ran inside the repo lock');
   } finally {
     await holder?.release();
@@ -186,7 +184,7 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
 });
 
 test('a stray write into an idle worktree is attributed to the running action', { timeout: 120_000 }, async (t) => {
-  const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real' });
+  const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real', git: 'fake' });
   f.options.target = EPIC;
   const aAdmitted = gate();
   const bIdle = gate();
@@ -233,7 +231,7 @@ test('a stray write into an idle worktree is attributed to the running action', 
 });
 
 test("a busy worktree is never attributed to another ticket's action", { timeout: 120_000 }, async (t) => {
-  const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real' });
+  const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real', git: 'fake' });
   f.options.target = EPIC;
   const bBusy = gate();
   const aEnded = gate();
