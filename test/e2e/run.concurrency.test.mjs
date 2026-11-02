@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import * as events from '../../lib/events.mjs';
 import * as integrity from '../../lib/integrity.mjs';
 import * as locks from '../../lib/locks.mjs';
-import { pathKey } from '../../lib/paths.ts';
+import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import {
@@ -229,7 +229,9 @@ test('a stray write into an idle worktree is attributed to the running action', 
   const red = f.readEvents().find((e) => e.type === 'action' && e.ticket === 21 && e.action === 'red' && e.agent);
   assert.equal(red?.outcome, 'integrity-violation', JSON.stringify(results));
   assert.ok(
-    red.integrityViolations.some((v) => pathKey(v.worktree) === pathKey(worktreeOf(f, 22)) && v.surface === 'tree'),
+    red.integrityViolations.some(
+      (v) => paths.pathKey(v.worktree) === paths.pathKey(worktreeOf(f, 22)) && v.surface === 'tree',
+    ),
     JSON.stringify(red.integrityViolations),
   );
 });

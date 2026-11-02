@@ -7,10 +7,10 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, wr
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
 import * as gitModule from '../../lib/git.mjs';
-import { canonical, pathKey } from '../../lib/paths.ts';
+import * as paths from '../../lib/paths.ts';
 
 const sha1 = (data) => createHash('sha1').update(data).digest('hex');
-const sorted = (paths) => [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+const sorted = (list) => [...list].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 const fail = (message) => Object.assign(new Error(message), { stderr: `${message}\n` });
 
 // A .gitignore line as git reads it: `dir/` matches directories only, a slash elsewhere anchors it to the root, `*` and `?`
@@ -137,7 +137,7 @@ export function fakeGit() {
   const at = (cwd) => {
     for (const repo of repos) {
       for (const wt of repo.worktrees) {
-        if (pathKey(wt.path) !== pathKey(cwd)) continue;
+        if (paths.pathKey(wt.path) !== paths.pathKey(cwd)) continue;
         const marker = join(cwd, '.git');
         if (wt.main ? existsSync(marker) : existsSync(marker) && readFileSync(marker, 'utf8') === wt.marker)
           return { repo, wt };
@@ -231,10 +231,10 @@ export function fakeGit() {
   const git = {
     repoInfo: async (cwd) => {
       const { repo, wt } = at(cwd);
-      const gitCommonDir = wt.main ? join(cwd, '.git') : canonical(repo.commonDir);
+      const gitCommonDir = wt.main ? join(cwd, '.git') : paths.canonical(repo.commonDir);
       return { mainRoot: dirname(gitCommonDir), gitCommonDir, name: dirname(gitCommonDir).split(/[\\/]/).at(-1) };
     },
-    commonDir: async (cwd) => canonical(at(cwd).repo.commonDir),
+    commonDir: async (cwd) => paths.canonical(at(cwd).repo.commonDir),
     slugify: gitModule.slugify,
     worktreePath: gitModule.worktreePath,
 
@@ -259,7 +259,12 @@ export function fakeGit() {
       repo.tracking.set(base, repo.origin.get(base));
       if (!repo.branches.has(branch)) repo.branches.set(branch, repo.tracking.get(base));
       const files = trees.get(commits.get(repo.branches.get(branch)).tree);
-      const wt = { path, branch, index: new Map(files), marker: `gitdir: fake ${sha1(`${pathKey(path)}${++n}`)}\n` };
+      const wt = {
+        path,
+        branch,
+        index: new Map(files),
+        marker: `gitdir: fake ${sha1(`${paths.pathKey(path)}${++n}`)}\n`,
+      };
       mkdirSync(path, { recursive: true });
       writeFileSync(join(path, '.git'), wt.marker);
       writeFiles(path, files);
@@ -270,7 +275,7 @@ export function fakeGit() {
     listWorktrees: async (mainRoot) =>
       at(mainRoot)
         .repo.worktrees.filter((w) => w.branch)
-        .map((w) => ({ path: canonical(w.path).replaceAll('\\', '/'), branch: w.branch })),
+        .map((w) => ({ path: paths.canonical(w.path).replaceAll('\\', '/'), branch: w.branch })),
     currentBranch: async (cwd) => at(cwd).wt.branch ?? null,
 
     async stageAll(cwd) {
