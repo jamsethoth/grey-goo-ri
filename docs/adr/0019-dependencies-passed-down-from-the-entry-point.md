@@ -30,8 +30,9 @@ Every external dependency of a Run is built once at the entry point and passed d
   `deps: Deps` and exports `Deps` from the interpreter; #207 makes `runTarget` take the same `deps` and `bin/gg.ts`
   build it. Each moves its function's test call sites from `options.git` to `options.deps.git`. With one key, a layer that only
   passes the deps along does not name each one, so a new dependency touches only where it is built and where it is
-  used, and `tsc` reports a missing one: adding `locks` and `database` here took four edits in `run.mjs` that only
-  passed them along.
+  used, and `tsc` reports a missing one: adding `locks` and `database` here meant naming them in four places in
+  `run.mjs` (`runRepo`'s parameters and Run context, `admit`'s parameters and the `runExecution` call), two of which
+  only pass them on.
 - A dep is something outside the process that a test replaces with a fake or a stub: GitHub, git, the shell, the State
   Database, the locks and time, and the integrity built from git and the locks. Configuration, the Harnesses, the log
   and the Ticket are not deps, so `deps` does not become a second options bag.
