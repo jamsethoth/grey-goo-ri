@@ -295,13 +295,14 @@ test('an Action id with whitespace is an error', async () => {
   ]);
 });
 
-test('a configuration without a Flow names the example document, not gg init', async () => {
+test("a configuration without a Flow names the request's key tables, not gg init", async () => {
   const config = example();
   delete config.flows;
   assert.deepEqual((await check(config)).errors, [
     {
       at: 'flows',
-      message: 'no Flow is declared; docs/research/user-defined-procedures-example-flow.md has an example Flow',
+      message:
+        'no Flow is declared; docs/requests/node-harness-dag.md tables the keys of a Flow (3.3) and of a Procedure (3.4)',
     },
   ]);
 });

@@ -19,13 +19,16 @@ function rows(header: string): string[][] {
   return found;
 }
 
-// Each code span of a first cell, mapped to its row's sorted Keys spans, in the table headed `| <first> | Keys |`.
-export const keyTable = (first: string) =>
+// Each code span of a first cell, mapped to its row's sorted spans in column `column` (1 is the first), in the table
+// headed `| <first> | Keys |`.
+export const columnTable = (first: string, column: number) =>
   Object.fromEntries(
     rows(`| ${first} | Keys |`).flatMap((cells) =>
-      spans(cells[1] ?? '').map((name) => [name, spans(cells[2] ?? '').sort()]),
+      spans(cells[1] ?? '').map((name) => [name, spans(cells[column] ?? '').sort()]),
     ),
   );
+
+export const keyTable = (first: string) => columnTable(first, 2);
 
 // Every code span in the first column of a table headed `header`, sorted: a table that names fields row by row.
 export const firstColumn = (header: string) =>
