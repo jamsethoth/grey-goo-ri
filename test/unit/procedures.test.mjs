@@ -59,11 +59,19 @@ test('a repeat Check gives its Findings Hash', () => {
 // The request lists each kind's keys for a Layer's author; this keeps the tables and the declared keys one list (#229).
 test("the request lists every Action kind's and Check kind's keys", () => {
   const request = readFileSync(new URL('../../docs/requests/node-harness-dag.md', import.meta.url), 'utf8');
-  const rowOf = (kind) =>
-    request.split('\n').find((line) => line.startsWith('| ') && line.split('|')[1].includes(`\`${kind}\``));
+  // A row's cells split on its unescaped pipes; a key counts only as a whole token inside a code span of the Keys cell.
+  const rows = request
+    .split('\n')
+    .filter((line) => line.startsWith('| '))
+    .map((line) => line.split(/(?<!\\)\|/));
+  const keysOf = (kind) => {
+    const row = rows.find((cells) => cells[1].includes(`\`${kind}\``));
+    const spans = row?.[2].match(/`[^`]+`/g) ?? [];
+    return row && new Set(spans.flatMap((span) => span.match(/[A-Za-z][\w-]*|<=|>=|<|>|=/g) ?? []));
+  };
   for (const [kind, keys] of [...Object.entries(procedures.ACTION_KEYS), ...Object.entries(procedures.CHECK_KEYS)]) {
-    const row = rowOf(kind);
-    assert.ok(row, `the request has a row for ${kind}`);
-    for (const key of keys) assert.ok(row.includes(key), `the ${kind} row names ${key}`);
+    const documented = keysOf(kind);
+    assert.ok(documented, `the request has a row for ${kind}`);
+    for (const key of keys) assert.ok(documented.has(key), `the ${kind} row names ${key}`);
   }
 });
