@@ -29,6 +29,7 @@ export class UsageError extends Error {
 // directory names on disk, never from the argument text.
 function stage(argv) {
   if (argv.length === 0) return [];
+  if (argv[0] === 'check') return []; // stub (#239)
   if (argv[0] !== 'fast') throw new UsageError();
   const boundaries = readdirSync(join(root, 'test', 'contract'), { withFileTypes: true })
     .filter((d) => d.isDirectory())

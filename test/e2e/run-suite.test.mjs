@@ -15,6 +15,18 @@ test('the launcher exits 2 with its usage and runs nothing for an argument outsi
   assert.match(r.stderr, /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/);
 });
 
+test('the launcher exits 2 with its usage and runs nothing for an argument after check', (t) => {
+  const copy = launcherCopy(t);
+  const r = copy.run(['check', 'git']);
+  assert.equal(r.status, 2, r.stderr);
+  assert.equal(r.stdout, '');
+  assert.match(
+    r.stderr,
+    /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.mjs check\n/,
+  );
+  assert.equal(copy.steps(), '');
+});
+
 // A copy of the launcher in a temp repo whose Prettier, ESLint and tsc bin scripts are fakes that log their step and exit
 // with the code a case gives; its one test file logs `tests`. Each step appends to steps.log, so the log is what ran, in
 // order.
