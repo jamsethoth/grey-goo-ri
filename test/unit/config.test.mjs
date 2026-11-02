@@ -292,15 +292,21 @@ test('a Layer with a duplicate key in one object is a load error naming the file
   assert.deepEqual(config.loadConfig(fine.repo, fine.home).b, { k: '"k": 2' });
 });
 
-test('a Layer that ends early is a load error naming the file and where it ends', (t) => {
+// V8 names no position when the text ends early or a token cannot start a value, as a trailing comma's bracket.
+test('a Layer V8 gives no parse position for is a load error naming the file and the position', (t) => {
   for (const [text, where] of [
-    ['', 'at position 0 (line 1 column 1)'],
-    ['{"agents":\n  {"implementer":', 'at position 28 (line 2 column 18)'],
+    ['', 'Unexpected end of JSON input at position 0 (line 1 column 1)'],
+    ['\r', 'Unexpected end of JSON input at position 1 (line 2 column 1)'],
+    ['{"agents":\n  {"implementer":', 'Unexpected end of JSON input at position 28 (line 2 column 18)'],
+    ['x', 'is not valid JSON at position 0 (line 1 column 1)'],
+    ['{"testPaths":\r\n  ["test/**",]}', 'is not valid JSON at position 28 (line 2 column 14)'],
   ]) {
     const { repo, home } = layers(t, { repo: text });
-    assert.throws(() => config.loadConfig(repo, home), {
-      message: `${config.layerPath(repo)}: Unexpected end of JSON input ${where}`,
-    });
+    assert.throws(
+      () => config.loadConfig(repo, home),
+      (e) => e.message.startsWith(`${config.layerPath(repo)}: `) && e.message.endsWith(` ${where}`),
+      JSON.stringify(text),
+    );
   }
 });
 
