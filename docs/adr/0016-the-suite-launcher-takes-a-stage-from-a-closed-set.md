@@ -23,6 +23,12 @@ those directory names, never from the argument text, and the environment is clea
 The execpolicy rule's prefix `node scripts/run-suite.mjs` already matches trailing arguments; its justification and
 examples now say what the launcher accepts.
 
+Amended 2026-11-02 (grey-goo-ri issue #239): the closed set is `fast [boundary ...]`, `check`, or nothing.
+`node scripts/run-suite.mjs check` runs the format check, ESLint and `tsc` (ADR 0018) and no tests, so CI can show them
+as their own `check` job beside the suite jobs. It takes no further argument: `check` followed by anything is a usage
+error with exit code 2. The full and fast stages still run the three checks before their tests, so no agent run skips
+them. The rule's prefix is unchanged; its justification and examples name `check`.
+
 ## Considered options
 
 - A second launcher, `scripts/run-fast.mjs`, that also ignores its arguments and runs `test/unit/` with every contract

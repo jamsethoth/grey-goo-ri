@@ -15,6 +15,18 @@ test('the launcher exits 2 with its usage and runs nothing for an argument outsi
   assert.match(r.stderr, /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/);
 });
 
+test('the launcher exits 2 with its usage and runs nothing for an argument after check', (t) => {
+  const copy = launcherCopy(t);
+  const r = copy.run(['check', 'git']);
+  assert.equal(r.status, 2, r.stderr);
+  assert.equal(r.stdout, '');
+  assert.match(
+    r.stderr,
+    /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.mjs check\n/,
+  );
+  assert.equal(copy.steps(), '');
+});
+
 // A copy of the launcher in a temp repo whose Prettier, ESLint and tsc bin scripts are fakes that log their step and exit
 // with the code a case gives; its one test file logs `tests`. Each step appends to steps.log, so the log is what ran, in
 // order.
@@ -45,6 +57,19 @@ function launcherCopy(t, { prettier = 0, eslint = 0, tsc = 0, installed = true }
   const steps = () => (existsSync(join(root, 'steps.log')) ? readFileSync(join(root, 'steps.log'), 'utf8') : '');
   return { run, steps };
 }
+
+test('the check stage runs the format check, lint and the type check in that order, no tests, and exits 0', (t) => {
+  const copy = launcherCopy(t);
+  const r = copy.run(['check']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(copy.steps(), 'prettier\neslint\ntsc\n');
+});
+
+test('a failing lint step stops the check stage with its exit code before the type check', (t) => {
+  const copy = launcherCopy(t, { eslint: 3 });
+  assert.equal(copy.run(['check']).status, 3);
+  assert.equal(copy.steps(), 'prettier\neslint\n');
+});
 
 for (const [stage, argv] of [
   ['full', []],

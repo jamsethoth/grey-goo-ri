@@ -59,6 +59,20 @@ test('the fast stage with no boundary runs only test/unit', async () => {
   ]);
 });
 
+test('the check stage runs the format check, lint and the type check and no tests', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.deepEqual(runSuite.suiteCommand({}, ['check']).steps, checks);
+});
+
+test('the check stage takes no boundary names', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.throws(() => runSuite.suiteCommand({}, ['check', 'git']), {
+    name: 'UsageError',
+    message:
+      /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.mjs check\n/,
+  });
+});
+
 // ADR 0016: anything outside the closed set stops the launcher before it runs anything.
 const refused = [
   ['a node flag in place of the stage', ['--import=x']],
