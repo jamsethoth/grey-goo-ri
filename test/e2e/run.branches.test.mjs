@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import * as integrity from '../../lib/integrity.mjs';
-import { pathKey } from '../../lib/paths.ts';
+import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
@@ -301,7 +301,7 @@ for (const row of SIBLINGS) {
     assert.equal(red?.outcome, 'integrity-violation');
     assert.deepEqual(red.rule, { table: 'fixed', row: 'integrity-violation' });
     assert.ok(
-      red.integrityViolations.some((v) => pathKey(v.worktree) === pathKey(sibling) && v.surface === 'tree'),
+      red.integrityViolations.some((v) => paths.pathKey(v.worktree) === paths.pathKey(sibling) && v.surface === 'tree'),
       JSON.stringify(red.integrityViolations),
     );
     assert.equal(f.harness.calls.length, 1, 'no agent call after the violation');
