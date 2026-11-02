@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathKey } from '../../lib/paths.ts';
+import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import {
@@ -130,8 +130,8 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   );
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
   assert.equal(
-    pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir),
-    pathKey(f.commonDir),
+    paths.pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir),
+    paths.pathKey(f.commonDir),
     'the linked worktree uses the main checkout State Database',
   );
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));

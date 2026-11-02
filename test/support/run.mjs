@@ -11,7 +11,7 @@ import * as events from '../../lib/events.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import { pathKey } from '../../lib/paths.ts';
+import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as validate from '../../lib/validate.mjs';
 import * as golden from './golden.mjs';
@@ -357,7 +357,7 @@ export function ticketHarnesses(f, tickets, { responses = {}, before = async () 
       }),
     ]),
   );
-  const ticketOf = (cwd) => tickets.find((n) => pathKey(cwd) === pathKey(worktreeOf(f, n)));
+  const ticketOf = (cwd) => tickets.find((n) => paths.pathKey(cwd) === paths.pathKey(worktreeOf(f, n)));
   f.options.harnesses.fake = {
     ...fakes[tickets[0]],
     run: async (call) => {
