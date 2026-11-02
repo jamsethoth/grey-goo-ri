@@ -300,11 +300,19 @@ test('a Layer V8 gives no parse position for is a load error naming the file and
     ['{"agents":\n  {"implementer":', 'Unexpected end of JSON input at position 28 (line 2 column 18)'],
     ['x', 'is not valid JSON at position 0 (line 1 column 1)'],
     ['{"testPaths":\r\n  ["test/**",]}', 'is not valid JSON at position 28 (line 2 column 14)'],
+    // V8 quotes the text around the token, line breaks and all, and the error stays one line.
+    [
+      '{\n  "testPaths": [\n    "test/**",\n  ]\n}\n',
+      '\\n  ]\\n}\\n" is not valid JSON at position 36 (line 4 column 3)',
+    ],
   ]) {
     const { repo, home } = layers(t, { repo: text });
     assert.throws(
       () => config.loadConfig(repo, home),
-      (e) => e.message.startsWith(`${config.layerPath(repo)}: `) && e.message.endsWith(` ${where}`),
+      (e) =>
+        e.message.startsWith(`${config.layerPath(repo)}: `) &&
+        e.message.endsWith(` ${where}`) &&
+        !/[\r\n]/.test(e.message),
       JSON.stringify(text),
     );
   }
