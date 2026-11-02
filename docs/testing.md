@@ -80,7 +80,7 @@ gg's doubles:
 | Double | Replaces | Contract |
 | --- | --- | --- |
 | `test/support/fake-harness.mjs` | the Claude Code and Codex harnesses | `test/contract/harness/` |
-| `fakeGh` (`test/support/golden.mjs`), installed with `github.setGh` | the `gh` transport | none: gh is never run in tests |
+| `fakeGh` (`test/support/golden.mjs`), installed with `useGh` (the same file) | the `gh` transport | none: gh is never run in tests |
 | the `runShell` in `golden.setup` (`test/support/golden.mjs`), returning red or green output | running the suite | none: `test/contract/exec/` covers the real `runShell` |
 | the injected clock and `crashAt` points | time and crashes | not needed: no external system |
 | fake integrity (#140), `test/support/fake-integrity.mjs` | integrity snapshots; its untracked files and Test Immutability are lib's own over the fake git | `test/contract/integrity/` (#218) |
