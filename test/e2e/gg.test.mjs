@@ -188,13 +188,11 @@ for (const args of [['doctor'], ['run', '1']]) {
     const { repo, ggIn } = tempRepo(t);
     const file = join(repo, '.agents', 'gg', 'gg.json');
     mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
-    writeFileSync(file, '{"agents": {}\n "flows": {}}\n');
+    writeFileSync(file, '{\n  "testPaths": [\n    "test/**",\n  ]\n}\n');
     const r = ggIn(...args);
     assert.equal(r.status, 1, r.stderr);
     assert.equal(r.stdout, '');
-    assert.equal(r.stderr.split('\n').length, 2, `one line: ${r.stderr}`);
-    assert.ok(r.stderr.startsWith(`gg ${args[0]}: ${file}: `), r.stderr);
-    assert.match(r.stderr, /position 15 \(line 2 column 2\)\n$/);
+    assert.equal(r.stderr, `gg ${args[0]}: ${file}:4:3: invalid JSON, value expected\n`);
   });
 }
 

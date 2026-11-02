@@ -292,26 +292,22 @@ test('a Layer with a duplicate key in one object is a load error naming the file
   assert.deepEqual(config.loadConfig(fine.repo, fine.home).b, { k: '"k": 2' });
 });
 
-// V8 names no position when the text ends early or a token cannot start a value, as a trailing comma's bracket.
-test('a Layer V8 gives no parse position for is a load error naming the file and the position', (t) => {
+// V8's own message names no position for an early end or a trailing comma, and quotes the Layer's text.
+test('a Layer that is not JSON is a load error naming the file, line and column of its first error', (t) => {
   for (const [text, where] of [
-    ['', 'Unexpected end of JSON input at position 0 (line 1 column 1)'],
-    ['\r', 'Unexpected end of JSON input at position 1 (line 2 column 1)'],
-    ['{"agents":\n  {"implementer":', 'Unexpected end of JSON input at position 28 (line 2 column 18)'],
-    ['x', 'is not valid JSON at position 0 (line 1 column 1)'],
-    ['{"testPaths":\r\n  ["test/**",]}', 'is not valid JSON at position 28 (line 2 column 14)'],
-    // V8 quotes the text around the token, line breaks and all, and the error stays one line.
-    ['{\n  "testPaths": [\n    "test/**",\n  ]\n}\n', ']\\n}\\n" is not valid JSON at position 36 (line 4 column 3)'],
+    ['{"agents": {}\n "flows": {}}\n', '2:2: invalid JSON, comma expected'],
+    ['{\n  "testPaths": [\n    "test/**",\n  ]\n}\n', '4:3: invalid JSON, value expected'],
+    ['{"testPaths":\r\n  ["test/**",]}', '2:14: invalid JSON, value expected'],
+    ['', '1:1: invalid JSON, value expected'],
+    ['\r', '2:1: invalid JSON, value expected'],
+    ['{"agents":\n  {"implementer":', '2:18: invalid JSON, value expected'],
+    ['x', '1:1: invalid JSON, invalid symbol'],
+    ['{"a position 5":x}', '1:17: invalid JSON, invalid symbol'],
+    ['[\u000b]', '1:2: invalid JSON, invalid symbol'],
+    ['{ // note\n "a": 1}', '1:3: invalid JSON, invalid comment token'],
   ]) {
     const { repo, home } = layers(t, { repo: text });
-    assert.throws(
-      () => config.loadConfig(repo, home),
-      (e) =>
-        e.message.startsWith(`${config.layerPath(repo)}: `) &&
-        e.message.endsWith(` ${where}`) &&
-        !/[\r\n]/.test(e.message),
-      JSON.stringify(text),
-    );
+    assert.throws(() => config.loadConfig(repo, home), { message: `${config.layerPath(repo)}:${where}` });
   }
 });
 
