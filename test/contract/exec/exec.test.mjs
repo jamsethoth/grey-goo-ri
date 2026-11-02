@@ -1,14 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.mjs';
-import * as paths from '../../../lib/paths.ts';
 import * as render from '../../../lib/render.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'gg-exec-'));
@@ -76,11 +75,13 @@ const pidIn = (file) => (existsSync(file) ? Number(readFileSync(file, 'utf8')) :
 // Runs commandLine with its timeout clock held until ready() holds, so the processes a case checks exist before the
 // timeout fires however slowly they start. ready is false when the command ended first.
 // The case's own signal ends the wait too, and then the command is timed out before the case fails.
-async function timeOutWhen(commandLine, options, ready, signal) {
+// options.kernel32, when given, is the FFI runShell runs on.
+async function timeOutWhen(commandLine, { kernel32, ...options }, ready, signal) {
+  const { runShell } = kernel32 === undefined ? exec : exec.createExec({ kernel32 });
   const clock = new AbortController();
   let settled = false,
     wasReady = false;
-  const running = exec.runShell(commandLine, shellOptions({ ...options, signal: clock.signal })).finally(() => {
+  const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal })).finally(() => {
     settled = true;
   });
   try {
@@ -96,6 +97,12 @@ async function timeOutWhen(commandLine, options, ready, signal) {
   signal.throwIfAborted();
   return { res, ready: wasReady };
 }
+
+// The real kernel32 functions (null off Windows), and a copy with some replaced, as a job call that fails would answer.
+const realKernel32 = containment.openKernel32();
+const withKernel32 = (replaced) => ({ ...realKernel32, ...replaced });
+// A kernel32 that cannot create a job, as when the job object is refused.
+const noJob = () => withKernel32({ CreateJobObjectW: () => 0n });
 
 // A clock that never starts: the command runs in the job, and only its own end ends it.
 const noClock = () => new AbortController().signal;
@@ -123,31 +130,6 @@ function manualTimers() {
       fn();
     },
     fired: () => fired,
-  };
-}
-
-// Holds back what a stream emits between hold() and release(), as a pipe read late on a loaded machine delivers it:
-// listeners see the same events in the same order, only later.
-function delayed(stream) {
-  const emit = stream.emit;
-  let held = null;
-  stream.emit = function (event, ...args) {
-    if (held && ['data', 'end', 'close'].includes(event)) {
-      held.push([event, args]);
-      return true;
-    }
-    return emit.call(this, event, ...args);
-  };
-  return {
-    holding: () => held !== null,
-    hold: () => {
-      held ??= [];
-    },
-    release: () => {
-      const events = held ?? [];
-      held = null;
-      for (const [event, args] of events) emit.call(stream, event, ...args);
-    },
   };
 }
 
@@ -317,19 +299,19 @@ test('runShell reports surviving PIDs and the kill error when termination fails'
     killPid: () => {
       throw new Error('EPERM refused');
     },
-    denyTerminate: true,
+    kernel32: withKernel32({ TerminateJobObject: () => 0 }),
   });
   try {
     assert.equal(res.timedOut, true);
     assert.ok(
-      res.survivors.some((s) => s.pid === pid && /EPERM refused|withheld/.test(s.error)),
+      res.survivors.some((s) => s.pid === pid && /EPERM refused|termination refused/.test(s.error)),
       JSON.stringify(res.survivors),
     );
   } finally {
     for (const s of res.survivors)
       try {
         process.kill(s.pid);
-      } catch {} // the withheld job leaves its root running too
+      } catch {} // a refused termination leaves the shell running too
   }
 });
 
@@ -631,30 +613,29 @@ test(
   async (t) => {
     const sleeper = script('ba-sleeper.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
     const created = join(tmp, 'breakaway.created');
-    const ps = script(
-      'breakaway.ps1',
-      `Add-Type -TypeDefinition @'
-using System; using System.Runtime.InteropServices;
-public static class BA {
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct SI { public int cb; public string r, desk, title; public int x, y, xs, ys, xc, yc, fill, flags; public short show, r2; public IntPtr r2p, hin, hout, herr; }
-  [StructLayout(LayoutKind.Sequential)] struct PI { public IntPtr hp, ht; public int pid, tid; }
-  [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool CreateProcess(string app, string cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string cwd, ref SI si, out PI pi);
-  public static string Run(string cmd) {
-    var si = new SI(); si.cb = Marshal.SizeOf(typeof(SI)); PI pi;
-    bool ok = CreateProcess(null, cmd, IntPtr.Zero, IntPtr.Zero, false, 0x01000000, IntPtr.Zero, null, ref si, out pi); // CREATE_BREAKAWAY_FROM_JOB
-    return ok ? "created pid=" + pi.pid : "failed win32error=" + Marshal.GetLastWin32Error();
-  }
-}
-'@
-$r = [BA]::Run('"' + $env:GG_TEST_BA_EXE + '" "' + $env:GG_TEST_BA_SCRIPT + '"')
-[Console]::Out.WriteLine($r); [Console]::Out.Flush()
-Set-Content -LiteralPath $env:GG_TEST_BA_CREATED -Value $r
-Start-Sleep ${LIVES_MS / 1000}
-`,
+    // CreateProcessW with CREATE_BREAKAWAY_FROM_JOB through node:ffi; STARTUPINFOW is 104 bytes on 64-bit Windows, and
+    // PROCESS_INFORMATION's dwProcessId sits at byte 16.
+    const breakaway = script(
+      'breakaway.mjs',
+      `import { writeFileSync } from 'node:fs';
+const [exe, sleeper, created] = args;
+const { functions: k } = process.getBuiltinModule('node:ffi').dlopen('kernel32.dll', {
+  CreateProcessW: { arguments: ['pointer', 'buffer', 'pointer', 'pointer', 'int32', 'uint32', 'pointer', 'pointer', 'buffer', 'buffer'], return: 'int32' },
+  GetLastError: { arguments: [], return: 'uint32' },
+});
+const startup = Buffer.alloc(104);
+startup.writeUInt32LE(104, 0);
+const info = Buffer.alloc(24);
+const line = Buffer.from('"' + exe + '" "' + sleeper + '"\\0', 'utf16le');
+const ok = k.CreateProcessW(0n, line, 0n, 0n, 0, 0x01000000, 0n, 0n, startup, info);
+const r = ok ? 'created pid=' + info.readUInt32LE(16) : 'failed win32error=' + k.GetLastError();
+console.log(r);
+writeFileSync(created, r);
+setTimeout(() => {}, ${LIVES_MS});`,
+      [process.execPath, sleeper, created],
     );
-    caseEnv(t, { GG_TEST_BA_EXE: process.execPath, GG_TEST_BA_SCRIPT: sleeper, GG_TEST_BA_CREATED: created });
     const { res } = await timeOutWhen(
-      `powershell.exe -NoProfile -NonInteractive -File "${ps}"`,
+      `"${process.execPath}" --disable-warning=ExperimentalWarning "${breakaway}"`,
       { timeoutMs: 6000 },
       () => existsSync(created),
       t.signal,
@@ -697,8 +678,12 @@ test(
   },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob');
-    caseEnv(t, { GG_TEST_NOJOB: '1' });
-    const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal);
+    const { res, ready } = await timeOutWhen(
+      cmd,
+      { timeoutMs: 4000, kernel32: noJob() },
+      () => existsSync(pidFile),
+      t.signal,
+    );
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
     try {
       assert.equal(res.timedOut, true);
@@ -725,8 +710,12 @@ test(
   },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-sandboxed');
-    caseEnv(t, { GG_TEST_NOJOB: '1' });
-    const { res, ready } = await timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal);
+    const { res, ready } = await timeOutWhen(
+      cmd,
+      { timeoutMs: 4000, kernel32: noJob() },
+      () => existsSync(pidFile),
+      t.signal,
+    );
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
     try {
       assert.equal(res.timedOut, true);
@@ -758,10 +747,9 @@ test(
       'slow-taskkill.mjs',
       `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 31000);`,
     );
-    caseEnv(t, { GG_TEST_NOJOB: '1' });
     const { res, ready } = await timeOutWhen(
       cmd,
-      { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] },
+      { timeoutMs: 4000, kernel32: noJob(), taskkillCommand: [process.execPath, [slow]] },
       () => existsSync(pidFile),
       t.signal,
     );
@@ -789,10 +777,9 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-denied');
-    caseEnv(t, { GG_TEST_NOJOB: '1' });
     const { res, ready } = await timeOutWhen(
       cmd,
-      { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
+      { timeoutMs: 4000, kernel32: noJob(), taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
       () => existsSync(pidFile),
       t.signal,
     );
@@ -826,10 +813,9 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-late', { delayMs: 4500 });
-    caseEnv(t, { GG_TEST_NOJOB: '1' });
     const { res } = await timeOutWhen(
       cmd,
-      { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
+      { timeoutMs: 4000, kernel32: noJob(), taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
       () => existsSync(pidFile),
       t.signal,
     );
@@ -858,206 +844,29 @@ test(
   },
 );
 
-// The timeout comes due just after runShell has seen the helper exit, while it still waits for the helper's notes (held
-// back until then), and fires unless the exit stopped it. A timeout then would taskkill the helper's pid, which may by
-// then be another process's. The leftover holds the output pipes, so they never close.
+// The leftover holds the output pipes, so they never close: runShell answers once the command exits. Its clock moves
+// only when the case moves it, which it never does, so the call cannot end by timing out.
 test(
   'runShell: a command that finishes is not reported as timed out while its leftover process still holds the output pipes',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
-    const sleeper = script('drain-sleeper.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
+    const pidFile = join(tmp, 'drain.pid');
+    const sleeper = script('drain-sleeper.mjs', writesPid, [pidFile]);
+    t.after(() => {
+      try {
+        if (pidIn(pidFile)) process.kill(pidIn(pidFile));
+      } catch {}
+    });
     const quit = script(
       'drain-quit.mjs',
       `import { spawn } from 'node:child_process'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'inherit' }).unref();`,
       [sleeper],
     );
     const timers = manualTimers();
-    const onHelper = (helper) => {
-      const late = [delayed(helper.stdout), delayed(helper.stderr)];
-      for (const l of late) l.hold();
-      // A microtask runs once every exit listener has, runShell's included.
-      helper.on('exit', () =>
-        queueMicrotask(() => {
-          timers.tick(1);
-          for (const l of late) l.release();
-        }),
-      );
-    };
-    // A timeout's kill of the helper's pid goes to a process that does nothing.
-    const seam = [process.execPath, ['-e', '']];
-    const res = await exec.runShell(
-      `"${process.execPath}" "${quit}"`,
-      shellOptions({
-        timeoutMs: 1,
-        timers,
-        taskkillCommand: seam,
-        onHelper,
-      }),
-    );
-    try {
-      assert.equal(res.timedOut, undefined, 'a finished command was reported as timed out');
-      assert.equal(res.code, 0);
-      assert.equal(timers.fired(), 0, 'a timeout ran after the command finished');
-    } finally {
-      for (const p of res.leftovers ?? [])
-        try {
-          process.kill(p);
-        } catch {}
-    }
-  },
-);
-
-// A cold Windows PowerShell and Add-Type took 3.5 s on a fresh runner and up to 15 s under the suite's load; that start-up
-// must not be charged to the command's timeout. The case moves runShell's clock itself: a start-up that used all but
-// 1 ms of the budget, then 2 ms more once runShell has seen the command start.
-test(
-  'runShell: the timeout counts from when the command starts, not from the job helper start-up',
-  { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
-  async (t) => {
-    const go = join(tmp, 'counts.go');
-    const p = script(
-      'counts.mjs',
-      `import { existsSync } from 'node:fs'; const wait = setInterval(() => { if (existsSync(args[0])) { clearInterval(wait); console.log('done'); } }, 50);`,
-      [go],
-    );
-    let seen;
-    const started = new Promise((r) => (seen = r));
-    let notes = '';
-    const onHelper = (helper) =>
-      helper.stderr.on('data', (d) => {
-        notes += d;
-        if (notes.includes('\u0001GGJOB started')) seen();
-      });
-    const timers = manualTimers();
-    const running = exec.runShell(`"${process.execPath}" "${p}"`, shellOptions({ timeoutMs: 7000, timers, onHelper }));
-    timers.tick(6999);
-    await started; // runShell's own listener ran right after this case's
-    timers.tick(2);
-    writeFileSync(go, '');
-    const res = await running;
-    assert.equal(res.timedOut, undefined, `the command timed out on the helper's start-up: ${res.output}`);
+    const res = await exec.runShell(`"${process.execPath}" "${quit}"`, shellOptions({ timeoutMs: 1, timers }));
+    assert.equal(res.timedOut, undefined, 'a finished command was reported as timed out');
     assert.equal(res.code, 0);
-    assert.match(res.output, /done/);
-  },
-);
-
-// The helper's last notes can reach runShell after its exit event, as on a loaded machine: here they are held back
-// until the next turn of the event loop, after everything the exit set going has run. Its answer must still be read,
-// never taken as a clean cleanup. The timeout fires as soon as runShell has seen the command start.
-test(
-  'runShell: a helper answer that arrives after the helper has exited is still read',
-  { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
-  async (t) => {
-    const p = script('late-answer.mjs', writesPid, [join(tmp, 'late-answer.pid')]);
-    const timers = manualTimers();
-    const onHelper = (helper) => {
-      const late = delayed(helper.stderr);
-      let notes = '';
-      helper.stderr.on('data', (d) => {
-        notes += d;
-        if (!notes.includes('\u0001GGJOB started') || late.holding()) return;
-        late.hold();
-        // A microtask runs once runShell's own listener has seen the start.
-        queueMicrotask(() => timers.tick(1));
-      });
-      helper.on('exit', () => setImmediate(late.release));
-    };
-    caseEnv(t, { GG_TEST_QUERYFAIL: '1' });
-    const res = await exec.runShell(`"${process.execPath}" "${p}"`, shellOptions({ timeoutMs: 1, timers, onHelper }));
-    assert.ok(
-      res.cleanupErrors.some((e) => /could not verify the job is empty/.test(e)),
-      JSON.stringify(res.cleanupErrors),
-    );
-    assert.ok(
-      res.survivors.length > 0 && res.survivors.every((s) => /not verified gone/.test(s.error)),
-      JSON.stringify(res.survivors),
-    );
-  },
-);
-
-// The helper's notes held back until 400 ms after it exits, past the 300 ms runShell once waited for them: a command
-// that ran must not be taken for one the helper never started, and run a second time.
-test(
-  'runShell: a finished command whose notes arrive after the helper has exited runs once',
-  { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
-  async (t) => {
-    const runs = join(tmp, 'once.runs');
-    const p = script('once.mjs', `import { appendFileSync } from 'node:fs'; appendFileSync(args[0], 'ran\\n');`, [
-      runs,
-    ]);
-    const onHelper = (helper) => {
-      const late = delayed(helper.stderr);
-      late.hold();
-      helper.on('exit', () => setTimeout(late.release, 400));
-    };
-    const res = await exec.runShell(
-      `"${process.execPath}" "${p}"`,
-      shellOptions({ timeoutMs: 1, signal: noClock(), onHelper }),
-    );
-    assert.equal(readFileSync(runs, 'utf8'), 'ran\n', 'the command ran more than once');
-    assert.equal(res.code, 0);
-  },
-);
-
-// With a signal aborted before the call, the clock counts from the call, as from any abort: the command's start does not
-// restart it. The case moves runShell's clock itself.
-test(
-  'runShell: a signal aborted before the call starts the timeout clock at the call',
-  { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
-  async (t) => {
-    const p = script('aborted-early.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
-    let seen;
-    const started = new Promise((r) => (seen = r));
-    let notes = '';
-    const onHelper = (helper) =>
-      helper.stderr.on('data', (d) => {
-        notes += d;
-        if (notes.includes('\u0001GGJOB started')) seen();
-      });
-    const timers = manualTimers();
-    const running = exec.runShell(
-      `"${process.execPath}" "${p}"`,
-      shellOptions({
-        timeoutMs: 7000,
-        signal: AbortSignal.abort(),
-        timers,
-        onHelper,
-      }),
-    );
-    timers.tick(6999);
-    await started; // runShell's own listener ran right after this case's
-    timers.tick(2); // 7001 ms after the call
-    const res = await running; // a clock restarted by the start never fires here: the case times out instead
-    assert.equal(res.timedOut, true);
-  },
-);
-
-test(
-  'runShell: a helper that never starts and cannot be killed is reported, and does not keep gg waiting',
-  { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
-  async (t) => {
-    caseEnv(t, { GG_TEST_STALL: '1' });
-    const res = await exec.runShell(
-      `"${process.execPath}" -e "1"`,
-      shellOptions({
-        timeoutMs: 800,
-        taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']],
-      }),
-    );
-    try {
-      assert.equal(res.timedOut, true);
-      assert.ok(res.cleanupErrors.length > 0, JSON.stringify(res));
-      assert.ok(
-        res.survivors.length === 1 && /not verified gone|could not be killed/.test(res.survivors[0].error),
-        JSON.stringify(res.survivors),
-      );
-      assert.ok(alive(res.survivors[0].pid), 'runShell waited for the stalled helper');
-    } finally {
-      for (const s of res.survivors)
-        try {
-          process.kill(s.pid);
-        } catch {}
-    }
+    assert.equal(timers.fired(), 0, 'a timeout ran after the command finished');
   },
 );
 
@@ -1067,10 +876,9 @@ test(
   async (t) => {
     const pidFile = join(tmp, 'queryfail.pid');
     const p = script('queryfail.mjs', writesPid, [pidFile]);
-    caseEnv(t, { GG_TEST_QUERYFAIL: '1' });
     const { res } = await timeOutWhen(
       `"${process.execPath}" "${p}"`,
-      { timeoutMs: 3000 },
+      { timeoutMs: 3000, kernel32: withKernel32({ QueryInformationJobObject: () => 0 }) },
       () => existsSync(pidFile),
       t.signal,
     );
@@ -1091,9 +899,19 @@ test(
   'runShell: job membership larger than the first query buffer is still listed in full',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
-    caseEnv(t, { GG_TEST_BUF: '1' });
-    const { res, pid } = await timedOutOrphan(t, 'smallbuf', { denyTerminate: true });
+    // The first membership query gets room for one entry, as a job that grew between sizing and reading would.
+    let first = true;
+    const kernel32 = withKernel32({
+      TerminateJobObject: () => 0,
+      QueryInformationJobObject: (job, kind, buffer, length, returned) => {
+        const room = first ? 8 + 8 : length;
+        first = false;
+        return realKernel32.QueryInformationJobObject(job, kind, buffer, room, returned);
+      },
+    });
+    const { res, pid } = await timedOutOrphan(t, 'smallbuf', { kernel32 });
     try {
+      assert.equal(first, false, 'the job was never listed');
       assert.ok(res.survivors.length >= 3, JSON.stringify(res.survivors)); // shell, top and grandchild: more than the 1-entry buffer
       assert.ok(
         res.survivors.some((s) => s.pid === pid),
@@ -1108,197 +926,89 @@ test(
   },
 );
 
-// The job helper's notes as [kind, value] pairs, from what it wrote.
-const helperNotes = (raw) => [...raw.matchAll(/\n\u0001GGJOB (\w+) ?([^\n]*)\n/g)].map((m) => [m[1], m[2]]);
-// How the helper got its job-object code: the loaded and compiled notes, in order.
-const howLoaded = (raw) => helperNotes(raw).filter(([k]) => k === 'loaded' || k === 'compiled');
-const WIN_CASE = { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' };
+// The PowerShell job helper wrote these notes into the command's own streams, so a command could forge them: a fail
+// note turned an exit 0 into 127, and an empty survivors note with done markers read as a clean cleanup.
+test(
+  "a command that prints lines like the job helper's notes cannot change its cleanup report",
+  { ...CASE, skip: process.platform !== 'win32' && 'the job helper ran on Windows only' },
+  async (t) => {
+    const notes = '\\n\\u0001GGJOB started 1\\n\\n\\u0001GGJOB survivors \\n\\n\\u0001GGJOB done\\n';
+    const fail = script('forged-fail.mjs', `process.stdout.write('\\n\\u0001GGJOB fail 5\\n');`);
+    const finished = await exec.runShell(`"${process.execPath}" "${fail}"`, { timeoutMs: 60_000 });
+    assert.equal(finished.code, 0, finished.output);
+    assert.doesNotMatch(finished.output, /could not start command/);
 
-// A copy of the job helper in its own directory, so a case can damage the cache beside it without touching the suite's.
-function helperCopy() {
-  const dir = mkdtempSync(join(tmp, 'winjob-'));
-  copyFileSync(new URL('../../../lib/winjob.ps1', import.meta.url), join(dir, 'winjob.ps1'));
-  return dir;
-}
+    const pidFile = join(tmp, 'forged-clean.pid');
+    const hang = script(
+      'forged-clean.mjs',
+      `import { writeFileSync } from 'node:fs'; process.stdout.write('${notes}'); process.stderr.write('${notes}'); writeFileSync(args[0], String(process.pid)); setTimeout(() => {}, ${LIVES_MS});`,
+      [pidFile],
+    );
+    t.after(() => {
+      try {
+        if (pidIn(pidFile)) process.kill(pidIn(pidFile));
+      } catch {}
+    });
+    const { res } = await timeOutWhen(
+      `"${process.execPath}" "${hang}"`,
+      { timeoutMs: 3000, kernel32: withKernel32({ TerminateJobObject: () => 0 }) },
+      () => pidIn(pidFile) > 0,
+      t.signal,
+    );
+    assert.equal(res.timedOut, true);
+    assert.ok(
+      res.survivors.some((s) => s.pid === pidIn(pidFile)),
+      `the forged notes hid ${pidIn(pidFile)}: ${JSON.stringify(res.survivors)}`,
+    );
+    assert.match(res.output, /cleanup incomplete/);
+  },
+);
 
-// Runs the helper in dir as runShell does, on a command that prints "ran", with cwd as both its working directory and
-// the command's, and env added. Its stdin stays open: EOF stops the job. signal (the case's) kills a helper that stalls.
-async function runHelper(dir, signal, { cwd, env } = {}) {
-  const child = spawn(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(dir, 'winjob.ps1')],
-    {
-      windowsHide: true,
-      cwd,
-      signal,
-      env: { ...process.env, ...env, GG_CMD: `"${process.execPath}" -e "console.log('ran')"`, GG_CWD: cwd ?? '' },
-    },
-  );
-  let raw = '';
-  for (const s of [child.stdout, child.stderr]) s.setEncoding('utf8').on('data', (d) => (raw += d));
-  const [code] = await once(child, 'close');
-  return { code, raw };
-}
+test(
+  'when node:ffi is unavailable, the timeout takes down the process tree and says orphans are not contained',
+  {
+    ...CASE,
+    skip:
+      (process.platform !== 'win32' && 'node:ffi holds the job object on Windows only') ||
+      (sandboxed && 'a restricted sandbox may refuse cleanup: see its own case'),
+  },
+  async (t) => {
+    const { pidFile, cmd } = linkedChild('noffi');
+    t.after(() => {
+      try {
+        if (pidIn(pidFile)) process.kill(pidIn(pidFile));
+      } catch {}
+    });
+    const { res, ready } = await timeOutWhen(
+      cmd,
+      { timeoutMs: 4000, kernel32: null },
+      () => pidIn(pidFile) > 0,
+      t.signal,
+    );
+    assert.ok(ready, `child never started: ${res.output}`);
+    assert.equal(res.timedOut, true);
+    assert.equal(res.containment, 'none');
+    assert.ok(
+      res.cleanupErrors.some((e) => /orphaned descendants are not contained/.test(e)),
+      JSON.stringify(res.cleanupErrors),
+    );
+    await waitFor(() => !alive(pidIn(pidFile)), t.signal); // a child still linked to the shell that is left running fails at the case timeout
+  },
+);
 
-// Builds at path a loadable GgJob that prints PLANTED instead of running the command.
-function plantedAssembly(path) {
-  const build = script(
-    'plant.ps1',
-    `Add-Type -OutputAssembly $env:GG_TEST_PLANTED -OutputType Library -TypeDefinition @'
-public static class GgJob {
-  public static int Run(string cmd, string cwd, bool deny) { System.Console.Out.WriteLine("PLANTED"); return 0; }
-  public static void Done() {}
-}
-'@
-`,
-  );
-  const built = spawnSync(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', build],
-    { windowsHide: true, encoding: 'utf8', env: { ...process.env, GG_TEST_PLANTED: path } },
-  );
-  assert.ok(existsSync(path), built.stderr);
-  return path;
-}
-
-test('the job helper reuses its compiled assembly on a second call', WIN_CASE, async (t) => {
-  const dir = helperCopy();
-  const first = await runHelper(dir, t.signal); // nothing cached yet: compiles, and caches what it compiled
-  assert.deepEqual(
-    howLoaded(first.raw).map(([k]) => k),
-    ['compiled'],
-    first.raw,
-  );
-  const [[, cached]] = howLoaded(first.raw);
-  const second = await runHelper(dir, t.signal);
-  assert.equal(second.code, 0);
-  assert.match(second.raw, /ran/);
-  assert.deepEqual(howLoaded(second.raw), [['loaded', cached]], second.raw);
-});
-
-// The wiring: runShell starts the helper so that it finds the cache beside lib/winjob.ps1. The case above shows the
-// cache is written; the suite's own cache may already be warm here.
-test('a second runShell with a timeout loads the cached helper assembly', WIN_CASE, async () => {
-  const call = async () => {
-    let raw = '';
-    const onHelper = (helper) => {
-      for (const s of [helper.stdout, helper.stderr]) s.on('data', (d) => (raw += d));
-    };
-    const res = await exec.runShell(`"${process.execPath}" -e "1"`, shellOptions({ timeoutMs: 60_000, onHelper }));
-    return { res, raw };
-  };
-  await call();
-  const second = await call();
-  assert.equal(second.res.code, 0);
-  assert.deepEqual(
-    howLoaded(second.raw).map(([k]) => k),
-    ['loaded'],
-    second.raw,
-  );
-  const [[, from]] = howLoaded(second.raw);
-  assert.equal(
-    paths.pathKey(dirname(from)),
-    paths.pathKey(fileURLToPath(new URL('../../../lib/winjob-cache', import.meta.url))),
-    from,
-  );
-});
-
-test('a truncated helper assembly falls back to compiling', WIN_CASE, async (t) => {
-  const dir = helperCopy();
-  const first = await runHelper(dir, t.signal); // nothing cached yet: compiles, and caches what it compiled
-  assert.deepEqual(
-    howLoaded(first.raw).map(([k]) => k),
-    ['compiled'],
-    first.raw,
-  );
-  const [[, cached]] = howLoaded(first.raw);
-  assert.ok(existsSync(cached), `no cached assembly at ${cached}`);
-  writeFileSync(cached, readFileSync(cached).subarray(0, 1024));
-  const second = await runHelper(dir, t.signal);
-  assert.equal(second.code, 0);
-  assert.match(second.raw, /ran/);
-  assert.deepEqual(
-    howLoaded(second.raw).map(([k]) => k),
-    ['compiled'],
-    second.raw,
-  );
-});
-
-test('a cached helper assembly whose bytes do not match its name is deleted, not loaded', WIN_CASE, async (t) => {
-  const dir = helperCopy();
-  const first = await runHelper(dir, t.signal);
-  assert.deepEqual(
-    howLoaded(first.raw).map(([k]) => k),
-    ['compiled'],
-    first.raw,
-  );
-  const [[, cached]] = howLoaded(first.raw);
-  copyFileSync(plantedAssembly(join(tmp, 'mismatched.dll')), cached); // loads, but is not the bytes its name hashes
-  const second = await runHelper(dir, t.signal);
-  assert.equal(second.code, 0);
-  assert.match(second.raw, /ran/);
-  assert.doesNotMatch(second.raw, /PLANTED/);
-  assert.deepEqual(
-    howLoaded(second.raw).map(([k]) => k),
-    ['compiled'],
-    second.raw,
-  );
-  assert.ok(!existsSync(cached), `the damaged copy is still at ${cached}`);
-});
-
-test('a helper assembly compiled from another version of the helper is not loaded', WIN_CASE, async (t) => {
-  const dir = helperCopy();
-  const first = await runHelper(dir, t.signal); // caches this version's assembly
-  assert.deepEqual(
-    howLoaded(first.raw).map(([k]) => k),
-    ['compiled'],
-    first.raw,
-  );
-  const ps1 = join(dir, 'winjob.ps1');
-  writeFileSync(ps1, readFileSync(ps1, 'utf8').replace('using System;', 'using System; // another version'));
-  const next = await runHelper(dir, t.signal);
-  assert.equal(next.code, 0);
-  assert.match(next.raw, /ran/);
-  assert.deepEqual(
-    howLoaded(next.raw).map(([k]) => k),
-    ['compiled'],
-    next.raw,
-  );
-});
-
-// A Node that may write its worktree and %TEMP% plants an assembly there under the very name the helper's cache gives
-// this source's assembly (its content's hash included). Loaded, it would run outside the Node's sandbox. The helper
-// that runs next has nothing cached, so a loader that looked elsewhere on a miss would find the planted copies.
-test('a helper assembly in an agent-writable directory is not loaded', WIN_CASE, async (t) => {
-  const probe = await runHelper(helperCopy(), t.signal); // learns the cache's name for this source
-  assert.deepEqual(
-    howLoaded(probe.raw).map(([k]) => k),
-    ['compiled'],
-    probe.raw,
-  );
-  const [[, probePath]] = howLoaded(probe.raw);
-  const cacheDir = basename(dirname(probePath));
-  const sourceKey = basename(probePath).split('-')[0];
-  const planted = plantedAssembly(join(tmp, 'planted.dll'));
-  const name = `${sourceKey}-${createHash('sha256').update(readFileSync(planted)).digest('hex')}.dll`;
-  const worktree = mkdtempSync(join(tmp, 'agent-worktree-'));
-  const agentTemp = mkdtempSync(join(tmp, 'agent-temp-'));
-  for (const d of [worktree, join(worktree, cacheDir), agentTemp, join(agentTemp, cacheDir)]) {
-    mkdirSync(d, { recursive: true });
-    copyFileSync(planted, join(d, name));
+test('the result names the containment it used', CASE, async () => {
+  const p = script('containment.mjs', `console.log('ran');`);
+  const win = process.platform === 'win32';
+  const contained = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 60_000 });
+  assert.equal(contained.containment, win ? 'job' : 'none', contained.output);
+  assert.equal(contained.containmentError, undefined);
+  for (const kernel32 of [null, noJob()]) {
+    const res = await exec.createExec({ kernel32 }).runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 60_000 });
+    assert.equal(res.code, 0, res.output);
+    assert.equal(res.containment, 'none');
+    // a Windows call that runs uncontained says so whether or not it times out
+    if (win) assert.match(res.containmentError ?? '', /orphaned descendants are not contained/);
   }
-  const dir = helperCopy();
-  const run = await runHelper(dir, t.signal, { cwd: worktree, env: { TEMP: agentTemp, TMP: agentTemp } });
-  assert.equal(run.code, 0);
-  assert.match(run.raw, /ran/);
-  assert.doesNotMatch(run.raw, /PLANTED/);
-  assert.deepEqual(
-    howLoaded(run.raw).map(([k]) => k),
-    ['compiled'],
-    run.raw,
-  );
-  const [[, cached]] = howLoaded(run.raw);
-  assert.ok(cached.startsWith(dir), `cached at ${cached}, not beside the helper in ${dir}`);
 });
 
 test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
