@@ -9,6 +9,7 @@ import * as doctor from '../../lib/doctor.mjs';
 import * as github from '../../lib/github.mjs';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
+import * as golden from '../support/golden.mjs';
 import {
   TICKET,
   BRANCH,
@@ -85,7 +86,7 @@ test('a concurrent State Label create does not fail the Run', async (t) => {
   // Another Run creates every State Label between this Run's label read and its creates.
   let reads = 0;
   const inner = f.gh.gh;
-  github.setGh(async (args, cwd, input) => {
+  f.options.gh = github.createGh(async (args, cwd, input) => {
     if (args[0] === 'api' && args.at(-1).includes('/labels') && ++reads === 1) {
       f.gh.calls.push({ args, cwd, input });
       return JSON.stringify([[]]);
@@ -102,7 +103,7 @@ test('a transient State Label setup failure is retried by the later label write'
   const f = fixture(t);
   let reads = 0;
   const inner = f.gh.gh;
-  github.setGh(async (args, cwd, input) => {
+  f.options.gh = github.createGh(async (args, cwd, input) => {
     if (args[0] === 'api' && args.at(-1).includes('/labels') && ++reads === 1) {
       f.gh.calls.push({ args, cwd, input });
       throw new Error('HTTP 502: temporary label read failure');
@@ -205,7 +206,7 @@ test('every error a Run throws names its repository', async (t) => {
   assert.ok(preflight?.message.startsWith('[main] preflight failed:'), preflight?.message);
 
   const v = fixture(t);
-  github.setGh(async (args) => {
+  v.options.gh = github.createGh(async (args) => {
     throw new Error(`gh ${args.join(' ')} exited 1\nHTTP 404: Not Found`);
   });
   const view = await run.runTarget(v.options).then(
@@ -221,25 +222,6 @@ test('every error a Run throws names its repository', async (t) => {
     (e) => e,
   );
   assert.ok(epic?.message.startsWith(`[main] #${EPIC}: nothing ready`), epic?.message);
-});
-
-test('a case with several run fixtures leaves gh as it found it', async (t) => {
-  const currentGh = () => {
-    const gh = github.setGh(null);
-    github.setGh(gh);
-    return gh;
-  };
-  const before = currentGh();
-  await t.test('a case that swaps gh between its fixtures', (inner) => {
-    fixture(inner);
-    github.setGh(async () => {
-      throw new Error('the stub the case installed');
-    });
-    fixture(inner);
-  });
-  const after = currentGh();
-  github.setGh(before);
-  assert.equal(after, before, 'gh is the transport from before the case');
 });
 
 test('preflight names every failing vertex in one error, before any gh call, worktree or run directory', async (t) => {
@@ -402,8 +384,7 @@ test('an admission hold saves an admission stop that declares every field', asyn
     }),
   );
   const saved = [];
-  const previous = record.setSaveHook((next) => saved.push(structuredClone(next)));
-  t.after(() => record.setSaveHook(previous));
+  golden.onSave(t, (next) => saved.push(structuredClone(next)));
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));

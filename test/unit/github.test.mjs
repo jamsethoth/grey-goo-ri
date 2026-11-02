@@ -7,8 +7,8 @@ import * as golden from '../support/golden.mjs';
 
 test('createIssue keeps malformed output complete for redaction before publication', async (t) => {
   const output = 'x'.repeat(190) + '/private/worktree/secret-file';
-  golden.useGh(t, async () => output);
-  await assert.rejects(github.createIssue({ title: 'Ticket', body: 'body' }, '/repo'), (err) =>
+  const client = github.createGh(async () => output);
+  await assert.rejects(client.createIssue({ title: 'Ticket', body: 'body' }, '/repo'), (err) =>
     err.message.includes(output),
   );
 });
@@ -39,8 +39,8 @@ const labelArgs = (calls) =>
 test('setLabels logs and records a failed label update with the ticket number, and reports failure', async (t) => {
   const logs = [],
     events = [];
-  golden.useGh(t, failingGh(() => new Error('HTTP 502')).gh);
-  const ok = await github.setLabels(7, { add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }, '/repo', {
+  const client = github.createGh(failingGh(() => new Error('HTTP 502')).gh);
+  const ok = await client.setLabels(7, { add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }, '/repo', {
     log: (m) => logs.push(m),
     ev: (t, d) => events.push([t, d]),
   });
@@ -57,9 +57,9 @@ test('setLabels logs and records a failed label update with the ticket number, a
 
 test('setLabels returns true and records nothing when the update succeeds', async (t) => {
   const events = [];
-  golden.useGh(t, fakeGh().gh);
+  const client = github.createGh(fakeGh().gh);
   assert.equal(
-    await github.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', { log() {}, ev: (t) => events.push(t) }),
+    await client.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', { log() {}, ev: (t) => events.push(t) }),
     true,
   );
   assert.deepEqual(events, []);
@@ -73,8 +73,8 @@ const ghFailure = () =>
 test('setLabels keeps the reason from the later lines of the error in the log and the event', async (t) => {
   const logs = [],
     events = [];
-  golden.useGh(t, failingGh(ghFailure).gh);
-  await github.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', {
+  const client = github.createGh(failingGh(ghFailure).gh);
+  await client.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', {
     log: (m) => logs.push(m),
     ev: (t, d) => events.push([t, d]),
   });
@@ -90,8 +90,8 @@ test('setLabels keeps the reason from the later lines of the error in the log an
 
 test('error excerpts are bounded', async (t) => {
   const logs = [];
-  golden.useGh(t, failingGh(() => new Error(`first\n${'x'.repeat(5000)}`)).gh);
-  await github.setLabels(7, {}, '/repo', { log: (m) => logs.push(m), ev() {} });
+  const client = github.createGh(failingGh(() => new Error(`first\n${'x'.repeat(5000)}`)).gh);
+  await client.setLabels(7, {}, '/repo', { log: (m) => logs.push(m), ev() {} });
   assert.ok(logs[0].length < 500, `log line of ${logs[0].length} chars`);
   const excerpt = github.errorExcerpt(new Error(`first\n${'x'.repeat(5000)}`));
   assert.ok(excerpt.length <= 300, `excerpt of ${excerpt.length} chars`);
@@ -155,8 +155,8 @@ for (const [label, reason] of [
 const viewLabelled = async (t, name) => {
   const fake = golden.fakeGh({ ticket: 7 });
   fake.labels.add(name);
-  golden.useGh(t, fake.gh);
-  return github.viewIssue(7, '/repo');
+  const client = github.createGh(fake.gh);
+  return client.viewIssue(7, '/repo');
 };
 
 for (const [prefix, label, reason] of [
@@ -204,23 +204,23 @@ const eventPages = [
 for (const prefix of ['gg', 'Gg']) {
   test(`inProgressSince with prefix ${prefix} matches mixed-case event labels`, async (t) => {
     const { gh, calls } = fakeGh((args) => (args[0] === 'api' ? eventPages : ''));
-    golden.useGh(t, gh);
-    assert.equal(await github.inProgressSince(7, '/repo', { prefix }), '2026-10-04T00:00:00Z');
+    const client = github.createGh(gh);
+    assert.equal(await client.inProgressSince(7, '/repo', { prefix }), '2026-10-04T00:00:00Z');
     assert.ok(calls[0].args.includes('--paginate'), JSON.stringify(calls[0].args));
     assert.match(calls[0].args.at(-1), /\/issues\/7\/events$/);
   });
 }
 
 test('inProgressSince is null when no event adds the in-progress State Label', async (t) => {
-  golden.useGh(t, fakeGh(() => [eventPages[0].slice(1), eventPages[1].slice(1)]).gh);
-  assert.equal(await github.inProgressSince(7, '/repo'), null);
+  const client = github.createGh(fakeGh(() => [eventPages[0].slice(1), eventPages[1].slice(1)]).gh);
+  assert.equal(await client.inProgressSince(7, '/repo'), null);
 });
 
 test('upsertPr updates an existing PR found by head branch instead of creating', async (t) => {
   const pr = { number: 12, state: 'OPEN', isDraft: true, url: 'https://github.com/o/r/pull/12' };
   const { gh, calls } = fakeGh((args) => (args[0] === 'pr' && args[1] === 'list' ? [pr] : ''));
-  golden.useGh(t, gh);
-  const got = await github.upsertPr({ branch: 'ticket/7-x', base: 'main', title: 'T', body: 'B' }, '/repo');
+  const client = github.createGh(gh);
+  const got = await client.upsertPr({ branch: 'ticket/7-x', base: 'main', title: 'T', body: 'B' }, '/repo');
   assert.equal(got.number, 12);
   const verbs = calls.map(({ args }) => `${args[0]} ${args[1]}`);
   assert.deepEqual(
@@ -241,8 +241,8 @@ for (const [prefix, expected] of [
 ]) {
   test(`ensureLabels creates the four ${prefix}-prefixed state labels`, async (t) => {
     const { gh, calls } = fakeGh(() => []);
-    golden.useGh(t, gh);
-    await github.ensureLabels('/repo', { prefix });
+    const client = github.createGh(gh);
+    await client.ensureLabels('/repo', { prefix });
     const created = calls.filter(({ args }) => args[0] === 'label' && args[1] === 'create').map(({ args }) => args[2]);
     assert.deepEqual(created.sort(), expected);
     assert.ok(
@@ -258,8 +258,8 @@ test('ensureLabels reads all label pages once and creates only missing State Lab
       ? [[{ name: 'gg:state:in-progress' }, { name: 'unrelated' }], [{ name: 'gg:state:needs-human' }]]
       : '',
   );
-  golden.useGh(t, gh);
-  await github.ensureLabels('/repo');
+  const client = github.createGh(gh);
+  await client.ensureLabels('/repo');
   assert.equal(calls.filter(({ args }) => args[0] === 'api').length, 1);
   assert.deepEqual(
     calls
@@ -276,10 +276,10 @@ test('ensureLabels reads all label pages once and creates only missing State Lab
 
 test('every label written through gh carries the prefix', async (t) => {
   const { gh, calls } = fakeGh(() => []);
-  golden.useGh(t, gh);
-  await github.ensureLabels('/repo', { prefix: 'x' });
-  await github.editLabels(7, { add: ['x:state:in-progress'], remove: ['x:await:qa-approval'] }, '/repo');
-  await github.setLabels(7, { add: ['x:state:ready-for-qa'], remove: ['x:state:in-progress'] }, '/repo', {
+  const client = github.createGh(gh);
+  await client.ensureLabels('/repo', { prefix: 'x' });
+  await client.editLabels(7, { add: ['x:state:in-progress'], remove: ['x:await:qa-approval'] }, '/repo');
+  await client.setLabels(7, { add: ['x:state:ready-for-qa'], remove: ['x:state:in-progress'] }, '/repo', {
     log() {},
     ev() {},
   });
@@ -318,8 +318,8 @@ const commentsGh = () =>
 
 test('viewPr reads the PR fields through gh pr view', async (t) => {
   const { gh, calls } = commentsGh();
-  golden.useGh(t, gh);
-  const got = await github.viewPr(12, '/repo');
+  const client = github.createGh(gh);
+  const got = await client.viewPr(12, '/repo');
   assert.equal(got.body, 'PR body');
   assert.equal(got.headRefName, 'ticket/7-x');
   const view = calls.find(({ args }) => args[0] === 'pr' && args[1] === 'view').args;
@@ -338,8 +338,8 @@ test('viewPr reads the PR fields through gh pr view', async (t) => {
 
 test("comments reads a PR's comments through gh api", async (t) => {
   const { gh, calls } = commentsGh();
-  golden.useGh(t, gh);
-  assert.deepEqual(await github.comments(12, '/repo'), [
+  const client = github.createGh(gh);
+  assert.deepEqual(await client.comments(12, '/repo'), [
     { id: 101, body: 'first', createdAt: '2026-10-01T00:00:00Z' },
     { id: 102, body: 'second', createdAt: '2026-10-02T00:00:00Z' },
   ]);
@@ -353,8 +353,8 @@ test("comments reads a PR's comments through gh api", async (t) => {
 
 test("comments reads an issue's comments through gh api", async (t) => {
   const { gh, calls } = commentsGh();
-  golden.useGh(t, gh);
-  assert.deepEqual(await github.comments(7, '/repo'), [
+  const client = github.createGh(gh);
+  assert.deepEqual(await client.comments(7, '/repo'), [
     { id: 101, body: 'first', createdAt: '2026-10-01T00:00:00Z' },
     { id: 102, body: 'second', createdAt: '2026-10-02T00:00:00Z' },
   ]);
@@ -380,8 +380,8 @@ test('ensureLabels accepts differently cased existing State Labels', async (t) =
         ]
       : '',
   );
-  golden.useGh(t, gh);
-  await github.ensureLabels('/repo', { prefix: 'Gg' });
+  const client = github.createGh(gh);
+  await client.ensureLabels('/repo', { prefix: 'Gg' });
   assert.equal(calls.filter(({ args }) => labelsApi(args)).length, 1, 'one label list read');
   assert.deepEqual(
     calls.filter(({ args }) => args[0] === 'label').map(({ args }) => args[2]),
@@ -402,8 +402,8 @@ test('ensureLabels accepts a concurrent create after confirming presence', async
     if (args[0] === 'label') throw COLLISION(args[2]);
     return '';
   });
-  golden.useGh(t, gh);
-  await github.ensureLabels('/repo');
+  const client = github.createGh(gh);
+  await client.ensureLabels('/repo');
   assert.equal(calls.filter(({ args }) => args[0] === 'label').length, 1, 'a confirmed label is not created again');
   assert.equal(reads, 2, 'the failed create is confirmed by one more read');
   assert.ok(
@@ -430,8 +430,8 @@ for (const [name, reread] of [
       if (args[0] === 'label') throw denied;
       return '';
     });
-    golden.useGh(t, gh);
-    await assert.rejects(github.ensureLabels('/repo'), (err) => err === denied);
+    const client = github.createGh(gh);
+    await assert.rejects(client.ensureLabels('/repo'), (err) => err === denied);
   });
 }
 
@@ -443,11 +443,11 @@ test('setLabels reports an unconfirmed setup failure without editing the issue',
     if (args[0] === 'label') throw new Error('HTTP 403: label creation denied');
     return '';
   });
-  golden.useGh(t, gh);
-  const ok = await github.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', {
+  const client = github.createGh(gh);
+  const ok = await client.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', {
     log: (m) => logs.push(m),
     ev: (t, d) => events.push([t, d]),
-    ensureLabels: () => github.ensureLabels('/repo'),
+    ensureLabels: () => client.ensureLabels('/repo'),
   });
   assert.equal(ok, false);
   assert.ok(
@@ -463,9 +463,9 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
   const { gh, calls } = fakeGh(() =>
     golden.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }),
   );
-  golden.useGh(t, gh);
-  assert.equal(await github.comment(7, 'a "quoted"\nbody', '/repo'), url);
-  assert.equal(await github.comment(7, 'on the PR', '/repo'), url);
+  const client = github.createGh(gh);
+  assert.equal(await client.comment(7, 'a "quoted"\nbody', '/repo'), url);
+  assert.equal(await client.comment(7, 'on the PR', '/repo'), url);
   assert.equal(github.commentId(url), 5);
   assert.ok(
     calls.every(({ args }) => golden.isCommentPost(args, 7) && args.includes('--include')),
@@ -476,14 +476,14 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
     [{ body: 'a "quoted"\nbody' }, { body: 'on the PR' }],
   );
 
-  github.setGh(async (args) => {
+  const rateLimited = github.createGh(async (args) => {
     throw golden.ghError(args, {
       status: 403,
       headers: { 'Retry-After': '7', 'X-RateLimit-Remaining': '12' },
       body: { message: 'You have exceeded a secondary rate limit.' },
     });
   });
-  await assert.rejects(github.comment(7, 'b', '/repo'), (err) => {
+  await assert.rejects(rateLimited.comment(7, 'b', '/repo'), (err) => {
     assert.deepEqual(err.http, { status: 403, headers: { 'retry-after': '7', 'x-ratelimit-remaining': '12' } });
     assert.match(err.message, /secondary rate limit/);
     return true;
@@ -508,8 +508,8 @@ test('a rate-limited PR write uses the wait GitHub gives', async (t) => {
     // gh pr create goes through GraphQL, whose rate limit has no HTTP status.
     throw golden.ghError(args, { stderr: 'GraphQL: API rate limit exceeded for user ID 1.' });
   });
-  golden.useGh(t, gh);
-  const err = await github.upsertPr({ branch: 'b', base: 'main', title: 'T', body: 'B' }, '/repo').then(
+  const client = github.createGh(gh);
+  const err = await client.upsertPr({ branch: 'b', base: 'main', title: 'T', body: 'B' }, '/repo').then(
     () => null,
     (e) => e,
   );
@@ -525,8 +525,8 @@ test('a failed rate-limit probe keeps the 60/120 s fallback', async (t) => {
       ? new Error('HTTP 502')
       : golden.ghError(args, { status: 403, body: { message: 'API rate limit exceeded for user ID 1.' } });
   });
-  golden.useGh(t, gh);
-  const err = await github.markReady(7, '/repo').then(
+  const client = github.createGh(gh);
+  const err = await client.markReady(7, '/repo').then(
     () => null,
     (e) => e,
   );

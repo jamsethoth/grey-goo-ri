@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as golden from './golden.mjs';
@@ -223,33 +224,36 @@ export const onPr = (fields) => ({ matches: (args) => golden.isCommentPost(args,
 // Crashes the `n`th review-comment POST as it launches, after the queued failures before it.
 export function crashPost(g, n) {
   let posts = 0;
-  g.options.gh.setGh(async (args, cwd, input) => {
+  g.options.gh = github.createGh(async (args, cwd, input) => {
     if (golden.isCommentPost(args, PR) && ++posts === n) throw new interpreter.CrashError('crash as the POST launched');
     return g.gh.gh(args, cwd, input);
   });
   return () => posts;
 }
 
-// Another holder takes the repo lock at the first lock attempt after `arm()`, so that attempt fails and waits; at the
-// next attempt `during()` runs and the lock is released, and the waiting git write goes ahead behind a contended lock.
-export function contendRepoLock(t, commonDir, during) {
+// Another holder takes the repo lock at the first lock attempt of the Execution's locks after `arm()`, so that attempt
+// fails and waits; at the next attempt `during()` runs and the lock is released, and the waiting git write goes ahead
+// behind a contended lock.
+export function contendRepoLock(g, during) {
+  const commonDir = g.commonDir;
   let state = 'idle';
   let held = null;
-  const previous = locks.setAttemptWrapper(async (lock, attempt) => {
-    if (lock.commonDir !== commonDir || lock.name !== 'repo') return attempt();
-    if (state === 'armed') {
-      state = 'holding';
-      held = await attempt();
-      return null;
-    }
-    if (state === 'holding') {
-      state = 'released';
-      await during();
-      await locks.release(held);
-    }
-    return attempt();
+  g.options.locks = locks.createLocks({
+    wrapAttempt: async (lock, attempt) => {
+      if (lock.commonDir !== commonDir || lock.name !== 'repo') return attempt();
+      if (state === 'armed') {
+        state = 'holding';
+        held = await attempt();
+        return null;
+      }
+      if (state === 'holding') {
+        state = 'released';
+        await during();
+        await locks.release(held);
+      }
+      return attempt();
+    },
   });
-  t.after(() => locks.setAttemptWrapper(previous));
   return {
     arm: () => {
       state = 'armed';
@@ -273,6 +277,6 @@ export function lockedSetup(g, after) {
     ]),
   );
   const git = g.options.git;
-  g.options.git = run.lockedGit({ ...git, ...raw }, g.commonDir);
+  g.options.git = run.lockedGit({ ...git, ...raw }, g.commonDir, { locks: g.options.locks });
   return counts;
 }
