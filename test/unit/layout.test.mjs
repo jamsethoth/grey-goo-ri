@@ -49,11 +49,11 @@ for (const file of unitFiles) {
   });
 }
 // Not source: lib/winjob-cache/ is the gitignored assembly cache the exec suite writes as it runs (ADR 0017).
-const SKIPPED = new Set(['.git', 'node_modules', 'winjob-cache']);
+const SKIPPED = new Set(['.git', 'node_modules', 'lib/winjob-cache']);
 function repoFiles(dir = '') {
   return readdirSync(root + dir, { withFileTypes: true }).flatMap((entry) => {
-    if (SKIPPED.has(entry.name)) return [];
     const path = dir + entry.name;
+    if (SKIPPED.has(path)) return [];
     return entry.isDirectory() ? repoFiles(`${path}/`) : [path];
   });
 }
