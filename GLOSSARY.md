@@ -60,7 +60,7 @@ _Avoid_: round, iteration
 
 **Vertex input**:
 A named value a Vertex reads from an Action output of an earlier Visit, declared `from` one reference
-`<vertex>.<action id>.<field>` or a list of them, where the latest Visit that produced any wins. It is resolved and
+`<vertex>.<action id>.<output>` or a list of them, where the latest Visit that produced any wins. It is resolved and
 snapshotted at Visit entry with the Vertex, Visit and Action that produced it; an `optional` input none produced is
 absent, and `pick` projects a list of objects to one field. Everything one Vertex hands another passes this way.
 _Avoid_: parameter, dependency, upstream output
@@ -252,7 +252,8 @@ The one field of a Structured Response in which the agent names what it reports:
 _Avoid_: status, result, response (for this field)
 
 **Claim token**:
-One value a Procedure lets its Claim take, declared as `{ requires: [<check ids>] }` or `{ stop: true }`. A token with
+One value a Procedure lets its Claim take, declared under its `claimTokens` as `{ requires: [<check ids>] }` or
+`{ stop: true }`. A token with
 `requires` is held to those Checks: when every one passed, the `passed` table decides the Outcome, else the `failed`
 table after recovery. A stop token still runs its pass's Checks, then the `stopped` table decides, else the token. A
 Vertex with no agent Action has the implicit token ok, which requires every Check it declares.
@@ -276,7 +277,10 @@ How an agent process ended: completed, failed with a Failure Class, timed out or
 _Avoid_: exit status, return value
 
 **Failure Class**:
-The typed category of a failed Harness Result: auth, quota, budget, rate-limited, transient or unknown.
+The typed category of a failure gg can act on: of a failed Harness Result (auth, quota, budget, rate-limited, transient
+or unknown) or of a failed remote Action, a gh or git call (rejected, rate-limited, auth, transient, invalid or
+unknown). What a class does depends on its source: a Harness auth, quota or budget stops the Run; a remote failure
+that is not retried faults only its Ticket.
 _Avoid_: error type, error code
 
 **Signal**:

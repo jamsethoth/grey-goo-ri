@@ -422,7 +422,8 @@ for (const [name, err, cls, retryable] of [
 ]) {
   test(`a remote failure is classified: ${name} is ${retryable ? 'a retryable' : 'a final'} ${cls}`, () => {
     const f = outcome.classifyRemoteFailure(err);
-    assert.equal(f.class, cls);
+    assert.equal(f.failureClass, cls);
+    assert.ok(outcome.REMOTE_FAILURE_CLASSES.includes(f.failureClass), 'a remote failure is one of the remote classes');
     assert.equal(f.retryable, retryable);
   });
 }
@@ -448,4 +449,24 @@ test('a rate limit with an invalid Retry-After backs off 60 s', () => {
 test('a transient remote failure backs off at least 60 s, growing exponentially', () => {
   assert.equal(delay(http(502, 'Bad Gateway'), 1), 60_000);
   assert.equal(delay(http(502, 'Bad Gateway'), 2), 120_000);
+});
+
+// One Failure Class term, two sources: each declares the classes it can report (#229).
+test('a Harness and a remote Action each declare the Failure Classes they report', () => {
+  assert.deepEqual(outcome.HARNESS_FAILURE_CLASSES, [
+    'auth',
+    'quota',
+    'budget',
+    'rate-limited',
+    'transient',
+    'unknown',
+  ]);
+  assert.deepEqual(outcome.REMOTE_FAILURE_CLASSES, [
+    'rejected',
+    'rate-limited',
+    'auth',
+    'transient',
+    'invalid',
+    'unknown',
+  ]);
 });

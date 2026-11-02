@@ -46,7 +46,7 @@ export const redResponse = {
 export const greenResponse = {
   claim: 'ok',
   summary: 'Add two numbers.',
-  dod: [{ item: 'add returns the sum', met: true, evidence: 'test/add.test.mjs' }],
+  definitionOfDone: [{ item: 'add returns the sum', met: true, evidence: 'test/add.test.mjs' }],
   qa: {
     setup: 'npm test',
     steps: [{ action: 'run npm test', expected: 'it passes' }],
@@ -62,12 +62,12 @@ export const firstVisitResponses = {
   'red/1/red/1': {
     files: { 'test/add.test.mjs': "import { add } from '../lib/add.mjs';\n" },
     response: redResponse,
-    result: { usage: { delta: { input: 100, output: 20 } } },
+    result: { usage: { delta: { inputTokens: 100, outputTokens: 20 } } },
   },
   'green/1/green/1': {
     files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' },
     response: greenResponse,
-    result: { usage: { delta: { input: 200, output: 40 } } },
+    result: { usage: { delta: { inputTokens: 200, outputTokens: 40 } } },
   },
 };
 
@@ -86,7 +86,7 @@ export const implementerAgent = (persona) => ({
 
 // The inputs the shipped Flow declares: green reads red's committed tests and Red Evidence; a reviewer or publish reads
 // the latest implementation report and Green Evidence across the implementing Vertices, and the Red Evidence.
-export const GREEN_INPUTS = { tests: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
+export const GREEN_INPUTS = { testFiles: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
 export const implInputs = (vertices) => ({
   report: { from: vertices.map((v) => `${v}.${v === 'green' ? 'green' : 'fix'}.response`) },
   red: { from: 'red.red-check.evidence' },
@@ -220,7 +220,7 @@ export async function setup(
   const harness = fakeHarness({
     transcriptDir: join(root, 'transcripts'),
     responses,
-    capabilities: { cost: false, reasoningTokens: false },
+    capabilities: { costReporting: false, reasoningTokenReporting: false },
   });
   const run = harness.run;
   harness.run = (call) => {

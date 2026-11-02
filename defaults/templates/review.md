@@ -1,4 +1,4 @@
-Review the change on branch {{ticket.branch}} (against {{base}}) for GitHub issue #{{ticket.number}}: {{ticket.title}}
+Review the change on branch {{ticket.branch}} (against {{baseBranch}}) for GitHub issue #{{ticket.number}}: {{ticket.title}}
 Read-only: do not modify files.
 
 ## Ticket (includes the definition of done)
@@ -32,11 +32,11 @@ Read-only: do not modify files.
 ```
 {{inputs.red.output}}
 ```
-{{#inputs.red.heuristic}}
+{{#inputs.red.foundByNameOnly}}
 
 The Red Check found the failing test by its name only: the runner printed no per-test statuses. Check that the test
 fails for the reason the ticket gives.
-{{/inputs.red.heuristic}}
+{{/inputs.red.foundByNameOnly}}
 
 ## Green Evidence
 {{#inputs.green}}

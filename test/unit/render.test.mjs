@@ -268,7 +268,7 @@ for (const [kind, subject] of [
 
 const impl = {
   summary: 'Adds the cart total.',
-  dod: [
+  definitionOfDone: [
     { item: 'Total sums items', met: true, evidence: 'test/cart.test.mjs' },
     { item: 'Docs', met: false, evidence: '' },
   ],
@@ -301,11 +301,11 @@ const provenance = [
     model: 'opus',
     effort: 'high',
     persona: 'tdd-implementer',
-    hash: 'abc123',
+    personaHash: 'abc123',
     calls: 2,
-    input: 100,
-    cached: 40,
-    output: 20,
+    inputTokens: 100,
+    cacheReadTokens: 40,
+    outputTokens: 20,
   },
   {
     vertex: 'review',
@@ -313,11 +313,11 @@ const provenance = [
     model: 'gpt',
     effort: 'medium',
     persona: 'reviewer',
-    hash: 'def456',
+    personaHash: 'def456',
     calls: 1,
-    input: 50,
-    cached: 0,
-    output: 10,
+    inputTokens: 50,
+    cacheReadTokens: 0,
+    outputTokens: 10,
   },
 ];
 
@@ -337,7 +337,7 @@ test('the PR body carries the marker line and provenance', async () => {
 test('provenance counts one call per Attempt and a resumed Session once', () => {
   const at = (vertex, action, recovery, attempt) =>
     marker.formatMarker({ execution: 'e1', vertex, visit: 1, action, recovery, run: 'r1', attempt });
-  const usage = (input, cached, output) => ({ input, cached, output });
+  const usage = (input, cached, output) => ({ inputTokens: input, cacheReadTokens: cached, outputTokens: output });
   // Each Attempt's completion saves its own usage.delta; the Session keeps only the last cumulative usage.
   const call = (m, delta) => [
     { step: 'intent', actionMarker: m, effect: 'call', payload: {}, evidence: null },
@@ -381,11 +381,11 @@ test('provenance counts one call per Attempt and a resumed Session once', () => 
     model: 'opus',
     effort: 'high',
     persona: 'tdd.md',
-    hash: 'abcdef012345',
+    personaHash: 'abcdef012345',
     calls,
-    input,
-    cached,
-    output,
+    inputTokens: input,
+    cacheReadTokens: cached,
+    outputTokens: output,
   });
   assert.deepEqual(render.provenance(rec), [row('red', 2, 130, 10, 13), row('green', 2, 110, 0, 11)]);
 });
@@ -593,8 +593,8 @@ test('a review comment fences each finding past its own backticks and carries th
     {
       claim: 'changes',
       summary: 'One bug.',
-      dodMet: true,
-      tddEvidenceOk: true,
+      definitionOfDoneMet: true,
+      redGreenEvidenceOk: true,
       diagnosis: '',
       findings: [
         {
@@ -627,8 +627,8 @@ test('a review comment fences a finding file so its text cannot leave the fence'
     {
       claim: 'changes',
       summary: 'x',
-      dodMet: true,
-      tddEvidenceOk: true,
+      definitionOfDoneMet: true,
+      redGreenEvidenceOk: true,
       diagnosis: '',
       findings: [{ severity: 'major', file, issue: 'i', fix: 'f' }],
     },
@@ -658,7 +658,7 @@ const tokenResponse = {
 };
 const tokenImpl = {
   summary: 'TOKEN summary',
-  dod: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
+  definitionOfDone: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
   red: { command: 'TOKEN red', output: 'TOKEN red output' },
   green: { command: 'TOKEN green', output: 'TOKEN green output' },
   qa: {
@@ -672,8 +672,8 @@ const tokenImpl = {
 const tokenReview = {
   claim: 'changes',
   summary: 'TOKEN summary',
-  dodMet: true,
-  tddEvidenceOk: true,
+  definitionOfDoneMet: true,
+  redGreenEvidenceOk: true,
   diagnosis: '',
   findings: [{ severity: 'major', file: 'TOKEN file', issue: 'TOKEN issue', fix: 'TOKEN fix' }],
 };

@@ -10,7 +10,7 @@ vertex baseline
   access: read-only (default)
   tests: frozen
   checks: test (command test)
-  claims: ok requires test
+  claimTokens: ok requires test
   passed: none
   failed: none
   stopped: none
@@ -26,7 +26,7 @@ vertex red
   access: workspace-write
   tests: write
   checks: red-check (tests-fail test)
-  claims: ok requires red-check, blocked stops
+  claimTokens: ok requires red-check, blocked stops
   passed: none
   failed: none
   stopped:
@@ -52,7 +52,7 @@ vertex green
   access: workspace-write
   tests: frozen
   checks: test (command test)
-  claims: ok requires test, blocked stops
+  claimTokens: ok requires test, blocked stops
   passed: none
   failed: none
   stopped:
@@ -69,7 +69,7 @@ vertex green
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
   inputs:
-    tests <- red.commit.files | senior-red.commit.files (optional)
+    testFiles <- red.commit.files | senior-red.commit.files (optional)
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
     findings <- reviewer.review.response.findings (optional)
     previous <- green.rescue (optional)
@@ -81,7 +81,7 @@ vertex senior-green
   access: workspace-write
   tests: frozen
   checks: test (command test)
-  claims: ok requires test, blocked stops
+  claimTokens: ok requires test, blocked stops
   passed: none
   failed: none
   stopped:
@@ -99,7 +99,7 @@ vertex senior-green
     harness-transient -> end needs-human (Flow "*"); work left in place
     harness-unparsed -> end needs-human (Flow "*"); work left in place
   inputs:
-    tests <- red.commit.files | senior-red.commit.files (optional)
+    testFiles <- red.commit.files | senior-red.commit.files (optional)
     red <- red.red-check.evidence | senior-red.red-check.evidence (optional)
     findings <- reviewer.review.response.findings (optional)
     previous <- green.rescue (optional)
@@ -111,7 +111,7 @@ vertex reviewer
   access: read-only (capped by the Procedure)
   tests: frozen
   checks: review-pass (response), repeat (repeat)
-  claims: ok requires none, changes requires none, blocked stops
+  claimTokens: ok requires none, changes requires none, blocked stops
   passed:
     1. claim = ok and check.review-pass = passed -> ok
     2. check.repeat = failed -> repeat
@@ -143,7 +143,7 @@ vertex senior-red
   access: workspace-write
   tests: write
   checks: red-check (tests-fail test)
-  claims: ok requires red-check, blocked stops
+  claimTokens: ok requires red-check, blocked stops
   passed: none
   failed: none
   stopped:
@@ -170,7 +170,7 @@ vertex implementer-fix
   access: workspace-write
   tests: named inputs.testFiles
   checks: test (command test)
-  claims: ok requires test, blocked stops
+  claimTokens: ok requires test, blocked stops
   passed: none
   failed: none
   stopped:
@@ -199,7 +199,7 @@ vertex senior-dev
   access: workspace-write
   tests: named inputs.testFiles
   checks: test (command test)
-  claims: ok requires test, blocked stops
+  claimTokens: ok requires test, blocked stops
   passed: none
   failed: none
   stopped:
@@ -229,7 +229,7 @@ vertex publish
   access: read-only (default)
   tests: frozen
   checks: test (command test)
-  claims: ok requires test
+  claimTokens: ok requires test
   passed: none
   failed: none
   stopped: none

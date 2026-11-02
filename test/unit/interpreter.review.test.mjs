@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as config from '../../lib/config.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.mjs';
 import * as marker from '../../lib/marker.mjs';
@@ -363,4 +364,10 @@ test('a comment Action with target ticket posts on the Ticket', async (t) => {
     kind: 'issue',
     number: golden.TICKET,
   });
+});
+
+test("the review comment names the reviewer's Persona with its hash", async (t) => {
+  const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
+  const hash = config.sha256(REVIEWER_PERSONA).slice(0, 12);
+  assert.match(prReviewComments(g)[0].body, new RegExp(`, persona reviewer\\.md@${hash}_`));
 });

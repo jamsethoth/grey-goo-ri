@@ -4,7 +4,7 @@
     "claim": { "type": "string", "enum": ["ok", "blocked"] },
     "reason": { "type": "string", "enum": ["none", "misscoped", "needs-input", "environment", "bad-test"] },
     "summary": { "type": "string" },
-    "dod": {
+    "definitionOfDone": {
       "type": "array",
       "items": {
         "type": "object",
@@ -43,6 +43,6 @@
     "diagnosis": { "type": "string" },
     "notes": { "type": "string" }
   },
-  "required": ["claim", "reason", "summary", "dod", "qa", "diagnosis", "notes"],
+  "required": ["claim", "reason", "summary", "definitionOfDone", "qa", "diagnosis", "notes"],
   "additionalProperties": false
 }

@@ -114,8 +114,8 @@ export const finding = (severity, file, issue) => ({ severity, file, issue, fix:
 export const review = (claim, findings = [], extra = {}) => ({
   claim,
   summary: `The review says ${claim}.`,
-  dodMet: true,
-  tddEvidenceOk: true,
+  definitionOfDoneMet: true,
+  redGreenEvidenceOk: true,
   findings,
   diagnosis: '',
   ...extra,

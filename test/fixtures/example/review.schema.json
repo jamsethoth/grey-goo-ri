@@ -4,8 +4,8 @@
     "claim": { "type": "string", "enum": ["ok", "changes", "blocked"] },
     "reason": { "type": "string", "enum": ["none", "misscoped", "needs-input", "environment"] },
     "summary": { "type": "string" },
-    "dodMet": { "type": "boolean" },
-    "tddEvidenceOk": { "type": "boolean" },
+    "definitionOfDoneMet": { "type": "boolean" },
+    "redGreenEvidenceOk": { "type": "boolean" },
     "needsTest": { "type": "boolean" },
     "findings": {
       "type": "array",
@@ -23,6 +23,6 @@
     },
     "diagnosis": { "type": "string" }
   },
-  "required": ["claim", "reason", "summary", "dodMet", "tddEvidenceOk", "needsTest", "findings", "diagnosis"],
+  "required": ["claim", "reason", "summary", "definitionOfDoneMet", "redGreenEvidenceOk", "needsTest", "findings", "diagnosis"],
   "additionalProperties": false
 }

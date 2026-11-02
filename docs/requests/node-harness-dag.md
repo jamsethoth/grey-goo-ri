@@ -58,7 +58,7 @@ An Agent is a named, declarative unit of work for one Agent CLI. Fields, all wit
 | `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name appears in code; default empty |
 | `mode` | `headless` (default) or `interactive` (the planner) |
 | `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates per surface |
-| `resolution` | per-class retry budgets (3.4); shipped default, overridable. Outcome order is the Procedure's (ADR 0014) |
+| `resolutionPolicy` | per-class retry budgets (3.4); shipped default, overridable. Outcome order is the Procedure's (ADR 0014) |
 | `contextBudget` | optional; translated to the harness compaction threshold; compaction count logged |
 | `timeouts` | optional stall and wall-clock overrides (3.5) |
 
@@ -95,9 +95,10 @@ is passed as prompt text or a best-effort setting and the action is logged as hi
 `unsupported` means an agent that lists the field fails preflight. A harness declares one of the three for `skills`,
 `mcp`, `plugins`, `access`, `network`, `contextBudget`. Current declarations: Claude `plugins` exact, `mcp`
 unsupported (until filtering lands), `skills` hint; Codex `plugins` exact, `mcp` exact for config servers, `skills`
-hint until verified per installed version. The matrix also declares `interactive`, `background`, `resume` with its
-preconditions, `structuredOutput`, `sandbox: none | codex-windows | codex-posix`, `peakContext`, `cost`, `turns`,
-`toolCalls`, `reasoningTokens`, `backgroundWork: reported | none | unobserved`.
+hint until verified per installed version. The matrix also declares `interactive`, `backgroundSessions`, `sessionResume` with its
+preconditions, `structuredOutput`, `sandbox: none | codex-windows | codex-posix`, `peakContextReporting`,
+`costReporting`, `turnCountReporting`, `toolCallReporting`, `reasoningTokenReporting`, `backgroundWork: reported |
+none | unobserved`.
 
 Permission intents are enforced per surface, and the harness states which surface each mechanism covers: shell
 commands, built-in file tools, MCP tools, plugins and hooks, network. A combination the harness cannot enforce on
@@ -115,7 +116,7 @@ equivalent to a sandbox.
 is one field of it),
 the harness result (`completed | failed | timed-out | killed`, session id, normalised usage cumulative and delta,
 transcript path, exit code, signal, final event subtype, init metadata, permission denials, commands-run count as
-diagnostics only), and for `failed` a typed `failure.class` of `auth | quota | budget | rate-limited | transient |
+diagnostics only), and for `failed` a typed `failure.failureClass` of `auth | quota | budget | rate-limited | transient |
 unknown` with `retryAfterMs`. A harness never throws for an expected failure; a throw is an unexpected fault (3.4).
 The orchestrator validates the claim against the schema regardless of harness and derives the outcome from the
 transition table in 3.4. Outcomes are classified from the final event, not the exit code. A reported case where
@@ -178,6 +179,17 @@ reads the plugin's hook manifest, runs its session-start command through the she
 
 A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes to another Vertex or to an end
 (ADR 0014).
+
+A Layer declares Flows under `flows`, by name. Each object below takes only the keys listed; any other key fails
+admission (`lib/validate.mjs` holds the lists):
+
+| Flow object | Keys | What each key takes |
+|---|---|---|
+| `flows.<name>` | `plan`, `actionCap`, `ticket` | `null` until Epic planning is built; the Action Cap, a positive integer; the ticket section |
+| `ticket` | `entry`, `routes`, `vertices` | the id of the first Vertex; the Flow-wide routes, from Outcome to target, for an Outcome a Vertex's own route does not name, where `*` catches any Outcome no route names and no Vertex's `*` caught; the Vertices by id |
+| `vertices.<id>` | `use`, `procedure`, `inputs`, `route`, `max`, `exhausted`, and any Agent key (3.1) | the Agent it uses, whose keys it may override; the Procedure it runs (3.4); its Vertex inputs by name; its routes, from Outcome to target, where `*` catches any Outcome named in neither the Vertex's nor the Flow's routes; optional, the Bound on its Visits and the target when that Bound is exhausted |
+| `route.<outcome>` | `to`, `max`, `exhausted` | a target is a Vertex id, `{ end: <end> }`, or this edge: the Vertex to go to; optional, the Bound on its traversals and the target when that Bound is exhausted, required with it |
+| `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
 
 - Vertex: a `procedure` (3.4), an agent (3.1) when the Procedure has an agent Action, `inputs` read from earlier
   Vertices, and edges. A gate is a Vertex whose Procedure has no agent Action and a `command` Check.
@@ -268,6 +280,55 @@ Sessions never cross Vertices. gg ships no Procedure; the example `gg init` writ
 - `publish`: no agent; the `test` Check, PR body re-render, and `pr-ready` on the tree that Check passed.
 - `plan`: interactive launch; exit is `gg publish`.
 
+A Layer declares Procedures under `procedures`, by name, each taking only these keys (`lib/validate.mjs` holds the
+lists):
+
+| Procedure object | Keys | What each key takes |
+|---|---|---|
+| `procedures.<name>` | `actions`, `claimTokens`, `tests`, `access`, `recover`, `passed`, `failed`, `stopped`, `otherwise` | its Actions, in order; its Claim tokens by token, declared only with an agent Action (without one, the implicit token `ok` requires every Check); `frozen` (the default), `write` or `{ named: <reference path> }`; optional, `read-only`; optional, `{ max, brief }`, the recovery passes and their Brief; the rule tables, each a list of `{ when, outcome }` rows; optional, the Outcome when no row matches |
+| `claimTokens.<token>` | `requires`, `stop`, `comment` | either `requires`, the ids of the Checks the token is held to, or `stop: true` with an optional `comment` template |
+
+Order: the agent Action, when a Procedure has one, comes first and is its only one, so a recovery pass runs every
+Check again after it; every Check comes before any effect Action (`commit`, `push`, `pr-upsert`, `pr-ready`,
+`comment`, `await-approval`), so no effect runs before its pass is decided.
+
+Reference paths read the Visit, wherever a Procedure or its templates name one (a rule table's `when`, `with`,
+`testNames`, `list`, `tests: { named }`): `response.<field>` (the agent's Structured Response), `inputs.<name>`,
+`<action id>.<output>` (the outputs below), `claim` (the token the agent claimed), `pass` (the pass number) and
+`check.<id>` (`passed`, `failed` or `not-run`). A stop token's `comment` is the exception: it reads the response,
+`inputs.<name>` and `<action id>.<output>`, and the stop's own `end`, `outcome`, `reason` and `marker`, but not
+`claim`, `pass` or `check.<id>`. Two start elsewhere: an input's `from` starts at a Vertex
+(`<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`), and a `response`
+Check's paths start inside the response (`findings`, not `response.findings`).
+
+An output is written when its Action completes: `evidence` only when its Check passed, `response` only for a valid
+Claim. `cleanup` (decision L11) and `<vertex>.rescue` (W3, #118) are declared, so a reference to them is admitted,
+but gg does not write them yet.
+
+Every Action declares `id` (its Action id) and `do` (its kind), and only its kind's keys; any other key fails
+admission (`lib/procedures.mjs` holds the lists):
+
+| `do` | Keys | What each key takes | Outputs |
+|---|---|---|---|
+| `agent` | `brief`, `schema` | the Brief template; the Structured Response schema | `response`, `cleanup` |
+| `check` | `kind`, `recoverBrief`, `recoverable`, and the Check kind's keys below | the Check kind; optional, the recovery Brief section for a failure; optional, `false` opts out of recovery | by its Check kind, below |
+| `commit` | `type` | the commit type, such as `test`, `feat` or `fix` | `files` |
+| `push`, `pr-ready` | none | | none |
+| `pr-upsert` | `body`, `with` | the PR body template; optional, a name for each reference path the body reads | none |
+| `comment` | `target`, `body` | `pr` or `ticket`; the comment template | none |
+| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3); #119 builds the Action and its default, and until then admission requires the list | none |
+
+| Check kind | Keys | What each key takes | Outputs |
+|---|---|---|---|
+| `command` | `command`, `reuse` | a Declared Command's name; optional, `tree` reuses a pass recorded for the same tree | `evidence`, `cleanup` |
+| `tests-fail` | `command`, `testNames` | a Declared Command's name; the reference path to the test names the agent wrote | `evidence`, `cleanup` |
+| `response` | `field`, `is`, `none`, `any`, `all`, `count`, `where`, `<`, `<=`, `>`, `>=`, `=`, `allOf` | one condition: `{ field, is }`, `{ none \| any \| all: <list>, where }` or `{ count: <list>, where, <op>: <integer> }`, with `<op>` one of the comparison keys; or `allOf: [<condition>, ...]`, passing when every one holds | none |
+| `repeat` | `list`, `fields` | the reference path to a list of objects; the item fields its Findings Hash covers | `findingsHash` |
+
+A Check's `evidence` is `{ command, output }`, and a `tests-fail` Check's adds `foundByNameOnly`, true when the runner
+printed no per-test statuses and the test was found by its name alone. A `cleanup` is `{ confirmed, survivors }`, and a
+`<vertex>.rescue` is `{ ref, output, diffStat }`.
+
 Validation prints each Vertex's effective Procedure, Checks, rule tables and Outcomes, so nothing a Procedure
 verifies is hidden in code.
 
@@ -323,7 +384,7 @@ Resolution. Fixed, not configurable: an Outcome from the `passed` table needs a 
 claim and every Check the claimed token requires passing on the current tree; an integrity violation always stops;
 publishing runs only on the tree its Vertex's required Checks passed. Which Outcome a Visit takes among the
 legitimate ones is the Procedure's rule tables, first match, analysed at admission for unreachable rows and overlaps
-over the inputs of every Claim token that reaches each table (ADR 0014). Configurable per agent through `resolution`, with a shipped default: per-class retry budgets. Every
+over the inputs of every Claim token that reaches each table (ADR 0014). Configurable per agent through `resolutionPolicy`, with a shipped default: per-class retry budgets. Every
 signal received and the rule that decided (`{ table, row }`) are recorded on the action event.
 
 ### 3.5 Execution record, approvals and work management
@@ -499,10 +560,10 @@ transcript path, usage cumulative and delta, cost delta, peak context, turns, to
 signal, final event subtype, permission denials, commands run (diagnostic), failure class. Deterministic actions record
 events too.
 
-Token rules, the same for both harnesses: `input` is uncached input tokens only; `cached` is cache reads;
-`cacheWrite` is cache creation; `output` is output tokens from the result; `reasoning` where the harness reports it,
-else absent. Peak context is the maximum over the session's requests of `input + cached + cacheWrite` for that
-request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
+Token rules, the same for both harnesses: `inputTokens` is uncached input tokens only; `cacheReadTokens` is cache
+reads; `cacheWriteTokens` is cache creation; `outputTokens` is output tokens from the result; `reasoningTokens` where
+the harness reports it, else absent. `peakContextTokens` is the maximum over the session's requests of `inputTokens +
+cacheReadTokens + cacheWriteTokens` for that request. Cost is the delta of the harness's cumulative figure per session, or computed from `apiPrices` where the
 harness reports none, or null, and carries its basis (`reported`, `priced` or null); an Attempt also records the
 subscription quota and credit snapshots its harness saw, or null (decision J13; reports in grey-goo-ri issue #135).
 Fixtures cover a resumed Claude session and a resumed Codex thread.
@@ -556,7 +617,11 @@ naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry over by
 `contextBudget.byModel`. Eval variants are config layers and may change flow structure. Declared Commands are a
 `commands` object in the repo Layer only: a `commands` key in the defaults or user Layer is a load error, as is a
 Layer file with a duplicate key, and preflight checks each name and command line (ADR 0013). `flows`, `procedures` and `testPaths` are
-repo-Layer-only too, and `testPaths` is required (ADR 0014).
+repo-Layer-only too, and `testPaths` is required (ADR 0014). Each file a Layer names (a Persona, Brief, template or
+schema) resolves beside that Layer's `gg.json`, and one name names one file across the Layers: a Layer that reuses a
+name another Layer declares for a different file fails to load. Until #121 the defaults Layer declares its own
+(`personas/implementer.md`, `schemas/implement.schema.json` and the rest), so a user or repository Layer gives its
+files other names.
 
 ## 4. Behaviours to port, and deliberate changes
 
@@ -598,7 +663,7 @@ Ported as they are:
 Deliberate changes, each with its own regression case:
 
 - Fresh green session with the full brief (ff resumes red).
-- Review `ok` requires the `review-pass` Check: `dodMet`, `tddEvidenceOk` and no blocker or major findings (ff
+- Review `ok` requires the `review-pass` Check: `definitionOfDoneMet`, `redGreenEvidenceOk` and no blocker or major findings (ff
   advances on the verdict alone).
 - Test immutability over `testPaths` after every agent Attempt, the baseline moving only through a Procedure allowed
   to change tests.

@@ -7,7 +7,7 @@ import * as config from '../../lib/config.mjs';
 const defaultsDir = fileURLToPath(new URL('../../defaults/', import.meta.url));
 // The inputs of the shipped Flow (#113): green reads red's tests and Red Evidence; the reviewer and publish the latest
 // report and Green Evidence, and the Red Evidence; the fix the review's Findings and their file paths.
-const GREEN_INPUTS = { tests: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
+const GREEN_INPUTS = { testFiles: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
 const IMPL_INPUTS = {
   report: { from: ['green.green.response', 'implementer-fix.fix.response', 'senior-dev.fix.response'] },
   red: { from: 'red.red-check.evidence' },
@@ -111,14 +111,27 @@ test("defaults/gg.json declares the shipped Procedures in the validator's shape"
     procedures.publish.actions.map((a) => [a.id, a.do].join(':')),
     ['test:check', 'pr:pr-upsert', 'pr-ready:pr-ready'],
   );
-  assert.deepEqual(procedures.implement.claims, {
+  assert.deepEqual(procedures.implement.claimTokens, {
     ok: { requires: ['test'] },
     blocked: { stop: true, comment: 'templates/stop.md' },
     misscoped: { stop: true, comment: 'templates/stop.md' },
   });
-  assert.deepEqual(procedures.publish.claims, { ok: { requires: ['test'] } });
+  assert.deepEqual(procedures.publish.claimTokens, { ok: { requires: ['test'] } });
   assert.deepEqual(
     [procedures['tests-fail'].tests, procedures.fix.tests, procedures.review.access],
     ['write', { named: 'inputs.testFiles' }, 'read-only'],
   );
+});
+
+test('the shipped schemas spell the Definition of Done and the red and green evidence in full', () => {
+  const fields = (name) => JSON.parse(readFileSync(`${defaultsDir}schemas/${name}.schema.json`, 'utf8')).required;
+  assert.deepEqual(fields('implement'), ['claim', 'summary', 'definitionOfDone', 'qa', 'diagnosis', 'notes']);
+  assert.deepEqual(fields('review'), [
+    'claim',
+    'summary',
+    'definitionOfDoneMet',
+    'redGreenEvidenceOk',
+    'findings',
+    'diagnosis',
+  ]);
 });

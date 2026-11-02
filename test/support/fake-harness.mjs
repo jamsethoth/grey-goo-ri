@@ -10,16 +10,16 @@ const DEFAULT_CAPABILITIES = {
   network: 'exact',
   contextBudget: 'exact',
   interactive: false,
-  background: false,
-  resume: { supported: true, preconditions: [] },
+  backgroundSessions: false,
+  sessionResume: { supported: true, preconditions: [] },
   structuredOutput: true,
   sandbox: 'none',
   confinement: 'none',
-  peakContext: true,
-  cost: true,
-  turns: true,
-  toolCalls: true,
-  reasoningTokens: true,
+  peakContextReporting: true,
+  costReporting: true,
+  turnCountReporting: true,
+  toolCallReporting: true,
+  reasoningTokenReporting: true,
   backgroundWork: 'none',
 };
 
@@ -44,7 +44,10 @@ export function fakeHarness({
     Object.fromEntries(
       contract.USAGE_FIELDS.map((field) => {
         if (delta[field] === null) return [field, null];
-        return [field, field === 'peakContext' ? Math.max(total[field], delta[field]) : total[field] + delta[field]];
+        return [
+          field,
+          field === 'peakContextTokens' ? Math.max(total[field], delta[field]) : total[field] + delta[field],
+        ];
       }),
     );
 

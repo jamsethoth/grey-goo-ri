@@ -12,7 +12,7 @@
     "summary": {
       "type": "string"
     },
-    "dod": {
+    "definitionOfDone": {
       "type": "array",
       "items": {
         "type": "object",
@@ -98,7 +98,7 @@
   "required": [
     "claim",
     "summary",
-    "dod",
+    "definitionOfDone",
     "qa",
     "diagnosis",
     "notes"

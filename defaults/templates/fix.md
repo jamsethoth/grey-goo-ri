@@ -1,6 +1,6 @@
 FIX VISIT for GitHub issue #{{ticket.number}}: {{ticket.title}}
 
-You are on branch {{ticket.branch}}, created from {{base}}. Work only here.
+You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here.
 
 ## Ticket
 {{ticket.body}}

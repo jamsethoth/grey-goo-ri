@@ -117,7 +117,7 @@ export function fixture(
   const harness = fakeHarness({
     transcriptDir: join(root, 'transcripts'),
     responses,
-    capabilities: { cost: false, reasoningTokens: false },
+    capabilities: { costReporting: false, reasoningTokenReporting: false },
   });
   const exec = {
     runShell: async (command, opts) =>
@@ -355,7 +355,7 @@ export function ticketHarnesses(f, tickets, { responses = {}, before = async () 
       fakeHarness({
         transcriptDir: join(f.root, 'transcripts', String(n)),
         responses: responses[n] ?? golden.firstVisitResponses,
-        capabilities: { cost: false, reasoningTokens: false },
+        capabilities: { costReporting: false, reasoningTokenReporting: false },
       }),
     ]),
   );

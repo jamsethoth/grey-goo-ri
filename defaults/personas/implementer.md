@@ -28,7 +28,7 @@ The orchestrator drives test-driven development in phases and makes every commit
 ## Report
 
 - `claim: ok | blocked | misscoped`: exactly one token. `misscoped` when the ticket itself cannot be met as written.
-- `dod`: every definition-of-done item, met or not, with evidence (test name, file).
+- `definitionOfDone`: every definition-of-done item, met or not, with evidence (test name, file).
 - `qa`: instructions a human can follow without reading the code: setup/run command, numbered
   steps with expected results, edge cases to try, what the tests already cover, and what needs eyes.
 - `diagnosis`: leave empty unless your claim is `blocked` or `misscoped`; then say why the ticket cannot be met.
