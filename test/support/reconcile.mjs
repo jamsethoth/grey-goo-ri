@@ -1,8 +1,8 @@
 // Helpers the reconcile test files share.
 import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as marker from '../../lib/marker.mjs';
-import * as record from '../../lib/record.mjs';
+import * as marker from '../../lib/marker.ts';
+import * as record from '../../lib/record.ts';
 import * as golden from './golden.mjs';
 import { branchMessages } from './interpreter.mjs';
 

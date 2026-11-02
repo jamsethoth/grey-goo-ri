@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as render from '../../lib/render.mjs';
-import * as marker from '../../lib/marker.mjs';
+import * as marker from '../../lib/marker.ts';
 import * as config from '../../lib/config.mjs';
 
 // A shipped template, as the defaults Layer loads it.

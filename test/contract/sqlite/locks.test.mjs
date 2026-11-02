@@ -7,10 +7,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as locks from '../../../lib/locks.mjs';
+import * as locks from '../../../lib/locks.ts';
 
 const contender = fileURLToPath(new URL('../../support/lock-contender.mjs', import.meta.url));
-const locksModule = new URL('../../../lib/locks.mjs', import.meta.url);
+const locksModule = new URL('../../../lib/locks.ts', import.meta.url);
 
 async function tempCommonDir(t) {
   const dir = await mkdtemp(join(tmpdir(), 'gg-locks-'));

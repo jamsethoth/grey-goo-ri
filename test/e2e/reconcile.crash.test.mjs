@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
 import * as golden from '../support/golden.mjs';
 import { resetEntries } from '../support/reconcile.mjs';
 

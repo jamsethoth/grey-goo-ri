@@ -4,9 +4,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import * as golden from './golden.mjs';
-import * as locks from '../../lib/locks.mjs';
+import * as locks from '../../lib/locks.ts';
 import * as run from '../../lib/run.mjs';
 
 export const TDD_VERTICES = ['red', 'green'];
@@ -209,7 +210,7 @@ export const loadTicket = (g) => record.load(g.commonDir, 'ticket', golden.TICKE
 // The saved row read without awaiting, for a getter that cannot await.
 export const ticketRow = (g) =>
   JSON.parse(
-    record.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET)
+    sqlite.openDb(g.commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET)
       .json,
   );
 export const attemptMarker = (g, ...at) => golden.markerOf(g.rec, ...at);

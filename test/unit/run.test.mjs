@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.mjs';
 import * as doctor from '../../lib/doctor.mjs';
 import * as github from '../../lib/github.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {

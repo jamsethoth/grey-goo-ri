@@ -5,7 +5,7 @@
 // `ready` once loaded and opens only when stdin brings `go`, so a case can start many openers' waits together.
 // The test runner also loads this file with no arguments, where it does nothing.
 import { DatabaseSync } from 'node:sqlite';
-import * as record from '../../lib/record.mjs';
+import * as sqlite from '../../lib/sqlite.ts';
 const [commonDir, gated] = process.argv.slice(2);
 if (commonDir) {
   const exec = DatabaseSync.prototype.exec;
@@ -24,8 +24,8 @@ if (commonDir) {
     return prepare.call(this, sql);
   };
   const open = () => {
-    record.openDb(commonDir);
-    record.close(commonDir);
+    sqlite.openDb(commonDir);
+    sqlite.close(commonDir);
   };
   if (gated === 'gated') {
     let input = '';

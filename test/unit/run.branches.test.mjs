@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.mjs';
 import { TICKET, BRANCH, IN_PROGRESS, fixture, ticketResult } from '../support/run.mjs';
 

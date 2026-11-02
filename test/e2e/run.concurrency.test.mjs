@@ -4,11 +4,12 @@ import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as events from '../../lib/events.mjs';
+import * as events from '../../lib/events.ts';
 import * as integrity from '../../lib/integrity.mjs';
-import * as locks from '../../lib/locks.mjs';
+import * as locks from '../../lib/locks.ts';
 import * as paths from '../../lib/paths.ts';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import * as run from '../../lib/run.mjs';
 import {
   BRANCH,
@@ -340,7 +341,7 @@ test('two processes serialise orchestrator git writes on the repo lock', { timeo
     ],
     'both processes appended to the one events table, in insertion order',
   );
-  const rows = record
+  const rows = sqlite
     .openDb(f.commonDir)
     .prepare('SELECT json FROM events ORDER BY id')
     .all()

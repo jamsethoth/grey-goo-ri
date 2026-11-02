@@ -11,11 +11,12 @@ import * as config from '../../lib/config.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as shipped from '../../lib/harnesses/shipped.mjs';
-import * as marker from '../../lib/marker.mjs';
-import * as record from '../../lib/record.mjs';
-import * as events from '../../lib/events.mjs';
+import * as marker from '../../lib/marker.ts';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
+import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as labelModule from '../../lib/labels.mjs';
+import * as labelModule from '../../lib/labels.ts';
 import * as validate from '../../lib/validate.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 import * as fakeIntegrityModule from './fake-integrity.mjs';
@@ -182,7 +183,7 @@ export async function setup(
   if (process.env.GG_KEEP_TEMP) t.diagnostic(`golden temp repo: ${root}`);
   else
     t.after(() => {
-      record.close(join(root, 'main', '.git'));
+      sqlite.close(join(root, 'main', '.git'));
       rmSync(root, { recursive: true, force: true });
     });
 
@@ -213,7 +214,7 @@ export async function setup(
   await database.save(rec);
 
   // What every launched process saw of the worktree's activity, read from the saved row as another process would.
-  const read = record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?");
+  const read = sqlite.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?");
   const activity = [];
   const observe = (what) => activity.push({ what, ...JSON.parse(read.get(TICKET).json).activity });
 
@@ -518,7 +519,7 @@ export function onSave(t, hook) {
 export const failSaves = (t, when) =>
   onSave(t, (next) => {
     const [kind, n] = 'execution' in next ? ['ticket', next.ticket] : ['epic', next.epic];
-    const row = record.openDb(next.commonDir).prepare('SELECT json FROM records WHERE kind = ? AND n = ?').get(kind, n);
+    const row = sqlite.openDb(next.commonDir).prepare('SELECT json FROM records WHERE kind = ? AND n = ?').get(kind, n);
     if (when(row && JSON.parse(row.json), next)) throw new Error('disk I/O error');
   });
 

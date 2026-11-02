@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import * as integrity from '../../../lib/integrity.mjs';
-import * as record from '../../../lib/record.mjs';
+import * as sqlite from '../../../lib/sqlite.ts';
 
 const saver = fileURLToPath(new URL('../../support/record-saver.mjs', import.meta.url));
 
@@ -14,7 +14,7 @@ test('readActivity reads a record another process saved', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
   const commonDir = join(root, 'own', '.git');
   t.after(() => {
-    record.close(commonDir);
+    sqlite.close(commonDir);
     rmSync(root, { recursive: true, force: true });
   });
   const other = join(root, 'other');

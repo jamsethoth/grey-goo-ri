@@ -5,15 +5,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
-import * as events from '../../lib/events.mjs';
-import * as record from '../../lib/record.mjs';
+import * as events from '../../lib/events.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import { fakeGit } from '../support/fake-git.mjs';
 
 // The State Database is closed before the directory is removed, as Windows requires.
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-events-'));
   t.after(() => {
-    record.close(dir);
+    sqlite.close(dir);
     rmSync(dir, { recursive: true, force: true });
   });
   return dir;

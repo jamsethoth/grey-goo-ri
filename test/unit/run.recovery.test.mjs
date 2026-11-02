@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.mjs';
-import * as marker from '../../lib/marker.mjs';
-import * as record from '../../lib/record.mjs';
+import * as marker from '../../lib/marker.ts';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
@@ -44,8 +45,8 @@ test('an admission failure on an active execution is reported as a fault', async
   assert.equal(final.state, 'fault', 'the record is marked, so it is not retried');
   assert.equal(final.execution, seeded.execution);
   assert.deepEqual(
-    record.openIntents(final).filter((e) => e.effect === 'push'),
-    record.openIntents(seeded),
+    writeAhead.openIntents(final).filter((e) => e.effect === 'push'),
+    writeAhead.openIntents(seeded),
     'the earlier intent is kept',
   );
   assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), 'the Ticket is at needs-human');
@@ -78,7 +79,7 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
   assert.equal(mid.terminalStop?.held, true);
   assert.notEqual(mid.state, 'held', 'a hold whose comment is pending is not held');
   assert.deepEqual(
-    record.openIntents(mid).map((e) => e.effect),
+    writeAhead.openIntents(mid).map((e) => e.effect),
     ['comment'],
     'only the hold comment intent stays open',
   );
@@ -91,7 +92,7 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
   const second = await run.runTarget(f.options);
   assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
   const final = await loadTicket(f);
-  const [open] = record.openIntents(mid);
+  const [open] = writeAhead.openIntents(mid);
   assert.equal(final.execution, mid.execution);
   assert.equal(final.state, 'held');
   assert.equal(f.comments().length, 1, 'exactly one hold comment');
@@ -100,7 +101,7 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
     'the comment carries the original Action Marker',
   );
   assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
-  assert.deepEqual(record.openIntents(final), []);
+  assert.deepEqual(writeAhead.openIntents(final), []);
   const ends = endsOf(f, final.execution);
   assert.equal(ends.length, 1);
   assert.deepEqual(ends[0].terminalReason, mid.terminalReason);
@@ -131,13 +132,13 @@ test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run',
   assert.equal(mid.terminalStop?.held, true);
   assert.notEqual(mid.state, 'held', 'a hold whose comment is pending is not held');
   assert.deepEqual(
-    record.openIntents(mid).map((e) => e.effect),
+    writeAhead.openIntents(mid).map((e) => e.effect),
     ['commit', 'comment'],
     'the hold comment intent stays open beside the seeded commit',
   );
   assert.deepEqual(
-    record.openIntents(mid).filter((e) => e.effect === 'commit'),
-    record.openIntents(seededRec),
+    writeAhead.openIntents(mid).filter((e) => e.effect === 'commit'),
+    writeAhead.openIntents(seededRec),
     'older intents are unchanged',
   );
   assert.deepEqual(f.comments(), []);
@@ -149,7 +150,7 @@ test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run',
   const second = await run.runTarget(f.options);
   assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
   const final = await loadTicket(f);
-  const [open] = record.openIntents(mid).filter((e) => e.effect === 'comment');
+  const [open] = writeAhead.openIntents(mid).filter((e) => e.effect === 'comment');
   assert.equal(final.execution, mid.execution);
   assert.equal(final.state, 'held');
   assert.equal(f.comments().length, 1, 'exactly one hold comment');
@@ -158,7 +159,11 @@ test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run',
     'the comment carries the original Action Marker',
   );
   assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
-  assert.deepEqual(record.openIntents(final), record.openIntents(seededRec), 'only the seeded commit stays open');
+  assert.deepEqual(
+    writeAhead.openIntents(final),
+    writeAhead.openIntents(seededRec),
+    'only the seeded commit stays open',
+  );
   const ends = endsOf(f, final.execution);
   assert.equal(ends.length, 1);
   assert.deepEqual(ends[0].terminalReason, mid.terminalReason);

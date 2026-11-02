@@ -6,8 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as events from '../../../lib/events.mjs';
-import * as record from '../../../lib/record.mjs';
+import * as events from '../../../lib/events.ts';
+import * as sqlite from '../../../lib/sqlite.ts';
 
 const appender = fileURLToPath(new URL('../../support/event-appender.mjs', import.meta.url));
 
@@ -15,7 +15,7 @@ const appender = fileURLToPath(new URL('../../support/event-appender.mjs', impor
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-events-'));
   t.after(() => {
-    record.close(dir);
+    sqlite.close(dir);
     rmSync(dir, { recursive: true, force: true });
   });
   return dir;

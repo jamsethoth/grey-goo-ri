@@ -5,14 +5,16 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
-import * as events from '../../lib/events.mjs';
-import * as record from '../../lib/record.mjs';
+import * as events from '../../lib/events.ts';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 
 // A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
 async function tempCommonDir(t) {
   const dir = await mkdtemp(join(tmpdir(), 'gg-record-'));
   t.after(async () => {
-    await record.close(dir);
+    await sqlite.close(dir);
     await rm(dir, { recursive: true, force: true });
   });
   return dir;
@@ -185,7 +187,7 @@ test('save writes a records row and never a records directory', async (t) => {
       { kind: 'ticket', n: 8, json: JSON.stringify(withoutCommonDir(r), null, 2) + '\n' },
     ]);
   });
-  assert.equal(record.DB_SCHEMA_VERSION, 1);
+  assert.equal(sqlite.DB_SCHEMA_VERSION, 1);
 });
 
 test('load returns null for a missing row and the record for a saved one', async (t) => {
@@ -278,7 +280,7 @@ test('openIntents lists intents without completion oldest first', async (t) => {
   const r = newExecution(commonDir);
   await record.intent(r, 'm1', 'commit', {});
   assert.deepEqual(
-    record.openIntents(r).map((e) => e.actionMarker ?? e),
+    writeAhead.openIntents(r).map((e) => e.actionMarker ?? e),
     ['m1'],
   );
   await record.intent(r, 'm2', 'push', {});
@@ -286,12 +288,12 @@ test('openIntents lists intents without completion oldest first', async (t) => {
   await record.evidence(r, 'm2', { ok: true });
   await record.complete(r, 'm2');
   assert.deepEqual(
-    record.openIntents(r).map((e) => e.actionMarker ?? e),
+    writeAhead.openIntents(r).map((e) => e.actionMarker ?? e),
     ['m1', 'm3'],
   );
   await record.complete(r, 'm1');
   await record.complete(r, 'm3');
-  assert.deepEqual(record.openIntents(r), []);
+  assert.deepEqual(writeAhead.openIntents(r), []);
 });
 
 test('loadAll lists every ticket record', async (t) => {
@@ -366,13 +368,13 @@ test('a record written before Action ids is corrupt, not misread', async (t) => 
 // past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136).
 test('the State Database waits up to 60 s for another writer', async (t) => {
   const commonDir = await tempCommonDir(t);
-  assert.deepEqual({ ...record.openDb(commonDir).prepare('PRAGMA busy_timeout').get() }, { timeout: 60_000 });
+  assert.deepEqual({ ...sqlite.openDb(commonDir).prepare('PRAGMA busy_timeout').get() }, { timeout: 60_000 });
 });
 
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
   const commonDir = await tempCommonDir(t);
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
-  await record.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
+  await sqlite.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
   const firstSeen = () =>
     withDb(commonDir, (db) => db.prepare("SELECT firstSeen FROM configs WHERE hash = 'hash-1'").get().firstSeen);
   const first = firstSeen();
@@ -380,11 +382,11 @@ test('saveConfig stores a pinned configuration once per hash and loadConfig read
   // An older firstSeen than any save could write, so a second save that replaced it would show.
   const older = '2020-01-01T00:00:00.000Z';
   withDb(commonDir, (db) => db.prepare("UPDATE configs SET firstSeen = ? WHERE hash = 'hash-1'").run(older));
-  await record.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
+  await sqlite.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
   assert.equal(firstSeen(), older, 'the second save keeps the first firstSeen');
   withDb(commonDir, (db) => assert.equal(db.prepare('SELECT count(*) AS n FROM configs').get().n, 1));
-  assert.deepEqual(await record.loadConfig(commonDir, 'hash-1'), pinned);
-  assert.equal(await record.loadConfig(commonDir, 'hash-2'), null);
+  assert.deepEqual(await sqlite.loadConfig(commonDir, 'hash-1'), pinned);
+  assert.equal(await sqlite.loadConfig(commonDir, 'hash-2'), null);
 });
 
 test('an unknown database version is refused by name', async (t) => {
@@ -394,7 +396,7 @@ test('an unknown database version is refused by name', async (t) => {
   db.exec('PRAGMA user_version = 2');
   db.close();
   assert.throws(
-    () => record.openDb(commonDir),
+    () => sqlite.openDb(commonDir),
     (err) => {
       assert.ok(!(err instanceof TypeError), `not a missing function: ${err.message}`);
       assert.ok(err.message.includes(dbPath(commonDir)), `${err.message} names the database`);
@@ -409,13 +411,13 @@ test('an unknown database version is refused by name', async (t) => {
 // `database is locked` from openDb's write transaction once its busy_timeout ran out.
 test('opening an existing State Database does not wait for a writer', async (t) => {
   const commonDir = await tempCommonDir(t);
-  record.openDb(commonDir);
-  await record.close(commonDir);
+  sqlite.openDb(commonDir);
+  await sqlite.close(commonDir);
   const writer = new DatabaseSync(dbPath(commonDir));
   writer.exec('BEGIN IMMEDIATE');
   try {
     // The writer holds its lock until this case ends, so an openDb that waited for it would fail with SQLITE_BUSY.
-    const db = record.openDb(commonDir);
+    const db = sqlite.openDb(commonDir);
     assert.equal(
       db.prepare('SELECT count(*) AS n FROM records').get().n,
       0,
@@ -429,11 +431,11 @@ test('opening an existing State Database does not wait for a writer', async (t) 
 
 test('openDb shares one connection between spellings of the same directory', async (t) => {
   const commonDir = await tempCommonDir(t);
-  const db = record.openDb(commonDir);
+  const db = sqlite.openDb(commonDir);
   // String concatenation, not join: join would normalise the segments before openDb sees them.
-  assert.equal(record.openDb(`${commonDir}/./gg/../`), db, 'a relative-segment spelling hits the cache');
+  assert.equal(sqlite.openDb(`${commonDir}/./gg/../`), db, 'a relative-segment spelling hits the cache');
   // sep: backslashes on Windows; on POSIX a backslash is a filename character, not another spelling.
-  await record.close(`${commonDir}${sep}gg${sep}..`);
+  await sqlite.close(`${commonDir}${sep}gg${sep}..`);
   assert.throws(() => db.prepare('SELECT 1'), /not open/, 'closing by another spelling closed the shared connection');
 });
 
@@ -441,13 +443,13 @@ test('close releases the database so the directory can be removed', async (t) =>
   const commonDir = await mkdtemp(join(tmpdir(), 'gg-record-'));
   t.after(() => rm(commonDir, { recursive: true, force: true }));
   await record.save(newExecution(commonDir));
-  await record.saveConfig(commonDir, 'hash-1', '{}');
+  await sqlite.saveConfig(commonDir, 'hash-1', '{}');
   assert.ok(existsSync(dbPath(commonDir)), 'gg/gg.db exists');
-  await record.close(commonDir);
+  await sqlite.close(commonDir);
   rmSync(commonDir, { recursive: true });
   assert.ok(!existsSync(commonDir));
   // A later call opens a fresh connection rather than reusing the closed one.
   await record.save(newExecution(commonDir));
   assert.equal((await record.load(commonDir, 'ticket', 8)).ticket, 8);
-  await record.close(commonDir);
+  await sqlite.close(commonDir);
 });

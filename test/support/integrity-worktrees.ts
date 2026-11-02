@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 
 export const PROTECTED = ['.agents/', '.claude/', '.codex/', '.mcp.json', 'AGENTS.md', 'CLAUDE.md'];
 
@@ -28,7 +29,7 @@ function newExecution(commonDir: string, ticket: number, worktree: string) {
 export async function twoWorktrees(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
   t.after(() => {
-    record.close(join(root, 'own', '.git'));
+    sqlite.close(join(root, 'own', '.git'));
     rmSync(root, { recursive: true, force: true });
   });
   const own = join(root, 'own');

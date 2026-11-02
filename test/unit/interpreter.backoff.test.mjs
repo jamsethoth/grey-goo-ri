@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as github from '../../lib/github.mjs';
 import * as run from '../../lib/run.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
 import * as golden from '../support/golden.mjs';
 import {
   steps,

@@ -3,9 +3,9 @@
 // release it, then reports the time it released.
 // The test runner also loads this file with no arguments, where it does nothing.
 import { execFileSync } from 'node:child_process';
-import * as events from '../../lib/events.mjs';
-import * as locks from '../../lib/locks.mjs';
-import * as record from '../../lib/record.mjs';
+import * as events from '../../lib/events.ts';
+import * as locks from '../../lib/locks.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 const [commonDir, worktree, run] = process.argv.slice(2);
 if (commonDir) {
   const git = async (...args) => execFileSync('git', args, { cwd: worktree, encoding: 'utf8' }).trim();
@@ -22,6 +22,6 @@ if (commonDir) {
   // Taken before the release, so any commit that waited on the lock is later.
   const releasing = Date.now();
   await locks.release(handle);
-  record.close(commonDir);
+  sqlite.close(commonDir);
   process.send({ releasing }, () => process.disconnect());
 }

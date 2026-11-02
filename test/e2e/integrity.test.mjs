@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as git from '../../lib/git.mjs';
 import * as integrity from '../../lib/integrity.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
 import { PROTECTED, sh, twoWorktrees } from '../support/integrity-worktrees.ts';
 
 // The other ticket's process holds its own copy of the record, as a separate Execution would.

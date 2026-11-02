@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import {
   firstVisit,
@@ -40,7 +41,7 @@ test('every side-effect action leaves intent, evidence and completion with the f
       ['label', DONE],
     ],
   );
-  assert.deepEqual(record.openIntents(g.rec), []);
+  assert.deepEqual(writeAhead.openIntents(g.rec), []);
 
   // Each agent Attempt is write-ahead too, its intent carrying the baseline the Integrity Assertion compares against,
   // which a resume reads back from the State Database.

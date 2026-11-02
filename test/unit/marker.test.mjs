@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as marker from '../../lib/marker.mjs';
+import * as marker from '../../lib/marker.ts';
 
 const parts = { execution: 'e1', vertex: 'implement', visit: 2, action: 'test', recovery: 1, run: 'r1', attempt: 1 };
 // Parsed parts come back as strings; compare on that form.

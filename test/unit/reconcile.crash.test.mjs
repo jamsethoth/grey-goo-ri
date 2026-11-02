@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as marker from '../../lib/marker.mjs';
+import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.mjs';
 import { branchMessages } from '../support/interpreter.mjs';
 import { stepsOf, originSha, withMarker, loadTicket, EFFECTS, POINTS, crashed } from '../support/reconcile.mjs';

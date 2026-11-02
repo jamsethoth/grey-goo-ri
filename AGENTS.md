@@ -62,13 +62,16 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/rules.mjs` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
 | `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
 | `lib/integrity.mjs` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) |
-| `lib/record.mjs` | Execution Record, Epic Record and Pinned Configuration persistence in the State Database, and the write-ahead log |
-| `lib/marker.mjs` | Action Marker format and parse |
+| `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
+| `lib/sqlite.ts` | the State Database file: one connection per repository, WAL and schema, Pinned Configurations and reusable Check results |
+| `lib/write-ahead.ts` | the write-ahead log's entries and what reads them: open intents, proof, the last commit |
+| `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union) |
+| `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.mjs` | Reconciliation of a record against git and GitHub at resume |
-| `lib/events.mjs` | event schema 2 append and read from the State Database |
-| `lib/labels.mjs` | State, Await and Decide Label names and prefix, and the end states |
-| `lib/approval.mjs` | Pending Instance, Approval Digest, timeline read, consumption |
-| `lib/locks.mjs` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
+| `lib/events.ts` | event schema 2 append and read from the State Database |
+| `lib/labels.ts` | State, Await and Decide Label names and prefix, and the end states |
+| `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |
+| `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
 | `lib/harnesses/contract.mjs` | the Harness contract check and shared Usage shape |
 | `lib/harnesses/shipped.mjs` | the shipped Harnesses by name; the only module outside a Harness that names one |
 | `lib/harnesses/claude.mjs` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
@@ -96,7 +99,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
 - `test/support/interpreter.mjs`, `run.mjs` and `reconcile.mjs` share lib module names but are test helpers.
-- `git.mjs`, `locks.mjs` and `record.mjs` also export the functions of their real instance, for callers that take no
+- `git.mjs`, `locks.ts` and `record.ts` also export the functions of their real instance, for callers that take no
   seam (`gg doctor`, contract suites, helper processes); code on a Run's path uses the deps it was passed instead.
 
 ## Examples to copy
@@ -124,7 +127,7 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 - A module's tests of one size go in `<dir>/<module>.test.mjs`. A large module may also have area files
   `<dir>/<module>.<area>.test.mjs`; new tests for it still go in `<dir>/<module>.test.mjs`. node runs files in parallel
   but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an area file.
-- Tests import modules as namespaces (`import * as record from '../../lib/record.mjs'`) and call `record.fn()`, so a
+- Tests import modules as namespaces (`import * as record from '../../lib/record.ts'`) and call `record.fn()`, so a
   missing export fails inside the case.
 - A test for a module that does not exist yet imports a stub module: its exports with their final signatures, each
   returning a wrong value.
