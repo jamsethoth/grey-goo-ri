@@ -8,8 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const USAGE = `usage: node scripts/run-suite.mjs [fast [boundary ...]]
+       node scripts/run-suite.mjs check
   no arguments: the full suite
-  fast: test/unit/, plus test/contract/<boundary>/ for each boundary named`;
+  fast: test/unit/, plus test/contract/<boundary>/ for each boundary named
+  check: the format check, lint and the type check, no tests`;
 // ADR 0018: each runs as node plus the package's own bin script, never through a shell or an npm .cmd shim. The format
 // check runs first, so lint judges formatted code.
 const CHECKS = [
@@ -26,10 +28,13 @@ export class UsageError extends Error {
 }
 
 // No arguments is the full stage. `fast` is test/unit/ plus the named contract suites, whose paths are built from the
-// directory names on disk, never from the argument text.
+// directory names on disk, never from the argument text. `check` runs no tests, so it gives null.
 function stage(argv) {
   if (argv.length === 0) return [];
-  if (argv[0] === 'check') return []; // stub (#239)
+  if (argv[0] === 'check') {
+    if (argv.length > 1) throw new UsageError();
+    return null;
+  }
   if (argv[0] !== 'fast') throw new UsageError();
   const boundaries = readdirSync(join(root, 'test', 'contract'), { withFileTypes: true })
     .filter((d) => d.isDirectory())
@@ -54,8 +59,8 @@ export function suiteCommand(env, argv) {
   // 345 s at 8 and 339 s at 12 (grey-goo-ri issue #143), against 652 s at the default 19 (grey-goo-ri PR #141). Small CI
   // runners keep their default of one fewer than their cores.
   const concurrency = Math.min(12, Math.max(1, availableParallelism() - 1));
-  const tests = ['--test', `--test-concurrency=${concurrency}`, ...files];
-  return { command: process.execPath, steps: [...CHECKS, tests], cwd: root, env: Object.fromEntries(kept) };
+  const steps = files ? [...CHECKS, ['--test', `--test-concurrency=${concurrency}`, ...files]] : CHECKS;
+  return { command: process.execPath, steps, cwd: root, env: Object.fromEntries(kept) };
 }
 
 const self = fileURLToPath(import.meta.url);
