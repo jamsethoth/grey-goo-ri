@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import * as procedures from '../../lib/procedures.mjs';
+import * as requestTables from '../support/request-tables.mjs';
 
 test('the Action kinds and the keys each may declare', () => {
   assert.deepEqual(procedures.ACTION_KEYS, {
@@ -57,22 +57,7 @@ test('a repeat Check gives its Findings Hash', () => {
 });
 
 // The request lists each kind's keys for a Layer's author; this keeps the tables and the declared keys one list (#229).
-// A table's Keys column holds only key names, each a code span, so it reads both ways: no key missing, none extra.
-const requestTable = (header) => {
-  const lines = readFileSync(new URL('../../docs/requests/node-harness-dag.md', import.meta.url), 'utf8').split('\n');
-  const start = lines.findIndex((line) => line.startsWith(`| ${header} | Keys |`));
-  assert.ok(start >= 0, `the request has the table headed ${header}`);
-  const rows = [];
-  for (const line of lines.slice(start + 2)) {
-    if (!line.startsWith('| ')) break;
-    rows.push(line.split(/(?<!\\)\|/));
-  }
-  const spans = (cell) => (cell.match(/`[^`]+`/g) ?? []).map((span) => span.slice(1, -1));
-  return Object.fromEntries(rows.flatMap((cells) => spans(cells[1]).map((kind) => [kind, spans(cells[2]).sort()])));
-};
-const sortedKeys = (table) => Object.fromEntries(Object.entries(table).map(([kind, keys]) => [kind, [...keys].sort()]));
-
 test("the request's tables list exactly each Action kind's and Check kind's keys", () => {
-  assert.deepEqual(requestTable('`do`'), sortedKeys(procedures.ACTION_KEYS));
-  assert.deepEqual(requestTable('Check kind'), sortedKeys(procedures.CHECK_KEYS));
+  assert.deepEqual(requestTables.keyTable('`do`'), requestTables.sortedKeys(procedures.ACTION_KEYS));
+  assert.deepEqual(requestTables.keyTable('Check kind'), requestTables.sortedKeys(procedures.CHECK_KEYS));
 });

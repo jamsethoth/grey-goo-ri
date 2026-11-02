@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import * as requestTables from '../support/request-tables.mjs';
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url), 'utf8'));
 
@@ -2058,6 +2059,7 @@ for (const [oldKey, write, at] of [
     (config) => oldKeyOf(actionOf(config, 'tests-fail', 'tests-fail'), 'names', 'testNames'),
     'procedures.tests-fail.actions[1]',
   ],
+  ['claims', (config) => oldKeyOf(config.procedures.review, 'claims', 'claimTokens'), 'procedures.review'],
   ['resolution', (config) => (config.agents.implementer.resolution = { transient: 1 }), 'agents.implementer'],
   ['resolution', (config) => (config.flows.default.ticket.vertices.red.resolution = { transient: 1 }), `${V}.red`],
 ]) {
@@ -2106,4 +2108,35 @@ test("an input may read a repeat Check's Findings Hash", async () => {
     optional: true,
   };
   assert.deepEqual((await check(config)).errors, []);
+});
+
+// The request's key tables a Layer's author reads list exactly the keys the validator accepts (#229).
+test("the request's Flow table lists exactly the keys of a Flow, its ticket, Vertices, routes and inputs", async () => {
+  const validate = await import('../../lib/validate.mjs');
+  assert.deepEqual(
+    requestTables.keyTable('Flow object'),
+    requestTables.sortedKeys({
+      'flows.<name>': validate.FLOW_KEYS,
+      ticket: validate.TICKET_KEYS,
+      'vertices.<id>': validate.VERTEX_KEYS,
+      'route.<outcome>': validate.EDGE_KEYS,
+      'inputs.<name>': validate.INPUT_KEYS,
+    }),
+  );
+});
+
+test("the request's Procedure table lists exactly the keys of a Procedure and a Claim token", async () => {
+  const validate = await import('../../lib/validate.mjs');
+  assert.deepEqual(
+    requestTables.keyTable('Procedure object'),
+    requestTables.sortedKeys({
+      'procedures.<name>': validate.PROCEDURE_KEYS,
+      'claimTokens.<token>': Object.values(validate.CLAIM_TOKEN_FORMS).flat(),
+    }),
+  );
+});
+
+test("the request's Agent table lists exactly the keys an Agent accepts", async () => {
+  const validate = await import('../../lib/validate.mjs');
+  assert.deepEqual(requestTables.firstColumn('| Field | Meaning |'), [...validate.AGENT_KEYS].sort());
 });
