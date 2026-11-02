@@ -100,7 +100,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
     messages.map((m) => m.split(':')[0]),
     ['test', 'feat', 'fix'],
   );
-  assert.match(messages.at(-1), /Feature-Flow-Stage: implementer-fix fake\/model-x\/high/);
+  assert.match(messages.at(-1), /Gg-Vertex: implementer-fix fake\/model-x\/high/);
   assert.equal(await originSha(g), await headSha(g), 'fix/4 pushed');
 
   const comments = prReviewComments(g);

@@ -146,8 +146,8 @@ test('each public field is redacted once and sent exactly as its intent saved it
   assert.ok(body.includes('| model TOKEN* |'), '| model TOKEN |');
   assert.ok(body.includes('| TOKEN* effort |'), '| TOKEN effort |');
   assert.ok(body.includes('| TOKEN*.md@'), '| TOKEN.md@');
-  assert.ok(messages[0].includes('Feature-Flow-Stage: red fake/model TOKEN*/TOKEN* effort'), messages[0]);
-  assert.ok(messages[1].includes('Feature-Flow-Stage: green fake/model TOKEN*/TOKEN* effort'), messages[1]);
+  assert.ok(messages[0].includes('Gg-Vertex: red fake/model TOKEN*/TOKEN* effort'), messages[0]);
+  assert.ok(messages[1].includes('Gg-Vertex: green fake/model TOKEN*/TOKEN* effort'), messages[1]);
   assert.ok(
     g.gh.calls.some((c) => c.args.includes('--title') && c.args.includes('Add TOKEN*')),
     'the PR title',
@@ -357,11 +357,11 @@ test("a hold's label is set after its comment, each under its own marker", async
 
 test("a fault during an end does not replay the end's open reporting Action", async (t) => {
   const g = await golden.setup(t);
-  const real = g.options.gh.commentIssue;
+  const real = g.options.gh.comment;
   let calls = 0;
   g.options.gh = {
     ...g.options.gh,
-    commentIssue: async (...a) => {
+    comment: async (...a) => {
       if (calls++ === 0) throw new Error('gh comment down');
       return real(...a);
     },

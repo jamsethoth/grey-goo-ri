@@ -11,7 +11,7 @@ import * as exec from '../../../lib/exec.mjs';
 import * as paths from '../../../lib/paths.ts';
 import * as render from '../../../lib/render.mjs';
 
-const tmp = mkdtempSync(join(tmpdir(), 'ff-exec-'));
+const tmp = mkdtempSync(join(tmpdir(), 'gg-exec-'));
 // With args, the script reads them as `args` from a JSON file beside it, so no value the case passes becomes code.
 const script = (name, body, args) => {
   const p = join(tmp, name);
@@ -42,7 +42,7 @@ const waitFor = async (fn, signal) => {
 };
 
 // Only a restricted sandbox may refuse cleanup; there survivors need only be reported.
-const sandboxed = process.env.FF_TEST_SANDBOXED === '1';
+const sandboxed = process.env.GG_TEST_SANDBOXED === '1';
 // Cases that wait for a process event: a broken runShell fails at this bound instead of hanging the file.
 const CASE = { timeout: 120_000 };
 // How long a test process lives unless it is killed: longer than any case, so no command ends on its own first.
@@ -181,7 +181,7 @@ test('runShell with a timeout still returns the exit code and output of a comman
   assert.equal(res.code, 7);
   assert.match(res.output, /hi/);
   assert.equal(res.timedOut, undefined, res.output);
-  assert.doesNotMatch(res.output, /FFJOB/);
+  assert.doesNotMatch(res.output, /GGJOB/);
   assert.equal(res.leftovers, undefined, 'a clean command must not report leftovers (e.g. its console host)');
 });
 
@@ -190,6 +190,13 @@ test('runShell: a command outliving timeoutMs returns within budget, flagged as 
   const p = script('sleep.mjs', `setInterval(() => {}, 60000);`);
   const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 500 });
   assert.equal(res.timedOut, true);
+});
+
+test('a timeout note names gg', CASE, async () => {
+  const p = script('sleep-note.mjs', `setInterval(() => {}, 60000);`);
+  const res = await exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 500 });
+  assert.match(res.output, /\n\[gg: timed out after 500 ms\]/);
+  assert.doesNotMatch(res.output, /\[ff:/);
 });
 
 test(
@@ -372,8 +379,8 @@ const POSIX_CASE = {
 test('runShell timeout kills an orphan its watcher listed, however slowly ps answers', POSIX_CASE, async (t) => {
   const delayFile = join(tmp, 'slow-ps.delay');
   writeFileSync(delayFile, '2');
-  caseEnv(t, { FF_TEST_PS_DELAY: delayFile });
-  psStandIn(t, 'slow-ps', `sleep "$(cat "$FF_TEST_PS_DELAY")" || exit 1\nPATH="\${PATH#*:}" exec ps "$@"`);
+  caseEnv(t, { GG_TEST_PS_DELAY: delayFile });
+  psStandIn(t, 'slow-ps', `sleep "$(cat "$GG_TEST_PS_DELAY")" || exit 1\nPATH="\${PATH#*:}" exec ps "$@"`);
   const { res, pid } = await timedOutOrphan(t, 'slow-ps', { beforeClock: () => writeFileSync(delayFile, '5') });
   assert.equal(res.timedOut, true);
   assert.deepEqual(res.survivors, []);
@@ -470,11 +477,11 @@ test(
     const psPid = join(tmp, 'stalled-ps.pid'),
       holderPid = join(tmp, 'stalled-ps-holder.pid');
     // renamed into place, so the command never sees the file before the pids are in both
-    caseEnv(t, { FF_TEST_PS_HOLDER: holderPid, FF_TEST_PS_PID: psPid });
+    caseEnv(t, { GG_TEST_PS_HOLDER: holderPid, GG_TEST_PS_PID: psPid });
     psStandIn(
       t,
       'stalled-ps',
-      `sleep ${LIVES_MS / 1000} &\necho $! > "$FF_TEST_PS_HOLDER"\necho $$ > "$FF_TEST_PS_PID.tmp" && mv "$FF_TEST_PS_PID.tmp" "$FF_TEST_PS_PID"\nwait`,
+      `sleep ${LIVES_MS / 1000} &\necho $! > "$GG_TEST_PS_HOLDER"\necho $$ > "$GG_TEST_PS_PID.tmp" && mv "$GG_TEST_PS_PID.tmp" "$GG_TEST_PS_PID"\nwait`,
     );
     t.after(() => {
       try {
@@ -610,13 +617,13 @@ public static class BA {
   }
 }
 '@
-$r = [BA]::Run('"' + $env:FF_TEST_BA_EXE + '" "' + $env:FF_TEST_BA_SCRIPT + '"')
+$r = [BA]::Run('"' + $env:GG_TEST_BA_EXE + '" "' + $env:GG_TEST_BA_SCRIPT + '"')
 [Console]::Out.WriteLine($r); [Console]::Out.Flush()
-Set-Content -LiteralPath $env:FF_TEST_BA_CREATED -Value $r
+Set-Content -LiteralPath $env:GG_TEST_BA_CREATED -Value $r
 Start-Sleep ${LIVES_MS / 1000}
 `,
     );
-    caseEnv(t, { FF_TEST_BA_EXE: process.execPath, FF_TEST_BA_SCRIPT: sleeper, FF_TEST_BA_CREATED: created });
+    caseEnv(t, { GG_TEST_BA_EXE: process.execPath, GG_TEST_BA_SCRIPT: sleeper, GG_TEST_BA_CREATED: created });
     const { res } = await timeOutWhen(
       `powershell.exe -NoProfile -NonInteractive -File "${ps}"`,
       { timeoutMs: 6000 },
@@ -670,7 +677,7 @@ test(
   },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob');
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
+    const { res, ready } = await withEnv({ GG_TEST_NOJOB: '1' }, () =>
       timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal),
     );
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
@@ -699,7 +706,7 @@ test(
   },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-sandboxed');
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
+    const { res, ready } = await withEnv({ GG_TEST_NOJOB: '1' }, () =>
       timeOutWhen(cmd, { timeoutMs: 4000 }, () => existsSync(pidFile), t.signal),
     );
     const pid = ready ? Number(readFileSync(pidFile, 'utf8')) : null;
@@ -733,7 +740,7 @@ test(
       'slow-taskkill.mjs',
       `import { spawnSync } from 'node:child_process'; setTimeout(() => process.exit(spawnSync('taskkill', ['/T', '/F', '/PID', String(process.argv[2])]).status ?? 1), 31000);`,
     );
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
+    const { res, ready } = await withEnv({ GG_TEST_NOJOB: '1' }, () =>
       timeOutWhen(
         cmd,
         { timeoutMs: 4000, taskkillCommand: [process.execPath, [slow]] },
@@ -765,7 +772,7 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-denied');
-    const { res, ready } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
+    const { res, ready } = await withEnv({ GG_TEST_NOJOB: '1' }, () =>
       timeOutWhen(
         cmd,
         { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
@@ -803,7 +810,7 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
     const { pidFile, cmd } = linkedChild('nojob-late', { delayMs: 4500 });
-    const { res } = await withEnv({ FF_TEST_NOJOB: '1' }, () =>
+    const { res } = await withEnv({ GG_TEST_NOJOB: '1' }, () =>
       timeOutWhen(
         cmd,
         { timeoutMs: 4000, taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']] },
@@ -901,7 +908,7 @@ test(
     const onHelper = (helper) =>
       helper.stderr.on('data', (d) => {
         notes += d;
-        if (notes.includes('\u0001FFJOB started')) seen();
+        if (notes.includes('\u0001GGJOB started')) seen();
       });
     const timers = manualTimers();
     const running = exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 7000, timers, onHelper });
@@ -930,14 +937,14 @@ test(
       let notes = '';
       helper.stderr.on('data', (d) => {
         notes += d;
-        if (!notes.includes('\u0001FFJOB started') || late.holding()) return;
+        if (!notes.includes('\u0001GGJOB started') || late.holding()) return;
         late.hold();
         // A microtask runs once runShell's own listener has seen the start.
         queueMicrotask(() => timers.tick(1));
       });
       helper.on('exit', () => setImmediate(late.release));
     };
-    const res = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () =>
+    const res = await withEnv({ GG_TEST_QUERYFAIL: '1' }, () =>
       exec.runShell(`"${process.execPath}" "${p}"`, { timeoutMs: 1, timers, onHelper }),
     );
     assert.ok(
@@ -985,7 +992,7 @@ test(
     const onHelper = (helper) =>
       helper.stderr.on('data', (d) => {
         notes += d;
-        if (notes.includes('\u0001FFJOB started')) seen();
+        if (notes.includes('\u0001GGJOB started')) seen();
       });
     const timers = manualTimers();
     const running = exec.runShell(`"${process.execPath}" "${p}"`, {
@@ -1003,10 +1010,10 @@ test(
 );
 
 test(
-  'runShell: a helper that never starts and cannot be killed is reported, and does not keep ff waiting',
+  'runShell: a helper that never starts and cannot be killed is reported, and does not keep gg waiting',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async () => {
-    const res = await withEnv({ FF_TEST_STALL: '1' }, () =>
+    const res = await withEnv({ GG_TEST_STALL: '1' }, () =>
       exec.runShell(`"${process.execPath}" -e "1"`, {
         timeoutMs: 800,
         taskkillCommand: [process.execPath, ['-e', 'process.exit(1)']],
@@ -1035,7 +1042,7 @@ test(
   async (t) => {
     const pidFile = join(tmp, 'queryfail.pid');
     const p = script('queryfail.mjs', writesPid, [pidFile]);
-    const { res } = await withEnv({ FF_TEST_QUERYFAIL: '1' }, () =>
+    const { res } = await withEnv({ GG_TEST_QUERYFAIL: '1' }, () =>
       timeOutWhen(`"${process.execPath}" "${p}"`, { timeoutMs: 3000 }, () => existsSync(pidFile), t.signal),
     );
     assert.equal(res.timedOut, true);
@@ -1055,7 +1062,7 @@ test(
   'runShell: job membership larger than the first query buffer is still listed in full',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
-    const { res, pid } = await withEnv({ FF_TEST_BUF: '1' }, () =>
+    const { res, pid } = await withEnv({ GG_TEST_BUF: '1' }, () =>
       timedOutOrphan(t, 'smallbuf', { denyTerminate: true }),
     );
     try {
@@ -1074,7 +1081,7 @@ test(
 );
 
 // The job helper's notes as [kind, value] pairs, from what it wrote.
-const helperNotes = (raw) => [...raw.matchAll(/\n\u0001FFJOB (\w+) ?([^\n]*)\n/g)].map((m) => [m[1], m[2]]);
+const helperNotes = (raw) => [...raw.matchAll(/\n\u0001GGJOB (\w+) ?([^\n]*)\n/g)].map((m) => [m[1], m[2]]);
 // How the helper got its job-object code: the loaded and compiled notes, in order.
 const howLoaded = (raw) => helperNotes(raw).filter(([k]) => k === 'loaded' || k === 'compiled');
 const WIN_CASE = { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' };
@@ -1096,7 +1103,7 @@ async function runHelper(dir, signal, { cwd, env } = {}) {
       windowsHide: true,
       cwd,
       signal,
-      env: { ...process.env, ...env, FF_CMD: `"${process.execPath}" -e "console.log('ran')"`, FF_CWD: cwd ?? '' },
+      env: { ...process.env, ...env, GG_CMD: `"${process.execPath}" -e "console.log('ran')"`, GG_CWD: cwd ?? '' },
     },
   );
   let raw = '';
@@ -1105,12 +1112,12 @@ async function runHelper(dir, signal, { cwd, env } = {}) {
   return { code, raw };
 }
 
-// Builds at path a loadable FFJob that prints PLANTED instead of running the command.
+// Builds at path a loadable GgJob that prints PLANTED instead of running the command.
 function plantedAssembly(path) {
   const build = script(
     'plant.ps1',
-    `Add-Type -OutputAssembly $env:FF_TEST_PLANTED -OutputType Library -TypeDefinition @'
-public static class FFJob {
+    `Add-Type -OutputAssembly $env:GG_TEST_PLANTED -OutputType Library -TypeDefinition @'
+public static class GgJob {
   public static int Run(string cmd, string cwd, bool deny) { System.Console.Out.WriteLine("PLANTED"); return 0; }
   public static void Done() {}
 }
@@ -1120,7 +1127,7 @@ public static class FFJob {
   const built = spawnSync(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', build],
-    { windowsHide: true, encoding: 'utf8', env: { ...process.env, FF_TEST_PLANTED: path } },
+    { windowsHide: true, encoding: 'utf8', env: { ...process.env, GG_TEST_PLANTED: path } },
   );
   assert.ok(existsSync(path), built.stderr);
   return path;

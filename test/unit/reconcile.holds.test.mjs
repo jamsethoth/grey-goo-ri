@@ -270,7 +270,7 @@ test('a failed lookup is unknown, not absent', async (t) => {
   const entry = record.openIntents(loaded).find((e) => e.actionMarker === m);
   const down = {
     ...g.options.gh,
-    issueComments: async () => {
+    comments: async () => {
       throw badGateway();
     },
   };
@@ -299,9 +299,9 @@ test('a failed lookup in a Run is retried on the Action budget and finds the lan
   let failures = 1;
   const once = {
     ...g.options.gh,
-    issueComments: async (...args) => {
+    comments: async (...args) => {
       if (failures-- > 0) throw badGateway();
-      return g.options.gh.issueComments(...args);
+      return g.options.gh.comments(...args);
     },
   };
 

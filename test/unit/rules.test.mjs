@@ -575,3 +575,24 @@ test('only the boxes with an input no row matches fall', async () => {
   assert.deepEqual(result.falls, [1, 2]);
   assert.deepEqual(result.defaultExample, { claim: 'b', response: { flag: false } });
 });
+
+// The validator accepts an operator by its name in the one table, so each one it accepts must also run (#198).
+test('every operator the validator accepts evaluates in a rule and in a count Check', async () => {
+  const rules = await load();
+  const procedures = await import('../../lib/procedures.mjs');
+  const checks = await import('../../lib/checks.mjs');
+  assert.deepEqual(procedures.OPS, Object.keys(procedures.COMPARISONS));
+  for (const op of procedures.OPS) {
+    const table = { name: 'count', rows: [{ when: { 'response.n': { [op]: 1 } }, outcome: 'hit' }] };
+    for (const n of [0, 1, 2]) {
+      const expected = procedures.COMPARISONS[op](n, 1);
+      assert.equal(rules.evaluate(table, { response: { n } }) === 0, expected, `rule ${n} ${op} 1`);
+      const findings = Array.from({ length: n }, () => ({ severity: 'minor' }));
+      assert.equal(
+        checks.responseCheck({ findings }, { count: 'findings', [op]: 1 }).passed,
+        expected,
+        `count ${n} ${op} 1`,
+      );
+    }
+  }
+});
