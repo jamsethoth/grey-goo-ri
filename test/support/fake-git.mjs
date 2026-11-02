@@ -10,7 +10,7 @@ import * as gitModule from '../../lib/git.mjs';
 import * as paths from '../../lib/paths.ts';
 
 const sha1 = (data) => createHash('sha1').update(data).digest('hex');
-const sorted = (paths) => [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+const sorted = (list) => [...list].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 const fail = (message) => Object.assign(new Error(message), { stderr: `${message}\n` });
 
 // A .gitignore line as git reads it: `dir/` matches directories only, a slash elsewhere anchors it to the root, `*` and `?`
