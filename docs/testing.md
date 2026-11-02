@@ -17,7 +17,7 @@ entry point since #199 (ADR 0019).
    the test or the environment, diagnosed and fixed at its root, never re-run past. A test waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Six cases measure real time, recorded as exceptions because their subject is real time across
+   wall clock. Five cases measure real time, recorded as exceptions because their subject is real time across
    processes, which no injected clock reaches:
    - `test/contract/sqlite/record.test.mjs`, `a save waits out another process that holds the write lock for longer
      than 5 s`: a save waiting past the 5 s busy timeout ADR 0015 replaced is the behaviour.
@@ -27,9 +27,6 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/exec.test.mjs`, `runShell timeout kills an orphan its watcher listed, however slowly ps
      answers`: its `ps` answers after 2 s and then 5 s, past the 1.5 s listing budget and the 2 s start-time
      tolerance `runShell` once had (POSIX only).
-   - `test/contract/exec/exec.test.mjs`, `runShell: a finished command whose notes arrive after the helper has exited
-     runs once`: the job helper's notes arrive 400 ms after it exits, past the 300 ms `runShell` once waited for them
-     (Windows only).
    - `test/e2e/run.concurrency.test.mjs`, `two processes serialise orchestrator git writes on the repo lock`: the
      wall clock is the only clock two processes share, so it orders one's release before the other's commit.
    - `test/contract/sqlite/record.test.mjs`, `openers of a new database queue while the open lock is held and all
@@ -105,7 +102,8 @@ in the options it builds, so none outlives the case:
 | the `database` option, `record.stateDatabase({ beforeSave, beforeAppend })` (`golden.caseDatabase(t)`, with `golden.onSave`, `golden.failSaves` and `golden.failAppends`) | sees or fails a chosen save or Event insert |
 | the `integrity` option; `integrity.withGit(git, fs, locks)` (`golden.crashFs`) | runs the fake integrity; crashes a restore's write |
 | the `exec` option | answers the suite's command with red or green output |
-| `exec.runShell`'s `testHooks` option: `timers`, `onHelper`, `onWatch`, `signal` and the rest | moves the timeout clock; listens to the job helper first; sees which descendants the POSIX watcher has listed |
+| `exec.runShell`'s `testHooks` option: `timers`, `onWatch`, `signal` and the rest | moves the timeout clock; sees which descendants the POSIX watcher has listed |
+| `exec.createExec({ kernel32 })` | runs Windows commands with no `node:ffi` (`null`) or with kernel32 calls that fail |
 
 ## Test sizes
 
