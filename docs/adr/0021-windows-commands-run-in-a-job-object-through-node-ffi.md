@@ -76,8 +76,9 @@ Each pull request that bumps the Node version checks:
 
 ## Consequences
 
-- A warm `runShell` start-up drops from the helper's 0.5 to 0.7 s to a plain spawn plus about 15 ms of job set-up. The
-  timeout counts from the call again: there is no helper start-up to exclude.
+- A warm `runShell` of `exit /b 0` on `windows-2025` takes a median of 21 ms, against 317 ms through the helper and 17
+  ms for a plain spawn of `cmd.exe` (20 runs each, workflow run 41540768520). The timeout counts from the call again:
+  there is no helper start-up to exclude.
 - `lib/winjob.ps1`, `lib/winjob-cache/` and the helper's test seams are gone, and with them ADR 0017's cache and its
   threat model. A checkout that ran the suite before may still hold an untracked `lib/winjob-cache/`, which can be
   deleted.
