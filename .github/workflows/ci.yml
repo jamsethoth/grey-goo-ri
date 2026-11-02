@@ -45,8 +45,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
-      # ESLint and tsc, which every suite stage runs first (ADR 0018). No install scripts: no dev dependency needs one.
-      - name: Dev dependencies
+      # jsonc-parser, which gg runs, and ESLint and tsc, which every suite stage runs first (ADR 0018). No install
+      # scripts: no dependency needs one.
+      - name: Dependencies
         run: npm ci --ignore-scripts
 
       # Any real gh, claude or codex spawned by the suite lands in calls.log and fails the job below.
