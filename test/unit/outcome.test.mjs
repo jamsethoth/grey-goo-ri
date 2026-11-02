@@ -324,7 +324,7 @@ for (const [name, err, cls, retryable] of [
     true,
   ],
   ['a 429', http(429, 'Too Many Requests'), 'rate-limited', true],
-  ['a bare 403', http(403, 'Resource not accessible by integration'), 'auth', false],
+  ['a bare 403', http(403, 'Resource not accessible by integration'), 'permission', false],
   ['a 401', http(401, 'Bad credentials'), 'auth', false],
   ['a validation failure', http(422, 'Validation Failed'), 'invalid', false],
   [
@@ -391,7 +391,7 @@ for (const [name, err, cls, retryable] of [
         stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\n",
       },
     ),
-    'auth',
+    'permission',
     false,
   ],
   [
@@ -423,7 +423,6 @@ for (const [name, err, cls, retryable] of [
   test(`a remote failure is classified: ${name} is ${retryable ? 'a retryable' : 'a final'} ${cls}`, () => {
     const f = outcome.classifyRemoteFailure(err);
     assert.equal(f.failureClass, cls);
-    assert.ok(outcome.REMOTE_FAILURE_CLASSES.includes(f.failureClass), 'a remote failure is one of the remote classes');
     assert.equal(f.retryable, retryable);
   });
 }
@@ -451,22 +450,50 @@ test('a transient remote failure backs off at least 60 s, growing exponentially'
   assert.equal(delay(http(502, 'Bad Gateway'), 2), 120_000);
 });
 
-// One Failure Class term, two sources: each declares the classes it can report (#229).
-test('a Harness and a remote Action each declare the Failure Classes they report', () => {
-  assert.deepEqual(outcome.HARNESS_FAILURE_CLASSES, [
-    'auth',
-    'quota',
-    'budget',
-    'rate-limited',
-    'transient',
-    'unknown',
-  ]);
-  assert.deepEqual(outcome.REMOTE_FAILURE_CLASSES, [
-    'rejected',
-    'rate-limited',
-    'auth',
-    'transient',
-    'invalid',
-    'unknown',
-  ]);
+test('a 401 is auth and a 403 that is not a rate limit is permission', () => {
+  const unauthorized = outcome.classifyRemoteFailure(http(401, 'Bad credentials'));
+  assert.equal(unauthorized.failureClass, 'auth');
+  assert.equal(unauthorized.retryable, false);
+  const forbidden = outcome.classifyRemoteFailure(http(403, 'Resource not accessible by integration'));
+  assert.equal(forbidden.failureClass, 'permission');
+  assert.equal(forbidden.retryable, false);
+  const limited = outcome.classifyRemoteFailure(http(403, 'You have exceeded a secondary rate limit.'));
+  assert.equal(limited.failureClass, 'rate-limited', 'a 403 rate limit stays a rate limit');
+});
+
+// git's credential failures carry no HTTP status, only git's own words.
+const gitFailure = (stderr) =>
+  Object.assign(new Error(`${stderr}\ngit push origin x`), { code: 128, stdout: '', stderr: `${stderr}\n` });
+
+test("git's credential failure is auth", () => {
+  for (const stderr of [
+    "remote: Invalid username or token. Password authentication is not supported for Git operations.\nfatal: Authentication failed for 'https://github.com/o/r.git/'",
+    "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+  ]) {
+    const f = outcome.classifyRemoteFailure(gitFailure(stderr));
+    assert.equal(f.failureClass, 'auth', stderr);
+    assert.equal(f.retryable, false, stderr);
+  }
+});
+
+// One table decides each class's retry and reach, whichever source reports it (#240).
+test('every class in the table has a reach, and the Harness rows follow it', () => {
+  assert.deepEqual(outcome.FAILURE_CLASSES, {
+    transient: { reach: 'retry', budget: 'transient' },
+    'rate-limited': { reach: 'retry', budget: 'rateLimited' },
+    auth: { reach: 'run', budget: null },
+    quota: { reach: 'run', budget: null },
+    budget: { reach: 'run', budget: null },
+    permission: { reach: 'ticket', budget: null },
+    rejected: { reach: 'ticket', budget: null },
+    invalid: { reach: 'ticket', budget: null },
+    unknown: { reach: 'ticket', budget: null },
+  });
+  const rowOf = { retry: 'transient-retry', run: 'run-stop', ticket: 'unknown-failure' };
+  for (const [failureClass, { reach, budget }] of Object.entries(outcome.FAILURE_CLASSES)) {
+    const r = resolve({ result: failed(failureClass), policy: outcome.DEFAULT_POLICY });
+    assert.equal(r.row, rowOf[reach], failureClass);
+    assert.equal(r.retryKind, budget, failureClass);
+    assert.equal(r.failureClass, failureClass);
+  }
 });

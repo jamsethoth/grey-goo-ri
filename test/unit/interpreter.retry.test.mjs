@@ -360,14 +360,15 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
       g.logs.join('\n'),
     );
   });
-  await t.test('an auth failure keeps the unexpected-fault reason', async (t) => {
+  await t.test('an auth failure stops the run, naming the comment', async (t) => {
     const g = await reviewFlow(t, okReview);
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
-    await interpreter.runExecution(g.options);
+    const result = await interpreter.runExecution(g.options);
 
+    assert.equal(result.runStop?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(
       g.rec.terminalReason.text,
-      'An unexpected fault stopped the Execution at comment; the error is in this comment and on ticket_end.',
+      'The comment at comment failed with class auth, which stops the whole run.',
     );
     assert.ok(!g.logs.some((l) => /retries exhausted/.test(l)));
   });

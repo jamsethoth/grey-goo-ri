@@ -563,3 +563,57 @@ test('a failed busy save after a backoff allows no later save or effect', async 
   assert.equal(ticketComments(g).length, 0, 'no fault report');
   assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
 });
+
+// A push git refused: a credential failure carries no status, a permission refusal its 403.
+const refusedPush = (stderr) => Object.assign(new Error('git push exited 128'), { code: 128, stdout: '', stderr });
+
+test('a remote auth failure stops the run and the next Execution stops before its first Action', async (t) => {
+  const g = await golden.setup(t);
+  pushThrough(g, () => Promise.reject(refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")));
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.equal(result.fault, undefined, 'a run stop, not a fault');
+  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.deepEqual(g.sleeps, [], 'never retried');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'needs-human');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stop' });
+  assert.equal(final.terminalReason.text, 'The push at push failed with class auth, which stops the whole run.');
+  assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
+
+  const next = await golden.setup(t);
+  const stopped = await interpreter.runExecution({ ...next.options, runState });
+
+  assert.equal(stopped.outcome, 'needs-human', JSON.stringify(stopped));
+  assert.equal(next.harness.calls.length, 0, 'no Action ran');
+  const reason = (await loadTicket(next)).terminalReason;
+  assert.deepEqual(reason.rule, { table: 'fixed', row: 'run-stopped' });
+  assert.equal(
+    reason.text,
+    `The push of Ticket #${golden.TICKET} failed with class auth, which stops the whole run, so this Execution stopped before red.`,
+  );
+});
+
+test('a remote permission failure faults only its Ticket', async (t) => {
+  const g = await golden.setup(t);
+  pushThrough(g, () =>
+    Promise.reject(
+      refusedPush("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\n"),
+    ),
+  );
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.equal(result.runStop, undefined, 'the run goes on');
+  assert.equal(runState.stop, null);
+  assert.deepEqual(g.sleeps, [], 'never retried');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'fault');
+  assert.equal(
+    final.terminalReason.text,
+    'The push at push failed with class permission (HTTP 403), which faults only this Ticket; the error is in this comment and on ticket_end.',
+  );
+});
