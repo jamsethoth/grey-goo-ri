@@ -180,6 +180,17 @@ reads the plugin's hook manifest, runs its session-start command through the she
 A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes to another Vertex or to an end
 (ADR 0014).
 
+A Layer declares Flows under `flows`, by name. Each object below takes only the keys listed; any other key fails
+admission (`lib/validate.mjs` holds the lists):
+
+| Flow object | Keys | What each key takes |
+|---|---|---|
+| `flows.<name>` | `plan`, `actionCap`, `ticket` | `null` until Epic planning is built; the Action Cap, a positive integer; the ticket section |
+| `ticket` | `entry`, `routes`, `vertices` | the id of the first Vertex; the Flow-wide routes, from Outcome to target, for an Outcome a Vertex's own route does not name; the Vertices by id |
+| `vertices.<id>` | `use`, `procedure`, `inputs`, `route`, `max`, `exhausted`, and any Agent key (3.1) | the Agent it uses, whose keys it may override; the Procedure it runs (3.4); its Vertex inputs by name; its routes, from Outcome to target, where `*` catches any Outcome named in neither the Vertex's nor the Flow's routes; optional, the Bound on its Visits and the target when that Bound is exhausted |
+| `route.<outcome>` | `to`, `max`, `exhausted` | a target is a Vertex id, `{ end: <end> }`, or this edge: the Vertex to go to; optional, the Bound on its traversals and the target when that Bound is exhausted, required with it |
+| `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<field>` or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
+
 - Vertex: a `procedure` (3.4), an agent (3.1) when the Procedure has an agent Action, `inputs` read from earlier
   Vertices, and edges. A gate is a Vertex whose Procedure has no agent Action and a `command` Check.
 - An approval vertex is a Vertex whose Procedure ends in an `await-approval` Action, after any Checks and with no
@@ -268,6 +279,23 @@ Sessions never cross Vertices. gg ships no Procedure; the example `gg init` writ
   numbers stripped).
 - `publish`: no agent; the `test` Check, PR body re-render, and `pr-ready` on the tree that Check passed.
 - `plan`: interactive launch; exit is `gg publish`.
+
+A Layer declares Procedures under `procedures`, by name, each taking only these keys (`lib/validate.mjs` holds the
+lists):
+
+| Procedure object | Keys | What each key takes |
+|---|---|---|
+| `procedures.<name>` | `actions`, `claimTokens`, `tests`, `access`, `recover`, `passed`, `failed`, `stopped`, `otherwise` | its Actions, in order; its Claim tokens by token, declared only with an agent Action (without one, the implicit token `ok` requires every Check); `frozen` (the default), `write` or `{ named: <reference path> }`; optional, `read-only`; optional, `{ max, brief }`, the recovery passes and their Brief; the rule tables, each a list of `{ when, outcome }` rows; optional, the Outcome when no row matches |
+| `claimTokens.<token>` | `requires`, `stop`, `comment` | either `requires`, the ids of the Checks the token is held to, or `stop: true` with an optional `comment` template |
+
+Order: the agent Action, when a Procedure has one, comes first and is its only one, so a recovery pass runs every
+Check again after it; every Check comes before any effect Action (`commit`, `push`, `pr-upsert`, `pr-ready`,
+`comment`, `await-approval`), so no effect runs before its pass is decided.
+
+Reference paths read the Visit: `response.<field>` (the agent's Structured Response), `inputs.<name>`,
+`<action id>.<output>`, and in a rule table's `when` also `claim`, `pass` and `check.<id>`. Two start elsewhere: an
+input's `from` starts at a Vertex (`<vertex>.<action id>.<field>`), and a `response` Check's paths start inside the
+response (`findings`, not `response.findings`).
 
 Every Action declares `id` (its Action id) and `do` (its kind), and only its kind's keys; any other key fails
 admission (`lib/procedures.mjs` holds the lists):

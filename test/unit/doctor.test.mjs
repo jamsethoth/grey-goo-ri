@@ -84,7 +84,7 @@ test('gg doctor reads schemas from the loaded Layer files', () => {
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
-      '\nerror: procedures.review.claims: review.schema.json: claim: enum "ok" | "changes" does not equal the declared tokens "ok" | "changes" | "blocked"\n',
+      '\nerror: procedures.review.claimTokens: review.schema.json: claim: enum "ok" | "changes" does not equal the declared tokens "ok" | "changes" | "blocked"\n',
     ),
     text,
   );

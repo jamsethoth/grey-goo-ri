@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import * as requestTables from '../support/request-tables.mjs';
+import * as requestTables from '../support/request-tables.ts';
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url), 'utf8'));
 
@@ -115,18 +115,18 @@ test("a Procedure's hash is the sha256 of its canonical JSON as declared, whatev
 
 test('a Procedure with no agent Action has the implicit Claim ok requiring every Check', async () => {
   const { flows } = await check(example());
-  assert.deepEqual(flows.default.procedures.publish.claims, { ok: { requires: ['test'] } });
+  assert.deepEqual(flows.default.procedures.publish.claimTokens, { ok: { requires: ['test'] } });
   assert.equal(flows.default.ticket.vertices.publish.agent, null);
 });
 
-test('a Procedure with no agent Action that declares claims is an error', async () => {
+test('a Procedure with no agent Action that declares claimTokens is an error', async () => {
   const config = example();
-  config.procedures['base-check'].claims = { ok: { requires: ['test'] } };
+  config.procedures['base-check'].claimTokens = { ok: { requires: ['test'] } };
   assert.deepEqual((await check(config)).errors, [
     {
-      at: 'procedures.base-check.claims',
+      at: 'procedures.base-check.claimTokens',
       message:
-        'a Procedure with no agent Action declares no claims: its implicit Claim ok requires every Check it declares',
+        'a Procedure with no agent Action declares no claimTokens: its implicit Claim ok requires every Check it declares',
     },
   ]);
 });
@@ -142,17 +142,17 @@ test('access: read-only on the Procedure caps the Agent', async () => {
 
 test('a Claim token named failed or harness-timeout is an error', async () => {
   const config = example();
-  config.procedures['tests-fail'].claims.failed = { stop: true };
-  config.procedures['tests-fail'].claims['harness-timeout'] = { stop: true };
+  config.procedures['tests-fail'].claimTokens.failed = { stop: true };
+  config.procedures['tests-fail'].claimTokens['harness-timeout'] = { stop: true };
   const files = schemas();
   files['red.schema.json'].properties.claim.enum = ['ok', 'blocked', 'failed', 'harness-timeout'];
   assert.deepEqual((await check(config, files)).errors, [
     {
-      at: 'procedures.tests-fail.claims.failed',
+      at: 'procedures.tests-fail.claimTokens.failed',
       message: 'Claim token "failed" is reserved for the engine: failed, an end name or harness-*',
     },
     {
-      at: 'procedures.tests-fail.claims.harness-timeout',
+      at: 'procedures.tests-fail.claimTokens.harness-timeout',
       message: 'Claim token "harness-timeout" is reserved for the engine: failed, an end name or harness-*',
     },
   ]);
@@ -189,7 +189,7 @@ test('a Vertex named __proto__ is an error, never dropped', async () => {
 test('a name of an Object.prototype property is reserved wherever the configuration names something', async () => {
   const config = example();
   config.agents.valueOf = { persona: 'implementer.md', harness: 'fake' };
-  config.procedures['tests-fail'].claims.isPrototypeOf = { stop: true };
+  config.procedures['tests-fail'].claimTokens.isPrototypeOf = { stop: true };
   config.procedures['tests-fail'].stopped[0].outcome = 'toString';
   config.procedures.review.otherwise = 'toLocaleString';
   config.procedures.gate = {
@@ -215,7 +215,7 @@ test('a name of an Object.prototype property is reserved wherever the configurat
   const F = 'flows.propertyIsEnumerable.ticket';
   assert.deepEqual((await check(config)).errors, [
     { at: 'agents.valueOf', message: `Agent "valueOf" ${INHERITED}` },
-    { at: 'procedures.tests-fail.claims.isPrototypeOf', message: `Claim token "isPrototypeOf" ${INHERITED}` },
+    { at: 'procedures.tests-fail.claimTokens.isPrototypeOf', message: `Claim token "isPrototypeOf" ${INHERITED}` },
     { at: 'procedures.tests-fail.stopped[0]', message: `outcome "toString" ${INHERITED}` },
     { at: 'procedures.review.otherwise', message: `otherwise "toLocaleString" ${INHERITED}` },
     { at: 'procedures.gate.actions[0]', message: `Action id "constructor" ${INHERITED}` },
@@ -230,10 +230,10 @@ test('a name of an Object.prototype property is reserved wherever the configurat
 
 test('a Claim enum that differs from the declared tokens is an error', async () => {
   const config = example();
-  config.procedures['tests-fail'].claims.stuck = { stop: true };
+  config.procedures['tests-fail'].claimTokens.stuck = { stop: true };
   assert.deepEqual((await check(config)).errors, [
     {
-      at: 'procedures.tests-fail.claims',
+      at: 'procedures.tests-fail.claimTokens',
       message:
         'red.schema.json: claim: enum "ok" | "blocked" does not equal the declared tokens "ok" | "blocked" | "stuck"',
     },
@@ -353,9 +353,9 @@ test('an unknown Action kind or Check kind is an error', async () => {
 
 test('a token requiring an Action that is not a Check is an error', async () => {
   const config = example();
-  config.procedures.implement.claims.ok.requires = ['commit'];
+  config.procedures.implement.claimTokens.ok.requires = ['commit'];
   assert.deepEqual((await check(config)).errors, [
-    { at: 'procedures.implement.claims.ok', message: 'requires "commit", which is not a Check of this Procedure' },
+    { at: 'procedures.implement.claimTokens.ok', message: 'requires "commit", which is not a Check of this Procedure' },
   ]);
 });
 
@@ -699,11 +699,11 @@ for (const [what, mutate, errors] of [
   [
     'requires that is a number',
     (c) => {
-      c.procedures.implement.claims.ok.requires = 3;
+      c.procedures.implement.claimTokens.ok.requires = 3;
     },
     [
       {
-        at: 'procedures.implement.claims.ok',
+        at: 'procedures.implement.claimTokens.ok',
         message: 'a Claim token is { requires: [<check ids>] } or { stop: true, comment?: <file> }',
       },
     ],
@@ -811,11 +811,11 @@ for (const [what, mutate, errors] of [
 
 test('a passed row on a Check its token requires failing is unreachable even when another token requires nothing', async () => {
   const config = example();
-  config.procedures.implement.claims.partial = { requires: [] };
+  config.procedures.implement.claimTokens.partial = { requires: [] };
   config.procedures.implement.passed = [{ when: { claim: 'ok', 'check.test': 'failed' }, outcome: 'odd' }];
   const files = schemas();
   files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
-  config.procedures.fix.claims.partial = { requires: [] };
+  config.procedures.fix.claimTokens.partial = { requires: [] };
   assert.deepEqual((await check(config, files)).errors, [
     {
       at: 'procedures.implement.passed',
@@ -837,11 +837,11 @@ test("a failed row on its token's only required Check passing is unreachable", a
 
 test('a token whose every passing case a row maps away is not an Outcome', async () => {
   const config = example();
-  config.procedures.implement.claims.partial = { requires: ['test'] };
+  config.procedures.implement.claimTokens.partial = { requires: ['test'] };
   config.procedures.implement.passed = [{ when: { claim: 'ok' }, outcome: 'done-ish' }];
   const files = schemas();
   files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
-  config.procedures.fix.claims.partial = { requires: ['test'] };
+  config.procedures.fix.claimTokens.partial = { requires: ['test'] };
   config.flows.default.ticket.routes['done-ish'] = 'reviewer';
   const { errors, flows } = await check(config, files);
   assert.deepEqual(errors, []);
@@ -1045,7 +1045,7 @@ test('a passing write path without a commit is an error', async () => {
 
 test('a write Vertex whose committing token requires no Check is an error', async () => {
   const config = example();
-  config.procedures.fix.claims.ok.requires = [];
+  config.procedures.fix.claimTokens.ok.requires = [];
   assert.deepEqual((await check(config)).errors, [
     {
       at: `${V}.implementer-fix`,
@@ -1163,7 +1163,7 @@ test('a required list input is met when each passing token produces a different 
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: ['a'] }, changes: { requires: ['b'] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: ['a'] }, changes: { requires: ['b'] }, blocked: { stop: true } },
     actions: [
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
@@ -1189,7 +1189,7 @@ test("the map gives a row's Outcome to every Claim token of its table", async ()
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: ['a'] }, changes: { requires: [] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: ['a'] }, changes: { requires: [] }, blocked: { stop: true } },
     actions: [
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
@@ -1316,7 +1316,7 @@ test('the map gives a row taken by an earlier row its Outcome for every token', 
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: ['a'] }, changes: { requires: ['b'] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: ['a'] }, changes: { requires: ['b'] }, blocked: { stop: true } },
     actions: [
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
@@ -1373,7 +1373,7 @@ test('the map takes no evidence from the stopped table, whatever a row names', a
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: ['test'] }, changes: { requires: [] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: ['test'] }, changes: { requires: [] }, blocked: { stop: true } },
     actions: [
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'test', do: 'check', kind: 'command', command: 'test' },
@@ -1401,7 +1401,7 @@ test('a stopped Claim guarantees no evidence, so an optional input reading it is
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: ['test'] }, changes: { requires: [] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: ['test'] }, changes: { requires: [] }, blocked: { stop: true } },
     actions: [
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'test', do: 'check', kind: 'command', command: 'test' },
@@ -1429,7 +1429,7 @@ test('the map takes no evidence from stopped rows, even when each needs a differ
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
     actions: [
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
@@ -1519,7 +1519,7 @@ test('an optional input that only some ways of an Outcome produce is warned', as
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: ['a'] }, changes: { requires: [] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: ['a'] }, changes: { requires: [] }, blocked: { stop: true } },
     actions: [
       { id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'a', do: 'check', kind: 'command', command: 'test' },
@@ -1550,7 +1550,7 @@ test('a harness failure leaves no response', async () => {
   const config = example();
   config.procedures.judge = {
     access: 'read-only',
-    claims: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: [] }, changes: { requires: [] }, blocked: { stop: true } },
     actions: [{ id: 'judge', do: 'agent', brief: 'review.md', schema: 'review.schema.json' }],
   };
   config.flows.default.ticket = {
@@ -1574,7 +1574,7 @@ test('pr-ready counts only from the passed table', async () => {
   const config = example();
   config.procedures.ship = {
     access: 'read-only',
-    claims: { ok: { requires: ['test'] }, changes: { requires: ['test'] }, blocked: { stop: true } },
+    claimTokens: { ok: { requires: ['test'] }, changes: { requires: ['test'] }, blocked: { stop: true } },
     actions: [
       { id: 'ship', do: 'agent', brief: 'review.md', schema: 'review.schema.json' },
       { id: 'test', do: 'check', kind: 'command', command: 'test' },

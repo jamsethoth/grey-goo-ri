@@ -111,12 +111,12 @@ test("defaults/gg.json declares the shipped Procedures in the validator's shape"
     procedures.publish.actions.map((a) => [a.id, a.do].join(':')),
     ['test:check', 'pr:pr-upsert', 'pr-ready:pr-ready'],
   );
-  assert.deepEqual(procedures.implement.claims, {
+  assert.deepEqual(procedures.implement.claimTokens, {
     ok: { requires: ['test'] },
     blocked: { stop: true, comment: 'templates/stop.md' },
     misscoped: { stop: true, comment: 'templates/stop.md' },
   });
-  assert.deepEqual(procedures.publish.claims, { ok: { requires: ['test'] } });
+  assert.deepEqual(procedures.publish.claimTokens, { ok: { requires: ['test'] } });
   assert.deepEqual(
     [procedures['tests-fail'].tests, procedures.fix.tests, procedures.review.access],
     ['write', { named: 'inputs.testFiles' }, 'read-only'],

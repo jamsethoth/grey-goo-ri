@@ -135,7 +135,7 @@ function beside(root, files) {
 test('loadConfig reads each file from the Layer that declares its name', (t) => {
   const { repo, home } = layers(t, {
     repo: '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}',
-    home: '{"procedures":{"probe":{"actions":[{"id":"ask","do":"agent","brief":"ask.md","schema":"ask.schema.json"},{"id":"pr","do":"pr-upsert","body":"body.md"}],"recover":{"max":1,"brief":"again.md"},"claims":{"halt":{"stop":true,"comment":"stopped.md"}}}}}',
+    home: '{"procedures":{"probe":{"actions":[{"id":"ask","do":"agent","brief":"ask.md","schema":"ask.schema.json"},{"id":"pr","do":"pr-upsert","body":"body.md"}],"recover":{"max":1,"brief":"again.md"},"claimTokens":{"halt":{"stop":true,"comment":"stopped.md"}}}}}',
   });
   beside(repo, { 'repo-implementer.md': '# repo implementer\n' });
   beside(home, {

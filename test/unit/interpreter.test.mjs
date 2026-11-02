@@ -545,7 +545,7 @@ test("a stop token's comment names the stopped Visit's own outputs and inputs", 
     c.files['stop-direct.md'] = golden.layerFile(
       'own: {{green.response.summary}}\ninput: {{inputs.red.output}}\n{{marker}}\n',
     );
-    c.procedures.implement.claims.blocked.comment = 'stop-direct.md';
+    c.procedures.implement.claimTokens.blocked.comment = 'stop-direct.md';
   });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'needs-human');
@@ -949,7 +949,7 @@ function unrequiredTest(g) {
   golden.configure(g, (c) => {
     c.commands.lint = 'npm run lint';
     c.procedures.implement.actions.splice(2, 0, { id: 'lint', do: 'check', kind: 'command', command: 'lint' });
-    c.procedures.implement.claims.ok = { requires: ['lint'] };
+    c.procedures.implement.claimTokens.ok = { requires: ['lint'] };
     c.flows.golden.ticket.vertices.publish.inputs.green.optional = true;
   });
   const { runShell } = g.options.exec;
@@ -971,7 +971,7 @@ function withLint(g, lintRuns) {
       command: 'lint',
       recoverBrief: 'templates/test-fix.md',
     });
-    c.procedures.implement.claims.ok = { requires: ['test', 'lint'] };
+    c.procedures.implement.claimTokens.ok = { requires: ['test', 'lint'] };
   });
   const shells = { ...g.options.exec, 'npm run lint': async () => lintRuns.shift() };
   g.options.exec.runShell = async (command, opts) => (shells[command] ?? shells.runShell)(command, opts);
@@ -1117,7 +1117,7 @@ test('a Check that passed and then failed in a recovery pass keeps no evidence o
   withLint(g, [LINT_FAILS, LINT_PASSES]);
   // ok requires only lint, so the Visit commits with test failing in its last pass.
   golden.configure(g, (c) => {
-    c.procedures.implement.claims.ok = { requires: ['lint'] };
+    c.procedures.implement.claimTokens.ok = { requires: ['lint'] };
     c.flows.golden.ticket.vertices.publish.inputs.green.optional = true;
   });
   await interpreter.runExecution(g.options);
@@ -1276,7 +1276,7 @@ const sealing = (tests, type) => ({
     { id: 'gate', do: 'check', kind: 'command', command: 'test' },
     { id: 'seal', do: 'commit', type },
   ],
-  claims: { ok: { requires: ['gate'] }, blocked: { stop: true } },
+  claimTokens: { ok: { requires: ['gate'] }, blocked: { stop: true } },
 });
 // Test Immutability scripted with ordered results; `baselines` records the commit each assertion compared against.
 function scriptedImmutability(g, results) {
@@ -1309,7 +1309,7 @@ test('the interpreter names no Procedure, Action or Check', async (t) => {
         { id: 'post', do: 'pr-upsert', body: 'probe-body.md' },
         { id: 'done', do: 'pr-ready' },
       ],
-      claims: { ok: { requires: ['gate'] }, blocked: { stop: true } },
+      claimTokens: { ok: { requires: ['gate'] }, blocked: { stop: true } },
     };
     c.flows.golden.ticket = {
       entry: 'build',
@@ -1394,7 +1394,7 @@ test('a passed row does not count a Check that passed on an older tree', async (
         { id: 'gate', do: 'check', kind: 'command', command: 'test' },
         { id: 'touch', do: 'check', kind: 'command', command: 'touch' },
       ],
-      claims: { ok: { requires: [] }, blocked: { stop: true } },
+      claimTokens: { ok: { requires: [] }, blocked: { stop: true } },
       passed: [{ when: { 'check.gate': 'passed' }, outcome: 'ok' }],
       otherwise: 'stale',
     };
@@ -1552,7 +1552,7 @@ test('a stop token posts the comment its token names', async (t) => {
 test('a stop token that names no comment posts the Terminal Reason comment', async (t) => {
   const g = await golden.setup(t, { responses: blockedGreen() });
   golden.configure(g, (c) => {
-    delete c.procedures.implement.claims.blocked.comment;
+    delete c.procedures.implement.claimTokens.blocked.comment;
   });
   await interpreter.runExecution(g.options);
 

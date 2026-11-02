@@ -252,7 +252,8 @@ The one field of a Structured Response in which the agent names what it reports:
 _Avoid_: status, result, response (for this field)
 
 **Claim token**:
-One value a Procedure lets its Claim take, declared as `{ requires: [<check ids>] }` or `{ stop: true }`. A token with
+One value a Procedure lets its Claim take, declared under its `claimTokens` as `{ requires: [<check ids>] }` or
+`{ stop: true }`. A token with
 `requires` is held to those Checks: when every one passed, the `passed` table decides the Outcome, else the `failed`
 table after recovery. A stop token still runs its pass's Checks, then the `stopped` table decides, else the token. A
 Vertex with no agent Action has the implicit token ok, which requires every Check it declares.
