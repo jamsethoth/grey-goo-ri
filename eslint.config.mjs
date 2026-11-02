@@ -57,6 +57,11 @@ const NO_MODULE_STATE = [
 
 export default defineConfig([
   {
+    // The ban on module state applies to every file, legacy .mjs included (#199).
+    files: ['**/*.mjs'],
+    rules: { 'no-restricted-syntax': ['error', ...NO_MODULE_STATE] },
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     plugins: { '@stylistic': stylistic },

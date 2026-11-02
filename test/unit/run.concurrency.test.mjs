@@ -387,13 +387,14 @@ test('a rate limit on one Ticket delays the next GitHub write of the other', { t
 test('snapshot and orchestrator writes wait beyond the default lock timeout', async (t) => {
   const f = fixture(t);
   let now = 0;
-  const previous = locks.setClock({
-    now: () => now,
-    sleep: async () => {
-      now += 60_000;
+  const timed = locks.createLocks({
+    clock: {
+      now: () => now,
+      sleep: async () => {
+        now += 60_000;
+      },
     },
   });
-  t.after(() => locks.setClock(previous));
   const called = [];
   const verbs = [
     'ensureWorktree',
@@ -415,17 +416,18 @@ test('snapshot and orchestrator writes wait beyond the default lock timeout', as
       ]),
     ),
     f.commonDir,
+    { locks: timed },
   );
   // Another connection holds the lock, as another gg process would. Released before the fixture's cleanup, which
   // Windows refuses while the holder keeps the lock file open.
   const holder = await locks.tryAcquire(f.commonDir, 'repo');
   let byDefault, snapshot, writes;
   try {
-    byDefault = await locks.acquire(f.commonDir, 'repo').then(
+    byDefault = await timed.acquire(f.commonDir, 'repo').then(
       () => null,
       (err) => ({ message: err.message, at: now }),
     );
-    snapshot = await integrity.snapshot(f.mainRoot, f.options.git).then(
+    snapshot = await integrity.snapshot(f.mainRoot, f.options.git, timed).then(
       () => null,
       (err) => ({ message: err.message, at: now }),
     );

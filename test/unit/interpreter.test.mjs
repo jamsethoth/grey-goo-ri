@@ -587,13 +587,12 @@ test('no "*" catches an unroutable Outcome', async (t) => {
 // Each Visit's snapshot as last saved, by `vertex/visit`: the record keeps only the current Visit's.
 function pinnedInputs(t) {
   const seen = {};
-  const previous = record.setSaveHook((r) => {
+  golden.onSave(t, (r) => {
     if (r.configurationSnapshot)
       seen[`${r.configurationSnapshot.vertex}/${r.configurationSnapshot.visit}`] = structuredClone(
         r.configurationSnapshot.inputs,
       );
   });
-  t.after(() => record.setSaveHook(previous));
   return seen;
 }
 const briefOf = (g, vertex, visit) =>
@@ -655,8 +654,7 @@ test('an absent optional input renders empty in the Brief', async (t) => {
 
 test('a Visit saves a state and inputs that declare every field', async (t) => {
   const saved = [];
-  const previous = record.setSaveHook((next) => saved.push(structuredClone(next)));
-  t.after(() => record.setSaveHook(previous));
+  golden.onSave(t, (next) => saved.push(structuredClone(next)));
   const g = await golden.setup(t);
   golden.configure(g, (c) => {
     c.flows.golden.ticket.vertices.green.inputs = {
@@ -1365,13 +1363,12 @@ test('a Vertex with no access set runs read-only', async (t) => {
 
 test("the Visit snapshot pins the Procedure's name and hash", async (t) => {
   const seen = {};
-  const previous = record.setSaveHook((r) => {
+  golden.onSave(t, (r) => {
     if (r.configurationSnapshot)
       seen[`${r.configurationSnapshot.vertex}/${r.configurationSnapshot.visit}`] = structuredClone(
         r.configurationSnapshot.procedure,
       );
   });
-  t.after(() => record.setSaveHook(previous));
   const g = await golden.setup(t);
   await interpreter.runExecution(g.options);
 
@@ -1821,11 +1818,10 @@ const undefinedPaths = (value, path = 'record') =>
 
 test('a stop a Visit decides saves a Terminal stop and Check runs that declare every field', async (t) => {
   const saved = [];
-  const previous = record.setSaveHook((next) => {
+  golden.onSave(t, (next) => {
     const { commonDir, ...persisted } = next;
     saved.push(structuredClone(persisted));
   });
-  t.after(() => record.setSaveHook(previous));
   const g = await cappedSetup(t);
   const result = await interpreter.runExecution(g.options);
   assert.equal(result.outcome, 'needs-human');

@@ -7,7 +7,8 @@ that adds or changes tests follows both.
 Owner decisions of 2026-10-24 and 2026-10-25, from the suite-speed work behind grey-goo-ri PR #141 and the research
 under [Sources](#sources), and the owner's decisions D1-D5 on the #145 audit
 ([grey-goo-ri issue #145, comment of 2026-10-25](https://github.com/jamsethoth/grey-goo-ri/issues/145#issuecomment-6406602493)).
-The test seams in `lib/` for the clock, failure injection and fs are grey-goo-ri issue #153.
+The test seams in `lib/` for the clock, failure injection and fs are grey-goo-ri issue #153, passed down from the
+entry point since #199 (ADR 0019).
 
 ## Rules for a test
 
@@ -49,9 +50,8 @@ The test seams in `lib/` for the clock, failure injection and fs are grey-goo-ri
 6. **Clear failures.** A failing assert says what was expected, what happened, and the inputs that matter.
 7. **Tests change only when behaviour does.** A test edited by a refactor is a sign it tested implementation
    detail; fix the test's coupling, not just its expectation.
-8. **Each case cleans up after itself.** It ends every run it started, removes its temp directories, and restores
-   any transport or hook it swapped (`github.setGh` and the seams below), so a failed case cannot reach the next
-   case's fakes.
+8. **Each case cleans up after itself.** It ends every run it started and removes its temp directories. A fake reaches
+   a run only through the options the case passes (the seams below), so no fake outlives its case.
 9. **No duplicated coverage.** A behaviour is asserted at the lowest size that can show it. A larger test covers
    what only it can show (the wiring, the real system), not the same branch again.
 
@@ -80,7 +80,7 @@ gg's doubles:
 | Double | Replaces | Contract |
 | --- | --- | --- |
 | `test/support/fake-harness.mjs` | the Claude Code and Codex harnesses | `test/contract/harness/` |
-| `fakeGh` (`test/support/golden.mjs`), installed with `useGh` (the same file) | the `gh` transport | none: gh is never run in tests |
+| `fakeGh` (`test/support/golden.mjs`), passed as `github.createGh(fake.gh)` | the `gh` transport | none: gh is never run in tests |
 | the `runShell` in `golden.setup` (`test/support/golden.mjs`), returning red or green output | running the suite | none: `test/contract/exec/` covers the real `runShell` |
 | the injected clock and `crashAt` points | time and crashes | not needed: no external system |
 | fake integrity (#140), `test/support/fake-integrity.mjs` | integrity snapshots; its untracked files and Test Immutability are lib's own over the fake git | `test/contract/integrity/` (#218) |
@@ -91,18 +91,21 @@ the real one over real git for tests whose subject is git behaviour, because it 
 the real integrity over the fake git, was measured slower (221 s against 181 s) and failed three cases on ignored
 Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152).
 
-The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers:
+The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers. Each is a
+dependency `bin/gg.mjs` builds once and passes down as a named option of `run.runTarget` and
+`interpreter.runExecution` (the deps, ADR 0019), or a factory option of the module that owns it; a test passes its own
+in the options it builds, so none outlives the case:
 
 | Seam | What a test does with it |
 | --- | --- |
-| the injected clock's `every` (`golden.setup`'s `clock.beat()`) | fires a heartbeat |
-| `locks.setClock` | times every lock wait, the 60 s default and the 600 s repo-lock waits included |
-| `git.setSleep` | records runGit's index.lock waits |
-| `locks.setAttemptWrapper` | sees a lock attempt, or contends it (`contendRepoLock`) |
-| `record.setSaveHook`, `events.setAppendHook` (`golden.failSaves`, `golden.failAppends`) | fails a chosen save or Event insert |
-| `integrity.withGit(git, fs)` (`golden.crashFs`) | crashes a restore's write |
-| `exec.runShell`'s `timers` and `onHelper` options | moves the timeout clock; listens to the job helper first |
-| `exec.runShell`'s `onWatch` option | sees which descendants the POSIX watcher has listed |
+| the `clock` option (`{ now, sleep, every }`; `golden.setup`'s `clock.beat()`) | moves time, records backoffs, fires a heartbeat |
+| the `gh` option, `github.createGh(transport)` | answers and records every gh call (`fakeGh`), or fails a chosen one |
+| the `git` option; `git.createGit({ sleep })` | runs over the fake git; records runGit's index.lock waits |
+| the `locks` option, `locks.createLocks({ clock, wrapAttempt })` | times every lock wait, the 60 s default and the 600 s repo-lock waits included; sees a lock attempt, or contends it (`contendRepoLock`) |
+| the `database` option, `record.stateDatabase({ beforeSave, beforeAppend })` (`golden.caseDatabase(t)`, with `golden.onSave`, `golden.failSaves` and `golden.failAppends`) | sees or fails a chosen save or Event insert |
+| the `integrity` option; `integrity.withGit(git, fs, locks)` (`golden.crashFs`) | runs the fake integrity; crashes a restore's write |
+| the `exec` option | answers the suite's command with red or green output |
+| `exec.runShell`'s `testHooks` option: `timers`, `onHelper`, `onWatch`, `signal` and the rest | moves the timeout clock; listens to the job helper first; sees which descendants the POSIX watcher has listed |
 
 ## Test sizes
 

@@ -565,15 +565,16 @@ test('a push writes no upstream into .git/config', async (t) => {
   assert.equal(spawnSync('git', ['config', '--get', 'branch.ticket/9-thing.remote'], { cwd: dir }).status, 1);
 });
 
-// Each index.lock wait is recorded and runs `during` in place of the wait.
-function recordWaits(t, during = () => {}) {
+// A git whose index.lock waits are recorded and run `during` in place of the wait.
+function recordWaits(during = () => {}) {
   const waits = [];
-  const previous = gitModule.setSleep(async (ms) => {
-    waits.push(ms);
-    during();
+  const git = gitModule.createGit({
+    sleep: async (ms) => {
+      waits.push(ms);
+      during();
+    },
   });
-  t.after(() => gitModule.setSleep(previous));
-  return waits;
+  return { waits, git };
 }
 
 test('a git write retries while index.lock is held and succeeds when it clears', async (t) => {
@@ -581,10 +582,10 @@ test('a git write retries while index.lock is held and succeeds when it clears',
   const lock = join(dir, '.git', 'index.lock');
   writeFileSync(lock, '');
   writeFileSync(join(dir, 'a.txt'), 'a');
-  const waits = recordWaits(t, () => rmSync(lock, { force: true }));
-  assert.equal(await gitModule.stageAll(dir), true);
+  const { waits, git } = recordWaits(() => rmSync(lock, { force: true }));
+  assert.equal(await git.stageAll(dir), true);
   assert.deepEqual(waits, [100], 'one wait, after which the lock had cleared');
-  const sha = await gitModule.commitStaged(dir, 'test: add a');
+  const sha = await git.commitStaged(dir, 'test: add a');
   assert.ok(!existsSync(lock));
   assert.equal(sh(dir, 'rev-parse', 'HEAD'), sha);
   assert.equal(sh(dir, 'log', '-1', '--format=%s'), 'test: add a');
@@ -595,8 +596,8 @@ test('a git write surfaces the error when index.lock never clears', async (t) =>
   const before = sh(dir, 'rev-parse', 'HEAD');
   writeFileSync(join(dir, '.git', 'index.lock'), '');
   writeFileSync(join(dir, 'a.txt'), 'a');
-  const waits = recordWaits(t);
-  await assert.rejects(gitModule.stageAll(dir), (e) => e.message.includes('index.lock'));
+  const { waits, git } = recordWaits();
+  await assert.rejects(git.stageAll(dir), (e) => e.message.includes('index.lock'));
   assert.deepEqual(waits, [100, 200, 400, 800], 'retried with backoff before giving up');
   assert.equal(sh(dir, 'rev-parse', 'HEAD'), before);
 });

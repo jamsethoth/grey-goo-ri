@@ -3,9 +3,11 @@ import { loadConfig } from '../lib/config.mjs';
 import * as doctor from '../lib/doctor.mjs';
 import * as exec from '../lib/exec.mjs';
 import * as git from '../lib/git.mjs';
-import * as gh from '../lib/github.mjs';
+import * as github from '../lib/github.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
+import * as locks from '../lib/locks.mjs';
 import { parseOpts, positiveInt, UsageError } from '../lib/opts.mjs';
+import * as record from '../lib/record.mjs';
 import * as run from '../lib/run.mjs';
 
 const usage = `Usage: gg <command>
@@ -33,18 +35,28 @@ const SPECS = {
 };
 const command = process.argv[2];
 
+// What a Run reaches outside itself, built once here and passed down as named options; a test passes fakes in their
+// place (ADR 0019).
+const realDeps = () => ({
+  gh: github.createGh(),
+  git: git.createGit(),
+  exec,
+  locks: locks.createLocks(),
+  database: record.stateDatabase(),
+  clock: interpreter.WALL_CLOCK,
+});
+
 async function runCommand(opts) {
   const target = positiveInt(opts._[0], 'ticket');
-  const { mainRoot } = await git.repoInfo(process.cwd());
+  const deps = realDeps();
+  const { mainRoot } = await deps.git.repoInfo(process.cwd());
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.mjs');
   const results = await run.runTarget({
+    ...deps,
     target,
     config: loadConfig(mainRoot),
     harnesses,
     protectedPaths: interpreter.protectedFiles(harnesses),
-    gh,
-    git,
-    exec,
     cwd: mainRoot,
     log: (m) => process.stdout.write(`${m}\n`),
   });
