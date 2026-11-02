@@ -9,6 +9,7 @@ const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }
 
 export const TEMPLATE_PACKAGE = '{ "scripts": { "test": "node --test" } }\n';
 
+// eslint-disable-next-line no-restricted-syntax -- the template is the test process's, built on first use and never swapped.
 let template;
 function buildTemplate() {
   const root = mkdtempSync(join(tmpdir(), 'gg-template-'));

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
@@ -98,7 +99,7 @@ for (const point of ['after-effect', 'after-completion']) {
     const g = await violating(t);
     const spelled = 'Gg:state:needs-human';
     g.gh = golden.fakeGh({ branch: golden.BRANCH, repoLabels: [spelled] });
-    g.options.gh.setGh(g.gh.gh);
+    g.options.gh = github.createGh(g.gh.gh);
     const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
     await crashed(g, ['needs-human', 1, 'end-label', 0], point);
     assert.deepEqual([...g.gh.labels], [spelled], 'GitHub shows the repository spelling');

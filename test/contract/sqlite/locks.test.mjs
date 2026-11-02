@@ -144,7 +144,7 @@ await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo')
   );
 });
 
-// Times the case's lock waits on a clock whose sleeps pass at once, moving its time on and running `during` first.
+// Locks that time the case's waits on a clock whose sleeps pass at once, moving its time on and running `during` first.
 // Called before the case's temp directory exists, so its end runs before that directory's removal, pass or fail. At
 // the end the clock's time runs out, so a wait the case abandoned at its timeout (`waiting`) reaches its deadline; once
 // it has, the case's own lock (`holding`) is released. In that order, because Windows cannot remove a directory whose
@@ -154,21 +154,23 @@ const timedLocks = (t, during = () => {}) => {
   let ended = false;
   const sleeps = [];
   const open = { holder: null, waits: [] };
-  const previous = locks.setClock({
-    now: () => (ended ? Infinity : now),
-    sleep: async (ms) => {
-      sleeps.push(ms);
-      await during();
-      now += ms;
+  const timed = locks.createLocks({
+    clock: {
+      now: () => (ended ? Infinity : now),
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        await during();
+        now += ms;
+      },
     },
   });
   t.after(async () => {
     ended = true;
-    locks.setClock(previous);
     await Promise.allSettled(open.waits);
     if (open.holder?.db.isOpen) await locks.release(open.holder);
   });
   return {
+    locks: timed,
     sleeps,
     holding: (handle) => (open.holder = handle),
     waiting: (promise) => {
@@ -183,8 +185,8 @@ test('acquire waits for release', { timeout: 10_000 }, async (t) => {
   let first;
   const timed = timedLocks(t, () => locks.release(first));
   const commonDir = await tempCommonDir(t);
-  first = timed.holding(await locks.acquire(commonDir, 'repo'));
-  const second = await timed.waiting(locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20 }));
+  first = timed.holding(await timed.locks.acquire(commonDir, 'repo'));
+  const second = await timed.waiting(timed.locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20 }));
   assert.equal(second.waited, true, 'waited for the holder');
   assert.deepEqual(timed.sleeps, [20], 'one poll, after which the holder had released');
   await locks.release(second);
@@ -193,8 +195,8 @@ test('acquire waits for release', { timeout: 10_000 }, async (t) => {
 test('acquire times out', { timeout: 10_000 }, async (t) => {
   const timed = timedLocks(t);
   const commonDir = await tempCommonDir(t);
-  const first = timed.holding(await locks.acquire(commonDir, 'repo'));
-  await assert.rejects(timed.waiting(locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 50 })), (err) => {
+  const first = timed.holding(await timed.locks.acquire(commonDir, 'repo'));
+  await assert.rejects(timed.waiting(timed.locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 50 })), (err) => {
     assert.ok(err instanceof locks.LockTimeoutError);
     return true;
   });
@@ -205,11 +207,11 @@ test('acquire times out', { timeout: 10_000 }, async (t) => {
 test('withLock forwards its acquisition timeout without invoking the callback', { timeout: 10_000 }, async (t) => {
   const timed = timedLocks(t);
   const commonDir = await tempCommonDir(t);
-  const first = timed.holding(await locks.acquire(commonDir, 'repo'));
+  const first = timed.holding(await timed.locks.acquire(commonDir, 'repo'));
   let ran = false;
   await assert.rejects(
     timed.waiting(
-      locks.withLock(
+      timed.locks.withLock(
         commonDir,
         'repo',
         async () => {

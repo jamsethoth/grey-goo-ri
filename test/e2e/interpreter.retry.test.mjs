@@ -7,7 +7,7 @@ import { loadTicket, contendRepoLock, lockedSetup } from '../support/interpreter
 test('a git write queued behind another holder of the repo lock checks the human override first', async (t) => {
   await t.test('a queued push', async (t) => {
     const g = await golden.setup(t, { integrity: 'real' });
-    const lock = contendRepoLock(t, g.commonDir, () => {
+    const lock = contendRepoLock(g, () => {
       g.gh.labels.add('gg:state:needs-human');
     });
     // The green commit's write is the last before the push, whose lock attempt then waits.
@@ -24,7 +24,7 @@ test('a git write queued behind another holder of the repo lock checks the human
   });
   await t.test('a queued push whose commit origin already has', async (t) => {
     const g = await golden.setup(t, { integrity: 'real' });
-    const lock = contendRepoLock(t, g.commonDir, () =>
+    const lock = contendRepoLock(g, () =>
       golden.sh(g.worktree, 'push', '-q', 'origin', `HEAD:refs/heads/${golden.BRANCH}`),
     );
     const counts = lockedSetup(g, (verb, n) => {
@@ -42,7 +42,7 @@ test('a git write queued behind another holder of the repo lock checks the human
   });
   await t.test('a queued commit', async (t) => {
     const g = await golden.setup(t, { integrity: 'real' });
-    const lock = contendRepoLock(t, g.commonDir, () => {
+    const lock = contendRepoLock(g, () => {
       g.gh.labels.add('gg:state:needs-human');
     });
     // The green commit's tree is written; its commit is the next locked write.

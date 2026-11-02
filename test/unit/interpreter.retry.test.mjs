@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.mjs';
 import * as golden from '../support/golden.mjs';
@@ -281,7 +282,7 @@ test('a first launch that crashed spends the budget when launched again', async 
   const g = await reviewFlow(t, okReview);
   let posts = 0;
   // Every POST crashes as it launches, the first included, so each Run's lookup finds the comment absent.
-  g.options.gh.setGh(async (args, cwd, input) => {
+  g.options.gh = github.createGh(async (args, cwd, input) => {
     if (golden.isCommentPost(args, PR) && ++posts) throw new interpreter.CrashError('crash as the POST launched');
     return g.gh.gh(args, cwd, input);
   });

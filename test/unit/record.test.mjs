@@ -233,25 +233,26 @@ test('the write-ahead log records intent, evidence and completion per marker', a
 
 test('a record transition and its event commit together', async (t) => {
   const commonDir = await tempCommonDir(t);
-  const ev = events.eventLog(commonDir, { run: 'run-1', ticket: 8 });
+  // Every Event insert fails while `appends.failing` is set, as a disk error would.
+  const appends = { failing: true };
+  const database = record.stateDatabase({
+    beforeAppend: () => {
+      if (appends.failing) throw new Error('disk I/O error');
+    },
+  });
+  const ev = events.eventLog(commonDir, { run: 'run-1', ticket: 8 }, database);
   const r = newExecution(commonDir);
-  // Every Event insert fails while `failing` is the append hook, as a disk error would.
-  const failing = () => {
-    throw new Error('disk I/O error');
-  };
-  const passing = events.setAppendHook(failing);
-  t.after(() => events.setAppendHook(passing));
   const eventTypes = () => events.readEvents(commonDir).map((e) => e.type);
   const start = () => ev('ticket_start', { execution: r.execution });
 
   await assert.rejects(record.save(r, start), (err) => err.name === 'RecordSaveError', 'a failed Event fails the save');
   assert.equal(await record.load(commonDir, 'ticket', 8), null, 'no record is created without its Event');
-  events.setAppendHook(passing);
+  appends.failing = false;
   await record.save(r, start);
   assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active');
   assert.deepEqual(eventTypes(), ['ticket_start']);
 
-  events.setAppendHook(failing);
+  appends.failing = true;
   r.state = 'held';
   await assert.rejects(
     record.save(r, () => ev('ticket_end', { execution: r.execution })),
@@ -259,7 +260,7 @@ test('a record transition and its event commit together', async (t) => {
   );
   assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active', 'the previous row stays');
   assert.deepEqual(eventTypes(), ['ticket_start'], 'and no Event lands');
-  events.setAppendHook(passing);
+  appends.failing = false;
   await record.save(r, () => ev('ticket_end', { execution: r.execution }));
   assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'held');
   assert.deepEqual(eventTypes(), ['ticket_start', 'ticket_end']);

@@ -113,7 +113,6 @@ export function fixture(
     }
     return inner(args, cwd, input);
   };
-  golden.useGh(t, fake.gh);
 
   const harness = fakeHarness({
     transcriptDir: join(root, 'transcripts'),
@@ -127,6 +126,7 @@ export function fixture(
         : { code: 1, output: golden.RED_OUTPUT, timedOut: false },
   };
   const logs = [];
+  const database = golden.caseDatabase(t);
   let now = Date.parse('2026-10-17T00:00:00Z');
   // No heartbeat fires: a Run's tests do not look at one.
   const clock = {
@@ -143,9 +143,10 @@ export function fixture(
     config: cfg,
     harnesses: { fake: harness },
     protectedPaths: golden.PROTECTED_PATHS,
-    gh: github,
+    gh: github.createGh(fake.gh),
     git,
     exec,
+    database,
     cwd: mainRoot,
     log: (m) => logs.push(m),
     clock,
@@ -200,16 +201,17 @@ export async function seedExecution(
     branch: BRANCH,
     base: 'main',
   });
-  await record.save(rec);
+  await f.options.database.save(rec);
   await assert.rejects(
     interpreter.runExecution({
       flow,
       record: rec,
       harness: f.harness,
-      gh: github,
+      gh: f.options.gh,
       git,
       exec,
-      events: events.eventLog(f.commonDir),
+      database: f.options.database,
+      events: events.eventLog(f.commonDir, {}, f.options.database),
       log: () => {},
       cwd: f.mainRoot,
       commands: { test: 'npm test' },
@@ -281,7 +283,7 @@ export const crashBeforeCommit = (f) =>
 export function failComment(f, { lost = false } = {}) {
   const inner = f.gh.gh;
   const failing = { on: true };
-  github.setGh(async (args, cwd, input) => {
+  f.options.gh = github.createGh(async (args, cwd, input) => {
     if (failing.on && golden.isCommentPost(args)) {
       if (lost) await inner(args, cwd, input);
       else f.gh.calls.push({ args, cwd, input });
@@ -310,7 +312,7 @@ export async function dirtyTicket(t, seeded) {
 export function failHoldLabel(f) {
   const inner = f.gh.gh;
   const failing = { on: true };
-  github.setGh(async (args, cwd, input) => {
+  f.options.gh = github.createGh(async (args, cwd, input) => {
     if (failing.on && args[0] === 'issue' && args[1] === 'edit' && args.includes(NEEDS_HUMAN)) {
       f.gh.calls.push({ args, cwd, input });
       throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
@@ -372,7 +374,7 @@ export function ticketHarnesses(f, tickets, { responses = {}, before = async () 
 // Every gh call passes through `hook` first.
 export function hookGh(f, hook) {
   const inner = f.gh.gh;
-  github.setGh(async (args, cwd, input) => {
+  f.options.gh = github.createGh(async (args, cwd, input) => {
     await hook(args);
     return inner(args, cwd, input);
   });
