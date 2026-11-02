@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as procedures from '../../lib/procedures.mjs';
 
 test('the Action kinds and the keys each may declare', () => {
@@ -53,4 +54,16 @@ test("a tests-fail Check's evidence says whether it found the failing test by it
 
 test('a repeat Check gives its Findings Hash', () => {
   assert.deepEqual(procedures.outputs({ do: 'check', kind: 'repeat' }).properties.findingsHash, { type: 'string' });
+});
+
+// The request lists each kind's keys for a Layer's author; this keeps the tables and the declared keys one list (#229).
+test("the request lists every Action kind's and Check kind's keys", () => {
+  const request = readFileSync(new URL('../../docs/requests/node-harness-dag.md', import.meta.url), 'utf8');
+  const rowOf = (kind) =>
+    request.split('\n').find((line) => line.startsWith('| ') && line.split('|')[1].includes(`\`${kind}\``));
+  for (const [kind, keys] of [...Object.entries(procedures.ACTION_KEYS), ...Object.entries(procedures.CHECK_KEYS)]) {
+    const row = rowOf(kind);
+    assert.ok(row, `the request has a row for ${kind}`);
+    for (const key of keys) assert.ok(row.includes(key), `the ${kind} row names ${key}`);
+  }
 });
