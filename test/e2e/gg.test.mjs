@@ -251,12 +251,12 @@ function removeLink(link) {
 function linkedInstall(t) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-linked-'));
   const link = join(dir, 'node_modules', 'grey-goo-ri');
-  mkdirSync(join(dir, 'node_modules'));
-  symlinkSync(root, link, process.platform === 'win32' ? 'junction' : 'dir');
   t.after(() => {
     removeLink(link);
     rmSync(dir, { recursive: true, force: true });
   });
+  mkdirSync(join(dir, 'node_modules'));
+  symlinkSync(root, link, process.platform === 'win32' ? 'junction' : 'dir');
   return link;
 }
 

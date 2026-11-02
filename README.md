@@ -32,8 +32,8 @@ To update, run `git pull` and then `npm ci` in the clone; the link stays. To rem
 A copy of gg cannot start, so `npm install -g <tarball>`, `npm install -g git+https://…` and a published package all
 fail with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. gg's TypeScript runs through Node's type stripping, with no
 build step (ADR 0018), and Node will not strip types in a file whose real path is under `node_modules`. A linked install
-keeps every real path in the clone. `package.json` is private, so `npm publish` refuses gg until grey-goo-ri issue
-#243 builds it for publishing.
+keeps every real path in the clone. `package.json` is private, so `npm publish` refuses gg until
+[grey-goo-ri issue #243](https://github.com/jamsethoth/grey-goo-ri/issues/243) builds it for publishing.
 
 Behaviour is decided by `docs/requests/node-harness-dag.md`; contributors and agents start at `AGENTS.md`.
 
