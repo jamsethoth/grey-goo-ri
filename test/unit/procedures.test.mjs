@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as procedures from '../../lib/procedures.mjs';
 
@@ -18,8 +18,8 @@ test('the Action kinds and the keys each may declare', () => {
 test('the Check kinds and the keys each may declare', () => {
   assert.deepEqual(procedures.CHECK_KEYS, {
     command: ['command', 'reuse'],
-    'tests-fail': ['command', 'names'],
-    response: ['field', 'is', 'none', 'any', 'all', 'count', 'where', '<', '<=', '>', '>=', '=', 'all-of'],
+    'tests-fail': ['command', 'testNames'],
+    response: ['field', 'is', 'none', 'any', 'all', 'count', 'where', '<', '<=', '>', '>=', '=', 'allOf'],
     repeat: ['list', 'fields'],
   });
 });
@@ -41,4 +41,16 @@ test("an agent Action's response is typed by its schema; a Check gives evidence 
     files: { type: 'array', items: { type: 'string' } },
   });
   assert.deepEqual(procedures.outputs({ do: 'push' }).properties, {});
+});
+
+test("a tests-fail Check's evidence says whether it found the failing test by its name only", () => {
+  assert.deepEqual(procedures.outputs({ do: 'check', kind: 'tests-fail' }).properties.evidence.properties, {
+    command: { type: 'string' },
+    output: { type: 'string' },
+    foundByNameOnly: { type: 'boolean' },
+  });
+});
+
+test('a repeat Check gives its Findings Hash', () => {
+  assert.deepEqual(procedures.outputs({ do: 'check', kind: 'repeat' }).properties.findingsHash, { type: 'string' });
 });

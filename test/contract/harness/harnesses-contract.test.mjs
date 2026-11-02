@@ -50,16 +50,16 @@ for (const [field, message] of [
   ['network', 'harness fake capabilities are missing network'],
   ['contextBudget', 'harness fake capabilities are missing contextBudget'],
   ['interactive', 'harness fake capabilities are missing interactive'],
-  ['background', 'harness fake capabilities are missing background'],
-  ['resume', 'harness fake capabilities are missing resume'],
+  ['backgroundSessions', 'harness fake capabilities are missing backgroundSessions'],
+  ['sessionResume', 'harness fake capabilities are missing sessionResume'],
   ['structuredOutput', 'harness fake capabilities are missing structuredOutput'],
   ['sandbox', 'harness fake capabilities are missing sandbox'],
   ['confinement', 'harness fake capabilities are missing confinement'],
-  ['peakContext', 'harness fake capabilities are missing peakContext'],
-  ['cost', 'harness fake capabilities are missing cost'],
-  ['turns', 'harness fake capabilities are missing turns'],
-  ['toolCalls', 'harness fake capabilities are missing toolCalls'],
-  ['reasoningTokens', 'harness fake capabilities are missing reasoningTokens'],
+  ['peakContextReporting', 'harness fake capabilities are missing peakContextReporting'],
+  ['costReporting', 'harness fake capabilities are missing costReporting'],
+  ['turnCountReporting', 'harness fake capabilities are missing turnCountReporting'],
+  ['toolCallReporting', 'harness fake capabilities are missing toolCallReporting'],
+  ['reasoningTokenReporting', 'harness fake capabilities are missing reasoningTokenReporting'],
   ['backgroundWork', 'harness fake capabilities are missing backgroundWork'],
 ]) {
   test(`assertHarness names a missing ${field} capability`, async () => {
@@ -86,13 +86,13 @@ test('every Harness declares the paths that configure it', async () => {
 
 test('USAGE_FIELDS lists the Usage fields', () => {
   assert.deepEqual(contract.USAGE_FIELDS, [
-    'input',
-    'cached',
-    'cacheWrite',
-    'output',
-    'reasoning',
+    'inputTokens',
+    'cacheReadTokens',
+    'cacheWriteTokens',
+    'outputTokens',
+    'reasoningTokens',
     'costUsd',
-    'peakContext',
+    'peakContextTokens',
     'turns',
     'toolCalls',
     'compactions',
@@ -101,15 +101,21 @@ test('USAGE_FIELDS lists the Usage fields', () => {
 
 test('emptyUsage sets null for absent capabilities', () => {
   assert.deepEqual(
-    contract.emptyUsage({ cost: false, reasoningTokens: false, peakContext: true, turns: true, toolCalls: true }),
+    contract.emptyUsage({
+      costReporting: false,
+      reasoningTokenReporting: false,
+      peakContextReporting: true,
+      turnCountReporting: true,
+      toolCallReporting: true,
+    }),
     {
-      input: 0,
-      cached: 0,
-      cacheWrite: 0,
-      output: 0,
-      reasoning: null,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: null,
       costUsd: null,
-      peakContext: 0,
+      peakContextTokens: 0,
       turns: 0,
       toolCalls: 0,
       compactions: 0,
@@ -119,18 +125,47 @@ test('emptyUsage sets null for absent capabilities', () => {
 
 test('emptyUsage with no usage capability present sets null for every field a capability gates', () => {
   assert.deepEqual(
-    contract.emptyUsage({ cost: false, reasoningTokens: false, peakContext: false, turns: false, toolCalls: false }),
+    contract.emptyUsage({
+      costReporting: false,
+      reasoningTokenReporting: false,
+      peakContextReporting: false,
+      turnCountReporting: false,
+      toolCallReporting: false,
+    }),
     {
-      input: 0,
-      cached: 0,
-      cacheWrite: 0,
-      output: 0,
-      reasoning: null,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: null,
       costUsd: null,
-      peakContext: null,
+      peakContextTokens: null,
       turns: null,
       toolCalls: null,
       compactions: 0,
     },
   );
+});
+
+test('CAPABILITY_FIELDS lists the Capability fields', () => {
+  assert.deepEqual(contract.CAPABILITY_FIELDS, [
+    'skills',
+    'mcp',
+    'plugins',
+    'access',
+    'network',
+    'contextBudget',
+    'interactive',
+    'backgroundSessions',
+    'sessionResume',
+    'structuredOutput',
+    'sandbox',
+    'confinement',
+    'peakContextReporting',
+    'costReporting',
+    'turnCountReporting',
+    'toolCallReporting',
+    'reasoningTokenReporting',
+    'backgroundWork',
+  ]);
 });

@@ -2037,3 +2037,69 @@ test("a Vertex's maxVisits is an unknown key: its Bound is max, as on an edge", 
   delete vertex.exhausted;
   assert.deepEqual((await check(config)).errors, [{ at: `${V}.senior-dev`, message: 'unknown key "maxVisits"' }]);
 });
+
+// The configuration keys #229 renamed: a Layer still written with an old key fails admission as any unknown key does.
+const oldKeyOf = (action, oldKey, newKey) => {
+  action[oldKey] = action[newKey] ?? action[oldKey];
+  delete action[newKey];
+};
+const actionOf = (config, procedure, kind) => config.procedures[procedure].actions.find((a) => a.kind === kind);
+for (const [oldKey, write, at] of [
+  [
+    'all-of',
+    (config) => oldKeyOf(actionOf(config, 'review', 'response'), 'all-of', 'allOf'),
+    'procedures.review.actions[1]',
+  ],
+  [
+    'names',
+    (config) => oldKeyOf(actionOf(config, 'tests-fail', 'tests-fail'), 'names', 'testNames'),
+    'procedures.tests-fail.actions[1]',
+  ],
+  ['resolution', (config) => (config.agents.implementer.resolution = { transient: 1 }), 'agents.implementer'],
+  ['resolution', (config) => (config.flows.default.ticket.vertices.red.resolution = { transient: 1 }), `${V}.red`],
+]) {
+  test(`a Layer written with a renamed key fails admission as an unknown key: ${oldKey} at ${at}`, async () => {
+    const config = example();
+    write(config);
+    const unknown = (await check(config)).errors.filter((e) => e.message.startsWith('unknown key'));
+    assert.deepEqual(unknown, [{ at, message: `unknown key "${oldKey}"` }]);
+  });
+}
+
+test('an Agent with a key no Agent declares is an error at agents.<name>', async () => {
+  const config = example();
+  config.agents.reviewer.modle = 'opus';
+  assert.deepEqual((await check(config)).errors, [{ at: 'agents.reviewer', message: 'unknown key "modle"' }]);
+});
+
+test('an Agent and a Vertex may declare a resolutionPolicy', async () => {
+  const config = example();
+  config.agents.implementer.resolutionPolicy = { transient: 1 };
+  config.flows.default.ticket.vertices.red.resolutionPolicy = { transient: 1 };
+  assert.deepEqual((await check(config)).errors, []);
+});
+
+test('a Brief reads the base branch as baseBranch', async () => {
+  const { errors } = await check(example(), schemas(), templates({ 'green.md': '{{baseBranch}} {{base}}\n' }));
+  assert.deepEqual([...new Set(errors.map((e) => e.message))], ['brief green.md: {{base}}: "base" is not defined']);
+});
+
+test("a comment reads its Agent's Persona hash as agent.personaHash", async () => {
+  const { errors } = await check(
+    example(),
+    schemas(),
+    templates({ 'review-comment.md': '{{agent.personaHash}} {{agent.hash}} {{marker}}\n' }),
+  );
+  assert.deepEqual(
+    [...new Set(errors.map((e) => e.message))],
+    ['body review-comment.md: {{agent.hash}}: "agent.hash" is not defined'],
+  );
+});
+
+test("an input may read a repeat Check's Findings Hash", async () => {
+  const config = example();
+  config.flows.default.ticket.vertices['implementer-fix'].inputs.findingsHash = {
+    from: 'reviewer.repeat.findingsHash',
+  };
+  assert.deepEqual((await check(config)).errors, []);
+});
