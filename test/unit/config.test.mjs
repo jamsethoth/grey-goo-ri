@@ -292,6 +292,18 @@ test('a Layer with a duplicate key in one object is a load error naming the file
   assert.deepEqual(config.loadConfig(fine.repo, fine.home).b, { k: '"k": 2' });
 });
 
+test('a Layer that ends early is a load error naming the file and where it ends', (t) => {
+  for (const [text, where] of [
+    ['', 'at position 0 (line 1 column 1)'],
+    ['{"agents":\n  {"implementer":', 'at position 28 (line 2 column 18)'],
+  ]) {
+    const { repo, home } = layers(t, { repo: text });
+    assert.throws(() => config.loadConfig(repo, home), {
+      message: `${config.layerPath(repo)}: Unexpected end of JSON input ${where}`,
+    });
+  }
+});
+
 const layerFile = config.layerPath('repo');
 
 test('commandProblems accepts a valid set and names each malformed entry', () => {
