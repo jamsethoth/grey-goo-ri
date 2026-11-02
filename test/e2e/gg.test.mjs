@@ -1,11 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const root = fileURLToPath(new URL('../..', import.meta.url));
 const bin = fileURLToPath(new URL('../../bin/gg.mjs', import.meta.url));
 const commands = ['init', 'doctor', 'plan', 'publish', 'run', 'work', 'trace', 'stats'];
 
@@ -216,4 +227,44 @@ test('gg plan rejects a value on a boolean flag', () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /--bg does not take a value/);
   assertUsage(r.stderr);
+});
+
+// Removes the link itself: a recursive remove on its path could walk into the repository it points at.
+function removeLink(link) {
+  if (lstatSync(link, { throwIfNoEntry: false })) unlinkSync(link);
+}
+
+// The layout npm link and npm install -g <checkout> make: node_modules/grey-goo-ri links to the checkout.
+function linkedInstall(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'gg-linked-'));
+  const link = join(dir, 'node_modules', 'grey-goo-ri');
+  mkdirSync(join(dir, 'node_modules'));
+  symlinkSync(root, link, process.platform === 'win32' ? 'junction' : 'dir');
+  t.after(() => {
+    removeLink(link);
+    rmSync(dir, { recursive: true, force: true });
+  });
+  return link;
+}
+
+test('gg runs through a linked install, as npm link and npm install -g <checkout> lay it out', (t) => {
+  const link = linkedInstall(t);
+  const r = spawnSync(process.execPath, [join(link, 'bin', 'gg.mjs'), '--help'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assertUsage(r.stdout);
+  removeLink(link);
+  assert.equal(existsSync(link), false);
+  for (const file of ['package.json', 'bin/gg.mjs', 'lib/paths.ts']) assert.ok(existsSync(join(root, file)), file);
+});
+
+test('a copy of gg under node_modules cannot start, which is why the install is linked', (t) => {
+  const link = linkedInstall(t);
+  // Keeping the link path makes Node see every file under node_modules, as it would in a copy.
+  const r = spawnSync(
+    process.execPath,
+    ['--preserve-symlinks', '--preserve-symlinks-main', join(link, 'bin', 'gg.mjs'), '--help'],
+    { encoding: 'utf8' },
+  );
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
 });

@@ -279,6 +279,12 @@ test('package.json keeps type module', async () => {
   assert.equal(pkg.type, 'module');
 });
 
+// Node will not strip types under node_modules, so an npm package of gg cannot start until #243 builds one (ADR 0018).
+test('package.json is private, so npm refuses to publish gg until it is built for publishing', async () => {
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  assert.equal(pkg.private, true);
+});
+
 // Only the range forms package.json uses: a bound like `<27` or a union has no single major to compare.
 const rangeMajor = (range) => {
   const match = /^(?:\^|~|>=)(\d+)(?:\.\d+){0,2}$/.exec(range);
