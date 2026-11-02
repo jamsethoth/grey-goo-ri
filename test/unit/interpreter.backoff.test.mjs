@@ -617,3 +617,25 @@ test('a remote permission failure faults only its Ticket', async (t) => {
     'The push at push failed with class permission (HTTP 403), which faults only this Ticket; the error is in this comment and on ticket_end.',
   );
 });
+
+test("a remote auth failure in a Terminal's report latches the run stop and faults its Ticket", async (t) => {
+  const g = await golden.setup(t, {
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
+  });
+  g.gh.fail({
+    matches: (args) => golden.isCommentPost(args, golden.TICKET),
+    status: 401,
+    body: { message: 'Bad credentials' },
+  });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
+  assert.equal(
+    (await loadTicket(g)).terminalReason.text,
+    'The comment at end-comment failed with class auth (HTTP 401), which stops the whole run; the error is in this ' +
+      'comment and on ticket_end.',
+  );
+});

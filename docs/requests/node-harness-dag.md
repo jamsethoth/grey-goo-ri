@@ -354,7 +354,19 @@ row by row, and `gg doctor` prints a vertex's effective table next to its effect
 | completed | valid, a stop token | all run and recorded | the `stopped` table, else the token, routed like any Outcome; passing checks never override this |
 | completed | valid, a token with `requires` | a required Check fails | recovery within the Procedure's `recover`; then the `failed` table, else `otherwise`, else the engine Outcome `failed`, whose route applies, default `end: needs-human`; edge and vertex bounds apply to the traversal as usual |
 | completed | valid, a token with `requires` | every required Check passed on the current tree | the `passed` table, else `otherwise`, else the token |
-| gg throws: bug, I/O error, gh failure after its own retries | any | any | unexpected fault: ticket to needs-human with the error on its end event, record marked, exit code 1, never retried automatically; a fault that interrupts a Terminal posts its own comment, carrying the error and the interrupted Terminal's Terminal Reason, which its end event also carries as `interrupted` |
+| gg throws: bug, I/O error, a remote failure that ends only its Ticket | any | any | unexpected fault: ticket to needs-human with the error on its end event, record marked, exit code 1, never retried automatically; a fault that interrupts a Terminal posts its own comment, carrying the error and the interrupted Terminal's Terminal Reason, which its end event also carries as `interrupted` |
+
+The Harness rows read one Failure Class table, and so do a remote Action's retries (the gh or git call of a comment,
+PR, push or ready Action), so a class means one thing whichever source reports it:
+
+| Failure Class | Reach | A Harness Attempt | A remote Action |
+|---|---|---|---|
+| transient, rate-limited | retry | retried within the class budget | retried within the Action's remote budget, after GitHub's own wait |
+| auth, quota, budget | run | stop the whole run | stop the whole run: its Execution ends at needs-human with a run-stop Terminal Reason naming the Action, every other at its next check |
+| permission, rejected, invalid, unknown | ticket | needs-human, no retry | a fault of its own Ticket, no retry |
+
+A remote 401 and git's own credential failure are auth; a 403 that is not a rate limit is permission (a token scope or
+branch protection). A Harness reports only auth, quota, budget, rate-limited, transient and unknown.
 
 Outcomes are the Procedure's own (its tokens, its tables' Outcomes and `otherwise`) plus gg's engine Outcomes
 `failed`, `harness-transient`, `harness-timeout` and `harness-unparsed`, each routable and defaulting to

@@ -143,11 +143,11 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     const result = await interpreter.runExecution(g.options);
 
-    assert.equal(result.fault, true, JSON.stringify(result));
+    assert.equal(result.runStop?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(commentPosts(g).length, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
     assert.equal(g.rec.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is reserved');
-    assert.match(g.rec.terminalStop.error, /HTTP 401/);
+    assert.match(g.rec.terminalStop.detail, /HTTP 401/, 'the run stop carries the error');
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   });
   await t.test('a non-fast-forward push', async (t) => {
