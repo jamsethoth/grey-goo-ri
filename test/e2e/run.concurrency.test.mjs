@@ -26,10 +26,6 @@ import {
   hookGh,
 } from '../support/run.mjs';
 
-// A hang guard for a whole Run over real git and the real integrity, not a timing: at the full stage's concurrency these
-// cases took 89 to 118 s on main and on #218's branch, within 20 s of the 120 s the lighter cases use.
-const FULL_RUN = { timeout: 300_000 };
-
 // Locks whose `allRefused` resolves once `n` first attempts at the repo lock have found it taken: each of `n` waiters is
 // then waiting.
 function refusedFirstAttempts(n) {
@@ -108,7 +104,7 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   assert.equal((await pending).head, f.base, 'the snapshot runs after release');
 });
 
-test('an orchestrator commit waits for the repo lock', FULL_RUN, async (t) => {
+test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { integrity: 'real' });
   // The competing lock is taken during the red call, after the worktree exists.
   let holder = null;
@@ -236,7 +232,7 @@ test('a stray write into an idle worktree is attributed to the running action', 
   );
 });
 
-test("a busy worktree is never attributed to another ticket's action", FULL_RUN, async (t) => {
+test("a busy worktree is never attributed to another ticket's action", { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real' });
   f.options.target = EPIC;
   const bBusy = gate();
