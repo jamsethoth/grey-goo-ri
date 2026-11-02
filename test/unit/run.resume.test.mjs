@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import * as marker from '../../lib/marker.mjs';
-import { canonical, pathKey } from '../../lib/paths.ts';
+import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.mjs';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
@@ -227,7 +227,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
       ),
   );
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal(pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir), pathKey(f.commonDir));
+  assert.equal(paths.pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir), paths.pathKey(f.commonDir));
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.ok(
     f.comments().every((b) => !b.includes(f.root)),
@@ -235,7 +235,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
   );
   // From the worktree git names the common dir canonically, so the log may carry either spelling.
   assert.ok(
-    f.logs.some((l) => l.includes(f.commonDir) || l.includes(canonical(f.commonDir))),
+    f.logs.some((l) => l.includes(f.commonDir) || l.includes(paths.canonical(f.commonDir))),
     'the local log keeps the full diagnostic',
   );
   assert.equal(f.loadRow(), corrupt, 'the corrupt record is kept');

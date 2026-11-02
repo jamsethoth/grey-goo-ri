@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as gitModule from '../../../lib/git.mjs';
-import { pathKey } from '../../../lib/paths.ts';
+import * as paths from '../../../lib/paths.ts';
 import * as templateRepos from '../../support/template-repos.mjs';
 
 const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
@@ -119,10 +119,10 @@ for (const [name, repo] of [
     assert.equal(await git.currentBranch(path), 'ticket/4-title');
     assert.equal(await git.headSha(path), await git.remoteSha(mainRoot, 'main'));
     assert.deepEqual(
-      (await git.listWorktrees(mainRoot)).map((w) => [pathKey(w.path), w.branch]),
+      (await git.listWorktrees(mainRoot)).map((w) => [paths.pathKey(w.path), w.branch]),
       [
-        [pathKey(mainRoot), 'main'],
-        [pathKey(path), 'ticket/4-title'],
+        [paths.pathKey(mainRoot), 'main'],
+        [paths.pathKey(path), 'ticket/4-title'],
       ],
     );
   });
@@ -175,8 +175,8 @@ for (const [name, repo] of [
   contract("commonDir names the main checkout's git directory from a worktree", async ({ git, root, mainRoot }) => {
     const path = join(root, 'wt', 'ticket-4');
     await git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' });
-    assert.equal(pathKey(await git.commonDir(path)), pathKey(join(mainRoot, '.git')));
-    assert.equal(pathKey((await git.repoInfo(path)).gitCommonDir), pathKey(join(mainRoot, '.git')));
+    assert.equal(paths.pathKey(await git.commonDir(path)), paths.pathKey(join(mainRoot, '.git')));
+    assert.equal(paths.pathKey((await git.repoInfo(path)).gitCommonDir), paths.pathKey(join(mainRoot, '.git')));
   });
 
   contract(
