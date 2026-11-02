@@ -89,7 +89,10 @@ gg's doubles:
 #144 kept both integrities: the fake one for tests whose subject is not git behaviour, because it is faster, and
 the real one over real git for tests whose subject is git behaviour, because it is what they check. The third option,
 the real integrity over the fake git, was measured slower (221 s against 181 s) and failed three cases on ignored
-Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152).
+Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152). It still serves a case that
+needs the real integrity's busy flags, generations and repo lock but not git, with no ignored Protected File: the
+concurrent Runs of `test/e2e/run.concurrency.test.mjs` use it, since over real git their snapshots' git processes took
+them up to 295 s under a full suite run (#187).
 
 The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers. Each is a
 dependency `bin/gg.mjs` builds once and passes down as a named option of `run.runTarget` and
