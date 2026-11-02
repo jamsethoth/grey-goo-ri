@@ -88,10 +88,10 @@ if (command === undefined || command === '--help') {
     if (e instanceof UsageError) {
       process.stderr.write(`gg ${command}: ${e.message}\n\n${usage}`);
       process.exitCode = 1;
-    } else if (command === 'run') {
-      process.stderr.write(`gg run: ${e.message}\n`);
+    } else {
+      process.stderr.write(`gg ${command}: ${e.message}\n`);
       process.exitCode = e.exitCode ?? 1;
-    } else throw e;
+    }
   }
 } else {
   process.stderr.write(`gg: unknown command ${command}\n\n${usage}`);

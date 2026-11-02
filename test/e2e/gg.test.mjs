@@ -194,6 +194,19 @@ test('gg doctor reads the repository Layer and its schemas and prints the Resolv
   assert.equal(r.status, 0, r.stdout);
 });
 
+for (const args of [['doctor'], ['run', '1']]) {
+  test(`gg ${args[0]} names a malformed Layer file without a stack trace`, (t) => {
+    const { repo, ggIn } = tempRepo(t);
+    const file = join(repo, '.agents', 'gg', 'gg.json');
+    mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
+    writeFileSync(file, '{\n  "testPaths": [\n    "test/**",\n  ]\n}\n');
+    const r = ggIn(...args);
+    assert.equal(r.status, 1, r.stderr);
+    assert.equal(r.stdout, '');
+    assert.equal(r.stderr, `gg ${args[0]}: ${file}:4:3: invalid JSON, value expected\n`);
+  });
+}
+
 test('gg run rejects a ticket that is not a positive integer', (t) => {
   const { ggIn } = tempRepo(t);
   const r = ggIn('run', 'abc');
