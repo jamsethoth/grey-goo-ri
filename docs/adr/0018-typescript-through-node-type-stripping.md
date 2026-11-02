@@ -73,5 +73,10 @@ no pattern already finds `.ts` tests.
 - Node refuses to strip types in a file under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so gg
   runs from a checkout. Publishing gg as an npm
   package would need a build step and a new ADR.
+- Amended 2026-11-02 (grey-goo-ri issue #242): the supported install is a clone, `npm ci` in it, then
+  `npm install -g <clone>` or `npm link` in the clone. Either links the global `node_modules` to the clone, so Node loads
+  every file from its real path there (README, "Install"). `package.json` is `private`, so `npm publish` refuses
+  (`EPRIVATE`), though npm 11.20's `npm publish --dry-run` skips that check and reports success; `npm pack` still packs a
+  copy, which cannot start. Publishing gg is grey-goo-ri issue #243.
 - The "Plain Node ESM (`.mjs`)" convention in AGENTS.md is amended: `.ts` for new and converted modules and tests.
 - The fast stage gains the time Prettier, ESLint and tsc take (a few seconds each on an idle machine).
