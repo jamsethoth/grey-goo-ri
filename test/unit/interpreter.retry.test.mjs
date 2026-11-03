@@ -19,6 +19,7 @@ import {
   crashPost,
   originSha,
   runStopEvent,
+  actionEvent,
 } from '../support/interpreter.mjs';
 
 test('a transient comment failure is retried once and posts one comment', async (t) => {
@@ -360,6 +361,13 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
       g.logs.some((l) => /reviewer\/1\/comment\/0: transient failure, retries exhausted after 2 of 2/.test(l)),
       g.logs.join('\n'),
     );
+    // The Action that ran out of retries records its failure Event (#251).
+    const failed = actionEvent(g, 'reviewer', 'comment');
+    assert.deepEqual(
+      [failed?.outcome, failed?.rule, failed?.failureClass],
+      ['fault', { table: 'fixed', row: 'fault' }, 'transient'],
+    );
+    assert.match(failed.error, /502/);
   });
   await t.test('an auth failure stops the run, naming the comment', async (t) => {
     const g = await reviewFlow(t, okReview);
