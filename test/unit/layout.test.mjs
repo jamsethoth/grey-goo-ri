@@ -142,10 +142,12 @@ test('no module outside lib/git.mjs passes git a command line', async () => {
 const CONVERTED = [
   'lib/approval.ts',
   'lib/events.ts',
+  'lib/integrity.ts',
   'lib/labels.ts',
   'lib/locks.ts',
   'lib/marker.ts',
   'lib/paths.ts',
+  'lib/reconcile.ts',
   'lib/record.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
@@ -165,14 +167,12 @@ const LEGACY_MJS = [
   'lib/harnesses/codex.mjs',
   'lib/harnesses/contract.mjs',
   'lib/harnesses/shipped.mjs',
-  'lib/integrity.mjs',
   'lib/interpreter.mjs',
   'lib/opts.mjs',
   'lib/outcome.mjs',
   'lib/plan.mjs',
   'lib/procedures.mjs',
   'lib/publish.mjs',
-  'lib/reconcile.mjs',
   'lib/refs.mjs',
   'lib/render.mjs',
   'lib/rules.mjs',
