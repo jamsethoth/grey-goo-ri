@@ -1,5 +1,7 @@
 // The Visit's saved shapes, which the Execution Record nests: the Configuration Snapshot a Visit entered with, its
 // Vertex inputs, its progress (VisitState) and each Action's Resolution, by the row that decided it.
+import type * as integrity from './integrity.ts';
+
 // The rule identity { table, row }: a fixed row by name, or a Procedure table's row by index, `otherwise`, or null
 // when no row matched (request 3.3).
 export interface RuleIdentity {
@@ -91,15 +93,12 @@ export interface VertexInput {
   absent: boolean;
 }
 
-// shortcut: a worktree snapshot is integrity.mjs's (#205), typed only as far as the Visit reads it.
-type WorktreeSnapshot = { head: string } & Record<string, unknown>;
-
 // The agent Action's latest Attempt, as the transition table reads it: the three Signals of a call.
 export interface AgentCall {
   harnessResult: Record<string, unknown>;
   claim: ClaimSignal;
   response: unknown;
-  baseline: WorktreeSnapshot;
+  baseline: integrity.IntegrityBaseline;
   signal: { status: string; response: unknown; failure: unknown };
 }
 
@@ -114,7 +113,7 @@ export interface CheckRun {
 // The current Visit's progress, saved so a restart routes what it already settled (interpreter.runVisit).
 export interface VisitState {
   recovery: number;
-  firstAttemptBaseline: WorktreeSnapshot | null;
+  firstAttemptBaseline: integrity.IntegrityBaseline | null;
   call: AgentCall | null;
   response: unknown;
   runs: Record<string, CheckRun>;

@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-import * as integrity from '../../../lib/integrity.mjs';
+import * as integrity from '../../../lib/integrity.ts';
 import * as sqlite from '../../../lib/sqlite.ts';
 
 const saver = fileURLToPath(new URL('../../support/record-saver.mjs', import.meta.url));

@@ -1,4 +1,4 @@
-// The fake integrity's contract: each case runs against lib/integrity.mjs and test/support/fake-integrity.mjs, so the
+// The fake integrity's contract: each case runs against lib/integrity.ts and test/support/fake-integrity.mjs, so the
 // violations the unit tier routes on, the untracked files it rolls back and the Test Immutability it checks keep the
 // real shape. The real side runs over real git and the fake side over the git it is given.
 import { test, type TestContext } from 'node:test';
@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as checks from '../../../lib/checks.mjs';
 import * as gitModule from '../../../lib/git.mjs';
-import * as integrity from '../../../lib/integrity.mjs';
+import * as integrity from '../../../lib/integrity.ts';
 import * as fakeGitModule from '../../support/fake-git.mjs';
 import * as fakeIntegrityModule from '../../support/fake-integrity.mjs';
 import * as worktrees from '../../support/integrity-worktrees.ts';
@@ -171,7 +171,7 @@ const SIDES: Side[] = [
       return { mainRoot, base: worktrees.sh(mainRoot, ['rev-parse', 'HEAD']), git: gitModule };
     },
     bound: (git: object) => ({
-      integrity: integrity.withGit(git),
+      integrity: integrity.withGit(git as integrity.IntegrityGit),
       testImmutability: (cwd: string, baseline: string, globs: string[]) =>
         checks.testImmutability(cwd, baseline, { globs, git }),
     }),

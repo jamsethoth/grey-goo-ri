@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as marker from '../../lib/marker.ts';
-import * as reconcile from '../../lib/reconcile.mjs';
+import * as reconcile from '../../lib/reconcile.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import { loadTicket, POINTS, crashed, NEEDS_HUMAN } from '../support/reconcile.mjs';
