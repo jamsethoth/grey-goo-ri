@@ -96,7 +96,8 @@ export type Job = {
   terminate(): void;
   // resolves once a terminated job is empty, however long a loaded machine takes to finish the exits
   emptied(): Promise<void>;
-  // lets the members run on and closes gg's handle
+  // lets the members run on and closes gg's handle; throws, keeping the handle, when kill-on-close cannot be dropped,
+  // since closing it then would kill them
   release(): void;
   close(): void;
 };
@@ -159,7 +160,7 @@ function createJob(kernel32: Kernel32, pid: number): Job {
       while (members().length) await sleep(20);
     },
     release() {
-      setLimits(kernel32, handle, BREAKAWAY_OK);
+      if (!setLimits(kernel32, handle, BREAKAWAY_OK)) throw failure(kernel32, 'SetInformationJobObject');
       kernel32.CloseHandle(handle);
     },
     close() {

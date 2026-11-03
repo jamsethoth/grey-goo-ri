@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import {
   copyFileSync,
@@ -616,6 +616,40 @@ test(
   },
 );
 
+// The job's second limit change, the one that drops kill-on-close, fails: closing the job's handle would then kill the
+// background process runShell reports as left running.
+test(
+  "runShell: when the job cannot let a finished command's leftovers run on, it keeps them running and says they end with gg",
+  { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
+  async (t) => {
+    const pidFile = join(tmp, 'kept.pid');
+    t.after(() => {
+      try {
+        if (pidIn(pidFile)) process.kill(pidIn(pidFile));
+      } catch {}
+    });
+    const background = script('kept-gc.mjs', writesPid, [pidFile]);
+    const quit = script(
+      'kept-quit.mjs',
+      `import { spawn } from 'node:child_process'; import { existsSync } from 'node:fs'; spawn(process.execPath, [args[0]], { detached: true, stdio: 'ignore' }).unref(); setInterval(() => existsSync(args[1]) && process.exit(0), 20);`,
+      [background, pidFile],
+    );
+    let limitChanges = 0;
+    const kernel32 = withKernel32({
+      SetInformationJobObject: (...limits) =>
+        ++limitChanges === 1 ? realKernel32.SetInformationJobObject(...limits) : 0,
+    });
+    const res = await exec.createExec({ kernel32 }).runShell(`"${process.execPath}" "${quit}"`, {
+      timeoutMs: 60_000,
+    });
+    assert.equal(res.code, 0, res.output);
+    assert.equal(limitChanges, 2, 'kill-on-close was never dropped');
+    assert.ok(res.leftovers?.includes(pidIn(pidFile)), JSON.stringify(res.leftovers));
+    assert.match(res.output, /they end when gg exits/);
+    assert.ok(alive(pidIn(pidFile)), 'the leftover was killed with the job');
+  },
+);
+
 test(
   'runShell: a child that asks to break away from the job still starts, and is left outside the timeout kill',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
@@ -875,6 +909,7 @@ test(
     const res = await exec.runShell(`"${process.execPath}" "${quit}"`, shellOptions({ timeoutMs: 1, timers }));
     assert.equal(res.timedOut, undefined, 'a finished command was reported as timed out');
     assert.equal(res.code, 0);
+    timers.tick(1); // past the timeout: a clock the finish left armed fires now
     assert.equal(timers.fired(), 0, 'a timeout ran after the command finished');
   },
 );
@@ -1100,19 +1135,25 @@ test(
         copyFileSync(process.execPath, join(planted, name)); // another volume
       }
     const noSearch = process.env.NoDefaultCurrentDirectoryInExePath;
-    delete process.env.NoDefaultCurrentDirectoryInExePath;
     const home = process.cwd();
-    process.chdir(planted);
     t.after(() => {
       process.chdir(home);
       if (noSearch !== undefined) process.env.NoDefaultCurrentDirectoryInExePath = noSearch;
     });
+    delete process.env.NoDefaultCurrentDirectoryInExePath;
+    process.chdir(planted);
     const res = await exec.runShell('echo real', { cwd: planted, timeoutMs: 60_000 });
     assert.equal(res.code, 0, res.output);
     assert.match(res.output, /real/);
 
     const { pidFile, cmd } = linkedChild('planted');
+    let survivors = [];
     t.after(() => {
+      // a runShell whose taskkill was the planted one leaves the shell running, in the planted directory
+      for (const { pid } of survivors)
+        spawnSync(`${process.env.SystemRoot}\\System32\\taskkill.exe`, ['/T', '/F', '/PID', String(pid)], {
+          windowsHide: true,
+        });
       try {
         if (pidIn(pidFile)) process.kill(pidIn(pidFile));
       } catch {}
@@ -1123,6 +1164,7 @@ test(
       () => pidIn(pidFile) > 0,
       t.signal,
     );
+    survivors = timedOut.survivors;
     assert.ok(ready, `child never started: ${timedOut.output}`);
     assert.ok(!timedOut.cleanupErrors.some((e) => /taskkill/.test(e)), JSON.stringify(timedOut.cleanupErrors));
     await waitFor(() => !alive(pidIn(pidFile)), t.signal); // a child taskkill never reached fails at the case timeout
