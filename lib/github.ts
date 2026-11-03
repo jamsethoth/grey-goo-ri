@@ -27,7 +27,9 @@ export class GhError extends exec.CommandError {
   declare rateLimit?: RateLimit;
 }
 
-// Runs gh with argv, a working directory and stdin, and returns its stdout.
+// Runs gh with argv, a working directory and stdin, and returns its stdout. A gh process that fails must reject with
+// an exec.CommandError: only that becomes a GhError with the status and rate limit a retry waits on, and any other
+// error passes through unread. The type cannot say what a function throws (#208 makes the failure a returned value).
 export type Transport = (args: string[], cwd?: string, input?: string) => Promise<string>;
 
 const defaultTransport: Transport = async (args, cwd, input) => (await exec.run('gh', args, { cwd, input })).stdout;
@@ -140,7 +142,7 @@ function client(transport: Transport): Client {
       return await transport(args, cwd, input);
     } catch (err) {
       if (!(err instanceof exec.CommandError)) throw err;
-      const ghError = new GhError(err.message, err);
+      const ghError = new GhError(err.message, err, { cause: err });
       const { status, headers } = included(err.stdout);
       if (status) ghError.http = { status, headers };
       await probeRateLimit(transport, ghError, args, cwd);

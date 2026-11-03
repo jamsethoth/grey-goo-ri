@@ -26,8 +26,8 @@ export class CommandError extends Error {
   stdout: string;
   stderr: string;
 
-  constructor(message: string, { code, stdout, stderr }: CommandResult) {
-    super(message);
+  constructor(message: string, { code, stdout, stderr }: CommandResult, options?: ErrorOptions) {
+    super(message, options);
     this.code = code;
     this.stdout = stdout;
     this.stderr = stderr;
