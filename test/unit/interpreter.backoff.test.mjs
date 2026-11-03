@@ -664,3 +664,21 @@ test('a remote run stop whose own report fails becomes a fault that keeps the ru
     /\*\*Interrupted:\*\* the needs-human Terminal, whose Terminal Reason was: The push at push failed with class auth/,
   );
 });
+
+test("a remote auth failure first met in a fault's report keeps the run stop on the fault", async (t) => {
+  const g = await golden.setup(t, {
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
+  });
+  const onTicket = (args) => golden.isCommentPost(args, golden.TICKET);
+  g.gh.fail({ matches: onTicket, status: 422, body: { message: 'Validation Failed' } });
+  g.gh.fail({ matches: onTicket, status: 401, body: { message: 'Bad credentials' } });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
+  assert.equal(result.runStop?.failureClass, 'auth');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'fault');
+  assert.equal(final.terminalStop.runStopFailureClass, 'auth');
+});
