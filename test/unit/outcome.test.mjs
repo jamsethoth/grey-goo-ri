@@ -272,6 +272,43 @@ test('with no row and no otherwise the Outcome is the token, or failed when a re
   assert.deepEqual([failed.outcome, failed.direction, failed.rule], ['failed', 'stop', { table: 'failed', row: null }]);
 });
 
+test('a passing Integrity Assertion does not count as the required Check it shares a name with', () => {
+  const r = outcome.decide({
+    result: completed,
+    claim: claim('ok'),
+    checks: [check('lint', true, true)],
+    retries: none,
+    token: { requires: ['lint'] },
+    procedure: {},
+    scope: { pass: 1, check: {} },
+  });
+  assert.deepEqual([r.outcome, r.direction, r.rule], ['failed', 'stop', { table: 'failed', row: null }]);
+});
+
+// The key order reaches persisted JSON (the Visit's settled resolution, the Action Event's rule and signals), and
+// deepEqual ignores it.
+test("the Resolution's keys keep their order from resolve and from decide", () => {
+  const keys = ['outcome', 'direction', 'row', 'rule', 'check', 'retryAfterMs', 'retryKind', 'failureClass'];
+  assert.deepEqual(Object.keys(resolve({ claim: claim('ok') })), keys);
+  const decide = (checks, extra = {}) =>
+    outcome.decide({
+      result: completed,
+      claim: claim('ok'),
+      checks: [integrityOk, ...checks],
+      retries: none,
+      token: { requires: ['test'] },
+      procedure: { passed: [{ when: { pass: 1 }, outcome: 'changes' }] },
+      scope: { pass: 1, check: {} },
+      ...extra,
+    });
+  const fromTable = decide([check('test', true)]);
+  assert.deepEqual(fromTable.rule, { table: 'passed', row: 0 });
+  assert.deepEqual(Object.keys(fromTable), keys);
+  const recover = decide([check('test', false)], { recoverable: true });
+  assert.equal(recover.row, 'recover');
+  assert.deepEqual(Object.keys(recover), keys);
+});
+
 // #66: GitHub and git failures of a remote Action, classified as gh and git report them.
 const http = (status, message, headers = {}) =>
   Object.assign(new Error(`gh: ${message} (HTTP ${status})\ngh api repos/{owner}/{repo}/issues/7/comments`), {
@@ -474,6 +511,15 @@ test("git's credential failure is auth", () => {
     assert.equal(f.failureClass, 'auth', stderr);
     assert.equal(f.retryable, false, stderr);
   }
+});
+
+test('a push rejection whose output also carries a rate-limit message is rejected', () => {
+  const f = outcome.classifyRemoteFailure(
+    gitFailure(
+      'remote: API rate limit exceeded for user ID 1.\nTo https://github.com/o/r.git\n ! [rejected]        x -> x (fetch first)\nerror: failed to push some refs',
+    ),
+  );
+  assert.equal(f.failureClass, 'rejected');
 });
 
 // One table decides each class's retry and reach, whichever source reports it (#240).
