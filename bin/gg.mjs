@@ -2,9 +2,9 @@
 import { loadConfig } from '../lib/config.mjs';
 import * as containment from '../lib/containment.ts';
 import * as doctor from '../lib/doctor.mjs';
-import * as exec from '../lib/exec.mjs';
-import * as git from '../lib/git.mjs';
-import * as github from '../lib/github.mjs';
+import * as exec from '../lib/exec.ts';
+import * as git from '../lib/git.ts';
+import * as github from '../lib/github.ts';
 import * as interpreter from '../lib/interpreter.mjs';
 import * as locks from '../lib/locks.ts';
 import { parseOpts, positiveInt, UsageError } from '../lib/opts.mjs';

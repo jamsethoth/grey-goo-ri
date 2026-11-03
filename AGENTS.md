@@ -24,7 +24,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   rules apply to `.ts` files; `test/unit/layout.test.mjs` lists the converted and legacy files.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
-  git (`test/support/fake-git.mjs`); real git in temp repositories only for the `lib/git.mjs` contract suite, tests whose
+  git (`test/support/fake-git.mjs`); real git in temp repositories only for the `lib/git.ts` contract suite, tests whose
   subject is git behaviour (integrity snapshots and violations, rollback of real files, Test Immutability, dirty state,
   admission's dirty, conflict and branch checks, Reconciliation against git state, the repo lock), and a few end-to-end
   runs.
@@ -78,11 +78,12 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/harnesses/shipped.mjs` | the shipped Harnesses by name; the only module outside a Harness that names one |
 | `lib/harnesses/claude.mjs` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/harnesses/codex.mjs` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
-| `lib/exec.mjs` | process spawn and the shell runner, with its timeout and tree kill (ported) |
+| `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`) and the shell runner, with its timeout and cleanup (ported) |
+| `lib/process-tree.ts` | the POSIX process tree a timed-out shell command leaves: listing, watching and killing it, and the helper processes that do so (ported) |
 | `lib/containment.ts` | the Windows job object a shell command runs in, through `node:ffi`: start, list, terminate, confirm empty (ADR 0021) |
-| `lib/git.mjs` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
+| `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
-| `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
+| `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
 | `lib/render.mjs` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
 | `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the parse-retry nudge and the default recovery section |
 | `defaults/` | the defaults Layer: `gg.json` (today it ships Agents `implementer` and `reviewer`, five Procedures and the `default` Flow; ADR 0014's "no shipped Flow" lands with #121) and the files it names, under `personas/`, `templates/` and `schemas/` |
@@ -101,7 +102,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
 - `test/support/interpreter.mjs`, `run.mjs` and `reconcile.mjs` share lib module names but are test helpers.
-- `git.mjs`, `locks.ts` and `record.ts` also export the functions of their real instance, for callers that take no
+- `git.ts`, `locks.ts` and `record.ts` also export the functions of their real instance, for callers that take no
   seam (`gg doctor`, contract suites, helper processes); code on a Run's path uses the deps it was passed instead.
 
 ## Examples to copy
@@ -135,7 +136,7 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
   returning a wrong value.
 - Ported test files follow the port rule above and rewrite static named imports to namespace imports.
 - A fake's contract suite lives under `test/contract/<boundary>/` and runs its cases against the real module and the fake;
-  `lib/git.mjs`'s is `test/contract/git/`.
+  `lib/git.ts`'s is `test/contract/git/`.
 - Fixtures live under `test/fixtures/` as JSON or text.
 - Shared helpers live under `test/support/`; the runner lists them as passing empty files.
 - Spawn `process.execPath` directly, never a shell.

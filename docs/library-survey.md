@@ -23,10 +23,10 @@ from the repository at ddd552d.
 | Pool | #22; ff `lib/run.mjs:17-27` | 10 | `p-limit` | a dependency for ten tested lines | none | **Hand-rolled** |
 | Two gg processes on one repository | #22 | | already serialised by the SQLite locks | | | **No change**; #22 gains the shared `events` table in its DoD |
 | Test glob to regex | `lib/checks.mjs:63` | 6 | `picomatch`; `path.matchesGlob` | `path.matchesGlob` is experimental on the 22.13 floor; stable from 24.8, below every floor since ADR 0012 | none | **Hand-rolled**; revisit when the floor makes `matchesGlob` stable |
-| Process tree kill and job object | `lib/exec.mjs`, `lib/containment.ts` | about 540 | `tree-kill`, `execa` | `tree-kill` is `taskkill /T`, which exec already has as fallback; the job object is a few kernel32 calls through `node:ffi`, built into Node 26 (ADR 0021) | none | **Kept** |
+| Process tree kill and job object | `lib/exec.ts`, `lib/containment.ts` | about 540 | `tree-kill`, `execa` | `tree-kill` is `taskkill /T`, which exec already has as fallback; the job object is a few kernel32 calls through `node:ffi`, built into Node 26 (ADR 0021) | none | **Kept** |
 | Version compare for `gg doctor` | slice 2 | ~5 | `semver` | none | none | **Hand-rolled** unless prerelease tags appear |
 | Retry on git index lock with backoff | request 3.5 | ~8 | `p-retry` | none | none | **Hand-rolled** |
-| GitHub access | `lib/github.mjs` | 97 | `@octokit/rest` | its own auth; `gh` uses the OS keyring | | **Kept on `gh`** |
+| GitHub access | `lib/github.ts` | 97 | `@octokit/rest` | its own auth; `gh` uses the OS keyring | | **Kept on `gh`** |
 | Trajectory export | slice 6 | | none; Harbor's validator is Python | | | **Hand-rolled** |
 | Durable execution of Visits | `lib/interpreter.mjs`, `lib/reconcile.mjs` | | Temporal, Restate, Inngest, DBOS (TypeScript needs Postgres) | each needs a server or database | | **Hand-rolled** (2026-10-18): the write-ahead Action log stays; ADR 0001 |
 | Retry of GitHub writes and push | `lib/interpreter.mjs` | | `p-retry`, `cockatiel`; `@octokit/plugin-retry` and `plugin-throttling` | in-memory budgets, while gg's must survive a crash; Octokit leaves `gh` | | **Hand-rolled** (2026-10-18); revisit Octokit only if `gh` cannot expose rate-limit headers |
