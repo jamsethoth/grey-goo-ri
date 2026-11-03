@@ -355,15 +355,15 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
     return hold(`The record continues at Vertex ${vertex}, which the Flow no longer has.`);
   // A Visit in progress runs on the Procedure it entered with, so one whose Procedure has changed is held, not resumed
   // (S6).
-  const snapshot = executionRecord.configurationSnapshot;
+  const configurationSnapshot = executionRecord.configurationSnapshot;
   if (
     executionRecord.cursor.action !== null &&
-    snapshot?.vertex === vertex &&
-    flow.procedures[snapshot.procedure.name]?.hash !== snapshot.procedure.hash
+    configurationSnapshot?.vertex === vertex &&
+    flow.procedures[configurationSnapshot.procedure.name]?.hash !== configurationSnapshot.procedure.hash
   ) {
     return hold(
-      `The Visit in progress at Vertex ${vertex} entered with Procedure ${snapshot.procedure.name} as it was then, ` +
-        'and the configuration has changed it since; nothing was run or discarded.',
+      `The Visit in progress at Vertex ${vertex} entered with Procedure ${configurationSnapshot.procedure.name} ` +
+        'as it was then, and the configuration has changed it since; nothing was run or discarded.',
     );
   }
   return null;
