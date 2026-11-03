@@ -93,13 +93,27 @@ export interface VertexInput {
   absent: boolean;
 }
 
+// A failed Harness Result's failure (docs/interfaces/harness.md): its Failure Class, and the wait the harness was told.
+export interface HarnessFailure {
+  failureClass: string;
+  retryAfterMs?: number | null;
+  message?: string;
+}
+
+// A call's Harness Result and response, as the transition table reads them (outcome.resolve).
+export interface CallSignal {
+  status: 'completed' | 'failed' | 'timed-out' | 'killed';
+  response: unknown;
+  failure: HarnessFailure | null;
+}
+
 // The agent Action's latest Attempt, as the transition table reads it: the three Signals of a call.
 export interface AgentCall {
   harnessResult: Record<string, unknown>;
   claim: ClaimSignal;
   response: unknown;
   baseline: integrity.IntegrityBaseline;
-  signal: { status: string; response: unknown; failure: unknown };
+  signal: CallSignal;
 }
 
 // What the recovery Brief and the Terminal Reason read of a Check's last run.
@@ -137,7 +151,7 @@ export interface ConfigurationSnapshot {
   routes: unknown;
   inputs: Record<string, VertexInput>;
   commands: Record<string, unknown>;
-  testPaths: unknown;
+  testPaths: string[];
   persona: { name: string; bytes: string; hash: string } | null;
 }
 

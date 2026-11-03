@@ -1,5 +1,5 @@
 // Append-only event log, schema 2: one row per Event in the events table of the State Database.
-import * as checks from './checks.mjs';
+import * as checks from './checks.ts';
 import * as record from './record.ts';
 import * as sqlite from './sqlite.ts';
 import type * as visit from './visit.ts';
@@ -297,7 +297,7 @@ export function lifecycleEvent<Type extends LifecycleType>(
 // pinned testPaths.
 export function diffStats(
   files: { path: string; insertions: number | null; deletions: number | null }[],
-  testPaths: unknown,
+  testPaths: string[],
 ): DiffStats {
   const isTest = checks.testPathMatcher(testPaths);
   const stats = { files: 0, insertions: 0, deletions: 0, testFiles: 0, testInsertions: 0 };

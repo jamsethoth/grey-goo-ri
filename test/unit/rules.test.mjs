@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const load = () => import('../../lib/rules.mjs');
+const load = () => import('../../lib/rules.ts');
 
 // Every Rule Table of the example Flow (docs/research/user-defined-procedures-example-flow.md).
 const flow = JSON.parse(readFileSync(new URL('../fixtures/rules-flow.json', import.meta.url), 'utf8'));
@@ -588,8 +588,8 @@ test('only the boxes with an input no row matches fall', async () => {
 // The validator accepts an operator by its name in the one table, so each one it accepts must also run (#198).
 test('every operator the validator accepts evaluates in a rule and in a count Check', async () => {
   const rules = await load();
-  const procedures = await import('../../lib/procedures.mjs');
-  const checks = await import('../../lib/checks.mjs');
+  const procedures = await import('../../lib/procedures.ts');
+  const checks = await import('../../lib/checks.ts');
   assert.deepEqual(procedures.OPS, Object.keys(procedures.COMPARISONS));
   for (const op of procedures.OPS) {
     const table = { name: 'count', rows: [{ when: { 'response.n': { [op]: 1 } }, outcome: 'hit' }] };

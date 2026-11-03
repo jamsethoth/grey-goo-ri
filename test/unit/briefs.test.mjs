@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as briefs from '../../lib/briefs.mjs';
-import * as checks from '../../lib/checks.mjs';
+import * as briefs from '../../lib/briefs.ts';
+import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.mjs';
 import * as render from '../../lib/render.mjs';
 import { homedir } from 'node:os';

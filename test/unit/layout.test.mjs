@@ -80,7 +80,7 @@ test('every module under lib imports', async () => {
 
 test('every file under lib is scanned', () => {
   const libFiles = repoFiles('lib/');
-  for (const path of ['lib/validate.mjs', 'lib/refs.mjs', 'lib/harnesses/shipped.mjs']) {
+  for (const path of ['lib/validate.mjs', 'lib/refs.ts', 'lib/harnesses/shipped.mjs']) {
     assert.ok(modules.includes(path), `${path} is scanned`);
   }
   // Templates and the job-object script are not modules: they import nothing and run no git.
@@ -141,22 +141,26 @@ test('no module outside lib/git.mjs passes git a command line', async () => {
 // ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
 const CONVERTED = [
   'lib/approval.ts',
+  'lib/briefs.ts',
+  'lib/checks.ts',
   'lib/effect-evidence.ts',
   'lib/events.ts',
   'lib/integrity.ts',
   'lib/labels.ts',
   'lib/locks.ts',
   'lib/marker.ts',
+  'lib/outcome.ts',
   'lib/paths.ts',
+  'lib/procedures.ts',
   'lib/reconcile.ts',
   'lib/record.ts',
+  'lib/refs.ts',
+  'lib/rules.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
 const LEGACY_MJS = [
   'bin/gg.mjs',
   'eslint.config.mjs',
-  'lib/briefs.mjs',
-  'lib/checks.mjs',
   'lib/config.mjs',
   'lib/doctor.mjs',
   'lib/effects.mjs',
@@ -170,13 +174,9 @@ const LEGACY_MJS = [
   'lib/harnesses/shipped.mjs',
   'lib/interpreter.mjs',
   'lib/opts.mjs',
-  'lib/outcome.mjs',
   'lib/plan.mjs',
-  'lib/procedures.mjs',
   'lib/publish.mjs',
-  'lib/refs.mjs',
   'lib/render.mjs',
-  'lib/rules.mjs',
   'lib/run.mjs',
   'lib/stats.mjs',
   'lib/terminal.mjs',

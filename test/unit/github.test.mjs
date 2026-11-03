@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../../lib/github.mjs';
 import * as labels from '../../lib/labels.ts';
-import * as outcome from '../../lib/outcome.mjs';
+import * as outcome from '../../lib/outcome.ts';
 import * as golden from '../support/golden.mjs';
 
 test('createIssue keeps malformed output complete for redaction before publication', async (t) => {

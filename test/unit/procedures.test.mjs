@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as procedures from '../../lib/procedures.mjs';
+import * as procedures from '../../lib/procedures.ts';
 import * as requestTables from '../support/request-tables.ts';
 
 test('the Action kinds and the keys each may declare', () => {

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as checks from '../../../lib/checks.mjs';
+import * as checks from '../../../lib/checks.ts';
 import * as gitModule from '../../../lib/git.mjs';
 import * as integrity from '../../../lib/integrity.ts';
 import * as fakeGitModule from '../../support/fake-git.mjs';
@@ -173,7 +173,7 @@ const SIDES: Side[] = [
     bound: (git: object) => ({
       integrity: integrity.withGit(git as integrity.IntegrityGit),
       testImmutability: (cwd: string, baseline: string, globs: string[]) =>
-        checks.testImmutability(cwd, baseline, { globs, git }),
+        checks.testImmutability(cwd, baseline, { globs, git: git as checks.ChangedPaths }),
     }),
   },
   {

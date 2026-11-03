@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as checks from '../../lib/checks.mjs';
+import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.mjs';
 import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.mjs';

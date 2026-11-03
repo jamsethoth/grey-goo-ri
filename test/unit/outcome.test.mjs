@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as outcome from '../../lib/outcome.mjs';
+import * as outcome from '../../lib/outcome.ts';
 
 const none = { transient: 0, rateLimited: 0, timeout: 0, parse: 0 };
 const completed = { status: 'completed', response: { claim: 'ok' }, failure: null };
