@@ -2,7 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -899,20 +908,27 @@ test(
   'runShell: job membership larger than the first query buffer is still listed in full',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
   async (t) => {
-    // The first membership query gets room for one entry, as a job that grew between sizing and reading would.
-    let first = true;
+    // The job answers as one with more members than the first list holds: a query with room for fewer than 65 pids
+    // fails with ERROR_MORE_DATA and says how many it holds, so only a list that grows past 64 entries is read.
+    const MORE_DATA = 234;
+    let refused = 0;
+    let lastError = null;
     const kernel32 = withKernel32({
       TerminateJobObject: () => 0,
+      GetLastError: () => lastError ?? realKernel32.GetLastError(),
       QueryInformationJobObject: (job, kind, buffer, length, returned) => {
-        const room = first ? 8 + 8 : length;
-        first = false;
-        return realKernel32.QueryInformationJobObject(job, kind, buffer, room, returned);
+        lastError = null;
+        if (length >= 8 + 8 * 65) return realKernel32.QueryInformationJobObject(job, kind, buffer, length, returned);
+        refused++;
+        buffer.writeUInt32LE(65, 0);
+        lastError = MORE_DATA;
+        return 0;
       },
     });
     const { res, pid } = await timedOutOrphan(t, 'smallbuf', { kernel32 });
     try {
-      assert.equal(first, false, 'the job was never listed');
-      assert.ok(res.survivors.length >= 3, JSON.stringify(res.survivors)); // shell, top and grandchild: more than the 1-entry buffer
+      assert.ok(refused > 0, 'no list was too small');
+      assert.ok(res.survivors.length >= 3, JSON.stringify(res.survivors)); // shell, top and grandchild
       assert.ok(
         res.survivors.some((s) => s.pid === pid),
         JSON.stringify(res.survivors),
@@ -1018,13 +1034,98 @@ test(
   { ...CASE, skip: process.platform !== 'win32' && 'the stdin gate is Windows only' },
   async () => {
     const line =
-      'if errorlevel 1 (echo LEVEL1) else (echo LEVEL0) & if defined GG_GATE (echo DEFINED) else (echo UNDEFINED) & exit /b';
+      '(if errorlevel 1 (echo LEVEL1) else (echo LEVEL0)) & (if defined GG_GATE (echo DEFINED) else (echo UNDEFINED)) & exit /b';
     for (const runShell of [exec.runShell, exec.createExec({ kernel32: null }).runShell]) {
       const res = await runShell(line, { timeoutMs: 60_000 });
       assert.equal(res.code, 0, res.output);
       assert.match(res.output, /LEVEL0/);
       assert.match(res.output, /UNDEFINED/);
     }
+  },
+);
+
+// bin/gg.mjs opens kernel32 and passes it down (ADR 0019); a module that imports exec must not open a second one.
+// A query string loads a fresh copy of exec.mjs, so its import is seen here.
+test(
+  'importing exec opens no node:ffi, and its own runShell opens it on the first call',
+  { ...CASE, skip: process.platform !== 'win32' && 'node:ffi is opened on Windows only' },
+  async (t) => {
+    const getBuiltinModule = process.getBuiltinModule;
+    const opened = [];
+    process.getBuiltinModule = (id) => {
+      opened.push(id);
+      return getBuiltinModule.call(process, id);
+    };
+    t.after(() => (process.getBuiltinModule = getBuiltinModule));
+    const fresh = await import(`../../../lib/exec.mjs?import-${Date.now()}`);
+    assert.deepEqual(opened, [], 'opened at import');
+    const res = await fresh.runShell('echo ran', { timeoutMs: 60_000 });
+    assert.equal(res.containment, 'job', res.output);
+    assert.deepEqual(opened, ['node:ffi']);
+  },
+);
+
+// The case moves runShell's clock itself, and never past the timeout: a clock that waited for an abort the signal had
+// already given would never fire.
+test('runShell: a signal aborted before the call starts the timeout clock at the call', CASE, async () => {
+  const p = script('aborted-early.mjs', `setTimeout(() => {}, ${LIVES_MS});`);
+  const timers = manualTimers();
+  const running = exec.runShell(
+    `"${process.execPath}" "${p}"`,
+    shellOptions({ timeoutMs: 7000, signal: AbortSignal.abort(), timers }),
+  );
+  timers.tick(7000);
+  const res = await running;
+  assert.equal(res.timedOut, true);
+  assert.equal(timers.fired(), 1);
+});
+
+// libuv looks a bare program name up in the child's working directory before PATH unless gg's own environment sets
+// NoDefaultCurrentDirectoryInExePath, so node.exe is planted there under the shell's and taskkill's names. taskkill
+// starts in gg's working directory, so the case moves there too.
+test(
+  'runShell runs cmd.exe and taskkill.exe from System32, not copies planted in the working directory',
+  {
+    ...CASE,
+    skip:
+      (process.platform !== 'win32' && 'Windows only') ||
+      (sandboxed && 'a restricted sandbox may refuse cleanup: see its own case'),
+  },
+  async (t) => {
+    const planted = mkdtempSync(join(tmp, 'planted-'));
+    for (const name of ['cmd.exe', 'taskkill.exe'])
+      try {
+        linkSync(process.execPath, join(planted, name));
+      } catch {
+        copyFileSync(process.execPath, join(planted, name)); // another volume
+      }
+    const noSearch = process.env.NoDefaultCurrentDirectoryInExePath;
+    delete process.env.NoDefaultCurrentDirectoryInExePath;
+    const home = process.cwd();
+    process.chdir(planted);
+    t.after(() => {
+      process.chdir(home);
+      if (noSearch !== undefined) process.env.NoDefaultCurrentDirectoryInExePath = noSearch;
+    });
+    const res = await exec.runShell('echo real', { cwd: planted, timeoutMs: 60_000 });
+    assert.equal(res.code, 0, res.output);
+    assert.match(res.output, /real/);
+
+    const { pidFile, cmd } = linkedChild('planted');
+    t.after(() => {
+      try {
+        if (pidIn(pidFile)) process.kill(pidIn(pidFile));
+      } catch {}
+    });
+    const { res: timedOut, ready } = await timeOutWhen(
+      cmd,
+      { timeoutMs: 4000, kernel32: noJob() },
+      () => pidIn(pidFile) > 0,
+      t.signal,
+    );
+    assert.ok(ready, `child never started: ${timedOut.output}`);
+    assert.ok(!timedOut.cleanupErrors.some((e) => /taskkill/.test(e)), JSON.stringify(timedOut.cleanupErrors));
+    await waitFor(() => !alive(pidIn(pidFile)), t.signal); // a child taskkill never reached fails at the case timeout
   },
 );
 
