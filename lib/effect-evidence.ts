@@ -1,5 +1,6 @@
 // Effect Evidence: an open intent's side effect looked for by its Action Marker, in git or on GitHub, so Reconciliation
-// and a remote retry can tell an effect that landed from one to redo (request 3.5). Each effect kind has its finder.
+// and a remote retry can tell an effect that landed from one to redo (request 3.5). Each kind with a finder is listed
+// in FINDERS.
 import * as config from './config.mjs';
 import * as labels from './labels.ts';
 import * as marker from './marker.ts';
