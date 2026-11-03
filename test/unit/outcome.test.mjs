@@ -520,6 +520,13 @@ test('a push rejection whose output also carries a rate-limit message is rejecte
     ),
   );
   assert.equal(f.failureClass, 'rejected');
+  const rateLimitOnStdout = Object.assign(new Error('git push origin x'), {
+    code: 1,
+    stdout: 'remote: API rate limit exceeded for user ID 1.\n',
+    stderr:
+      'To https://github.com/o/r.git\n ! [rejected]        x -> x (fetch first)\nerror: failed to push some refs\n',
+  });
+  assert.equal(outcome.classifyRemoteFailure(rateLimitOnStdout).failureClass, 'rejected', 'the rate limit on stdout');
 });
 
 // One table decides each class's retry and reach, whichever source reports it (#240).

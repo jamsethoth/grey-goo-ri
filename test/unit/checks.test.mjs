@@ -163,12 +163,14 @@ for (const [file, failing, passing] of FAILURE_LINES) {
 }
 
 test('red check reports a passing named test before an excused one', () => {
-  const output = 'ok 1 - a\nnot ok 2 - b # TODO\n';
-  assert.deepEqual(checks.redCheck({ code: 1, output }, ['a', 'b']), {
+  const passed = {
     ok: false,
     failure: 'passed',
     reason: 'The runner reports a as passing, so it is not evidence of a failing test.',
-  });
+  };
+  assert.deepEqual(checks.redCheck({ code: 1, output: 'ok 1 - a\nnot ok 2 - b # TODO\n' }, ['a', 'b']), passed);
+  // Whichever is named or printed first.
+  assert.deepEqual(checks.redCheck({ code: 1, output: 'not ok 1 - b # TODO\nok 2 - a\n' }, ['b', 'a']), passed);
 });
 
 test('findings hash ignores whitespace, order and line numbers', () => {
@@ -374,8 +376,8 @@ test('a count condition without a comparison fails, naming it', () => {
 
 test('an all condition fails when only some items match where', () => {
   const findings = [
-    { severity: 'minor', file: 'a', issue: 'nit', fix: '' },
     { severity: 'major', file: 'b', issue: 'bug', fix: '' },
+    { severity: 'minor', file: 'a', issue: 'nit', fix: '' },
   ];
   const result = checks.responseCheck({ findings }, { all: 'findings', where: { severity: 'minor' } });
   assert.deepEqual(result, {
