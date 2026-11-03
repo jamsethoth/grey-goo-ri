@@ -230,6 +230,8 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
     assert.equal(prReviewComments(g).length, 0);
     assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
+    // Its failure Event names the class its retries were spent on, as its Terminal Reason does (#251).
+    assert.equal(actionEvent(g, 'reviewer', 'comment')?.failureClass, 'transient');
   });
 });
 
