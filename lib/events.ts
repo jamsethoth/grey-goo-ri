@@ -284,8 +284,9 @@ export function lifecycleEvent<Type extends LifecycleType>(
   type: Type,
   fields: Fields = {},
 ): EventBody<LifecycleOf<Type>> {
-  const shape: DeclaredShape | undefined = LIFECYCLE[type];
-  if (!shape) throw new Error(`unknown lifecycle event type ${type}`);
+  // An own key only: `toString` or `__proto__` would otherwise find Object.prototype's member and pass as a type.
+  if (!Object.hasOwn(LIFECYCLE, type)) throw new Error(`unknown lifecycle event type ${type}`);
+  const shape: DeclaredShape = LIFECYCLE[type];
   const required = declaredAs(shape, 'required');
   const optional = declaredAs(shape, 'optional');
   closed(`${type} event`, fields, required, optional);

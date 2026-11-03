@@ -348,6 +348,13 @@ test('lifecycle events validate their required fields per type', () => {
   assert.throws(() => events.lifecycleEvent('stage_call', { run: 'r1' }), /\bstage_call\b/);
 });
 
+// A type named after an Object member is no lifecycle type, though LIFECYCLE[type] finds something for it.
+for (const type of ['toString', 'constructor', '__proto__']) {
+  test(`lifecycleEvent refuses the type ${type}, which only Object.prototype defines`, () => {
+    assert.throws(() => events.lifecycleEvent(type, { run: 'r1' }), new RegExp(`unknown lifecycle event type ${type}`));
+  });
+}
+
 test('eventLog appends a row with the identity columns and the full event', (t) => {
   const dir = tempDir(t);
   events.eventLog(dir, { run: 'r1' })('ticket_start', { execution: 'e1', ticket: 7 });
