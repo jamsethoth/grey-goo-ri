@@ -888,7 +888,8 @@ test(
 );
 
 // The leftover holds the output pipes, so they never close: runShell answers once the command exits. Its clock moves
-// only when the case moves it, which it never does, so the call cannot end by timing out.
+// only when the case moves it, so the call cannot end by timing out; the case moves it past the timeout only once
+// the call has answered, when a timer the finish left armed would fire.
 test(
   'runShell: a command that finishes is not reported as timed out while its leftover process still holds the output pipes',
   { ...CASE, skip: process.platform !== 'win32' && 'Windows job objects only' },
