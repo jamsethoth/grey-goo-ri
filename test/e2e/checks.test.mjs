@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as checks from '../../lib/checks.mjs';
+import * as checks from '../../lib/checks.ts';
 import * as git from '../../lib/git.mjs';
 
 function tempDir(t) {

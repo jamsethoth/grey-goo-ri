@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import * as checks from '../../lib/checks.mjs';
+import * as checks from '../../lib/checks.ts';
 import * as events from '../../lib/events.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import { fakeGit } from '../support/fake-git.mjs';

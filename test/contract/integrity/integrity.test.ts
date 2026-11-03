@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as checks from '../../../lib/checks.mjs';
+import * as checks from '../../../lib/checks.ts';
 import * as gitModule from '../../../lib/git.mjs';
 import * as integrity from '../../../lib/integrity.mjs';
 import * as fakeGitModule from '../../support/fake-git.mjs';
@@ -170,7 +170,7 @@ const SIDES: Side[] = [
       worktrees.sh(mainRoot, ['commit', '-q', '-m', 'init']);
       return { mainRoot, base: worktrees.sh(mainRoot, ['rev-parse', 'HEAD']), git: gitModule };
     },
-    bound: (git: object) => ({
+    bound: (git: checks.ChangedPaths) => ({
       integrity: integrity.withGit(git),
       testImmutability: (cwd: string, baseline: string, globs: string[]) =>
         checks.testImmutability(cwd, baseline, { globs, git }),

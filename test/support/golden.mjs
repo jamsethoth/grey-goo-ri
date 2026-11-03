@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as checks from '../../lib/checks.mjs';
+import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.mjs';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';

@@ -5,7 +5,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import * as checks from '../../lib/checks.mjs';
+import * as checks from '../../lib/checks.ts';
 import * as gitModule from '../../lib/git.mjs';
 import * as paths from '../../lib/paths.ts';
 

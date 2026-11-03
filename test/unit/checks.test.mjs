@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as checks from '../../lib/checks.mjs';
+import * as checks from '../../lib/checks.ts';
 import { fakeGit } from '../support/fake-git.mjs';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');

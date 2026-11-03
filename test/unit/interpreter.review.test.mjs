@@ -4,7 +4,7 @@ import * as config from '../../lib/config.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.ts';
 import * as marker from '../../lib/marker.ts';
-import * as checks from '../../lib/checks.mjs';
+import * as checks from '../../lib/checks.ts';
 import * as golden from '../support/golden.mjs';
 import {
   REVIEWER_PERSONA,

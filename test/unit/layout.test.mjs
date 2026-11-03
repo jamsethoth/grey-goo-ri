@@ -80,7 +80,7 @@ test('every module under lib imports', async () => {
 
 test('every file under lib is scanned', () => {
   const libFiles = repoFiles('lib/');
-  for (const path of ['lib/validate.mjs', 'lib/refs.mjs', 'lib/harnesses/shipped.mjs']) {
+  for (const path of ['lib/validate.mjs', 'lib/refs.ts', 'lib/harnesses/shipped.mjs']) {
     assert.ok(modules.includes(path), `${path} is scanned`);
   }
   // Templates and the job-object script are not modules: they import nothing and run no git.

@@ -51,16 +51,17 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/config.mjs` | Layers, merge, Config Hash, the Layer files each Layer names, Declared Command loading |
 | `lib/flow.mjs` | the Resolved Flow and Config Hash written to a Run's directory |
 | `lib/validate.mjs` | the Flow validator, which `gg doctor` and `gg run` admission share: the configuration's agents, procedures, flows and the names each template reads checked, giving each Resolved Flow (with each Procedure's hash) plus errors and warnings |
-| `lib/refs.mjs` | the one reference-path resolver: parse, read and type every dotted reference path |
+| `lib/refs.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
 | `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
 | `lib/effects.mjs` | write-ahead side effects, the activity bracket, remote retries and backoff, the repo-lock guard |
 | `lib/terminal.mjs` | Terminals: hold, abandonment, fault, run-stopped and their reports, Terminal Reason texts |
-| `lib/procedures.mjs` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs (Procedures themselves are configuration) |
-| `lib/briefs.mjs` | Brief context and rendering, Structured Response schema and response validation |
-| `lib/outcome.mjs` | the transition table and Resolution Policy |
-| `lib/rules.mjs` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
-| `lib/checks.mjs` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
+| `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs (Procedures themselves are configuration) |
+| `lib/briefs.ts` | Brief context and rendering, Structured Response schema and response validation |
+| `lib/outcome.ts` | the transition table and Resolution Policy |
+| `lib/rules.ts` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
+| `lib/rule-domain.ts` | a Rule Table's finite domain for that analysis: each field's partition, the row masks per value, and the passes over every point |
+| `lib/checks.ts` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
 | `lib/integrity.mjs` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) |
 | `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
 | `lib/sqlite.ts` | the State Database file: one connection per repository, WAL and schema, Pinned Configurations and reusable Check results |
