@@ -796,3 +796,19 @@ test('a stop routed to ready-for-qa keeps its run stop when the replacement repo
   const stopped = runStopEvent(g);
   assert.deepEqual([stopped?.vertex, stopped?.action, stopped?.outcome], ['ready-for-qa', 'end-comment', 'run-stop']);
 });
+
+test("a failed Action's Event that cannot be saved still stops the run and saves nothing more", async (t) => {
+  const g = await golden.setup(t);
+  pushThrough(g, () => Promise.reject(refusedPush(AUTH_REFUSED)));
+  golden.failAppends(t, (event) => event.type === 'action' && event.action === 'push');
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const err = await interpreter.runExecution({ ...g.options, runState }).then(
+    () => null,
+    (e) => e,
+  );
+
+  assert.equal(err?.name, 'RecordSaveError', String(err));
+  assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'push' });
+  assert.equal((await loadTicket(g)).state, 'active', 'no fault is saved');
+  assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
+});
