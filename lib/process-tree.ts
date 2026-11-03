@@ -69,36 +69,36 @@ export function quick(
   });
 }
 
-// { procs, error } for every process; error is set when the snapshot is unusable.
+// { processes, error } for every process; error is set when the snapshot is unusable.
 // ps is let finish however long a loaded machine takes: a listing cut short names nothing. lstart is the start time
 // the kernel recorded, so it is the same in every listing however late ps reads or answers; elapsed time read at an
 // unknown moment of a slow listing would leave a window as long as the listing, wide enough for a reused pid.
 async function snapshot(override?: CommandLine, signal?: AbortSignal) {
   const listing = override ?? ['ps', ['-e', '-o', 'pid=,ppid=,lstart=']]; // POSIX only; Windows uses a job object
   const result = await quick(listing, undefined, { ...process.env, TZ: 'UTC', LC_ALL: 'C' }, signal);
-  const procs = result.stdout
+  const processes = result.stdout
     .split('\n')
     .map((line) => line.trim().split(/\s+/))
     .filter((fields) => fields.length > 2 && /^\d+$/.test(fields[0]!) && /^\d+$/.test(fields[1]!))
     .map(([pid, parentPid, ...started]): ProcessRow => [Number(pid), Number(parentPid), started.join(' ')]);
   const failure = result.code === null ? 'did not start' : 'exit ' + result.code;
   const error =
-    result.code !== 0 || !procs.length
+    result.code !== 0 || !processes.length
       ? `process snapshot failed (${failure}): ${result.stderr.trim()}`.trim()
       : undefined;
-  return { procs, error };
+  return { processes, error };
 }
 
-const sameProc = (left: ProcessRow, right: ProcessRow) => left[0] === right[0] && left[2] === right[2];
+const sameProcess = (left: ProcessRow, right: ProcessRow) => left[0] === right[0] && left[2] === right[2];
 
 // Grows `tree` with every listed process whose parent is in it, until no more join; `onJoin` sees each that does.
-function growTree(tree: Set<number>, procs: ProcessRow[], onJoin: (proc: ProcessRow) => void = () => {}) {
+function growTree(tree: Set<number>, processes: ProcessRow[], onJoin: (processRow: ProcessRow) => void = () => {}) {
   for (let grew = true; grew;) {
     grew = false;
-    for (const proc of procs)
-      if (!tree.has(proc[0]) && tree.has(proc[1]) && proc[0] !== process.pid) {
-        tree.add(proc[0]);
-        onJoin(proc);
+    for (const processRow of processes)
+      if (!tree.has(processRow[0]) && tree.has(processRow[1]) && processRow[0] !== process.pid) {
+        tree.add(processRow[0]);
+        onJoin(processRow);
         grew = true;
       }
   }
@@ -113,12 +113,12 @@ export function watch(rootPid: number) {
   let stopped = false;
   const loop = (async () => {
     while (!stopped) {
-      const { procs, error } = await snapshot(undefined, cancel.signal);
+      const { processes, error } = await snapshot(undefined, cancel.signal);
       if (!error) {
-        const listed = new Set(procs.map((proc) => proc[0]));
+        const listed = new Set(processes.map((processRow) => processRow[0]));
         // gone: its pid may come to name another process
         for (const pid of seen.keys()) if (!listed.has(pid)) seen.delete(pid);
-        growTree(new Set([rootPid, ...seen.keys()]), procs, (proc) => seen.set(proc[0], proc));
+        growTree(new Set([rootPid, ...seen.keys()]), processes, (processRow) => seen.set(processRow[0], processRow));
       }
       await new Promise((wake) => setTimeout(wake, POLL_GAP_MS));
     }
@@ -139,13 +139,13 @@ export const errorCode = (err: unknown) => (err as NodeJS.ErrnoException).code;
 
 // The processes still linked to rootPid in a listing taken with the group stopped: rootPid, each descendant the
 // watcher saw that still has its start time, and whatever those have started.
-function aliveTree(rootPid: number, seen: Seen, procs: ProcessRow[]) {
+function aliveTree(rootPid: number, seen: Seen, processes: ProcessRow[]) {
   const alive = new Set([rootPid]);
-  for (const proc of procs) {
-    const known = seen.get(proc[0]);
-    if (known && sameProc(known, proc)) alive.add(proc[0]);
+  for (const processRow of processes) {
+    const known = seen.get(processRow[0]);
+    if (known && sameProcess(known, processRow)) alive.add(processRow[0]);
   }
-  growTree(alive, procs);
+  growTree(alive, processes);
   return alive;
 }
 
@@ -164,7 +164,7 @@ export async function killTree(
   try {
     process.kill(-rootPid, 'SIGSTOP');
   } catch {} // the kill below reports a group it cannot signal
-  const { procs, error } = await snapshot(snapshotCommand);
+  const { processes, error } = await snapshot(snapshotCommand);
   try {
     process.kill(-rootPid, 'SIGKILL');
   } catch (err) {
@@ -187,13 +187,13 @@ export async function killTree(
         survivors.push({ pid, error: 'not verified gone: ' + error });
     return { survivors, cleanupErrors };
   }
-  const alive = aliveTree(rootPid, seen, procs);
-  for (const pid of alive) if (procs.some((proc) => proc[0] === pid)) tryKill(pid);
+  const alive = aliveTree(rootPid, seen, processes);
+  for (const pid of alive) if (processes.some((processRow) => processRow[0] === pid)) tryKill(pid);
   // A listed pid with another start time is a new process under a reused pid, not ours to kill, or ours after a
   // wall-clock step moved every start time ps reports: left alone, and not claimed gone.
-  for (const proc of procs)
-    if (seen.has(proc[0]) && !alive.has(proc[0]))
-      survivors.push({ pid: proc[0], error: 'not verified gone: its pid now has another start time' });
+  for (const processRow of processes)
+    if (seen.has(processRow[0]) && !alive.has(processRow[0]))
+      survivors.push({ pid: processRow[0], error: 'not verified gone: its pid now has another start time' });
   return { survivors, cleanupErrors };
 }
 

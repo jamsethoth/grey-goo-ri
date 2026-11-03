@@ -39,11 +39,11 @@ function pathspecs(within: integrity.Within | undefined) {
     ...(process.platform === 'win32' ? bare.map((path) => `:(icase)${path}`) : bare),
     ...globs.map((glob) => `:(glob,icase)${glob}`),
   ];
-  const specs = [
+  const combined = [
     ...(exclude.length && !included.length ? ['.'] : included),
     ...exclude.map((glob) => `:(exclude,glob,icase)${glob}`),
   ];
-  return specs.length ? ['--', ...specs] : [];
+  return combined.length ? ['--', ...combined] : [];
 }
 
 // Concurrent `git worktree add` calls race on .git/config's lock, so they run one at a time, in every git of the
@@ -98,7 +98,7 @@ async function readRepoInfo({ git }: Runner, cwd: string) {
 async function existingWorktree(gitRunner: Runner, { mainRoot, path }: WorktreeRequest) {
   // The title may have changed since creation, so trust the worktree's branch, not the derived one.
   // Ask the directory itself: a stale registry entry can outlive a folder that was replaced by a plain one.
-  const norm = (dir: string) => paths.canonical(dir).toLowerCase();
+  const comparable = (location: string) => paths.canonical(location).toLowerCase();
   const query = async (...args: string[]) =>
     (await gitRunner.runGit(args, { cwd: path, allowFail: true })).stdout.trim();
   const [top, common, branch] = [
@@ -109,8 +109,8 @@ async function existingWorktree(gitRunner: Runner, { mainRoot, path }: WorktreeR
   const ours =
     top &&
     common &&
-    norm(top) === norm(path) &&
-    norm(resolve(path, common)) === norm((await readRepoInfo(gitRunner, mainRoot)).gitCommonDir);
+    comparable(top) === comparable(path) &&
+    comparable(resolve(path, common)) === comparable((await readRepoInfo(gitRunner, mainRoot)).gitCommonDir);
   if (!ours || !branch.startsWith('ticket/'))
     throw new Error(
       `${path} exists but is not a git worktree of this repo on a ticket/ branch; remove or move it and re-run`,
@@ -321,9 +321,9 @@ function diffVerbs(gitRunner: Runner) {
 // neither an unstaged edit nor one that assume-unchanged or skip-worktree hides goes unseen. Writes objects, so callers
 // hold the repo lock.
 async function snapshotWorktree({ git, runGit }: Runner, worktree: string): Promise<integrity.WorktreeSnapshot> {
-  const dir = await mkdtemp(join(tmpdir(), 'gg-snapshot-'));
+  const tempDir = await mkdtemp(join(tmpdir(), 'gg-snapshot-'));
   try {
-    const env = { GIT_INDEX_FILE: join(dir, 'index') };
+    const env = { GIT_INDEX_FILE: join(tempDir, 'index') };
     // One process for both: a snapshot runs several per Action, each git process about 80 ms on Windows.
     const revParse = await git(['rev-parse', '--git-path', 'index', 'HEAD'], worktree);
     const [index, head] = revParse.split(/\r?\n/) as [string, string];
@@ -346,7 +346,7 @@ async function snapshotWorktree({ git, runGit }: Runner, worktree: string): Prom
     await git(['add', '-A'], worktree, env);
     return { head, index: await git(['write-tree'], worktree), tree: await git(['write-tree'], worktree, env) };
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(tempDir, { recursive: true, force: true });
   }
 }
 

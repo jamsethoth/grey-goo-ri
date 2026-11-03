@@ -65,7 +65,9 @@ export function run(
     child.on('close', (code: number | null) => {
       const result = { code, stdout, stderr };
       if (code !== 0 && !allowFail) {
-        const shown = args.map((arg) => (arg.length > 200 ? `<${arg.length} chars>` : arg)).join(' ');
+        const shown = args
+          .map((argument) => (argument.length > 200 ? `<${argument.length} chars>` : argument))
+          .join(' ');
         reject(new CommandError(`${(stderr || stdout).trim()}\n${command} ${shown} exited ${code}`, result));
       } else resolve(result);
     });
