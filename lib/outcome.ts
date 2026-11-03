@@ -1,3 +1,4 @@
+import type * as github from './github.ts';
 import * as labels from './labels.ts';
 import type * as procedures from './procedures.ts';
 import * as rules from './rules.ts';
@@ -209,15 +210,9 @@ const CREDENTIAL = /Authentication failed for|could not read (?:Username|Passwor
 const REJECTED = /! \[(?:remote )?rejected\]|\(non-fast-forward\)|\(fetch first\)/;
 const seconds = (value: unknown) => (/^\d+$/.test(String(value ?? '').trim()) ? Number(value) * 1000 : null);
 
-// A failed gh or git call: a process's output, or a message; `http` is what `gh api --include` showed, and
-// `rateLimit` the reset github.mjs read from the quota.
-export interface RemoteError {
-  stderr?: string;
-  stdout?: string;
-  message?: string;
-  http?: { status?: number | null; headers?: Record<string, string> };
-  rateLimit?: { resetAt?: number | null };
-}
+// A failed gh or git call: a process's output, or a message; `http` and `rateLimit` are what a github.GhError
+// carries: what `gh api --include` showed, and the reset github.ts read from the quota.
+export type RemoteError = Partial<Pick<github.GhError, 'stderr' | 'stdout' | 'message' | 'http' | 'rateLimit'>>;
 export interface RemoteFailure {
   failureClass: FailureClass;
   retryable: boolean;
@@ -257,7 +252,7 @@ function classOf(failure: Omit<RemoteFailure, 'failureClass' | 'retryable'>, tex
 
 // Classifies a failed gh or git call of a remote Action; FAILURE_CLASSES says which are retried. `err.http` is what
 // `gh api --include` showed; other calls carry their status in gh's message, and a GraphQL rate limit none.
-// `err.rateLimit` is the reset github.mjs read from the quota when the response gave no wait.
+// `err.rateLimit` is the reset github.ts read from the quota when the response gave no wait.
 export function classifyRemoteFailure(err: RemoteError | null | undefined): RemoteFailure {
   const text = textOf(err);
   const headers = err?.http?.headers ?? {};

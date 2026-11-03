@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as checks from '../../../lib/checks.ts';
-import * as gitModule from '../../../lib/git.mjs';
+import * as gitModule from '../../../lib/git.ts';
 import * as integrity from '../../../lib/integrity.ts';
 import * as fakeGitModule from '../../support/fake-git.mjs';
 import * as fakeIntegrityModule from '../../support/fake-integrity.mjs';

@@ -7,7 +7,7 @@ import * as marker from './marker.ts';
 import type * as record from './record.ts';
 import type * as writeAhead from './write-ahead.ts';
 
-// The git verbs the finders call (lib/git.mjs).
+// The git verbs the finders call (lib/git.ts).
 export interface EvidenceGit {
   headSha(worktree: string): Promise<string>;
   branchHead(worktree: string, branch: string): Promise<string>;
@@ -19,7 +19,7 @@ export interface EvidenceGit {
   ): Promise<{ sha: string; parents: string[]; tree: string; message: string }[]>;
 }
 
-// The gh verbs the finders call (lib/github.mjs).
+// The gh verbs the finders call (lib/github.ts).
 export interface EvidenceGh {
   findPr(branch: string, cwd?: string): Promise<{ number: number } | undefined>;
   viewPr(pr: number, cwd?: string): Promise<{ number: number; url: string; body: string }>;
