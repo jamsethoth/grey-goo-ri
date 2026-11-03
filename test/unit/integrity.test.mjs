@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as integrity from '../../lib/integrity.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import { fakeGit } from '../support/fake-git.mjs';
 
 function newExecution(commonDir, ticket, worktree) {
@@ -27,7 +28,7 @@ async function twoRecords(t) {
   const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
   const commonDir = join(root, 'own', '.git');
   t.after(() => {
-    record.close(commonDir);
+    sqlite.close(commonDir);
     rmSync(root, { recursive: true, force: true });
   });
   const ownRecord = newExecution(commonDir, 1, join(root, 'own'));
@@ -73,7 +74,7 @@ test('a workflow file change is an integrity violation', async (t) => {
   const fake = fakeGit();
   const { mainRoot, commonDir } = fake.init(root, { files: { '.github/workflows/ci.yml': 'on: push\n' } });
   t.after(() => {
-    record.close(commonDir);
+    sqlite.close(commonDir);
     rmSync(root, { recursive: true, force: true });
   });
   const real = integrity.withGit(fake.git);

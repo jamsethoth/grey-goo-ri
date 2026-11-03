@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import { TICKET, BRANCH, IN_PROGRESS, sh, fixture, seedExecution } from '../support/run.mjs';
@@ -16,7 +17,7 @@ test('an in-progress ticket with a recoverable record is resumed', async (t) => 
   });
   assert.equal(rec.state, 'active');
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.effect),
+    writeAhead.openIntents(rec).map((e) => e.effect),
     ['push'],
     'the push is the open intent',
   );

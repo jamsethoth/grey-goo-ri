@@ -2,7 +2,7 @@
 // With holdMs 'barrier' it prints ready, tries on the first stdin line and holds until stdin ends,
 // so every contender tries while the owner still holds, however slowly the processes start.
 // The test runner also loads this file with no arguments, where it does nothing.
-import * as locks from '../../lib/locks.mjs';
+import * as locks from '../../lib/locks.ts';
 const [commonDir, name, holdMs] = process.argv.slice(2);
 if (commonDir) {
   let ended;

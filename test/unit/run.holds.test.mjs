@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import * as github from '../../lib/github.mjs';
 import * as integrity from '../../lib/integrity.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as locks from '../../lib/locks.mjs';
-import * as record from '../../lib/record.mjs';
+import * as locks from '../../lib/locks.ts';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
@@ -37,7 +39,7 @@ test('a hold label failure leaves its label intent open for the next Run', async
   assert.equal(mid?.terminalStop?.held, true, 'the hold is decided');
   assert.notEqual(mid.state, 'held', 'a hold whose label is pending is not held');
   assert.deepEqual(
-    record.openIntents(mid).map((e) => e.effect),
+    writeAhead.openIntents(mid).map((e) => e.effect),
     ['label'],
     'the label intent stays open',
   );
@@ -49,7 +51,7 @@ test('a hold label failure leaves its label intent open for the next Run', async
   assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
   const final = await loadTicket(f);
   assert.equal(final.execution, mid.execution);
-  assert.deepEqual(record.openIntents(final), []);
+  assert.deepEqual(writeAhead.openIntents(final), []);
   assert.equal(final.state, 'held');
   assert.equal(endsOf(f, final.execution).length, 1);
 });
@@ -67,7 +69,7 @@ test('a seeded hold label failure is finished on the next Run', async (t) => {
   assert.equal(mid?.terminalStop?.held, true, 'the hold is decided');
   assert.notEqual(mid.state, 'held', 'a hold whose label is pending is not held');
   assert.deepEqual(
-    record.openIntents(mid).map((e) => e.effect),
+    writeAhead.openIntents(mid).map((e) => e.effect),
     ['commit', 'label'],
     'the label intent stays open beside the seeded commit',
   );
@@ -79,7 +81,11 @@ test('a seeded hold label failure is finished on the next Run', async (t) => {
   assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
   const final = await loadTicket(f);
   assert.equal(final.execution, mid.execution);
-  assert.deepEqual(record.openIntents(final), record.openIntents(seededRec), 'only the seeded commit stays open');
+  assert.deepEqual(
+    writeAhead.openIntents(final),
+    writeAhead.openIntents(seededRec),
+    'only the seeded commit stays open',
+  );
   assert.equal(final.state, 'held');
   assert.equal(endsOf(f, final.execution).length, 1);
 });
@@ -92,7 +98,7 @@ async function overriddenPendingHold(t) {
   const failing = failComment(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
-  const [holdComment] = record.openIntents(mid).filter((e) => e.effect === 'comment');
+  const [holdComment] = writeAhead.openIntents(mid).filter((e) => e.effect === 'comment');
   failing.on = false;
   f.gh.labels.add(NEEDS_HUMAN);
   const inner = f.gh.gh;
@@ -132,12 +138,12 @@ test('human override abandons a pending hold before any label cleanup', async (t
   assert.equal(ends[0].outcome, 'abandoned');
   assert.deepEqual(ends[0].terminalReason, final.terminalReason);
   assert.ok(
-    record.openIntents(final).some((e) => e.actionMarker === holdComment.actionMarker),
+    writeAhead.openIntents(final).some((e) => e.actionMarker === holdComment.actionMarker),
     'the hold comment intent stays open, never replayed',
   );
   assert.deepEqual(
-    record.openIntents(final).filter((e) => e.effect === 'commit'),
-    record.openIntents(seededRec),
+    writeAhead.openIntents(final).filter((e) => e.effect === 'commit'),
+    writeAhead.openIntents(seededRec),
     'the older intent is kept',
   );
   assert.deepEqual(
@@ -179,12 +185,12 @@ test('human override of a pending hold is decided durably when its label cleanup
   assert.equal(ends[0].outcome, 'abandoned');
   assert.deepEqual(ends[0].terminalReason, final.terminalReason);
   assert.ok(
-    record.openIntents(final).some((e) => e.actionMarker === holdComment.actionMarker),
+    writeAhead.openIntents(final).some((e) => e.actionMarker === holdComment.actionMarker),
     'the hold comment intent stays open, never replayed',
   );
   assert.deepEqual(
-    record.openIntents(final).filter((e) => e.effect === 'commit'),
-    record.openIntents(seededRec),
+    writeAhead.openIntents(final).filter((e) => e.effect === 'commit'),
+    writeAhead.openIntents(seededRec),
     'the older intent is kept',
   );
   assert.deepEqual(
@@ -220,7 +226,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
 
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
-  const [open] = record.openIntents(mid ?? { writeAheadLog: [] }).filter((e) => e.effect === 'comment');
+  const [open] = writeAhead.openIntents(mid ?? { writeAheadLog: [] }).filter((e) => e.effect === 'comment');
   assert.ok(open, 'the landed fault comment waits for its completion');
   assert.equal(f.comments().length, 1);
 
@@ -433,7 +439,7 @@ test('a human needs-human label prevents admission effects without a record', as
 
 test('a human needs-human label prevents admission effects with a corrupt record', async (t) => {
   const f = fixture(t, { labels: [NEEDS_HUMAN] });
-  record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
+  sqlite.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
 
   assert.equal(
     run.runExitCode(await run.runTarget(f.options)),
@@ -517,7 +523,7 @@ test('mixed-case needs-human skips without a record', async (t) => {
 
 test('mixed-case needs-human skips with a corrupt record', async (t) => {
   const f = fixture(t, { labels: [HUMAN_NEEDS_HUMAN] });
-  record.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
+  sqlite.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
   const results = await run.runTarget(f.options);
   assert.equal(ticketResult(results).outcome, 'skipped', JSON.stringify(results));
   assert.equal(ticketResult(results).state, 'needs-human');

@@ -7,12 +7,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as checks from '../../lib/checks.mjs';
 import * as config from '../../lib/config.mjs';
-import * as events from '../../lib/events.mjs';
+import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.mjs';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as paths from '../../lib/paths.ts';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import * as validate from '../../lib/validate.mjs';
 import * as golden from './golden.mjs';
 import { fakeHarness } from './fake-harness.mjs';
@@ -77,7 +78,7 @@ export function fixture(
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
   t.after(() => {
-    record.close(commonDir);
+    sqlite.close(commonDir);
     if (linked) rmSync(root, { recursive: true, force: true }); // removes the link, not its target
     rmSync(real, { recursive: true, force: true });
   });
@@ -169,7 +170,7 @@ export function fixture(
     readEvents: () => events.readEvents(commonDir),
     worktrees: () => (fakeGit ? fakeGit.worktreeCount(mainRoot) : sh(mainRoot, 'worktree', 'list').split('\n').length),
     loadRow: () =>
-      record.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(TICKET)?.json,
+      sqlite.openDb(commonDir).prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(TICKET)?.json,
     comments: () => fake.comments.filter((c) => c.number === TICKET).map((c) => c.body),
     labelAdds: () =>
       fake.calls

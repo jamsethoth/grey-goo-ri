@@ -4,7 +4,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import { resetEntries } from '../support/reconcile.mjs';
 
@@ -38,7 +39,7 @@ test('a crash after the reset of an Integrity Violation keeps its History item e
   assert.equal(g.loaded.history[0].kind, 'integrity violation');
   assert.match(g.loaded.history[0].text, /changed protected/);
   assert.deepEqual(resetEntries(g.loaded), ['intent', 'evidence', 'complete']);
-  assert.deepEqual(record.openIntents(g.loaded), []);
+  assert.deepEqual(writeAhead.openIntents(g.loaded), []);
 
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(saved.history, g.loaded.history, 'the History item is persisted');
@@ -72,7 +73,7 @@ test('a crash before the reset holds the Execution and discards nothing once a h
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
   assert.deepEqual(g.loaded.history, []);
   assert.equal(
-    record.openIntents(g.loaded)[0].payload.history.kind,
+    writeAhead.openIntents(g.loaded)[0].payload.history.kind,
     'integrity violation',
     'the reason waits in the open intent',
   );
@@ -132,7 +133,7 @@ test('a crash between the reset and the Protected File restore of an integrity v
   assert.equal(await reconcile.resets(loaded, { git }), 'continue');
   assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', "the owner's bytes come back from the saved intent");
   assert.equal(loaded.history[0].kind, 'integrity violation');
-  assert.deepEqual(record.openIntents(loaded), []);
+  assert.deepEqual(writeAhead.openIntents(loaded), []);
 });
 
 test('Reconciliation uses an injected integrity', async (t) => {

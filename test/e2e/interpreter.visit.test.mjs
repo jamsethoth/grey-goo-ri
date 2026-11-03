@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import {
   firstVisit,
@@ -113,7 +113,7 @@ test('golden: a failed red is recovered once then fails at needs-human with its 
   );
   assert.deepEqual(intents(g.rec, 'reset'), [], 'nothing is reset');
   assert.deepEqual(g.rec.history, []);
-  assert.deepEqual(record.openIntents(g.rec), []);
+  assert.deepEqual(writeAhead.openIntents(g.rec), []);
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
 
   const reason = terminalReasonOf(g);

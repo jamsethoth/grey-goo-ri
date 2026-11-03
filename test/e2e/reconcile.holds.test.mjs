@@ -4,7 +4,8 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import { withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs } from '../support/reconcile.mjs';
 
@@ -49,7 +50,7 @@ for (const point of Object.keys(POINTS)) {
       (err) => err instanceof interpreter.CrashError,
     );
     const mid = await loadTicket(g);
-    const older = record.openIntents(mid).filter((e) => e.effect === 'commit');
+    const older = writeAhead.openIntents(mid).filter((e) => e.effect === 'commit');
     assert.equal(older.length, 1);
     const git = new Proxy(
       {},
@@ -65,7 +66,7 @@ for (const point of Object.keys(POINTS)) {
     assert.equal(result.held, true, JSON.stringify(result));
     const final = await loadTicket(g);
     assert.equal(final.state, 'held');
-    assert.deepEqual(record.openIntents(final), older, 'only the older commit intent stays open, untouched');
+    assert.deepEqual(writeAhead.openIntents(final), older, 'only the older commit intent stays open, untouched');
     assert.equal(
       withMarker(
         g.gh.comments.map((c) => c.body),
@@ -118,7 +119,7 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   const final = await loadTicket(g);
   assert.equal(final.state, 'held');
   assert.ok(
-    record.openIntents(final).some((e) => e.actionMarker === older),
+    writeAhead.openIntents(final).some((e) => e.actionMarker === older),
     'the older intent stays open, untouched',
   );
   assert.equal(

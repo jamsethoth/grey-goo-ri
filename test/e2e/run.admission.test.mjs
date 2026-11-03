@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as paths from '../../lib/paths.ts';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.mjs';
 import {
   TICKET,
@@ -153,7 +155,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
     .comments()
     .join('\n')
     .match(/`(DELETE FROM records WHERE kind = 'ticket' AND n = \d+;)`/)[1];
-  record.openDb(f.commonDir).exec(statement);
+  sqlite.openDb(f.commonDir).exec(statement);
   assert.equal(
     run.runExitCode(await run.runTarget(f.options)),
     0,
@@ -177,7 +179,7 @@ test('a commit interrupted before it landed is admitted and replayed', async (t)
   const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
   const seeded = await crashBeforeCommit(f);
   assert.deepEqual(
-    record.openIntents(seeded).map((e) => e.effect),
+    writeAhead.openIntents(seeded).map((e) => e.effect),
     ['commit'],
     'the record holds the intended commit',
   );

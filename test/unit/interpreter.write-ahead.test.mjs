@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import {
   FIRST_VISIT,
@@ -98,7 +99,7 @@ for (const [name, agentWrites] of [
     assert.equal(final.state, 'held');
     const red = actionMarker(g, 'red', 'red');
     assert.deepEqual(
-      record.openIntents(final).map((e) => [e.effect, e.actionMarker]),
+      writeAhead.openIntents(final).map((e) => [e.effect, e.actionMarker]),
       [['call', red]],
       'the Attempt intent stays open',
     );

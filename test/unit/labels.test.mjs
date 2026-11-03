@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import * as labels from '../../lib/labels.mjs';
+import * as labels from '../../lib/labels.ts';
 
 test('label names carry the configured prefix and family', () => {
   const gg = labels.labels('gg');

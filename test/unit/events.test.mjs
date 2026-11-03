@@ -5,15 +5,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.mjs';
-import * as events from '../../lib/events.mjs';
-import * as record from '../../lib/record.mjs';
+import * as events from '../../lib/events.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import { fakeGit } from '../support/fake-git.mjs';
 
 // The State Database is closed before the directory is removed, as Windows requires.
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-events-'));
   t.after(() => {
-    record.close(dir);
+    sqlite.close(dir);
     rmSync(dir, { recursive: true, force: true });
   });
   return dir;
@@ -347,6 +347,13 @@ test('lifecycle events validate their required fields per type', () => {
   assert.throws(() => events.lifecycleEvent('run_start', { run: 'r1', extra: 1 }), /\bextra\b/);
   assert.throws(() => events.lifecycleEvent('stage_call', { run: 'r1' }), /\bstage_call\b/);
 });
+
+// A type named after an Object member is no lifecycle type, though LIFECYCLE[type] finds something for it.
+for (const type of ['toString', 'constructor', '__proto__']) {
+  test(`lifecycleEvent refuses the type ${type}, which only Object.prototype defines`, () => {
+    assert.throws(() => events.lifecycleEvent(type, { run: 'r1' }), new RegExp(`unknown lifecycle event type ${type}`));
+  });
+}
 
 test('eventLog appends a row with the identity columns and the full event', (t) => {
   const dir = tempDir(t);

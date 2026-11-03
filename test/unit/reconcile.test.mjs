@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
 import * as golden from '../support/golden.mjs';
 import * as interpreterSupport from '../support/interpreter.mjs';
 import { resetEntries } from '../support/reconcile.mjs';

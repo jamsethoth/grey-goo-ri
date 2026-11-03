@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
@@ -33,7 +34,7 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
   };
   const seeded = await seedExecution(f, { git });
   assert.deepEqual(
-    record.openIntents(seeded).map((e) => e.effect),
+    writeAhead.openIntents(seeded).map((e) => e.effect),
     ['reset'],
     'the record holds the decided reset',
   );
@@ -49,7 +50,7 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
     final.history.map((h) => h.kind),
     ['integrity violation'],
   );
-  assert.deepEqual(record.openIntents(final), []);
+  assert.deepEqual(writeAhead.openIntents(final), []);
 });
 
 test('changes made after an interrupted reset are held, not discarded', async (t) => {
@@ -144,7 +145,7 @@ test('an interrupted reset whose intent predates the index fingerprint is held',
     },
   };
   const seeded = await seedExecution(f, { git });
-  delete record.openIntents(seeded)[0].payload.left.index;
+  delete writeAhead.openIntents(seeded)[0].payload.left.index;
   await record.save(seeded);
 
   const results = await run.runTarget(f.options);
@@ -181,7 +182,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   const seeded = await seedExecution(f, { git, integrity: crashing });
   assert.ok(!existsSync(join(f.worktree, '.claude', 'settings.local.json')), 'the crash came mid-restore');
   assert.deepEqual(
-    record.openIntents(seeded).map((e) => e.effect),
+    writeAhead.openIntents(seeded).map((e) => e.effect),
     ['reset'],
   );
 

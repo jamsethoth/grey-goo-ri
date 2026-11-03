@@ -6,9 +6,9 @@ import * as exec from '../lib/exec.mjs';
 import * as git from '../lib/git.mjs';
 import * as github from '../lib/github.mjs';
 import * as interpreter from '../lib/interpreter.mjs';
-import * as locks from '../lib/locks.mjs';
+import * as locks from '../lib/locks.ts';
 import { parseOpts, positiveInt, UsageError } from '../lib/opts.mjs';
-import * as record from '../lib/record.mjs';
+import * as record from '../lib/record.ts';
 import * as run from '../lib/run.mjs';
 
 const usage = `Usage: gg <command>

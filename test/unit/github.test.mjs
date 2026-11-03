@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../../lib/github.mjs';
-import * as labels from '../../lib/labels.mjs';
+import * as labels from '../../lib/labels.ts';
 import * as outcome from '../../lib/outcome.mjs';
 import * as golden from '../support/golden.mjs';
 

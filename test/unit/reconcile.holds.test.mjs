@@ -4,7 +4,9 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import {
   stepsOf,
@@ -243,7 +245,7 @@ test('bounds survive a restart', async (t) => {
 test('a corrupt record holds the ticket', async (t) => {
   const g = await golden.setup(t);
   const corrupt = '{ "schemaVersion": 1, "log": [';
-  const db = record.openDb(g.commonDir);
+  const db = sqlite.openDb(g.commonDir);
   db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = ?").run(corrupt, golden.TICKET);
   const err = await loadTicket(g).catch((e) => e);
   assert.ok(err instanceof record.RecordCorruptError, String(err));
@@ -267,7 +269,7 @@ const badGateway = () =>
 test('a failed lookup is unknown, not absent', async (t) => {
   const g = await golden.setup(t);
   const { m, loaded } = await crashed(g, EFFECTS.comment.at, 'after-effect');
-  const entry = record.openIntents(loaded).find((e) => e.actionMarker === m);
+  const entry = writeAhead.openIntents(loaded).find((e) => e.actionMarker === m);
   const down = {
     ...g.options.gh,
     comments: async () => {

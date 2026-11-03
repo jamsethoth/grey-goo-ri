@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import * as marker from '../../lib/marker.mjs';
+import * as marker from '../../lib/marker.ts';
 import * as paths from '../../lib/paths.ts';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import { fakeHarness } from '../support/fake-harness.mjs';
@@ -163,7 +164,7 @@ async function corruptTicket(t) {
   const f = fixture(t, { labels: [IN_PROGRESS] });
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
-  record
+  sqlite
     .openDb(f.commonDir)
     .prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)")
     .run(TICKET, '{ "schemaVersion": 1, "log": [');
@@ -204,7 +205,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
   await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const corrupt = '{ "schemaVersion": 1, "log": [';
-  record
+  sqlite
     .openDb(f.commonDir)
     .prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)")
     .run(TICKET, corrupt);

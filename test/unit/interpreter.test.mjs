@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as config from '../../lib/config.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as render from '../../lib/render.mjs';
-import * as marker from '../../lib/marker.mjs';
+import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.mjs';
 import { fakeHarness } from '../support/fake-harness.mjs';
 import {
@@ -365,7 +366,7 @@ test("a hold's label is set after its comment, each under its own marker", async
   const [posted] = g.gh.comments;
   assert.ok(posted.body.includes(marker.markerComment(comment)), 'the comment carries its own marker');
   assert.ok(g.gh.labels.has('gg:state:needs-human'));
-  assert.deepEqual(record.openIntents(rec), []);
+  assert.deepEqual(writeAhead.openIntents(rec), []);
 });
 
 test("a fault during an end does not replay the end's open reporting Action", async (t) => {
@@ -385,7 +386,7 @@ test("a fault during an end does not replay the end's open reporting Action", as
   const rec = await loadTicket(g);
   const ended = reportMarker(g, 'ready-for-qa', 'end-comment');
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.actionMarker),
+    writeAhead.openIntents(rec).map((e) => e.actionMarker),
     [ended],
     "the end's comment stays open",
   );

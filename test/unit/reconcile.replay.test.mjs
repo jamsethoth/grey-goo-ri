@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../../lib/github.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as marker from '../../lib/marker.mjs';
+import * as marker from '../../lib/marker.ts';
 import * as reconcile from '../../lib/reconcile.mjs';
-import * as record from '../../lib/record.mjs';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import { loadTicket, POINTS, crashed, NEEDS_HUMAN } from '../support/reconcile.mjs';
 
@@ -88,7 +88,7 @@ for (const point of ['after-effect', 'after-completion']) {
     assert.equal(result.outcome, 'needs-human');
     const final = await loadTicket(g);
     assert.equal(final.state, 'needs-human', 'not mistaken for a human override');
-    assert.deepEqual(record.openIntents(final), []);
+    assert.deepEqual(writeAhead.openIntents(final), []);
     assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
   });
 }
@@ -109,7 +109,7 @@ for (const point of ['after-effect', 'after-completion']) {
     assert.equal(result.outcome, 'needs-human');
     const final = await loadTicket(g);
     assert.equal(final.state, 'needs-human', 'not mistaken for a human override');
-    assert.deepEqual(record.openIntents(final), []);
+    assert.deepEqual(writeAhead.openIntents(final), []);
     assert.equal(edits(), 1, 'the label is not applied again');
     assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
   });

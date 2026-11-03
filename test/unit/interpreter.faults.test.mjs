@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import {
   tddTrace,
@@ -263,7 +264,7 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   assert.ok(posted.body.includes(terminalMarker(g, 'fault-comment')), 'the fault report has its own Action Marker');
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.actionMarker),
+    writeAhead.openIntents(rec).map((e) => e.actionMarker),
     [terminalMarker(g, 'end-comment')],
     'the intent of the interrupted comment stays open, and the fault report never replays it',
   );
@@ -311,7 +312,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.equal(rec.state, 'held');
   assert.deepEqual(
-    record.openIntents(rec).map((e) => e.actionMarker),
+    writeAhead.openIntents(rec).map((e) => e.actionMarker),
     [blocked],
     'the interrupted blocked intent stays open, untouched',
   );
@@ -337,7 +338,7 @@ test('a crash inside the fault report replays its comment once on resume', async
   assert.equal(g.readEvents().find((e) => e.type === 'ticket_end').interrupted, null);
   // The faulted Attempt never completed, so its intent stays open on the finished record.
   assert.deepEqual(
-    record.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)).map((e) => e.effect),
+    writeAhead.openIntents(await record.load(g.commonDir, 'ticket', golden.TICKET)).map((e) => e.effect),
     ['call'],
   );
 });

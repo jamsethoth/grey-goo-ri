@@ -5,7 +5,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import * as integrity from '../../lib/integrity.mjs';
 import * as paths from '../../lib/paths.ts';
-import * as record from '../../lib/record.mjs';
+import * as record from '../../lib/record.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.mjs';
 import * as golden from '../support/golden.mjs';
 import {
@@ -72,7 +73,7 @@ for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-atte
     const final = await record.load(f.commonDir, 'ticket', TICKET);
     assert.equal(final.state, 'held');
     assert.equal(final.branch, BRANCH);
-    assert.deepEqual(record.openIntents(final), record.openIntents(seeded), 'the intended commit is kept');
+    assert.deepEqual(writeAhead.openIntents(final), writeAhead.openIntents(seeded), 'the intended commit is kept');
   });
 }
 
@@ -161,7 +162,7 @@ async function foreignBranchRecord(f, branch) {
     base: 'main',
   });
   await record.intent(rec, 'seed-intent', 'commit', { message: 'red' });
-  assert.equal(record.openIntents(rec).length, 1);
+  assert.equal(writeAhead.openIntents(rec).length, 1);
   return rec;
 }
 
@@ -202,7 +203,7 @@ test('resume refuses a recorded branch belonging to another Ticket: its worktree
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'held');
   assert.equal(final.branch, branch);
-  assert.deepEqual(record.openIntents(final), record.openIntents(rec), 'the outstanding intent is kept');
+  assert.deepEqual(writeAhead.openIntents(final), writeAhead.openIntents(rec), 'the outstanding intent is kept');
 });
 
 test('resume refuses a recorded branch belonging to another Ticket: its worktree is missing', async (t) => {
@@ -239,7 +240,7 @@ test('resume refuses a recorded branch belonging to another Ticket: its worktree
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'held');
   assert.equal(final.branch, branch);
-  assert.deepEqual(record.openIntents(final), record.openIntents(rec), 'the outstanding intent is kept');
+  assert.deepEqual(writeAhead.openIntents(final), writeAhead.openIntents(rec), 'the outstanding intent is kept');
 });
 
 // A Ticket admitted, fresh or `seeded` with a record, beside a sibling worktree on `siblingBranch` (with a record of
@@ -383,7 +384,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
   );
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'held');
-  assert.deepEqual(record.openIntents(final), record.openIntents(seeded));
+  assert.deepEqual(writeAhead.openIntents(final), writeAhead.openIntents(seeded));
 });
 
 test('a resumed execution stopped mid-rebase is held without changing the rebase', async (t) => {
@@ -406,7 +407,10 @@ test('a resumed execution stopped mid-rebase is held without changing the rebase
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before);
   assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head);
   assert.equal(readFileSync(join(rebasePath, 'git-rebase-todo'), 'utf8'), todo, 'the rebase is untouched');
-  assert.deepEqual(record.openIntents(await record.load(f.commonDir, 'ticket', TICKET)), record.openIntents(seeded));
+  assert.deepEqual(
+    writeAhead.openIntents(await record.load(f.commonDir, 'ticket', TICKET)),
+    writeAhead.openIntents(seeded),
+  );
 });
 
 test('an unexpected branch query failure faults before recovery', async (t) => {
@@ -428,7 +432,7 @@ test('an unexpected branch query failure faults before recovery', async (t) => {
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'fault');
   assert.deepEqual(
-    record.openIntents(final).filter((e) => e.effect === 'commit'),
-    record.openIntents(seeded),
+    writeAhead.openIntents(final).filter((e) => e.effect === 'commit'),
+    writeAhead.openIntents(seeded),
   );
 });
