@@ -194,7 +194,6 @@ const LEGACY_MJS = [
   'test/e2e/checks.test.mjs',
   'test/e2e/gg.test.mjs',
   'test/e2e/integrity.test.mjs',
-  'test/e2e/interpreter.backoff.test.mjs',
   'test/e2e/interpreter.faults.test.mjs',
   'test/e2e/interpreter.fix.test.mjs',
   'test/e2e/interpreter.retry.test.mjs',
