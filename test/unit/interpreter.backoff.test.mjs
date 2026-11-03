@@ -25,6 +25,8 @@ import {
   crashPost,
   originSha,
   headSha,
+  actionEvent,
+  runStopEvent,
 } from '../support/interpreter.mjs';
 
 // #83: the pr-upsert, pr-ready and push paths of the in-Action retry, end to end.
@@ -601,7 +603,7 @@ test('a remote auth failure stops the run and the next Execution stops before it
 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   assert.equal(result.fault, undefined, 'a run stop, not a fault');
-  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth');
   assert.deepEqual(g.sleeps, [], 'never retried');
   const final = await loadTicket(g);
   assert.equal(final.state, 'needs-human');
@@ -633,7 +635,7 @@ test('a remote permission failure faults only its Ticket', async (t) => {
   const result = await interpreter.runExecution({ ...g.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
-  assert.equal(result.runStop, undefined, 'the run goes on');
+  assert.equal(runStopEvent(g), null, 'the run goes on');
   assert.equal(runState.stop, null);
   assert.deepEqual(g.sleeps, [], 'never retried');
   const final = await loadTicket(g);
@@ -657,7 +659,7 @@ test("a remote auth failure in a Terminal's report latches the run stop and faul
   const result = await interpreter.runExecution({ ...g.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
-  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth');
   assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
   assert.equal(
     (await loadTicket(g)).terminalReason.text,
@@ -678,7 +680,7 @@ test('a remote run stop whose own report fails becomes a fault that keeps the ru
   const result = await interpreter.runExecution({ ...g.options, runState });
 
   assert.equal(result.fault, true, JSON.stringify(result));
-  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth');
   const final = await loadTicket(g);
   assert.equal(final.state, 'fault');
   assert.ok(
@@ -703,8 +705,94 @@ test("a remote auth failure first met in a fault's report keeps the run stop on 
 
   assert.equal(result.fault, true, JSON.stringify(result));
   assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
-  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth');
   const final = await loadTicket(g);
   assert.equal(final.state, 'fault');
-  assert.equal(final.terminalStop.runStopFailureClass, 'auth');
+  assert.equal(runStopEvent(g)?.action, 'fault-comment', "the fault report's failed comment records it");
+});
+
+// #251: a failed Action is recorded where it fails, and the run stop is read from the Action Events.
+const AUTH_REFUSED = "fatal: Authentication failed for 'https://github.com/o/r.git/'\n";
+const FORBIDDEN = "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\n";
+
+test('a remote Action that fails for good records its Action Event with its class and error', async (t) => {
+  for (const [name, stderr, failureClass, outcome] of [
+    ['a push refused with auth', AUTH_REFUSED, 'auth', 'run-stop'],
+    ['a push refused with a 403', FORBIDDEN, 'permission', 'fault'],
+  ]) {
+    await t.test(name, async (t) => {
+      const g = await golden.setup(t);
+      pushThrough(g, () => Promise.reject(refusedPush(stderr)));
+      await interpreter.runExecution({ ...g.options, runState: { stop: null, remoteNotBefore: 0 } });
+
+      const pushed = actionEvent(g, 'green', 'push');
+      assert.ok(pushed, 'the failed push has an Action Event');
+      const { agent, procedure, attempt, direction, rule, error } = pushed;
+      assert.deepEqual(
+        { agent, procedure, attempt, outcome: pushed.outcome, direction, rule, failureClass: pushed.failureClass },
+        {
+          agent: false,
+          procedure: 'implement',
+          attempt: 1,
+          outcome,
+          direction: 'stop',
+          rule: { table: 'fixed', row: outcome },
+          failureClass,
+        },
+      );
+      assert.match(error, /git push exited 128/);
+    });
+  }
+});
+
+test('a run stop survives a human abandonment of its Terminal', async (t) => {
+  const g = await golden.setup(t, {
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
+  });
+  // The run stop's own comment backs off, and a human sets needs-human meanwhile.
+  g.gh.fail({ matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 });
+  g.clock.onSleep = () => {
+    g.gh.labels.add('gg:state:needs-human');
+  };
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
+  assert.equal((await loadTicket(g)).state, 'abandoned');
+  assert.equal(runState.stop?.ticket, golden.TICKET);
+  assert.equal(result.runStop?.failureClass, 'auth', 'the result reads the run stop from the Action Events');
+  assert.deepEqual([runStopEvent(g)?.action, runStopEvent(g)?.failureClass], ['red', 'auth']);
+});
+
+test('a stop routed to ready-for-qa keeps its run stop when the replacement report fails', async (t) => {
+  const g = await golden.setup(t);
+  // A Check-only Vertex after publish whose failing lint Check routes ok and failed to ready-for-qa.
+  golden.configure(g, (c) => {
+    c.commands.lint = 'npm run lint';
+    c.procedures['lint-only'] = { actions: [{ id: 'lint', do: 'check', kind: 'command', command: 'lint' }] };
+    c.flows.golden.ticket.vertices.publish.route = { ok: 'lint' };
+    c.flows.golden.ticket.vertices.lint = {
+      procedure: 'lint-only',
+      route: { ok: { end: 'ready-for-qa' }, failed: { end: 'ready-for-qa' } },
+    };
+  });
+  const { runShell } = g.options.exec;
+  g.options.exec = {
+    runShell: (command, opts) =>
+      command === 'npm run lint'
+        ? Promise.resolve({ code: 1, output: 'lint failed', timedOut: false })
+        : runShell(command, opts),
+  };
+  // ready-for-qa's comment meets auth, so a run stop replaces it; that run stop's comment then fails in an ordinary way.
+  const onTicket = (args) => golden.isCommentPost(args, golden.TICKET);
+  g.gh.fail({ matches: onTicket, status: 401, body: { message: 'Bad credentials' } });
+  g.gh.fail({ matches: onTicket, status: 422, body: { message: 'Validation Failed' } });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
+  assert.equal(result.runStop?.failureClass, 'auth', 'the result reads the run stop from the Action Events');
+  const stopped = runStopEvent(g);
+  assert.deepEqual([stopped?.vertex, stopped?.action, stopped?.outcome], ['ready-for-qa', 'end-comment', 'run-stop']);
 });

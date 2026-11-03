@@ -19,7 +19,7 @@ import {
   NEEDS_HUMAN,
   reconcileArgs,
 } from '../support/reconcile.mjs';
-import { reviewFlow } from '../support/interpreter.mjs';
+import { reviewFlow, runStopEvent } from '../support/interpreter.mjs';
 
 // Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<effect>), then resumes on a
 // freshly loaded record with the same options.
@@ -75,7 +75,7 @@ for (const point of Object.keys(POINTS)) {
 
     const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
     assert.equal(result.outcome, 'needs-human');
-    assert.equal(result.runStop?.failureClass, 'auth');
+    assert.equal(runStopEvent(g)?.failureClass, 'auth');
     assert.ok(g.gh.labels.has(NEEDS_HUMAN));
     assert.equal((await loadTicket(g)).state, 'needs-human');
     assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);

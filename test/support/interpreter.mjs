@@ -9,6 +9,7 @@ import * as sqlite from '../../lib/sqlite.ts';
 import * as golden from './golden.mjs';
 import * as locks from '../../lib/locks.ts';
 import * as run from '../../lib/run.mjs';
+import * as terminal from '../../lib/terminal.mjs';
 
 export const TDD_VERTICES = ['red', 'green'];
 
@@ -55,6 +56,8 @@ const isAction = (e, vertex, action, recovery) =>
   e.type === 'action' && e.vertex === vertex && e.action === action && e.recovery === recovery;
 export const actionEvent = (g, vertex, action, recovery = 0) =>
   g.readEvents().find((e) => isAction(e, vertex, action, recovery));
+// The case's Execution's run stop, as its Action Events record it.
+export const runStopEvent = (g) => terminal.runStopEvent(g.readEvents().filter((e) => e.execution === g.rec.execution));
 
 // T17's error paths: every non-advance row of the transition table, reached through the interpreter.
 export const WRONG_ADD = 'export const add = () => 0;\n';

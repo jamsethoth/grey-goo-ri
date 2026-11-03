@@ -17,6 +17,7 @@ import {
   greenSetup,
   stopReason,
   subjects,
+  runStopEvent,
 } from '../support/interpreter.mjs';
 
 test('golden: an invalid structured response is retried once with a nudge then stops', async (t) => {
@@ -203,7 +204,7 @@ test('an auth failure stops the run with its class', async (t) => {
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'needs-human');
-  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth');
   assert.equal(g.harness.calls.length, 1, 'no retry');
   assert.equal(actionEvent(g, 'red', 'red').failureClass, 'auth');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
@@ -230,7 +231,7 @@ test('an auth failure keeps its run stop when the terminal comment fails', async
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.fault, true);
-  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 });
 
@@ -252,7 +253,7 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.fault, true);
-  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth');
   const [posted, ...rest] = ticketComments(g);
   assert.equal(rest.length, 0);
   assert.match(posted.body, /gh comment down/, 'the fault comment carries the error, as its Terminal Reason says');
@@ -378,7 +379,7 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
     record: await record.load(g.commonDir, 'ticket', golden.TICKET),
   });
   assert.equal(result.fault, true);
-  assert.equal(result.runStop?.failureClass, 'auth', 'the saved run stop survives the failed recovery');
+  assert.equal(runStopEvent(g)?.failureClass, 'auth', 'the run stop survives the failed recovery');
   assert.equal(ticketComments(g).length, 1, 'no second comment');
   assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
 });
@@ -390,7 +391,7 @@ test('an unknown failure goes to needs-human without retry', async (t) => {
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'needs-human');
-  assert.equal(result.runStop, undefined);
+  assert.equal(runStopEvent(g), null);
   assert.equal(g.harness.calls.length, 1, 'no retry');
   assert.equal(attemptsOf(g, 'red', 'red').length, 1);
   const reason = stopReason(g, {

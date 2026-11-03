@@ -18,6 +18,7 @@ import {
   onPr,
   crashPost,
   originSha,
+  runStopEvent,
 } from '../support/interpreter.mjs';
 
 test('a transient comment failure is retried once and posts one comment', async (t) => {
@@ -143,7 +144,7 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     const result = await interpreter.runExecution(g.options);
 
-    assert.equal(result.runStop?.failureClass, 'auth', JSON.stringify(result));
+    assert.equal(runStopEvent(g)?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(commentPosts(g).length, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
     assert.equal(g.rec.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is reserved');
@@ -365,7 +366,7 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     const result = await interpreter.runExecution(g.options);
 
-    assert.equal(result.runStop?.failureClass, 'auth', JSON.stringify(result));
+    assert.equal(runStopEvent(g)?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(
       g.rec.terminalReason.text,
       'The comment at comment failed with class auth, which stops the whole run.',
