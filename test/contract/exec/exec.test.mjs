@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as containment from '../../../lib/containment.ts';
-import * as exec from '../../../lib/exec.mjs';
+import * as exec from '../../../lib/exec.ts';
 import * as render from '../../../lib/render.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'gg-exec-'));
@@ -512,7 +512,7 @@ test(
     const caller = script(
       'stalled-caller.mjs',
       `const exec = await import(args[0]); const res = await exec.runShell(args[1], { timeoutMs: ${LIVES_MS} }); process.exitCode = res.code;`,
-      [pathToFileURL(join(import.meta.dirname, '../../../lib/exec.mjs')).href, `"${process.execPath}" "${quit}"`],
+      [pathToFileURL(join(import.meta.dirname, '../../../lib/exec.ts')).href, `"${process.execPath}" "${quit}"`],
     );
     const child = spawn(process.execPath, [caller], { stdio: ['ignore', 'ignore', 'inherit'] });
     t.after(() => {
@@ -1081,7 +1081,7 @@ test(
 );
 
 // bin/gg.mjs opens kernel32 and passes it down (ADR 0019); a module that imports exec must not open a second one.
-// A query string loads a fresh copy of exec.mjs, so its import is seen here.
+// A query string loads a fresh copy of exec.ts, so its import is seen here.
 test(
   'importing exec opens no node:ffi, and its own runShell opens it on the first call',
   { ...CASE, skip: process.platform !== 'win32' && 'node:ffi is opened on Windows only' },
@@ -1093,7 +1093,7 @@ test(
       return getBuiltinModule.call(process, id);
     };
     t.after(() => (process.getBuiltinModule = getBuiltinModule));
-    const fresh = await import(`../../../lib/exec.mjs?import-${Date.now()}`);
+    const fresh = await import(`../../../lib/exec.ts?import-${Date.now()}`);
     assert.deepEqual(opened, [], 'opened at import');
     const res = await fresh.runShell('echo ran', { timeoutMs: 60_000 });
     assert.equal(res.containment, 'job', res.output);

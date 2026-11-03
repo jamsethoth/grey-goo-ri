@@ -18,7 +18,7 @@ const schemas = () => ({
 });
 
 async function check(config, files = schemas(), templates) {
-  const validate = await import('../../lib/validate.mjs');
+  const validate = await import('../../lib/validate/index.ts');
   return validate.validate(config, {
     harnesses: { fake: {} },
     readSchema: (name) => {
@@ -138,6 +138,18 @@ test('access: read-only on the Procedure caps the Agent', async () => {
   assert.deepEqual(errors, []);
   assert.equal(flows.default.ticket.vertices.reviewer.agent.access, 'workspace-write');
   assert.equal(flows.default.ticket.vertices.reviewer.access, 'read-only');
+});
+
+test("a Vertex's own access outside the Permission Intents is an error at the Vertex", async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.green.access = 'read-write';
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [
+    {
+      at: `${V}.green.access`,
+      message: 'access "read-write" is not a Permission Intent: read-only or workspace-write',
+    },
+  ]);
 });
 
 test('a Claim token named failed or harness-timeout is an error', async () => {
@@ -897,7 +909,7 @@ test('schemas that differ only in the order of required or enum are one type', a
 });
 
 test('a configuration that is not an object is one error, not a throw', async () => {
-  const validate = await import('../../lib/validate.mjs');
+  const validate = await import('../../lib/validate/index.ts');
   assert.deepEqual(validate.validate(null, { harnesses: {}, readSchema: () => ({}) }), {
     flows: {},
     errors: [{ at: '(root)', message: 'the configuration must be an object' }],
@@ -2113,7 +2125,7 @@ test("an input may read a repeat Check's Findings Hash", async () => {
 
 // The request's key tables a Layer's author reads list exactly the keys the validator accepts (#229).
 test("the request's Flow table lists exactly the keys of a Flow, its ticket, Vertices, routes and inputs", async () => {
-  const validate = await import('../../lib/validate.mjs');
+  const validate = await import('../../lib/validate/index.ts');
   assert.deepEqual(
     requestTables.keyTable('Flow object'),
     requestTables.sortedKeys({
@@ -2127,7 +2139,7 @@ test("the request's Flow table lists exactly the keys of a Flow, its ticket, Ver
 });
 
 test("the request's Procedure table lists exactly the keys of a Procedure and a Claim token", async () => {
-  const validate = await import('../../lib/validate.mjs');
+  const validate = await import('../../lib/validate/index.ts');
   assert.deepEqual(
     requestTables.keyTable('Procedure object'),
     requestTables.sortedKeys({
@@ -2138,6 +2150,6 @@ test("the request's Procedure table lists exactly the keys of a Procedure and a 
 });
 
 test("the request's Agent table lists exactly the keys an Agent accepts", async () => {
-  const validate = await import('../../lib/validate.mjs');
+  const validate = await import('../../lib/validate/index.ts');
   assert.deepEqual(requestTables.firstColumn('| Field | Meaning |'), [...validate.AGENT_KEYS].sort());
 });

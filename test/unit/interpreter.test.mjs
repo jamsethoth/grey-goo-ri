@@ -571,6 +571,20 @@ test('H7: the Flow\'s route for an Outcome beats the Vertex\'s "*"', async (t) =
   assert.equal((await interpreter.runExecution(g.options)).outcome, 'needs-replan');
 });
 
+test("H7: the Vertex's route for an Outcome beats the Flow's route for it", async (t) => {
+  const responses = structuredClone(golden.firstVisitResponses);
+  responses['green/1/green/1'] = {
+    files: {},
+    response: { ...golden.greenResponse, claim: 'misscoped', diagnosis: 'Two tickets.' },
+  };
+  const g = await golden.setup(t, { responses });
+  golden.configure(g, (c) => {
+    c.flows.golden.ticket.vertices.green.route.misscoped = { end: 'needs-human' };
+  });
+  assert.equal((await interpreter.runExecution(g.options)).outcome, 'needs-human');
+  assert.equal((await loadTicket(g)).terminalReason.outcome, 'misscoped');
+});
+
 test('no "*" catches an unroutable Outcome', async (t) => {
   const g = await golden.setup(t);
   golden.configure(g, (c) => {

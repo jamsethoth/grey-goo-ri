@@ -1,12 +1,12 @@
-// lib/git.mjs without git, for tests whose subject is not git behaviour: commits, trees, refs, each worktree's index and the
+// lib/git.ts without git, for tests whose subject is not git behaviour: commits, trees, refs, each worktree's index and the
 // origin live in memory, while a worktree's files stay on disk, where the fake harness and a test runner read and write
-// them. test/contract/git/ runs lib/git.mjs's cases against this and the real module, so a verb that drifts fails there.
-// Owned beside lib/git.mjs: a verb added there is added here.
+// them. test/contract/git/ runs lib/git.ts's cases against this and the real module, so a verb that drifts fails there.
+// Owned beside lib/git.ts: a verb added there is added here.
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
-import * as gitModule from '../../lib/git.mjs';
+import * as gitModule from '../../lib/git.ts';
 import * as paths from '../../lib/paths.ts';
 
 const sha1 = (data) => createHash('sha1').update(data).digest('hex');
@@ -55,7 +55,7 @@ const globRe = (glob, flags = '') =>
     flags,
   );
 
-// `within` as lib/git.mjs reads it: { paths, globs, exclude }, where a path matches itself and what is under it, folding
+// `within` as lib/git.ts reads it: { paths, globs, exclude }, where a path matches itself and what is under it, folding
 // case on Windows, and with only exclusions everything else matches; or the pathspecs a reset intent saved before #144.
 function withinMatcher(within) {
   if (!within) return () => true;

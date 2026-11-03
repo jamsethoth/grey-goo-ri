@@ -1,4 +1,4 @@
-// Golden-trace fixture: a temp bare origin and clone with a ticket worktree, a fake gh at lib/github.mjs's seam,
+// Golden-trace fixture: a temp bare origin and clone with a ticket worktree, a fake gh at lib/github.ts's seam,
 // a fake test runner, the fake harness, and every harness, test, git and gh call tagged with the activity it observed.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -8,8 +8,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.mjs';
-import * as gitModule from '../../lib/git.mjs';
-import * as github from '../../lib/github.mjs';
+import * as exec from '../../lib/exec.ts';
+import * as gitModule from '../../lib/git.ts';
+import * as github from '../../lib/github.ts';
 import * as shipped from '../../lib/harnesses/shipped.mjs';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
@@ -17,7 +18,7 @@ import * as sqlite from '../../lib/sqlite.ts';
 import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as labelModule from '../../lib/labels.ts';
-import * as validate from '../../lib/validate.mjs';
+import * as validate from '../../lib/validate/index.ts';
 import { fakeHarness } from './fake-harness.mjs';
 import * as fakeIntegrityModule from './fake-integrity.mjs';
 import * as fakeGitModule from './fake-git.mjs';
@@ -352,7 +353,7 @@ export function ghError(args, { status, headers = {}, body, stderr }) {
   const message = body?.message ?? STATUS_TEXT[status];
   const err = stderr ?? `gh: ${message} (HTTP ${status})`;
   const stdout = args.includes('--include') && status ? included(status, headers, body ?? { message }) : '';
-  return Object.assign(new Error(`${err}\ngh ${args.join(' ')}`), { code: 1, stdout, stderr: err });
+  return new exec.CommandError(`${err}\ngh ${args.join(' ')}`, { code: 1, stdout, stderr: err });
 }
 
 // A stand-in for the gh executable: records every argv and answers with canned JSON. `fail(f)` queues a failure: the

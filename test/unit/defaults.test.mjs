@@ -79,7 +79,7 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
 });
 
 test("defaults/gg.json declares the shipped Procedures in the validator's shape", async () => {
-  const { validate } = await import('../../lib/validate.mjs');
+  const { validate } = await import('../../lib/validate/index.ts');
   const c = config.loadDefaults();
   c.agents.implementer.harness = 'fake';
   c.agents.reviewer.harness = 'fake';

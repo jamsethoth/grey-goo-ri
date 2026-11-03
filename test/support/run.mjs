@@ -8,13 +8,13 @@ import { fileURLToPath } from 'node:url';
 import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.mjs';
 import * as events from '../../lib/events.ts';
-import * as gitModule from '../../lib/git.mjs';
-import * as github from '../../lib/github.mjs';
+import * as gitModule from '../../lib/git.ts';
+import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
-import * as validate from '../../lib/validate.mjs';
+import * as validate from '../../lib/validate/index.ts';
 import * as golden from './golden.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 
@@ -48,7 +48,7 @@ export function testConfig(root, { harness = 'fake', fullFlow = false } = {}) {
   return c;
 }
 
-// A temp origin and clone, a fake gh at lib/github.mjs's seam answering one standalone Ticket, and the
+// A temp origin and clone, a fake gh at lib/github.ts's seam answering one standalone Ticket, and the
 // fake harness. `failEdit` makes every label edit fail as gh does; `issue` overrides fields of the issue view, and `issues`
 // those of one issue number.
 // git is the fake unless `git` or `integrity` is 'real'.

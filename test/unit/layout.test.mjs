@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 // shortcut: a text check misses a bare `sh(` or an unlisted spawning helper; a runtime guard if the fast stage slows (docs/testing.md, "Considered and deferred").
 const MEDIUM = [
   [/['"](?:node:)?child_process['"]/, 'imports node:child_process'],
-  [/['"](?:\.\.\/)+lib\/(?:exec|git)\.mjs['"]/, 'imports lib/exec.mjs or lib/git.mjs'],
+  [/['"](?:\.\.\/)+lib\/(?:exec|git)\.ts['"]/, 'imports lib/exec.ts or lib/git.ts'],
   [/\b(?:git|integrity):\s*['"]real['"]/, 'asks for real git'],
   [/\bset(?:Timeout|Interval)\s*\(|['"]node:timers/, 'uses a timer'],
   [/\b(?:golden|run|support)\.sh\(|\b(?:holdLock|conflict|seedRepos)\(/, 'calls a support helper that spawns'],
@@ -22,7 +22,7 @@ const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true 
 
 const marked = [
   ["import { spawn } from 'node:child_process';", 'imports node:child_process'],
-  ["import * as git from '../../lib/git.mjs';", 'imports lib/exec.mjs or lib/git.mjs'],
+  ["import * as git from '../../lib/git.ts';", 'imports lib/exec.ts or lib/git.ts'],
   ["await golden.setup(t, { git: 'real' })", 'asks for real git'],
   ["fixture(t, { integrity: 'real' })", 'asks for real git'],
   ['await new Promise((r) => setTimeout(r, 5))', 'uses a timer'],
@@ -80,7 +80,7 @@ test('every module under lib imports', async () => {
 
 test('every file under lib is scanned', () => {
   const libFiles = repoFiles('lib/');
-  for (const path of ['lib/validate.mjs', 'lib/refs.ts', 'lib/harnesses/shipped.mjs']) {
+  for (const path of ['lib/validate/index.ts', 'lib/refs.ts', 'lib/harnesses/shipped.mjs']) {
     assert.ok(modules.includes(path), `${path} is scanned`);
   }
   // Templates and the job-object script are not modules: they import nothing and run no git.
@@ -94,7 +94,7 @@ test('every file under lib has a row in AGENTS.md', async () => {
   const sampleRows = ['lib/a.mjs', 'lib/templates/'];
   assert.deepEqual(unlistedFiles(['lib/a.mjs', 'lib/templates/t.md', 'lib/b.mjs'], sampleRows), ['lib/b.mjs']);
   const rows = layoutRows(await readFile(`${root}AGENTS.md`, 'utf8'));
-  assert.ok(rows.includes('lib/validate.mjs') && rows.includes('bin/gg.mjs'), 'the layout table is read');
+  assert.ok(rows.includes('lib/validate/') && rows.includes('bin/gg.mjs'), 'the layout table is read');
   assert.deepEqual(unlistedFiles(repoFiles('lib/'), rows), [], 'add a row to the AGENTS.md layout table');
   assert.deepEqual(
     rows.filter((path) => !existsSync(root + path)),
@@ -108,7 +108,7 @@ const NAMED_LIB_IMPORT = /^import\s+(?!\*\s*as\s)[^;]*?\sfrom\s+['"](?:\.\.\/)+l
 
 test('tests import lib modules as namespaces', () => {
   assert.equal(NAMED_LIB_IMPORT.test("import { pathKey } from '../../lib/paths.ts';"), true);
-  assert.equal(NAMED_LIB_IMPORT.test("import {\n  a,\n  b,\n} from '../../../lib/git.mjs';"), true);
+  assert.equal(NAMED_LIB_IMPORT.test("import {\n  a,\n  b,\n} from '../../../lib/git.ts';"), true);
   assert.equal(NAMED_LIB_IMPORT.test("import * as paths from '../../lib/paths.ts';"), false);
   assert.equal(NAMED_LIB_IMPORT.test('  "import { add } from \'../lib/add.mjs\';\\n",'), false);
   assert.equal(NAMED_LIB_IMPORT.test("import { join } from 'node:path';\nimport * as x from '../lib/x.mjs';"), false);
@@ -120,19 +120,19 @@ test('tests import lib modules as namespaces', () => {
   );
 });
 
-// lib/git.mjs is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
-test('no module outside lib/git.mjs passes git a command line', async () => {
-  const git = await import(pathToFileURL(`${root}lib/git.mjs`));
+// lib/git.ts is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
+test('no module outside lib/git.ts passes git a command line', async () => {
+  const git = await import(pathToFileURL(`${root}lib/git.ts`));
   assert.equal(git.runGit, undefined, 'runGit is not exported');
   const raw = [
     [/\brunGit\b/, 'runGit'],
     [/\b(?:run|spawn|spawnSync|execFile|execFileSync)\(\s*['"`]git['"`]/, 'a spawned git'],
     [/\^\{|\.\.\.HEAD|refs\/heads\/|['"`]HEAD['"`]/, 'git ref syntax'],
     [/['"`]:\([a-z,]+\)/, 'a git pathspec'],
-    // bin/gg.mjs passes lib/git.mjs in; a module that imported it could fall back to it instead of the git it was given.
-    [/from ['"`]\.\/git\.mjs['"`]/, 'an import of lib/git.mjs'],
+    // bin/gg.mjs passes lib/git.ts in; a module that imported it could fall back to it instead of the git it was given.
+    [/from ['"`]\.\/git\.ts['"`]/, 'an import of lib/git.ts'],
   ];
-  for (const path of [...modules.filter((m) => m !== 'lib/git.mjs'), 'bin/gg.mjs', 'scripts/run-suite.mjs']) {
+  for (const path of [...modules.filter((m) => m !== 'lib/git.ts'), 'bin/gg.mjs', 'scripts/run-suite.mjs']) {
     const text = await readFile(root + path, 'utf8');
     for (const [re, what] of raw) assert.doesNotMatch(text, re, `${path} builds ${what}`);
   }
@@ -145,6 +145,10 @@ const CONVERTED = [
   'lib/checks.ts',
   'lib/effect-evidence.ts',
   'lib/events.ts',
+  'lib/exec.ts',
+  'lib/flow.ts',
+  'lib/git.ts',
+  'lib/github.ts',
   'lib/integrity.ts',
   'lib/labels.ts',
   'lib/locks.ts',
@@ -152,10 +156,21 @@ const CONVERTED = [
   'lib/outcome.ts',
   'lib/paths.ts',
   'lib/procedures.ts',
+  'lib/process-tree.ts',
   'lib/reconcile.ts',
   'lib/record.ts',
   'lib/refs.ts',
   'lib/rules.ts',
+  'lib/validate/actions.ts',
+  'lib/validate/conditions.ts',
+  'lib/validate/flows.ts',
+  'lib/validate/graph.ts',
+  'lib/validate/index.ts',
+  'lib/validate/inputs.ts',
+  'lib/validate/procedures.ts',
+  'lib/validate/references.ts',
+  'lib/validate/report.ts',
+  'lib/validate/templates.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
 const LEGACY_MJS = [
@@ -164,10 +179,6 @@ const LEGACY_MJS = [
   'lib/config.mjs',
   'lib/doctor.mjs',
   'lib/effects.mjs',
-  'lib/exec.mjs',
-  'lib/flow.mjs',
-  'lib/git.mjs',
-  'lib/github.mjs',
   'lib/harnesses/claude.mjs',
   'lib/harnesses/codex.mjs',
   'lib/harnesses/contract.mjs',
@@ -181,7 +192,6 @@ const LEGACY_MJS = [
   'lib/stats.mjs',
   'lib/terminal.mjs',
   'lib/trace.mjs',
-  'lib/validate.mjs',
   'lib/work.mjs',
   'scripts/run-suite.mjs',
   'test/contract/exec/exec.test.mjs',

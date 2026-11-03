@@ -81,7 +81,7 @@ gg's doubles:
 | the `runShell` in `golden.setup` (`test/support/golden.mjs`), returning red or green output | running the suite | none: `test/contract/exec/` covers the real `runShell` |
 | the injected clock and `crashAt` points | time and crashes | not needed: no external system |
 | fake integrity (#140), `test/support/fake-integrity.mjs` | integrity snapshots; its untracked files and Test Immutability are lib's own over the fake git | `test/contract/integrity/` (#218) |
-| fake git (#144), `test/support/fake-git.mjs` | `lib/git.mjs` | `test/contract/git/` (#144) |
+| fake git (#144), `test/support/fake-git.mjs` | `lib/git.ts` | `test/contract/git/` (#144) |
 
 #144 kept both integrities: the fake one for tests whose subject is not git behaviour, because it is faster, and
 the real one over real git for tests whose subject is git behaviour, because it is what they check. The third option,
@@ -138,8 +138,8 @@ that leaves the machine. Aim for most tests small; a medium test exists to show 
 A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`
 as before. A module whose cases have different sizes has a file in each directory under the same name: the small cases
 of `run.branches` are in `test/unit/run.branches.test.mjs` and its real-git cases in `test/e2e/run.branches.test.mjs`.
-`test/unit/layout.test.mjs` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.mjs` or
-`lib/git.mjs`, asks for real git, uses a timer, or calls a support helper that spawns.
+`test/unit/layout.test.mjs` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.ts` or
+`lib/git.ts`, asks for real git, uses a timer, or calls a support helper that spawns.
 
 That check reads source text, so it misses a spawn it has no pattern for: a support helper imported and called bare
 (`sh(...)` rather than `golden.sh(...)`), a new support helper that spawns, or a lib function reached without its fake.

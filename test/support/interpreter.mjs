@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as github from '../../lib/github.mjs';
+import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';

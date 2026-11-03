@@ -50,7 +50,7 @@ export type IntegrityViolation =
   | { worktree: string; surface: Surface; before: string; after: string }
   | { worktree: string; surface: 'protected'; before: null; after: string[] };
 
-// The git verbs the Integrity Assertions call: lib/git.mjs's, or the fake git's in the unit tier.
+// The git verbs the Integrity Assertions call: lib/git.ts's, or the fake git's in the unit tier.
 export interface IntegrityGit {
   commonDir(worktree: string): Promise<string>;
   fingerprint(worktree: string): Promise<WorktreeSnapshot>;
@@ -135,7 +135,7 @@ async function idleSnapshot(
     : null;
 }
 
-// A rollback set's paths: `within`, or the git pathspecs a reset intent saved before #144, which git.mjs still takes.
+// A rollback set's paths: `within`, or the git pathspecs a reset intent saved before #144, which git.ts still takes.
 export const withinOf = (set: RollbackSet): Within | undefined => set.within ?? set.pathspecs;
 
 // No paths named: an empty { paths, globs, exclude } or an empty saved pathspec array.
