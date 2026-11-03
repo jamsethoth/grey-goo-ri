@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as golden from '../support/golden.mjs';
-import { loadTicket, contendRepoLock, lockedSetup } from '../support/interpreter.mjs';
+import { loadTicket, contendRepoLock, lockedSetup, originSha, headSha, subjects } from '../support/interpreter.mjs';
 
 test('a git write queued behind another holder of the repo lock checks the human override first', async (t) => {
   await t.test('a queued push', async (t) => {
-    const g = await golden.setup(t, { integrity: 'real' });
+    const g = await golden.setup(t, { integrity: 'real', git: 'fake' });
     const lock = contendRepoLock(g, () => {
       g.gh.labels.add('gg:state:needs-human');
     });
@@ -19,14 +19,14 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal(lock.state(), 'released', 'the push waited for the lock');
     assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
     assert.equal(counts.push ?? 0, 0, 'nothing was pushed');
-    assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
+    assert.equal(await originSha(g), null);
     assert.equal((await loadTicket(g)).state, 'abandoned');
   });
   await t.test('a queued push whose commit origin already has', async (t) => {
-    const g = await golden.setup(t, { integrity: 'real' });
-    const lock = contendRepoLock(g, () =>
-      golden.sh(g.worktree, 'push', '-q', 'origin', `HEAD:refs/heads/${golden.BRANCH}`),
-    );
+    const g = await golden.setup(t, { integrity: 'real', git: 'fake' });
+    // Unlocked: the push runs while the contender holds the repo lock.
+    const { git } = g.options;
+    const lock = contendRepoLock(g, async () => git.push(g.worktree, golden.BRANCH, await git.headSha(g.worktree)));
     const counts = lockedSetup(g, (verb, n) => {
       if (verb === 'commitStaged' && n === 2) lock.arm();
     });
@@ -35,13 +35,10 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal(lock.state(), 'released', 'the push waited for the lock');
     assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
     assert.equal(counts.push ?? 0, 0, 'the commit is on origin, so it is not pushed again');
-    assert.equal(
-      golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0],
-      golden.sh(g.worktree, 'rev-parse', 'HEAD'),
-    );
+    assert.equal(await originSha(g), await headSha(g));
   });
   await t.test('a queued commit', async (t) => {
-    const g = await golden.setup(t, { integrity: 'real' });
+    const g = await golden.setup(t, { integrity: 'real', git: 'fake' });
     const lock = contendRepoLock(g, () => {
       g.gh.labels.add('gg:state:needs-human');
     });
@@ -54,10 +51,7 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal(lock.state(), 'released', 'the commit waited for the lock');
     assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
     assert.equal(counts.commitStaged, 1, 'only the red commit was made');
-    assert.deepEqual(
-      golden.sh(g.worktree, 'log', '--format=%s', `${g.base}..HEAD`).split('\n').filter(Boolean).length,
-      1,
-    );
+    assert.deepEqual((await subjects(g)).length, 1);
     assert.equal((await loadTicket(g)).state, 'abandoned');
   });
 });

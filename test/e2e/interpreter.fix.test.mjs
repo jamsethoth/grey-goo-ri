@@ -60,7 +60,7 @@ test('a fix that changes a named test moves the immutability baseline', async (t
       'implementer-fix/2/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
       'reviewer/3/review/1': reviewed(review('ok')),
     },
-    { integrity: 'real' },
+    { integrity: 'real', git: 'fake' },
   );
 
   assert.equal(g.result.outcome, 'ready-for-qa');
@@ -106,7 +106,7 @@ test('a fix with no edits keeps the moved immutability baseline', async (t) => {
       'implementer-fix/3/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
       'reviewer/4/review/1': reviewed(review('ok')),
     },
-    { integrity: 'real' },
+    { integrity: 'real', git: 'fake' },
   );
   golden.configure(g, (c) => {
     c.flows.golden.ticket.vertices.reviewer.route.changes.max = 3;
