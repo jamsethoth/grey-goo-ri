@@ -17,7 +17,7 @@ entry point since #199 (ADR 0019).
    the test or the environment, diagnosed and fixed at its root, never re-run past. A test waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Six cases measure real time, recorded as exceptions because their subject is real time across
+   wall clock. Five cases measure real time, recorded as exceptions because their subject is real time across
    processes, which no injected clock reaches:
    - `test/contract/sqlite/record.test.mjs`, `a save waits out another process that holds the write lock for longer
      than 5 s`: a save waiting past the 5 s busy timeout ADR 0015 replaced is the behaviour.
@@ -27,9 +27,6 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/exec.test.mjs`, `runShell timeout kills an orphan its watcher listed, however slowly ps
      answers`: its `ps` answers after 2 s and then 5 s, past the 1.5 s listing budget and the 2 s start-time
      tolerance `runShell` once had (POSIX only).
-   - `test/contract/exec/exec.test.mjs`, `runShell: a finished command whose notes arrive after the helper has exited
-     runs once`: the job helper's notes arrive 400 ms after it exits, past the 300 ms `runShell` once waited for them
-     (Windows only).
    - `test/e2e/run.concurrency.test.mjs`, `two processes serialise orchestrator git writes on the repo lock`: the
      wall clock is the only clock two processes share, so it orders one's release before the other's commit.
    - `test/contract/sqlite/record.test.mjs`, `openers of a new database queue while the open lock is held and all
@@ -89,7 +86,11 @@ gg's doubles:
 #144 kept both integrities: the fake one for tests whose subject is not git behaviour, because it is faster, and
 the real one over real git for tests whose subject is git behaviour, because it is what they check. The third option,
 the real integrity over the fake git, was measured slower (221 s against 181 s) and failed three cases on ignored
-Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152).
+Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152). It still serves a case that
+needs the real integrity (its busy flags, generations, repo lock waits or Test Immutability) but not git, with no
+ignored Protected File: the concurrent Runs of `test/e2e/run.concurrency.test.mjs`, the queued writes of
+`test/e2e/interpreter.retry.test.mjs` and the moved immutability baselines of `test/e2e/interpreter.fix.test.mjs` use
+it, since over real git their snapshots' git processes took them up to 444 s under a full suite run (#187).
 
 The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers. Each is a
 dependency `bin/gg.mjs` builds once and passes down as a named option of `run.runTarget` and
@@ -105,7 +106,8 @@ in the options it builds, so none outlives the case:
 | the `database` option, `record.stateDatabase({ beforeSave, beforeAppend })` (`golden.caseDatabase(t)`, with `golden.onSave`, `golden.failSaves` and `golden.failAppends`) | sees or fails a chosen save or Event insert |
 | the `integrity` option; `integrity.withGit(git, fs, locks)` (`golden.crashFs`) | runs the fake integrity; crashes a restore's write |
 | the `exec` option | answers the suite's command with red or green output |
-| `exec.runShell`'s `testHooks` option: `timers`, `onHelper`, `onWatch`, `signal` and the rest | moves the timeout clock; listens to the job helper first; sees which descendants the POSIX watcher has listed |
+| `exec.runShell`'s `testHooks` option: `timers`, `onWatch`, `signal` and the rest | moves the timeout clock; sees which descendants the POSIX watcher has listed |
+| `exec.createExec({ kernel32 })` | runs Windows commands with no `node:ffi` (`null`) or with kernel32 calls that fail |
 
 ## Test sizes
 
@@ -130,7 +132,7 @@ that leaves the machine. Aim for most tests small; a medium test exists to show 
 | --- | --- | --- |
 | `test/unit/` | logic over fakes | small |
 | `test/contract/<boundary>/` | one narrow suite per external boundary (`git`, `harness`, `integrity`, `sqlite`, `exec`), run against the real module and its fake, or against the real system where there is no fake | medium |
-| `test/e2e/` | the full runs and the git-behaviour wiring: the golden traces that run on real git (those over the fakes are in `test/unit/`), and the interpreter, Run and Reconciliation cases whose subject is real git (integrity rollback, admission's dirty, conflict and branch checks, crash and resume, the repo lock), and the `gg` CLI | medium or large |
+| `test/e2e/` | the full runs and the git-behaviour wiring: the golden traces that run on real git (those over the fakes are in `test/unit/`), and the interpreter, Run and Reconciliation cases whose subject is real git (integrity rollback, admission's dirty, conflict and branch checks, crash and resume, the repo lock), the Runs over the fake git that the real integrity or a lock-holding process makes medium (`run.concurrency`'s attribution and repo-lock Runs, `interpreter.retry`'s queued writes, `interpreter.fix`'s moved baselines), and the `gg` CLI | medium or large |
 | `test/support/`, `test/fixtures/` | helpers, fakes and data | |
 
 A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`

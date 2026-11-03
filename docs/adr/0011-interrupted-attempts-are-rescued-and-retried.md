@@ -25,6 +25,12 @@ Ctrl+C, a closed console, a tree kill or power loss no process survives to recor
 the agent's process group does not die with gg. The rule mostly held ordinary crashes, so it was dropped.
 Merge conflicts, a moved branch and an exhausted budget hold as before.
 
+Amended 2026-11-02 (grey-goo-ri issue #245): gg creates the Windows job object itself through `node:ffi` instead of
+through the PowerShell job helper, and holds the job's only handle. No helper process is left to identify, so the call
+intent records only the containment kind, `job` or `none`, and the helper's process identity this ADR recorded
+(decision N1) is dropped. Kill-on-close is the confirmation: the handle closes when the gg process that ran the call
+ends, which ends every process still in the job.
+
 ## Considered options
 
 - Keep holding every Interrupted Attempt that left changes. Rejected: a crash costs a human round trip even when the
@@ -46,11 +52,12 @@ Merge conflicts, a moved branch and an exhausted budget hold as before.
 - Ignored files outside the Protected Files and test paths are still neither rescued nor restored, as before.
 - A retried agent call is not a replay: it may produce a different result, and every Check after it runs again.
 - Tools the agent ran that changed anything outside the worktree are not undone.
-- The worktree is reset only after the interrupted Attempt's writers are confirmed gone (decision N1, 2026-10-23): the
-  call intent records the containment (a Windows job object with kill-on-close, or none) and the job helper's process
-  identity; at resume a helper still running is killed and confirmed gone first. An uncontained Attempt (POSIX, or a
-  helper that failed to start) is rescued and held, never reset, since a surviving writer could write after the
-  rescue's verification. A tool that explicitly breaks away from the job is an accepted residual risk. Linux cgroup
+- The worktree is reset only after the interrupted Attempt's writers are confirmed gone (decision N1, 2026-10-23,
+  amended 2026-11-02): the call intent records the containment, `job` (a Windows job object with kill-on-close) or
+  `none`. gg holds the job's only handle, so the handle closed when the gg process that ran the call ended, and
+  kill-on-close ended every process still in the job. An uncontained Attempt (POSIX, or a job that could not be
+  created or assigned) is rescued and held, never reset, since a surviving writer could write after the rescue's
+  verification. A tool that explicitly breaks away from the job is an accepted residual risk. Linux cgroup
   containment is backlogged (grey-goo-ri issue #128). A call that returns normally kills its leftover processes too
   (decision L6), so routed rescues and resets meet the same rule.
 - A human edit made between the crash and the resume leaves the worktree; the History and any hold comment name the

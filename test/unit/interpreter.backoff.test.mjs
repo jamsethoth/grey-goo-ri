@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as github from '../../lib/github.mjs';
+import * as integrity from '../../lib/integrity.mjs';
 import * as run from '../../lib/run.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.ts';
@@ -562,4 +565,146 @@ test('a failed busy save after a backoff allows no later save or effect', async 
   assert.equal(commentPosts(g).length, 1);
   assert.equal(ticketComments(g).length, 0, 'no fault report');
   assert.ok(!g.readEvents().some((e) => e.type === 'ticket_end'));
+});
+
+test("a worktree backing off is idle to other Tickets' integrity checks", async (t) => {
+  const g = await reviewFlow(t, okReview);
+  g.gh.fail(onPr({ status: 502 }));
+  // Another Ticket's Action, in the main checkout, writes into this worktree while it backs off.
+  const other = { worktree: g.mainRoot, commonDir: g.commonDir };
+  const check = { others: [g.worktree], protectedPaths: g.options.protectedPaths, git: g.options.git };
+  const stray = join(g.worktree, 'stray.txt');
+  let violations;
+  g.clock.onSleep = async () => {
+    const baseline = await integrity.begin({ record: other, ...check });
+    writeFileSync(stray, 'stray\n');
+    ({ violations } = await integrity.end({ baseline, record: other, access: 'workspace-write', ...check }));
+    rmSync(stray);
+  };
+  const result = await interpreter.runExecution(g.options);
+
+  assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
+  assert.ok(
+    violations?.some((v) => v.worktree === g.worktree && v.surface === 'tree'),
+    JSON.stringify(violations),
+  );
+});
+
+// A push git refused: a credential failure carries no status, a permission refusal its 403.
+const refusedPush = (stderr) => Object.assign(new Error('git push exited 128'), { code: 128, stdout: '', stderr });
+
+test('a remote auth failure stops the run and the next Execution stops before its first Action', async (t) => {
+  const g = await golden.setup(t);
+  pushThrough(g, () => Promise.reject(refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")));
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  assert.equal(result.fault, undefined, 'a run stop, not a fault');
+  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.deepEqual(g.sleeps, [], 'never retried');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'needs-human');
+  assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stop' });
+  assert.equal(final.terminalReason.text, 'The push at push failed with class auth, which stops the whole run.');
+  assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
+
+  const next = await golden.setup(t);
+  const stopped = await interpreter.runExecution({ ...next.options, runState });
+
+  assert.equal(stopped.outcome, 'needs-human', JSON.stringify(stopped));
+  assert.equal(next.harness.calls.length, 0, 'no Action ran');
+  const reason = (await loadTicket(next)).terminalReason;
+  assert.deepEqual(reason.rule, { table: 'fixed', row: 'run-stopped' });
+  assert.equal(
+    reason.text,
+    `The push of Ticket #${golden.TICKET} failed with class auth, which stops the whole run, so this Execution stopped before red.`,
+  );
+});
+
+test('a remote permission failure faults only its Ticket', async (t) => {
+  const g = await golden.setup(t);
+  pushThrough(g, () =>
+    Promise.reject(
+      refusedPush("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\n"),
+    ),
+  );
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.equal(result.runStop, undefined, 'the run goes on');
+  assert.equal(runState.stop, null);
+  assert.deepEqual(g.sleeps, [], 'never retried');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'fault');
+  assert.equal(
+    final.terminalReason.text,
+    'The push at push failed with class permission (HTTP 403), which faults only this Ticket; the error is in this comment and on ticket_end.',
+  );
+});
+
+test("a remote auth failure in a Terminal's report latches the run stop and faults its Ticket", async (t) => {
+  const g = await golden.setup(t, {
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
+  });
+  g.gh.fail({
+    matches: (args) => golden.isCommentPost(args, golden.TICKET),
+    status: 401,
+    body: { message: 'Bad credentials' },
+  });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.equal(result.runStop?.failureClass, 'auth');
+  assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
+  assert.equal(
+    (await loadTicket(g)).terminalReason.text,
+    'The comment at end-comment failed with class auth (HTTP 401), which stops the whole run; the error is in this ' +
+      'comment and on ticket_end.',
+  );
+});
+
+test('a remote run stop whose own report fails becomes a fault that keeps the run stop', async (t) => {
+  const g = await golden.setup(t);
+  pushThrough(g, () => Promise.reject(refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")));
+  g.gh.fail({
+    matches: (args) => golden.isCommentPost(args, golden.TICKET),
+    status: 401,
+    body: { message: 'Bad credentials' },
+  });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.equal(result.runStop?.failureClass, 'auth');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'fault');
+  assert.ok(
+    g.readEvents().some((e) => e.type === 'ticket_end'),
+    'the Execution landed',
+  );
+  assert.match(
+    ticketComments(g).at(-1).body,
+    /\*\*Interrupted:\*\* the needs-human Terminal, whose Terminal Reason was: The push at push failed with class auth/,
+  );
+});
+
+test("a remote auth failure first met in a fault's report keeps the run stop on the fault", async (t) => {
+  const g = await golden.setup(t, {
+    responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
+  });
+  const onTicket = (args) => golden.isCommentPost(args, golden.TICKET);
+  g.gh.fail({ matches: onTicket, status: 422, body: { message: 'Validation Failed' } });
+  g.gh.fail({ matches: onTicket, status: 401, body: { message: 'Bad credentials' } });
+  const runState = { stop: null, remoteNotBefore: 0 };
+  const result = await interpreter.runExecution({ ...g.options, runState });
+
+  assert.equal(result.fault, true, JSON.stringify(result));
+  assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
+  assert.equal(result.runStop?.failureClass, 'auth');
+  const final = await loadTicket(g);
+  assert.equal(final.state, 'fault');
+  assert.equal(final.terminalStop.runStopFailureClass, 'auth');
 });

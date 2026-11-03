@@ -76,8 +76,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/harnesses/shipped.mjs` | the shipped Harnesses by name; the only module outside a Harness that names one |
 | `lib/harnesses/claude.mjs` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/harnesses/codex.mjs` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
-| `lib/exec.mjs` | process spawn and job-object runner (ported) |
-| `lib/winjob.ps1` | the Windows job-object helper `lib/exec.mjs` runs, which caches its compiled assembly beside itself (ADR 0017) |
+| `lib/exec.mjs` | process spawn and the shell runner, with its timeout and tree kill (ported) |
+| `lib/containment.ts` | the Windows job object a shell command runs in, through `node:ffi`: start, list, terminate, confirm empty (ADR 0021) |
 | `lib/git.mjs` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.mjs` | gh verbs and label writes that never throw (ported) |
