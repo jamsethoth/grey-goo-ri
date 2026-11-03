@@ -50,6 +50,8 @@ interface ActionFields {
   check: string;
   integrityViolations: unknown[];
   retryAfterMs: number;
+  // Null unless the Action failed: a Harness's class, or a remote Action's that failed for good (#251).
+  failureClass: string;
   error: string;
 }
 const ACTION = {
@@ -74,6 +76,7 @@ const ACTION = {
   check: 'optional',
   integrityViolations: 'optional',
   retryAfterMs: 'optional',
+  failureClass: 'optional',
   error: 'optional',
 } as const satisfies Declaration<ActionFields>;
 
@@ -94,7 +97,6 @@ interface AgentFields {
   finalEventSubtype: string | null;
   permissionDenials: unknown;
   commandsRun: unknown;
-  failureClass: string | null;
 }
 const AGENT = {
   harness: 'required',
@@ -113,7 +115,6 @@ const AGENT = {
   finalEventSubtype: 'required',
   permissionDenials: 'required',
   commandsRun: 'required',
-  failureClass: 'required',
 } as const satisfies Declaration<AgentFields>;
 
 // An agent Action's event adds the agent fields after `agent: true`; a deterministic Action's has none of them.
@@ -227,6 +228,14 @@ export function readEvents(commonDir: string): Event[] {
     .all()
     .map((row) => JSON.parse(row.json as string) as Event);
 }
+
+// One Execution's Events, in the order they were appended.
+export const executionEvents = (commonDir: string, execution: string): Event[] =>
+  sqlite
+    .openDb(commonDir)
+    .prepare('SELECT json FROM events WHERE execution = ? ORDER BY id')
+    .all(execution)
+    .map((row) => JSON.parse(row.json as string) as Event);
 
 // An Execution's Terminal has landed once its ticket_end is in the log.
 export const hasTicketEnd = (commonDir: string, execution: string): boolean =>

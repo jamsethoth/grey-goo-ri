@@ -566,11 +566,13 @@ run or an execution starting or ending (run start and end, ticket start and end)
 execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
 events. Action events, schema 2, appended as rows of the state database carry: flow name, config hash,
 launch profile, ticket, run, vertex, visit, procedure, action, recovery, attempt, duration, outcome, direction, signals
-received and the resolution rule applied. Agent actions add: harness and CLI version, model and effective effort,
-persona hash, resolved tools with hint fields marked, init metadata (plugins, MCP servers), session id and lineage,
-transcript path, usage cumulative and delta, cost delta, peak context, turns, tool calls, compactions, exit code,
-signal, final event subtype, permission denials, commands run (diagnostic), failure class. Deterministic actions record
-events too.
+received, the resolution rule applied, and the failure class and error, null unless the action failed. Agent actions
+add: harness and CLI version, model and effective effort, persona hash, resolved tools with hint fields marked, init
+metadata (plugins, MCP servers), session id and lineage, transcript path, usage cumulative and delta, cost delta, peak
+context, turns, tool calls, compactions, exit code, signal, final event subtype, permission denials, commands run
+(diagnostic). Deterministic actions record events too: a remote action that fails for good records its event where it
+fails, with its failure class, error, and the outcome and rule of what it leads to (a run stop or a fault). An
+execution's run stop is the first of its action events whose failure class stops the run.
 
 Token rules, the same for both harnesses: `inputTokens` is uncached input tokens only; `cacheReadTokens` is cache
 reads; `cacheWriteTokens` is cache creation; `outputTokens` is output tokens from the result; `reasoningTokens` where

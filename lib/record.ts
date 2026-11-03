@@ -55,7 +55,6 @@ export interface TerminalStop {
   detail: string | null;
   error: string | null;
   failureClass: string | null;
-  runStopFailureClass: string | null;
   interrupted: { terminal: string; terminalReason: TerminalReason } | null;
 }
 
