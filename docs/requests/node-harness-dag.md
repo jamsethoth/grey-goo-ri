@@ -667,8 +667,8 @@ Ported as they are:
   changes below.)
 - Preflight resolves tools for every active vertex before any gh call or worktree, all failures in one error; plan
   approval admission check; pool with `maxParallel`; per-epic log and usage file; run start and end events.
-- Process containment: job object via winjob.ps1 for shell runs, timeout kills orphans, fallback chain and survivor
-  reporting; green check timeout 30 minutes.
+- Process containment: job object through `node:ffi` (`lib/containment.ts`) for shell runs, timeout kills orphans,
+  fallback chain and survivor reporting; green check timeout 30 minutes.
 - Planning: interactive launch with session id and stop-hook budget warning, background sessions, plan marker,
   `--finish`, transcript metrics.
 

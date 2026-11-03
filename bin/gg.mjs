@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { loadConfig } from '../lib/config.mjs';
+import * as containment from '../lib/containment.ts';
 import * as doctor from '../lib/doctor.mjs';
 import * as exec from '../lib/exec.mjs';
 import * as git from '../lib/git.mjs';
@@ -40,7 +41,7 @@ const command = process.argv[2];
 const realDeps = () => ({
   gh: github.createGh(),
   git: git.createGit(),
-  exec,
+  exec: exec.createExec({ kernel32: containment.openKernel32() }),
   locks: locks.createLocks(),
   database: record.stateDatabase(),
   clock: interpreter.WALL_CLOCK,
