@@ -1,4 +1,5 @@
 import * as config from './config.mjs';
+import type * as exec from './exec.ts';
 import * as procedures from './procedures.ts';
 import * as refs from './refs.ts';
 
@@ -47,13 +48,8 @@ function testStatuses(output: string) {
   return failed;
 }
 
-// A command's run as exec.runShell reports it, typed as far as a Check reads it.
-// shortcut: exec.mjs is untyped until #202, which owns this shape.
-export interface ShellRun {
-  code: number | null;
-  output: string;
-  timedOut?: boolean;
-}
+// A command's run as exec.runShell reports it, as far as a Check reads it.
+export type ShellRun = Pick<exec.ShellResult, 'code' | 'output' | 'timedOut'>;
 
 // A Red Check's result: on a failure an agent can fix, `failure` says which (T4c, N5).
 export interface RedCheck {
@@ -182,7 +178,7 @@ const DEPENDENCY_DIRS = ['**/node_modules/**', '**/site-packages/**'];
 // The same test paths, for listing the untracked ones a rollback must restore.
 export const testPathSet = (globs: string[]) => ({ globs, exclude: DEPENDENCY_DIRS });
 
-// The git verbs Test Immutability reads (lib/git.mjs).
+// The git verbs Test Immutability reads (lib/git.ts).
 export interface ChangedPaths {
   changedSince(cwd: string, baseline: string): Promise<string[]>;
   untrackedPaths(cwd: string, options?: { include: string; within: { exclude: string[] } }): Promise<string[]>;

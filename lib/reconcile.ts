@@ -14,7 +14,7 @@ export interface ReconcileGit extends integrityModule.IntegrityGit, effectEviden
 }
 
 type Issue = { labels: { name: string }[] };
-// The gh verbs Reconciliation calls, beside the effect finders' (lib/github.mjs).
+// The gh verbs Reconciliation calls, beside the effect finders' (lib/github.ts).
 export interface ReconcileGh extends effectEvidence.EvidenceGh {
   labelNames(issue: Issue): string[];
   viewIssue(ticket: number, cwd?: string): Promise<Issue>;

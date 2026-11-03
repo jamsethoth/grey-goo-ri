@@ -1,4 +1,4 @@
-// lib/git.mjs's contract: every case runs against the real module over temp repositories and against the fake git, so a
+// lib/git.ts's contract: every case runs against the real module over temp repositories and against the fake git, so a
 // verb whose fake drifts from git fails here. Cases the fake cannot model run on real git alone, at the end.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as gitModule from '../../../lib/git.mjs';
+import * as gitModule from '../../../lib/git.ts';
 import * as paths from '../../../lib/paths.ts';
 import * as templateRepos from '../../support/template-repos.mjs';
 

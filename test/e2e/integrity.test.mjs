@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as git from '../../lib/git.mjs';
+import * as git from '../../lib/git.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as record from '../../lib/record.ts';
 import { PROTECTED, sh, twoWorktrees } from '../support/integrity-worktrees.ts';

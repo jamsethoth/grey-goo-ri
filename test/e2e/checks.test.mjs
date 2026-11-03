@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as checks from '../../lib/checks.ts';
-import * as git from '../../lib/git.mjs';
+import * as git from '../../lib/git.ts';
 
 function tempDir(t) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));

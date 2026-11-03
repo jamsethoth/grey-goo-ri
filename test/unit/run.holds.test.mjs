@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as github from '../../lib/github.mjs';
+import * as github from '../../lib/github.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as locks from '../../lib/locks.ts';
