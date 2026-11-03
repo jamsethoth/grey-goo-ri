@@ -1,11 +1,12 @@
 import * as record from './record.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
-import * as finders from './finders.ts';
+import * as effectEvidence from './effect-evidence.ts';
 import * as labels from './labels.ts';
 
-// The git verbs Reconciliation calls, beside those its default Integrity Assertions and the finders take.
-export interface ReconcileGit extends integrityModule.IntegrityGit, finders.FinderGit {
+// The git verbs Reconciliation calls, beside those its default Integrity Assertions and the
+// effect finders take.
+export interface ReconcileGit extends integrityModule.IntegrityGit, effectEvidence.EvidenceGit {
   treeDiff(worktree: string, from: string, to: string): Promise<{ path: string; change: string }[]>;
   resetTo(worktree: string, sha: string): Promise<unknown>;
   conflictedPaths(worktree: string): Promise<string[]>;
@@ -13,8 +14,8 @@ export interface ReconcileGit extends integrityModule.IntegrityGit, finders.Find
 }
 
 type Issue = { labels: { name: string }[] };
-// The gh verbs Reconciliation calls, beside the finders' (lib/github.mjs).
-export interface ReconcileGh extends finders.FinderGh {
+// The gh verbs Reconciliation calls, beside the effect finders' (lib/github.mjs).
+export interface ReconcileGh extends effectEvidence.EvidenceGh {
   labelNames(issue: Issue): string[];
   viewIssue(ticket: number, cwd?: string): Promise<Issue>;
 }
@@ -117,7 +118,7 @@ async function asRecorded(
 ): Promise<boolean> {
   if (effect === 'reset') return (await resetState(worktree, payload as ResetPayload, git, integrity)) !== null;
   if (effect !== 'commit') return false;
-  const { parent, tree } = payload as finders.CommitPayload;
+  const { parent, tree } = payload as effectEvidence.CommitPayload;
   const now = await integrity.snapshot(worktree);
   return now.head === parent && now.index === tree && now.tree === tree;
 }
@@ -196,7 +197,7 @@ export async function humanOverride(
     (entry) =>
       entry.step === 'intent' &&
       entry.effect === 'label' &&
-      labels.has((entry.payload as finders.LabelPayload).add, needsHuman),
+      labels.has((entry.payload as effectEvidence.LabelPayload).add, needsHuman),
   );
   if (own || !labels.has(issueLabels, needsHuman)) return null;
   return {
@@ -212,8 +213,8 @@ export async function humanOverride(
 // findEffect; the interpreter passes one that retries a failed remote lookup on the Action's budget.
 async function findEffects(
   entries: writeAhead.WriteAheadEntry[],
-  context: finders.FinderContext & { database: Database },
-  find: finders.Finder = finders.findEffect,
+  context: effectEvidence.EvidenceContext & { database: Database },
+  find: effectEvidence.FindEffect = effectEvidence.findEffect,
 ): Promise<string | null> {
   for (const entry of entries) {
     if (writeAhead.proof(context.executionRecord, entry.actionMarker)) continue;
@@ -242,7 +243,7 @@ export async function terminalEffects(
     labelPrefix?: string;
     cwd?: string;
     markers: string[];
-    find?: finders.Finder;
+    find?: effectEvidence.FindEffect;
     database?: Database;
   },
 ): Promise<ReconcileDecision> {
@@ -287,7 +288,7 @@ export type ReconcileOptions = ({ record: record.ExecutionRecord } | { corrupt: 
   gh: ReconcileGh;
   labelPrefix?: string;
   cwd?: string;
-  find?: finders.Finder;
+  find?: effectEvidence.FindEffect;
   database?: Database;
 };
 

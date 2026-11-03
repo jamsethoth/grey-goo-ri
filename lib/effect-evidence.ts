@@ -1,5 +1,5 @@
-// The finders: each looks for an open intent's side effect by its Action Marker, in git or on GitHub, so Reconciliation
-// and a remote retry can tell an effect that landed from one to redo (request 3.5).
+// Effect Evidence: an open intent's side effect looked for by its Action Marker, in git or on GitHub, so Reconciliation
+// and a remote retry can tell an effect that landed from one to redo (request 3.5). Each effect kind has its finder.
 import * as config from './config.mjs';
 import * as labels from './labels.ts';
 import * as marker from './marker.ts';
@@ -7,7 +7,7 @@ import type * as record from './record.ts';
 import type * as writeAhead from './write-ahead.ts';
 
 // The git verbs the finders call (lib/git.mjs).
-export interface FinderGit {
+export interface EvidenceGit {
   headSha(worktree: string): Promise<string>;
   branchHead(worktree: string, branch: string): Promise<string>;
   remoteSha(worktree: string, branch: string): Promise<string | null>;
@@ -19,7 +19,7 @@ export interface FinderGit {
 }
 
 // The gh verbs the finders call (lib/github.mjs).
-export interface FinderGh {
+export interface EvidenceGh {
   findPr(branch: string, cwd?: string): Promise<{ number: number } | undefined>;
   viewPr(pr: number, cwd?: string): Promise<{ number: number; url: string; body: string }>;
   comments(issue: number, cwd?: string): Promise<{ id: number; body: string }[]>;
@@ -34,10 +34,10 @@ type CommentPayload = { target: { number: number } };
 export type LabelPayload = { add: string[]; remove: string[] };
 
 // What a finder reads. terminalEffects looks only for comment and label intents, so it passes no git.
-export interface FinderContext {
+export interface EvidenceContext {
   executionRecord: record.ExecutionRecord;
-  git?: FinderGit;
-  gh?: FinderGh;
+  git?: EvidenceGit;
+  gh?: EvidenceGh;
   cwd?: string;
   issueLabels: string[];
 }
@@ -48,7 +48,7 @@ export type FindResult =
   | { status: 'conflicting'; reason: string }
   | { status: 'absent' }
   | { status: 'unknown'; error: unknown };
-export type Finder = (entry: writeAhead.WriteAheadEntry, context: FinderContext) => Promise<FindResult>;
+export type FindEffect = (entry: writeAhead.WriteAheadEntry, context: EvidenceContext) => Promise<FindResult>;
 
 // The last marker line wins (marker.parseMarker), so agent text that mimics a marker cannot complete an Action.
 export const carries = (text: string | null | undefined, actionMarker: string): boolean => {
@@ -59,7 +59,7 @@ export const carries = (text: string | null | undefined, actionMarker: string): 
 const found = (evidence: Record<string, unknown>): FindResult => ({ status: 'found', evidence });
 const conflicting = (reason: string): FindResult => ({ status: 'conflicting', reason });
 const ABSENT: FindResult = { status: 'absent' };
-const FINDERS: Record<string, Finder | undefined> = {
+const FINDERS: Record<string, FindEffect | undefined> = {
   async commit({ actionMarker, payload }, { executionRecord, git }) {
     const { parent, tree: intendedTree } = payload as CommitPayload;
     for (const { sha, parents, tree, message } of await git!.commitLog(
@@ -117,7 +117,7 @@ const FINDERS: Record<string, Finder | undefined> = {
 };
 
 // An effect with no finder (a reset, a call or pr-ready) is absent.
-export async function findEffect(entry: writeAhead.WriteAheadEntry, context: FinderContext): Promise<FindResult> {
+export async function findEffect(entry: writeAhead.WriteAheadEntry, context: EvidenceContext): Promise<FindResult> {
   try {
     return (await FINDERS[String(entry.effect)]?.(entry, context)) ?? ABSENT;
   } catch (error) {

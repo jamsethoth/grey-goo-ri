@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as finders from '../../lib/finders.ts';
+import * as effectEvidence from '../../lib/effect-evidence.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
@@ -278,7 +278,7 @@ test('a failed lookup is unknown, not absent', async (t) => {
     },
   };
 
-  const found = await finders.findEffect(entry, { executionRecord: loaded, gh: down, cwd: g.mainRoot });
+  const found = await effectEvidence.findEffect(entry, { executionRecord: loaded, gh: down, cwd: g.mainRoot });
   assert.equal(found.status, 'unknown');
   assert.match(found.error.message, /HTTP 502/);
   await assert.rejects(

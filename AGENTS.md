@@ -68,7 +68,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union) |
 | `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.ts` | Reconciliation of a record against git and GitHub at resume, and admission's load of a record or its corrupt row |
-| `lib/finders.ts` | the finders: each looks for an open intent's side effect by its Action Marker in git or on GitHub |
+| `lib/effect-evidence.ts` | Effect Evidence: an open intent's side effect looked for by its Action Marker in git or on GitHub, one finder per effect kind |
 | `lib/events.ts` | event schema 2 append and read from the State Database |
 | `lib/labels.ts` | State, Await and Decide Label names and prefix, and the end states |
 | `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |
