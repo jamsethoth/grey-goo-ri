@@ -81,6 +81,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | V4: engine Outcome names are reserved | H10: so are the names of `Object.prototype`'s properties |
 | V3: every cycle has an edge with `max` or a Vertex with `maxVisits` | H12: and no loop is made of exhausted targets alone |
 | Request 3.3, V3: a Vertex's Bound is `maxVisits` | O1: `max`, the same key as an edge's |
+| N1, L14: the record keeps the Windows job helper's process identity | #245 (2026-11-02): the containment kind `job`; kill-on-close confirms |
 
 ## Step 1: use cases and users (2026-10-21)
 
@@ -1209,6 +1210,18 @@ repository but this one declares a Flow.
   meaning gets one word: how many times, then where to go. Where the key sits says what is counted: an edge counts
   its traversals, a Vertex its Visits. `maxVisits` is no longer a key; the validator reports it as unknown. The
   Resolved Flow's Vertex field is `max` too. Decisions written before this one keep the word `maxVisits`. Issue #117.
+
+## Containment through node:ffi (2026-11-02)
+
+Taken by the owner with grey-goo-ri issue #245, which replaces the PowerShell job helper with a job object gg creates
+itself through `node:ffi`.
+
+- N1 and L14 amended. On Windows the record keeps the containment kind `job` (or `none`), not the job helper's process
+  id and start or creation time, since no helper process exists. gg holds the job's only handle; when that handle
+  closes, with the gg process that ran the call or explicitly, kill-on-close ends every process still in the job. That
+  is the confirmation N1 asks for before an Interrupted Attempt's reset and L14 asks for before a cleanup hold resumes.
+  The POSIX process group and `none` keep their rules, and a tool that explicitly breaks away from the job stays an
+  accepted residual risk. ADR 0011 is amended; issues #118, #119 and #23 follow.
 
 ## Open
 
