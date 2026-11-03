@@ -18,7 +18,7 @@ import * as sqlite from '../../lib/sqlite.ts';
 import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as labelModule from '../../lib/labels.ts';
-import * as validate from '../../lib/validate.mjs';
+import * as validate from '../../lib/validate/index.ts';
 import { fakeHarness } from './fake-harness.mjs';
 import * as fakeIntegrityModule from './fake-integrity.mjs';
 import * as fakeGitModule from './fake-git.mjs';

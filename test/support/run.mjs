@@ -14,7 +14,7 @@ import * as interpreter from '../../lib/interpreter.mjs';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
-import * as validate from '../../lib/validate.mjs';
+import * as validate from '../../lib/validate/index.ts';
 import * as golden from './golden.mjs';
 import { fakeHarness } from './fake-harness.mjs';
 

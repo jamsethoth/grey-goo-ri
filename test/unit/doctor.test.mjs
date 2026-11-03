@@ -64,6 +64,19 @@ test('gg doctor exits non-zero on an error', () => {
   );
 });
 
+test("gg doctor reports an Agent's access outside the Permission Intents at agents.<name>.access", () => {
+  const config = example();
+  config.agents.implementer.access = 'read-write';
+  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.equal(exitCode, 1);
+  assert.ok(
+    text.endsWith(
+      '\nerror: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or workspace-write\n1 error, 2 warnings\n',
+    ),
+    text,
+  );
+});
+
 test('gg doctor reports an Outcome named after an Object.prototype property as reserved', () => {
   const config = example();
   config.procedures['tests-fail'].stopped[0].outcome = 'toString';

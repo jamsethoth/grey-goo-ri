@@ -71,6 +71,21 @@ test('a Flow without a plan key fails admission before any effect', async (t) =>
   assert.deepEqual(f.gh.calls, [], 'no gh call');
 });
 
+test("an Agent's access outside the Permission Intents fails admission before any effect", async (t) => {
+  const f = fixture(t);
+  f.options.config.agents.implementer.access = 'read-write';
+  const err = await run.runTarget(f.options).then(
+    () => null,
+    (e) => e,
+  );
+  assert.deepEqual(err?.message.split('\n'), [
+    '[main] preflight failed:',
+    'error: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or workspace-write',
+  ]);
+  assert.deepEqual(f.gh.calls, [], 'no gh call');
+  assert.equal(f.worktrees(), 1, 'no worktree');
+});
+
 test('a ticket reaching done exits 0 and the run events carry the run id and outcome', async (t) => {
   const f = fixture(t);
   const results = await run.runTarget(f.options);

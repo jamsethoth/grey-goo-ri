@@ -4,8 +4,6 @@ export const NEEDS_HUMAN = 'needs-human';
 export type EndState = 'ready-for-qa' | typeof NEEDS_HUMAN | 'needs-replan';
 // The name a State Label carries after its prefix: in-progress while the Execution runs, then its end state.
 export type StateName = 'in-progress' | EndState;
-// A route to it: where an exhausted Bound goes, and the engine's own Outcomes unless routed (R12c, T7).
-export const NEEDS_HUMAN_ROUTE: { end: EndState } = { end: NEEDS_HUMAN };
 export const ENDS: EndState[] = ['ready-for-qa', NEEDS_HUMAN, 'needs-replan'];
 export const STATE_LABELS: StateName[] = ['in-progress', ...ENDS];
 // Admission treats in-progress specially (stuck detection); every State Label still means the ticket is not idle.
