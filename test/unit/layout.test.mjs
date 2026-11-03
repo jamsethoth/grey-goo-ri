@@ -142,6 +142,7 @@ test('no module outside lib/git.mjs passes git a command line', async () => {
 const CONVERTED = [
   'lib/approval.ts',
   'lib/events.ts',
+  'lib/finders.ts',
   'lib/integrity.ts',
   'lib/labels.ts',
   'lib/locks.ts',
