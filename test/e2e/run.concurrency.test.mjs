@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as events from '../../lib/events.ts';
-import * as integrity from '../../lib/integrity.mjs';
+import * as integrity from '../../lib/integrity.ts';
 import * as locks from '../../lib/locks.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';

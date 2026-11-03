@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as github from '../../lib/github.mjs';
-import * as integrity from '../../lib/integrity.mjs';
+import * as integrity from '../../lib/integrity.ts';
 import * as run from '../../lib/run.mjs';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.ts';

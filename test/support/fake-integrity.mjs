@@ -1,10 +1,10 @@
 // Integrity snapshots without fingerprinting, for tests whose subject is not git behaviour. A snapshot is fixed values;
 // `write` and `commit` stand in for an agent changing a worktree, so a test can script a violation. What reads only files
 // and git (the untracked files a baseline records and a rollback restores, and Test Immutability) is lib's own over the
-// given git, the fake git in the unit tier. test/contract/integrity/ runs this and lib/integrity.mjs against the same
+// given git, the fake git in the unit tier. test/contract/integrity/ runs this and lib/integrity.ts against the same
 // cases, so the violations it reports keep the real shape.
 import * as checks from '../../lib/checks.ts';
-import * as integrityModule from '../../lib/integrity.mjs';
+import * as integrityModule from '../../lib/integrity.ts';
 
 // Every worktree starts at `head`, so a rollback to a baseline head resets to a real commit when `head` is one. `git` is
 // the git the case runs on.

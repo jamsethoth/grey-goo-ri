@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.mjs';
-import * as reconcile from '../../lib/reconcile.mjs';
+import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as golden from '../support/golden.mjs';
 import * as interpreterSupport from '../support/interpreter.mjs';
-import { resetEntries } from '../support/reconcile.mjs';
+import { resetEntries, crashed, EFFECTS, originSha, reconcileArgs, stepsOf } from '../support/reconcile.mjs';
 
 // The Ticket branch's log from its head: two commits since the base, the base, and the commit the base was cut from.
 const branchLog = [
@@ -63,4 +63,17 @@ test('a failed HEAD read after the reset of an Integrity Violation leaves the Hi
   assert.deepEqual(loaded.history, [], 'no History item is saved without the reset evidence');
   assert.equal(await reconcile.resets(loaded, { git }), 'continue');
   assert.equal(loaded.history.length, 1);
+});
+
+// A push that landed before the crash is found on the remote by its sha, which Reconciliation saves as its evidence, so
+// the resume completes the push rather than making it again.
+test('a push that landed before a crash is found by its remote sha', async (t) => {
+  const g = await golden.setup(t);
+  const { m, loaded } = await crashed(g, EFFECTS.push.at, 'after-effect');
+  const pushed = await originSha(g);
+
+  const decided = await reconcile.reconcile(reconcileArgs(g, loaded));
+  assert.equal(decided.next, 'continue');
+  assert.deepEqual(stepsOf(loaded, m), ['intent', 'evidence']);
+  assert.deepEqual(loaded.writeAheadLog.findLast((e) => e.actionMarker === m).evidence, { remoteSha: pushed });
 });

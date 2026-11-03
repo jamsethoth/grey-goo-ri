@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as integrity from '../../lib/integrity.mjs';
+import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.mjs';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';

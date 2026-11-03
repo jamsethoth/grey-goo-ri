@@ -70,8 +70,9 @@ export async function crashed(g, at, point) {
 }
 
 export const NEEDS_HUMAN = 'gg:state:needs-human';
+// A record that failed to load is passed as `corrupt`, as admission passes it.
 export const reconcileArgs = (g, rec, flow = g.flow) => ({
-  record: rec,
+  ...(rec instanceof record.RecordCorruptError ? { corrupt: rec } : { record: rec }),
   flow,
   git: g.options.git,
   gh: g.options.gh,
