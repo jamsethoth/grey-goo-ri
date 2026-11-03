@@ -140,6 +140,18 @@ test('access: read-only on the Procedure caps the Agent', async () => {
   assert.equal(flows.default.ticket.vertices.reviewer.access, 'read-only');
 });
 
+test("a Vertex's own access outside the Permission Intents is an error at the Vertex", async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.green.access = 'read-write';
+  const { errors } = await check(config);
+  assert.deepEqual(errors, [
+    {
+      at: `${V}.green.access`,
+      message: 'access "read-write" is not a Permission Intent: read-only or workspace-write',
+    },
+  ]);
+});
+
 test('a Claim token named failed or harness-timeout is an error', async () => {
   const config = example();
   config.procedures['tests-fail'].claimTokens.failed = { stop: true };

@@ -80,7 +80,7 @@ test('every module under lib imports', async () => {
 
 test('every file under lib is scanned', () => {
   const libFiles = repoFiles('lib/');
-  for (const path of ['lib/validate.mjs', 'lib/refs.ts', 'lib/harnesses/shipped.mjs']) {
+  for (const path of ['lib/validate/index.ts', 'lib/refs.ts', 'lib/harnesses/shipped.mjs']) {
     assert.ok(modules.includes(path), `${path} is scanned`);
   }
   // Templates and the job-object script are not modules: they import nothing and run no git.
@@ -94,7 +94,7 @@ test('every file under lib has a row in AGENTS.md', async () => {
   const sampleRows = ['lib/a.mjs', 'lib/templates/'];
   assert.deepEqual(unlistedFiles(['lib/a.mjs', 'lib/templates/t.md', 'lib/b.mjs'], sampleRows), ['lib/b.mjs']);
   const rows = layoutRows(await readFile(`${root}AGENTS.md`, 'utf8'));
-  assert.ok(rows.includes('lib/validate.mjs') && rows.includes('bin/gg.mjs'), 'the layout table is read');
+  assert.ok(rows.includes('lib/validate/') && rows.includes('bin/gg.mjs'), 'the layout table is read');
   assert.deepEqual(unlistedFiles(repoFiles('lib/'), rows), [], 'add a row to the AGENTS.md layout table');
   assert.deepEqual(
     rows.filter((path) => !existsSync(root + path)),
@@ -145,6 +145,7 @@ const CONVERTED = [
   'lib/checks.ts',
   'lib/effect-evidence.ts',
   'lib/events.ts',
+  'lib/flow.ts',
   'lib/integrity.ts',
   'lib/labels.ts',
   'lib/locks.ts',
@@ -156,6 +157,13 @@ const CONVERTED = [
   'lib/record.ts',
   'lib/refs.ts',
   'lib/rules.ts',
+  'lib/validate/flows.ts',
+  'lib/validate/graph.ts',
+  'lib/validate/index.ts',
+  'lib/validate/procedures.ts',
+  'lib/validate/references.ts',
+  'lib/validate/report.ts',
+  'lib/validate/templates.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
 const LEGACY_MJS = [
@@ -165,7 +173,6 @@ const LEGACY_MJS = [
   'lib/doctor.mjs',
   'lib/effects.mjs',
   'lib/exec.mjs',
-  'lib/flow.mjs',
   'lib/git.mjs',
   'lib/github.mjs',
   'lib/harnesses/claude.mjs',
@@ -181,7 +188,6 @@ const LEGACY_MJS = [
   'lib/stats.mjs',
   'lib/terminal.mjs',
   'lib/trace.mjs',
-  'lib/validate.mjs',
   'lib/work.mjs',
   'scripts/run-suite.mjs',
   'test/contract/exec/exec.test.mjs',
