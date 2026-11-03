@@ -137,7 +137,7 @@ export interface VisitState {
 }
 
 // Everything a Visit reads, copied at its entry so a Flow or command edited mid-Visit cannot reach it. The Agent,
-// Outcomes, routes and commands are the Resolved Flow's (validate.mjs).
+// Outcomes, routes and commands are the Resolved Flow's (lib/validate/).
 export interface ConfigurationSnapshot {
   vertex: string;
   visit: number;

@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as config from '../../lib/config.mjs';
-import * as flow from '../../lib/flow.mjs';
+import * as flow from '../../lib/flow.ts';
 
 test('writeResolved writes the flow and hash to the run directory', (t) => {
   const runDir = mkdtempSync(join(tmpdir(), 'gg-flow-'));

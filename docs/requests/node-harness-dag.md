@@ -181,7 +181,7 @@ A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes
 (ADR 0014).
 
 A Layer declares Flows under `flows`, by name. Each object below takes only the keys listed; any other key fails
-admission (`lib/validate.mjs` holds the lists):
+admission (`lib/validate/` holds the lists):
 
 | Flow object | Keys | What each key takes |
 |---|---|---|
@@ -280,7 +280,7 @@ Sessions never cross Vertices. gg ships no Procedure; the example `gg init` writ
 - `publish`: no agent; the `test` Check, PR body re-render, and `pr-ready` on the tree that Check passed.
 - `plan`: interactive launch; exit is `gg publish`.
 
-A Layer declares Procedures under `procedures`, by name, each taking only these keys (`lib/validate.mjs` holds the
+A Layer declares Procedures under `procedures`, by name, each taking only these keys (`lib/validate/` holds the
 lists):
 
 | Procedure object | Keys | What each key takes |

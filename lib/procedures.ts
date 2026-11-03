@@ -28,7 +28,7 @@ export interface Action {
 // A Claim token (R11f): held to the Checks it requires, or a stop, which may name its comment template.
 export type ClaimToken = { requires: string[]; stop?: never } | { stop: true; comment?: string; requires?: never };
 
-// A Procedure as the Resolved Flow carries it (validate.mjs): its Actions and Claim tokens, its three Rule Tables, and
+// A Procedure as the Resolved Flow carries it (lib/validate/): its Actions and Claim tokens, its three Rule Tables, and
 // the hash of the Procedure as declared (S6).
 export interface Procedure {
   actions: Action[];

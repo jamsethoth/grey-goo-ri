@@ -49,8 +49,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `bin/gg.mjs` | `gg` entry point: usage and command dispatch |
 | `lib/opts.mjs` | option parsing |
 | `lib/config.mjs` | Layers, merge, Config Hash, the Layer files each Layer names, Declared Command loading |
-| `lib/flow.mjs` | the Resolved Flow and Config Hash written to a Run's directory |
-| `lib/validate.mjs` | the Flow validator, which `gg doctor` and `gg run` admission share: the configuration's agents, procedures, flows and the names each template reads checked, giving each Resolved Flow (with each Procedure's hash) plus errors and warnings |
+| `lib/flow.ts` | the Flow rules the interpreter and the validator share: where an Outcome routes (H7), and the Resolved Flow and Config Hash written to a Run's directory |
+| `lib/validate/` | the Flow validator, which `gg doctor` and `gg run` admission share: `index.ts` (`validate()`, the Agents, inherited names), `procedures.ts`, `actions.ts` and `conditions.ts` (a Procedure on its own), `references.ts` and `templates.ts` (what it reads, typed alone and at each Vertex), `flows.ts` and `inputs.ts` (Flows, Vertices, Agents and inputs), `graph.ts` (the graph checks) and `report.ts` (the errors and warnings); it gives each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/refs.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
 | `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
@@ -116,8 +116,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 Each is rewritten by its ticket; until then, do not take its patterns:
 
-- `lib/validate.mjs` (#206), `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210),
-  `test/unit/run.holds.test.mjs` (#211), `test/contract/exec/exec.test.mjs` (#212), `test/support/run.mjs` (#208).
+- `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210), `test/unit/run.holds.test.mjs` (#211),
+  `test/contract/exec/exec.test.mjs` (#212), `test/support/run.mjs` (#208).
 
 ## Tests
 
