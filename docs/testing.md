@@ -133,7 +133,7 @@ that leaves the machine. Aim for most tests small; a medium test exists to show 
 | --- | --- | --- |
 | `test/unit/` | logic over fakes | small |
 | `test/contract/<boundary>/` | one narrow suite per external boundary (`git`, `harness`, `integrity`, `sqlite`, `exec`), run against the real module and its fake, or against the real system where there is no fake | medium |
-| `test/e2e/` | the full runs and the git-behaviour wiring: the golden traces that run on real git (those over the fakes are in `test/unit/`), and the interpreter, Run and Reconciliation cases whose subject is real git (integrity rollback, admission's dirty, conflict and branch checks, crash and resume, the repo lock), and the `gg` CLI | medium or large |
+| `test/e2e/` | the full runs and the git-behaviour wiring: the golden traces that run on real git (those over the fakes are in `test/unit/`), and the interpreter, Run and Reconciliation cases whose subject is real git (integrity rollback, admission's dirty, conflict and branch checks, crash and resume, the repo lock), the Runs over the fake git that the real integrity or a lock-holding process makes medium (`run.concurrency`'s attribution and repo-lock Runs), and the `gg` CLI | medium or large |
 | `test/support/`, `test/fixtures/` | helpers, fakes and data | |
 
 A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`

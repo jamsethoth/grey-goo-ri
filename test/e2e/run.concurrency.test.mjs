@@ -29,6 +29,7 @@ import {
 // The Runs below use the real integrity over the fake git: their subject is the repo lock and which worktree a change is
 // attributed to, not git. Over real git, every git process of every snapshot was theirs, and under a full suite run
 // they took up to ten times their time alone, 295 s for one (#187).
+
 // Locks whose `allRefused` resolves once `n` first attempts at the repo lock have found it taken: each of `n` waiters is
 // then waiting.
 function refusedFirstAttempts(n) {
