@@ -63,8 +63,8 @@ export interface RedCheck {
   foundByNameOnly?: boolean;
 }
 
-// The red run's verdict where the runner reports per test: a named test failing, passing, or excused.
-function statusVerdict(statuses: Map<string, TestStatus>, names: string[], missing: RedCheck): RedCheck {
+// The Red Check where the runner reports per test: a named test failing, passing, or excused.
+function fromStatuses(statuses: Map<string, TestStatus>, names: string[], missing: RedCheck): RedCheck {
   if (names.some((name) => statuses.get(name) === true)) return { ok: true };
   const passing = names.filter((name) => statuses.get(name) === false);
   if (passing.length)
@@ -108,7 +108,7 @@ export function redCheck(result: ShellRun, names: string[]): RedCheck {
     return names.some((name) => name && output.includes(name))
       ? { ok: true, foundByNameOnly: true }
       : { ...missing, foundByNameOnly: true };
-  return statusVerdict(statuses, names, missing);
+  return fromStatuses(statuses, names, missing);
 }
 
 type RunShell = (command: string, options: { cwd: string; timeoutMs: number }) => Promise<ShellRun>;
