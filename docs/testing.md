@@ -146,13 +146,22 @@ That check reads source text, so it misses a spawn it has no pattern for: a supp
 A slip costs speed, not coverage: the full stage still runs the case, and the fast stage's wall time shows the
 regression. A new support helper that spawns is added to the check's list in the same change.
 
-Three stages, ordered by speed:
+Four stages, ordered by speed:
 
 | Stage | Runs | When |
 | --- | --- | --- |
 | **Check** | `prettier --check`, ESLint and `tsc` (ADR 0018), and no tests: `node scripts/run-suite.mjs check` (ADR 0016) | in CI as its own `check` job beside the suite jobs, so a format, lint or type error shows on its own |
 | **Fast** | `prettier --check`, ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.mjs fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
 | **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.mjs` | before a PR is marked ready, and in CI on every PR |
+| **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.mjs coverage` (ADR 0016, amended) | in CI after the full stage on each platform; locally with `coverage update` when a change raises coverage |
+
+Coverage only climbs. The coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
+below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
+recorded, so the next change cannot spend the gain. `node scripts/run-suite.mjs coverage update` records a rise; CI's
+failure message prints the other platform's figures to paste. The measured set is what a small test can reach: `lib/`
+without `lib/exec.mjs`, `lib/git.mjs` and `lib/containment.ts`, whose contract suites cover them, and without the
+`bin/gg.mjs` entry point that wires them. A module no unit test loads still counts, at zero. The spec reporter prints
+each file's lines, branches and functions, so the uncovered line numbers are in the stage's output.
 
 The full stage always runs every contract suite, even when no boundary file changed. A contract also depends on
 things outside the repository, such as the installed git, Node, Windows behaviour or the CI image, and the

@@ -29,6 +29,17 @@ as their own `check` job beside the suite jobs. It takes no further argument: `c
 error with exit code 2. The full and fast stages still run the three checks before their tests, so no agent run skips
 them. The rule's prefix is unchanged; its justification and examples name `check`.
 
+Amended 2026-11-03 (the coverage ratchet): the closed set adds `coverage` and `coverage update`.
+`node scripts/run-suite.mjs coverage` runs `test/unit/` alone, with node's built-in coverage over `lib/` (every module,
+loaded or not, minus `lib/exec.mjs`, `lib/git.mjs` and `lib/containment.ts`, which `test/unit/` may not reach), writes
+`coverage/lcov.info`, and compares the line and function percentages with `coverage-baseline.json`'s figures for the
+running platform. A fall fails, and so does a rise not yet recorded, so the figures only climb; `coverage update` records
+a rise and never lowers a figure. Lowering one is a hand edit a reviewer sees. Branch coverage is printed but not held:
+node merges each test process's V8 branch ranges, and the branches found in a file move by one or two between runs of
+the same tree. Each platform keeps its own figures because the win32 and POSIX branches of `lib/` are covered
+differently. The stage runs no format check, lint or type check: CI's `check` job and the suite stages run them. Any
+other argument after `coverage` is a usage error with exit code 2. The rule's examples name `coverage`.
+
 ## Considered options
 
 - A second launcher, `scripts/run-fast.mjs`, that also ignores its arguments and runs `test/unit/` with every contract

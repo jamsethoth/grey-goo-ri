@@ -111,6 +111,12 @@ jobs:
           git --version
           node scripts/run-suite.mjs 2>&1 | tee "$RUNNER_TEMP/suite.log"
 
+      # test/unit/'s line and function coverage of lib/, held to this platform's figures in coverage-baseline.json
+      # (ADR 0016, amended): a fall, or a rise not yet recorded, fails the job.
+      - name: Coverage
+        shell: bash
+        run: node scripts/run-suite.mjs coverage
+
       - name: No real gh, claude or codex was called
         if: always() && runner.os == 'Linux'
         shell: bash
