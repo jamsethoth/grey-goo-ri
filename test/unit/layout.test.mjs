@@ -172,6 +172,7 @@ const CONVERTED = [
   'lib/approval.ts',
   'lib/briefs.ts',
   'lib/checks.ts',
+  'lib/command-cleanup.ts',
   'lib/effect-errors.ts',
   'lib/effect-evidence.ts',
   'lib/effects.ts',
