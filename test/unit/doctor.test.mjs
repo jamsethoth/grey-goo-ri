@@ -64,6 +64,21 @@ test('gg doctor exits non-zero on an error', () => {
   );
 });
 
+test('gg doctor reports a Procedure name with a colon at its location', () => {
+  const config = example();
+  config.procedures['base:check'] = config.procedures['base-check'];
+  delete config.procedures['base-check'];
+  config.flows.default.ticket.vertices.baseline.procedure = 'base:check';
+  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.equal(exitCode, 1);
+  assert.ok(
+    text.includes(
+      '\nerror: procedures.base:check: Procedure "base:check" must be non-empty with no ":", "." or whitespace\n',
+    ),
+    text,
+  );
+});
+
 test("gg doctor reports an Agent's access outside the Permission Intents at agents.<name>.access", () => {
   const config = example();
   config.agents.implementer.access = 'read-write';

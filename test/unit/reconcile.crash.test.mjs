@@ -128,3 +128,33 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
     });
   }
 }
+
+// A Vertex id with whitespace: its markers are written, but parseMarker reads back only parts with none (#269).
+const SPACED = 'red tests';
+function spaceTheRedVertex(config) {
+  const { ticket } = config.flows.golden;
+  ticket.vertices[SPACED] = ticket.vertices.red;
+  delete ticket.vertices.red;
+  ticket.entry = SPACED;
+  ticket.vertices.green.inputs = {
+    testFiles: { from: `${SPACED}.commit.files` },
+    red: { from: `${SPACED}.red-check.evidence` },
+  };
+  ticket.vertices.publish.inputs.red = { from: `${SPACED}.red-check.evidence` };
+}
+
+test('a commit made at a Vertex whose id has whitespace is found by its marker after a crash', async (t) => {
+  const { 'red/1/red/1': red, ...rest } = golden.firstVisitResponses;
+  const g = await golden.setup(t, { responses: { [`${SPACED}/1/red/1`]: red, ...rest } });
+  golden.configure(g, spaceTheRedVertex);
+  const { m, loaded } = await crashed(g, [SPACED, 1, 'commit', 0], 'after-effect');
+
+  await interpreter.runExecution({ ...g.options, record: loaded });
+  const final = await loadTicket(g);
+  assert.deepEqual(stepsOf(final, m), ['intent', 'evidence', 'complete'], 'the commit is found and completed');
+  assert.equal(
+    (await branchMessages(g)).filter((b) => b.includes(marker.markerTrailer(m))).length,
+    1,
+    'the commit is not made again',
+  );
+});

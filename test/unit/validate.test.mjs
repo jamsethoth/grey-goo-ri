@@ -307,6 +307,66 @@ test('an Action id with whitespace is an error', async () => {
   ]);
 });
 
+// A second Flow of one Vertex, whose id the case chooses, running the example's base-check.
+const oneVertexFlow = (id) => ({
+  plan: null,
+  actionCap: 1,
+  ticket: { entry: id, vertices: { [id]: { procedure: 'base-check', route: { ok: { end: 'needs-human' } } } } },
+});
+const CARRIED = 'must be non-empty with no ":", "." or whitespace';
+
+test('a Vertex id that is empty or has ":", "." or whitespace is an error at its location', async () => {
+  for (const id of ['', 'a:b', 'a.b', 'a b']) {
+    const config = example();
+    config.flows.names = oneVertexFlow(id);
+    assert.deepEqual(
+      (await check(config)).errors,
+      [{ at: `flows.names.ticket.vertices.${id}`, message: `Vertex id ${JSON.stringify(id)} ${CARRIED}` }],
+      JSON.stringify(id),
+    );
+  }
+});
+
+test('a Procedure name that is empty or has ":", "." or whitespace is an error at its location', async () => {
+  for (const name of ['', 'a:b', 'a.b', 'a b']) {
+    const config = example();
+    config.procedures[name] = config.procedures['base-check'];
+    config.flows.default.ticket.vertices.baseline.procedure = name;
+    assert.deepEqual(
+      (await check(config)).errors,
+      [{ at: `procedures.${name}`, message: `Procedure ${JSON.stringify(name)} ${CARRIED}` }],
+      JSON.stringify(name),
+    );
+  }
+});
+
+test('an Agent or Flow name that is empty is an error at its location', async () => {
+  const config = example();
+  config.agents[''] = config.agents.senior;
+  config.flows[''] = oneVertexFlow('only');
+  assert.deepEqual((await check(config)).errors, [
+    { at: 'agents.', message: 'Agent "" must be non-empty' },
+    { at: 'flows.', message: 'Flow "" must be non-empty' },
+  ]);
+});
+
+test('a Claim token that is empty, or an input name that is empty or has ".", is an error at its location', async () => {
+  const config = example();
+  const fix = config.flows.default.ticket.vertices['implementer-fix'];
+  config.procedures['tests-fail'].claimTokens[''] = { stop: true };
+  fix.inputs[''] = { from: 'red.commit.files' };
+  fix.inputs['a.b'] = { from: 'red.commit.files' };
+  const at = 'flows.default.ticket.vertices.implementer-fix.inputs';
+  assert.deepEqual(
+    (await check(config)).errors.filter((e) => /must be non-empty/.test(e.message)),
+    [
+      { at: 'procedures.tests-fail.claimTokens.', message: 'Claim token "" must be non-empty' },
+      { at: `${at}.`, message: `input "" ${CARRIED}` },
+      { at: `${at}.a.b`, message: `input "a.b" ${CARRIED}` },
+    ],
+  );
+});
+
 test("a configuration without a Flow names the request's key tables, not gg init", async () => {
   const config = example();
   delete config.flows;
