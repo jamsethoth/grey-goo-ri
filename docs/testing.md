@@ -159,12 +159,11 @@ Coverage only climbs. The coverage stage fails when the line or function coverag
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
 recorded, so the next change cannot spend the gain. `node scripts/run-suite.mjs coverage update` records a rise; CI's
 failure message prints the other platform's figures to paste. The measured set is what a small test can reach: `lib/`
-without `lib/exec.ts`, `lib/git.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover them, and without the
-`bin/gg.mjs` entry point that wires them. Command Cleanup's decisions, which processes a command left and what
-is done with each, live apart from `lib/process-tree.ts` and `lib/containment.ts` in `lib/command-cleanup.ts`, which is
-measured. A module no unit test loads still
-counts, at zero. The spec reporter prints
-each file's lines, branches and functions, so the uncovered line numbers are in the stage's output.
+without `lib/exec.ts`, `lib/git.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
+them, and without the `bin/gg.mjs` entry point that wires them. Command Cleanup's decisions, which processes a command
+left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
+`lib/containment.ts`. A module no unit test loads still counts, at zero. The spec reporter prints each file's lines,
+branches and functions, so the uncovered line numbers are in the stage's output.
 
 The full stage always runs every contract suite, even when no boundary file changed. A contract also depends on
 things outside the repository, such as the installed git, Node, Windows behaviour or the CI image, and the

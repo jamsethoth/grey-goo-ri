@@ -187,15 +187,16 @@ _Avoid_: script, task, allowed command
 **Containment**:
 A Windows job object holding a shell command and everything it starts, so Command Cleanup ends them all. On POSIX,
 or when the job cannot be set up, the command runs uncontained (`containment: 'none'`), and a timeout kills the tree
-its watcher saw.
+its watcher saw on POSIX, or the tree taskkill finds on Windows.
 _Avoid_: Confinement (which limits what an agent may touch)
 
 **Command Cleanup**:
 What gg does with the processes a shell command leaves. On a timeout it ends them: it terminates the Containment's
-job, or, uncontained, kills the tree the watcher saw on POSIX or runs taskkill on Windows. It never kills a process
-that is not the command's, and names as survivors each one it could not end or confirm gone. A contained command
-that finishes but leaves processes running has them named as leftovers and let run on. A command Check's `cleanup`
-output is its result.
+job, or, uncontained, kills the tree the watcher saw on POSIX or runs taskkill on Windows. A process it cannot tie to
+the command is left alone, and each one it could not end or confirm gone is named as a survivor. A contained command
+that finishes but leaves processes running has them named as leftovers and let run on, unless the job cannot release
+them: then they end when gg exits. The `cleanup` output that Checks and agent Actions declare is to carry its result;
+gg does not write it yet.
 _Avoid_: cleanup (alone, which also names removing a ticket's worktree), teardown, reaping
 
 **Permission Intent**:

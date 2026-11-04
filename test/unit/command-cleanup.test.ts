@@ -166,6 +166,15 @@ test('leftoverPids drops a member no longer in the process list, which is still 
   assert.deepEqual(commandCleanup.leftoverPids([201, 202], entries, ROOT), [201]);
 });
 
+test('leftoverPids names only members of the job, in member order, not every running process', () => {
+  const entries = [
+    { pid: 7, parentPid: 1, exe: 'explorer.exe' },
+    { pid: 202, parentPid: 201, exe: 'node.exe' },
+    { pid: 201, parentPid: ROOT, exe: 'node.exe' },
+  ];
+  assert.deepEqual(commandCleanup.leftoverPids([201, 202], entries, ROOT), [201, 202]);
+});
+
 test("leftoverPids drops the command's own console host, but not another conhost.exe", () => {
   const entries = [
     { pid: 201, parentPid: ROOT, exe: 'Conhost.exe' },
