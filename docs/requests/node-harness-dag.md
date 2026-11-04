@@ -192,9 +192,10 @@ admission (`lib/validate/` holds the lists):
 | `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
 
 The name a Layer gives a Flow, Vertex, Agent, Procedure, Claim token, input or Action is a string with a character
-other than whitespace. A Vertex id, an Action id and an input name are non-empty with no `:`, `.`, `/` or whitespace:
-the Action Marker (3.5) and the Await and Decide Labels split on `:`, a reference path on `.`, the key an Action's
-retries are saved under joins its parts with `/`, and a marker is read back only when its parts have no whitespace. A
+other than whitespace. A Vertex id, an Action id and an input name are non-empty with no `:`, `.`, `/`, `--` or
+whitespace: the Action Marker (3.5) and the Await and Decide Labels split on `:`, a reference path on `.`, the key an
+Action's retries are saved under joins its parts with `/`, the HTML comment that carries a marker in a PR body or
+comment ends at `-->` or `--!>`, and a marker is read back only when its parts have no whitespace. A
 Procedure name takes the same form. Admission reports a name that breaks the rule at its location (R6d,
 #269).
 

@@ -40,19 +40,19 @@ export function has(value: unknown, key: unknown) {
   return typeof key === 'string' && refs.isRecord(value) && Object.hasOwn(value, key);
 }
 export const isName = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
-// Every configured name has a character other than whitespace. A carried one has no ":", ".", "/" or whitespace at all:
-// the Action Marker and the Await and Decide Labels split on ":", a reference path on ".", an Action's retry key joins
-// its parts with "/", and a marker is read back only without whitespace. A Procedure name takes the carried form by
-// the same rule (3.3).
+// Every configured name has a character other than whitespace. A carried one has no ":", ".", "/", "--" or whitespace
+// at all: the Action Marker and the Await and Decide Labels split on ":", a reference path on ".", an Action's retry
+// key joins its parts with "/", the HTML comment a marker rides in on GitHub ends at "-->" or "--!>", and a marker is
+// read back only without whitespace. A Procedure name takes the carried form by the same rule (3.3).
 export function checkName(
   report: Report,
   location: string,
   name: unknown,
   { what, carried }: { what: string; carried: boolean },
 ): name is string {
-  const valid = carried ? typeof name === 'string' && /^[^\s:./]+$/.test(name) : isName(name);
+  const valid = carried ? typeof name === 'string' && /^[^\s:./]+$/.test(name) && !name.includes('--') : isName(name);
   const rule = carried
-    ? 'must be non-empty with no ":", ".", "/" or whitespace'
+    ? 'must be non-empty with no ":", ".", "/", "--" or whitespace'
     : 'must not be empty or only whitespace';
   if (!valid) error(report, location, `${what} ${JSON.stringify(name)} ${rule}`);
   return valid;
