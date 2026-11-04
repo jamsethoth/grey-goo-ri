@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DatabaseSync } from 'node:sqlite';
@@ -225,15 +225,17 @@ test(
     for (const { go } of openers) go();
     await Promise.all(openers.map(({ said }) => said('locking')));
     // An opener that got past the held lock switches to WAL within milliseconds of its `locking`, as fast as this process
-    // could release, so the lock stays held a while longer to let one show itself; its own clock then says it switched
-    // before the release. A queued opener switches only once it holds the lock.
+    // could release, so the lock stays held a while longer to let one show itself. The marker written just before the
+    // release then tells each switch's side of it: a queued opener switches only once it holds the lock, after the marker.
     await sleep(1000);
-    const releasedAt = Date.now();
+    writeFileSync(join(commonDir, 'released'), '');
     await locks.release(openLock);
     const exits = await Promise.all(openers.map(({ exit }) => exit));
-    const switchedAt = (out) => [...out.matchAll(/^switching (\d+)$/gm)].map(([, ms]) => Number(ms));
-    const switchedEarly = exits.filter(({ out }) => switchedAt(out).some((ms) => ms < releasedAt));
-    assert.deepEqual(switchedEarly, [], 'no opener gets past a held open lock');
+    assert.deepEqual(
+      exits.map(({ out }) => out.match(/^switching \w+$/gm)),
+      tickets.map(() => ['switching released']),
+      'no opener gets past a held open lock, and each switches once it is released',
+    );
     assert.deepEqual(
       exits.map(({ code, err }) => ({ code, err })),
       tickets.map(() => ({ code: 0, err: '' })),

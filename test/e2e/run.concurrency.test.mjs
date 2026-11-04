@@ -285,39 +285,39 @@ test('two processes serialise orchestrator git writes on the repo lock', { timeo
   });
   const exited = new Promise((resolve) => child.on('exit', resolve));
   t.after(() => child.kill());
-  const message = () =>
-    new Promise((resolve, reject) => {
-      child.once('message', resolve);
-      child.once('exit', (code) => reject(new Error(`the writer exited ${code} before reporting`)));
-    });
-
-  const { sha: childSha } = await message();
-  // The child holds the repo lock now; the parent's commit is called while it does.
-  let started = null;
+  const { sha: childSha } = await new Promise((resolve, reject) => {
+    child.once('message', resolve);
+    child.once('exit', (code) => reject(new Error(`the writer exited ${code} before reporting`)));
+  });
+  // The child holds the repo lock now; the parent's commit is called while it does. Told to release, the child appends
+  // its run_end before it releases, so the Events the parent's commit sees as it starts show which side of the release
+  // it ran on, with no clock compared across the two processes (#260).
+  let seenAtCommit = null;
   const git = run.lockedGit(
     {
       ...f.options.git,
       commitStaged: (...args) => {
-        started = Date.now();
+        seenAtCommit = f.readEvents().map((e) => [e.run, e.type]);
         return f.options.git.commitStaged(...args);
       },
     },
     f.commonDir,
   );
   const committing = git.commitStaged(f.mainRoot, 'parent commit');
-  const released = message();
   child.send('release');
-  const { releasing } = await released;
   const parentSha = await committing;
-  const committed = Date.now();
   assert.equal(await exited, 0, 'the writer exits cleanly');
   log('run_end');
 
-  assert.ok(
-    started >= releasing,
-    `the parent's commit started at ${started}, after the child's release at ${releasing}`,
+  assert.deepEqual(
+    seenAtCommit,
+    [
+      ['parent', 'run_start'],
+      ['child', 'run_start'],
+      ['child', 'run_end'],
+    ],
+    "the parent's commit started only after the child, told to release, appended its run_end",
   );
-  assert.ok(committed >= releasing, 'and landed after it');
   assert.ok(parentSha, 'the parent commit landed without an index error');
   assert.equal(sh(f.mainRoot, 'rev-parse', `${parentSha}^`), childSha, 'the parent commit sits on the child commit');
   assert.deepEqual(
