@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../../lib/github.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.mjs';
 import {
@@ -156,11 +156,11 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     const g = await golden.setup(t);
     // origin has the Ticket branch at a commit the worktree's branch does not contain.
     const theirs = g.fakeGit.commit(g.mainRoot, 'someone else');
-    const { push } = g.options.git;
+    const { push } = g.options.deps.git;
     await push(g.mainRoot, golden.BRANCH, theirs);
     let pushes = 0;
-    g.options.git = {
-      ...g.options.git,
+    g.options.deps.git = {
+      ...g.options.deps.git,
       push: (...args) => {
         pushes++;
         return push(...args);
@@ -239,11 +239,11 @@ test('a cooldown raised while a retry looks for its effect is waited out before 
   const g = await reviewFlow(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   const runState = { stop: null, remoteNotBefore: 0 };
-  const { comments } = g.options.gh;
+  const { comments } = g.options.deps.gh;
   let raised = false;
   // Another Ticket backs off while this retry's lookup is in flight.
-  g.options.gh = {
-    ...g.options.gh,
+  g.options.deps.gh = {
+    ...g.options.deps.gh,
     comments: async (...args) => {
       if (!raised) runState.remoteNotBefore = g.clock.now() + 10_000;
       raised = true;
@@ -286,7 +286,7 @@ test('a first launch that crashed spends the budget when launched again', async 
   const g = await reviewFlow(t, okReview);
   let posts = 0;
   // Every POST crashes as it launches, the first included, so each Run's lookup finds the comment absent.
-  g.options.gh = github.createGh(async (args, cwd, input) => {
+  g.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (golden.isCommentPost(args, PR) && ++posts) throw new interpreter.CrashError('crash as the POST launched');
     return g.gh.gh(args, cwd, input);
   });

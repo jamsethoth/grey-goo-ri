@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../../lib/github.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
@@ -99,7 +99,7 @@ for (const point of ['after-effect', 'after-completion']) {
     const g = await violating(t);
     const spelled = 'Gg:state:needs-human';
     g.gh = golden.fakeGh({ branch: golden.BRANCH, repoLabels: [spelled] });
-    g.options.gh = github.createGh(g.gh.gh);
+    g.options.deps.gh = github.createGh(g.gh.gh);
     const edits = () => g.gh.calls.filter((c) => c.args[0] === 'issue' && c.args[1] === 'edit').length;
     await crashed(g, ['needs-human', 1, 'end-label', 0], point);
     assert.deepEqual([...g.gh.labels], [spelled], 'GitHub shows the repository spelling');
@@ -131,7 +131,7 @@ const evidenced = async (g, m) =>
 const terminalEffects = async (g, m) =>
   (
     await reconcile.terminalEffects(await loadTicket(g), {
-      gh: g.options.gh,
+      gh: g.options.deps.gh,
       labelPrefix: 'gg',
       cwd: g.mainRoot,
       markers: [m],

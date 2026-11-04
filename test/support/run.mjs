@@ -10,7 +10,7 @@ import * as config from '../../lib/config.mjs';
 import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.ts';
 import * as github from '../../lib/github.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
@@ -205,13 +205,10 @@ export async function seedExecution(
   await f.options.database.save(rec);
   await assert.rejects(
     interpreter.runExecution({
+      deps: { gh: f.options.gh, git, exec, database: f.options.database, clock: f.clock, integrity },
       flow,
       record: rec,
       harness: f.harness,
-      gh: f.options.gh,
-      git,
-      exec,
-      database: f.options.database,
       events: events.eventLog(f.commonDir, {}, f.options.database),
       log: () => {},
       cwd: f.mainRoot,
@@ -221,9 +218,7 @@ export async function seedExecution(
       base: 'main',
       labelPrefix: 'gg',
       others: [],
-      clock: f.clock,
       crashAt: crashAt?.(rec),
-      integrity,
       testImmutability: f.options.testImmutability,
       protectedPaths: f.options.protectedPaths,
       files: f.options.config.files,

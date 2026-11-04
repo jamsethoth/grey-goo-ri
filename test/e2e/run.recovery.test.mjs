@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.mjs';
@@ -175,7 +175,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
     },
   };
   // Crashed after the extra is removed and the changed file deleted, before its rewrite.
-  const crashing = integrity.withGit(
+  const crashing = integrity.createIntegrity(
     git,
     golden.crashFs(f.worktree, () => reset, { op: 'rm', n: 2, after: true }),
   );

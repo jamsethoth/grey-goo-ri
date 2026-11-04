@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
@@ -84,7 +84,7 @@ test('every side-effect action leaves intent, evidence and completion with the f
   // pr-ready's saved target: the pushed commit and the tree publish's Check passed on.
   assert.deepEqual(
     intents(g.rec, 'pr-ready').map((r) => r.payload),
-    [{ number: 7, sha: head, tree: await g.options.git.treeOf(g.worktree, head) }],
+    [{ number: 7, sha: head, tree: await g.options.deps.git.treeOf(g.worktree, head) }],
   );
 
   assert.deepEqual(
@@ -101,11 +101,11 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
     'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
   });
   g.options.testPaths = ['test/**'];
-  const { runShell } = g.options.exec;
+  const { runShell } = g.options.deps.exec;
   const commands = [];
   // green's own snapshot, as its last Check saw it: publish pins its own after.
   let pinned;
-  g.options.exec = {
+  g.options.deps.exec = {
     runShell: (command, opts) => {
       commands.push(command);
       if (g.rec.cursor.vertex === 'green') pinned = structuredClone(g.rec.configurationSnapshot);
@@ -261,8 +261,8 @@ test("agent-reported test names stay out of a failed red's Terminal Reason and a
 test('the Terminal Reason is saved before any Terminal side effect, so a crash posting the end comment keeps it', async (t) => {
   const g = await golden.setup(t);
   // A CrashError, since any other throw is now an unexpected fault handled inside runExecution.
-  g.options.gh = {
-    ...g.options.gh,
+  g.options.deps.gh = {
+    ...g.options.deps.gh,
     comment: async () => {
       throw new interpreter.CrashError('crash');
     },
@@ -297,7 +297,7 @@ async function redGate(t, { tests, run }) {
   };
   responses['red/1/recover/1'] = { files: {}, response: { ...golden.redResponse, tests } };
   const g = await golden.setup(t, { responses });
-  g.options.exec = {
+  g.options.deps.exec = {
     runShell: async (command, opts) =>
       existsSync(join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs'))
         ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }

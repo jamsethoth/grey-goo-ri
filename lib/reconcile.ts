@@ -3,6 +3,7 @@ import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
 import * as effectEvidence from './effect-evidence.ts';
 import * as labels from './labels.ts';
+import type * as visit from './visit.ts';
 
 // The git verbs Reconciliation calls, beside those its default Integrity Assertions and the
 // effect finders take.
@@ -26,15 +27,7 @@ export interface ReconciledFlow {
   procedures: Record<string, { hash: string } | undefined>;
 }
 
-// The reset intent's payload, as the interpreter writes it (interpreter.discard).
-// shortcut: declared by its reader until the interpreter (#204) converts and owns it.
-interface ResetPayload {
-  baseline: string;
-  history: Record<string, unknown>;
-  untracked?: integrityModule.RollbackSet;
-  // An intent saved before the index was fingerprinted has no `index`.
-  left?: Omit<integrityModule.WorktreeSnapshot, 'index'> & { index?: string; files?: integrityModule.UntrackedFiles };
-}
+type ResetPayload = visit.ResetPayload;
 
 // What Reconciliation decides: continue at the cursor, hold the Ticket, or abandon it for a human's label.
 export type HumanOverride = {
@@ -130,7 +123,7 @@ export async function resets(
   executionRecord: record.ExecutionRecord,
   {
     git,
-    integrity = integrityModule.withGit(git),
+    integrity = integrityModule.createIntegrity(git),
     database = record,
   }: { git: ReconcileGit; integrity?: integrityModule.Integrity; database?: Database },
 ): Promise<'held' | 'continue'> {
@@ -162,11 +155,11 @@ export async function dirtyState(
     git,
     worktree,
     locks,
-    integrity = integrityModule.withGit(git, undefined, locks),
+    integrity = integrityModule.createIntegrity(git, undefined, locks),
   }: {
     git: ReconcileGit;
     worktree: string;
-    locks?: Parameters<typeof integrityModule.withGit>[2];
+    locks?: Parameters<typeof integrityModule.createIntegrity>[2];
     integrity?: integrityModule.Integrity;
   },
 ): Promise<{ conflicts: string[]; stat: string } | null> {

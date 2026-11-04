@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as github from '../../lib/github.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as run from '../../lib/run.mjs';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as golden from '../support/golden.mjs';
 import {
@@ -46,8 +46,8 @@ const pushError = () =>
 // The golden Execution on the orchestrator's locked git, whose nth raw push runs `push(n, real)`; returns the count.
 function pushThrough(g, push) {
   let n = 0;
-  const git = g.options.git;
-  g.options.git = run.lockedGit({ ...git, push: (...args) => push(++n, () => git.push(...args)) }, g.commonDir);
+  const git = g.options.deps.git;
+  g.options.deps.git = run.lockedGit({ ...git, push: (...args) => push(++n, () => git.push(...args)) }, g.commonDir);
   return () => n;
 }
 
@@ -56,7 +56,7 @@ function crashPr(g, verb) {
   let n = 0;
   g.gh.fail({ matches: isPr(verb), status: 502 });
   g.gh.fail({ matches: isPr(verb), status: 502 });
-  g.options.gh = github.createGh(async (args, cwd, input) => {
+  g.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (isPr(verb)(args) && ++n === 3) throw new interpreter.CrashError(`crash as pr ${verb} launched`);
     return g.gh.gh(args, cwd, input);
   });
@@ -127,7 +127,7 @@ test('an accepted pr-ready whose call errored is repeated with one state change'
   const g = await golden.setup(t);
   g.gh.fail({ matches: isPr('ready'), status: 502, afterEffect: true });
   const drafts = [];
-  g.options.gh = github.createGh(async (args, cwd, input) => {
+  g.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (isPr('ready')(args)) drafts.push(g.gh.pr().isDraft);
     return g.gh.gh(args, cwd, input);
   });
@@ -150,7 +150,7 @@ test('a transient push failure is retried and pushes once', async (t) => {
 
 test('a push that landed but whose call errored is found on origin, not pushed again', async (t) => {
   const g = await golden.setup(t);
-  const unlocked = g.options.git;
+  const unlocked = g.options.deps.git;
   const pushes = pushThrough(g, async (n, push) => {
     await push();
     if (n === 1) throw pushError();
@@ -574,7 +574,7 @@ test("a worktree backing off is idle to other Tickets' integrity checks", async 
   g.gh.fail(onPr({ status: 502 }));
   // Another Ticket's Action, in the main checkout, writes into this worktree while it backs off.
   const other = { worktree: g.mainRoot, commonDir: g.commonDir };
-  const check = { others: [g.worktree], protectedPaths: g.options.protectedPaths, git: g.options.git };
+  const check = { others: [g.worktree], protectedPaths: g.options.protectedPaths, git: g.options.deps.git };
   const stray = join(g.worktree, 'stray.txt');
   let violations;
   g.clock.onSleep = async () => {
@@ -776,8 +776,8 @@ test('a stop routed to ready-for-qa keeps its run stop when the replacement repo
       route: { ok: { end: 'ready-for-qa' }, failed: { end: 'ready-for-qa' } },
     };
   });
-  const { runShell } = g.options.exec;
-  g.options.exec = {
+  const { runShell } = g.options.deps.exec;
+  g.options.deps.exec = {
     runShell: (command, opts) =>
       command === 'npm run lint'
         ? Promise.resolve({ code: 1, output: 'lint failed', timedOut: false })

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
@@ -32,7 +32,7 @@ test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
   const g = await golden.setup(t, { git: 'real' });
   golden.sh(g.worktree, 'config', 'core.quotePath', 'true');
   writeFileSync(join(g.worktree, 'café notes.txt'), 'mine\n');
-  const { stat } = await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree });
+  const { stat } = await reconcile.dirtyState(null, { git: g.options.deps.git, worktree: g.worktree });
   assert.ok(stat.includes(' café notes.txt (untracked)\n'), stat);
 });
 
@@ -61,7 +61,7 @@ for (const point of Object.keys(POINTS)) {
       },
     );
 
-    const result = await interpreter.runExecution({ ...g.options, git, record: mid });
+    const result = await interpreter.runExecution({ ...g.options, deps: { ...g.options.deps, git }, record: mid });
     assert.equal(result.outcome, 'needs-human');
     assert.equal(result.held, true, JSON.stringify(result));
     const final = await loadTicket(g);
@@ -104,16 +104,20 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   );
   let looked = 0;
   const gh = {
-    ...g.options.gh,
+    ...g.options.deps.gh,
     // One read serves an issue and a PR, so only the PR's is counted.
     comments: async (n, cwd) => {
-      if (n !== 7) return g.options.gh.comments(n, cwd);
+      if (n !== 7) return g.options.deps.gh.comments(n, cwd);
       looked++;
       throw new Error('gh api exited 1\nHTTP 502: Bad Gateway');
     },
   };
 
-  const result = await interpreter.runExecution({ ...g.options, gh, record: await loadTicket(g) });
+  const result = await interpreter.runExecution({
+    ...g.options,
+    deps: { ...g.options.deps, gh },
+    record: await loadTicket(g),
+  });
   assert.equal(looked, 0, "the older PR's comments are never read");
   assert.equal(result.held, true, JSON.stringify(result));
   const final = await loadTicket(g);

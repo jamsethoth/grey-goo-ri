@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as golden from '../support/golden.mjs';
 import { originSha, loadTicket, EFFECTS, crashed, NEEDS_HUMAN, reconcileArgs } from '../support/reconcile.mjs';

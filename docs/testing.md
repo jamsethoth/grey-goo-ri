@@ -93,8 +93,8 @@ ignored Protected File: the concurrent Runs of `test/e2e/run.concurrency.test.mj
 it, since over real git their snapshots' git processes took them up to 444 s under a full suite run (#187).
 
 The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers. Each is a
-dependency `bin/gg.mjs` builds once and passes down as a named option of `run.runTarget` and
-`interpreter.runExecution` (the deps, ADR 0019), or a factory option of the module that owns it; a test passes its own
+dependency `bin/gg.mjs` builds once and passes down as a named option of `run.runTarget`, which passes it on in
+`interpreter.runExecution`'s `deps` (ADR 0019), or a factory option of the module that owns it; a test passes its own
 in the options it builds, so none outlives the case:
 
 | Seam | What a test does with it |
@@ -103,8 +103,8 @@ in the options it builds, so none outlives the case:
 | the `gh` option, `github.createGh(transport)` | answers and records every gh call (`fakeGh`), or fails a chosen one |
 | the `git` option; `git.createGit({ sleep })` | runs over the fake git; records runGit's index.lock waits |
 | the `locks` option, `locks.createLocks({ clock, wrapAttempt })` | times every lock wait, the 60 s default and the 600 s repo-lock waits included; sees a lock attempt, or contends it (`contendRepoLock`) |
-| the `database` option, `record.stateDatabase({ beforeSave, beforeAppend })` (`golden.caseDatabase(t)`, with `golden.onSave`, `golden.failSaves` and `golden.failAppends`) | sees or fails a chosen save or Event insert |
-| the `integrity` option; `integrity.withGit(git, fs, locks)` (`golden.crashFs`) | runs the fake integrity; crashes a restore's write |
+| the `database` option, `record.createStateDatabase({ beforeSave, beforeAppend })` (`golden.caseDatabase(t)`, with `golden.onSave`, `golden.failSaves` and `golden.failAppends`) | sees or fails a chosen save or Event insert |
+| the `integrity` option; `integrity.createIntegrity(git, fs, locks)` (`golden.crashFs`) | runs the fake integrity; crashes a restore's write |
 | the `exec` option | answers the suite's command with red or green output |
 | `exec.runShell`'s `testHooks` option: `timers`, `onWatch`, `signal` and the rest | moves the timeout clock; sees which descendants the POSIX watcher has listed |
 | `exec.createExec({ kernel32 })` | runs Windows commands with no `node:ffi` (`null`) or with kernel32 calls that fail |

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
@@ -163,8 +163,8 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
     },
   });
   const sleeps = [];
-  const { clock } = g.options;
-  g.options.clock = {
+  const { clock } = g.options.deps;
+  g.options.deps.clock = {
     ...clock,
     sleep: async (ms) => {
       sleeps.push(ms);
@@ -222,8 +222,8 @@ test('an auth failure keeps its run stop when the terminal comment fails', async
   const g = await golden.setup(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
-  g.options.gh = {
-    ...g.options.gh,
+  g.options.deps.gh = {
+    ...g.options.deps.gh,
     comment: async () => {
       throw new Error('gh comment down');
     },
@@ -241,10 +241,10 @@ test('a fault interrupting a Terminal comment posts its own comment with the err
   const g = await golden.setup(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
-  const real = g.options.gh.comment;
+  const real = g.options.deps.gh.comment;
   let calls = 0;
-  g.options.gh = {
-    ...g.options.gh,
+  g.options.deps.gh = {
+    ...g.options.deps.gh,
     comment: async (...a) => {
       if (calls++ === 0) throw new Error('gh comment down');
       return real(...a);
@@ -348,10 +348,10 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
   const g = await golden.setup(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
-  const real = g.options.gh.comment;
+  const real = g.options.deps.gh.comment;
   let calls = 0;
   const gh = {
-    ...g.options.gh,
+    ...g.options.deps.gh,
     comment: async (...a) => {
       if (calls++ === 0) throw new Error('gh comment down');
       return real(...a);
@@ -361,13 +361,13 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
   await assert.rejects(
     interpreter.runExecution({
       ...g.options,
-      gh,
+      deps: { ...g.options.deps, gh },
       crashAt: { marker: terminalMarker(g, 'fault-comment'), point: 'after-effect' },
     }),
     (err) => err instanceof interpreter.CrashError,
   );
   const lookupDown = {
-    ...g.options.gh,
+    ...g.options.deps.gh,
     comments: async () => {
       throw new Error('gh api exited 1\nHTTP 502: Bad Gateway');
     },
@@ -375,7 +375,7 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
 
   const result = await interpreter.runExecution({
     ...g.options,
-    gh: lookupDown,
+    deps: { ...g.options.deps, gh: lookupDown },
     record: await record.load(g.commonDir, 'ticket', golden.TICKET),
   });
   assert.equal(result.fault, true);
@@ -425,8 +425,8 @@ test('a rejecting harness is an unexpected fault', async (t) => {
 
 test('a fault whose terminal comment also fails is still recorded as a fault', async (t) => {
   const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
-  g.options.gh = {
-    ...g.options.gh,
+  g.options.deps.gh = {
+    ...g.options.deps.gh,
     comment: async () => {
       throw new Error('gh comment down');
     },
@@ -472,7 +472,7 @@ test('golden: blocked after a red recovery pass stops', async (t) => {
       },
     },
   });
-  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');

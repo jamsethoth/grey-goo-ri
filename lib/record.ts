@@ -336,7 +336,7 @@ export async function loadAll<Kind extends RecordKind>(
 // The State Database's writes. `beforeSave` sees each record about to be written, and `beforeAppend` each Event about
 // to be inserted (events.eventLog), and either throws to fail that write, as a disk error would. The entry point passes
 // neither; a test passes them to see or fail chosen writes.
-export function stateDatabase({
+export function createStateDatabase({
   beforeSave = () => {},
   beforeAppend = () => {},
 }: {
@@ -375,10 +375,10 @@ export function stateDatabase({
 }
 
 // The State Database the entry point builds and passes down as `database` (ADR 0019).
-export type StateDatabase = ReturnType<typeof stateDatabase>;
+export type StateDatabase = ReturnType<typeof createStateDatabase>;
 
 // The real State Database, for callers that take no seam: this module is itself one, so it can stand for a `database`.
-export const { save, intent, evidence, complete, beforeAppend } = stateDatabase();
+export const { save, intent, evidence, complete, beforeAppend } = createStateDatabase();
 
 // What a reference or template may name of a Visit (W2): its own outputs by Action id, and its `inputs`, where an
 // absent input reads as nothing so a template renders it empty (T10).

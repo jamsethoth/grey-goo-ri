@@ -188,8 +188,8 @@ const ACTION_REQUIRED = declaredAs(ACTION, 'required');
 const ACTION_OPTIONAL = declaredAs(ACTION, 'optional');
 const AGENT_REQUIRED = declaredAs(AGENT, 'required');
 
-// `database` (record.stateDatabase) sees each Event before it is inserted; the real one, the record module, lets every
-// Event through.
+// `database` (record.createStateDatabase) sees each Event before it is inserted; the real one, the record module, lets
+// every Event through.
 export function eventLog(
   commonDir: string,
   base: Fields = {},

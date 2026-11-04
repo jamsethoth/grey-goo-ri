@@ -11,13 +11,13 @@ grey-goo-ri issue #153 gave tests seams in `lib/` as module-level setters: `gith
 before its restore, or restored in the wrong order, left its fake installed for the next case: grey-goo-ri issue #217
 found two such leaks, one of them in `test/unit/run.test.mjs`, and fixed them by care in each case, which the next
 case could forget. A reader also could not see at a call site which git, gh or clock it reached. The other style,
-already used for `runTarget`'s `git`, `gh` and `exec` and for `integrity.withGit`, passed the dependency in. Epic #193
+already used for `runTarget`'s `git`, `gh` and `exec` and for `integrity.createIntegrity`, passed the dependency in. Epic #193
 chose that style for all of them.
 
 Every external dependency of a Run is built once at the entry point and passed down:
 
 - A module with a dependency exports a factory over it: `github.createGh(transport)`, `git.createGit({ sleep })`,
-  `locks.createLocks({ clock, wrapAttempt })` and `record.stateDatabase({ beforeSave, beforeAppend })`, whose
+  `locks.createLocks({ clock, wrapAttempt })` and `record.createStateDatabase({ beforeSave, beforeAppend })`, whose
   `beforeAppend` `events.eventLog(commonDir, base, database)` calls before each Event insert. Given nothing, each builds
   the real one.
 - `bin/gg.mjs` builds the deps (`gh`, `git`, `exec`, `locks`, `database` and `clock`) and passes them as named options

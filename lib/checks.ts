@@ -49,7 +49,7 @@ function testStatuses(output: string) {
 }
 
 // A command's run as exec.runShell reports it, as far as a Check reads it.
-export type ShellRun = Pick<exec.ShellResult, 'code' | 'output' | 'timedOut'>;
+export type ShellRun = Pick<exec.ShellResult, 'code' | 'output'> & { timedOut?: boolean };
 
 // A Red Check's result: on a failure an agent can fix, `failure` says which (T4c, N5).
 export interface RedCheck {
@@ -181,7 +181,7 @@ export const testPathSet = (globs: string[]) => ({ globs, exclude: DEPENDENCY_DI
 // The git verbs Test Immutability reads (lib/git.ts).
 export interface ChangedPaths {
   changedSince(cwd: string, baseline: string): Promise<string[]>;
-  untrackedPaths(cwd: string, options?: { include: string; within: { exclude: string[] } }): Promise<string[]>;
+  untrackedPaths(cwd: string, options?: { include: 'ignored'; within: { exclude: string[] } }): Promise<string[]>;
 }
 
 export async function testImmutability(

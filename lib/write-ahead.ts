@@ -1,6 +1,6 @@
 // The write-ahead log an Execution Record keeps: the intent, evidence and completion of every side effect, by its
 // Action Marker, so Reconciliation can tell which effects landed (request 3.5). The State Database's writes append to
-// it (record.stateDatabase); these read it.
+// it (record.createStateDatabase); these read it.
 import type * as record from './record.ts';
 
 // One step of a side effect in the write-ahead log.

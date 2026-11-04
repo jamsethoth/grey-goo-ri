@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as golden from '../support/golden.mjs';
@@ -46,17 +46,17 @@ async function crashedRestore(t, crash) {
     }
     return out;
   };
-  const git = g.options.git;
+  const git = g.options.deps.git;
   let reset = false;
-  g.options.git = {
+  g.options.deps.git = {
     ...git,
     resetTo: async (...args) => {
       await git.resetTo(...args);
       reset = true;
     },
   };
-  g.options.integrity = integrity.withGit(
-    g.options.git,
+  g.options.deps.integrity = integrity.createIntegrity(
+    g.options.deps.git,
     golden.crashFs(g.worktree, () => reset, crash),
   );
   await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
@@ -98,7 +98,7 @@ for (const [name, crash] of Object.entries(RESTORE_CRASHES)) {
 
 test('a second crash during restore replay remains resumable', async (t) => {
   const g = await crashedRestore(t, RESTORE_CRASHES['after deleting an extra']);
-  const crashing = integrity.withGit(
+  const crashing = integrity.createIntegrity(
     g.git,
     golden.crashFs(g.worktree, () => true, { op: 'writeFile', n: 1, after: true }),
   );

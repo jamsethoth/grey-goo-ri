@@ -155,6 +155,16 @@ export interface ConfigurationSnapshot {
   persona: { name: string; bytes: string; hash: string } | null;
 }
 
+// The reset intent's payload (visit-runner's rollback): the baseline head, the History item it adds, what git clean
+// leaves to restore, and the worktree as the agent left it.
+export interface ResetPayload {
+  baseline: string;
+  history: Record<string, unknown>;
+  untracked?: integrity.RollbackSet;
+  // An intent saved before the index was fingerprinted has no `index`.
+  left?: Omit<integrity.WorktreeSnapshot, 'index'> & { index?: string; files?: integrity.UntrackedFiles };
+}
+
 // An Action's outputs in Visit order, by Vertex, Visit and Action, which later Vertices' inputs read (W2).
 export interface ActionOutput {
   vertex: string;

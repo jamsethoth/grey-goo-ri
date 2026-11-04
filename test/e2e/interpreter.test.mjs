@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.mjs';
 import {
@@ -39,9 +39,9 @@ const deterministic = (vertex, action, row) => {
 test('golden: a first-visit pass ends at ready-for-qa through publish', async (t) => {
   const g = await golden.setup(t, { integrity: 'real' });
   let draft;
-  const { markReady } = g.options.gh;
-  g.options.gh = {
-    ...g.options.gh,
+  const { markReady } = g.options.deps.gh;
+  g.options.deps.gh = {
+    ...g.options.deps.gh,
     markReady: async (...args) => {
       draft = g.gh.pr().isDraft;
       return markReady(...args);
@@ -161,10 +161,10 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
 // R2d: red committed its tests, then a human edited a tracked file before green started.
 test("a write Vertex on a dirty worktree gg's records do not explain is held", async (t) => {
   const g = await golden.setup(t, { integrity: 'real' });
-  const { commitStaged } = g.options.git;
+  const { commitStaged } = g.options.deps.git;
   let edited = null;
-  g.options.git = {
-    ...g.options.git,
+  g.options.deps.git = {
+    ...g.options.deps.git,
     commitStaged: async (...args) => {
       const sha = await commitStaged(...args);
       [edited] = golden.sh(g.worktree, 'ls-files').split('\n');

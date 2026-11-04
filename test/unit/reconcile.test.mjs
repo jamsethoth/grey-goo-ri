@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as golden from '../support/golden.mjs';
@@ -14,7 +14,11 @@ const branchLog = [
   { sha: 'a'.repeat(40), message: 'base' },
   { sha: '9'.repeat(40), message: 'before the base' },
 ];
-const onBranch = (base) => ({ worktree: '/wt', base, options: { git: { commitLog: async () => branchLog } } });
+const onBranch = (base) => ({
+  worktree: '/wt',
+  base,
+  options: { deps: { git: { commitLog: async () => branchLog } } },
+});
 
 test('branchMessages lists the commits since the base, oldest first', async () => {
   assert.deepEqual(await interpreterSupport.branchMessages(onBranch('a'.repeat(40))), ['feat: a', 'feat: b']);
@@ -26,27 +30,27 @@ test('branchMessages throws when the base is not in the log', async () => {
 
 // An Integrity Violation at red's Attempt, which a reset rolls back.
 const violating = (g) => ({
-  ...g.options.integrity,
+  ...g.options.deps.integrity,
   end: async () => ({ violations: [{ worktree: g.worktree, surface: 'head', before: g.base, after: 'a'.repeat(40) }] }),
 });
 
 test('a reset whose evidence was saved but not its completion is completed without a second History item', async (t) => {
   const g = await golden.setup(t);
-  await interpreter.runExecution({ ...g.options, integrity: violating(g) });
+  await interpreter.runExecution({ ...g.options, deps: { ...g.options.deps, integrity: violating(g) } });
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   rec.writeAheadLog = rec.writeAheadLog.filter((e) => !(e.effect === 'reset' && e.step === 'complete'));
 
-  assert.equal(await reconcile.resets(rec, { git: g.options.git }), 'continue');
+  assert.equal(await reconcile.resets(rec, { git: g.options.deps.git }), 'continue');
   assert.equal(rec.history.length, 1);
   assert.deepEqual(resetEntries(rec), ['intent', 'evidence', 'complete']);
 });
 
 test('a failed HEAD read after the reset of an Integrity Violation leaves the History item to Reconciliation, once', async (t) => {
   const g = await golden.setup(t);
-  g.options.integrity = violating(g);
-  const git = g.options.git;
+  g.options.deps.integrity = violating(g);
+  const git = g.options.deps.git;
   let reset = false;
-  g.options.git = {
+  g.options.deps.git = {
     ...git,
     resetTo: async (...args) => {
       await git.resetTo(...args);

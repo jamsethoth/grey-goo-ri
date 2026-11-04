@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as github from '../../lib/github.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as golden from './golden.mjs';
@@ -75,7 +75,7 @@ export async function greenSetup(t, responses, integrity, git) {
     integrity,
     git,
   });
-  g.options.exec = {
+  g.options.deps.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
       if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
@@ -100,7 +100,7 @@ export function stopReason(g, { vertex, action, recovery = 0, outcome, rule, com
 // The Ticket branch as the injected git, real or fake, holds it: commit messages since the base, oldest first, and their
 // subjects. A base missing from the log throws, so no commit is dropped or added unnoticed.
 export async function branchMessages(g) {
-  const log = await g.options.git.commitLog(g.worktree, golden.BRANCH);
+  const log = await g.options.deps.git.commitLog(g.worktree, golden.BRANCH);
   const since = log.findIndex((c) => c.sha === g.base);
   if (since < 0) throw new Error(`base ${g.base} is not in the log of ${golden.BRANCH}`);
   return log
@@ -109,9 +109,9 @@ export async function branchMessages(g) {
     .reverse();
 }
 export const subjects = async (g) => (await branchMessages(g)).map((m) => m.split('\n')[0]);
-export const headSha = (g) => g.options.git.headSha(g.worktree);
+export const headSha = (g) => g.options.deps.git.headSha(g.worktree);
 // The Ticket branch's commit on origin, or null. A test that holds the repo lock passes the unlocked git.
-export const originSha = (g, git = g.options.git) => git.remoteSha(g.mainRoot, golden.BRANCH);
+export const originSha = (g, git = g.options.deps.git) => git.remoteSha(g.mainRoot, golden.BRANCH);
 
 // T17: the review and fix Procedures on an inline Flow matching request 3.3's illustration.
 export const REVIEWER_PERSONA = '# reviewer\nJudge the diff.\n';
@@ -190,7 +190,7 @@ export async function reviewFlow(t, responses, { exec, integrity, git, configure
     vertices.publish.inputs = REVIEW_INPUTS;
   });
   if (configure) golden.configure(g, configure);
-  if (exec) g.options.exec = exec;
+  if (exec) g.options.deps.exec = exec;
   return g;
 }
 
@@ -229,7 +229,7 @@ export const onPr = (fields) => ({ matches: (args) => golden.isCommentPost(args,
 // Crashes the `n`th review-comment POST as it launches, after the queued failures before it.
 export function crashPost(g, n) {
   let posts = 0;
-  g.options.gh = github.createGh(async (args, cwd, input) => {
+  g.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (golden.isCommentPost(args, PR) && ++posts === n) throw new interpreter.CrashError('crash as the POST launched');
     return g.gh.gh(args, cwd, input);
   });
@@ -243,7 +243,7 @@ export function contendRepoLock(g, during) {
   const commonDir = g.commonDir;
   let state = 'idle';
   let held = null;
-  g.options.locks = locks.createLocks({
+  g.options.deps.locks = locks.createLocks({
     wrapAttempt: async (lock, attempt) => {
       if (lock.commonDir !== commonDir || lock.name !== 'repo') return attempt();
       if (state === 'armed') {
@@ -281,7 +281,7 @@ export function lockedSetup(g, after) {
       },
     ]),
   );
-  const git = g.options.git;
-  g.options.git = run.lockedGit({ ...git, ...raw }, g.commonDir, { locks: g.options.locks });
+  const git = g.options.deps.git;
+  g.options.deps.git = run.lockedGit({ ...git, ...raw }, g.commonDir, { locks: g.options.deps.locks });
   return counts;
 }

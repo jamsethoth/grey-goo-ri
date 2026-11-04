@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as effectEvidence from '../../lib/effect-evidence.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
@@ -90,7 +90,7 @@ test('dirtyState and humanOverride return decisions without finalizing the recor
   const rec = await loadTicket(g);
 
   assert.ok(
-    await reconcile.dirtyState(rec, { git: g.options.git, worktree: g.worktree }),
+    await reconcile.dirtyState(rec, { git: g.options.deps.git, worktree: g.worktree }),
     'the human file is unknown dirty state',
   );
   assert.equal(rec.state, 'active');
@@ -131,7 +131,7 @@ async function testFixSetup(t) {
       },
     },
   });
-  g.options.exec = {
+  g.options.deps.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
       if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
@@ -272,7 +272,7 @@ test('a failed lookup is unknown, not absent', async (t) => {
   const { m, loaded } = await crashed(g, EFFECTS.comment.at, 'after-effect');
   const entry = writeAhead.openIntents(loaded).find((e) => e.actionMarker === m);
   const down = {
-    ...g.options.gh,
+    ...g.options.deps.gh,
     comments: async () => {
       throw badGateway();
     },
@@ -301,14 +301,18 @@ test('a failed lookup in a Run is retried on the Action budget and finds the lan
   const { m } = await crashed(g, EFFECTS.comment.at, 'after-effect');
   let failures = 1;
   const once = {
-    ...g.options.gh,
+    ...g.options.deps.gh,
     comments: async (...args) => {
       if (failures-- > 0) throw badGateway();
-      return g.options.gh.comments(...args);
+      return g.options.deps.gh.comments(...args);
     },
   };
 
-  const result = await interpreter.runExecution({ ...g.options, gh: once, record: await loadTicket(g) });
+  const result = await interpreter.runExecution({
+    ...g.options,
+    deps: { ...g.options.deps, gh: once },
+    record: await loadTicket(g),
+  });
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.equal(
     withMarker(

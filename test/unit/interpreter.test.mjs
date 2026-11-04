@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as config from '../../lib/config.mjs';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as render from '../../lib/render.mjs';
@@ -80,8 +80,8 @@ test('a Persona from the repository Layer is pinned with its hash', async (t) =>
 test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
   const g = await golden.setup(t);
   const path = join(g.worktree, 'test', 'add.test.mjs');
-  const runShell = g.options.exec.runShell;
-  g.options.exec.runShell = async (...args) => {
+  const runShell = g.options.deps.exec.runShell;
+  g.options.deps.exec.runShell = async (...args) => {
     const r = await runShell(...args);
     return { ...r, output: `${r.output}\n    at (${path}:1:1)` };
   };
@@ -115,8 +115,8 @@ test('each public field is redacted once and sent exactly as its intent saved it
     c.files['TOKEN.md'] = golden.layerFile(golden.PERSONA);
     Object.assign(c.agents.implementer, { model: 'model TOKEN', effort: 'TOKEN effort', persona: 'TOKEN.md' });
   });
-  const runShell = g.options.exec.runShell;
-  g.options.exec.runShell = async (...args) => {
+  const runShell = g.options.deps.exec.runShell;
+  g.options.deps.exec.runShell = async (...args) => {
     const r = await runShell(...args);
     return { ...r, output: `${r.output}\nTOKEN output` };
   };
@@ -187,8 +187,8 @@ for (const [kind, [directory, output]] of Object.entries(longLines)) {
   test(`${kind} Check output line publishes no fragment of a known directory`, async (t) => {
     const g = await golden.setup(t);
     g.options.publicText = (text) => render.publicText(text, [directory]);
-    const runShell = g.options.exec.runShell;
-    g.options.exec.runShell = async (...args) => {
+    const runShell = g.options.deps.exec.runShell;
+    g.options.deps.exec.runShell = async (...args) => {
       const r = await runShell(...args);
       return r.code === 0 ? { ...r, output } : r;
     };
@@ -234,8 +234,8 @@ for (const [name, from, to, generation, activity] of [
 test('runExecution asks the injected integrity whether an Attempt kept to its access', async (t) => {
   const g = await golden.setup(t);
   const violation = { worktree: g.worktree, surface: 'head', before: g.base, after: 'a'.repeat(40) };
-  const injected = { ...g.options.integrity, end: async () => ({ violations: [violation] }) };
-  const result = await interpreter.runExecution({ ...g.options, integrity: injected });
+  const injected = { ...g.options.deps.integrity, end: async () => ({ violations: [violation] }) };
+  const result = await interpreter.runExecution({ ...g.options, deps: { ...g.options.deps, integrity: injected } });
 
   assert.equal(result.outcome, 'needs-human');
   const red = actionEvent(g, 'red', 'red');
@@ -306,17 +306,21 @@ test('runExecution asserts the Protected Files it is given', async (t) => {
   const g = await golden.setup(t);
   const seen = [];
   const injected = {
-    ...g.options.integrity,
+    ...g.options.deps.integrity,
     begin: (args) => {
       seen.push(['begin', args.protectedPaths]);
-      return g.options.integrity.begin(args);
+      return g.options.deps.integrity.begin(args);
     },
     end: (args) => {
       seen.push(['end', args.protectedPaths]);
-      return g.options.integrity.end(args);
+      return g.options.deps.integrity.end(args);
     },
   };
-  await interpreter.runExecution({ ...g.options, integrity: injected, protectedPaths: ['.x/'] });
+  await interpreter.runExecution({
+    ...g.options,
+    deps: { ...g.options.deps, integrity: injected },
+    protectedPaths: ['.x/'],
+  });
   assert.deepEqual(seen.slice(0, 2), [
     ['begin', ['.x/']],
     ['end', ['.x/']],
@@ -371,10 +375,10 @@ test("a hold's label is set after its comment, each under its own marker", async
 
 test("a fault during an end does not replay the end's open reporting Action", async (t) => {
   const g = await golden.setup(t);
-  const real = g.options.gh.comment;
+  const real = g.options.deps.gh.comment;
   let calls = 0;
-  g.options.gh = {
-    ...g.options.gh,
+  g.options.deps.gh = {
+    ...g.options.deps.gh,
     comment: async (...a) => {
       if (calls++ === 0) throw new Error('gh comment down');
       return real(...a);
@@ -430,8 +434,8 @@ test("the PR's provenance counts a retried Attempt and a resumed Session once ea
 // T1a, M1: publish's pr-ready marks ready only the commit its Check passed on, while the PR's head is that commit.
 const publishing = async (t, during) => {
   const g = await golden.setup(t);
-  const runShell = g.options.exec.runShell;
-  g.options.exec.runShell = async (...args) => {
+  const runShell = g.options.deps.exec.runShell;
+  g.options.deps.exec.runShell = async (...args) => {
     const r = await runShell(...args);
     if (g.rec.cursor.vertex === 'publish') await during(g);
     return r;
@@ -476,8 +480,8 @@ test('pr-ready holds when only the remote PR head moved after the push', async (
   assert.deepEqual(rec.terminalReason.decidedBy, { hold: 'unchecked-publish' });
   assert.ok(rec.terminalReason.text.includes(moved), rec.terminalReason.text);
   assert.equal(
-    await g.options.git.remoteSha(g.mainRoot, golden.BRANCH),
-    await g.options.git.headSha(g.worktree),
+    await g.options.deps.git.remoteSha(g.mainRoot, golden.BRANCH),
+    await g.options.deps.git.headSha(g.worktree),
     "gg's push stands",
   );
 });
@@ -594,7 +598,10 @@ test('no "*" catches an unroutable Outcome', async (t) => {
   const violation = { worktree: g.worktree, surface: 'head', before: g.base, after: 'a'.repeat(40) };
   const result = await interpreter.runExecution({
     ...g.options,
-    integrity: { ...g.options.integrity, end: async () => ({ violations: [violation] }) },
+    deps: {
+      ...g.options.deps,
+      integrity: { ...g.options.deps.integrity, end: async () => ({ violations: [violation] }) },
+    },
   });
   assert.equal(result.outcome, 'needs-human', 'an Integrity Violation is never routed');
 });
@@ -747,8 +754,8 @@ test('a shipped Brief names its inputs directly', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files['test/sentinel.test.mjs'] = "import { add } from '../lib/add.mjs';\n";
   const g = await golden.setup(t, { responses });
-  const runShell = g.options.exec.runShell;
-  g.options.exec.runShell = async (...args) => {
+  const runShell = g.options.deps.exec.runShell;
+  g.options.deps.exec.runShell = async (...args) => {
     const r = await runShell(...args);
     return { ...r, output: `${r.output}\nSENTINEL red output` };
   };
@@ -872,7 +879,7 @@ test('a failed red at an end leaves its work in place', async (t) => {
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses });
   // The new test passes before any implementation exists, both times.
-  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -941,9 +948,9 @@ test('a Check result on an older tree does not count', async (t) => {
 
 test('a Check that changes the tree fails', async (t) => {
   const g = await golden.setup(t);
-  const runShell = g.options.exec.runShell;
+  const runShell = g.options.deps.exec.runShell;
   // The passing run leaves a generated file behind.
-  g.options.exec.runShell = async (command, opts) => {
+  g.options.deps.exec.runShell = async (command, opts) => {
     const r = await runShell(command, opts);
     if (r.code === 0) writeFileSync(join(g.worktree, 'lib', 'generated.mjs'), 'export {};\n');
     return r;
@@ -966,8 +973,8 @@ function unrequiredTest(g) {
     c.procedures.implement.claimTokens.ok = { requires: ['lint'] };
     c.flows.golden.ticket.vertices.publish.inputs.green.optional = true;
   });
-  const { runShell } = g.options.exec;
-  g.options.exec.runShell = async (command, opts) =>
+  const { runShell } = g.options.deps.exec;
+  g.options.deps.exec.runShell = async (command, opts) =>
     command === 'npm run lint' ? LINT_PASSES : runShell(command, opts);
 }
 
@@ -987,8 +994,8 @@ function withLint(g, lintRuns) {
     });
     c.procedures.implement.claimTokens.ok = { requires: ['test', 'lint'] };
   });
-  const shells = { ...g.options.exec, 'npm run lint': async () => lintRuns.shift() };
-  g.options.exec.runShell = async (command, opts) => (shells[command] ?? shells.runShell)(command, opts);
+  const shells = { ...g.options.deps.exec, 'npm run lint': async () => lintRuns.shift() };
+  g.options.deps.exec.runShell = async (command, opts) => (shells[command] ?? shells.runShell)(command, opts);
 }
 
 const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
@@ -1085,7 +1092,7 @@ test('named tests missing from the output are recovered once, then fail', async 
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses });
   // The runner fails, but its output never names the reported test.
-  g.options.exec = { runShell: async () => ({ code: 1, output: 'Error: something else broke', timedOut: false }) };
+  g.options.deps.exec = { runShell: async () => ({ code: 1, output: 'Error: something else broke', timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -1153,7 +1160,7 @@ test('a command Check that times out is not recovered', async (t) => {
     { code: 1, output: golden.RED_OUTPUT, timedOut: false },
     { code: null, output: 'killed after 30 min', timedOut: true },
   ];
-  g.options.exec.runShell = async () => runs.shift();
+  g.options.deps.exec.runShell = async () => runs.shift();
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -1233,8 +1240,8 @@ test('a failing reuse: tree result is never reused', async (t) => {
   golden.configure(g, reuseTree('implement', 'publish'));
   unrequiredTest(g);
   const runs = [];
-  const runShell = g.options.exec.runShell;
-  g.options.exec.runShell = async (command, opts) => {
+  const runShell = g.options.deps.exec.runShell;
+  g.options.deps.exec.runShell = async (command, opts) => {
     runs.push(command);
     return runShell(command, opts);
   };
@@ -1353,8 +1360,21 @@ test('the interpreter names no Procedure, Action or Check', async (t) => {
   assert.equal(g.gh.pr().isDraft, false, 'pr-ready marked the PR ready');
 });
 
-test('lib/interpreter.mjs holds no Procedure table, describe, shipped Procedure name or phase read', () => {
-  const source = readFileSync(new URL('../../lib/interpreter.mjs', import.meta.url), 'utf8');
+// The interpreter's modules (AGENTS.md's layout table).
+const INTERPRETER = [
+  'interpreter',
+  'run-context',
+  'visit-runner',
+  'visit-scope',
+  'bounds',
+  'agent-action',
+  'check-action',
+  'effect-actions',
+];
+test('lib/interpreter.ts and its modules hold no Procedure table, describe, shipped Procedure name or phase read', () => {
+  const source = INTERPRETER.map((name) => readFileSync(new URL(`../../lib/${name}.ts`, import.meta.url), 'utf8')).join(
+    '\n',
+  );
   assert.doesNotMatch(source, /PROCEDURES|procedures\.describe/);
   assert.doesNotMatch(source, /'(red|green|fix|review|implement|publish)'/);
   assert.doesNotMatch(source, /\.phase\b/);
@@ -1419,7 +1439,7 @@ test('a passed row does not count a Check that passed on an older tree', async (
     };
   });
   // Every command passes; touch also changes the worktree after gate checked it.
-  g.options.exec.runShell = async (command) => {
+  g.options.deps.exec.runShell = async (command) => {
     if (command === 'npm run touch') writeFileSync(join(g.worktree, 'touched.txt'), 'x\n');
     return { code: 0, output: 'ok', timedOut: false };
   };
@@ -2045,7 +2065,7 @@ test('worked example: retries and a recovery pass count toward the cap, which wi
     },
   );
   // The suite passes only once lib/add.mjs really adds, so green's first test Check fails.
-  g.options.exec = {
+  g.options.deps.exec = {
     runShell: async (command, opts) => {
       const file = join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs');
       if (!existsSync(file)) return { code: 1, output: golden.RED_OUTPUT, timedOut: false };
@@ -2177,7 +2197,7 @@ test("a repeat Check ignores an earlier Execution's identical findings", async (
 
   const branch = 'ticket/16-add-again';
   const worktree = join(g.root, 'wt', 'ticket-16');
-  await g.options.git.ensureWorktree({ mainRoot: g.mainRoot, path: worktree, branch, base: 'main' });
+  await g.options.deps.git.ensureWorktree({ mainRoot: g.mainRoot, path: worktree, branch, base: 'main' });
   const next = record.createExecution({
     commonDir: g.commonDir,
     ticket: 16,

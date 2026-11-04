@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as integrity from '../../lib/integrity.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import { fakeGit } from '../support/fake-git.mjs';
@@ -77,7 +77,7 @@ test('a workflow file change is an integrity violation', async (t) => {
     sqlite.close(commonDir);
     rmSync(root, { recursive: true, force: true });
   });
-  const real = integrity.withGit(fake.git);
+  const real = integrity.createIntegrity(fake.git);
   const rec = newExecution(commonDir, 1, mainRoot);
   const baseline = await real.begin({ record: rec, others: [], protectedPaths: interpreter.protectedFiles({}) });
   writeFileSync(join(mainRoot, '.github', 'workflows', 'ci.yml'), 'on: push\njobs: {}\n');
