@@ -195,8 +195,8 @@ What gg does with the processes a shell command leaves. On a timeout it ends the
 job, or, uncontained, kills the tree the watcher saw on POSIX or runs taskkill on Windows. A process it cannot tie to
 the command is left alone, and each one it could not end or confirm gone is named as a survivor. A contained command
 that finishes but leaves processes running has them named as leftovers and let run on, unless the job cannot release
-them: then they end when gg exits. The `cleanup` output that Checks and agent Actions declare is to carry its result;
-gg does not write it yet.
+them: then they end when gg exits. The `cleanup` output that agent Actions and command and tests-fail Checks declare
+is to carry its result; gg does not write it yet.
 _Avoid_: cleanup (alone, which also names removing a ticket's worktree), teardown, reaping
 
 **Permission Intent**:
