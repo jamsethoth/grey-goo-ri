@@ -1080,7 +1080,7 @@ test(
   },
 );
 
-// bin/gg.mjs opens kernel32 and passes it down (ADR 0019); a module that imports exec must not open a second one.
+// bin/gg.ts opens kernel32 and passes it down (ADR 0019); a module that imports exec must not open a second one.
 // A query string loads a fresh copy of exec.ts, so its import is seen here.
 test(
   'importing exec opens no node:ffi, and its own runShell opens it on the first call',
