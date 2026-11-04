@@ -171,6 +171,38 @@ test('finish completes a marked Action with its evidence once, and returns a com
   assert.equal(emitted.length, 1, 'a completed Action records no second Event');
 });
 
+test("a Flow Action's retry is not settled, so a resumed Visit runs the Action again", async (t) => {
+  const { context, executionRecord, emitted } = await support.executionContext(t);
+  executionRecord.visitState = {
+    recovery: 0,
+    firstAttemptBaseline: null,
+    call: null,
+    response: null,
+    runs: {},
+    checks: {},
+    checkFollows: false,
+    settled: null,
+  };
+  const resolution: visit.TableResolution = {
+    outcome: 'failed',
+    direction: 'retry',
+    rule: { table: 'fixed', row: 'transient-retry' },
+    row: 'transient-retry',
+    check: null,
+    retryAfterMs: 60_000,
+    retryKind: 'transient',
+    failureClass: 'transient',
+  };
+  const actionRef = { ...support.PUSH_REF, action: 'green' };
+  await effects.finish(context, { actionRef, startedAt: 5, resolution });
+  assert.equal(executionRecord.visitState.settled, null);
+  assert.deepEqual(
+    emitted.map((event) => [event.action, event.direction]),
+    [['green', 'retry']],
+    'its Action Event is still recorded',
+  );
+});
+
 test('a completed side effect finishes as effect-completed', async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
   await record.intent(executionRecord, 'gg:m', 'push', {});
