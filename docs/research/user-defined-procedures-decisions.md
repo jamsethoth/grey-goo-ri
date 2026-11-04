@@ -314,7 +314,7 @@ Commands now come from the repository Layer's `commands` key (grey-goo-ri PR #99
     `rec.sessions` keys on the agent step, since recovery resumes the same Session.
   - (d) Step ids are unique within a Procedure and contain no `:` and no whitespace (`lib/marker.mjs:14`), checked at
     admission.
-    The request document's names rule (3.3) now states the form, with no `.` either, and gives Vertex ids the same
+    The request document's names rule (3.3) now states the form, with no `.` or `/` either, and gives Vertex ids the same
     (grey-goo-ri issue #269).
   - (e) Glossary: a **Recovery Number** entry ("how many recovery Phases have run in this Visit; 0 before the
     first"), and the Action identity entry rewritten. grey-goo-ri issue #23 freezes it.
