@@ -285,27 +285,32 @@ test('an undeclared command is an error naming the Check', async () => {
   ]);
 });
 
-test('an Action id with a colon is an error', async () => {
-  const config = example();
-  config.procedures['base-check'].actions[0].id = 'te:st';
-  assert.deepEqual((await check(config)).errors, [
-    {
-      at: 'procedures.base-check.actions[0]',
-      message: 'Action id "te:st" must be non-empty with no ":", "." or whitespace',
-    },
-  ]);
-});
+const CARRIED = 'must be non-empty with no ":", ".", "/" or whitespace';
+const BLANK = 'must not be empty or only whitespace';
 
-test('an Action id with whitespace is an error', async () => {
-  const config = example();
-  config.procedures['base-check'].actions[0].id = 'te st';
-  assert.deepEqual((await check(config)).errors, [
-    {
-      at: 'procedures.base-check.actions[0]',
-      message: 'Action id "te st" must be non-empty with no ":", "." or whitespace',
-    },
-  ]);
-});
+// Each form a carried name may not take, named for the case.
+const CARRIED_BREAKS = [
+  ['', 'that is empty'],
+  ['a:b', 'with a colon'],
+  ['a.b', 'with a dot'],
+  ['a b', 'with whitespace'],
+  ['a/b', 'with a slash'],
+];
+// Each form any other configured name may not take.
+const BLANK_BREAKS = [
+  ['', 'empty'],
+  [' ', 'only whitespace'],
+];
+
+for (const [id, form] of CARRIED_BREAKS.slice(1)) {
+  test(`an Action id ${form} is an error`, async () => {
+    const config = example();
+    config.procedures['base-check'].actions[0].id = id;
+    assert.deepEqual((await check(config)).errors, [
+      { at: 'procedures.base-check.actions[0]', message: `Action id ${JSON.stringify(id)} ${CARRIED}` },
+    ]);
+  });
+}
 
 // A second Flow of one Vertex, whose id the case chooses, running the example's base-check.
 const oneVertexFlow = (id) => ({
@@ -313,59 +318,61 @@ const oneVertexFlow = (id) => ({
   actionCap: 1,
   ticket: { entry: id, vertices: { [id]: { procedure: 'base-check', route: { ok: { end: 'needs-human' } } } } },
 });
-const CARRIED = 'must be non-empty with no ":", "." or whitespace';
 
-test('a Vertex id that is empty or has ":", "." or whitespace is an error at its location', async () => {
-  for (const id of ['', 'a:b', 'a.b', 'a b']) {
+for (const [id, form] of CARRIED_BREAKS) {
+  test(`a Vertex id ${form} is an error at its location`, async () => {
     const config = example();
     config.flows.names = oneVertexFlow(id);
-    assert.deepEqual(
-      (await check(config)).errors,
-      [{ at: `flows.names.ticket.vertices.${id}`, message: `Vertex id ${JSON.stringify(id)} ${CARRIED}` }],
-      JSON.stringify(id),
-    );
-  }
-});
+    assert.deepEqual((await check(config)).errors, [
+      { at: `flows.names.ticket.vertices.${id}`, message: `Vertex id ${JSON.stringify(id)} ${CARRIED}` },
+    ]);
+  });
+}
 
-test('a Procedure name that is empty or has ":", "." or whitespace is an error at its location', async () => {
-  for (const name of ['', 'a:b', 'a.b', 'a b']) {
+for (const [name, form] of CARRIED_BREAKS) {
+  test(`a Procedure name ${form} is an error at its location`, async () => {
     const config = example();
     config.procedures[name] = config.procedures['base-check'];
     config.flows.default.ticket.vertices.baseline.procedure = name;
+    assert.deepEqual((await check(config)).errors, [
+      { at: `procedures.${name}`, message: `Procedure ${JSON.stringify(name)} ${CARRIED}` },
+    ]);
+  });
+}
+
+for (const [name, form] of CARRIED_BREAKS.filter(([name]) => name !== 'a:b')) {
+  test(`an input name ${form} is an error at its location`, async () => {
+    const config = example();
+    config.flows.default.ticket.vertices['implementer-fix'].inputs[name] = { from: 'red.commit.files' };
+    const inputLocation = `flows.default.ticket.vertices.implementer-fix.inputs.${name}`;
     assert.deepEqual(
-      (await check(config)).errors,
-      [{ at: `procedures.${name}`, message: `Procedure ${JSON.stringify(name)} ${CARRIED}` }],
-      JSON.stringify(name),
+      (await check(config)).errors.filter((e) => e.at === inputLocation),
+      [{ at: inputLocation, message: `input ${JSON.stringify(name)} ${CARRIED}` }],
     );
-  }
-});
+  });
+}
 
-test('an Agent or Flow name that is empty is an error at its location', async () => {
-  const config = example();
-  config.agents[''] = config.agents.senior;
-  config.flows[''] = oneVertexFlow('only');
-  assert.deepEqual((await check(config)).errors, [
-    { at: 'agents.', message: 'Agent "" must be non-empty' },
-    { at: 'flows.', message: 'Flow "" must be non-empty' },
-  ]);
-});
+for (const [name, form] of BLANK_BREAKS) {
+  test(`an Agent or Flow name that is ${form} is an error at its location`, async () => {
+    const config = example();
+    config.agents[name] = config.agents.senior;
+    config.flows[name] = oneVertexFlow('only');
+    assert.deepEqual((await check(config)).errors, [
+      { at: `agents.${name}`, message: `Agent ${JSON.stringify(name)} ${BLANK}` },
+      { at: `flows.${name}`, message: `Flow ${JSON.stringify(name)} ${BLANK}` },
+    ]);
+  });
 
-test('a Claim token that is empty, or an input name that is empty or has ".", is an error at its location', async () => {
-  const config = example();
-  const fix = config.flows.default.ticket.vertices['implementer-fix'];
-  config.procedures['tests-fail'].claimTokens[''] = { stop: true };
-  fix.inputs[''] = { from: 'red.commit.files' };
-  fix.inputs['a.b'] = { from: 'red.commit.files' };
-  const at = 'flows.default.ticket.vertices.implementer-fix.inputs';
-  assert.deepEqual(
-    (await check(config)).errors.filter((e) => /must be non-empty/.test(e.message)),
-    [
-      { at: 'procedures.tests-fail.claimTokens.', message: 'Claim token "" must be non-empty' },
-      { at: `${at}.`, message: `input "" ${CARRIED}` },
-      { at: `${at}.a.b`, message: `input "a.b" ${CARRIED}` },
-    ],
-  );
-});
+  test(`a Claim token that is ${form} is an error at its location`, async () => {
+    const config = example();
+    config.procedures['tests-fail'].claimTokens[name] = { stop: true };
+    const tokenLocation = `procedures.tests-fail.claimTokens.${name}`;
+    assert.deepEqual(
+      (await check(config)).errors.filter((e) => e.at === tokenLocation),
+      [{ at: tokenLocation, message: `Claim token ${JSON.stringify(name)} ${BLANK}` }],
+    );
+  });
+}
 
 test("a configuration without a Flow names the request's key tables, not gg init", async () => {
   const config = example();

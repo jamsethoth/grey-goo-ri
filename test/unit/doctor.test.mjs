@@ -73,7 +73,7 @@ test('gg doctor reports a Procedure name with a colon at its location', () => {
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
-      '\nerror: procedures.base:check: Procedure "base:check" must be non-empty with no ":", "." or whitespace\n',
+      '\nerror: procedures.base:check: Procedure "base:check" must be non-empty with no ":", ".", "/" or whitespace\n',
     ),
     text,
   );
