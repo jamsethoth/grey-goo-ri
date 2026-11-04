@@ -45,6 +45,47 @@ jobs:
       - name: Check
         run: node scripts/run-suite.mjs check
 
+  # test/unit/'s line and function coverage of lib/, held to each platform's figures in coverage-baseline.json (ADR
+  # 0016, amended): a fall, or a rise not yet recorded, fails the job. Its own job, beside the suite's, so it adds no
+  # wall time; no tripwire, since test/unit/ spawns nothing (test/unit/layout.test.mjs).
+  coverage:
+    # Stable names: the Main ruleset requires these checks by name.
+    name: coverage (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      # jsonc-parser, which gg runs. No install scripts: no dependency needs one.
+      - name: Dependencies
+        run: npm ci --ignore-scripts
+
+      # The unit tests' State Databases and temp directories, on the fast drive as in the suite job.
+      - name: Temp on the fast drive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP tmp
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          "TEMP=$dir", "TMP=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # Exactly the local command (ADR 0010, ADR 0016).
+      - name: Coverage
+        run: node scripts/run-suite.mjs coverage
+
   suite:
     # Stable names: branch protection requires these checks by name.
     name: suite (${{ matrix.os }})
@@ -110,12 +151,6 @@ jobs:
           node --version
           git --version
           node scripts/run-suite.mjs 2>&1 | tee "$RUNNER_TEMP/suite.log"
-
-      # test/unit/'s line and function coverage of lib/, held to this platform's figures in coverage-baseline.json
-      # (ADR 0016, amended): a fall, or a rise not yet recorded, fails the job.
-      - name: Coverage
-        shell: bash
-        run: node scripts/run-suite.mjs coverage
 
       - name: No real gh, claude or codex was called
         if: always() && runner.os == 'Linux'

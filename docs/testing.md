@@ -153,7 +153,7 @@ Four stages, ordered by speed:
 | **Check** | `prettier --check`, ESLint and `tsc` (ADR 0018), and no tests: `node scripts/run-suite.mjs check` (ADR 0016) | in CI as its own `check` job beside the suite jobs, so a format, lint or type error shows on its own |
 | **Fast** | `prettier --check`, ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.mjs fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
 | **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.mjs` | before a PR is marked ready, and in CI on every PR |
-| **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.mjs coverage` (ADR 0016, amended) | in CI after the full stage on each platform; locally with `coverage update` when a change raises coverage |
+| **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.mjs coverage` (ADR 0016, amended) | in CI as its own `coverage (<os>)` job on each platform, beside the suite jobs; locally with `coverage update` when a change raises coverage |
 
 Coverage only climbs. The coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
