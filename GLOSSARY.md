@@ -184,6 +184,20 @@ may run. No other Layer may set one. Agents may also use gg's built-in read-only
 file reads, which is not a Declared Command.
 _Avoid_: script, task, allowed command
 
+**Containment**:
+A Windows job object holding a shell command and everything it starts, so Command Cleanup ends them all. On POSIX,
+or when the job cannot be set up, the command runs uncontained (`containment: 'none'`), and a timeout kills the tree
+its watcher saw.
+_Avoid_: Confinement (which limits what an agent may touch)
+
+**Command Cleanup**:
+What gg does with the processes a shell command leaves. On a timeout it ends them: it terminates the Containment's
+job, or, uncontained, kills the tree the watcher saw on POSIX or runs taskkill on Windows. It never kills a process
+that is not the command's, and names as survivors each one it could not end or confirm gone. A contained command
+that finishes but leaves processes running has them named as leftovers and let run on. A command Check's `cleanup`
+output is its result.
+_Avoid_: cleanup (alone, which also names removing a ticket's worktree), teardown, reaping
+
 **Permission Intent**:
 What an Agent asks for in the abstract, such as read-only or workspace-write access and network, which each Harness
 translates into its own mechanisms.
