@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
 import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.mjs';
 import {
   TICKET,
@@ -164,12 +164,12 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
   assert.ok(!f.readEvents().some((e) => e.ticket === 23), 'nor a Ticket Event');
 });
 
-test('pool never exceeds its limit and keeps result order', async () => {
+test('mapConcurrently never exceeds its limit and keeps result order', async () => {
   const started = [gate(), gate(), gate(), gate(), gate()];
   const finish = [gate(), gate(), gate(), gate(), gate()];
   let live = 0,
     peak = 0;
-  const pending = run.pool([1, 2, 3, 4, 5], 2, async (x) => {
+  const pending = run.mapConcurrently([1, 2, 3, 4, 5], 2, async (x) => {
     peak = Math.max(peak, ++live);
     started[x - 1].open();
     await finish[x - 1].wait();
@@ -344,7 +344,7 @@ test('a rate limit on one Ticket delays the next GitHub write of the other', { t
   const bCalls = () =>
     f.gh.calls.filter((c) => c.args.some((a) => a.startsWith('ticket/22-')) || golden.isCommentPost(c.args, 22)).length;
   // A backs off first; B's wait moves the shared clock once, to A's deadline, and wakes both.
-  f.options.clock = {
+  f.options.deps.clock = {
     ...f.clock,
     sleep: async (ms) => {
       sleeps.push({ ms, bCalls: bCalls() });
@@ -427,7 +427,7 @@ test('snapshot and orchestrator writes wait beyond the default lock timeout', as
       () => null,
       (err) => ({ message: err.message, at: now }),
     );
-    snapshot = await integrity.snapshot(f.mainRoot, f.options.git, timed).then(
+    snapshot = await integrity.snapshot(f.mainRoot, f.options.deps.git, timed).then(
       () => null,
       (err) => ({ message: err.message, at: now }),
     );

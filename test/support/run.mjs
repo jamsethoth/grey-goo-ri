@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as checks from '../../lib/checks.ts';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.ts';
 import * as github from '../../lib/github.ts';
@@ -144,14 +144,17 @@ export function fixture(
     config: cfg,
     harnesses: { fake: harness },
     protectedPaths: golden.PROTECTED_PATHS,
-    gh: github.createGh(fake.gh),
-    git,
-    exec,
-    database,
+    deps: {
+      gh: github.createGh(fake.gh),
+      git,
+      exec,
+      database,
+      clock,
+      ...(fakeIntegrity && { integrity: fakeIntegrity.integrity }),
+    },
     cwd: mainRoot,
     log: (m) => logs.push(m),
-    clock,
-    ...golden.injected(fakeIntegrity),
+    ...(fakeIntegrity && { testImmutability: fakeIntegrity.testImmutability }),
   };
   return {
     root,
@@ -182,7 +185,7 @@ export function fixture(
 // An Execution of the fixture's Ticket run straight through the interpreter, as an earlier Run left it.
 export async function seedExecution(
   f,
-  { git = f.options.git, crashAt, exec = f.exec, integrity = f.options.integrity } = {},
+  { git = f.options.deps.git, crashAt, exec = f.exec, integrity = f.options.deps.integrity } = {},
 ) {
   await git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const cfg = f.options.config;
@@ -202,14 +205,14 @@ export async function seedExecution(
     branch: BRANCH,
     base: 'main',
   });
-  await f.options.database.save(rec);
+  await f.options.deps.database.save(rec);
   await assert.rejects(
     interpreter.runExecution({
-      deps: { gh: f.options.gh, git, exec, database: f.options.database, clock: f.clock, integrity },
+      deps: { gh: f.options.deps.gh, git, exec, database: f.options.deps.database, clock: f.clock, integrity },
       flow,
       record: rec,
       harness: f.harness,
-      events: events.eventLog(f.commonDir, {}, f.options.database),
+      events: events.eventLog(f.commonDir, {}, f.options.deps.database),
       log: () => {},
       cwd: f.mainRoot,
       commands: { test: 'npm test' },
@@ -279,7 +282,7 @@ export const crashBeforeCommit = (f) =>
 export function failComment(f, { lost = false } = {}) {
   const inner = f.gh.gh;
   const failing = { on: true };
-  f.options.gh = github.createGh(async (args, cwd, input) => {
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (failing.on && golden.isCommentPost(args)) {
       if (lost) await inner(args, cwd, input);
       else f.gh.calls.push({ args, cwd, input });
@@ -300,7 +303,7 @@ export async function dirtyTicket(t, seeded) {
   const f = fixture(t, { labels: seeded ? [IN_PROGRESS] : [], integrity: 'real', git: 'fake' });
   const seededRec = seeded ? await crashBeforeCommit(f) : null;
   if (!seeded)
-    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
   return { f, seededRec };
 }
@@ -308,7 +311,7 @@ export async function dirtyTicket(t, seeded) {
 export function failHoldLabel(f) {
   const inner = f.gh.gh;
   const failing = { on: true };
-  f.options.gh = github.createGh(async (args, cwd, input) => {
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (failing.on && args[0] === 'issue' && args[1] === 'edit' && args.includes(NEEDS_HUMAN)) {
       f.gh.calls.push({ args, cwd, input });
       throw new Error(`gh issue edit ${args[2]} exited 1\nHTTP 502: Bad Gateway`);
@@ -370,7 +373,7 @@ export function ticketHarnesses(f, tickets, { responses = {}, before = async () 
 // Every gh call passes through `hook` first.
 export function hookGh(f, hook) {
   const inner = f.gh.gh;
-  f.options.gh = github.createGh(async (args, cwd, input) => {
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
     await hook(args);
     return inner(args, cwd, input);
   });

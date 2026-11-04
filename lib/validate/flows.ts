@@ -1,7 +1,7 @@
 // A Flow as declared, checked against the checked Procedures: its keys, routes and Vertices and each Vertex's Agent,
 // giving the Resolved Flow. A Vertex's inputs are inputs.ts's, the graph checks graph.ts's.
 
-import * as config from '../config.mjs';
+import * as config from '../config.ts';
 import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
 import * as procedures from '../procedures.ts';

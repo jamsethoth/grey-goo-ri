@@ -80,7 +80,7 @@ test('every module under lib imports', async () => {
 
 test('every file under lib is scanned', () => {
   const libFiles = repoFiles('lib/');
-  for (const path of ['lib/validate/index.ts', 'lib/refs.ts', 'lib/harnesses/shipped.mjs']) {
+  for (const path of ['lib/validate/index.ts', 'lib/refs.ts', 'lib/harnesses/shipped.ts']) {
     assert.ok(modules.includes(path), `${path} is scanned`);
   }
   // Templates and the job-object script are not modules: they import nothing and run no git.
@@ -115,7 +115,7 @@ test('every code file is named in lowercase hyphenated words for its job', () =>
   const code = ['lib/', 'bin/', 'scripts/', 'test/']
     .flatMap((dir) => repoFiles(dir))
     .filter((path) => /\.(?:mjs|ts)$/.test(path));
-  assert.ok(code.includes('lib/process-tree.ts') && code.includes('bin/gg.mjs'), 'the code files are read');
+  assert.ok(code.includes('lib/process-tree.ts') && code.includes('bin/gg.ts'), 'the code files are read');
   assert.deepEqual(misnamed(code), [], 'rename the file: lowercase words joined by hyphens, named for what it does');
 });
 
@@ -123,7 +123,7 @@ test('every file under lib has a row in AGENTS.md', async () => {
   const sampleRows = ['lib/a.mjs', 'lib/templates/'];
   assert.deepEqual(unlistedFiles(['lib/a.mjs', 'lib/templates/t.md', 'lib/b.mjs'], sampleRows), ['lib/b.mjs']);
   const rows = layoutRows(await readFile(`${root}AGENTS.md`, 'utf8'));
-  assert.ok(rows.includes('lib/validate/') && rows.includes('bin/gg.mjs'), 'the layout table is read');
+  assert.ok(rows.includes('lib/validate/') && rows.includes('bin/gg.ts'), 'the layout table is read');
   assert.deepEqual(unlistedFiles(repoFiles('lib/'), rows), [], 'add a row to the AGENTS.md layout table');
   assert.deepEqual(
     rows.filter((path) => !existsSync(root + path)),
@@ -158,10 +158,10 @@ test('no module outside lib/git.ts passes git a command line', async () => {
     [/\b(?:run|spawn|spawnSync|execFile|execFileSync)\(\s*['"`]git['"`]/, 'a spawned git'],
     [/\^\{|\.\.\.HEAD|refs\/heads\/|['"`]HEAD['"`]/, 'git ref syntax'],
     [/['"`]:\([a-z,]+\)/, 'a git pathspec'],
-    // bin/gg.mjs passes lib/git.ts in; a module that imported it could fall back to it instead of the git it was given.
+    // bin/gg.ts passes lib/git.ts in; a module that imported it could fall back to it instead of the git it was given.
     [/from ['"`]\.\/git\.ts['"`]/, 'an import of lib/git.ts'],
   ];
-  for (const path of [...modules.filter((m) => m !== 'lib/git.ts'), 'bin/gg.mjs', 'scripts/run-suite.mjs']) {
+  for (const path of [...modules.filter((m) => m !== 'lib/git.ts'), 'bin/gg.ts', 'scripts/run-suite.ts']) {
     const text = await readFile(root + path, 'utf8');
     for (const [re, what] of raw) assert.doesNotMatch(text, re, `${path} builds ${what}`);
   }
@@ -169,6 +169,7 @@ test('no module outside lib/git.ts passes git a command line', async () => {
 
 // ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
 const CONVERTED = [
+  'bin/gg.ts',
   'lib/agent-action.ts',
   'lib/agent-call.ts',
   'lib/approval.ts',
@@ -177,6 +178,8 @@ const CONVERTED = [
   'lib/check-action.ts',
   'lib/checks.ts',
   'lib/command-cleanup.ts',
+  'lib/config.ts',
+  'lib/doctor.ts',
   'lib/effect-actions.ts',
   'lib/effect-errors.ts',
   'lib/effect-evidence.ts',
@@ -186,23 +189,34 @@ const CONVERTED = [
   'lib/flow.ts',
   'lib/git.ts',
   'lib/github.ts',
+  'lib/harnesses/claude.ts',
+  'lib/harnesses/codex.ts',
+  'lib/harnesses/contract.ts',
+  'lib/harnesses/shipped.ts',
   'lib/integrity.ts',
   'lib/interpreter.ts',
   'lib/labels.ts',
   'lib/locks.ts',
   'lib/marker.ts',
+  'lib/options.ts',
   'lib/outcome.ts',
   'lib/paths.ts',
+  'lib/plan.ts',
   'lib/procedures.ts',
   'lib/process-tree.ts',
+  'lib/publish.ts',
   'lib/reconcile.ts',
   'lib/record.ts',
   'lib/refs.ts',
   'lib/remote-effects.ts',
+  'lib/render.ts',
   'lib/rules.ts',
   'lib/run-context.ts',
+  'lib/run.ts',
+  'lib/stats.ts',
   'lib/terminal-report.ts',
   'lib/terminal.ts',
+  'lib/trace.ts',
   'lib/validate/actions.ts',
   'lib/validate/conditions.ts',
   'lib/validate/flows.ts',
@@ -215,26 +229,12 @@ const CONVERTED = [
   'lib/validate/templates.ts',
   'lib/visit-runner.ts',
   'lib/visit-scope.ts',
+  'lib/work.ts',
+  'scripts/run-suite.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
 const LEGACY_MJS = [
-  'bin/gg.mjs',
   'eslint.config.mjs',
-  'lib/config.mjs',
-  'lib/doctor.mjs',
-  'lib/harnesses/claude.mjs',
-  'lib/harnesses/codex.mjs',
-  'lib/harnesses/contract.mjs',
-  'lib/harnesses/shipped.mjs',
-  'lib/opts.mjs',
-  'lib/plan.mjs',
-  'lib/publish.mjs',
-  'lib/render.mjs',
-  'lib/run.mjs',
-  'lib/stats.mjs',
-  'lib/trace.mjs',
-  'lib/work.mjs',
-  'scripts/run-suite.mjs',
   'test/contract/exec/exec.test.mjs',
   'test/contract/git/git.test.mjs',
   'test/contract/git/template-repos.test.mjs',
@@ -301,7 +301,6 @@ const LEGACY_MJS = [
   'test/unit/labels.test.mjs',
   'test/unit/layout.test.mjs',
   'test/unit/marker.test.mjs',
-  'test/unit/opts.test.mjs',
   'test/unit/outcome.test.mjs',
   'test/unit/personas.test.mjs',
   'test/unit/procedures.test.mjs',

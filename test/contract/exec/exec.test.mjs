@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
-import * as render from '../../../lib/render.mjs';
+import * as render from '../../../lib/render.ts';
 
 const tmp = mkdtempSync(join(tmpdir(), 'gg-exec-'));
 // With args, the script reads them as `args` from a JSON file beside it, so no value the case passes becomes code.
@@ -1080,7 +1080,7 @@ test(
   },
 );
 
-// bin/gg.mjs opens kernel32 and passes it down (ADR 0019); a module that imports exec must not open a second one.
+// bin/gg.ts opens kernel32 and passes it down (ADR 0019); a module that imports exec must not open a second one.
 // A query string loads a fresh copy of exec.ts, so its import is seen here.
 test(
   'importing exec opens no node:ffi, and its own runShell opens it on the first call',

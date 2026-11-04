@@ -7,11 +7,11 @@ import fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 import * as exec from '../../lib/exec.ts';
 import * as gitModule from '../../lib/git.ts';
 import * as github from '../../lib/github.ts';
-import * as shipped from '../../lib/harnesses/shipped.mjs';
+import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
@@ -34,7 +34,7 @@ export const TEST_NAME = 'adds two numbers';
 export const RED_OUTPUT = `✖ ${TEST_NAME} (1.2ms)\n  Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'lib/add.mjs'\nℹ fail 1`;
 export const GREEN_OUTPUT = `✔ ${TEST_NAME} (0.8ms)\nℹ pass 1`;
 export const PERSONA = '# implementer\nWrite the smallest change.\n';
-// A Layer file as loadConfig loads it.
+// A Layer file as loadLayers loads it.
 export const layerFile = (bytes) => ({ bytes, hash: createHash('sha256').update(bytes).digest('hex') });
 
 export const redResponse = {

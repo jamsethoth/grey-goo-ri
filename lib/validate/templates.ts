@@ -3,7 +3,7 @@
 
 import * as procedures from '../procedures.ts';
 import * as refs from '../refs.ts';
-import * as render from '../render.mjs';
+import * as render from '../render.ts';
 import type * as checked from './procedures.ts';
 import * as references from './references.ts';
 import * as report from './report.ts';
@@ -83,8 +83,8 @@ function lookup(node: refs.SchemaNode, name: string) {
   return { error: `${resolved.error}; read its items in a section, {{#${resolved.list}}}`, node: undefined };
 }
 
-// A name reads the innermost section item that holds its first segment, then the scope (render.template); an item of
-// unknown shape may hold any name. A path is typed as rendering reads it.
+// A name reads the innermost section item that holds its first segment, then the scope (render.renderTemplate); an item
+// of unknown shape may hold any name. A path is typed as rendering reads it.
 function nodeOf(problems: string[], tag: TemplateTag, items: refs.SchemaNode[], scope: refs.SchemaNode) {
   if (tag.name === '.') return items[0] ?? refs.ANY;
   const head = refs.parse(tag.name).steps?.[0] as string;

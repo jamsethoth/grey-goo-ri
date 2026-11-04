@@ -80,3 +80,6 @@ no pattern already finds `.ts` tests.
   copy, which cannot start. Publishing gg is grey-goo-ri issue #243.
 - The "Plain Node ESM (`.mjs`)" convention in AGENTS.md is amended: `.ts` for new and converted modules and tests.
 - The fast stage gains the time Prettier, ESLint and tsc take (a few seconds each on an idle machine).
+- Amended 2026-11-04 (grey-goo-ri issue #207): no `.mjs` file is left under `lib/`, `bin/` or `scripts/`. The entry
+  point is `bin/gg.ts`, which `package.json`'s `bin` names and `node bin/gg.ts` runs, and the suite launcher is
+  `scripts/run-suite.ts`.

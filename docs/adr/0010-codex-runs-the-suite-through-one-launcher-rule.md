@@ -33,3 +33,6 @@ launcher accepts a stage and boundary names from a closed set, and still forward
 - PR code runs outside the sandbox during Codex reviews, as it already does in the test gate.
 - Rules load from the checked-out tree, so a PR that touches `.codex/` needs human review before Codex reviews it.
 - The Codex plugin's broker must be restarted after the rule changes, because it reads rules at start.
+- Amended 2026-11-04 (grey-goo-ri issue #207): the launcher is `scripts/run-suite.ts` (ADR 0018), so the rule allows
+  exactly `node scripts/run-suite.ts`, and `node scripts/run-suite.mjs` is one of its `not_match` examples. The decision
+  stands.

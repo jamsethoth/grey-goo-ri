@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import * as contract from '../../lib/harnesses/contract.mjs';
+import * as contract from '../../lib/harnesses/contract.ts';
 
 const DEFAULT_CAPABILITIES = {
   skills: 'exact',

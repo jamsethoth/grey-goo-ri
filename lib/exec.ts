@@ -172,7 +172,7 @@ export interface ShellOptions {
   testHooks?: TestHooks;
 }
 
-// run and runShell over kernel32, the FFI bin/gg.mjs opens and passes down (ADR 0019); null runs Windows commands
+// run and runShell over kernel32, the FFI bin/gg.ts opens and passes down (ADR 0019); null runs Windows commands
 // uncontained. Given nothing, it opens the real one.
 export function createExec({ kernel32 = containment.openKernel32() }: { kernel32?: containment.Kernel32 | null } = {}) {
   return {
@@ -201,7 +201,7 @@ export function runShell(commandLine: string, options?: ShellOptions) {
 }
 
 // The real kernel32 for runShell's callers that take no seam, opened on the first call rather than at import, so
-// importing exec opens nothing beside what bin/gg.mjs passes down.
+// importing exec opens nothing beside what bin/gg.ts passes down.
 const realKernel32 = (() => {
   let opened: { kernel32: containment.Kernel32 | null } | undefined;
   return () => (opened ??= { kernel32: containment.openKernel32() }).kernel32;

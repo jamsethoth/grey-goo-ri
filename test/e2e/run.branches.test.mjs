@@ -7,7 +7,7 @@ import * as integrity from '../../lib/integrity.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.mjs';
 import {
   TICKET,
@@ -28,7 +28,7 @@ for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-atte
     const seeded = await crashBeforeCommit(f);
     sh(f.worktree, 'checkout', '-q', '-b', branch);
     const head = sh(f.worktree, 'rev-parse', 'HEAD');
-    const before = await integrity.snapshot(f.worktree, f.options.git);
+    const before = await integrity.snapshot(f.worktree, f.options.deps.git);
     const implementation = readFileSync(join(f.worktree, 'lib', 'add.mjs'), 'utf8');
     f.gh.calls.length = 0;
 
@@ -56,7 +56,7 @@ for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-atte
     assert.equal(sh(f.worktree, 'rev-parse', branch), head, 'the other branch did not advance');
     assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head, 'the recorded branch did not advance');
     assert.deepEqual(
-      await integrity.snapshot(f.worktree, f.options.git),
+      await integrity.snapshot(f.worktree, f.options.deps.git),
       before,
       'the index and worktree are untouched',
     );
@@ -86,10 +86,10 @@ const REFUSED = [
 for (const { branch, checkout, current } of REFUSED) {
   test(`fresh admission refuses another Ticket's branch without changing it: ${branch}`, async (t) => {
     const f = fixture(t, { git: 'real' });
-    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     sh(f.worktree, 'checkout', '-q', ...checkout);
     const head = sh(f.worktree, 'rev-parse', 'HEAD');
-    const before = await integrity.snapshot(f.worktree, f.options.git);
+    const before = await integrity.snapshot(f.worktree, f.options.deps.git);
 
     const results = await run.runTarget(f.options);
     assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
@@ -124,7 +124,11 @@ for (const { branch, checkout, current } of REFUSED) {
     );
     assert.equal(sh(f.worktree, 'branch', '--show-current'), current);
     assert.equal(sh(f.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
-    assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the index and files are untouched');
+    assert.deepEqual(
+      await integrity.snapshot(f.worktree, f.options.deps.git),
+      before,
+      'the index and files are untouched',
+    );
     assert.equal(sh(f.mainRoot, 'ls-remote', 'origin', `refs/heads/${branch}`), '', 'nothing was pushed');
   });
 }
@@ -132,7 +136,7 @@ for (const { branch, checkout, current } of REFUSED) {
 test('fresh admission reuses its Ticket branch after a title change', async (t) => {
   const branch = `ticket/${TICKET}-old-title`;
   const f = fixture(t, { git: 'real', branch, issue: { title: 'A new title' } });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
@@ -169,9 +173,9 @@ async function foreignBranchRecord(f, branch) {
 test('resume refuses a recorded branch belonging to another Ticket: its worktree exists', async (t) => {
   const branch = 'ticket/99-other';
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
   const rec = await foreignBranchRecord(f, branch);
-  const before = await integrity.snapshot(f.worktree, f.options.git);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
@@ -199,7 +203,11 @@ test('resume refuses a recorded branch belonging to another Ticket: its worktree
   assert.equal(f.worktrees(), 2, 'no worktree was created or removed');
   assert.equal(existsSync(f.worktree), true, 'the worktree is kept');
   assert.equal(sh(f.worktree, 'branch', '--show-current'), branch);
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the index and files are untouched');
+  assert.deepEqual(
+    await integrity.snapshot(f.worktree, f.options.deps.git),
+    before,
+    'the index and files are untouched',
+  );
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'held');
   assert.equal(final.branch, branch);
@@ -267,7 +275,7 @@ async function siblingOverwrite(t, { seeded, siblingRecord, siblingBranch }) {
     );
   }
   if (seeded) {
-    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     await record.save(
       record.createExecution({
         commonDir: f.commonDir,
@@ -335,8 +343,8 @@ test(
   { skip: process.platform !== 'win32' && 'case-insensitive paths are Windows only' },
   async (t) => {
     const f = fixture(t, { integrity: 'real' });
-    const git = f.options.git;
-    f.options.git = {
+    const git = f.options.deps.git;
+    f.options.deps.git = {
       ...git,
       listWorktrees: async (root) => (await git.listWorktrees(root)).map((w) => ({ ...w, path: w.path.toUpperCase() })),
     };
@@ -352,7 +360,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
   const seeded = await crashBeforeCommit(f);
   const head = sh(f.worktree, 'rev-parse', 'HEAD');
   sh(f.worktree, 'checkout', '-q', '--detach', head);
-  const before = await integrity.snapshot(f.worktree, f.options.git);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
   f.gh.calls.length = 0;
 
   const results = await run.runTarget(f.options);
@@ -376,7 +384,11 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
   assert.equal(sh(f.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD', 'HEAD stays detached');
   assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head, 'the recorded branch is untouched');
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the index and files are untouched');
+  assert.deepEqual(
+    await integrity.snapshot(f.worktree, f.options.deps.git),
+    before,
+    'the index and files are untouched',
+  );
   assert.equal(
     f.gh.calls.some((c) => c.args[0] === 'pr'),
     false,
@@ -397,14 +409,14 @@ test('a resumed execution stopped mid-rebase is held without changing the rebase
   assert.equal(sh(f.worktree, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD');
   const rebasePath = sh(f.worktree, 'rev-parse', '--git-path', 'rebase-merge');
   const todo = readFileSync(join(rebasePath, 'git-rebase-todo'), 'utf8');
-  const before = await integrity.snapshot(f.worktree, f.options.git);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
   const head = sh(f.worktree, 'rev-parse', BRANCH);
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');
   assert.equal(f.harness.calls.length, 1, 'no agent call beyond the seeded 1');
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before);
+  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before);
   assert.equal(sh(f.worktree, 'rev-parse', BRANCH), head);
   assert.equal(readFileSync(join(rebasePath, 'git-rebase-todo'), 'utf8'), todo, 'the rebase is untouched');
   assert.deepEqual(
@@ -416,9 +428,9 @@ test('a resumed execution stopped mid-rebase is held without changing the rebase
 test('an unexpected branch query failure faults before recovery', async (t) => {
   const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
   const seeded = await crashBeforeCommit(f);
-  const before = await integrity.snapshot(f.worktree, f.options.git);
-  f.options.git = {
-    ...f.options.git,
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
+  f.options.deps.git = {
+    ...f.options.deps.git,
     currentBranch: async () => {
       throw new Error('fatal: cannot read HEAD');
     },
@@ -428,7 +440,11 @@ test('an unexpected branch query failure faults before recovery', async (t) => {
   assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
   assert.match(ticketResult(results).error, /cannot read HEAD/);
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'nothing was replayed or discarded');
+  assert.deepEqual(
+    await integrity.snapshot(f.worktree, f.options.deps.git),
+    before,
+    'nothing was replayed or discarded',
+  );
   const final = await record.load(f.commonDir, 'ticket', TICKET);
   assert.equal(final.state, 'fault');
   assert.deepEqual(

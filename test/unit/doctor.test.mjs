@@ -2,15 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import * as config from '../../lib/config.mjs';
-import * as doctor from '../../lib/doctor.mjs';
+import * as config from '../../lib/config.ts';
+import * as doctor from '../../lib/doctor.ts';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url), 'utf8');
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const file = (bytes) => ({ bytes, hash: sha256(bytes) });
 
-// The example Layer as loadConfig gives it: its schemas loaded beside it, and a template naming nothing for each template
+// The example Layer as loadLayers gives it: its schemas loaded beside it, and a template naming nothing for each template
 // it names (its own templates arrive with #120).
 function example() {
   const config = JSON.parse(fixture('gg.json'));

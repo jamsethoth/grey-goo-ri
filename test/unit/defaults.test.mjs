@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 
 const defaultsDir = fileURLToPath(new URL('../../defaults/', import.meta.url));
 // The inputs of the shipped Flow (#113): green reads red's tests and Red Evidence; the reviewer and publish the latest

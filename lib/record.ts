@@ -172,7 +172,7 @@ export function createExecution(start: ExecutionStart): ExecutionRecord {
     terminalReason: null,
     // How the Terminal classifies the stop: held, fault, abandoned, a run stop or a stop token (terminal.ts).
     terminalStop: null,
-    // A hold, abandonment or fault admission decided, until its Terminal reports it (run.mjs).
+    // A hold, abandonment or fault admission decided, until its Terminal reports it (admission.ts).
     admissionStop: null,
     cursor: { vertex: flow.entry, visit: 1, action: null, recovery: 0, attempt: 1 },
     visits: {},

@@ -40,21 +40,23 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
-  built once in `bin/gg.mjs` and passed down as named options of `run.runTarget`, which passes them to
-  `interpreter.runExecution` as one `deps` key typed `Deps` (ADR 0019); #207 makes `runTarget` take the same. New code
-  takes what it needs from its caller as a parameter; ESLint fails a module-level `let` or an exported `set*` function.
+  built once in `bin/gg.ts` and passed down as one `deps` key typed `Deps` (ADR 0019): `run.runTarget` takes it and
+  passes it on to `interpreter.runExecution`. New code takes what it needs from its caller as a parameter; ESLint fails
+  a module-level `let` or an exported `set*` function.
 
 ## Layout
 
 | Module | Responsibility |
 | --- | --- |
-| `bin/gg.mjs` | `gg` entry point: usage and command dispatch |
-| `lib/opts.mjs` | option parsing |
-| `lib/config.mjs` | Layers, merge, Config Hash, the Layer files each Layer names, Declared Command loading |
+| `bin/gg.ts` | `gg` entry point: one command table gives the usage, each command's flags and its dispatch |
+| `lib/options.ts` | option parsing and its `UsageError` |
+| `lib/config.ts` | Layers, merge, Config Hash, the Layer files each Layer names, Declared Command loading |
 | `lib/flow.ts` | the Flow rules the interpreter and the validator share: where an Outcome routes (H7), and the Resolved Flow and Config Hash written to a Run's directory |
 | `lib/validate/` | the Flow validator, which `gg doctor` and `gg run` admission share: `index.ts` (`validate()`, the Agents, inherited names), `procedures.ts`, `actions.ts` and `conditions.ts` (a Procedure on its own), `references.ts` and `templates.ts` (what it reads, typed alone and at each Vertex), `flows.ts` and `inputs.ts` (Flows, Vertices, Agents and inputs), `graph.ts` (the graph checks) and `report.ts` (the errors and warnings); it gives each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/refs.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
-| `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
+| `lib/run.ts` | `gg run`: preflight, the Run's Tickets mapped concurrently, run directory, Lifecycle Events, exit codes |
+| `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution |
+| `lib/ticket-worktree.ts` | the worktree admission runs a Ticket in: the branch checks that hold it, and the other ticket worktrees |
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |
 | `lib/run-context.ts` | the Run context every step reads (`RunContext`), the deps a test replaces (`Deps`), the wall clock, and how each Action is entered, marked and recorded |
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
@@ -87,10 +89,10 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/labels.ts` | State, Await and Decide Label names and prefix, and the end states |
 | `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |
-| `lib/harnesses/contract.mjs` | the Harness contract check and shared Usage shape |
-| `lib/harnesses/shipped.mjs` | the shipped Harnesses by name; the only module outside a Harness that names one |
-| `lib/harnesses/claude.mjs` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
-| `lib/harnesses/codex.mjs` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
+| `lib/harnesses/contract.ts` | the Harness contract check and shared Usage shape |
+| `lib/harnesses/shipped.ts` | the shipped Harnesses by name; the only module outside a Harness that names one |
+| `lib/harnesses/claude.ts` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
+| `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`) and the shell runner, with its timeout and cleanup (ported) |
 | `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plan and its survivors, a job's leftovers |
 | `lib/process-tree.ts` | the POSIX process tree a timed-out shell command leaves: listing it, watching it and killing it as Command Cleanup decides, and the helper processes that do so (ported) |
@@ -98,16 +100,17 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
-| `lib/render.mjs` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
+| `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
+| `lib/public-text.ts` | redaction of the local directories in text gg publishes |
 | `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the parse-retry nudge and the default recovery section |
 | `defaults/` | the defaults Layer: `gg.json` (today it ships Agents `implementer` and `reviewer`, five Procedures and the `default` Flow; ADR 0014's "no shipped Flow" lands with #121) and the files it names, under `personas/`, `templates/` and `schemas/` |
-| `lib/work.mjs` | **stub** (`export {}`): `gg work` and the Registry |
-| `lib/trace.mjs` | **stub** (`export {}`): Trajectory export and `gg trace` |
-| `lib/stats.mjs` | **stub** (`export {}`): `gg stats` |
-| `lib/doctor.mjs` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex. `gg init` is not built (#120) |
-| `lib/plan.mjs` | **stub** (`export {}`): `gg plan` |
-| `lib/publish.mjs` | **stub** (`export {}`): `gg publish` (to be ported) |
-| `scripts/run-suite.mjs` | the suite launcher Codex may run outside its sandbox (ADR 0010) |
+| `lib/work.ts` | **stub** (`export {}`): `gg work` and the Registry |
+| `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
+| `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
+| `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex. `gg init` is not built (#120) |
+| `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
+| `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
+| `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010) |
 | `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Agents |
 
 ## Misleading areas
@@ -121,7 +124,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 ## Examples to copy
 
-- A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.mjs` (a closed set of
+- A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.ts` (a closed set of
   inputs, a usage error that prints the usage).
 - A module split by job with no import cycle, its context typed and its errors subclasses a catch site tests:
   `lib/effects.ts` with `lib/effect-errors.ts` and `lib/remote-effects.ts`, and `lib/terminal.ts` with
@@ -162,10 +165,10 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 
 ## Commands
 
-- test: `node scripts/run-suite.mjs` (`npm test` is the same)
-- fast stage: `node scripts/run-suite.mjs fast [boundary ...]` runs `test/unit/` and the named `test/contract/` suites
-- check stage: `node scripts/run-suite.mjs check` runs the format check, lint and the type check, and no tests
-- coverage stage: `node scripts/run-suite.mjs coverage` holds unit coverage to `coverage-baseline.json` (`coverage update` records a rise)
+- test: `node scripts/run-suite.ts` (`npm test` is the same)
+- fast stage: `node scripts/run-suite.ts fast [boundary ...]` runs `test/unit/` and the named `test/contract/` suites
+- check stage: `node scripts/run-suite.ts check` runs the format check, lint and the type check, and no tests
+- coverage stage: `node scripts/run-suite.ts coverage` holds unit coverage to `coverage-baseline.json` (`coverage update` records a rise)
 - lint: `node node_modules/eslint/bin/eslint.js .`
 - typecheck: `node node_modules/typescript/bin/tsc -p tsconfig.json`
 - format: `node node_modules/prettier/bin/prettier.cjs --check .` (`--write` in place of `--check` fixes the format)

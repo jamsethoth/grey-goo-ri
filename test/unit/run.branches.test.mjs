@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as record from '../../lib/record.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import { TICKET, BRANCH, IN_PROGRESS, fixture, ticketResult } from '../support/run.mjs';
 
 // An Execution that cannot be admitted, fresh or active, is marked as a fault, never left to retry.
 test('sibling discovery failure prevents agent execution: a fresh Ticket', async (t) => {
   const f = fixture(t);
-  f.options.git = {
-    ...f.options.git,
+  f.options.deps.git = {
+    ...f.options.deps.git,
     listWorktrees: async () => {
       throw new Error('fatal: cannot list worktrees');
     },
@@ -23,7 +23,7 @@ test('sibling discovery failure prevents agent execution: a fresh Ticket', async
 
 test('sibling discovery failure prevents agent execution: an active Execution', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(
     record.createExecution({
       commonDir: f.commonDir,
@@ -37,8 +37,8 @@ test('sibling discovery failure prevents agent execution: an active Execution', 
       base: 'main',
     }),
   );
-  f.options.git = {
-    ...f.options.git,
+  f.options.deps.git = {
+    ...f.options.deps.git,
     listWorktrees: async () => {
       throw new Error('fatal: cannot list worktrees');
     },
@@ -65,8 +65,8 @@ test('a fault before the first visit still records its action events', async (t)
     base: 'main',
   });
   await record.save(rec);
-  f.options.git = {
-    ...f.options.git,
+  f.options.deps.git = {
+    ...f.options.deps.git,
     ensureWorktree: async () => {
       throw new Error('worktree add failed\nfatal: disk full');
     },

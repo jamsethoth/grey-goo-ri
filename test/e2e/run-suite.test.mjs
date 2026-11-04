@@ -6,13 +6,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const launcher = fileURLToPath(new URL('../../scripts/run-suite.mjs', import.meta.url));
+const launcher = fileURLToPath(new URL('../../scripts/run-suite.ts', import.meta.url));
 
 test('the launcher exits 2 with its usage and runs nothing for an argument outside its closed set', () => {
   const r = spawnSync(process.execPath, [launcher, 'fast', '--import=x'], { encoding: 'utf8' });
   assert.equal(r.status, 2, r.stderr);
   assert.equal(r.stdout, '');
-  assert.match(r.stderr, /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/);
+  assert.match(r.stderr, /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]/);
 });
 
 test('the launcher exits 2 with its usage and runs nothing for an argument after check', (t) => {
@@ -22,7 +22,7 @@ test('the launcher exits 2 with its usage and runs nothing for an argument after
   assert.equal(r.stdout, '');
   assert.match(
     r.stderr,
-    /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.mjs check\n/,
+    /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.ts check\n/,
   );
   assert.equal(copy.steps(), '');
 });
@@ -36,7 +36,7 @@ function launcherCopy(t, { prettier = 0, eslint = 0, tsc = 0, installed = true }
   mkdirSync(join(root, 'scripts'));
   mkdirSync(join(root, 'test', 'contract'), { recursive: true });
   mkdirSync(join(root, 'test', 'unit'));
-  copyFileSync(launcher, join(root, 'scripts', 'run-suite.mjs'));
+  copyFileSync(launcher, join(root, 'scripts', 'run-suite.ts'));
   const step = (name, code) => `require('node:fs').appendFileSync('steps.log', '${name}\\n'); process.exit(${code});\n`;
   if (installed) {
     mkdirSync(join(root, 'node_modules', 'prettier', 'bin'), { recursive: true });
@@ -53,7 +53,7 @@ function launcherCopy(t, { prettier = 0, eslint = 0, tsc = 0, installed = true }
   // The runner running this file sets NODE_TEST_CONTEXT, which would make the copy's own node --test run no file.
   const { NODE_TEST_CONTEXT, ...env } = process.env;
   const run = (argv) =>
-    spawnSync(process.execPath, [join(root, 'scripts', 'run-suite.mjs'), ...argv], { encoding: 'utf8', env });
+    spawnSync(process.execPath, [join(root, 'scripts', 'run-suite.ts'), ...argv], { encoding: 'utf8', env });
   const steps = () => (existsSync(join(root, 'steps.log')) ? readFileSync(join(root, 'steps.log'), 'utf8') : '');
   return { run, steps };
 }

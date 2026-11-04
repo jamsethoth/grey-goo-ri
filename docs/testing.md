@@ -93,9 +93,9 @@ ignored Protected File: the concurrent Runs of `test/e2e/run.concurrency.test.mj
 it, since over real git their snapshots' git processes took them up to 444 s under a full suite run (#187).
 
 The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers. Each is a
-dependency `bin/gg.mjs` builds once and passes down as a named option of `run.runTarget`, which passes it on in
-`interpreter.runExecution`'s `deps` (ADR 0019), or a factory option of the module that owns it; a test passes its own
-in the options it builds, so none outlives the case:
+dependency `bin/gg.ts` builds once and passes down in one `deps` key, which `run.runTarget` takes and passes on to
+`interpreter.runExecution` (ADR 0019), or a factory option of the module that owns it; a test passes its own in the
+options it builds, so none outlives the case:
 
 | Seam | What a test does with it |
 | --- | --- |
@@ -150,17 +150,17 @@ Four stages, ordered by speed:
 
 | Stage | Runs | When |
 | --- | --- | --- |
-| **Check** | `prettier --check`, ESLint and `tsc` (ADR 0018), and no tests: `node scripts/run-suite.mjs check` (ADR 0016) | in CI as its own `check` job beside the suite jobs, so a format, lint or type error shows on its own |
-| **Fast** | `prettier --check`, ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.mjs fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
-| **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.mjs` | before a PR is marked ready, and in CI on every PR |
-| **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.mjs coverage` (ADR 0016, amended) | in CI as its own `coverage (<os>)` job on each platform, beside the suite jobs; locally with `coverage update` when a change raises coverage |
+| **Check** | `prettier --check`, ESLint and `tsc` (ADR 0018), and no tests: `node scripts/run-suite.ts check` (ADR 0016) | in CI as its own `check` job beside the suite jobs, so a format, lint or type error shows on its own |
+| **Fast** | `prettier --check`, ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.ts fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
+| **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.ts` | before a PR is marked ready, and in CI on every PR |
+| **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.ts coverage` (ADR 0016, amended) | in CI as its own `coverage (<os>)` job on each platform, beside the suite jobs; locally with `coverage update` when a change raises coverage |
 
 Coverage only climbs. The coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
-recorded, so the next change cannot spend the gain. `node scripts/run-suite.mjs coverage update` records a rise; CI's
+recorded, so the next change cannot spend the gain. `node scripts/run-suite.ts coverage update` records a rise; CI's
 failure message prints the other platform's figures to paste. The measured set is what a small test can reach: `lib/`
 without `lib/exec.ts`, `lib/git.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
-them, and without the `bin/gg.mjs` entry point that wires them. Command Cleanup's decisions, which processes a command
+them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command
 left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
 `lib/containment.ts`. A module no unit test loads still counts, at zero. The spec reporter prints each file's lines,
 branches and functions, so the uncovered line numbers are in the stage's output.

@@ -10,7 +10,7 @@ import * as locks from '../../lib/locks.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import {
   BRANCH,
   IN_PROGRESS,
@@ -96,7 +96,7 @@ test('an integrity snapshot waits for the repo lock', async (t) => {
   const holder = await holdLock(t, f.commonDir, 'repo');
   let settled = false;
   const { locks: watched, allRefused: waiting } = refusedFirstAttempts(1);
-  const pending = integrity.snapshot(f.mainRoot, f.options.git, watched).finally(() => {
+  const pending = integrity.snapshot(f.mainRoot, f.options.deps.git, watched).finally(() => {
     settled = true;
   });
   // Released before the fixture's cleanup, pass or fail: Windows refuses to remove the lock file the holder keeps open.
@@ -133,7 +133,7 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
   const waiting = new Promise((resolve) => {
     refused = resolve;
   });
-  f.options.locks = locks.createLocks({
+  f.options.deps.locks = locks.createLocks({
     wrapAttempt: async (lock, attempt) => {
       const handle = await attempt();
       if (holder && lock.name === 'repo' && !handle) refused();
@@ -142,8 +142,8 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
   });
   // The snapshot after the call waits on the holder too, so each commit-path write must itself run inside the repo lock.
   const unlocked = [];
-  const git = f.options.git;
-  f.options.git = {
+  const git = f.options.deps.git;
+  f.options.deps.git = {
     ...git,
     ...Object.fromEntries(
       ['stageAll', 'writeTree', 'commitStaged', 'push', 'remoteSha'].map((v) => [
@@ -193,7 +193,7 @@ test('a stray write into an idle worktree is attributed to the running action', 
   const aEnded = gate();
   // B starts only after A's admission has read the worktree list: B's ticket lock attempt waits for it. So only a
   // worktree list read per Attempt can see B.
-  f.options.locks = locks.createLocks({
+  f.options.deps.locks = locks.createLocks({
     wrapAttempt: async (lock, attempt) => {
       if (lock.name === 'ticket-22') await aAdmitted.wait();
       return attempt();
@@ -295,10 +295,10 @@ test('two processes serialise orchestrator git writes on the repo lock', { timeo
   let seenAtCommit = null;
   const git = run.lockedGit(
     {
-      ...f.options.git,
+      ...f.options.deps.git,
       commitStaged: (...args) => {
         seenAtCommit = f.readEvents().map((e) => [e.run, e.type]);
-        return f.options.git.commitStaged(...args);
+        return f.options.deps.git.commitStaged(...args);
       },
     },
     f.commonDir,
