@@ -51,7 +51,7 @@ async function changedTests(
   runContext: RunContext,
   { actionIdentity, state }: Attempt,
   baseline: integrity.IntegrityBaseline,
-  response: unknown,
+  called: { response: unknown },
 ): Promise<integrity.IntegrityViolation | null> {
   const executionRecord = runContext.record;
   let { ok, changed } = await runContext.testImmutability(
@@ -62,7 +62,10 @@ async function changedTests(
   const { tests } = state.proc;
   if (typeof tests === 'object' && tests?.named) {
     const named = new Set(
-      (refs.read({ ...record.visitScope(executionRecord, actionIdentity), response }, tests.named) as string[]) ?? [],
+      (refs.read(
+        { ...record.visitScope(executionRecord, actionIdentity), response: called.response },
+        tests.named,
+      ) as string[]) ?? [],
     );
     changed = changed.filter((path) => !named.has(path));
     ok = changed.length === 0;
@@ -102,7 +105,7 @@ export async function guardedCall(
     protectedPaths,
   });
   if (access !== 'read-only' && attempt.state.proc.tests !== 'write') {
-    const violation = await changedTests(runContext, attempt, baseline, called.response);
+    const violation = await changedTests(runContext, attempt, baseline, called);
     if (violation) violations.push(violation);
   }
   return { ...called, violations, baseline };

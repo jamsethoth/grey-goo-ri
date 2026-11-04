@@ -15,6 +15,8 @@ import * as visitScope from './visit-scope.ts';
 import * as writeAhead from './write-ahead.ts';
 
 type Running = visitScope.Running;
+// The agent call's Signals as the commit read them, before it looked at the tree.
+type CallRead = { result: visit.AgentCall['harnessResult']; claim: visit.ClaimSignal; signal: visit.CallSignal };
 // The intents these Actions write ahead, which Effect Evidence reads at resume (lib/effect-evidence.ts).
 export type CommitPayload = { message: string; tree: string; parent: string };
 export type PushPayload = { branch: string; sha: string };
@@ -60,9 +62,9 @@ async function makeCommit(
 function refuseStale(
   runContext: RunContext,
   { actionIdentity, state }: Running,
-  { stale, startedAt, call }: { stale: visit.CheckSignal[]; startedAt: number; call: visit.AgentCall },
+  { stale, startedAt, call }: { stale: visit.CheckSignal[]; startedAt: number; call: CallRead },
 ) {
-  const { harnessResult: result, claim, signal } = call;
+  const { result, claim, signal } = call;
   const [first] = stale;
   const resolution = outcome.decide({
     result: signal,
@@ -102,8 +104,7 @@ async function commit(runContext: RunContext, running: Running) {
   const { agent } = executionRecord.configurationSnapshot!;
   const startedAt = runContext.clock.now();
   const actionMarker = runContext.markerOf(actionIdentity);
-  const call = state.call!;
-  const { response } = call;
+  const { harnessResult: result, claim, signal, response } = state.call!;
   const message = render.commitMessage(
     {
       kind: action.type,
@@ -121,7 +122,8 @@ async function commit(runContext: RunContext, running: Running) {
   const committed: Committed = await effects.bracket(runContext, () =>
     makeCommit(runContext, state, actionMarker, message),
   );
-  if (committed.stale) return refuseStale(runContext, running, { stale: committed.stale, startedAt, call });
+  if (committed.stale)
+    return refuseStale(runContext, running, { stale: committed.stale, startedAt, call: { result, claim, signal } });
   const { sha, files } = committed;
   visitScope.recordOutput(executionRecord, actionIdentity, { files });
   if (sha) executionRecord.testCommits.baseline = sha;
