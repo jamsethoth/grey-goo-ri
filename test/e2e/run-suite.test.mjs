@@ -12,7 +12,7 @@ test('the launcher exits 2 with its usage and runs nothing for an argument outsi
   const r = spawnSync(process.execPath, [launcher, 'fast', '--import=x'], { encoding: 'utf8' });
   assert.equal(r.status, 2, r.stderr);
   assert.equal(r.stdout, '');
-  assert.match(r.stderr, /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/);
+  assert.match(r.stderr, /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]/);
 });
 
 test('the launcher exits 2 with its usage and runs nothing for an argument after check', (t) => {
@@ -22,7 +22,7 @@ test('the launcher exits 2 with its usage and runs nothing for an argument after
   assert.equal(r.stdout, '');
   assert.match(
     r.stderr,
-    /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.mjs check\n/,
+    /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.ts check\n/,
   );
   assert.equal(copy.steps(), '');
 });

@@ -267,7 +267,7 @@ test('gg runs through a linked install, as npm link and npm install -g <checkout
   assertUsage(r.stdout);
   removeLink(link);
   assert.equal(existsSync(link), false);
-  for (const file of ['package.json', 'bin/gg.mjs', 'lib/paths.ts']) assert.ok(existsSync(join(root, file)), file);
+  for (const file of ['package.json', 'bin/gg.ts', 'lib/paths.ts']) assert.ok(existsSync(join(root, file)), file);
 });
 
 test('a copy of gg under node_modules cannot start, which is why the install is linked', (t) => {

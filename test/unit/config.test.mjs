@@ -419,7 +419,7 @@ test('this repository AGENTS.md Commands line matches its repository Layer', (t)
   const listed = Object.fromEntries(
     [...list.matchAll(/^- ([a-z][a-z0-9-]*): `([^`]+)`/gm)].map(([, name, line]) => [name, line]),
   );
-  assert.equal(listed.test, 'node scripts/run-suite.mjs');
+  assert.equal(listed.test, 'node scripts/run-suite.ts');
   const { home } = layers(t);
   assert.deepEqual(config.loadConfig(repoRoot, home).commands, listed);
 });

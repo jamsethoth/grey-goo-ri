@@ -75,3 +75,7 @@ test('positiveInt: rejects overflow and unsafe integers', () => {
   assert.throws(() => opts.positiveInt('9'.repeat(400), '--runs'), /--runs/);
   assert.throws(() => opts.positiveInt('9007199254740993', 'epic'), /epic/);
 });
+
+test('a UsageError is named for its class', () => {
+  assert.equal(new opts.UsageError('x').name, 'UsageError');
+});
