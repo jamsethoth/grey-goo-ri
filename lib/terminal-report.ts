@@ -130,7 +130,7 @@ async function savedStop(context: TerminalContext, given: StopDeclaration | unde
 function tolerated<Result>(context: TerminalContext, stop: record.TerminalStop | null, pending: Promise<Result>) {
   if (!stop?.error) return pending;
   return pending.catch((err) => {
-    if (effectErrors.fatal(err) || err instanceof effectErrors.EarlyTerminal) throw err;
+    if (effectErrors.fatal(err) || err instanceof effectErrors.EarlyTerminalError) throw err;
     context.log(`#${context.record.ticket} fault report failed: ${(err as Error | undefined)?.message}`);
   });
 }

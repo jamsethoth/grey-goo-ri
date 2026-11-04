@@ -59,7 +59,7 @@ const httpOf = (status: number | null) => (status ? ` (HTTP ${status})` : '');
 
 // A fault's Terminal Reason: a retry budget that ran out, a final remote failure by its class, or an unexpected fault.
 function faultText(err: unknown, where: string | null): string {
-  if (err instanceof effectErrors.RetriesExhausted) {
+  if (err instanceof effectErrors.RetriesExhaustedError) {
     const { spent } = err;
     const target = spent.effect === 'push' ? 'push' : 'GitHub';
     const what = spent.failureClass === 'rate-limited' ? `A ${target} rate limit` : `A transient ${target} failure`;
@@ -210,7 +210,7 @@ export function stopText(
   return `${where} ended with ${outcomeName} (${resolution.rule.table} rule ${resolution.rule.row ?? 'default'}).`;
 }
 
-// An Execution ended early, as an Action found it must (effectErrors.EarlyTerminal): held, abandoned, or stopped.
+// An Execution ended early, as an Action found it must (effectErrors.EarlyTerminalError): held, abandoned, or stopped.
 export function decide(context: TerminalContext, ending: effectErrors.Ending): Promise<TerminalResult> {
   context.log(`#${context.record.ticket} ${ending.next}: ${ending.reason}`);
   if (ending.next === 'run-stopped') return runStoppedAt(context, ending.retrying);
@@ -252,7 +252,7 @@ function runStopAt(context: TerminalContext, { failureClass, source, detail }: e
 }
 
 // Runs a Terminal's report. An Action of its own that finds the Execution must end otherwise (a retry that meets a
-// human's label, or a run stop) throws effectErrors.EarlyTerminal like any other, and is ended here, since a fault
+// human's label, or a run stop) throws effectErrors.EarlyTerminalError like any other, and is ended here, since a fault
 // report may run from runExecution's catch, past the one there.
 export async function terminal(
   context: TerminalContext,
@@ -262,7 +262,7 @@ export async function terminal(
   try {
     return await terminalReport.report(context, name, stop);
   } catch (err) {
-    if (err instanceof effectErrors.EarlyTerminal) return decide(context, err.ending);
+    if (err instanceof effectErrors.EarlyTerminalError) return decide(context, err.ending);
     throw err;
   }
 }

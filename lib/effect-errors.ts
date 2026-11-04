@@ -47,10 +47,13 @@ export interface RunStopEnding {
 // How an Execution ends before its route reaches an end state: held, abandoned for a human's label, or stopped.
 export type Ending = HoldEnding | reconcile.HumanOverride | RunStoppedEnding | RunStopEnding;
 
-// Thrown rather than returned because it is found deep inside an Action, in a repo-lock guard, an effect's retry, a
-// finder's lookup or a perform callback, about five calls below the runExecution and terminal.terminal that catch it
-// and end the Execution as `ending` says (terminal.decide). Every layer between passes it on untouched.
-export class EarlyTerminal extends Error {
+// An Action found that the Execution must end now, before its route reaches an end state: held when gg cannot go on
+// safely, abandoned for a human's needs-human label, or stopped for a run stop, its own or another Ticket's. Thrown
+// rather than returned because it is found deep inside an Action, in a repo-lock guard, an effect's retry, a finder's
+// lookup or a perform callback, about five calls below the runExecution and terminal.terminal that catch it and end
+// the Execution as `ending` says (terminal.decide). Every layer between passes it on untouched.
+export class EarlyTerminalError extends Error {
+  name = 'EarlyTerminalError';
   readonly ending: Ending;
   constructor(ending: Ending) {
     super(ending.reason);
@@ -67,7 +70,8 @@ export interface SpentRetries {
 }
 // A remote Action whose retry budget ran out on transient failures, so terminal.fault says the budget ran out rather
 // than that the fault was unexpected. `cause` is the last failure, whose message this error keeps.
-export class RetriesExhausted extends Error {
+export class RetriesExhaustedError extends Error {
+  name = 'RetriesExhaustedError';
   readonly spent: SpentRetries;
   constructor(message: string, spent: SpentRetries, options?: ErrorOptions) {
     super(message, options);

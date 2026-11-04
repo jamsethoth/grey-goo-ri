@@ -25,7 +25,8 @@ const remoteRetry = (executionRecord: record.ExecutionRecord, actionMarker: stri
 
 // A run stop latched while a remote Action backs off, in a Visit, Reconciliation's lookup or ready-for-qa's Terminal:
 // decide() ends the Execution at needs-human as one found before an Action does (#85).
-class RunStopped extends effectErrors.EarlyTerminal {
+class RunStoppedError extends effectErrors.EarlyTerminalError {
+  name = 'RunStoppedError';
   constructor(ending: effectErrors.RunStoppedEnding) {
     super(ending);
   }
@@ -42,7 +43,7 @@ function checkStop(context: effects.EffectContext, { retrying = true }: { retryi
   const stop = context.runState.stop;
   if (!stop || !stopApplies(context.record.cursor.vertex)) return;
   const during = retrying ? 'a backoff' : 'a repo-lock wait';
-  throw new RunStopped({
+  throw new RunStoppedError({
     next: 'run-stopped',
     retrying,
     reason: `Ticket #${stop.ticket} stopped the run with class ${stop.failureClass} during ${during}.`,
@@ -64,7 +65,7 @@ function eligibleAt(context: effects.EffectContext, actionMarker: string, eligib
       : JSON.stringify(eligible);
   const key = actionKey(actionMarker);
   context.log(`#${context.record.ticket} ${key}: retry deadline ${shown} is not a time within 31 days, so it is held`);
-  throw new effectErrors.EarlyTerminal({
+  throw new effectErrors.EarlyTerminalError({
     next: 'hold',
     reason: `The retry of ${key} has a deadline gg will not wait for, so the Ticket is held with its retry as saved.`,
   });
@@ -125,10 +126,10 @@ async function finalFailure(context: effects.EffectContext, failed: FailedLaunch
   if (reach === 'run') context.runState.stop ??= { failureClass, ticket: context.record.ticket, source };
   // A relaunch refused with its budget spent is unknown to the classifier; its Event names the class its retries were
   // spent on.
-  const eventClass = err instanceof effectErrors.RetriesExhausted ? err.spent.failureClass : failureClass;
+  const eventClass = err instanceof effectErrors.RetriesExhaustedError ? err.spent.failureClass : failureClass;
   await failedEvent(context, failed, { failureClass: eventClass, consequence: stops ? 'run-stop' : 'fault' });
   if (stops)
-    return new effectErrors.EarlyTerminal({
+    return new effectErrors.EarlyTerminalError({
       next: 'run-stop',
       failureClass,
       source,
@@ -162,7 +163,7 @@ async function reserveRetry(context: effects.EffectContext, failed: FailedLaunch
     );
     // The fault's Terminal Reason says the budget ran out, not that the fault was unexpected.
     if (err && typeof err === 'object')
-      throw new effectErrors.RetriesExhausted(
+      throw new effectErrors.RetriesExhaustedError(
         errorText(err),
         {
           failureClass: failure.failureClass,
@@ -234,7 +235,7 @@ async function relaunch(context: effects.EffectContext, actionMarker: string, re
       `#${context.record.ticket} ${actionKey(actionMarker)}: ${retry.failureClass} failure, retries exhausted after ` +
         `${retry.count} of ${REMOTE_RETRIES}`,
     );
-    throw new effectErrors.RetriesExhausted(message, {
+    throw new effectErrors.RetriesExhaustedError(message, {
       failureClass: retry.failureClass,
       status: null,
       count: retry.count,
@@ -275,7 +276,7 @@ async function recheck(
   context.labelsStale = false;
   const labelPrefix = context.labelPrefix ?? labels.DEFAULT_PREFIX;
   const overridden = await reconcile.humanOverride(executionRecord, issueLabels, labelPrefix);
-  if (overridden) throw new effectErrors.EarlyTerminal(overridden);
+  if (overridden) throw new effectErrors.EarlyTerminalError(overridden);
   // A finder reads only the entry's marker, effect and payload.
   const found = await effectEvidence.findEffect(entry as writeAhead.WriteAheadEntry, {
     executionRecord,
@@ -285,7 +286,7 @@ async function recheck(
     issueLabels,
   });
   if (found.status === 'unknown') throw found.error;
-  if (found.status === 'conflicting') throw new effectErrors.EarlyTerminal({ next: 'hold', reason: found.reason });
+  if (found.status === 'conflicting') throw new effectErrors.EarlyTerminalError({ next: 'hold', reason: found.reason });
   if (found.status === 'found') return { found: found.evidence };
   // Another Ticket may have raised the cooldown during the lookup: wait it out, then check the labels again.
   return (await cooldown(context, entry.actionMarker)) ? 'again' : 'launch';
@@ -339,7 +340,7 @@ export async function remoteEffect<Payload>(
       await markStarted(context, entry.actionMarker, retry);
       return await perform(entry.payload);
     } catch (err) {
-      if (err instanceof effectErrors.EarlyTerminal || effectErrors.fatal(err)) throw err;
+      if (err instanceof effectErrors.EarlyTerminalError || effectErrors.fatal(err)) throw err;
       await reserveRetry(context, { actionMarker: entry.actionMarker, startedAt, err });
     }
   }
@@ -361,7 +362,7 @@ export async function lockGuard(
     gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd)),
     context.labelPrefix ?? labels.DEFAULT_PREFIX,
   );
-  if (overridden) throw new effectErrors.EarlyTerminal(overridden);
+  if (overridden) throw new effectErrors.EarlyTerminalError(overridden);
   if (verb !== 'push') return undefined;
   const [worktree, branch, sha] = args as [string, string, string];
   return { skip: (await git.remoteSha(worktree, branch)) === sha };

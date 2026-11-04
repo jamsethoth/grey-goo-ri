@@ -14,7 +14,7 @@ test('the remote Actions are the comment, PR upsert, push and PR ready', () => {
 test('a remote effect that fails transiently is retried after its backoff, once its effect is not found', async (t) => {
   const { context, executionRecord, fakeGh, sleeps } = await support.executionContext(t);
   fakeGh.fail({ matches: support.commentPost, status: 502 });
-  assert.deepEqual(await support.remoteComment(context), { id: 1000 });
+  assert.deepEqual(await support.remoteCommentLaunch(context), { id: 1000 });
   assert.equal(fakeGh.comments.length, 1, 'posted once');
   assert.deepEqual(sleeps, [60_000]);
   assert.deepEqual(executionRecord.retries[pushKey], {
@@ -27,8 +27,8 @@ test('a remote effect that keeps failing transiently is rethrown once its two re
   fakeGh.fail({ matches: support.commentPost, status: 502 });
   fakeGh.fail({ matches: support.commentPost, status: 502 });
   fakeGh.fail({ matches: support.commentPost, status: 502 });
-  const err = await support.rejection(support.remoteComment(context));
-  assert.ok(err instanceof effectErrors.RetriesExhausted, 'a typed error says the budget ran out');
+  const err = await support.rejection(support.remoteCommentLaunch(context));
+  assert.ok(err instanceof effectErrors.RetriesExhaustedError, 'a typed error says the budget ran out');
   assert.match(err.message, /HTTP 502/);
   assert.deepEqual(err.spent, { failureClass: 'transient', status: 502, count: 2, effect: 'comment' });
   assert.equal(executionRecord.retries[pushKey]?.remote?.count, 2);
@@ -42,8 +42,8 @@ test('a remote effect that keeps failing transiently is rethrown once its two re
 test('a remote failure whose class reaches the run latches the run stop and is decided as a run stop', async (t) => {
   const { context, fakeGh, emitted } = await support.executionContext(t);
   fakeGh.fail({ matches: support.commentPost, status: 401 });
-  const err = await support.rejection(support.remoteComment(context));
-  assert.ok(err instanceof effectErrors.EarlyTerminal && err.ending.next === 'run-stop');
+  const err = await support.rejection(support.remoteCommentLaunch(context));
+  assert.ok(err instanceof effectErrors.EarlyTerminalError && err.ending.next === 'run-stop');
   const { detail, ...ending } = err.ending;
   assert.deepEqual(ending, {
     next: 'run-stop',
@@ -63,8 +63,8 @@ test("a run stop latched before a remote Action's backoff ends it as run-stopped
   const { context, executionRecord, fakeGh, sleeps } = await support.executionContext(t);
   context.runState.stop = { failureClass: 'auth', ticket: 21, source: 'push' };
   fakeGh.fail({ matches: support.commentPost, status: 502 });
-  const err = await support.rejection(support.remoteComment(context));
-  assert.ok(err instanceof effectErrors.EarlyTerminal);
+  const err = await support.rejection(support.remoteCommentLaunch(context));
+  assert.ok(err instanceof effectErrors.EarlyTerminalError);
   assert.deepEqual(err.ending, {
     next: 'run-stopped',
     retrying: true,
@@ -79,8 +79,8 @@ test('a saved retry deadline further away than 31 days holds the Ticket', async 
   executionRecord.retries[pushKey] = {
     remote: { count: 1, failureClass: 'transient', nextEligibleAt: Number.MAX_SAFE_INTEGER, started: false },
   };
-  const err = await support.rejection(support.remoteComment(context));
-  assert.ok(err instanceof effectErrors.EarlyTerminal);
+  const err = await support.rejection(support.remoteCommentLaunch(context));
+  assert.ok(err instanceof effectErrors.EarlyTerminalError);
   assert.deepEqual(err.ending, {
     next: 'hold',
     reason:
@@ -109,7 +109,7 @@ test('a git write queued for the repo lock is ended as run-stopped when the run 
   const { context } = await support.executionContext(t);
   context.runState.stop = { failureClass: 'auth', ticket: 21, source: 'push' };
   const err = await support.rejection(remoteEffects.lockGuard(context, 'commit', [], unread));
-  assert.ok(err instanceof effectErrors.EarlyTerminal);
+  assert.ok(err instanceof effectErrors.EarlyTerminalError);
   assert.deepEqual(err.ending, {
     next: 'run-stopped',
     retrying: false,
@@ -122,7 +122,7 @@ test("a git write queued for the repo lock abandons the Ticket when a human's ne
   fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
   fakeGh.labels.add(support.IN_PROGRESS_LABEL);
   const err = await support.rejection(remoteEffects.lockGuard(context, 'commit', [], unread));
-  assert.ok(err instanceof effectErrors.EarlyTerminal);
+  assert.ok(err instanceof effectErrors.EarlyTerminalError);
   assert.deepEqual(err.ending, {
     next: 'abandon',
     cursor: executionRecord.cursor,

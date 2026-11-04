@@ -19,7 +19,7 @@ test('a crash point throws a CrashError only at its own point of its own marker'
 
 test('an early Terminal carries its ending, and its reason as its message', () => {
   const ending = { next: 'hold' as const, name: 'unchecked-publish', reason: 'PR #7 was not marked ready.' };
-  const early = new effectErrors.EarlyTerminal(ending);
+  const early = new effectErrors.EarlyTerminalError(ending);
   assert.equal(early.ending, ending);
   assert.equal(early.message, 'PR #7 was not marked ready.');
 });
@@ -27,7 +27,7 @@ test('an early Terminal carries its ending, and its reason as its message', () =
 test('a spent retry budget keeps the last failure as its cause and its message', () => {
   const last = new Error('gh: Bad Gateway (HTTP 502)');
   const spent = { failureClass: 'transient' as const, status: 502, count: 2, effect: 'comment' };
-  const exhausted = new effectErrors.RetriesExhausted(last.message, spent, { cause: last });
+  const exhausted = new effectErrors.RetriesExhaustedError(last.message, spent, { cause: last });
   assert.equal(exhausted.message, 'gh: Bad Gateway (HTTP 502)');
   assert.equal(exhausted.cause, last);
   assert.deepEqual(exhausted.spent, spent);

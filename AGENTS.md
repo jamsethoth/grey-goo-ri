@@ -55,7 +55,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
 | `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
 | `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, the activity bracket, each effect's intent, evidence and completion with its Action Event |
-| `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminal` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhausted` |
+| `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
 | `lib/remote-effects.ts` | the remote Actions' retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
 | `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
 | `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop |

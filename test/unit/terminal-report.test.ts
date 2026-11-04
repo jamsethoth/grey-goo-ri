@@ -97,6 +97,23 @@ test("a Terminal's Actions are named for its report: end, fault, hold or abandon
   });
 });
 
+test('a fault report whose comment cannot be rendered fails, rather than landing without its comment', async (t) => {
+  const { context, executionRecord, fakeGh, commonDir } = await support.executionContext(t);
+  executionRecord.terminalReason = { decidedBy: {}, outcome: null, rule: null, text: 'It faulted.' };
+  const stop = {
+    outcome: 'fault',
+    error: 'boom',
+    stopped: true,
+    response: { claim: 'blocked' },
+    commentTemplate: 'stopped.md',
+    actionRef: { vertex: 'green', visit: 1, action: 'green', recovery: 0 },
+  };
+  await assert.rejects(terminalReport.report(context, 'needs-human', stop), /no Layer names file "stopped\.md"/);
+  assert.deepEqual(fakeGh.comments, []);
+  assert.equal(executionRecord.state, 'active', 'the fault has not landed');
+  assert.deepEqual(ticketEnds(commonDir, executionRecord.execution), []);
+});
+
 test('a Terminal posts its reason, sets its end label and lands that state with ticket_end', async (t) => {
   const { context, executionRecord, fakeGh, commonDir } = await support.executionContext(t);
   executionRecord.terminalReason = { decidedBy: {}, outcome: 'replan', rule: null, text: 'Replan it.' };

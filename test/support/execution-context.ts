@@ -10,6 +10,7 @@ import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
+import * as remoteEffects from '../../lib/remote-effects.ts';
 import * as render from '../../lib/render.mjs';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
@@ -89,9 +90,9 @@ export const PUSH_REF = { vertex: 'green', visit: 1, procedure: 'implement', act
 export const commentPost = (args: string[]) => golden.isCommentPost(args);
 
 // A remote comment Action on the Ticket at PUSH_REF, as the comment Action posts it: its body carries its marker.
-export function remoteComment(context: ExecutionContext) {
+function commentEffect(context: ExecutionContext) {
   const actionMarker = context.markerOf(PUSH_REF);
-  return effects.sideEffect(context, {
+  return {
     actionMarker,
     effect: 'comment',
     payload: {
@@ -99,10 +100,21 @@ export function remoteComment(context: ExecutionContext) {
       body: `A comment.\n${marker.markerComment(actionMarker)}`,
       bodyHash: 'hash',
     },
-    perform: async (payload) => ({
+    perform: async (payload: { target: { number: number }; body: string }) => ({
       id: github.commentId(await context.gh.comment(payload.target.number, payload.body, context.cwd)),
     }),
-  });
+  };
+}
+
+// The remote comment launched as an Action launches it, write-ahead.
+export const remoteComment = (context: ExecutionContext) => effects.sideEffect(context, commentEffect(context));
+
+// The remote comment's launch alone, after its intent is logged as sideEffect logs it: a run stop's source and a spent
+// budget's effect are read from that intent.
+export async function remoteCommentLaunch(context: ExecutionContext) {
+  const { perform, ...entry } = commentEffect(context);
+  await context.database.intent(context.record, entry.actionMarker, entry.effect, entry.payload);
+  return remoteEffects.remoteEffect(context, entry, perform);
 }
 
 // What a promise rejects with; a promise that resolves fails the case.
