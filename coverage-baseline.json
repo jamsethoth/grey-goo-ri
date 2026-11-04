@@ -1,0 +1,10 @@
+{
+  "linux": {
+    "lines": 98.56,
+    "functions": 97.63
+  },
+  "win32": {
+    "lines": 98.56,
+    "functions": 97.63
+  }
+}

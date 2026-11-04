@@ -73,6 +73,96 @@ test('the check stage takes no boundary names', async () => {
   });
 });
 
+test('the coverage stage runs test/unit with coverage of lib/ outside its process boundaries, and no checks', async () => {
+  const runSuite = await import(launcherUrl);
+  const cmd = runSuite.suiteCommand({}, ['coverage']);
+  assert.deepEqual(cmd.steps, [
+    [
+      '--test',
+      concurrency,
+      '--experimental-test-coverage',
+      '--test-coverage-include-all',
+      '--test-coverage-include=lib/**',
+      '--test-coverage-exclude=lib/exec.ts',
+      '--test-coverage-exclude=lib/git.ts',
+      '--test-coverage-exclude=lib/process-tree.ts',
+      '--test-coverage-exclude=lib/containment.ts',
+      '--test-reporter=spec',
+      '--test-reporter-destination=stdout',
+      '--test-reporter=lcov',
+      '--test-reporter-destination=coverage/lcov.info',
+      'test/unit/**/*.test.{mjs,ts}',
+    ],
+  ]);
+  assert.equal(cmd.coverage, 'check');
+});
+
+test('coverage update runs the same tests and records a rise', async () => {
+  const runSuite = await import(launcherUrl);
+  const cmd = runSuite.suiteCommand({}, ['coverage', 'update']);
+  assert.deepEqual(cmd.steps, runSuite.suiteCommand({}, ['coverage']).steps);
+  assert.equal(cmd.coverage, 'update');
+});
+
+test('coverage totals sum every file of an lcov report, floored to two places', async () => {
+  const runSuite = await import(launcherUrl);
+  const lcov = [
+    'SF:lib/a.ts',
+    'FNF:2',
+    'FNH:2',
+    'BRF:4',
+    'BRH:1',
+    'LH:2',
+    'LF:3',
+    'end_of_record',
+    'SF:lib/b.mjs',
+    'FNF:1',
+    'FNH:0',
+    'LH:0',
+    'LF:3',
+    'end_of_record',
+    '',
+  ].join('\r\n');
+  assert.deepEqual(runSuite.coverageTotals(lcov), { lines: 33.33, functions: 66.66 });
+});
+
+test('coverage that falls below the recorded figures is reported as a fall', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.31, functions: 97.25 }), {
+    fell: ['lines 98.32 -> 98.31'],
+    rose: [],
+  });
+});
+
+test('coverage above the recorded figures is reported as a rise to record', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.32, functions: 97.3 }), {
+    fell: [],
+    rose: ['functions 97.25 -> 97.3'],
+  });
+});
+
+test('coverage equal to the recorded figures neither falls nor rises', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.32, functions: 97.25 }), {
+    fell: [],
+    rose: [],
+  });
+});
+
+test('a platform with no recorded figures has risen', async () => {
+  const runSuite = await import(launcherUrl);
+  assert.deepEqual(runSuite.compareCoverage(undefined, { lines: 98.32, functions: 97.25 }), {
+    fell: [],
+    rose: ['lines unrecorded -> 98.32', 'functions unrecorded -> 97.25'],
+  });
+});
+
+test('every platform CI runs has recorded coverage figures', async () => {
+  const baseline = JSON.parse(await readFile(new URL('../../coverage-baseline.json', import.meta.url), 'utf8'));
+  assert.deepEqual(Object.keys(baseline).sort(), ['linux', 'win32']);
+});
+
 // ADR 0016: anything outside the closed set stops the launcher before it runs anything.
 const refused = [
   ['a node flag in place of the stage', ['--import=x']],
@@ -83,6 +173,8 @@ const refused = [
   ['an unknown boundary', ['fast', 'nope']],
   ['a boundary in the wrong case', ['fast', 'GIT']],
   ['a file under test/contract that is not a directory', ['fast', 'git/git.test.mjs']],
+  ['an argument after coverage other than update', ['coverage', 'git']],
+  ['a flag after coverage update', ['coverage', 'update', '--test-name-pattern=x']],
 ];
 for (const [what, argv] of refused) {
   test(`the launcher refuses ${what}`, async () => {
