@@ -6,7 +6,7 @@ import * as integrity from '../../lib/integrity.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.mjs';
 import {
   TICKET,
@@ -29,8 +29,8 @@ test('an admission failure on an active execution is reported as a fault', async
     crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }),
   });
   let adds = 0;
-  f.options.git = {
-    ...f.options.git,
+  f.options.deps.git = {
+    ...f.options.deps.git,
     ensureWorktree: async () => {
       adds++;
       throw new Error('worktree add failed\nfatal: disk full');
@@ -66,8 +66,8 @@ test('an admission failure on an active execution is reported as a fault', async
 
 test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async (t) => {
   const { f } = await dirtyTicket(t, false);
-  const before = await integrity.snapshot(f.worktree, f.options.git);
-  const head = await f.options.git.headSha(f.worktree);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
+  const head = await f.options.deps.git.headSha(f.worktree);
   const failing = failComment(f);
 
   const first = await run.runTarget(f.options);
@@ -107,20 +107,20 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
   assert.deepEqual(ends[0].terminalReason, mid.terminalReason);
   assert.equal(ends[0].run, lastRun(f));
   assert.equal(f.harness.calls.length, 0, 'no agent ran');
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
-  assert.equal(await f.options.git.headSha(f.worktree), head, 'nothing was committed or reset');
+  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
+  assert.equal(await f.options.deps.git.headSha(f.worktree), head, 'nothing was committed or reset');
   assert.equal(
     f.gh.calls.some((c) => c.args[0] === 'pr'),
     false,
     'no PR was read or published',
   );
-  assert.equal(await f.options.git.remoteSha(f.mainRoot, BRANCH), null, 'nothing was pushed');
+  assert.equal(await f.options.deps.git.remoteSha(f.mainRoot, BRANCH), null, 'nothing was pushed');
 });
 
 test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run', async (t) => {
   const { f, seededRec } = await dirtyTicket(t, true);
-  const before = await integrity.snapshot(f.worktree, f.options.git);
-  const head = await f.options.git.headSha(f.worktree);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
+  const head = await f.options.deps.git.headSha(f.worktree);
   const failing = failComment(f);
 
   const first = await run.runTarget(f.options);
@@ -169,14 +169,14 @@ test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run',
   assert.deepEqual(ends[0].terminalReason, mid.terminalReason);
   assert.equal(ends[0].run, lastRun(f));
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
-  assert.equal(await f.options.git.headSha(f.worktree), head, 'nothing was committed or reset');
+  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
+  assert.equal(await f.options.deps.git.headSha(f.worktree), head, 'nothing was committed or reset');
   assert.equal(
     f.gh.calls.some((c) => c.args[0] === 'pr'),
     false,
     'no PR was read or published',
   );
-  assert.equal(await f.options.git.remoteSha(f.mainRoot, BRANCH), null, 'nothing was pushed');
+  assert.equal(await f.options.deps.git.remoteSha(f.mainRoot, BRANCH), null, 'nothing was pushed');
 });
 
 test('a resumed pending report emits no second ticket_start', async (t) => {
@@ -262,8 +262,8 @@ test('a landed hold comment with a lost response is not posted twice', async (t)
 test('an ensureWorktree failure without a record is marked and never retried', async (t) => {
   const f = fixture(t);
   let adds = 0;
-  f.options.git = {
-    ...f.options.git,
+  f.options.deps.git = {
+    ...f.options.deps.git,
     ensureWorktree: async () => {
       adds++;
       throw new Error('worktree add failed\nfatal: disk full');

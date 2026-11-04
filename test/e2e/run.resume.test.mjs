@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.mjs';
 import { TICKET, BRANCH, IN_PROGRESS, sh, fixture, seedExecution } from '../support/run.mjs';
 
@@ -53,7 +53,7 @@ test('local paths in captured Check output and agent text do not reach PR bodies
   const f = fixture(t, { git: 'real', responses });
   responses['green/1/green/1'].response.summary = `Updated ${f.worktree}/lib/add.mjs`;
   responses['red/1/red/1'].response.summary = `Tested ${f.worktree}/test/add.test.mjs`;
-  f.options.exec.runShell = async (_command, opts) =>
+  f.options.deps.exec.runShell = async (_command, opts) =>
     existsSync(join(opts.cwd, 'lib', 'add.mjs'))
       ? { code: 0, output: `${golden.GREEN_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false }
       : { code: 1, output: `${golden.RED_OUTPUT}\n${f.worktree}/test/add.test.mjs`, timedOut: false };
@@ -89,7 +89,7 @@ test('encoded and JSON-escaped local paths reach no done publication', async (t)
   issue.title = `Add two numbers ${pathToFileURL(f.worktree).href}`;
   responses['red/1/red/1'].response.summary = `Tested ${forms(join(f.worktree, 'test', 'add.test.mjs'))}`;
   responses['green/1/green/1'].response.summary = `Updated ${forms(join(f.worktree, 'lib', 'add.mjs'))}`;
-  f.options.exec.runShell = async (_command, opts) =>
+  f.options.deps.exec.runShell = async (_command, opts) =>
     existsSync(join(opts.cwd, 'lib', 'add.mjs'))
       ? { code: 0, output: `${golden.GREEN_OUTPUT}\n${forms(f.worktree)}`, timedOut: false }
       : { code: 1, output: `${golden.RED_OUTPUT}\n${forms(f.worktree)}`, timedOut: false };

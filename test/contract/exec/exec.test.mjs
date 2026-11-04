@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
-import * as render from '../../../lib/render.mjs';
+import * as render from '../../../lib/render.ts';
 
 const tmp = mkdtempSync(join(tmpdir(), 'gg-exec-'));
 // With args, the script reads them as `args` from a JSON file beside it, so no value the case passes becomes code.

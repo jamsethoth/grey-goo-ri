@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.ts';
 import * as checks from '../../lib/checks.ts';
-import * as config from '../../lib/config.mjs';
-import * as render from '../../lib/render.mjs';
+import * as config from '../../lib/config.ts';
+import * as render from '../../lib/render.ts';
 import { homedir } from 'node:os';
 import { readFileSync } from 'node:fs';
 

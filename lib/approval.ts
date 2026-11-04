@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import * as config from './config.mjs';
+import * as config from './config.ts';
 import * as labels from './labels.ts';
 
 // The fingerprint of what a Decision covers; when it changes the Decision is stale.

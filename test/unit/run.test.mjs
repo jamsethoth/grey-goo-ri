@@ -4,11 +4,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as config from '../../lib/config.mjs';
-import * as doctor from '../../lib/doctor.mjs';
+import * as config from '../../lib/config.ts';
+import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.mjs';
 import {
   TICKET,
@@ -86,7 +86,7 @@ test('a concurrent State Label create does not fail the Run', async (t) => {
   // Another Run creates every State Label between this Run's label read and its creates.
   let reads = 0;
   const inner = f.gh.gh;
-  f.options.gh = github.createGh(async (args, cwd, input) => {
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (args[0] === 'api' && args.at(-1).includes('/labels') && ++reads === 1) {
       f.gh.calls.push({ args, cwd, input });
       return JSON.stringify([[]]);
@@ -103,7 +103,7 @@ test('a transient State Label setup failure is retried by the later label write'
   const f = fixture(t);
   let reads = 0;
   const inner = f.gh.gh;
-  f.options.gh = github.createGh(async (args, cwd, input) => {
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (args[0] === 'api' && args.at(-1).includes('/labels') && ++reads === 1) {
       f.gh.calls.push({ args, cwd, input });
       throw new Error('HTTP 502: temporary label read failure');
@@ -157,8 +157,8 @@ test('every line a Run prints names its repository, in the terminal and in run.l
     base: 'main',
   });
   await record.save(rec);
-  f.options.git = {
-    ...f.options.git,
+  f.options.deps.git = {
+    ...f.options.deps.git,
     ensureWorktree: async () => {
       throw new Error('worktree add failed');
     },
@@ -206,7 +206,7 @@ test('every error a Run throws names its repository', async (t) => {
   assert.ok(preflight?.message.startsWith('[main] preflight failed:'), preflight?.message);
 
   const v = fixture(t);
-  v.options.gh = github.createGh(async (args) => {
+  v.options.deps.gh = github.createGh(async (args) => {
     throw new Error(`gh ${args.join(' ')} exited 1\nHTTP 404: Not Found`);
   });
   const view = await run.runTarget(v.options).then(
@@ -228,7 +228,7 @@ test('preflight names every failing vertex in one error, before any gh call, wor
   const f = fixture(t, { fullFlow: true });
   f.options.config.agents.implementer.harness = 'nope';
   f.options.config.agents.reviewer.harness = 'claude';
-  f.options.harnesses.claude = await import('../../lib/harnesses/claude.mjs');
+  f.options.harnesses.claude = await import('../../lib/harnesses/claude.ts');
   const err = await run.runTarget(f.options).then(
     () => null,
     (e) => e,

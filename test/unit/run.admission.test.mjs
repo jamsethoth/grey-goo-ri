@@ -2,15 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import { TICKET, fixture, ticketResult } from '../support/run.mjs';
 
 test('gg run runs the Declared Commands of its config, not those of AGENTS.md', async (t) => {
   const f = fixture(t);
   writeFileSync(join(f.mainRoot, 'AGENTS.md'), '# repo\n\n## Commands\n\n- test: `agents-md-test`\n');
   const ran = [];
-  const { runShell } = f.options.exec;
-  f.options.exec = { ...f.options.exec, runShell: (command, opts) => (ran.push(command), runShell(command, opts)) };
+  const { runShell } = f.options.deps.exec;
+  f.options.deps.exec = {
+    ...f.options.deps.exec,
+    runShell: (command, opts) => (ran.push(command), runShell(command, opts)),
+  };
   const results = await run.runTarget(f.options);
   assert.equal(ticketResult(results).outcome, 'ready-for-qa', JSON.stringify(results));
   assert.ok(ran.length > 0, 'the Checks ran');

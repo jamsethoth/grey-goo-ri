@@ -8,7 +8,7 @@ import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as golden from './golden.mjs';
 import * as locks from '../../lib/locks.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
 
 export const TDD_VERTICES = ['red', 'green'];

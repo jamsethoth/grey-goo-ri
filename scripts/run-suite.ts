@@ -7,9 +7,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const USAGE = `usage: node scripts/run-suite.mjs [fast [boundary ...]]
-       node scripts/run-suite.mjs check
-       node scripts/run-suite.mjs coverage [update]
+const USAGE = `usage: node scripts/run-suite.ts [fast [boundary ...]]
+       node scripts/run-suite.ts check
+       node scripts/run-suite.ts coverage [update]
   no arguments: the full suite
   fast: test/unit/, plus test/contract/<boundary>/ for each boundary named
   check: the format check, lint and the type check, no tests
@@ -29,48 +29,60 @@ export const BASELINE = 'coverage-baseline.json';
 // their decisions are in lib/command-cleanup.ts, which is measured.
 const NOT_UNIT = ['lib/exec.ts', 'lib/git.ts', 'lib/process-tree.ts', 'lib/containment.ts'];
 
-export class UsageError extends Error {
+// Its message is the whole usage text. lib/options.ts has its own UsageError, which this launcher does not load: it
+// loads only node: built-ins (ADR 0010, ADR 0016).
+export class SuiteUsageError extends Error {
   constructor() {
     super(USAGE);
-    this.name = 'UsageError';
+    this.name = 'SuiteUsageError';
   }
+}
+
+// What the launcher runs: node, in the repository root, with this environment, once per step in order. `coverage` is
+// set for the coverage stage, and says whether a rise is recorded or refused.
+export interface SuiteCommand {
+  command: string;
+  cwd: string;
+  env: Record<string, string | undefined>;
+  steps: string[][];
+  coverage?: 'check' | 'update';
 }
 
 // No arguments is the full stage. `fast` is test/unit/ plus the named contract suites, whose paths are built from the
 // directory names on disk, never from the argument text. `check` runs no tests, so it gives null.
-function stage(argv) {
+function stage(argv: string[]): string[] | null {
   if (argv.length === 0) return [];
   if (argv[0] === 'check') {
-    if (argv.length > 1) throw new UsageError();
+    if (argv.length > 1) throw new SuiteUsageError();
     return null;
   }
-  if (argv[0] !== 'fast') throw new UsageError();
+  if (argv[0] !== 'fast') throw new SuiteUsageError();
   const boundaries = readdirSync(join(root, 'test', 'contract'), { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name);
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
   return [
     UNIT,
     ...argv.slice(1).map((arg) => {
-      const name = boundaries.find((b) => b === arg);
-      if (!name) throw new UsageError();
+      const name = boundaries.find((boundary) => boundary === arg);
+      if (!name) throw new SuiteUsageError();
       return `test/contract/${name}/**/*.test.{mjs,ts}`;
     }),
   ];
 }
 
-export function suiteCommand(env, argv) {
+export function suiteCommand(env: Record<string, string | undefined>, argv: string[]): SuiteCommand {
   const kept = Object.entries(env).filter(([key]) => {
-    const k = key.toUpperCase(); // Windows environment keys are case-insensitive
-    return k !== 'NODE_OPTIONS' && k !== 'NODE_PATH' && !k.startsWith('NPM_CONFIG_');
+    const upper = key.toUpperCase(); // Windows environment keys are case-insensitive
+    return upper !== 'NODE_OPTIONS' && upper !== 'NODE_PATH' && !upper.startsWith('NPM_CONFIG_');
   });
   // Saturating the machine slows every test: on a 20-core machine the suite took 680 s at 2 files at once, 440 s at 4,
-  // 345 s at 8 and 339 s at 12 (grey-goo-ri issue #143), against 652 s at the default 19 (grey-goo-ri PR #141). Small CI
-  // runners keep their default of one fewer than their cores.
+  // 345 s at 8 and 339 s at 12 (grey-goo-ri issue #143), against 652 s at the default 19 (grey-goo-ri PR #141). Small
+  // CI runners keep their default of one fewer than their cores.
   const concurrency = Math.min(12, Math.max(1, availableParallelism() - 1));
   const base = { command: process.execPath, cwd: root, env: Object.fromEntries(kept) };
   // The check job and the suite stages already run CHECKS, so the coverage stage runs only the measured tests.
   if (argv[0] === 'coverage') {
-    if (argv.length > 2 || (argv.length === 2 && argv[1] !== 'update')) throw new UsageError();
+    if (argv.length > 2 || (argv.length === 2 && argv[1] !== 'update')) throw new SuiteUsageError();
     const test = ['--test', `--test-concurrency=${concurrency}`, '--experimental-test-coverage'];
     // include-all counts a module no test loads, so a new untested file lowers the figures instead of hiding.
     const scope = ['--test-coverage-include-all', '--test-coverage-include=lib/**'];
@@ -85,7 +97,7 @@ export function suiteCommand(env, argv) {
         UNIT,
       ],
     ];
-    return { ...base, steps, coverage: argv[1] ?? 'check' };
+    return { ...base, steps, coverage: argv[1] === 'update' ? 'update' : 'check' };
   }
   const files = stage(argv);
   const steps = files ? [...CHECKS, ['--test', `--test-concurrency=${concurrency}`, ...files]] : CHECKS;
@@ -95,17 +107,21 @@ export function suiteCommand(env, argv) {
 // The summed line and function totals of an lcov report as percentages, floored to two places. Branches are left out:
 // node merges each test process's V8 branch ranges, so the branches found in one file move by one or two between runs
 // of the same tree.
-export function coverageTotals(lcov) {
+export function coverageTotals(lcov: string): Record<'lines' | 'functions', number> {
   const sum = { LF: 0, LH: 0, FNF: 0, FNH: 0 };
-  for (const [, key, count] of lcov.matchAll(/^(LF|LH|FNF|FNH):(\d+)\r?$/gm)) sum[key] += Number(count);
-  const percent = (hit, found) => (found ? Math.floor((10000 * hit) / found) / 100 : 100);
+  for (const [, key, count] of lcov.matchAll(/^(LF|LH|FNF|FNH):(\d+)\r?$/gm))
+    sum[key as keyof typeof sum] += Number(count);
+  const percent = (hit: number, found: number) => (found ? Math.floor((10000 * hit) / found) / 100 : 100);
   return { lines: percent(sum.LH, sum.LF), functions: percent(sum.FNH, sum.FNF) };
 }
 
 // The ratchet: each figure that fell below the recorded one, and each that rose above it. A missing record rose.
-export function compareCoverage(recorded, current) {
-  const fell = [];
-  const rose = [];
+export function compareCoverage(
+  recorded: Record<string, number> | undefined,
+  current: Record<string, number>,
+): { fell: string[]; rose: string[] } {
+  const fell: string[] = [];
+  const rose: string[] = [];
   for (const [metric, now] of Object.entries(current)) {
     const was = recorded?.[metric];
     if (was === undefined || now > was) rose.push(`${metric} ${was ?? 'unrecorded'} -> ${now}`);
@@ -115,7 +131,7 @@ export function compareCoverage(recorded, current) {
 }
 
 // Coverage differs by platform (win32 and POSIX branches), so each platform keeps its own figures.
-function ratchet(mode) {
+function ratchet(mode: 'check' | 'update'): number {
   const path = join(root, BASELINE);
   const baseline = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
   const current = coverageTotals(readFileSync(join(root, LCOV), 'utf8'));
@@ -137,7 +153,8 @@ function ratchet(mode) {
     return 0;
   }
   console.error(
-    `coverage rose (${rose.join(', ')}). Record it: node scripts/run-suite.mjs coverage update, or set ${figures} in ${BASELINE}.`,
+    `coverage rose (${rose.join(', ')}). Record it: node scripts/run-suite.ts coverage update, ` +
+      `or set ${figures} in ${BASELINE}.`,
   );
   return 1;
 }
@@ -145,25 +162,26 @@ function ratchet(mode) {
 const self = fileURLToPath(import.meta.url);
 const entry = process.argv[1] && resolve(process.argv[1]);
 if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowerCase() : entry === self)) {
-  let cmd;
+  let suite: SuiteCommand;
   try {
-    cmd = suiteCommand(process.env, process.argv.slice(2));
+    suite = suiteCommand(process.env, process.argv.slice(2));
   } catch (err) {
-    if (!(err instanceof UsageError)) throw err;
+    if (!(err instanceof SuiteUsageError)) throw err;
     console.error(err.message);
     process.exit(2);
   }
   const missing = CHECKS.map(([script]) => script).filter((script) => !existsSync(join(root, script)));
-  if (missing.length && !cmd.coverage) {
+  if (missing.length && !suite.coverage) {
     console.error(`${missing.join(' and ')} not found: run npm ci first`);
     process.exit(1);
   }
   // node's lcov reporter does not create its destination's directory.
-  if (cmd.coverage) mkdirSync(join(root, dirname(LCOV)), { recursive: true });
-  // Steps run in order and the first failure stops the stage, so a format, lint or type error is the last thing printed.
-  for (const args of cmd.steps) {
-    const code = await new Promise((done) => {
-      const child = spawn(cmd.command, args, { cwd: cmd.cwd, env: cmd.env, stdio: 'inherit', shell: false });
+  if (suite.coverage) mkdirSync(join(root, dirname(LCOV)), { recursive: true });
+  // Steps run in order and the first failure stops the stage, so a format, lint or type error is the last thing
+  // printed.
+  for (const args of suite.steps) {
+    const code = await new Promise<number | null>((done) => {
+      const child = spawn(suite.command, args, { cwd: suite.cwd, env: suite.env, stdio: 'inherit', shell: false });
       child.on('error', (err) => {
         console.error(err.message);
         done(1);
@@ -172,5 +190,5 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     });
     if (code !== 0) process.exit(code);
   }
-  if (cmd.coverage) process.exit(ratchet(cmd.coverage));
+  if (suite.coverage) process.exit(ratchet(suite.coverage));
 }

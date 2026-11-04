@@ -4,7 +4,7 @@ import { readdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as contract from '../../../lib/harnesses/contract.mjs';
+import * as contract from '../../../lib/harnesses/contract.ts';
 
 const dirs = [];
 after(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
@@ -71,10 +71,10 @@ for (const [field, message] of [
 }
 
 test('every Harness declares the paths that configure it', async () => {
-  const { HARNESSES } = await import('../../../lib/harnesses/shipped.mjs');
+  const { HARNESSES } = await import('../../../lib/harnesses/shipped.ts');
   const modules = readdirSync(new URL('../../../lib/harnesses/', import.meta.url))
-    .filter((f) => !['contract.mjs', 'shipped.mjs'].includes(f))
-    .map((f) => f.replace(/\.mjs$/, ''));
+    .filter((f) => !['contract.ts', 'shipped.ts'].includes(f))
+    .map((f) => f.replace(/\.ts$/, ''));
   assert.deepEqual(Object.keys(HARNESSES).sort(), modules.sort(), 'every Harness module is shipped');
   assert.deepEqual(Object.fromEntries(Object.entries(HARNESSES).map(([name, h]) => [name, h.protectedPaths])), {
     claude: ['.claude/', '.mcp.json', 'CLAUDE.md'],

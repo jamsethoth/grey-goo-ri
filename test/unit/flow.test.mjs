@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 import * as flow from '../../lib/flow.ts';
 
 test('writeResolved writes the flow and hash to the run directory', (t) => {

@@ -6,7 +6,7 @@ import { matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const launcherUrl = new URL('../../scripts/run-suite.mjs', import.meta.url);
+const launcherUrl = new URL('../../scripts/run-suite.ts', import.meta.url);
 // The machine's own cap, as the launcher computes it; the cases assert the rest of the command line literally.
 const concurrency = `--test-concurrency=${Math.min(12, Math.max(1, availableParallelism() - 1))}`;
 // ADR 0018: Prettier, ESLint and tsc run as node plus each package's own bin script, before the tests, in every stage.

@@ -4,9 +4,10 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import * as render from '../../lib/render.mjs';
+import * as publicText from '../../lib/public-text.ts';
+import * as render from '../../lib/render.ts';
 import * as marker from '../../lib/marker.ts';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 
 // A shipped template, as the defaults Layer loads it.
 const shipped = (name) => config.loadDefaults().files[`templates/${name}`].bytes;
@@ -17,7 +18,7 @@ const asText = (p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, S
 test('fence redacts before truncating and prefers complete lines', () => {
   const directory = '/private/' + 'person'.repeat(20);
   const raw = `${directory}/proj/file\n${'x'.repeat(2970)}`;
-  const redact = (text) => render.publicText(text, [directory]);
+  const redact = (text) => publicText.publicText(text, [directory]);
   assert.equal(render.fence(raw, redact), '```\n[local]/proj/file\n' + 'x'.repeat(2970) + '\n```');
   assert.equal(render.fence('x'.repeat(3100) + '\nlast line'), '```\nlast line\n```');
   assert.equal(render.fence('x'.repeat(3100)), '```\n' + 'x'.repeat(3000) + '\n```');
@@ -33,9 +34,9 @@ test('fence retains a character tail for JSON errors and overlong final lines', 
 });
 
 test('publicTail falls back to a character tail when the only later newline ends the text', () => {
-  assert.equal(render.publicTail('x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');
-  assert.equal(render.publicTail('a\n' + 'x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');
-  assert.equal(render.publicTail('head line\n' + 'x'.repeat(2995) + '\n', String), 'x'.repeat(2995) + '\n');
+  assert.equal(publicText.publicTail('x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');
+  assert.equal(publicText.publicTail('a\n' + 'x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');
+  assert.equal(publicText.publicTail('head line\n' + 'x'.repeat(2995) + '\n', String), 'x'.repeat(2995) + '\n');
 });
 
 // [name, known directories, text, the text published]
@@ -165,9 +166,9 @@ const MASKS = [
 ];
 for (const [name, directories, text, expected] of MASKS) {
   test(`publicText masks known directories without changing unrelated text: ${name}`, () => {
-    const actual = render.publicText(text, directories);
+    const actual = publicText.publicText(text, directories);
     assert.equal(actual, expected);
-    assert.equal(render.publicText(actual, directories), actual, 'masking again changes nothing');
+    assert.equal(publicText.publicText(actual, directories), actual, 'masking again changes nothing');
   });
 }
 
@@ -211,9 +212,9 @@ const PERCENT_ENCODED = [
 ];
 for (const [name, directories, text, expected] of PERCENT_ENCODED) {
   test(`publicText masks percent-encoded directories in file URLs and plain text: ${name}`, () => {
-    const actual = render.publicText(text, directories);
+    const actual = publicText.publicText(text, directories);
     assert.equal(actual, expected);
-    assert.equal(render.publicText(actual, directories), actual, 'masking again changes nothing');
+    assert.equal(publicText.publicText(actual, directories), actual, 'masking again changes nothing');
   });
 }
 
@@ -234,7 +235,7 @@ test('publicText masks the canonical form of the temp directory and of directori
   // Only the linked spellings are known: the temp directory and the repository both arrive through the link.
   for (const k of Object.keys(saved)) process.env[k] = join(root, 'link', 'tmp');
   const text = `fatal: ${join(real, 'tmp', 'x')} and ${pathToFileURL(join(real, 'repo', 'y')).href}`;
-  assert.equal(render.publicText(text, [join(root, 'link', 'repo')]), `fatal: [local]${sep}x and [local]/y`);
+  assert.equal(publicText.publicText(text, [join(root, 'link', 'repo')]), `fatal: [local]${sep}x and [local]/y`);
 });
 
 for (const [kind, subject] of [
@@ -395,14 +396,14 @@ const fenced = (s) => '```\n' + s + '\n```';
 
 test('a section renders once per list item', async () => {
   assert.equal(
-    await render.template('{{#items}}- {{name}}\n{{/items}}', { items: [{ name: 'a' }, { name: 'b' }] }),
+    await render.renderTemplate('{{#items}}- {{name}}\n{{/items}}', { items: [{ name: 'a' }, { name: 'b' }] }),
     '- a\n- b\n',
   );
 });
 
 test('a section renders once for a present value and not for an empty one', async () => {
   assert.equal(
-    await render.template('[{{#met}}x{{/met}}][{{#none}}y{{/none}}][{{#empty}}z{{/empty}}]', {
+    await render.renderTemplate('[{{#met}}x{{/met}}][{{#none}}y{{/none}}][{{#empty}}z{{/empty}}]', {
       met: true,
       none: '',
       empty: [],
@@ -412,16 +413,21 @@ test('a section renders once for a present value and not for an empty one', asyn
 });
 
 test('an inverted section renders for an absent value', async () => {
-  assert.equal(await render.template('{{^missing}}none{{/missing}}', {}), 'none');
+  assert.equal(await render.renderTemplate('{{^missing}}none{{/missing}}', {}), 'none');
 });
 
 test('an inverted section renders for an empty list and not for a present value', async () => {
-  assert.equal(await render.template('{{^items}}none{{/items}}{{^met}}no{{/met}}', { items: [], met: true }), 'none');
+  assert.equal(
+    await render.renderTemplate('{{^items}}none{{/items}}{{^met}}no{{/met}}', { items: [], met: true }),
+    'none',
+  );
 });
 
 test('a dotted name reads a nested field, and an absent name renders empty', async () => {
   assert.equal(
-    await render.template('#{{ticket.number}} [{{ticket.missing}}] [{{nothing.here}}]', { ticket: { number: 7 } }),
+    await render.renderTemplate('#{{ticket.number}} [{{ticket.missing}}] [{{nothing.here}}]', {
+      ticket: { number: 7 },
+    }),
     '#7 [] []',
   );
 });
@@ -429,14 +435,14 @@ test('a dotted name reads a nested field, and an absent name renders empty', asy
 test('inside a list section a name reads the item first, then the outer context', async () => {
   const context = { base: 'main', files: ['a.mjs', 'b.mjs'], rows: [{ name: 'r1' }] };
   assert.equal(
-    await render.template('{{#files}}{{.}}@{{base}} {{/files}}{{#rows}}{{name}}@{{base}}{{/rows}}', context),
+    await render.renderTemplate('{{#files}}{{.}}@{{base}} {{/files}}{{#rows}}{{name}}@{{base}}{{/rows}}', context),
     'a.mjs@main b.mjs@main r1@main',
   );
 });
 
 test('a section tag alone on its line leaves no line behind', async () => {
   assert.equal(
-    await render.template('head\n  {{#items}}\n- {{.}}\n  {{/items}}\n{{^items}}\nnone\n{{/items}}\ntail', {
+    await render.renderTemplate('head\n  {{#items}}\n- {{.}}\n  {{/items}}\n{{^items}}\nnone\n{{/items}}\ntail', {
       items: ['a'],
     }),
     'head\n- a\ntail',
@@ -454,48 +460,54 @@ test('an unnamed context value is not computed', async () => {
       throw new Error('the unnamed value was computed');
     },
   };
-  assert.equal(await render.template('{{named}} {{#named}}{{named}}{{/named}}', context), 'yes yes');
+  assert.equal(await render.renderTemplate('{{named}} {{#named}}{{named}}{{/named}}', context), 'yes yes');
   assert.equal(named, 1, 'a named value is computed once');
 });
 
 test('an async context value is awaited', async () => {
   assert.equal(
-    await render.template('{{#files}}{{.}} {{/files}}', { files: async () => ['a.mjs', 'b.mjs'] }),
+    await render.renderTemplate('{{#files}}{{.}} {{/files}}', { files: async () => ['a.mjs', 'b.mjs'] }),
     'a.mjs b.mjs ',
   );
 });
 
 test('a section without its closing tag is refused', async () => {
-  await assert.rejects(render.template('{{#items}}x', { items: [1] }), /\{\{#items\}\} is not closed/);
-  await assert.rejects(render.template('x{{/items}}', {}), /\{\{\/items\}\} closes no open section/);
+  await assert.rejects(render.renderTemplate('{{#items}}x', { items: [1] }), /\{\{#items\}\} is not closed/);
+  await assert.rejects(render.renderTemplate('x{{/items}}', {}), /\{\{\/items\}\} closes no open section/);
 });
 
 test("a fence whose opening line names a value fences every value it holds past that value's backticks", async () => {
   assert.equal(
-    await render.template('```{{lang}}\n{{text}}\n```', { lang: 'text', text: 'x\n```\n## Outside' }),
+    await render.renderTemplate('```{{lang}}\n{{text}}\n```', { lang: 'text', text: 'x\n```\n## Outside' }),
     '````text\nx\n```\n## Outside\n````',
   );
 });
 
 test('a value between two fences is not fenced', async () => {
   assert.equal(
-    await render.template('```\na\n```\n{{v}}\n```\nb\n```', { v: '``` v' }),
+    await render.renderTemplate('```\na\n```\n{{v}}\n```\nb\n```', { v: '``` v' }),
     '```\na\n```\n``` v\n```\nb\n```',
   );
 });
 
 test('a tilde fence outruns the tildes it holds, and an info string holding a backtick takes a tilde fence', async () => {
-  assert.equal(await render.template('~~~\n{{text}}\n~~~', { text: '~~~\n## Outside' }), '~~~~\n~~~\n## Outside\n~~~~');
-  assert.equal(await render.template('```{{lang}}\n{{text}}\n```', { lang: 'a`b', text: 'x' }), '~~~a`b\nx\n~~~');
+  assert.equal(
+    await render.renderTemplate('~~~\n{{text}}\n~~~', { text: '~~~\n## Outside' }),
+    '~~~~\n~~~\n## Outside\n~~~~',
+  );
+  assert.equal(await render.renderTemplate('```{{lang}}\n{{text}}\n```', { lang: 'a`b', text: 'x' }), '~~~a`b\nx\n~~~');
 });
 
 test('a section that crosses a fence, and a fence that is not closed, are refused', async () => {
-  await assert.rejects(render.template('{{#a}}\n```\n{{/a}}\n```', { a: 1 }), /\{\{\/a\}\} closes no open section/);
   await assert.rejects(
-    render.template('```\n{{#a}}\n```\n{{/a}}', { a: 1 }),
+    render.renderTemplate('{{#a}}\n```\n{{/a}}\n```', { a: 1 }),
+    /\{\{\/a\}\} closes no open section/,
+  );
+  await assert.rejects(
+    render.renderTemplate('```\n{{#a}}\n```\n{{/a}}', { a: 1 }),
     /\{\{#a\}\} must close inside the fence it opens in/,
   );
-  await assert.rejects(render.template('```\nx', {}), /a fence is not closed/);
+  await assert.rejects(render.renderTemplate('```\nx', {}), /a fence is not closed/);
 });
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
@@ -524,21 +536,21 @@ test(`the review comment template matches its builder's output`, async () => {
 test(`the Terminal Reason comment template matches its builder's output`, async () => {
   const interrupted = { terminal: 'ready-for-qa', terminalReason: { text: 'PR #3 is ready.' } };
   assert.equal(
-    await render.terminalComment(
-      'needs-human',
-      { text: 'An unexpected fault stopped the Execution at test.' },
-      fixtureMarker,
-      'Error: boom',
+    await render.terminalComment({
+      end: 'needs-human',
+      reason: { text: 'An unexpected fault stopped the Execution at test.' },
+      marker: fixtureMarker,
+      detail: 'Error: boom',
       interrupted,
-    ),
+    }),
     fixture('terminal.txt'),
   );
   assert.equal(
-    await render.terminalComment(
-      'ready-for-qa',
-      { text: 'Every Vertex passed. PR #3 is ready for review.' },
-      fixtureMarker,
-    ),
+    await render.terminalComment({
+      end: 'ready-for-qa',
+      reason: { text: 'Every Vertex passed. PR #3 is ready for review.' },
+      marker: fixtureMarker,
+    }),
     fixture('terminal-plain.txt'),
   );
 });
@@ -703,14 +715,14 @@ for (const [name, build] of [
   [
     'terminalComment',
     (m) =>
-      render.terminalComment(
-        'TOKEN needs-human',
+      render.terminalComment({
+        end: 'TOKEN needs-human',
         reason,
-        m,
-        'TOKEN detail',
-        { terminal: 'TOKEN done', terminalReason: { text: 'TOKEN earlier' } },
+        marker: m,
+        detail: 'TOKEN detail',
+        interrupted: { terminal: 'TOKEN done', terminalReason: { text: 'TOKEN earlier' } },
         redact,
-      ),
+      }),
   ],
 ]) {
   test(`${name} redacts each public field exactly once`, async () => {
@@ -778,7 +790,7 @@ test('marker-shaped agent text does not displace the rendered marker', async () 
 
 // A section item is a scope only when it is an object, as the validator types it (#198).
 test('a section over a list of lists does not take the inner list as its scope', async () => {
-  const out = await render.template('{{#rows}}{{length}};{{/rows}}', { rows: [['a', 'b']], length: 'outer' });
+  const out = await render.renderTemplate('{{#rows}}{{length}};{{/rows}}', { rows: [['a', 'b']], length: 'outer' });
   assert.equal(out, 'outer;');
 });
 

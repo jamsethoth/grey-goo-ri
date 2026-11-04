@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const bin = fileURLToPath(new URL('../../bin/gg.mjs', import.meta.url));
+const bin = fileURLToPath(new URL('../../bin/gg.ts', import.meta.url));
 const commands = ['init', 'doctor', 'plan', 'publish', 'run', 'work', 'trace', 'stats'];
 
 function gg(...args) {
@@ -262,7 +262,7 @@ function linkedInstall(t) {
 
 test('gg runs through a linked install, as npm link and npm install -g <checkout> lay it out', (t) => {
   const link = linkedInstall(t);
-  const r = spawnSync(process.execPath, [join(link, 'bin', 'gg.mjs'), '--help'], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [join(link, 'bin', 'gg.ts'), '--help'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assertUsage(r.stdout);
   removeLink(link);
@@ -275,7 +275,7 @@ test('a copy of gg under node_modules cannot start, which is why the install is 
   // Keeping the link path makes Node see every file under node_modules, as it would in a copy.
   const r = spawnSync(
     process.execPath,
-    ['--preserve-symlinks', '--preserve-symlinks-main', join(link, 'bin', 'gg.mjs'), '--help'],
+    ['--preserve-symlinks', '--preserve-symlinks-main', join(link, 'bin', 'gg.ts'), '--help'],
     { encoding: 'utf8' },
   );
   assert.notEqual(r.status, 0);

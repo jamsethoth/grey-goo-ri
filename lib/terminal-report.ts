@@ -1,6 +1,6 @@
 // A Terminal's report: its comment and label Actions, each write-ahead with its Action Event, the stop it saves
 // first, and the state and ticket_end it lands with.
-import * as config from './config.mjs';
+import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
 import type * as effectEvidence from './effect-evidence.ts';
 import * as effects from './effects.ts';
@@ -10,7 +10,7 @@ import * as labels from './labels.ts';
 import type * as marker from './marker.ts';
 import * as outcome from './outcome.ts';
 import * as record from './record.ts';
-import * as render from './render.mjs';
+import * as render from './render.ts';
 
 type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 
@@ -161,7 +161,14 @@ function commentBody(
     );
   // A hold's advice is for the human reading its comment, not part of its one-sentence Terminal Reason.
   const shown = stop?.advice ? { ...reason, text: `${reason!.text}\n\n${stop.advice}` } : reason;
-  return render.terminalComment(name, shown, actionMarker, stop?.detail, stop?.interrupted, context.publicText);
+  return render.terminalComment({
+    end: name,
+    reason: shown!,
+    marker: actionMarker,
+    detail: stop?.detail,
+    interrupted: stop?.interrupted,
+    redact: context.publicText,
+  });
 }
 
 // The Terminal being reported: its end state, its saved stop, and its Terminal Reason as the report began.

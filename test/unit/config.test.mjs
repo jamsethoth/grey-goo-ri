@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as checks from '../../lib/checks.ts';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const personaPath = (name) => join(repoRoot, 'defaults', 'personas', name);
@@ -38,14 +38,14 @@ for (const name of ['implementer.md', 'reviewer.md']) {
   });
 }
 
-test('loadConfig reads the Layer identified by layerPath', (t) => {
+test('loadLayers reads the Layer identified by layerPath', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'gg-layer-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const file = config.layerPath(dir);
   assert.equal(file, join(dir, '.agents', 'gg', 'gg.json'));
   mkdirSync(join(dir, '.agents', 'gg'), { recursive: true });
   writeFileSync(file, '{"baseBranch":"layer-base"}');
-  assert.equal(config.loadConfig(dir, join(dir, 'no-user-layer')).baseBranch, 'layer-base');
+  assert.equal(config.loadLayers(dir, join(dir, 'no-user-layer')).baseBranch, 'layer-base');
 });
 
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
@@ -96,7 +96,7 @@ async function installed(t, install, edit = () => {}) {
   t.after(() => rmSync(join(root, '..'), { recursive: true, force: true }));
   copyInstall(root);
   edit(root);
-  const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
+  const c = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
   const defaults = c.loadDefaults();
   const input = { flow: defaults.flows.default, files: defaults.files, harnesses: {}, commands: {} };
   return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: c.configHash(input) };
@@ -132,7 +132,7 @@ function beside(root, files) {
   for (const [name, text] of Object.entries(files)) writeFileSync(join(root, '.agents', 'gg', name), text);
 }
 
-test('loadConfig reads each file from the Layer that declares its name', (t) => {
+test('loadLayers reads each file from the Layer that declares its name', (t) => {
   const { repo, home } = layers(t, {
     repo: '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}',
     home: '{"procedures":{"probe":{"actions":[{"id":"ask","do":"agent","brief":"ask.md","schema":"ask.schema.json"},{"id":"pr","do":"pr-upsert","body":"body.md"}],"recover":{"max":1,"brief":"again.md"},"claimTokens":{"halt":{"stop":true,"comment":"stopped.md"}}}}}',
@@ -145,7 +145,7 @@ test('loadConfig reads each file from the Layer that declares its name', (t) => 
     'again.md': 'again',
     'stopped.md': 'stopped',
   });
-  const { files } = config.loadConfig(repo, home);
+  const { files } = config.loadLayers(repo, home);
   assert.deepEqual(files['repo-implementer.md'], {
     bytes: '# repo implementer\n',
     hash: '906646d8774b848deba8dffcf8c2b5961d3f249ca95cc4b5f025d299d66036e1',
@@ -184,7 +184,7 @@ test('an inherited file reference keeps its declaring Layer', (t) => {
   });
   beside(home, { 'shared.md': '# from the user Layer\n' });
   beside(repo, { 'shared.md': '# a repository file no Layer names\n', 'fix-it.md': 'fix it' });
-  const c = config.loadConfig(repo, home);
+  const c = config.loadLayers(repo, home);
   assert.equal(c.agents.implementer.persona, 'shared.md');
   assert.equal(c.files['shared.md'].bytes, '# from the user Layer\n');
   assert.equal(c.files['fix-it.md'].bytes, 'fix it');
@@ -195,7 +195,7 @@ test('an inline Vertex persona loads from its declaring Layer', (t) => {
     repo: '{"flows":{"default":{"ticket":{"vertices":{"red":{"persona":"red-persona.md"}}}}}}',
   });
   beside(repo, { 'red-persona.md': '# red only\n' });
-  const c = config.loadConfig(repo, home);
+  const c = config.loadLayers(repo, home);
   assert.equal(c.flows.default.ticket.vertices.red.persona, 'red-persona.md');
   assert.deepEqual(c.files['red-persona.md'], {
     bytes: '# red only\n',
@@ -210,14 +210,14 @@ test('a name two Layers declare for different files is a load error naming both'
   });
   beside(home, { 'same.md': '# home\n' });
   beside(repo, { 'same.md': '# repo\n' });
-  assert.throws(() => config.loadConfig(repo, home), {
+  assert.throws(() => config.loadLayers(repo, home), {
     message: `file "same.md" is declared by ${config.layerPath(home)} and by ${config.layerPath(repo)}, each beside its own Layer; give one of them another name`,
   });
 });
 
 test('a declared file that does not exist is a load error naming the Layer file and the name', (t) => {
   const { repo, home } = layers(t, { repo: '{"agents":{"implementer":{"persona":"missing.md"}}}' });
-  assert.throws(() => config.loadConfig(repo, home), {
+  assert.throws(() => config.loadLayers(repo, home), {
     message: `${config.layerPath(repo)} names file "missing.md", which cannot be read (ENOENT)`,
   });
 });
@@ -226,7 +226,7 @@ test('a Flow or Procedure a later Layer declares replaces the earlier one of its
   const { repo, home } = layers(t, {
     repo: '{"procedures":{"review":{"actions":[{"id":"look","do":"check","kind":"command","command":"test"}]}},"flows":{"default":{"plan":null,"actionCap":5,"ticket":{"entry":"look","vertices":{"look":{"procedure":"review"}}}}}}',
   });
-  const c = config.loadConfig(repo, home);
+  const c = config.loadLayers(repo, home);
   assert.deepEqual(c.procedures.review, { actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }] });
   assert.deepEqual(c.flows.default, {
     plan: null,
@@ -236,21 +236,21 @@ test('a Flow or Procedure a later Layer declares replaces the earlier one of its
   assert.equal(c.procedures.implement.actions[0].id, 'green', 'a Procedure the Layer does not declare stays');
 });
 
-test('loadConfig takes Declared Commands whole from the repository Layer', (t) => {
+test('loadLayers takes Declared Commands whole from the repository Layer', (t) => {
   const { repo, home } = layers(t, {
     repo: '{"commands":{"test":"npm test","lint-js":"npm run lint"}}',
     home: '{"baseBranch":"dev"}',
   });
-  const c = config.loadConfig(repo, home);
+  const c = config.loadLayers(repo, home);
   assert.deepEqual(c.commands, { test: 'npm test', 'lint-js': 'npm run lint' });
   assert.equal(c.baseBranch, 'dev');
   assert.equal(Object.hasOwn(config.loadDefaults(), 'commands'), false, 'the shipped defaults declare no commands');
 });
 
-test('loadConfig reads no Declared Commands from AGENTS.md', (t) => {
+test('loadLayers reads no Declared Commands from AGENTS.md', (t) => {
   const { repo, home } = layers(t);
   writeFileSync(join(repo, 'AGENTS.md'), '# r\n\n## Commands\n\n- test: `npm test`\n');
-  assert.equal(config.loadConfig(repo, home).commands, undefined);
+  assert.equal(config.loadLayers(repo, home).commands, undefined);
 });
 
 test('a commands key in the user Layer is a load error naming the file', (t) => {
@@ -259,7 +259,7 @@ test('a commands key in the user Layer is a load error naming the file', (t) => 
     home: '{"commands":{"test":"npm test"}}',
   });
   assert.throws(
-    () => config.loadConfig(repo, home),
+    () => config.loadLayers(repo, home),
     (err) => {
       assert.equal(err.message, `${config.layerPath(home)}: commands may be set only in a repository Layer`);
       return true;
@@ -269,7 +269,7 @@ test('a commands key in the user Layer is a load error naming the file', (t) => 
 
 test('a testPaths key in the user Layer is a load error naming the file', (t) => {
   const { repo, home } = layers(t, { repo: '{"testPaths":["test/**"]}', home: '{"testPaths":["spec/**"]}' });
-  assert.throws(() => config.loadConfig(repo, home), {
+  assert.throws(() => config.loadLayers(repo, home), {
     message: `${config.layerPath(home)}: testPaths may be set only in a repository Layer`,
   });
 });
@@ -280,22 +280,22 @@ test('a testPaths key in the defaults Layer is a load error naming the file', as
   copyInstall(root);
   const file = join(root, 'defaults', 'gg.json');
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testPaths: ['test/**'] }));
-  const c = await import(pathToFileURL(join(root, 'lib', 'config.mjs')).href);
+  const c = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
   assert.throws(() => c.loadDefaults(), { message: `${file}: testPaths may be set only in a repository Layer` });
 });
 
 test('a Layer with a duplicate key in one object is a load error naming the file and key', (t) => {
   const repoDup = layers(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
-  assert.throws(() => config.loadConfig(repoDup.repo, repoDup.home), {
+  assert.throws(() => config.loadLayers(repoDup.repo, repoDup.home), {
     message: `${config.layerPath(repoDup.repo)}: key "test" appears twice in one object`,
   });
   const userDup = layers(t, { home: '{"agents":{"implementer":{"model":"a","model":"b"}}}' });
-  assert.throws(() => config.loadConfig(userDup.repo, userDup.home), {
+  assert.throws(() => config.loadLayers(userDup.repo, userDup.home), {
     message: `${config.layerPath(userDup.home)}: key "model" appears twice in one object`,
   });
   // Equal keys in sibling objects, in array elements and inside a string value are not duplicates.
   const fine = layers(t, { repo: '{"a":{"k":1},"b":{"k":"\\"k\\": 2"},"c":[{"k":1},{"k":2}],"d":{"k\\"":1,"k":2}}' });
-  assert.deepEqual(config.loadConfig(fine.repo, fine.home).b, { k: '"k": 2' });
+  assert.deepEqual(config.loadLayers(fine.repo, fine.home).b, { k: '"k": 2' });
 });
 
 // V8's own message names no position for an early end or a trailing comma, and quotes the Layer's text.
@@ -313,7 +313,7 @@ test('a Layer that is not JSON is a load error naming the file, line and column 
     ['{ // note\n "a": 1}', '1:3: invalid JSON, invalid comment token'],
   ]) {
     const { repo, home } = layers(t, { repo: text });
-    assert.throws(() => config.loadConfig(repo, home), { message: `${config.layerPath(repo)}:${where}` });
+    assert.throws(() => config.loadLayers(repo, home), { message: `${config.layerPath(repo)}:${where}` });
   }
 });
 
@@ -408,7 +408,7 @@ test('testPathsProblems names a testPaths entry git would reject or read differe
 
 test('this repository Layer declares the default test globs as its testPaths', (t) => {
   const { home } = layers(t);
-  assert.deepEqual(config.loadConfig(repoRoot, home).testPaths, checks.DEFAULT_TEST_GLOBS);
+  assert.deepEqual(config.loadLayers(repoRoot, home).testPaths, checks.DEFAULT_TEST_GLOBS);
 });
 
 // Until the cutover (grey-goo-ri issue #97): feature-flow builds this repository and reads its AGENTS.md line.
@@ -421,5 +421,5 @@ test('this repository AGENTS.md Commands line matches its repository Layer', (t)
   );
   assert.equal(listed.test, 'node scripts/run-suite.ts');
   const { home } = layers(t);
-  assert.deepEqual(config.loadConfig(repoRoot, home).commands, listed);
+  assert.deepEqual(config.loadLayers(repoRoot, home).commands, listed);
 });

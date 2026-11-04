@@ -12,7 +12,7 @@ import type * as procedures from './procedures.ts';
 import type * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
-import * as render from './render.mjs';
+import * as publicText from './public-text.ts';
 import type * as terminalReport from './terminal-report.ts';
 import type * as inputs from './validate/inputs.ts';
 import type * as visit from './visit.ts';
@@ -47,7 +47,20 @@ export type RunGit = reconcile.ReconcileGit &
     commitStaged(worktree: string, message: string): Promise<string | null>;
     push(worktree: string, branch: string, sha: string): Promise<unknown>;
     withGuard?: (guard: (verb: string, args: unknown[], unlocked: RunGit) => Promise<unknown>) => RunGit;
-  };
+  } & AdmissionGit;
+
+// The git verbs gg run's admission calls before an Execution runs: the repository, and the Ticket's worktree.
+export interface AdmissionGit {
+  repoInfo(cwd: string): Promise<{ mainRoot: string; gitCommonDir: string; name: string }>;
+  worktreePath(root: string, repo: string, ticket: number): string;
+  slugify(text: string): string;
+  currentBranch(cwd: string): Promise<string | null>;
+  ensureWorktree(request: { mainRoot: string; path: string; branch: string; base: string }): Promise<{
+    path: string;
+    branch: string;
+  }>;
+  listWorktrees(mainRoot: string): Promise<{ path: string; branch: string }[]>;
+}
 
 // What a Run reaches outside its process, which a test replaces with a fake (ADR 0019): GitHub, git, the shell, the
 // locks, the State Database, time, and the integrity built from git and the locks. Given none, the State Database is
@@ -198,7 +211,7 @@ export function createRunContext(options: ExecutionOptions): RunContext {
     runContext.git = deps.git.withGuard!((verb, args, unlocked) =>
       remoteEffects.lockGuard(runContext, verb, args, unlocked),
     );
-  runContext.publicText ??= render.publicTextFor({
+  runContext.publicText ??= publicText.publicTextFor({
     worktree: executionRecord.worktree,
     commonDir: executionRecord.commonDir,
     cwd: options.cwd,

@@ -43,7 +43,7 @@ jobs:
 
       # Exactly the local command (ADR 0010, ADR 0016).
       - name: Check
-        run: node scripts/run-suite.mjs check
+        run: node scripts/run-suite.ts check
 
   # test/unit/'s line and function coverage of lib/, held to each platform's figures in coverage-baseline.json (ADR
   # 0016, amended): a fall, or a rise not yet recorded, fails the job. Its own job, beside the suite's, so it adds no
@@ -86,7 +86,7 @@ jobs:
       # the step.
       - name: Coverage
         shell: bash
-        run: node scripts/run-suite.mjs coverage 2>&1 | tee "$RUNNER_TEMP/coverage.log"
+        run: node scripts/run-suite.ts coverage 2>&1 | tee "$RUNNER_TEMP/coverage.log"
 
       # The ratchet's verdict, and node's per-file table: lines, branches, functions and the uncovered line numbers.
       - name: Summary
@@ -168,7 +168,7 @@ jobs:
         run: |
           node --version
           git --version
-          node scripts/run-suite.mjs 2>&1 | tee "$RUNNER_TEMP/suite.log"
+          node scripts/run-suite.ts 2>&1 | tee "$RUNNER_TEMP/suite.log"
 
       - name: No real gh, claude or codex was called
         if: always() && runner.os == 'Linux'

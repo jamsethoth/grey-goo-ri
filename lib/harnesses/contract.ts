@@ -45,7 +45,7 @@ export const USAGE_FIELDS = [
 ];
 
 // Usage fields that exist only when the named Capability is declared present.
-const USAGE_CAPABILITY = {
+const USAGE_CAPABILITY: Record<string, string> = {
   reasoningTokens: 'reasoningTokenReporting',
   costUsd: 'costReporting',
   peakContextTokens: 'peakContextReporting',
@@ -53,16 +53,19 @@ const USAGE_CAPABILITY = {
   toolCalls: 'toolCallReporting',
 };
 
-export function assertHarness(obj) {
+// Throws naming the first method or Capability a Harness module lacks.
+export function assertHarness(harness: unknown): void {
+  const declared = (harness ?? {}) as Record<string, unknown> & { capabilities: Record<string, unknown> };
   for (const method of HARNESS_METHODS) {
-    if (obj?.[method] === undefined) throw new Error(`harness is missing ${method}`);
+    if (declared[method] === undefined) throw new Error(`harness is missing ${method}`);
   }
   for (const field of CAPABILITY_FIELDS) {
-    if (obj.capabilities[field] === undefined) throw new Error(`harness ${obj.name} capabilities are missing ${field}`);
+    if (declared.capabilities[field] === undefined)
+      throw new Error(`harness ${String(declared.name)} capabilities are missing ${field}`);
   }
 }
 
-export function emptyUsage(capabilities) {
+export function emptyUsage(capabilities: Record<string, unknown> | null | undefined): Record<string, number | null> {
   return Object.fromEntries(
     USAGE_FIELDS.map((field) => {
       const capability = USAGE_CAPABILITY[field];

@@ -1,14 +1,14 @@
 // The deterministic Actions, each a write-ahead side effect (lib/effects.ts): commit and push in git, and comment,
 // pr-upsert and pr-ready on GitHub.
 import * as checks from './checks.ts';
-import * as config from './config.mjs';
+import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects.ts';
 import * as github from './github.ts';
 import * as integrity from './integrity.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
-import * as render from './render.mjs';
+import * as render from './render.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';

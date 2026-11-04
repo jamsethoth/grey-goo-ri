@@ -57,3 +57,6 @@ other argument after `coverage` is a usage error with exit code 2. The rule's ex
 - A new `test/contract/<boundary>/` directory becomes a valid argument without a change to the launcher.
 - Rules load from the checked-out tree, so the PR that changes `.codex/rules/test.rules` needs human review before Codex
   reviews it (ADR 0010).
+- Amended 2026-11-04 (grey-goo-ri issue #207): the launcher is `scripts/run-suite.ts` (ADR 0018), so each stage above
+  runs as `node scripts/run-suite.ts [stage]`. The closed set is unchanged. Its usage error is `SuiteUsageError`, named
+  apart from `lib/options.ts`'s `UsageError`, which the launcher does not load: it loads only `node:` built-ins.
