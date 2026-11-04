@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as publicText from '../../lib/public-text.ts';
@@ -236,6 +236,10 @@ test('publicText masks the canonical form of the temp directory and of directori
   for (const k of Object.keys(saved)) process.env[k] = join(root, 'link', 'tmp');
   const text = `fatal: ${join(real, 'tmp', 'x')} and ${pathToFileURL(join(real, 'repo', 'y')).href}`;
   assert.equal(publicText.publicText(text, [join(root, 'link', 'repo')]), `fatal: [local]${sep}x and [local]/y`);
+});
+
+test('publicText masks the home directory without being given it', () => {
+  assert.equal(publicText.publicText(`at ${join(homedir(), 'notes', 'x')}`), `at [local]${sep}notes${sep}x`);
 });
 
 for (const [kind, subject] of [

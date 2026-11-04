@@ -81,6 +81,23 @@ test('a State Label creation failure uses the label-failure log, Event and exit 
   );
 });
 
+test('a State Label write that fails inside the Execution fails the Run', async (t) => {
+  const f = fixture(t);
+  // Admission's in-progress label lands; only the Terminal's ready-for-qa label write fails.
+  const inner = f.gh.gh;
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
+    if (args[0] === 'issue' && args[1] === 'edit' && args.includes('gg:state:ready-for-qa')) {
+      f.gh.calls.push({ args, cwd, input });
+      throw new Error('label edit denied');
+    }
+    return inner(args, cwd, input);
+  });
+  const results = await run.runTarget(f.options);
+  assert.equal(ticketResult(results).outcome, 'ready-for-qa', JSON.stringify(results));
+  assert.equal(ticketResult(results).labelFailed, true);
+  assert.equal(run.runExitCode(results), 1);
+});
+
 test('a concurrent State Label create does not fail the Run', async (t) => {
   const f = fixture(t);
   // Another Run creates every State Label between this Run's label read and its creates.
