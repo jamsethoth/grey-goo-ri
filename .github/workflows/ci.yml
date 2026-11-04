@@ -82,9 +82,27 @@ jobs:
           New-Item -ItemType Directory -Force $dir | Out-Null
           "TEMP=$dir", "TMP=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      # Exactly the local command (ADR 0010, ADR 0016).
+      # Exactly the local command (ADR 0010, ADR 0016). shell: bash runs with pipefail, so the stage's exit code decides
+      # the step.
       - name: Coverage
-        run: node scripts/run-suite.mjs coverage
+        shell: bash
+        run: node scripts/run-suite.mjs coverage 2>&1 | tee "$RUNNER_TEMP/coverage.log"
+
+      # The ratchet's verdict, and node's per-file table: lines, branches, functions and the uncovered line numbers.
+      - name: Summary
+        if: always()
+        shell: bash
+        env:
+          LEG: ${{ matrix.os }}, node ${{ env.NODE_VERSION }}
+        run: |
+          log="$RUNNER_TEMP/coverage.log"
+          {
+            echo "### coverage: $LEG"
+            grep -aE '^coverage (held|rose|fell)' "$log" || echo 'no verdict: the unit tests did not finish or failed'
+            echo '```'
+            sed -n '/start of coverage report/,/end of coverage report/p' "$log" | sed 's/^ℹ //'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   suite:
     # Stable names: branch protection requires these checks by name.
