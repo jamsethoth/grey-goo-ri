@@ -196,14 +196,14 @@ async function admitConfiguration(layers: config.Config, harnesses: Record<strin
 
 // The Ticket, or an Epic's ready sub-issues. Every sub-issue is read before the Run's first effect, so an epic with
 // nothing ready leaves no trace.
-async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, labelPrefix: string) {
+async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, layers: config.Config) {
   const issue = await gh.viewIssue(target, repo.mainRoot);
   // gh gives an issue's sub-issues as a list, or as a connection with its list under `nodes`.
   const declared = issue.subIssues as ({ nodes?: { number: number }[] } & { number: number }[]) | undefined;
   const subIssues = declared?.nodes ?? declared ?? [];
   if (!subIssues.length) return { issue, subIssues, tickets: [issue] };
   const children = await Promise.all(subIssues.map((sub) => gh.viewIssue(sub.number, repo.mainRoot)));
-  const tickets = children.filter((child) => gh.isReady(child, { prefix: labelPrefix }));
+  const tickets = children.filter((child) => gh.isReady(child, { prefix: layers.labelPrefix }));
   const problem = epicProblem(children, tickets);
   if (problem) throw new Error(`#${target}: ${problem}`);
   return { issue, subIssues, tickets };
@@ -211,7 +211,7 @@ async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, 
 
 // The gh a Run's Tickets share: a label update that adds a label first creates gg's State Labels, once per Run, and
 // again after a failed attempt.
-function labelEnsuringGh(gh: github.Gh, repo: admission.Repo, labelPrefix: string): github.Gh {
+function labelEnsuringGh(gh: github.Gh, repo: admission.Repo, layers: config.Config): github.Gh {
   let ensuredLabels: Promise<void> | undefined;
   return {
     ...gh,
@@ -220,7 +220,7 @@ function labelEnsuringGh(gh: github.Gh, repo: admission.Repo, labelPrefix: strin
         ...report,
         ...(change.add?.length && {
           ensureLabels: () =>
-            (ensuredLabels ??= gh.ensureLabels(repo.mainRoot, { prefix: labelPrefix }).catch((err) => {
+            (ensuredLabels ??= gh.ensureLabels(repo.mainRoot, { prefix: layers.labelPrefix }).catch((err) => {
               ensuredLabels = undefined;
               throw err;
             })),
@@ -251,7 +251,7 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
   const { target, config: layers, harnesses, protectedPaths, testImmutability, deps, log } = options;
   const { gh, git, exec, integrity, locks = locksModule, database = record, clock = interpreter.WALL_CLOCK } = deps;
   const { flow, warnings, commands, pinned, hash } = await admitConfiguration(layers, harnesses, repo);
-  const { issue, subIssues, tickets } = await readTickets(gh, target, repo, layers.labelPrefix);
+  const { issue, subIssues, tickets } = await readTickets(gh, target, repo, layers);
   const { runId, runLog } = startRun(repo, { flow, hash, pinned, clock }, { named, log });
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
@@ -272,7 +272,7 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
     harnesses,
     protectedPaths,
     deps: {
-      gh: labelEnsuringGh(gh, repo, layers.labelPrefix),
+      gh: labelEnsuringGh(gh, repo, layers),
       git: lockedGit(git, repo.gitCommonDir, { locks }),
       exec,
       locks,
