@@ -54,8 +54,11 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/refs.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
 | `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
-| `lib/effects.mjs` | write-ahead side effects, the activity bracket, remote retries and backoff, the repo-lock guard |
-| `lib/terminal.mjs` | Terminals: hold, abandonment, fault, run-stopped and their reports, Terminal Reason texts |
+| `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, the activity bracket, each effect's intent, evidence and completion with its Action Event |
+| `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminal` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhausted` |
+| `lib/remote-effects.ts` | the remote Actions' retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
+| `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
+| `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop |
 | `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs (Procedures themselves are configuration) |
 | `lib/briefs.ts` | Brief context and rendering, Structured Response schema and response validation |
 | `lib/outcome.ts` | the transition table and Resolution Policy |
@@ -109,6 +112,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 - A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.mjs` (a closed set of
   inputs, a usage error that prints the usage).
+- A module split by job with no import cycle, its context typed and its errors subclasses a catch site tests:
+  `lib/effects.ts` with `lib/effect-errors.ts` and `lib/remote-effects.ts`, and `lib/terminal.ts` with
+  `lib/terminal-report.ts`; options objects in place of positional flags (`effects.sideEffect`, `effects.finish`).
 - A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
 - A contract suite and its fake: `test/contract/git/git.test.mjs` and `test/support/fake-git.mjs`.

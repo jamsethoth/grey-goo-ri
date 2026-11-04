@@ -1,15 +1,18 @@
 // The context the effects and Terminal functions read, as runExecution builds it, over a temp State Database, the
 // fake gh transport and an injected clock. Each case gets its own and removes it when it ends.
 import type { TestContext } from 'node:test';
+import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as effects from '../../lib/effects.ts';
 import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as render from '../../lib/render.mjs';
 import * as sqlite from '../../lib/sqlite.ts';
+import * as terminalReport from '../../lib/terminal-report.ts';
 import * as golden from './golden.mjs';
 
 export const TICKET = golden.TICKET;
@@ -48,14 +51,17 @@ export async function executionContext(t: TestContext) {
       time.now += ms;
     },
   };
-  const context = {
+  const context: terminalReport.TerminalContext = {
     record: executionRecord,
     database: record.stateDatabase(),
     events: events.eventLog(commonDir),
     run: 'run-1',
-    runState: { stop: null as unknown, remoteNotBefore: 0 },
+    runState: { stop: null, remoteNotBefore: 0 },
     clock,
     gh: github.createGh(fakeGh.gh),
+    // No case here reaches a git verb: the effects take git from their caller, and no Terminal here is ready-for-qa.
+    git: {} as terminalReport.TerminalContext['git'],
+    files: {},
     cwd: commonDir,
     labelPrefix: 'gg',
     log: (line: string) => logs.push(line),
@@ -74,8 +80,37 @@ export async function executionContext(t: TestContext) {
   return { context, executionRecord, fakeGh, sleeps, logs, emitted, commonDir };
 }
 
+export type ExecutionContext = Awaited<ReturnType<typeof executionContext>>['context'];
+
 // A remote Action's identity at the green Vertex, where a run stop ends the Execution.
 export const PUSH_REF = { vertex: 'green', visit: 1, procedure: 'implement', action: 'push', recovery: 0 };
 
 // The fake gh's comment post, which a case fails with an HTTP status.
 export const commentPost = (args: string[]) => golden.isCommentPost(args);
+
+// A remote comment Action on the Ticket at PUSH_REF, as the comment Action posts it: its body carries its marker.
+export function remoteComment(context: ExecutionContext) {
+  const actionMarker = context.markerOf(PUSH_REF);
+  return effects.sideEffect(context, {
+    actionMarker,
+    effect: 'comment',
+    payload: {
+      target: { kind: 'issue', number: TICKET },
+      body: `A comment.\n${marker.markerComment(actionMarker)}`,
+      bodyHash: 'hash',
+    },
+    perform: async (payload) => ({
+      id: github.commentId(await context.gh.comment(payload.target.number, payload.body, context.cwd)),
+    }),
+  });
+}
+
+// What a promise rejects with; a promise that resolves fails the case.
+export async function rejection(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (err) {
+    return err;
+  }
+  assert.fail('expected a rejection');
+}

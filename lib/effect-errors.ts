@@ -1,0 +1,84 @@
+// What an Action's effects throw, and what each means to the code that catches it: a test's crash, a fatal save, an
+// early Terminal, and a remote Action's spent retries or final failure.
+import type * as outcome from './outcome.ts';
+import type * as reconcile from './reconcile.ts';
+import * as record from './record.ts';
+
+export type CrashPointName = 'before-effect' | 'after-effect' | 'after-completion' | 'after-retry-saved';
+
+// Test-only crash injection (T18): rethrown untouched, so the record is left exactly as the crash found it.
+export class CrashError extends Error {
+  name = 'CrashError';
+}
+
+// A crash, or a record save that failed: either way nothing more of the record is saved.
+export const fatal = (err: unknown): boolean => err instanceof CrashError || err instanceof record.RecordSaveError;
+
+// crashAt (tests only) throws at a named point of the Action or Attempt with that marker.
+export function crashPoint(
+  context: { crashAt?: { marker: string; point: CrashPointName } },
+  actionMarker: string,
+  point: CrashPointName,
+): void {
+  if (context.crashAt?.marker === actionMarker && context.crashAt.point === point)
+    throw new CrashError(`crash ${point} ${actionMarker}`);
+}
+
+// A hold found inside an Action: a conflicting effect, a corrupt retry deadline, or a publish refused (`name`).
+export interface HoldEnding {
+  next: 'hold';
+  reason: string;
+  name?: string;
+}
+// Another Execution's run stop, found while this one waited: in a backoff (`retrying`) or for the repo lock.
+export interface RunStoppedEnding {
+  next: 'run-stopped';
+  retrying: boolean;
+  reason: string;
+}
+// This Execution's own remote Action failed with a class that stops the whole Run (#240).
+export interface RunStopEnding {
+  next: 'run-stop';
+  failureClass: outcome.FailureClass;
+  source: string;
+  detail: string;
+  reason: string;
+}
+// How an Execution ends before its route reaches an end state: held, abandoned for a human's label, or stopped.
+export type Ending = HoldEnding | reconcile.HumanOverride | RunStoppedEnding | RunStopEnding;
+
+// Thrown rather than returned because it is found deep inside an Action, in a repo-lock guard, an effect's retry, a
+// finder's lookup or a perform callback, about five calls below the runExecution and terminal.terminal that catch it
+// and end the Execution as `ending` says (terminal.decide). Every layer between passes it on untouched.
+export class EarlyTerminal extends Error {
+  readonly ending: Ending;
+  constructor(ending: Ending) {
+    super(ending.reason);
+    this.ending = ending;
+  }
+}
+
+// What a remote Action spent its retries on.
+export interface SpentRetries {
+  failureClass: outcome.FailureClass;
+  status: number | null;
+  count: number;
+  effect: string | null;
+}
+// A remote Action whose retry budget ran out on transient failures, so terminal.fault says the budget ran out rather
+// than that the fault was unexpected. `cause` is the last failure, whose message this error keeps.
+export class RetriesExhausted extends Error {
+  readonly spent: SpentRetries;
+  constructor(message: string, spent: SpentRetries, options?: ErrorOptions) {
+    super(message, options);
+    this.spent = spent;
+  }
+}
+
+// A final remote failure's class, which remote-effects puts on its error for terminal.fault's Terminal Reason.
+export interface FinalRemoteFailure {
+  failureClass: outcome.FailureClass;
+  status: number | null;
+  reach: 'retry' | 'run' | 'ticket';
+  effect: string;
+}
