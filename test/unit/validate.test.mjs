@@ -302,7 +302,7 @@ const BLANK_BREAKS = [
   [' ', 'only whitespace'],
 ];
 
-for (const [id, form] of CARRIED_BREAKS.slice(1)) {
+for (const [id, form] of CARRIED_BREAKS) {
   test(`an Action id ${form} is an error`, async () => {
     const config = example();
     config.procedures['base-check'].actions[0].id = id;
@@ -340,7 +340,7 @@ for (const [name, form] of CARRIED_BREAKS) {
   });
 }
 
-for (const [name, form] of CARRIED_BREAKS.filter(([name]) => name !== 'a:b')) {
+for (const [name, form] of CARRIED_BREAKS) {
   test(`an input name ${form} is an error at its location`, async () => {
     const config = example();
     config.flows.default.ticket.vertices['implementer-fix'].inputs[name] = { from: 'red.commit.files' };
