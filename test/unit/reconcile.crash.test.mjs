@@ -129,7 +129,7 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
   }
 }
 
-// A Vertex id with whitespace: its markers are written, but parseMarker reads back only parts with none (#269).
+// A Vertex id with whitespace: its markers would be written, but parseMarker reads back only parts with none (#269).
 const SPACED = 'red tests';
 function spaceTheRedVertex(config) {
   const { ticket } = config.flows.golden;
@@ -143,18 +143,12 @@ function spaceTheRedVertex(config) {
   ticket.vertices.publish.inputs.red = { from: `${SPACED}.red-check.evidence` };
 }
 
-test('a commit made at a Vertex whose id has whitespace is found by its marker after a crash', async (t) => {
-  const { 'red/1/red/1': red, ...rest } = golden.firstVisitResponses;
-  const g = await golden.setup(t, { responses: { [`${SPACED}/1/red/1`]: red, ...rest } });
-  golden.configure(g, spaceTheRedVertex);
-  const { m, loaded } = await crashed(g, [SPACED, 1, 'commit', 0], 'after-effect');
-
-  await interpreter.runExecution({ ...g.options, record: loaded });
-  const final = await loadTicket(g);
-  assert.deepEqual(stepsOf(final, m), ['intent', 'evidence', 'complete'], 'the commit is found and completed');
-  assert.equal(
-    (await branchMessages(g)).filter((b) => b.includes(marker.markerTrailer(m))).length,
-    1,
-    'the commit is not made again',
+// On main before #269 this Flow was admitted, and a resume after a crash past the commit held the ticket, its Terminal
+// Reason saying the commit "was not made".
+test('a Vertex whose id has whitespace, whose commit a crash could not find by its marker, is kept out', async (t) => {
+  const g = await golden.setup(t);
+  assert.throws(
+    () => golden.configure(g, spaceTheRedVertex),
+    /vertices\.red tests: Vertex id "red tests" must be non-empty with no ":", "\." or whitespace/,
   );
 });

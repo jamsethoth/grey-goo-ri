@@ -248,6 +248,7 @@ function resolveVertex(
 function checkVertex(checking: Checking, state: FlowState, id: string, vertex: unknown) {
   const problems = checking.report;
   const location = `${state.location}.ticket.vertices.${id}`;
+  report.checkName(problems, location, id, { what: 'Vertex id', carried: true });
   if (RESERVED_VERTICES.includes(id))
     report.error(problems, location, `Vertex id ${JSON.stringify(id)} is reserved: an end name, cleanup or done`);
   if (!refs.isRecord(vertex)) return report.error(problems, location, 'a Vertex must be an object');
@@ -285,6 +286,7 @@ export function checkFlow(checking: Checking, name: string, declaration: unknown
   const location = `flows.${name}`;
   const problems = checking.report;
   const start = problems.errors.length;
+  report.checkName(problems, location, name, { what: 'Flow', carried: false });
   if (!refs.isRecord(declaration)) {
     report.error(problems, location, 'a Flow must be an object');
     return undefined;

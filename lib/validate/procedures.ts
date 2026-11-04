@@ -107,6 +107,7 @@ function checkClaimTokens(
   const claimTokens: Record<string, procedures.ClaimToken> = {};
   for (const [token, form] of Object.entries(declaredTokens)) {
     const atToken = `${location}.claimTokens.${token}`;
+    report.checkName(problems, atToken, token, { what: 'Claim token', carried: false });
     if (report.isReserved(token))
       report.error(problems, atToken, `Claim token ${JSON.stringify(token)} ${report.RESERVED}`);
     claimTokens[token] = checkClaimToken(problems, form, checkIds, atToken);
@@ -239,6 +240,7 @@ export function checkProcedure(
 ): CheckedProcedure | undefined {
   const location = `procedures.${name}`;
   const problems = declaring.report;
+  report.checkName(problems, location, name, { what: 'Procedure', carried: true });
   if (!refs.isRecord(declaration)) {
     report.error(problems, location, 'a Procedure must be an object');
     return undefined;

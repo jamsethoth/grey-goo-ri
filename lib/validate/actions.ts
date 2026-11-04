@@ -59,13 +59,8 @@ const requireFile = (problems: report.Report, action: Value, key: string, locati
 };
 
 function checkActionId(problems: report.Report, ids: unknown[], id: unknown, location: string) {
-  if (typeof id !== 'string' || !/^[^\s:.]+$/.test(id))
-    report.error(
-      problems,
-      location,
-      `Action id ${JSON.stringify(id)} must be non-empty with no ":", "." or whitespace`,
-    );
-  else if (ids.includes(id)) report.error(problems, location, `Action id ${JSON.stringify(id)} is repeated`);
+  if (!report.checkName(problems, location, id, { what: 'Action id', carried: true })) return;
+  if (ids.includes(id)) report.error(problems, location, `Action id ${JSON.stringify(id)} is repeated`);
   else if (HEADS.includes(id))
     report.error(
       problems,

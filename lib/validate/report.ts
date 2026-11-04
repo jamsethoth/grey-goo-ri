@@ -40,6 +40,24 @@ export function has(value: unknown, key: unknown) {
   return typeof key === 'string' && refs.isRecord(value) && Object.hasOwn(value, key);
 }
 export const isName = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+// Every configured name is non-empty. A carried one also has no ":", "." or whitespace: the Action Marker and the Await
+// and Decide Labels split on ":", a reference path on ".", and a marker is read back only without whitespace. A
+// Procedure name takes the carried form by the same rule (3.3).
+export function checkName(
+  report: Report,
+  location: string,
+  name: unknown,
+  { what, carried }: { what: string; carried: boolean },
+): name is string {
+  const valid = typeof name === 'string' && (carried ? /^[^\s:.]+$/.test(name) : name !== '');
+  if (!valid)
+    error(
+      report,
+      location,
+      `${what} ${JSON.stringify(name)} must be non-empty${carried ? ' with no ":", "." or whitespace' : ''}`,
+    );
+  return valid;
+}
 export const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;
 export const entries = (value: unknown) => (refs.isRecord(value) ? Object.entries(value) : []);
 export const unique = <T>(list: T[]) => [...new Set(list)];
