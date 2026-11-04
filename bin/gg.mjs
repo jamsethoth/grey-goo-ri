@@ -5,7 +5,7 @@ import * as doctor from '../lib/doctor.mjs';
 import * as exec from '../lib/exec.ts';
 import * as git from '../lib/git.ts';
 import * as github from '../lib/github.ts';
-import * as interpreter from '../lib/interpreter.mjs';
+import * as interpreter from '../lib/interpreter.ts';
 import * as locks from '../lib/locks.ts';
 import { parseOpts, positiveInt, UsageError } from '../lib/opts.mjs';
 import * as record from '../lib/record.ts';
@@ -43,7 +43,7 @@ const realDeps = () => ({
   git: git.createGit(),
   exec: exec.createExec({ kernel32: containment.openKernel32() }),
   locks: locks.createLocks(),
-  database: record.stateDatabase(),
+  database: record.createStateDatabase(),
   clock: interpreter.WALL_CLOCK,
 });
 

@@ -16,7 +16,7 @@ import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as events from '../../lib/events.ts';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as labelModule from '../../lib/labels.ts';
 import * as validate from '../../lib/validate/index.ts';
 import { fakeHarness } from './fake-harness.mjs';
@@ -278,14 +278,19 @@ export async function setup(
     },
   };
 
+  const { integrity: fakeIntegrity, testImmutability } = injected(fake);
   const options = {
+    deps: {
+      gh: github.createGh(gh.gh),
+      git: observedGit,
+      exec,
+      database,
+      clock,
+      ...(fakeIntegrity && { integrity: fakeIntegrity }),
+    },
     flow,
     record: rec,
     harness,
-    gh: github.createGh(gh.gh),
-    git: observedGit,
-    exec,
-    database,
     events: ev,
     log: (m) => logs.push(m),
     cwd: mainRoot,
@@ -295,10 +300,9 @@ export async function setup(
     base: 'main',
     labelPrefix: 'gg',
     others: [],
-    clock,
     protectedPaths: PROTECTED_PATHS,
     files,
-    ...injected(fake),
+    ...(testImmutability && { testImmutability }),
   };
   return {
     root,
@@ -476,7 +480,7 @@ export function fakeGh({
   };
 }
 
-// The fs a restore uses (integrity.withGit's), crashing the `n`th `op` (rm or writeFile) on a path under `root` once
+// The fs a restore uses (integrity.createIntegrity's), crashing the `n`th `op` (rm or writeFile) on a path under `root` once
 // `active()` holds, after the call has run when `after` is set.
 export function crashFs(root, active, { op, n, after = false }) {
   let calls = 0;
@@ -502,7 +506,7 @@ function hooksOf(t) {
 // record about to be saved or Event about to be inserted, and may throw to fail that write.
 export function caseDatabase(t) {
   const hooks = hooksOf(t);
-  return record.stateDatabase({
+  return record.createStateDatabase({
     beforeSave: (next) => hooks.saves.forEach((hook) => hook(next)),
     beforeAppend: (event) => hooks.appends.forEach((hook) => hook(event)),
   });

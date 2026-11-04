@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as golden from '../support/golden.mjs';
 import { intents, steps, actionMarker } from '../support/interpreter.mjs';
 

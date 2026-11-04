@@ -4,7 +4,8 @@ import type * as outcome from './outcome.ts';
 import type * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
 
-export type CrashPointName = 'before-effect' | 'after-effect' | 'after-completion' | 'after-retry-saved';
+export type CrashPointName =
+  'before-intent' | 'before-effect' | 'after-effect' | 'after-completion' | 'after-retry-saved';
 
 // Test-only crash injection (T18): rethrown untouched, so the record is left exactly as the crash found it.
 export class CrashError extends Error {

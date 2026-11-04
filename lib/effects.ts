@@ -34,7 +34,7 @@ export interface RemoteRetry {
   started: boolean;
 }
 
-// What the effects read of the Execution they run in, which runExecution builds (interpreter.mjs).
+// What the effects read of the Execution they run in, which runExecution builds (lib/run-context.ts).
 export interface EffectContext {
   record: record.ExecutionRecord;
   database: Pick<record.StateDatabase, 'save' | 'intent' | 'evidence' | 'complete'>;

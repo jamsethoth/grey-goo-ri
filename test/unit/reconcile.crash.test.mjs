@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.mjs';
 import { branchMessages } from '../support/interpreter.mjs';
@@ -95,7 +95,7 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
       );
       assert.equal(
         await originSha(g),
-        await g.options.git.headSha(g.worktree),
+        await g.options.deps.git.headSha(g.worktree),
         'the remote branch is at the last commit',
       );
 
@@ -108,8 +108,8 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
         final.writeAheadLog.find((e) => e.effect === 'pr-ready' && e.step === 'intent').payload,
         {
           number: g.gh.pr().number,
-          sha: await g.options.git.headSha(g.worktree),
-          tree: await g.options.git.treeOf(g.worktree),
+          sha: await g.options.deps.git.headSha(g.worktree),
+          tree: await g.options.deps.git.treeOf(g.worktree),
         },
         'pr-ready targets the pushed commit and the tree its Check passed on',
       );

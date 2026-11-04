@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
 import {
@@ -82,7 +82,7 @@ test('golden: a failed red is recovered once then fails at needs-human with its 
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
   // The new test passes before any implementation exists, both times.
-  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -188,7 +188,7 @@ test('an assume-unchanged edit before red is held too, so a rollback cannot rese
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
   const g = await golden.setup(t, { responses, integrity: 'real' });
-  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
   golden.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);
   writeFileSync(join(g.worktree, tracked), 'a hidden human edit\n');
@@ -209,7 +209,7 @@ test('a read-only red Vertex is held before unknown changes, so a rollback canno
   golden.configure(g, (c) => {
     c.flows.golden.ticket.vertices.red.access = 'read-only';
   });
-  g.options.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
+  g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
   writeFileSync(join(g.worktree, tracked), 'a human edit\n');
   const { outcome } = await interpreter.runExecution(g.options);

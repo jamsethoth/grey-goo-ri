@@ -45,10 +45,11 @@ export interface IntegrityBaseline {
   tests: UntrackedFiles;
 }
 
-// A failed Integrity Assertion: a surface that moved, or the Protected Files the Attempt touched.
+// A failed Integrity Assertion: a surface that moved, the Protected Files the Attempt touched, or the committed tests
+// it changed (Test Immutability, R3).
 export type IntegrityViolation =
   | { worktree: string; surface: Surface; before: string; after: string }
-  | { worktree: string; surface: 'protected'; before: null; after: string[] };
+  | { worktree: string; surface: 'protected' | 'committed tests'; before: null; after: string[] };
 
 // The git verbs the Integrity Assertions call: lib/git.ts's, or the fake git's in the unit tier.
 export interface IntegrityGit {
@@ -272,7 +273,7 @@ type EndOptions = Omit<Parameters<typeof end>[0], 'git' | 'locks'>;
 
 // The Integrity Assertions over an injected git, in the shape the interpreter and Reconciliation call. `fs` reaches
 // restoreUntracked, and `locks` (locks.createLocks) times and sees each snapshot's wait for the repo lock.
-export const withGit = (git: IntegrityGit, fs?: RestoreFs, locks?: RepoLocks) => ({
+export const createIntegrity = (git: IntegrityGit, fs?: RestoreFs, locks?: RepoLocks) => ({
   snapshot: (worktree: string) => snapshot(worktree, git, locks),
   isCleanAt: (worktree: string) => isCleanAt(worktree, git, locks),
   untrackedFiles: (worktree: string, within: Within | undefined) => untrackedFiles(worktree, within, git),
@@ -281,8 +282,8 @@ export const withGit = (git: IntegrityGit, fs?: RestoreFs, locks?: RepoLocks) =>
   begin: (options: BeginOptions) => begin({ ...options, git, locks }),
   end: (options: EndOptions) => end({ ...options, git, locks }),
 });
-// The Integrity Assertions a Run is given: withGit's, or the fake integrity's in the unit tier.
-export type Integrity = ReturnType<typeof withGit>;
+// The Integrity Assertions a Run is given: createIntegrity's, or the fake integrity's in the unit tier.
+export type Integrity = ReturnType<typeof createIntegrity>;
 
 const diffSurfaces = (
   worktree: string,

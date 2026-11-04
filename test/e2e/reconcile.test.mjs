@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
@@ -15,8 +15,8 @@ async function crashedViolation(t, when) {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
   const g = await golden.setup(t, { responses, integrity: 'real' });
-  const git = g.options.git;
-  g.options.git = {
+  const git = g.options.deps.git;
+  g.options.deps.git = {
     ...git,
     resetTo: async (...args) => {
       if (when === 'after reset') await git.resetTo(...args);
@@ -34,7 +34,7 @@ test('a crash after the reset of an Integrity Violation keeps its History item e
   assert.deepEqual(g.loaded.history, [], 'the crash came before the History item was saved');
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 
-  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'continue');
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.deps.git }), 'continue');
   assert.equal(g.loaded.history.length, 1);
   assert.equal(g.loaded.history[0].kind, 'integrity violation');
   assert.match(g.loaded.history[0].text, /changed protected/);
@@ -43,7 +43,7 @@ test('a crash after the reset of an Integrity Violation keeps its History item e
 
   const saved = await record.load(g.commonDir, 'ticket', golden.TICKET);
   assert.deepEqual(saved.history, g.loaded.history, 'the History item is persisted');
-  assert.equal(await reconcile.resets(saved, { git: g.options.git }), 'continue');
+  assert.equal(await reconcile.resets(saved, { git: g.options.deps.git }), 'continue');
   assert.equal(saved.history.length, 1, 'a second Reconciliation adds nothing');
 });
 
@@ -69,7 +69,7 @@ test('a crash before the reset holds the Execution and discards nothing once a h
   writeFileSync(join(g.worktree, 'human.txt'), 'mine\n');
   const dirty = golden.sh(g.worktree, 'status', '--porcelain');
 
-  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.deps.git }), 'held');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
   assert.deepEqual(g.loaded.history, []);
   assert.equal(
@@ -86,7 +86,7 @@ test('an assume-unchanged edit left at the baseline does not prove the reset don
   writeFileSync(join(g.worktree, tracked), 'a hidden agent edit\n');
   assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'git status cannot see it');
 
-  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.deps.git }), 'held');
   assert.deepEqual(g.loaded.history, []);
   assert.deepEqual(resetEntries(g.loaded), ['intent']);
 });
@@ -97,7 +97,7 @@ test('an ignored test added after an interrupted reset holds the restore and is 
   mkdirSync(join(g.worktree, 'test'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'mine\n');
 
-  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'held');
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.deps.git }), 'held');
   assert.equal(
     readFileSync(join(g.worktree, 'test', 'human.test.mjs'), 'utf8'),
     'mine\n',
@@ -118,8 +118,8 @@ test('a crash between the reset and the Protected File restore of an integrity v
     if (call.phase === 'red') writeFileSync(local, '{"agent":true}\n');
     return out;
   };
-  const git = g.options.git;
-  g.options.git = {
+  const git = g.options.deps.git;
+  g.options.deps.git = {
     ...git,
     resetTo: async (...args) => {
       await git.resetTo(...args);
@@ -146,10 +146,10 @@ test('Reconciliation uses an injected integrity', async (t) => {
     untrackedFiles: async () => ({}),
     ignoredFiles: async () => ({}),
   };
-  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git, integrity }), 'held');
-  assert.deepEqual(await reconcile.dirtyState(null, { git: g.options.git, worktree: g.worktree, integrity }), {
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.deps.git, integrity }), 'held');
+  assert.deepEqual(await reconcile.dirtyState(null, { git: g.options.deps.git, worktree: g.worktree, integrity }), {
     conflicts: [],
     stat: '',
   });
-  assert.equal(await reconcile.resets(g.loaded, { git: g.options.git }), 'continue');
+  assert.equal(await reconcile.resets(g.loaded, { git: g.options.deps.git }), 'continue');
 });

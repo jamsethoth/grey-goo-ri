@@ -169,10 +169,15 @@ test('no module outside lib/git.ts passes git a command line', async () => {
 
 // ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
 const CONVERTED = [
+  'lib/agent-action.ts',
+  'lib/agent-call.ts',
   'lib/approval.ts',
+  'lib/bounds.ts',
   'lib/briefs.ts',
+  'lib/check-action.ts',
   'lib/checks.ts',
   'lib/command-cleanup.ts',
+  'lib/effect-actions.ts',
   'lib/effect-errors.ts',
   'lib/effect-evidence.ts',
   'lib/effects.ts',
@@ -182,6 +187,7 @@ const CONVERTED = [
   'lib/git.ts',
   'lib/github.ts',
   'lib/integrity.ts',
+  'lib/interpreter.ts',
   'lib/labels.ts',
   'lib/locks.ts',
   'lib/marker.ts',
@@ -194,6 +200,7 @@ const CONVERTED = [
   'lib/refs.ts',
   'lib/remote-effects.ts',
   'lib/rules.ts',
+  'lib/run-context.ts',
   'lib/terminal-report.ts',
   'lib/terminal.ts',
   'lib/validate/actions.ts',
@@ -206,6 +213,8 @@ const CONVERTED = [
   'lib/validate/references.ts',
   'lib/validate/report.ts',
   'lib/validate/templates.ts',
+  'lib/visit-runner.ts',
+  'lib/visit-scope.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
 const LEGACY_MJS = [
@@ -217,7 +226,6 @@ const LEGACY_MJS = [
   'lib/harnesses/codex.mjs',
   'lib/harnesses/contract.mjs',
   'lib/harnesses/shipped.mjs',
-  'lib/interpreter.mjs',
   'lib/opts.mjs',
   'lib/plan.mjs',
   'lib/publish.mjs',

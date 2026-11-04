@@ -54,7 +54,7 @@ export async function executionContext(t: TestContext) {
   };
   const context: terminalReport.TerminalContext = {
     record: executionRecord,
-    database: record.stateDatabase(),
+    database: record.createStateDatabase(),
     events: events.eventLog(commonDir),
     run: 'run-1',
     runState: { stop: null, remoteNotBefore: 0 },

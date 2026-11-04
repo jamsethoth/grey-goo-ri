@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as golden from '../support/golden.mjs';
 import { loadTicket, contendRepoLock, lockedSetup, originSha, headSha, subjects } from '../support/interpreter.mjs';
 
@@ -25,7 +25,7 @@ test('a git write queued behind another holder of the repo lock checks the human
   await t.test('a queued push whose commit origin already has', async (t) => {
     const g = await golden.setup(t, { integrity: 'real', git: 'fake' });
     // Unlocked: the push runs while the contender holds the repo lock.
-    const { git } = g.options;
+    const { git } = g.options.deps;
     const lock = contendRepoLock(g, async () => git.push(g.worktree, golden.BRANCH, await git.headSha(g.worktree)));
     const counts = lockedSetup(g, (verb, n) => {
       if (verb === 'commitStaged' && n === 2) lock.arm();

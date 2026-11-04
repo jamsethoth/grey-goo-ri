@@ -14,9 +14,9 @@ import * as render from './render.mjs';
 
 type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 
-// What a Terminal reads beside the effects' context, which runExecution builds (interpreter.mjs): the Event log and Run
-// its ticket_end goes to, the Layer files a stop token's comment renders, and how each Terminal Action is entered and
-// marked.
+// What a Terminal reads beside the effects' context, which runExecution builds (lib/run-context.ts): the Event log and
+// Run its ticket_end goes to, the Layer files a stop token's comment renders, and how each Terminal Action is entered
+// and marked.
 export interface TerminalContext extends effects.EffectContext {
   gh: github.Gh;
   git: effectEvidence.EvidenceGit & { diffStats(worktree: string, base: string): Promise<DiffStatsFile[]> };

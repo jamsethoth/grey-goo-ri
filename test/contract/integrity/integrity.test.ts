@@ -116,7 +116,7 @@ for (const scenario of SCENARIOS) {
         violations: shapeOf((await implementation.end({ ...call, baseline })).violations, names),
       };
     };
-    const real = await attempt(integrity.withGit(gitModule), () => scenario.real(pair));
+    const real = await attempt(integrity.createIntegrity(gitModule), () => scenario.real(pair));
 
     assert.deepEqual(
       real.violations.map((violation) => [violation.worktree, violation.surface]),
@@ -142,7 +142,7 @@ test('the fake integrity records the untracked tests the real one records', asyn
     protectedPaths: worktrees.PROTECTED,
     testPaths: checks.testPathSet(checks.DEFAULT_TEST_GLOBS),
   };
-  const real = await integrity.withGit(gitModule).begin(beginArguments);
+  const real = await integrity.createIntegrity(gitModule).begin(beginArguments);
   const fake = await fakeIntegrityModule.fakeIntegrity({ git: gitModule }).integrity.begin(beginArguments);
 
   assert.deepEqual(Object.keys(real.tests).sort(), ['test/cache/out.json', 'test/new.test.mjs']);
@@ -171,7 +171,7 @@ const SIDES: Side[] = [
       return { mainRoot, base: worktrees.sh(mainRoot, ['rev-parse', 'HEAD']), git: gitModule };
     },
     bound: (git: object) => ({
-      integrity: integrity.withGit(git as integrity.IntegrityGit),
+      integrity: integrity.createIntegrity(git as integrity.IntegrityGit),
       testImmutability: (cwd: string, baseline: string, globs: string[]) =>
         checks.testImmutability(cwd, baseline, { globs, git: git as checks.ChangedPaths }),
     }),

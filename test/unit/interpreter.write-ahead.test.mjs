@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.mjs';
@@ -243,7 +243,11 @@ test('a label update whose failure was saved before its completion is retried on
     return ev(type, data);
   };
   await assert.rejects(
-    interpreter.runExecution({ ...g.options, events, gh: { ...g.options.gh, setLabels: async () => false } }),
+    interpreter.runExecution({
+      ...g.options,
+      events,
+      deps: { ...g.options.deps, gh: { ...g.options.deps.gh, setLabels: async () => false } },
+    }),
     (err) => err instanceof record.RecordSaveError && err.cause instanceof interpreter.CrashError,
   );
   const label = attemptMarker(g, 'ready-for-qa', 1, 'end-label', 0);

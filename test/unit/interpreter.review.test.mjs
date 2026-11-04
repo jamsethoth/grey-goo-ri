@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as config from '../../lib/config.mjs';
-import * as interpreter from '../../lib/interpreter.mjs';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as marker from '../../lib/marker.ts';
 import * as checks from '../../lib/checks.ts';
@@ -286,9 +286,9 @@ test('the review lists the test files changed since red under the testPaths pinn
     changed: ['lib/add.mjs', 'test/add.test.mjs'].filter(checks.testPathMatcher(globs)),
   });
   // The live testPaths drop lib/** after the reviewer's Visit pinned them, just before its changed-test list is read.
-  const { branchDiff } = g.options.git;
-  g.options.git = {
-    ...g.options.git,
+  const { branchDiff } = g.options.deps.git;
+  g.options.deps.git = {
+    ...g.options.deps.git,
     branchDiff: (...args) => {
       g.options.testPaths.splice(1);
       return branchDiff(...args);
@@ -318,9 +318,9 @@ test('the branch diff and changed test files are read for the review Brief and n
   // Each read is tagged with how many harness calls came before it: 2 is the Green Check and the review Brief, 3 would
   // be the nudge.
   const reads = [];
-  const { branchDiff } = g.options.git;
-  g.options.git = {
-    ...g.options.git,
+  const { branchDiff } = g.options.deps.git;
+  g.options.deps.git = {
+    ...g.options.deps.git,
     branchDiff: (...args) => {
       reads.push(`diff ${g.harness.calls.length}`);
       return branchDiff(...args);

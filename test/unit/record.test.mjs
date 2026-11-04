@@ -237,7 +237,7 @@ test('a record transition and its event commit together', async (t) => {
   const commonDir = await tempCommonDir(t);
   // Every Event insert fails while `appends.failing` is set, as a disk error would.
   const appends = { failing: true };
-  const database = record.stateDatabase({
+  const database = record.createStateDatabase({
     beforeAppend: () => {
       if (appends.failing) throw new Error('disk I/O error');
     },

@@ -40,9 +40,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
-  built once in `bin/gg.mjs` and passed down as named options of `run.runTarget` and `interpreter.runExecution` (ADR
-  0019), until #204 and #207 group them under one `deps` key typed `Deps`. New code takes what it needs from its caller
-  as a parameter; ESLint fails a module-level `let` or an exported `set*` function.
+  built once in `bin/gg.mjs` and passed down as named options of `run.runTarget`, which passes them to
+  `interpreter.runExecution` as one `deps` key typed `Deps` (ADR 0019); #207 makes `runTarget` take the same. New code
+  takes what it needs from its caller as a parameter; ESLint fails a module-level `let` or an exported `set*` function.
 
 ## Layout
 
@@ -55,7 +55,15 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/validate/` | the Flow validator, which `gg doctor` and `gg run` admission share: `index.ts` (`validate()`, the Agents, inherited names), `procedures.ts`, `actions.ts` and `conditions.ts` (a Procedure on its own), `references.ts` and `templates.ts` (what it reads, typed alone and at each Vertex), `flows.ts` and `inputs.ts` (Flows, Vertices, Agents and inputs), `graph.ts` (the graph checks) and `report.ts` (the errors and warnings); it gives each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/refs.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.mjs` | `gg run` admission, preflight, pool, run directory, Lifecycle Events, exit codes |
-| `lib/interpreter.mjs` | Visits, Actions, Attempts, Edge routing, Bounds, Action Cap |
+| `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |
+| `lib/run-context.ts` | the Run context every step reads (`RunContext`), the deps a test replaces (`Deps`), the wall clock, and how each Action is entered, marked and recorded |
+| `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
+| `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
+| `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap |
+| `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the transition table makes of its Signals |
+| `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
+| `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |
+| `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready) and the intents they write ahead |
 | `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, the activity bracket, each effect's intent, evidence and completion with its Action Event |
 | `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
 | `lib/remote-effects.ts` | the remote Actions' retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
@@ -118,6 +126,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - A module split by job with no import cycle, its context typed and its errors subclasses a catch site tests:
   `lib/effects.ts` with `lib/effect-errors.ts` and `lib/remote-effects.ts`, and `lib/terminal.ts` with
   `lib/terminal-report.ts`; options objects in place of positional flags (`effects.sideEffect`, `effects.finish`).
+- A long function cut into named steps, its context declared as one type and built in one place: `lib/interpreter.ts`,
+  with `lib/run-context.ts` and `lib/visit-runner.ts`.
 - A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
 - A contract suite and its fake: `test/contract/git/git.test.mjs` and `test/support/fake-git.mjs`.

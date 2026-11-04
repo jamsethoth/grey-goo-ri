@@ -2,6 +2,7 @@
 // and a remote retry can tell an effect that landed from one to redo (request 3.5). Each kind with a finder is listed
 // in FINDERS.
 import * as config from './config.mjs';
+import type * as effectActions from './effect-actions.ts';
 import * as labels from './labels.ts';
 import * as marker from './marker.ts';
 import type * as record from './record.ts';
@@ -26,12 +27,12 @@ export interface EvidenceGh {
   comments(issue: number, cwd?: string): Promise<{ id: number; body: string }[]>;
 }
 
-// The intent payloads the finders read, as the interpreter and effects write them.
-// shortcut: declared by their reader until effects (#203) and the interpreter (#204) convert and own them.
-export type CommitPayload = { parent: string; tree: string };
-type PushPayload = { branch: string; sha: string };
-type PrUpsertPayload = { branch: string; bodyHash: string };
-type CommentPayload = { target: { number: number } };
+// The intent payloads the finders read, as the Actions (lib/effect-actions.ts) and the Terminals write them.
+// shortcut: a Terminal's label payload is declared by its reader; move it to lib/terminal-report.ts when that changes.
+export type CommitPayload = Pick<effectActions.CommitPayload, 'parent' | 'tree'>;
+type PushPayload = effectActions.PushPayload;
+type PrUpsertPayload = Pick<effectActions.PrUpsertPayload, 'branch' | 'bodyHash'>;
+type CommentPayload = Pick<effectActions.CommentPayload, 'target'>;
 export type LabelPayload = { add: string[]; remove: string[] };
 
 // What a finder reads. terminalEffects looks only for comment and label intents, so it passes no git.
