@@ -34,7 +34,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   and in `docs/research/user-defined-procedures-decisions.md` and its siblings.
 - Names: a domain concept takes its full GLOSSARY.md term in camelCase (`executionRecord`, not `rec`; `actionRef`, not
   `at`). Single letters only within about 10 lines of scope. Abbreviations only from `id`, `url`, `sha`, `err`, `gh`,
-  `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out` and the like.
+  `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out` and the like. Types are PascalCase, other
+  identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
+  lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.mjs`).
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are

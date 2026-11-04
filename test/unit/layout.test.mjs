@@ -90,6 +90,35 @@ test('every file under lib is scanned', () => {
   );
 });
 
+// A code file is named in lowercase words joined by hyphens, with a dot only before an area or test suffix
+// (`run.branches.test.mjs`), and never a grab-bag name that says nothing of its job (Angular's style guide).
+const FILE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.(?:mjs|ts)$/;
+const GRAB_BAG = /^(?:utils?|helpers?|common|misc|shared)\./;
+const misnamed = (files) =>
+  files.filter((path) => {
+    const name = path.split('/').at(-1);
+    return !FILE_NAME.test(name) || GRAB_BAG.test(name);
+  });
+
+test('every code file is named in lowercase hyphenated words for its job', () => {
+  const samples = [
+    'lib/process-tree.ts',
+    'test/unit/run.branches.test.mjs',
+    'lib/processTree.ts',
+    'lib/write_ahead.ts',
+  ];
+  assert.deepEqual(misnamed([...samples, 'lib/utils.ts']), [
+    'lib/processTree.ts',
+    'lib/write_ahead.ts',
+    'lib/utils.ts',
+  ]);
+  const code = ['lib/', 'bin/', 'scripts/', 'test/']
+    .flatMap((dir) => repoFiles(dir))
+    .filter((path) => /\.(?:mjs|ts)$/.test(path));
+  assert.ok(code.includes('lib/process-tree.ts') && code.includes('bin/gg.mjs'), 'the code files are read');
+  assert.deepEqual(misnamed(code), [], 'rename the file: lowercase words joined by hyphens, named for what it does');
+});
+
 test('every file under lib has a row in AGENTS.md', async () => {
   const sampleRows = ['lib/a.mjs', 'lib/templates/'];
   assert.deepEqual(unlistedFiles(['lib/a.mjs', 'lib/templates/t.md', 'lib/b.mjs'], sampleRows), ['lib/b.mjs']);
