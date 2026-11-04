@@ -42,7 +42,7 @@ created the job, and wrote its answers as `\x01GGJOB` notes into the command's o
 - `cmd.exe` and `taskkill.exe` run from `%SystemRoot%\System32`. libuv looks a bare name up in the child's working
   directory before `PATH`, unless `NoDefaultCurrentDirectoryInExePath` is set, and an agent can write there; this was
   checked on Node 26.13 with a planted `taskkill.exe`.
-- `bin/gg.mjs` opens the kernel32 functions once and passes them down through `exec.createExec` (ADR 0019). A test
+- `bin/gg.ts` opens the kernel32 functions once and passes them down through `exec.createExec` (ADR 0019). A test
   passes `null` or a copy with some functions replaced.
 
 ## node:ffi is experimental
