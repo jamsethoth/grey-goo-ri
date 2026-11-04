@@ -1,4 +1,4 @@
-import * as config from './config.mjs';
+import * as config from './config.ts';
 import type * as exec from './exec.ts';
 import * as procedures from './procedures.ts';
 import * as refs from './refs.ts';

@@ -14,7 +14,7 @@ const files = ['lib', 'bin']
 const NAMES = /claude|codex|CLAUDE\.md|\.codex/i;
 
 test('no module outside lib/harnesses names a Harness', () => {
-  assert.ok(files.includes('lib/interpreter.ts') && files.includes('bin/gg.mjs'), `scanned ${files.join(', ')}`);
+  assert.ok(files.includes('lib/interpreter.ts') && files.includes('bin/gg.ts'), `scanned ${files.join(', ')}`);
   const named = files.flatMap((f) =>
     readFileSync(join(root, f), 'utf8')
       .split('\n')

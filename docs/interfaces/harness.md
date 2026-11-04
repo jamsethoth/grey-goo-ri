@@ -1,8 +1,8 @@
 # Harness interface
 
-Every Harness module (`lib/harnesses/claude.mjs`, `lib/harnesses/codex.mjs`, and the test fake in
+Every Harness module (`lib/harnesses/claude.ts`, `lib/harnesses/codex.ts`, and the test fake in
 `test/support/fake-harness.mjs`) exports an object with the same contract. `assertHarness(obj)` in
-`lib/harnesses/contract.mjs` checks it and throws naming the first missing method or Capability field. Behaviour is
+`lib/harnesses/contract.ts` checks it and throws naming the first missing method or Capability field. Behaviour is
 decided by request section 3.2; Usage token rules by section 3.7.
 
 ## Members
@@ -21,8 +21,8 @@ decided by request section 3.2; Usage token rules by section 3.7.
 
 `HARNESS_METHODS` lists these names in this order.
 
-`lib/harnesses/shipped.mjs` lists every shipped Harness by name. The Protected Files (request 3.6) are gg's own paths
-plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents use; `bin/gg.mjs` builds that union with
+`lib/harnesses/shipped.ts` lists every shipped Harness by name. The Protected Files (request 3.6) are gg's own paths
+plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents use; `bin/gg.ts` builds that union with
 `protectedFiles` (`lib/interpreter.ts`) and passes it to the Run, so the interpreter imports no Harness module.
 `protectedFiles` fails, naming the Harness, when a `protectedPaths` is not an array of paths. No module outside
 `lib/harnesses/` names a Harness (`test/unit/harness-boundary.test.mjs`).
@@ -68,7 +68,7 @@ The Harness receives the Persona bytes, never a path.
 
 A Harness never throws or rejects for an expected failure; a rejection is an unexpected fault.
 
-`schema` is a Structured Response schema inside gg's strict subset (`assertStrict`, `lib/briefs.mjs`): `object` with
+`schema` is a Structured Response schema inside gg's strict subset (`assertStrict`, `lib/briefs.ts`): `object` with
 every property required and `additionalProperties: false`, `array` with `items`, `string`, `boolean`, `integer`, and
 an `enum` of strings. Every Harness accepts every schema in the subset, so one schema serves an Agent on any Harness.
 The subset is the common ground of the Harnesses' structured-output modes: Codex's `--output-schema` requires every

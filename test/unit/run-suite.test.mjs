@@ -6,7 +6,7 @@ import { matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-const launcherUrl = new URL('../../scripts/run-suite.mjs', import.meta.url);
+const launcherUrl = new URL('../../scripts/run-suite.ts', import.meta.url);
 // The machine's own cap, as the launcher computes it; the cases assert the rest of the command line literally.
 const concurrency = `--test-concurrency=${Math.min(12, Math.max(1, availableParallelism() - 1))}`;
 // ADR 0018: Prettier, ESLint and tsc run as node plus each package's own bin script, before the tests, in every stage.
@@ -67,9 +67,8 @@ test('the check stage runs the format check, lint and the type check and no test
 test('the check stage takes no boundary names', async () => {
   const runSuite = await import(launcherUrl);
   assert.throws(() => runSuite.suiteCommand({}, ['check', 'git']), {
-    name: 'UsageError',
-    message:
-      /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.mjs check\n/,
+    name: 'SuiteUsageError',
+    message: /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.ts check\n/,
   });
 });
 
@@ -180,8 +179,8 @@ for (const [what, argv] of refused) {
   test(`the launcher refuses ${what}`, async () => {
     const runSuite = await import(launcherUrl);
     assert.throws(() => runSuite.suiteCommand({}, argv), {
-      name: 'UsageError',
-      message: /^usage: node scripts\/run-suite\.mjs \[fast \[boundary \.\.\.\]\]/,
+      name: 'SuiteUsageError',
+      message: /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]/,
     });
   });
 }
@@ -198,32 +197,32 @@ test('suiteCommand drops NODE_OPTIONS, NODE_PATH and npm_config_* and keeps the 
 test('the launcher is not a default node --test file', async () => {
   await readFile(launcherUrl);
   const patterns = [
-    '**/*.test.{cjs,mjs,js}',
-    '**/*-test.{cjs,mjs,js}',
-    '**/*_test.{cjs,mjs,js}',
-    '**/test-*.{cjs,mjs,js}',
-    '**/test.{cjs,mjs,js}',
-    '**/test/**/*.{cjs,mjs,js}',
+    '**/*.test.{cjs,mjs,js,cts,mts,ts}',
+    '**/*-test.{cjs,mjs,js,cts,mts,ts}',
+    '**/*_test.{cjs,mjs,js,cts,mts,ts}',
+    '**/test-*.{cjs,mjs,js,cts,mts,ts}',
+    '**/test.{cjs,mjs,js,cts,mts,ts}',
+    '**/test/**/*.{cjs,mjs,js,cts,mts,ts}',
   ];
   assert.deepEqual(
-    patterns.filter((pattern) => matchesGlob('scripts/run-suite.mjs', pattern)),
+    patterns.filter((pattern) => matchesGlob('scripts/run-suite.ts', pattern)),
     [],
   );
 });
 
-test('the codex rule allows only node scripts/run-suite.mjs and has no BOM', async () => {
+test('the codex rule allows only node scripts/run-suite.ts and has no BOM', async () => {
   const bytes = await readFile(new URL('../../.codex/rules/test.rules', import.meta.url));
   assert.notDeepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
   const text = bytes.toString('utf8');
   assert.equal(text.match(/prefix_rule\(/g)?.length, 1);
-  assert.match(text, /pattern\s*=\s*\[\s*"node"\s*,\s*"scripts\/run-suite\.mjs"\s*\]/);
+  assert.match(text, /pattern\s*=\s*\[\s*"node"\s*,\s*"scripts\/run-suite\.ts"\s*\]/);
   assert.match(text, /decision\s*=\s*"allow"/);
 });
 
 test('npm test is the launcher', async () => {
   const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.scripts.test, 'node scripts/run-suite.mjs');
+  assert.equal(pkg.scripts.test, 'node scripts/run-suite.ts');
   const agents = await readFile(new URL('../../AGENTS.md', import.meta.url), 'utf8');
-  assert.match(agents, /^- test: `node scripts\/run-suite\.mjs`/m);
-  assert.match(agents, /`scripts\/run-suite\.mjs` \|/, 'AGENTS.md lists scripts/run-suite.mjs in Layout');
+  assert.match(agents, /^- test: `node scripts\/run-suite\.ts`/m);
+  assert.match(agents, /`scripts\/run-suite\.ts` \|/, 'AGENTS.md lists scripts/run-suite.ts in Layout');
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as marker from '../../lib/marker.ts';

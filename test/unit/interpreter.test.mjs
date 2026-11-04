@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as config from '../../lib/config.mjs';
+import * as config from '../../lib/config.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as render from '../../lib/render.mjs';
+import * as publicText from '../../lib/public-text.ts';
 import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.mjs';
 import { fakeHarness } from '../support/fake-harness.mjs';
@@ -61,7 +61,7 @@ test('a Persona from the repository Layer is pinned with its hash', async (t) =>
   mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
   writeFileSync(config.layerPath(repo), '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}');
   writeFileSync(join(repo, '.agents', 'gg', 'repo-implementer.md'), '# repo implementer\n');
-  const layered = config.loadConfig(repo, join(dir, 'home'));
+  const layered = config.loadLayers(repo, join(dir, 'home'));
   const g = await golden.setup(t);
   golden.configure(g, (c) => {
     c.files = layered.files;
@@ -186,7 +186,7 @@ const longLines = {
 for (const [kind, [directory, output]] of Object.entries(longLines)) {
   test(`${kind} Check output line publishes no fragment of a known directory`, async (t) => {
     const g = await golden.setup(t);
-    g.options.publicText = (text) => render.publicText(text, [directory]);
+    g.options.publicText = (text) => publicText.publicText(text, [directory]);
     const runShell = g.options.deps.exec.runShell;
     g.options.deps.exec.runShell = async (...args) => {
       const r = await runShell(...args);
@@ -271,7 +271,7 @@ test('a green agent that rewrites a committed test is an integrity violation', a
 });
 
 test("the Protected Files are gg's paths plus every shipped Harness's paths", async () => {
-  const { HARNESSES } = await import('../../lib/harnesses/shipped.mjs');
+  const { HARNESSES } = await import('../../lib/harnesses/shipped.ts');
   assert.deepEqual(interpreter.protectedFiles({}), ['.agents/', '.github/actions/', '.github/workflows/']);
   assert.deepEqual(interpreter.protectedFiles(HARNESSES), [
     '.agents/',

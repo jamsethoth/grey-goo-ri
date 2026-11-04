@@ -61,6 +61,10 @@ context, so a hook ends with its case whether it passes or fails.
 - A function that saves a record or takes a lock takes the State Database or the locks from its caller's context; one
   that does not is visible at its call site.
 - A new seam is a parameter or a factory option, never a setter: the lint rule fails the setter.
+- Amended 2026-11-04 (grey-goo-ri issue #207): `bin/gg.ts` builds the deps and passes them as one `deps` key typed
+  `Deps`; `run.runTarget` takes it and passes it on to `interpreter.runExecution`, and no dep is a top-level option of
+  either. The git verbs admission calls before an Execution (`repoInfo`, `worktreePath`, `slugify`, `currentBranch`,
+  `ensureWorktree` and `listWorktrees`) join the git type `Deps` names.
 
 ## Considered and rejected
 

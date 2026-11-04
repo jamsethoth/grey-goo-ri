@@ -3,7 +3,8 @@
 // (docs/interfaces/harness.md, `run(call)`).
 
 import * as refs from './refs.ts';
-import * as render from './render.mjs';
+import * as publicText from './public-text.ts';
+import * as render from './render.ts';
 import type * as visit from './visit.ts';
 
 // gg's strict subset: the keywords each type may carry. assertStrict refuses any other keyword or type.
@@ -169,7 +170,7 @@ export interface BriefSection {
 
 // How a Brief prints a value: an excerpt where its context names a limit, an object as JSON, else the value itself.
 function printed(limits: Record<string, number>, value: unknown, ref: string, item: unknown) {
-  if (!item && Object.hasOwn(limits, ref)) return render.publicTail(value, String, limits[ref]);
+  if (!item && Object.hasOwn(limits, ref)) return publicText.publicTail(value, String, limits[ref]);
   if (refs.isRecord(value) || (Array.isArray(value) && value.some(refs.isRecord)))
     return JSON.stringify(value, null, 2);
   return value ?? '';
@@ -185,7 +186,7 @@ export function brief(name: string, text: string, { commands = {}, history = [],
   const limits = { ...EXCERPT, ...OUTPUT_LIMIT[name] };
   const emit = (value: unknown, { name: ref }: { name: string }, _fenced: boolean, item: unknown) =>
     printed(limits, value, ref, item);
-  return render.template(
+  return render.renderTemplate(
     text,
     {
       ...context,
@@ -194,8 +195,7 @@ export function brief(name: string, text: string, { commands = {}, history = [],
       // eslint-disable-next-line id-length -- History templates number each entry as {{n}}
       history: () => history.map((entry, i) => ({ ...entry, n: i + 1, first: i === 0 })),
     },
-    // shortcut: render.mjs types `emit` by its one-argument default until it converts (#207).
-    emit as (value: unknown) => unknown,
+    emit,
   );
 }
 

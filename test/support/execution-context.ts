@@ -11,7 +11,7 @@ import * as github from '../../lib/github.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as remoteEffects from '../../lib/remote-effects.ts';
-import * as render from '../../lib/render.mjs';
+import * as publicText from '../../lib/public-text.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
 import * as golden from './golden.mjs';
@@ -66,7 +66,7 @@ export async function executionContext(t: TestContext) {
     cwd: commonDir,
     labelPrefix: 'gg',
     log: (line: string) => logs.push(line),
-    publicText: (text: string) => render.publicText(text),
+    publicText: (text: string) => publicText.publicText(text),
     emit: (actionRef: object, startedAt: number, fields: object) =>
       emitted.push({ ...actionRef, startedAt, ...fields }),
     markerOf: (actionRef: marker.ActionRef) =>

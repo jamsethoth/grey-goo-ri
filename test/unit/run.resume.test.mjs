@@ -7,7 +7,7 @@ import * as marker from '../../lib/marker.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.mjs';
 import { fakeHarness } from '../support/fake-harness.mjs';
 import {
@@ -78,7 +78,7 @@ test('an in-progress ticket without a record is skipped', async (t) => {
 for (const state of ['ready-for-qa', 'fault', 'abandoned']) {
   test(`a finished record with open intents is not resumed: ${state}`, async (t) => {
     const f = fixture(t, { labels: [IN_PROGRESS] });
-    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     const rec = record.createExecution({
       commonDir: f.commonDir,
       ticket: TICKET,
@@ -162,7 +162,7 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
 // A corrupt row stands for a Ticket whose worktree and in-progress label an earlier Run left behind.
 async function corruptTicket(t) {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   sqlite
     .openDb(f.commonDir)
@@ -202,7 +202,7 @@ test('a corrupt-record hold whose comment failed is posted once on the next run'
 
 test('a corrupt record found at admission is held through reconcile', async (t) => {
   const f = fixture(t, { labels: [IN_PROGRESS] });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const corrupt = '{ "schemaVersion": 1, "log": [';
   sqlite
@@ -228,7 +228,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
       ),
   );
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
-  assert.equal(paths.pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir), paths.pathKey(f.commonDir));
+  assert.equal(paths.pathKey((await f.options.deps.git.repoInfo(f.worktree)).gitCommonDir), paths.pathKey(f.commonDir));
   assert.ok(existsSync(join(f.mainRoot, '.git', 'gg', 'gg.db')));
   assert.ok(
     f.comments().every((b) => !b.includes(f.root)),
@@ -270,7 +270,7 @@ const truncatedAt = (directory) => {
 test('truncated Check output does not expose fragments of local paths', async (t) => {
   const f = fixture(t);
   const raw = truncatedAt(f.worktree);
-  f.options.exec.runShell = async (_command, opts) =>
+  f.options.deps.exec.runShell = async (_command, opts) =>
     existsSync(join(opts.cwd, 'lib', 'add.mjs'))
       ? { code: 0, output: raw, timedOut: false }
       : { code: 1, output: golden.RED_OUTPUT, timedOut: false };
@@ -304,7 +304,7 @@ test('truncated Check output does not expose fragments of local paths', async (t
 test('truncated long Check output does not expose fragments of local paths', async (t) => {
   const f = fixture(t);
   const raw = 'y'.repeat(70_000) + '\n' + truncatedAt(f.worktree);
-  f.options.exec.runShell = async (_command, opts) =>
+  f.options.deps.exec.runShell = async (_command, opts) =>
     existsSync(join(opts.cwd, 'lib', 'add.mjs'))
       ? { code: 0, output: raw, timedOut: false }
       : { code: 1, output: golden.RED_OUTPUT, timedOut: false };

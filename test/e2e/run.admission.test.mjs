@@ -6,7 +6,7 @@ import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import {
   TICKET,
   BRANCH,
@@ -23,7 +23,7 @@ import * as golden from '../support/golden.mjs';
 
 test('unknown dirty state is held with the diff stat', async (t) => {
   const f = fixture(t, { integrity: 'real' });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const edited = '{ "scripts": { "test": "node --test" }, "human": true }\n';
   writeFileSync(join(f.worktree, 'package.json'), edited);
   writeFileSync(join(f.worktree, 'notes.txt'), 'my notes\n');
@@ -88,7 +88,7 @@ function assertConflictHeld(f, results, before) {
 
 test('a merge conflict at ticket start is held with the diff stat', async (t) => {
   const f = fixture(t, { git: 'real' });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const before = conflict(f.worktree);
 
   assertConflictHeld(f, await run.runTarget(f.options), before);
@@ -102,7 +102,7 @@ test('a merge conflict at ticket start is held with the diff stat', async (t) =>
 
 test('dirty hold advice explains how a held Execution Record can be inspected and restarted', async (t) => {
   const f = fixture(t, { integrity: 'real' });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const rec = record.createExecution({
     commonDir: f.commonDir,
@@ -132,7 +132,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   );
   assert.ok(f.comments().some((b) => b.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)));
   assert.equal(
-    paths.pathKey((await f.options.git.repoInfo(f.worktree)).gitCommonDir),
+    paths.pathKey((await f.options.deps.git.repoInfo(f.worktree)).gitCommonDir),
     paths.pathKey(f.commonDir),
     'the linked worktree uses the main checkout State Database',
   );

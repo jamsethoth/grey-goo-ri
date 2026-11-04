@@ -20,7 +20,7 @@ const SIGNATURES = {
   Process32NextW: { arguments: ['pointer', 'buffer'], return: 'int32' },
 } as const;
 
-// The kernel32 functions gg calls. bin/gg.mjs opens them once and passes them down; a test passes null or a copy with
+// The kernel32 functions gg calls. bin/gg.ts opens them once and passes them down; a test passes null or a copy with
 // some replaced.
 export type Kernel32 = ffi.DynamicLibraryResult<typeof SIGNATURES>['functions'];
 

@@ -5,7 +5,7 @@ import * as agentAction from './agent-action.ts';
 import * as bounds from './bounds.ts';
 import * as checkAction from './check-action.ts';
 import * as checks from './checks.ts';
-import * as config from './config.mjs';
+import * as config from './config.ts';
 import * as effectActions from './effect-actions.ts';
 import * as effects from './effects.ts';
 import * as integrity from './integrity.ts';
@@ -107,7 +107,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     inputs: resolveInputs(executionRecord, vertexId, declared),
     commands: runContext.commands!,
     testPaths: runContext.testPaths!,
-    persona: agent && { name: basename(agent.persona), bytes, hash: config.sha256(bytes) },
+    persona: agent && { name: basename(agent.persona), bytes: bytes!, hash: config.sha256(bytes!) },
   });
   // shortcut: nothing reloads configuration mid-Execution yet, so a change is not detected or logged at Vertex entry;
   // log it against the Config Hash when gg run reloads between Vertices (#184).

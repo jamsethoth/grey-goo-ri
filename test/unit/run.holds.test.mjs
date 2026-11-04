@@ -9,7 +9,7 @@ import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as run from '../../lib/run.mjs';
+import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.mjs';
 import {
   TICKET,
@@ -94,7 +94,7 @@ test('a seeded hold label failure is finished on the next Run', async (t) => {
 // whether the record was abandoned first and failing while `cleanup.fails` is set.
 async function overriddenPendingHold(t) {
   const { f, seededRec } = await dirtyTicket(t, true);
-  const before = await integrity.snapshot(f.worktree, f.options.git);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
   const failing = failComment(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
@@ -104,7 +104,7 @@ async function overriddenPendingHold(t) {
   const inner = f.gh.gh;
   const states = [];
   const cleanup = { fails: false };
-  f.options.gh = github.createGh(async (args, cwd, input) => {
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (args[0] === 'issue' && args[1] === 'edit') {
       states.push((await loadTicket(f)).terminalStop?.abandoned);
       if (cleanup.fails) {
@@ -151,7 +151,7 @@ test('human override abandons a pending hold before any label cleanup', async (t
     [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
     'the cleanup is one write-ahead label Action',
   );
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
+  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
 });
 
@@ -198,21 +198,21 @@ test('human override of a pending hold is decided durably when its label cleanup
     [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
     'the cleanup is one write-ahead label Action',
   );
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
+  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
 });
 
 test('a pending fault report whose comment lookup fails stays pending and posts no second comment', async (t) => {
   const f = fixture(t);
-  f.options.git = {
-    ...f.options.git,
+  f.options.deps.git = {
+    ...f.options.deps.git,
     ensureWorktree: async () => {
       throw new Error('worktree add failed\nfatal: disk full');
     },
   };
   const inner = f.gh.gh;
   let mode = 'crash';
-  f.options.gh = github.createGh(async (args, cwd, input) => {
+  f.options.deps.gh = github.createGh(async (args, cwd, input) => {
     if (mode === 'crash' && golden.isCommentPost(args)) {
       await inner(args, cwd, input);
       throw new interpreter.CrashError('crash after the fault comment landed');
@@ -332,7 +332,7 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
 // An Execution saved before its first Visit, under a human needs-human label.
 async function overriddenBeforeFirstVisit(t) {
   const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });
-  await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+  await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(
     record.createExecution({
       commonDir: f.commonDir,
@@ -351,7 +351,7 @@ async function overriddenBeforeFirstVisit(t) {
 
 test('a human needs-human label before the first Visit prevents admission effects', async (t) => {
   const f = await overriddenBeforeFirstVisit(t);
-  const before = await integrity.snapshot(f.worktree, f.options.git);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
 
   const results = await run.runTarget(f.options);
   assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
@@ -366,7 +366,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     'only the in-progress label is removed',
   );
   assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
+  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
   const final = await loadTicket(f);
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
   assert.deepEqual(final.visits, {});
@@ -388,7 +388,7 @@ test('a human needs-human label before the first Visit prevents admission effect
 test('a human needs-human label before the first Visit prevents admission effects in a dirty worktree', async (t) => {
   const f = await overriddenBeforeFirstVisit(t);
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
-  const before = await integrity.snapshot(f.worktree, f.options.git);
+  const before = await integrity.snapshot(f.worktree, f.options.deps.git);
 
   const results = await run.runTarget(f.options);
   assert.equal(ticketResult(results).outcome, 'abandoned', JSON.stringify(results));
@@ -403,7 +403,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     'only the in-progress label is removed',
   );
   assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
-  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.git), before, 'the worktree is untouched');
+  assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
   assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n');
   const final = await loadTicket(f);
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
@@ -468,7 +468,7 @@ const MIXED_CASE = [
 for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
   test(`mixed-case human needs-human wins before any label write: ${labels.join(', ')}`, async (t) => {
     const f = fixture(t, { labels });
-    await f.options.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
+    await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     await record.save(
       record.createExecution({
         commonDir: f.commonDir,
@@ -484,7 +484,7 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
     );
     const inner = f.gh.gh;
     const states = [];
-    f.options.gh = github.createGh(async (args, cwd, input) => {
+    f.options.deps.gh = github.createGh(async (args, cwd, input) => {
       if (args[0] === 'issue' && args[1] === 'edit') states.push((await loadTicket(f)).terminalStop?.abandoned);
       return inner(args, cwd, input);
     });
@@ -601,11 +601,11 @@ test('an interrupted reset under a human needs-human label is abandoned before a
   const f = fixture(t, { labels: [NEEDS_HUMAN] });
   // red's Attempt breaks an Integrity Assertion, and gg dies before its reset.
   const integrity = {
-    ...f.options.integrity,
+    ...f.options.deps.integrity,
     end: async () => ({ violations: [{ worktree: f.worktree, surface: 'head', before: null, after: 'a'.repeat(40) }] }),
   };
   const git = {
-    ...f.options.git,
+    ...f.options.deps.git,
     resetTo: async () => {
       throw new interpreter.CrashError('crash before reset');
     },
