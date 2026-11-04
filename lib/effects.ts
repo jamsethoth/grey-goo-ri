@@ -6,7 +6,7 @@ import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
 import type * as outcome from './outcome.ts';
 import type * as reconcile from './reconcile.ts';
-import * as record from './record.ts';
+import type * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
 import type * as visit from './visit.ts';
 import * as writeAhead from './write-ahead.ts';

@@ -127,9 +127,9 @@ async function savedStop(context: TerminalContext, given: StopDeclaration | unde
 }
 
 // In a fault the report is best effort: a failing comment or label must not keep the state and ticket_end from landing.
-function tolerated<Result>(context: TerminalContext, stop: record.TerminalStop | null, report: Promise<Result>) {
-  if (!stop?.error) return report;
-  return report.catch((err) => {
+function tolerated<Result>(context: TerminalContext, stop: record.TerminalStop | null, pending: Promise<Result>) {
+  if (!stop?.error) return pending;
+  return pending.catch((err) => {
     if (effectErrors.fatal(err) || err instanceof effectErrors.EarlyTerminal) throw err;
     context.log(`#${context.record.ticket} fault report failed: ${(err as Error | undefined)?.message}`);
   });
@@ -137,7 +137,11 @@ function tolerated<Result>(context: TerminalContext, stop: record.TerminalStop |
 
 // A stop token's comment replaces the end comment and carries the Terminal Reason, so the Ticket gets one comment (U6);
 // a token that names none posts the Terminal Reason comment.
-function commentBody(context: TerminalContext, { name, stop, reason }: Report, actionMarker: string): Promise<string> {
+function commentBody(
+  context: TerminalContext,
+  { name, stop, reason }: Reporting,
+  actionMarker: string,
+): Promise<string> {
   const { record: executionRecord } = context;
   // A stop comment, the template the stop token names, reads the stopped Visit's outputs, inputs and response (audit
   // 10). Its heading is gg's Outcome, never the response's claim: a route can reach replan with a response that failed
@@ -161,7 +165,7 @@ function commentBody(context: TerminalContext, { name, stop, reason }: Report, a
 }
 
 // The Terminal being reported: its end state, its saved stop, and its Terminal Reason as the report began.
-interface Report {
+interface Reporting {
   name: string;
   stop: record.TerminalStop | null;
   reason: record.TerminalReason | null;
@@ -170,14 +174,14 @@ interface Report {
 // A failure to render the body is not the report's to tolerate: only the comment Action is.
 async function postComment(
   context: TerminalContext,
-  report: Report,
+  reporting: Reporting,
   { number, effect }: { number: number; effect: string },
 ) {
-  const actionRef = terminalAt(report.name, report.stop)(effect);
-  const body = await commentBody(context, report, context.markerOf(actionRef));
+  const actionRef = terminalAt(reporting.name, reporting.stop)(effect);
+  const body = await commentBody(context, reporting, context.markerOf(actionRef));
   return tolerated(
     context,
-    report.stop,
+    reporting.stop,
     terminalAction(context, actionRef, {
       effect: 'comment',
       payload: { target: { kind: 'issue', number }, body, bodyHash: config.sha256(body) },
@@ -189,7 +193,7 @@ async function postComment(
 }
 
 // The end's State Label replaces in-progress; an abandonment, under the human's label, only removes in-progress.
-function setStateLabel(context: TerminalContext, { name, stop }: Report) {
+function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
   const { record: executionRecord, labelPrefix = labels.DEFAULT_PREFIX } = context;
   const state = labels.labels(labelPrefix).state;
   const change = { add: stop?.abandoned ? [] : [state(name)], remove: [state('in-progress')] };
@@ -235,12 +239,12 @@ export async function report(
 ): Promise<TerminalResult> {
   const { record: executionRecord } = context;
   const stop = await savedStop(context, given);
-  const report: Report = { name, stop, reason: executionRecord.terminalReason };
+  const reporting: Reporting = { name, stop, reason: executionRecord.terminalReason };
   // An abandonment posts nothing.
-  if (!stop?.abandoned) await postComment(context, report, { number: executionRecord.ticket, effect: 'comment' });
+  if (!stop?.abandoned) await postComment(context, reporting, { number: executionRecord.ticket, effect: 'comment' });
   // The Epic's plan section replans, so needs-replan posts the same comment there (W9).
   if (name === 'needs-replan' && executionRecord.epic)
-    await postComment(context, report, { number: executionRecord.epic, effect: 'epic-comment' });
+    await postComment(context, reporting, { number: executionRecord.epic, effect: 'epic-comment' });
   // Read outside the label's effect, which a Terminal resumed after it does not run again.
   const diffStats =
     name === 'ready-for-qa'
@@ -249,7 +253,7 @@ export async function report(
           executionRecord.configurationSnapshot!.testPaths,
         )
       : null;
-  if (!stop?.abandoned || stop.inProgress) await setStateLabel(context, report);
+  if (!stop?.abandoned || stop.inProgress) await setStateLabel(context, reporting);
   executionRecord.state = landedState(name, stop);
   // The final state and ticket_end commit together: a Terminal has landed in both or in neither.
   await context.database.save(executionRecord, () =>
@@ -259,7 +263,7 @@ export async function report(
       ticket: executionRecord.ticket,
       outcome: name,
       diffStats,
-      terminalReason: report.reason,
+      terminalReason: reporting.reason,
       error: stop?.error,
       interrupted: stop?.interrupted,
     }),
