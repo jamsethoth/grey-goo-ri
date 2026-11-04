@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import * as containment from './containment.ts';
+import * as commandCleanup from './command-cleanup.ts';
 import * as processTree from './process-tree.ts';
 
 // What a finished process gave: its exit code (null when a signal or timeout ended it), stdout and stderr.
@@ -75,14 +76,14 @@ export function run(
 }
 
 // What a timed-out command's output ends with: the timeout, each process left alive, and any cleanup that failed.
-const timeoutNote = (timeoutMs: number, { survivors, cleanupErrors }: processTree.Cleanup) =>
+const timeoutNote = (timeoutMs: number, { survivors, cleanupErrors }: commandCleanup.Cleanup) =>
   `\n[gg: timed out after ${timeoutMs} ms]` +
   survivors.map((survivor) => `\n[gg: could not kill pid ${survivor.pid}: ${survivor.error}]`).join('') +
   (cleanupErrors.length ? `\n[gg: cleanup incomplete: ${cleanupErrors.join('; ')}]` : '');
 
 // Windows: terminate the job and wait until it is empty. A job not confirmed empty keeps gg's handle, so kill-on-close
 // takes what is left when gg exits.
-async function terminateJob(job: containment.Job, rootPid: number): Promise<processTree.Cleanup> {
+async function terminateJob(job: containment.Job, rootPid: number): Promise<commandCleanup.Cleanup> {
   let refused: string | undefined;
   try {
     job.terminate();
@@ -113,18 +114,18 @@ async function takeDownTree(
   kernel32: containment.Kernel32 | null,
   taskkillCommand: processTree.CommandLine | undefined,
   containmentError: string | undefined,
-): Promise<processTree.Cleanup> {
+): Promise<commandCleanup.Cleanup> {
   const cleanupErrors = [containmentError] as string[];
   let linked: number[] = [];
   try {
-    if (kernel32) linked = containment.linkedTo(kernel32, rootPid);
+    if (kernel32) linked = containment.linkedDescendants(kernel32, rootPid);
   } catch (err) {
     cleanupErrors.push(
       `could not list the command's descendants (${(err as Error).message}); they are not verified gone`,
     );
   }
   const [command, args] = taskkillCommand ?? [`${containment.SYSTEM32}\\taskkill.exe`, ['/T', '/F', '/PID']];
-  const result = await processTree.quick([command, [...args, String(rootPid)]]);
+  const result = await processTree.runHelper([command, [...args, String(rootPid)]]);
   if (result.code === 0 || result.code === 128) return { survivors: [], cleanupErrors }; // 128: already gone
   cleanupErrors.push(
     `taskkill on command pid ${rootPid} failed: exit ${result.code}: ${(result.stderr || result.stdout).trim()}`,
@@ -146,7 +147,7 @@ export type ShellResult = {
   code: number | null;
   output: string;
   timedOut?: true;
-  survivors?: processTree.Survivor[];
+  survivors?: commandCleanup.Survivor[];
   cleanupErrors?: string[];
   leftovers?: number[];
 } & Containment;
@@ -162,7 +163,7 @@ export interface TestHooks {
   snapshotCommand?: processTree.CommandLine;
   taskkillCommand?: processTree.CommandLine;
   timers?: Timers;
-  onWatch?: (seen: processTree.Seen) => void;
+  onWatch?: (seen: commandCleanup.Seen) => void;
 }
 
 export interface ShellOptions {
@@ -272,7 +273,7 @@ function shell(
     let timedOut = false;
     let finished = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const watcher = timeoutMs && process.platform !== 'win32' ? processTree.watch(child.pid as number) : null;
+    const watcher = timeoutMs && process.platform !== 'win32' ? processTree.watchDescendants(child.pid!) : null;
     if (watcher) onWatch?.(watcher.seen);
     const onTimeout = async () => {
       timedOut = true; // the kill makes 'exit' and 'close' fire first; the timeout result below wins

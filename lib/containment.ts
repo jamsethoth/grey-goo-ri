@@ -3,6 +3,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type * as ffi from 'node:ffi';
 import { setTimeout as sleep } from 'node:timers/promises';
+import * as commandCleanup from './command-cleanup.ts';
 
 // The struct offsets below are 64-bit Windows', the only Windows Node 26 is built for (x64 and arm64).
 const SIGNATURES = {
@@ -56,14 +57,12 @@ export function openKernel32(): Kernel32 | null {
   }
 }
 
-type ProcessEntry = { pid: number; parentPid: number; exe: string };
-
-function processes(kernel32: Kernel32): ProcessEntry[] {
+function processes(kernel32: Kernel32): commandCleanup.ProcessEntry[] {
   const snapshot = kernel32.CreateToolhelp32Snapshot(SNAPSHOT_PROCESSES, 0);
   if (BigInt.asUintN(64, snapshot) === INVALID_HANDLE) throw failure(kernel32, 'CreateToolhelp32Snapshot');
   const entry = Buffer.alloc(PROCESS_ENTRY_SIZE);
   entry.writeUInt32LE(PROCESS_ENTRY_SIZE, 0);
-  const found: ProcessEntry[] = [];
+  const found: commandCleanup.ProcessEntry[] = [];
   for (let more = kernel32.Process32FirstW(snapshot, entry); more; more = kernel32.Process32NextW(snapshot, entry)) {
     const exe = entry.toString('utf16le', 44, 44 + 520);
     found.push({ pid: entry.readUInt32LE(8), parentPid: entry.readUInt32LE(32), exe: exe.slice(0, exe.indexOf('\0')) });
@@ -73,19 +72,11 @@ function processes(kernel32: Kernel32): ProcessEntry[] {
 }
 
 // The pids still linked to rootPid through parent pids, for the fallback that has no job to list.
-export function linkedTo(kernel32: Kernel32, rootPid: number): number[] {
-  const all = processes(kernel32);
-  const linked = new Set([rootPid]);
-  for (let grew = true; grew;) {
-    grew = false;
-    for (const { pid, parentPid } of all)
-      if (!linked.has(pid) && linked.has(parentPid)) {
-        linked.add(pid);
-        grew = true;
-      }
-  }
-  linked.delete(rootPid);
-  return [...linked];
+export function linkedDescendants(kernel32: Kernel32, rootPid: number): number[] {
+  const rows = processes(kernel32).map(({ pid, parentPid }): commandCleanup.ProcessRow => [pid, parentPid, '']);
+  const linked: number[] = [];
+  commandCleanup.growTree(new Set([rootPid]), rows, process.pid, ([pid]) => linked.push(pid));
+  return linked;
 }
 
 export type Job = {
@@ -143,15 +134,7 @@ function createJob(kernel32: Kernel32, pid: number): Job {
     members,
     leftovers(commandPid) {
       const left = members();
-      if (!left.length) return left;
-      // A member still exiting is in the job but no longer in the snapshot. windowsHide makes libuv start cmd.exe
-      // with CREATE_NO_WINDOW, so it gets a conhost.exe of its own in the job, which ends just after cmd.exe does.
-      const running = new Set(
-        processes(kernel32)
-          .filter((entry) => !(entry.parentPid === commandPid && entry.exe.toLowerCase() === 'conhost.exe'))
-          .map((entry) => entry.pid),
-      );
-      return left.filter((pid) => running.has(pid));
+      return left.length ? commandCleanup.leftoverPids(left, processes(kernel32), commandPid) : left;
     },
     terminate() {
       if (!kernel32.TerminateJobObject(handle, 1)) throw failure(kernel32, 'TerminateJobObject');

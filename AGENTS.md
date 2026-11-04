@@ -84,7 +84,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/harnesses/claude.mjs` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/harnesses/codex.mjs` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`) and the shell runner, with its timeout and cleanup (ported) |
-| `lib/process-tree.ts` | the POSIX process tree a timed-out shell command leaves: listing, watching and killing it, and the helper processes that do so (ported) |
+| `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plan and its survivors, a job's leftovers |
+| `lib/process-tree.ts` | the POSIX process tree a timed-out shell command leaves: listing it, watching it and killing it as Command Cleanup decides, and the helper processes that do so (ported) |
 | `lib/containment.ts` | the Windows job object a shell command runs in, through `node:ffi`: start, list, terminate, confirm empty (ADR 0021) |
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
