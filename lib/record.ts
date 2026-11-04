@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type * as approval from './approval.ts';
+import type * as effects from './effects.ts';
 import type * as events from './events.ts';
 import type * as marker from './marker.ts';
 import * as sqlite from './sqlite.ts';
@@ -108,7 +109,10 @@ export interface ExecutionRecord {
   cursor: Cursor;
   visits: Record<string, number>;
   traversals: Record<string, number>;
-  retries: Record<string, Partial<Record<NonNullable<visit.TableResolution['retryKind']>, number>>>;
+  retries: Record<
+    string,
+    Partial<Record<NonNullable<visit.TableResolution['retryKind']>, number>> & { remote?: effects.RemoteRetry }
+  >;
   sessions: Record<string, SessionEntry>;
   attempts: number;
   outputs: visit.ActionOutput[];
@@ -166,7 +170,7 @@ export function createExecution(start: ExecutionStart): ExecutionRecord {
     state: 'active',
     // Why the Execution reached its end state, kept beside the state (request 3.1).
     terminalReason: null,
-    // How the Terminal classifies the stop: held, fault, abandoned, a run stop or a stop token (terminal.mjs).
+    // How the Terminal classifies the stop: held, fault, abandoned, a run stop or a stop token (terminal.ts).
     terminalStop: null,
     // A hold, abandonment or fault admission decided, until its Terminal reports it (run.mjs).
     admissionStop: null,
