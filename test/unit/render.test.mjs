@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join, sep } from 'node:path';
+import { join, parse, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as publicText from '../../lib/public-text.ts';
 import * as render from '../../lib/render.ts';
@@ -238,8 +238,19 @@ test('publicText masks the canonical form of the temp directory and of directori
   assert.equal(publicText.publicText(text, [join(root, 'link', 'repo')]), `fatal: [local]${sep}x and [local]/y`);
 });
 
-test('publicText masks the home directory without being given it', () => {
-  assert.equal(publicText.publicText(`at ${join(homedir(), 'notes', 'x')}`), `at [local]${sep}notes${sep}x`);
+test('publicText masks the home directory without being given it', (t) => {
+  // A home of its own, apart from the temp directory and the checkout, which publicText also masks.
+  const home = join(parse(tmpdir()).root, 'gg-synthetic-home');
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  t.after(() => {
+    for (const [k, v] of Object.entries(saved))
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+  });
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  assert.equal(homedir(), home);
+  assert.equal(publicText.publicText(`at ${join(home, 'notes', 'x')}`), `at [local]${sep}notes${sep}x`);
 });
 
 for (const [kind, subject] of [
