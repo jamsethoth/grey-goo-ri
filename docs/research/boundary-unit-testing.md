@@ -3,6 +3,10 @@
 Research note, 2026-11-03, against the tree at bdfb599. Line numbers refer to that tree. Upstream sources were read
 on 2026-11-03 at the branch named in each link.
 
+Since then grey-goo-ri PR #257 converted `lib/exec.mjs` to `lib/exec.ts` and moved its POSIX listing, watcher and tree
+kill into `lib/process-tree.ts`, with one shared `growTree`; `lib/git.mjs` became `lib/git.ts`. The line numbers below
+are the old files'; the follow-up ticket cites the current ones.
+
 ## The question and the short answer
 
 How do well-known projects unit-test code that spawns processes, kills process trees, runs the git CLI and parses

@@ -25,8 +25,8 @@ const UNIT = 'test/unit/**/*.test.{mjs,ts}';
 export const LCOV = 'coverage/lcov.info';
 export const BASELINE = 'coverage-baseline.json';
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.mjs), so their lines are not unit-testable;
-// lib/containment.ts is reached only through lib/exec.mjs. Their contract suites cover them.
-const NOT_UNIT = ['lib/exec.mjs', 'lib/git.mjs', 'lib/containment.ts'];
+// lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts. Their contract suites cover them.
+const NOT_UNIT = ['lib/exec.ts', 'lib/git.ts', 'lib/process-tree.ts', 'lib/containment.ts'];
 
 export class UsageError extends Error {
   constructor() {
