@@ -1368,6 +1368,7 @@ const INTERPRETER = [
   'visit-scope',
   'bounds',
   'agent-action',
+  'agent-call',
   'check-action',
   'effect-actions',
 ];
@@ -1402,9 +1403,11 @@ test('a Vertex with no access set runs read-only', async (t) => {
 
 test("a Harness that edits its call changes neither the Attempt's marker nor its saved Agent and Persona", async (t) => {
   const g = await golden.setup(t);
+  const sent = [];
   const run = g.harness.run;
   g.harness.run = async (call) => {
     const out = await run(call);
+    sent.push(call.marker);
     Object.assign(call, { marker: 'gg:edited', agent: { harness: 'edited' }, persona: { name: 'edited' } });
     return out;
   };
@@ -1412,12 +1415,47 @@ test("a Harness that edits its call changes neither the Attempt's marker nor its
 
   assert.equal(outcome, 'ready-for-qa');
   const rec = await loadTicket(g);
-  assert.ok(!rec.writeAheadLog.some((entry) => entry.actionMarker === 'gg:edited'));
   assert.deepEqual(
-    Object.values(rec.sessions).map((s) => [s.harness, s.personaName]),
-    Object.values(rec.sessions).map(() => ['fake', 'implementer.md']),
+    sent.map((m) => rec.writeAheadLog.filter((entry) => entry.actionMarker === m).map((entry) => entry.step)),
+    [
+      ['intent', 'evidence', 'complete'],
+      ['intent', 'evidence', 'complete'],
+    ],
+  );
+  assert.deepEqual(
+    Object.entries(rec.sessions).map(([key, s]) => [key, s.harness, s.personaName]),
+    [
+      ['red/1/red', 'fake', 'implementer.md'],
+      ['green/1/green', 'fake', 'implementer.md'],
+    ],
   );
   assert.equal(actionEvent(g, 'red', 'red').harness, 'fake');
+});
+
+test('an Attempt resolves its tools and runs on the one Harness it began with', async (t) => {
+  const g = await golden.setup(t);
+  const log = [];
+  const pair = {};
+  const harnesses = {};
+  // Each Harness hands the next Attempt to the other one as it resolves its tools.
+  const handing = (name, next) => ({
+    ...g.harness,
+    resolveTools: (agent) => {
+      log.push(`${name} tools`);
+      harnesses.fake = pair[next];
+      return g.harness.resolveTools(agent);
+    },
+    run: (call) => {
+      log.push(`${name} run`);
+      return g.harness.run(call);
+    },
+  });
+  pair.a = handing('a', 'b');
+  pair.b = handing('b', 'a');
+  harnesses.fake = pair.a;
+  await interpreter.runExecution({ ...g.options, harnesses });
+
+  assert.deepEqual(log, ['a tools', 'a run', 'b tools', 'b run']);
 });
 
 test("the Visit snapshot pins the Procedure's name and hash", async (t) => {

@@ -170,6 +170,7 @@ test('no module outside lib/git.ts passes git a command line', async () => {
 // ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
 const CONVERTED = [
   'lib/agent-action.ts',
+  'lib/agent-call.ts',
   'lib/approval.ts',
   'lib/bounds.ts',
   'lib/briefs.ts',

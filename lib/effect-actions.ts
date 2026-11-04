@@ -55,14 +55,14 @@ async function makeCommit(
   return { sha, files: sha ? await git.changedPaths(worktree, payload.parent, sha) : [] };
 }
 
-// Nothing was committed: a required Check passed on a tree that is no longer the worktree's.
+// Nothing was committed: a required Check passed on a tree that is no longer the worktree's. The agent call is the one
+// the commit read before it looked.
 function refuseStale(
   runContext: RunContext,
   { actionIdentity, state }: Running,
-  stale: visit.CheckSignal[],
-  startedAt: number,
+  { stale, startedAt, call }: { stale: visit.CheckSignal[]; startedAt: number; call: visit.AgentCall },
 ) {
-  const { harnessResult: result, claim, signal } = state.call!;
+  const { harnessResult: result, claim, signal } = call;
   const [first] = stale;
   const resolution = outcome.decide({
     result: signal,
@@ -102,7 +102,8 @@ async function commit(runContext: RunContext, running: Running) {
   const { agent } = executionRecord.configurationSnapshot!;
   const startedAt = runContext.clock.now();
   const actionMarker = runContext.markerOf(actionIdentity);
-  const { response } = state.call!;
+  const call = state.call!;
+  const { response } = call;
   const message = render.commitMessage(
     {
       kind: action.type,
@@ -120,7 +121,7 @@ async function commit(runContext: RunContext, running: Running) {
   const committed: Committed = await effects.bracket(runContext, () =>
     makeCommit(runContext, state, actionMarker, message),
   );
-  if (committed.stale) return refuseStale(runContext, running, committed.stale, startedAt);
+  if (committed.stale) return refuseStale(runContext, running, { stale: committed.stale, startedAt, call });
   const { sha, files } = committed;
   visitScope.recordOutput(executionRecord, actionIdentity, { files });
   if (sha) executionRecord.testCommits.baseline = sha;

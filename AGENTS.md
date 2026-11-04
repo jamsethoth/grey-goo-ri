@@ -60,7 +60,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
 | `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap |
-| `lib/agent-action.ts` | the agent Action: its Attempts, Brief, Session, heartbeat, Integrity Assertions and Test Immutability |
+| `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the transition table makes of its Signals |
+| `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
 | `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |
 | `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready) and the intents they write ahead |
 | `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, the activity bracket, each effect's intent, evidence and completion with its Action Event |

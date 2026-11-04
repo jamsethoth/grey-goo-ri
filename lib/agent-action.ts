@@ -1,18 +1,17 @@
-// The agent Action: its Attempts, each a call to the pinned Agent's Harness under the Integrity Assertions, with its
-// Brief, Session, heartbeat and Test Immutability, and the result the transition table makes of its Signals.
+// The agent Action: its Attempts, each with its Brief and Session, a call to the pinned Agent's Harness (agent-call),
+// and the result the transition table makes of its Signals.
 import { existsSync } from 'node:fs';
+import * as agentCall from './agent-call.ts';
 import * as bounds from './bounds.ts';
 import * as briefs from './briefs.ts';
-import * as checks from './checks.ts';
 import * as config from './config.mjs';
-import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects.ts';
 import type * as integrity from './integrity.ts';
 import * as marker from './marker.ts';
 import * as record from './record.ts';
 import * as refs from './refs.ts';
 import * as render from './render.mjs';
-import type { HarnessResult, RunContext } from './run-context.ts';
+import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
@@ -20,20 +19,7 @@ import * as visitScope from './visit-scope.ts';
 type ActionResolution = visitScope.ActionResolution;
 type Agent = NonNullable<visit.ConfigurationSnapshot['agent']>;
 type Persona = NonNullable<visit.ConfigurationSnapshot['persona']>;
-
-// One Attempt of the agent Action: `resume` and `nudge` come from the Attempt before it, if any.
-interface Attempt extends visitScope.Running {
-  resume: string | null;
-  nudge: string | null;
-}
-// What one Attempt's guarded call gave.
-interface Called {
-  response: unknown;
-  result: HarnessResult;
-  failure: visit.HarnessFailure | null;
-  violations: integrity.IntegrityViolation[];
-  baseline: integrity.IntegrityBaseline;
-}
+type Attempt = agentCall.Attempt;
 
 // An agent Action's Session, which its recovery passes and retries resume.
 const sessionKey = (actionIdentity: { vertex: string; visit: number; action: string }) =>
@@ -45,12 +31,14 @@ const resumable = (session: record.SessionEntry) => !!(session.transcriptPath &&
 // recovery). A resumed Action continues at the Attempt its cursor names, after the saved result of the one before.
 export async function agent(runContext: RunContext, running: visitScope.Running): Promise<ActionResolution> {
   const { actionIdentity } = running;
+  // The Harness is the Action's for all its Attempts, and each Attempt's own for its whole call.
+  const harness = runContext.harnessOf()!;
   let resume = firstResume(runContext, running);
   let nudge = null;
   for (let attempt = runContext.record.cursor.attempt; ; attempt++) {
     if (attempt > 1) {
       const previous = previousAttempt(runContext, actionIdentity, attempt, resume);
-      if (runContext.harnessOf()!.capabilities.sessionResume?.supported) resume = previous.sessionId as string | null;
+      if (harness.capabilities.sessionResume?.supported) resume = previous.sessionId as string | null;
       nudge = previous.row === 'parse-retry' ? (previous.reason as string | null) : null;
       const stopped = terminal.runStopped(runContext);
       if (stopped) return stopped;
@@ -152,86 +140,6 @@ async function briefOf(runContext: RunContext, attempt: Attempt, commands: Recor
   );
 }
 
-// While an agent call runs its heartbeat is saved about every 60 s on the clock: a file modified after the last one is
-// not the agent's (ADR 0011). A heartbeat that cannot be saved stops and fails the call.
-async function withHeartbeat<Result>(runContext: RunContext, run: () => Promise<Result>): Promise<Result> {
-  const executionRecord = runContext.record;
-  let failed: unknown = null;
-  const stop = runContext.clock.every(60_000, () => {
-    executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
-    runContext.database.save(executionRecord).catch((err: unknown) => {
-      failed ??= err;
-      stop();
-    });
-  });
-  try {
-    const result = await run();
-    if (failed) throw failed;
-    return result;
-  } finally {
-    stop();
-    executionRecord.heartbeat = null;
-  }
-}
-
-// A write Vertex's agent leaves each committed test as the last gg commit, or else the Execution base, has it (R3); a
-// Procedure that writes tests is not held to it, and `tests: named` frees the tests its reference names.
-async function changedTests(
-  runContext: RunContext,
-  { actionIdentity, state }: Attempt,
-  baseline: integrity.IntegrityBaseline,
-  response: unknown,
-): Promise<integrity.IntegrityViolation | null> {
-  const executionRecord = runContext.record;
-  let { ok, changed } = await runContext.testImmutability(
-    executionRecord.worktree,
-    executionRecord.testCommits.baseline ?? baseline.head,
-    executionRecord.configurationSnapshot!.testPaths,
-  );
-  const { tests } = state.proc;
-  if (typeof tests === 'object' && tests?.named) {
-    const named = new Set(
-      (refs.read({ ...record.visitScope(executionRecord, actionIdentity), response }, tests.named) as string[]) ?? [],
-    );
-    changed = changed.filter((path) => !named.has(path));
-    ok = changed.length === 0;
-  }
-  return ok ? null : { worktree: executionRecord.worktree, surface: 'committed tests', before: null, after: changed };
-}
-
-// The call under the Integrity Assertions. The snapshots are git processes in this worktree, so they run inside the
-// busy interval too (request 3.6). The other worktrees are read once per Attempt, so begin and end guard the same
-// worktrees, including any created since admission. The intent is written ahead with its baseline: an Attempt whose
-// intent is open at resume is an Interrupted Attempt, held rather than run again on a new baseline.
-async function guardedCall(runContext: RunContext, attempt: Attempt, call: Record<string, unknown>): Promise<Called> {
-  const { record: executionRecord, protectedPaths, others: listed } = runContext;
-  const access = call.access as string;
-  const others = typeof listed === 'function' ? await listed() : (listed ?? []);
-  const baseline = await runContext.integrity.begin({
-    record: executionRecord,
-    others,
-    protectedPaths,
-    testPaths: checks.testPathSet(executionRecord.configurationSnapshot!.testPaths),
-  });
-  attempt.state.firstAttemptBaseline ??= baseline;
-  effectErrors.crashPoint(runContext, call.marker as string, 'before-intent');
-  executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
-  await runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
-  const called = await withHeartbeat(runContext, () => runContext.harnessOf()!.run(call));
-  const { violations } = await runContext.integrity.end({
-    baseline,
-    record: executionRecord,
-    others,
-    access,
-    protectedPaths,
-  });
-  if (access !== 'read-only' && attempt.state.proc.tests !== 'write') {
-    const violation = await changedTests(runContext, attempt, baseline, called.response);
-    if (violation) violations.push(violation);
-  }
-  return { ...called, violations, baseline };
-}
-
 // One Attempt. A completed one is never run again: runVisit routes every saved result but a retry's, which ends here.
 async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<ActionResolution> {
   const executionRecord = runContext.record;
@@ -239,12 +147,13 @@ async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<Ac
   const actionMarker = runContext.markerOf(actionIdentity);
   if (effects.logged(executionRecord, actionMarker, 'complete'))
     return effects.logged(executionRecord, actionMarker, 'evidence')!.evidence as unknown as ActionResolution;
+  const harness = runContext.harnessOf()!;
   // Each call gets its own copy: a Harness that edits its call must not change the next one.
   const pinned = structuredClone(executionRecord.configurationSnapshot!);
   const brief = await briefOf(runContext, attempt, pinned.commands);
-  const call = callOf(runContext, attempt, { pinned, brief, actionMarker });
+  const call = callOf(runContext, attempt, { pinned, brief, actionMarker, harness });
   const startedAt = runContext.clock.now();
-  const called = await effects.bracket(runContext, () => guardedCall(runContext, attempt, call));
+  const called = await effects.bracket(runContext, () => agentCall.guardedCall(runContext, attempt, call, harness));
   // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is saved.
   const own = { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona };
   saveSession(executionRecord, actionIdentity, called.result, own);
@@ -256,7 +165,7 @@ async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<Ac
 function callOf(
   runContext: RunContext,
   { actionIdentity, action, resume }: Attempt,
-  { pinned, brief, actionMarker }: { pinned: visit.ConfigurationSnapshot; brief: string; actionMarker: string },
+  { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
   const schema = JSON.parse(config.layerFile(runContext.files, action.schema)) as refs.SchemaNode;
@@ -274,11 +183,12 @@ function callOf(
     resume,
     access: pinned.access,
     network: agentPinned.network,
-    tools: runContext.harnessOf()!.resolveTools(agentPinned),
+    tools: harness.resolveTools(agentPinned),
     timeouts: agentPinned.timeouts ?? {},
     env: {},
   };
 }
+type CallParts = { pinned: visit.ConfigurationSnapshot; brief: string; actionMarker: string; harness: Harness };
 type SentCall = ReturnType<typeof callOf>;
 type Own = { actionMarker: string; agent: Agent; persona: Persona };
 
@@ -306,7 +216,7 @@ function saveSession(
 function settleAttempt(
   runContext: RunContext,
   { actionIdentity, action, state }: Attempt,
-  { call, own, called, startedAt }: { call: SentCall; own: Own; called: Called; startedAt: number },
+  { call, own, called, startedAt }: { call: SentCall; own: Own; called: agentCall.Called; startedAt: number },
 ): Promise<ActionResolution> {
   const executionRecord = runContext.record;
   const { response, result, failure, violations, baseline } = called;

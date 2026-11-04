@@ -190,11 +190,11 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
   const agentIndex = actions.findIndex((action) => action.do === 'agent');
   let last: Ran | null = null;
   for (
-    let i = resuming ? actions.findIndex((candidate) => candidate.id === executionRecord.cursor.action) : 0;
-    i < actions.length;
-    i++
+    let actionIndex = resuming ? actions.findIndex((candidate) => candidate.id === executionRecord.cursor.action) : 0;
+    actionIndex < actions.length;
+    actionIndex++
   ) {
-    const action = actions[i];
+    const action = actions[actionIndex];
     const actionIdentity = {
       vertex: snapshot.vertex,
       visit: snapshot.visit,
@@ -203,7 +203,7 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
       recovery: state.recovery,
     };
     await runContext.enter(actionIdentity);
-    state.checkFollows = actions.slice(i + 1).some((later) => later.do === 'check');
+    state.checkFollows = actions.slice(actionIndex + 1).some((later) => later.do === 'check');
     const settled =
       state.settled?.action === actionIdentity.action && state.settled.recovery === actionIdentity.recovery
         ? state.settled.resolution
@@ -219,7 +219,7 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
     last = { actionIdentity, resolution };
     if (resolution.row === 'recover') {
       state.recovery += 1;
-      i = agentIndex - 1;
+      actionIndex = agentIndex - 1;
       continue;
     }
     if (resolution.direction === 'advance') continue;
