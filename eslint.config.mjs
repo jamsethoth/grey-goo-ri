@@ -27,6 +27,16 @@ const DENIED_NAMES = [
   'fn',
 ];
 const SHORT_NAMES = ['i', 'j', '_'];
+// Identifier casing, as in the Google TypeScript Style Guide's rules by identifier type. A leading underscore marks a
+// binding left unused on purpose. Object and type properties are left free: they carry the names of the data or API
+// they mirror (GitHub's `created_at`, kernel32's `CreateJobObjectW`, an operator such as `'<='`).
+const NAMING = [
+  { selector: 'default', format: ['camelCase'], leadingUnderscore: 'allow' },
+  { selector: 'variable', modifiers: ['const', 'global'], format: ['camelCase', 'UPPER_CASE'] },
+  { selector: 'typeLike', format: ['PascalCase'] },
+  { selector: 'import', format: ['camelCase', 'PascalCase'] },
+  { selector: ['objectLiteralProperty', 'objectLiteralMethod', 'typeProperty'], format: null },
+];
 
 const namespaceImport = (source) => ({
   selector:
@@ -64,8 +74,11 @@ export default defineConfig([
   {
     files: ['**/*.ts'],
     languageOptions: { parser: tseslint.parser },
-    plugins: { '@stylistic': stylistic },
+    plugins: { '@stylistic': stylistic, '@typescript-eslint': tseslint.plugin },
     rules: {
+      '@typescript-eslint/naming-convention': ['error', ...NAMING],
+      // Named exports only: a default export takes whatever name each importer gives it.
+      'no-restricted-exports': ['error', { restrictDefaultExports: { direct: true, named: true, defaultFrom: true } }],
       'id-length': ['error', { min: 2, exceptions: SHORT_NAMES }],
       'id-denylist': ['error', ...DENIED_NAMES],
       '@stylistic/max-len': ['error', { code: 120 }],
