@@ -17,8 +17,10 @@ entry point since #199 (ADR 0019).
    the test or the environment, diagnosed and fixed at its root, never re-run past. A test waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Five cases measure real time, recorded as exceptions because their subject is real time across
-   processes, which no injected clock reaches:
+   wall clock. Four cases measure real time, recorded as exceptions because their subject is real time across
+   processes, which no injected clock reaches. None compares one process's clock with another's: two processes'
+   `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
+   saw of the other's writes (#260):
    - `test/contract/sqlite/record.test.mjs`, `a save waits out another process that holds the write lock for longer
      than 5 s`: a save waiting past the 5 s busy timeout ADR 0015 replaced is the behaviour.
    - `test/contract/exec/exec.test.mjs`, `runShell: when the job cannot be set up, a slow taskkill still takes down
@@ -27,11 +29,9 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/exec.test.mjs`, `runShell timeout kills an orphan its watcher listed, however slowly ps
      answers`: its `ps` answers after 2 s and then 5 s, past the 1.5 s listing budget and the 2 s start-time
      tolerance `runShell` once had (POSIX only).
-   - `test/e2e/run.concurrency.test.mjs`, `two processes serialise orchestrator git writes on the repo lock`: the
-     wall clock is the only clock two processes share, so it orders one's release before the other's commit.
    - `test/contract/sqlite/record.test.mjs`, `openers of a new database queue while the open lock is held and all
-     succeed once it is released`: it holds the lock a second longer, then compares each opener's clock with the
-     release time, the only clock the parent and its openers share (#188).
+     succeed once it is released`: it holds the lock a second longer so an opener that got past it shows itself (#188);
+     each opener then reports whether the marker the parent writes just before the release was there when it switched.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
    Tests), not its private helpers or internal shapes. A refactor that keeps behaviour must not break a test.
 3. **Assert state, not interactions.** Check the result (the record, the events, the worktree, the labels), not

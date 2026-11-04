@@ -1,6 +1,7 @@
 // Spawned by the run tests over IPC: another gg process that takes the repo lock, commits on HEAD of `worktree` with
-// plumbing (leaving the index alone), appends Events for run `run`, reports its commit and holds the lock until told to
-// release it, then reports the time it released.
+// plumbing (leaving the index alone), appends `run_start` for run `run`, reports its commit and holds the lock until
+// told to release it. Told to, it appends `run_end` while it still holds the lock, so a write that waited on the lock
+// sees that Event, and one that ran while it was held does not.
 // The test runner also loads this file with no arguments, where it does nothing.
 import { execFileSync } from 'node:child_process';
 import * as events from '../../lib/events.ts';
@@ -15,13 +16,11 @@ if (commonDir) {
   await git('update-ref', 'HEAD', sha, parent);
   const log = events.eventLog(commonDir, { run });
   log('run_start');
-  log('run_end');
   const released = new Promise((resolve) => process.once('message', resolve));
   process.send({ sha });
   await released;
-  // Taken before the release, so any commit that waited on the lock is later.
-  const releasing = Date.now();
+  log('run_end');
   await locks.release(handle);
   sqlite.close(commonDir);
-  process.send({ releasing }, () => process.disconnect());
+  process.disconnect();
 }
