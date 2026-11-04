@@ -69,8 +69,7 @@ export async function agent(runContext: RunContext, running: visitScope.Running)
   }
 }
 
-// A recovery pass resumes its agent Action's own Session; without its transcript, the pass starts fresh, with the
-// recovery Brief.
+// A recovery pass resumes its agent Action's own Session, or without its transcript starts fresh with the Brief.
 function firstResume(runContext: RunContext, { actionIdentity, action }: visitScope.Running): string | null {
   const executionRecord = runContext.record;
   const parent = actionIdentity.recovery ? executionRecord.sessions[sessionKey(actionIdentity)] : null;
@@ -84,9 +83,8 @@ function firstResume(runContext: RunContext, { actionIdentity, action }: visitSc
   return parent?.sessionId ?? null;
 }
 
-// The saved result of the Attempt before. A record saved before Attempts were write-ahead has none: its saved Session
-// resumes with the full Brief, or starts fresh when its transcript is gone, and its spent budget is already in
-// record.retries.
+// The saved result of the Attempt before. A record saved before Attempts were write-ahead has none: its Session resumes
+// with the full Brief, or starts fresh without its transcript, and record.retries already holds its spent budget.
 function previousAttempt(
   runContext: RunContext,
   actionIdentity: visitScope.Running['actionIdentity'],
@@ -176,8 +174,8 @@ async function withHeartbeat<Result>(runContext: RunContext, run: () => Promise<
   }
 }
 
-// R3: a write Vertex's agent keeps every committed test as the last gg commit has it, or the Execution base before any;
-// a Procedure that writes tests is not held to it, and `tests: named` frees the tests its reference names.
+// A write Vertex's agent leaves each committed test as the last gg commit, or else the Execution base, has it (R3); a
+// Procedure that writes tests is not held to it, and `tests: named` frees the tests its reference names.
 async function changedTests(
   runContext: RunContext,
   { actionIdentity, state }: Attempt,
@@ -234,8 +232,7 @@ async function guardedCall(runContext: RunContext, attempt: Attempt, call: Recor
   return { ...called, violations, baseline };
 }
 
-// One Attempt of the agent Action. A completed Attempt is never run again; runVisit routes every saved result but a
-// retry's, which ends up here.
+// One Attempt. A completed one is never run again: runVisit routes every saved result but a retry's, which ends here.
 async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<ActionResolution> {
   const executionRecord = runContext.record;
   const { actionIdentity } = attempt;
@@ -248,8 +245,10 @@ async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<Ac
   const call = callOf(runContext, attempt, { pinned, brief, actionMarker });
   const startedAt = runContext.clock.now();
   const called = await effects.bracket(runContext, () => guardedCall(runContext, attempt, call));
-  saveSession(executionRecord, actionIdentity, called.result, call);
-  return settleAttempt(runContext, attempt, { call, called, startedAt });
+  // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is saved.
+  const own = { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona };
+  saveSession(executionRecord, actionIdentity, called.result, own);
+  return settleAttempt(runContext, attempt, { call, own, called, startedAt });
 }
 
 // `access` is the Vertex's, which the validator resolved (H9): read-only unless its Agent allows more and its
@@ -281,12 +280,13 @@ function callOf(
   };
 }
 type SentCall = ReturnType<typeof callOf>;
+type Own = { actionMarker: string; agent: Agent; persona: Persona };
 
 function saveSession(
   executionRecord: record.ExecutionRecord,
   actionIdentity: visitScope.Running['actionIdentity'],
   result: HarnessResult,
-  { agent: pinned, persona }: SentCall,
+  { agent: pinned, persona }: Own,
 ) {
   executionRecord.sessions[sessionKey(actionIdentity)] = {
     sessionId: result.sessionId,
@@ -301,13 +301,12 @@ function saveSession(
   };
 }
 
-// The transition table reads the three Signals of a call as one flat result. A retry spends its budget in the
-// Attempt's completion, so a resumed Action never spends it twice. A violation always stops (integrity-violation is the
-// first row), so runVisit rolls it back with the other stops.
+// The transition table reads a call's three Signals as one flat result. A retry spends its budget in the Attempt's
+// completion, so a resume never spends it twice. A violation always stops (its row is first); runVisit rolls it back.
 function settleAttempt(
   runContext: RunContext,
   { actionIdentity, action, state }: Attempt,
-  { call, called, startedAt }: { call: SentCall; called: Called; startedAt: number },
+  { call, own, called, startedAt }: { call: SentCall; own: Own; called: Called; startedAt: number },
 ): Promise<ActionResolution> {
   const executionRecord = runContext.record;
   const { response, result, failure, violations, baseline } = called;
@@ -345,18 +344,18 @@ function settleAttempt(
     startedAt,
     resolution: done,
     fields: {
-      ...agentFields(call),
+      ...agentFields(own, call.tools),
       // A recovery pass's Session descends from its agent Action's.
       ...harnessFields(result, actionIdentity.recovery ? action.id : null),
       ...decisionFields(resolution, { result, claim, integrityRows }),
     },
-    actionMarker: call.marker,
+    actionMarker: own.actionMarker,
     evidence: { ...done, usageDelta: result.usage.delta },
   });
 }
 
 // The Action Event's agent fields: the Agent the call ran as and the tools its Harness resolved.
-const agentFields = ({ agent: pinned, persona, tools }: SentCall) => ({
+const agentFields = ({ agent: pinned, persona }: Own, tools: unknown) => ({
   agent: true,
   harness: pinned.harness,
   agentCliVersion: null,

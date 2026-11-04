@@ -1400,6 +1400,26 @@ test('a Vertex with no access set runs read-only', async (t) => {
   assert.equal(red.integrityViolations[0].surface, 'tree');
 });
 
+test("a Harness that edits its call changes neither the Attempt's marker nor its saved Agent and Persona", async (t) => {
+  const g = await golden.setup(t);
+  const run = g.harness.run;
+  g.harness.run = async (call) => {
+    const out = await run(call);
+    Object.assign(call, { marker: 'gg:edited', agent: { harness: 'edited' }, persona: { name: 'edited' } });
+    return out;
+  };
+  const { outcome } = await interpreter.runExecution(g.options);
+
+  assert.equal(outcome, 'ready-for-qa');
+  const rec = await loadTicket(g);
+  assert.ok(!rec.writeAheadLog.some((entry) => entry.actionMarker === 'gg:edited'));
+  assert.deepEqual(
+    Object.values(rec.sessions).map((s) => [s.harness, s.personaName]),
+    Object.values(rec.sessions).map(() => ['fake', 'implementer.md']),
+  );
+  assert.equal(actionEvent(g, 'red', 'red').harness, 'fake');
+});
+
 test("the Visit snapshot pins the Procedure's name and hash", async (t) => {
   const seen = {};
   golden.onSave(t, (r) => {
