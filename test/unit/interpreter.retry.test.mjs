@@ -18,6 +18,8 @@ import {
   onPr,
   crashPost,
   originSha,
+  runStopEvent,
+  actionEvent,
 } from '../support/interpreter.mjs';
 
 test('a transient comment failure is retried once and posts one comment', async (t) => {
@@ -143,7 +145,7 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     const result = await interpreter.runExecution(g.options);
 
-    assert.equal(result.runStop?.failureClass, 'auth', JSON.stringify(result));
+    assert.equal(runStopEvent(g)?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(commentPosts(g).length, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
     assert.equal(g.rec.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is reserved');
@@ -228,6 +230,8 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
     assert.equal(prReviewComments(g).length, 0);
     assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2);
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
+    // Its failure Event names the class its retries were spent on, as its Terminal Reason does (#251).
+    assert.equal(actionEvent(g, 'reviewer', 'comment')?.failureClass, 'transient');
   });
 });
 
@@ -359,13 +363,20 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
       g.logs.some((l) => /reviewer\/1\/comment\/0: transient failure, retries exhausted after 2 of 2/.test(l)),
       g.logs.join('\n'),
     );
+    // The Action that ran out of retries records its failure Event (#251).
+    const failed = actionEvent(g, 'reviewer', 'comment');
+    assert.deepEqual(
+      [failed?.outcome, failed?.rule, failed?.failureClass],
+      ['fault', { table: 'fixed', row: 'fault' }, 'transient'],
+    );
+    assert.match(failed.error, /502/);
   });
   await t.test('an auth failure stops the run, naming the comment', async (t) => {
     const g = await reviewFlow(t, okReview);
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     const result = await interpreter.runExecution(g.options);
 
-    assert.equal(result.runStop?.failureClass, 'auth', JSON.stringify(result));
+    assert.equal(runStopEvent(g)?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(
       g.rec.terminalReason.text,
       'The comment at comment failed with class auth, which stops the whole run.',

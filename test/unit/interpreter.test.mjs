@@ -737,7 +737,6 @@ test('a held Execution saves a Terminal stop that declares every field', async (
     detail: null,
     error: null,
     failureClass: null,
-    runStopFailureClass: null,
     interrupted: null,
   };
   assert.deepEqual(terminalStop, expected);
@@ -1864,7 +1863,6 @@ test('a stop a Visit decides saves a Terminal stop and Check runs that declare e
     'detail',
     'error',
     'failureClass',
-    'runStopFailureClass',
     'interrupted',
   ]);
   assert.deepEqual(terminalStop.actionRef, {

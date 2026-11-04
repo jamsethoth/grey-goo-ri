@@ -110,7 +110,6 @@ const agentRequired = [
   'finalEventSubtype',
   'permissionDenials',
   'commandsRun',
-  'failureClass',
 ];
 
 test('an action event carries schema version 2 and every required field', (t) => {
@@ -167,10 +166,10 @@ test('an action event carries schema version 2 and every required field', (t) =>
     'finalEventSubtype',
     'permissionDenials',
     'commandsRun',
-    'failureClass',
     'check',
     'integrityViolations',
     'retryAfterMs',
+    'failureClass',
     'error',
   ]);
   assert.equal(back.launchProfile, null);
@@ -203,6 +202,7 @@ const optional = {
   check: 'red',
   integrityViolations: [],
   retryAfterMs: 1000,
+  failureClass: 'auth',
   error: 'boom',
 };
 for (const [key, value] of Object.entries(optional)) {
@@ -212,8 +212,11 @@ for (const [key, value] of Object.entries(optional)) {
 }
 
 test('actionEvent accepts every optional key together', () => {
-  const { check, integrityViolations, retryAfterMs, error } = events.actionEvent({ ...actionFields(), ...optional });
-  assert.deepEqual({ check, integrityViolations, retryAfterMs, error }, optional);
+  const { check, integrityViolations, retryAfterMs, failureClass, error } = events.actionEvent({
+    ...actionFields(),
+    ...optional,
+  });
+  assert.deepEqual({ check, integrityViolations, retryAfterMs, failureClass, error }, optional);
 });
 
 test('an Event carries schemaVersion and time', (t) => {
@@ -225,14 +228,14 @@ test('an Event carries schemaVersion and time', (t) => {
   assert.ok(!Number.isNaN(Date.parse(event.time)), event.time);
 });
 
-const OPTIONAL_KEYS = ['check', 'integrityViolations', 'retryAfterMs', 'error'];
+const OPTIONAL_KEYS = ['check', 'integrityViolations', 'retryAfterMs', 'failureClass', 'error'];
 
 test('an agent Action Event declares every field, null where it was not given', () => {
   const event = events.actionEvent(actionFields());
   assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...agentRequired, ...OPTIONAL_KEYS]);
   assert.deepEqual(
     OPTIONAL_KEYS.map((key) => event[key]),
-    [null, null, null, null],
+    [null, null, null, null, null],
   );
 });
 
@@ -242,8 +245,22 @@ test('a deterministic Action Event declares every field of its shape', () => {
   assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...OPTIONAL_KEYS]);
   assert.deepEqual(
     ['agent', ...OPTIONAL_KEYS].map((key) => event[key]),
-    [false, null, null, null, null],
+    [false, null, null, null, null, null],
   );
+});
+
+test('a deterministic Action Event carries failureClass, null unless the Action failed', () => {
+  const deterministic = Object.fromEntries(Object.entries(actionFields()).filter(([key]) => required.includes(key)));
+  const done = events.actionEvent(deterministic);
+  assert.ok(Object.hasOwn(done, 'failureClass'), 'declared on every Action Event');
+  assert.equal(done.failureClass, null);
+  const failed = events.actionEvent({
+    ...deterministic,
+    outcome: 'run-stop',
+    failureClass: 'auth',
+    error: 'git push exited 128',
+  });
+  assert.deepEqual([failed.failureClass, failed.error], ['auth', 'git push exited 128']);
 });
 
 test('a Lifecycle Event declares every field of its type, null where it was not given', () => {

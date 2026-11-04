@@ -27,3 +27,23 @@ test('a run stop from a remote Action names the Action, not a harness call', () 
     "a Harness's run stop still names the harness call",
   );
 });
+
+test("an Execution's run stop is its first Action Event whose class reaches the run", () => {
+  const event = (action: string, failureClass: string | null, agent = false) => ({
+    type: 'action',
+    action,
+    agent,
+    failureClass,
+  });
+  const harnessAuth = event('red', 'auth', true);
+  const remoteAuth = event('push', 'auth');
+  const permission = event('push', 'permission');
+  assert.equal(
+    terminal.runStopEvent([event('red-check', null), harnessAuth, remoteAuth]),
+    harnessAuth,
+    'a Harness auth',
+  );
+  assert.equal(terminal.runStopEvent([permission, remoteAuth, { type: 'ticket_end' }]), remoteAuth, 'a remote auth');
+  assert.equal(terminal.runStopEvent([permission]), null, 'a permission failure faults only its Ticket');
+  assert.equal(terminal.runStopEvent([]), null, 'none');
+});
