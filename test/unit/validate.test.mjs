@@ -285,7 +285,7 @@ test('an undeclared command is an error naming the Check', async () => {
   ]);
 });
 
-const CARRIED = 'must be non-empty with no ":", ".", "/" or whitespace';
+const CARRIED = 'must be non-empty with no ":", ".", "/", "--" or whitespace';
 const BLANK = 'must not be empty or only whitespace';
 
 // Each form a carried name may not take, named for the case.
@@ -295,6 +295,7 @@ const CARRIED_BREAKS = [
   ['a.b', 'with a dot'],
   ['a b', 'with whitespace'],
   ['a/b', 'with a slash'],
+  ['a--b', 'with a double hyphen'],
 ];
 // Each form any other configured name may not take.
 const BLANK_BREAKS = [

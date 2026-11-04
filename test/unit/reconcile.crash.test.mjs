@@ -149,6 +149,6 @@ test('a Vertex whose id has whitespace, whose commit a crash could not find by i
   const g = await golden.setup(t);
   assert.throws(
     () => golden.configure(g, spaceTheRedVertex),
-    /vertices\.red tests: Vertex id "red tests" must be non-empty with no ":", "\.", "\/" or whitespace/,
+    /vertices\.red tests: Vertex id "red tests" must be non-empty with no ":", "\.", "\/", "--" or whitespace/,
   );
 });
