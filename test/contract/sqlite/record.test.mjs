@@ -231,8 +231,11 @@ test(
     writeFileSync(join(commonDir, 'released'), '');
     await locks.release(openLock);
     const exits = await Promise.all(openers.map(({ exit }) => exit));
-    const switchedEarly = exits.filter(({ out }) => out.includes('switching held'));
-    assert.deepEqual(switchedEarly, [], 'no opener gets past a held open lock');
+    assert.deepEqual(
+      exits.map(({ out }) => out.match(/^switching \w+$/gm)),
+      tickets.map(() => ['switching released']),
+      'no opener gets past a held open lock, and each switches once it is released',
+    );
     assert.deepEqual(
       exits.map(({ code, err }) => ({ code, err })),
       tickets.map(() => ({ code: 0, err: '' })),
