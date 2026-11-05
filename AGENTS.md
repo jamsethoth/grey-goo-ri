@@ -21,7 +21,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   built-ins. Never adopt an agentic workflow framework (ADR 0001).
 - TypeScript on Node's type stripping, no build step (ADR 0018): new and converted modules and tests are `.ts`, and no
   new `.mjs` file may be added. Erasable syntax only (no enums, namespaces or parameter properties). The strict ESLint
-  rules apply to `.ts` files; `test/unit/layout.test.mjs` lists the converted and legacy files.
+  rules apply to `.ts` files; `test/unit/layout.test.ts` lists the converted and legacy files.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
   git (`test/support/fake-git.ts`); real git in temp repositories only for the `lib/git.ts` contract suite, tests whose
@@ -36,7 +36,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   `at`). Single letters only within about 10 lines of scope. Abbreviations only from `id`, `url`, `sha`, `err`, `gh`,
   `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out` and the like. Types are PascalCase, other
   identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
-  lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.mjs`).
+  lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.ts`).
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
@@ -130,7 +130,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   `lib/terminal-report.ts`; options objects in place of positional flags (`effects.sideEffect`, `effects.finish`).
 - A long function cut into named steps, its context declared as one type and built in one place: `lib/interpreter.ts`,
   with `lib/run-context.ts` and `lib/visit-runner.ts`.
-- A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.ts` (one behaviour per case,
+- A new unit test: `test/unit/record.test.ts` and `test/unit/interpreter.retry.test.ts` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
 - A contract suite and its fake: `test/contract/git/git.test.mjs` and `test/support/fake-git.ts`.
 - A fake typed against the interface it stands in for: `test/support/fake-git.ts` (lib/git.ts's `Git`) and
@@ -148,7 +148,7 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 
 - Every test lives in the layout of `docs/testing.md` for its size: `test/unit/` (small: one process, no child
   process, no real git, no timers), `test/contract/<boundary>/` (one suite per external boundary) or `test/e2e/` (the
-  full runs and the real-git wiring). `test/unit/layout.test.mjs` checks `test/unit/`.
+  full runs and the real-git wiring). `test/unit/layout.test.ts` checks `test/unit/`.
 - A module's tests of one size go in `<dir>/<module>.test.mjs`. A large module may also have area files
   `<dir>/<module>.<area>.test.mjs`; new tests for it still go in `<dir>/<module>.test.mjs`. node runs files in parallel
   but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an area file.
@@ -161,7 +161,7 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
   `lib/git.ts`'s is `test/contract/git/`.
 - Fixtures live under `test/fixtures/` as JSON or text.
 - Shared helpers live under `test/support/`, one helper per job, each file named for that job and never for the lib
-  module it serves (`test/unit/layout.test.mjs`). A fixture builder says whether it runs the Execution:
+  module it serves (`test/unit/layout.test.ts`). A fixture builder says whether it runs the Execution:
   `golden.fixture`, `greenFixture`, `reviewFixture` and the run fixture build one; `runFirstVisit` and
   `runReviewFlow` run it. A case asks for real git by name (`git: 'real'`); real integrity alone runs over the fake
   git.
