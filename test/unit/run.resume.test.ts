@@ -1,0 +1,217 @@
+import { type TestContext, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import * as marker from '../../lib/marker.ts';
+import * as paths from '../../lib/paths.ts';
+import * as record from '../../lib/record.ts';
+import * as run from '../../lib/run.ts';
+import * as sqlite from '../../lib/sqlite.ts';
+import * as golden from '../support/golden.ts';
+import * as fakeHarness from '../support/fake-harness.ts';
+import * as executionContext from '../support/execution-context.ts';
+import * as runFixture from '../support/run-fixture.ts';
+import * as unvisitedExecution from '../support/unvisited-execution.ts';
+
+const { BRANCH, TICKET } = runFixture;
+const { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } = executionContext;
+// Where the State Database is, which a held or corrupt record's advice names.
+const INSPECT_ADVICE =
+  'Inspect the row first in the State Database at .git/gg/gg.db (relative to the main checkout) using a SQLite client.';
+
+test('a flow mixing harnesses runs each vertex on its own harness', async (t) => {
+  const responses = {
+    ...structuredClone(golden.firstVisitResponses),
+    'reviewer/1/review/1': {
+      files: {},
+      response: {
+        claim: 'ok',
+        summary: 'The review says ok.',
+        definitionOfDoneMet: true,
+        redGreenEvidenceOk: true,
+        findings: [],
+        diagnosis: '',
+      },
+    },
+  };
+  const fixture = runFixture.fixture(t, { responses, fullFlow: true });
+  const other = fakeHarness.fakeHarness({
+    name: 'other',
+    transcriptDir: join(fixture.root, 'transcripts-other'),
+    responses,
+    capabilities: { costReporting: false, reasoningTokenReporting: false },
+  });
+  fixture.options.config.agents.reviewer.harness = 'other';
+  fixture.options.harnesses.other = other;
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 0);
+  // parseMarker reads a marker from the text it is published in.
+  const vertexOf = (call: { marker?: string }) =>
+    marker.parseMarker(marker.markerTrailer(call.marker as string))?.vertex;
+  assert.deepEqual(fixture.harness.calls.map(vertexOf), ['red', 'green'], 'the implementer runs on its own harness');
+  assert.deepEqual(other.calls.map(vertexOf), ['reviewer'], 'the reviewer runs on its own harness');
+});
+
+test('an in-progress ticket without a record is skipped', async (t) => {
+  const fixture = runFixture.fixture(t, { labels: [IN_PROGRESS_LABEL] });
+  await run.runTarget(fixture.options);
+  assert.equal(fixture.harness.calls.length, 0, 'no agent started');
+  assert.ok(
+    fixture.logs.some((line) => line.includes(`#${TICKET}`)),
+    `the skip is logged: ${JSON.stringify(fixture.logs)}`,
+  );
+  assert.equal(fixture.worktrees(), 1, 'no worktree');
+  assert.deepEqual(fixture.labelAdds(), [], 'no label written');
+  assert.deepEqual(
+    fixture.gh.calls.map((call) => call.args.slice(0, 2)),
+    [['issue', 'view']],
+    'no repository label setup on a Stuck Ticket',
+  );
+  assert.ok(fixture.gh.labels.has(IN_PROGRESS_LABEL), 'the State Label is left for Stuck handling');
+});
+
+// A fault report leaves the comment intent of the Terminal it interrupted open for good.
+for (const state of ['ready-for-qa', 'fault', 'abandoned'] as const) {
+  test(`a finished record with open intents is not resumed: ${state}`, async (t) => {
+    const fixture = runFixture.fixture(t, { labels: [IN_PROGRESS_LABEL] });
+    const { mainRoot, worktree } = fixture;
+    await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
+    const executionRecord = unvisitedExecution.unvisitedExecution(fixture);
+    executionRecord.visits = { red: 1, green: 1 };
+    executionRecord.cursor = { vertex: 'needs-human', visit: null, action: null, recovery: 0, attempt: 1 };
+    const actionMarker = golden.markerOf(executionRecord, 'ready-for-qa', 1, 'end-comment', 0);
+    await record.intent(executionRecord, actionMarker, 'comment', {
+      target: { kind: 'issue', number: TICKET },
+      body: 'x',
+      bodyHash: 'h',
+    });
+    executionRecord.state = state;
+    await record.save(executionRecord);
+    const row = fixture.loadRow();
+
+    assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0);
+    assert.equal(fixture.harness.calls.length, 0, 'no agent started');
+    assert.equal(fixture.loadRow(), row, 'the finished record is unchanged');
+    assert.deepEqual(fixture.comments(), [], 'the open comment intent is not replayed');
+    assert.ok(
+      fixture.logs.some((line) => line.includes(`finished (${state})`)),
+      JSON.stringify(fixture.logs),
+    );
+    assert.deepEqual(
+      fixture.gh.calls.map((call) => call.args.slice(0, 2)),
+      [['issue', 'view']],
+      'gh made only the discovery read',
+    );
+  });
+}
+
+test('a held Execution Record skip gives row-delete recovery without GitHub writes', async (t) => {
+  const fixture = runFixture.fixture(t);
+  const executionRecord = unvisitedExecution.unvisitedExecution(fixture, { run: 'seed' });
+  executionRecord.state = 'held';
+  await record.save(executionRecord);
+  const row = fixture.loadRow();
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 0);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'skipped');
+  assert.ok(
+    fixture.logs.some(
+      (line) =>
+        line.includes(`Execution Record ticket-${TICKET} is held and cannot resume.`) &&
+        line.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`) &&
+        line.includes(INSPECT_ADVICE),
+    ),
+    JSON.stringify(fixture.logs),
+  );
+  assert.ok(
+    fixture.logs.every((line) => !line.includes('finished (held)')),
+    JSON.stringify(fixture.logs),
+  );
+  assert.equal(fixture.loadRow(), row);
+  assert.equal(fixture.harness.calls.length, 0);
+  assert.deepEqual(
+    fixture.gh.calls.map((call) => call.args.slice(0, 2)),
+    [['issue', 'view']],
+  );
+});
+
+const CORRUPT = '{ "schemaVersion": 1, "log": [';
+
+// A corrupt row stands for a Ticket whose worktree and in-progress label an earlier Run left behind.
+async function corruptTicket(t: TestContext) {
+  const fixture = runFixture.fixture(t, { labels: [IN_PROGRESS_LABEL] });
+  const { mainRoot, worktree } = fixture;
+  await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
+  fixture.options.cwd = fixture.worktree;
+  sqlite
+    .openDb(fixture.commonDir)
+    .prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)")
+    .run(TICKET, CORRUPT);
+  return fixture;
+}
+const heldLabels = (fixture: runFixture.RunFixture) =>
+  fixture.gh.labels.has(NEEDS_HUMAN_LABEL) && !fixture.gh.labels.has(IN_PROGRESS_LABEL);
+
+test('a corrupt-record hold whose label failed is not posted twice', async (t) => {
+  const fixture = await corruptTicket(t);
+  const failing = runFixture.failHoldLabel(fixture);
+  assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
+  assert.equal(fixture.comments().length, 1);
+  assert.equal(fixture.gh.labels.has(NEEDS_HUMAN_LABEL), false);
+
+  failing.on = false;
+  assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2);
+  assert.equal(fixture.comments().length, 1, 'the landed comment is found by its marker, not reposted');
+  assert.ok(marker.parseMarker(fixture.comments()[0] as string), 'the corrupt-record comment carries an Action Marker');
+  assert.ok(heldLabels(fixture));
+});
+
+test('a corrupt-record hold whose comment failed is posted once on the next run', async (t) => {
+  const fixture = await corruptTicket(t);
+  const failing = runFixture.failComment(fixture);
+  assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
+  assert.deepEqual(fixture.comments(), []);
+  assert.equal(fixture.gh.labels.has(NEEDS_HUMAN_LABEL), false);
+
+  failing.on = false;
+  assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2);
+  assert.equal(fixture.comments().length, 1);
+  assert.ok(heldLabels(fixture));
+  await run.runTarget(fixture.options);
+  assert.equal(fixture.comments().length, 1, 'a labelled corrupt record is not commented again');
+});
+
+test('a corrupt record found at admission is held through reconcile', async (t) => {
+  const fixture = await corruptTicket(t);
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 2);
+  assert.equal(fixture.harness.calls.length, 0, 'no agent started');
+  assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
+  assert.ok(
+    fixture
+      .comments()
+      .some((body) => body.includes(`Execution Record ticket-${TICKET}`) && body.includes('SQLite client')),
+    `a comment names the record: ${JSON.stringify(fixture.comments())}`,
+  );
+  assert.ok(fixture.comments().some((body) => body.includes(INSPECT_ADVICE)));
+  assert.ok(
+    fixture.comments().some((body) => body.includes(`DELETE FROM records WHERE kind = 'ticket' AND n = ${TICKET};`)),
+  );
+  assert.equal(
+    paths.pathKey((await fixture.options.deps.git.repoInfo(fixture.worktree)).gitCommonDir),
+    paths.pathKey(fixture.commonDir),
+  );
+  assert.ok(existsSync(join(fixture.mainRoot, '.git', 'gg', 'gg.db')));
+  assert.ok(
+    fixture.comments().every((body) => !body.includes(fixture.root)),
+    'no comment exposes a local path',
+  );
+  // From the worktree git names the common dir canonically, so the log may carry either spelling.
+  assert.ok(
+    fixture.logs.some((line) => line.includes(fixture.commonDir) || line.includes(paths.canonical(fixture.commonDir))),
+    'the local log keeps the full diagnostic',
+  );
+  assert.equal(fixture.loadRow(), CORRUPT, 'the corrupt record is kept');
+});
