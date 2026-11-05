@@ -69,23 +69,21 @@ test('a crash before the reset is finished by Reconciliation while the worktree 
   assert.deepEqual(crashResume.resetEntries(crashed.loaded), ['intent', 'evidence', 'complete']);
 });
 
-test(
-  'a crash before the reset holds the Execution and discards ' + 'nothing once a human changed the worktree',
-  async (t) => {
-    const crashed = await crashedViolation(t, 'before reset');
-    writeFileSync(join(crashed.worktree, 'human.txt'), 'mine\n');
-    const dirty = gitShell.sh(crashed.worktree, 'status', '--porcelain');
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a crash before the reset holds the Execution and discards nothing once a human changed the worktree', async (t) => {
+  const crashed = await crashedViolation(t, 'before reset');
+  writeFileSync(join(crashed.worktree, 'human.txt'), 'mine\n');
+  const dirty = gitShell.sh(crashed.worktree, 'status', '--porcelain');
 
-    assert.equal(await reconcile.resets(crashed.loaded, { git: crashed.options.deps.git }), 'held');
-    assert.equal(gitShell.sh(crashed.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
-    assert.deepEqual(crashed.loaded.history, []);
-    assert.equal(
-      (writeAhead.openIntents(crashed.loaded)[0]?.payload as { history: { kind: string } }).history.kind,
-      'integrity violation',
-      'the reason waits in the open intent',
-    );
-  },
-);
+  assert.equal(await reconcile.resets(crashed.loaded, { git: crashed.options.deps.git }), 'held');
+  assert.equal(gitShell.sh(crashed.worktree, 'status', '--porcelain'), dirty, 'nothing is discarded at resume');
+  assert.deepEqual(crashed.loaded.history, []);
+  assert.equal(
+    (writeAhead.openIntents(crashed.loaded)[0]?.payload as { history: { kind: string } }).history.kind,
+    'integrity violation',
+    'the reason waits in the open intent',
+  );
+});
 
 test('an assume-unchanged edit left at the baseline does not prove the reset done', async (t) => {
   const crashed = await crashedViolation(t, 'after reset');
@@ -114,28 +112,25 @@ test('an ignored test added after an interrupted reset holds the restore and is 
   assert.deepEqual(crashResume.resetEntries(crashed.loaded), ['intent']);
 });
 
-test(
-  'a crash between the reset and the Protected File restore of an ' +
-    'integrity violation is finished by Reconciliation',
-  async (t) => {
-    const fixture = await golden.fixture(t, { integrity: 'real', git: 'real' });
-    mkdirSync(join(fixture.worktree, '.claude'), { recursive: true });
-    writeFileSync(join(fixture.worktree, '.claude', '.gitignore'), '*\n');
-    const local = join(fixture.worktree, '.claude', 'settings.local.json');
-    writeFileSync(local, '{"owner":true}\n');
-    afterPhase.afterPhase(fixture, 'red', () => writeFileSync(local, '{"agent":true}\n'));
-    const git = fixture.options.deps.git;
-    fixture.options.deps.git = resetInterruption.crashingReset(git, { after: true });
-    await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
-    assert.equal(readFileSync(local, 'utf8'), '{"agent":true}\n', 'the crash came before the restore');
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a crash between the reset and the Protected File restore of an integrity violation is finished by Reconciliation', async (t) => {
+  const fixture = await golden.fixture(t, { integrity: 'real', git: 'real' });
+  mkdirSync(join(fixture.worktree, '.claude'), { recursive: true });
+  writeFileSync(join(fixture.worktree, '.claude', '.gitignore'), '*\n');
+  const local = join(fixture.worktree, '.claude', 'settings.local.json');
+  writeFileSync(local, '{"owner":true}\n');
+  afterPhase.afterPhase(fixture, 'red', () => writeFileSync(local, '{"agent":true}\n'));
+  const git = fixture.options.deps.git;
+  fixture.options.deps.git = resetInterruption.crashingReset(git, { after: true });
+  await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
+  assert.equal(readFileSync(local, 'utf8'), '{"agent":true}\n', 'the crash came before the restore');
 
-    const loaded = await loadTicket(fixture);
-    assert.equal(await reconcile.resets(loaded, { git }), 'continue');
-    assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', "the owner's bytes come back from the saved intent");
-    assert.equal(loaded.history[0]?.kind, 'integrity violation');
-    assert.deepEqual(writeAhead.openIntents(loaded), []);
-  },
-);
+  const loaded = await loadTicket(fixture);
+  assert.equal(await reconcile.resets(loaded, { git }), 'continue');
+  assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', "the owner's bytes come back from the saved intent");
+  assert.equal(loaded.history[0]?.kind, 'integrity violation');
+  assert.deepEqual(writeAhead.openIntents(loaded), []);
+});
 
 test('Reconciliation uses an injected integrity', async (t) => {
   const crashed = await crashedViolation(t, 'after reset');

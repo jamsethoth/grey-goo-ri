@@ -103,7 +103,7 @@ async function landedHoldComment(fixture: RunFixture, mid: record.ExecutionRecor
   return final;
 }
 
-// The hold ended within the latest Run, as decided, without a commit, reset, push or PR.
+// The hold has one ticket_end, written by the latest Run with the Terminal Reason decided in the first.
 async function assertHoldEndedInLastRun(
   fixture: RunFixture,
   final: record.ExecutionRecord,
@@ -114,6 +114,8 @@ async function assertHoldEndedInLastRun(
   assert.deepEqual(ends[0]?.terminalReason, mid.terminalReason);
   assert.equal(ends[0]?.run, runFixture.lastRun(fixture));
 }
+
+// The worktree, its HEAD and the remote branch are as before, and no PR was read or published.
 async function assertNothingPublished(fixture: RunFixture, before: integrity.WorktreeSnapshot, head: string | null) {
   assert.deepEqual(
     await integrity.snapshot(fixture.worktree, fixture.options.deps.git),
@@ -218,40 +220,36 @@ async function fixedWhileHoldPending(fixture: RunFixture, agentCalls: number, me
   return mid;
 }
 
-test(
-  'fixing the worktree while a hold comment is pending still ' + 'finishes the hold, and a fresh hold restarts',
-  async (t) => {
-    const { runFixture: fixture } = await runFixture.dirtyTicket(t, false);
-    const mid = await fixedWhileHoldPending(fixture, 0, 'no agent ran');
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('fixing the worktree while a hold comment is pending still finishes the hold, and a fresh hold restarts', async (t) => {
+  const { runFixture: fixture } = await runFixture.dirtyTicket(t, false);
+  const mid = await fixedWhileHoldPending(fixture, 0, 'no agent ran');
 
-    fixture.gh.labels.delete(NEEDS_HUMAN_LABEL);
-    const third = await run.runTarget(fixture.options);
-    assert.equal(run.runExitCode(third), 0, JSON.stringify(third));
-    assert.notEqual(
-      (await executionReads.loadTicket(fixture)).execution,
-      mid.execution,
-      'a fresh hold restarts as a new Execution',
-    );
-    assert.equal(fixture.harness.calls.length, 2);
-  },
-);
+  fixture.gh.labels.delete(NEEDS_HUMAN_LABEL);
+  const third = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(third), 0, JSON.stringify(third));
+  assert.notEqual(
+    (await executionReads.loadTicket(fixture)).execution,
+    mid.execution,
+    'a fresh hold restarts as a new Execution',
+  );
+  assert.equal(fixture.harness.calls.length, 2);
+});
 
-test(
-  'fixing the worktree while a hold comment is pending still ' + 'finishes the hold, and a seeded hold stays held',
-  async (t) => {
-    const { runFixture: fixture } = await runFixture.dirtyTicket(t, true);
-    await fixedWhileHoldPending(fixture, 2, 'no agent call beyond the seeded 2');
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('fixing the worktree while a hold comment is pending still finishes the hold, and a seeded hold stays held', async (t) => {
+  const { runFixture: fixture } = await runFixture.dirtyTicket(t, true);
+  await fixedWhileHoldPending(fixture, 2, 'no agent call beyond the seeded 2');
 
-    fixture.gh.labels.delete(NEEDS_HUMAN_LABEL);
-    const third = await run.runTarget(fixture.options);
-    assert.equal(
-      runFixture.ticketResult(third)?.outcome,
-      'skipped',
-      'a held Execution with Visits needs its row deleted',
-    );
-    assert.equal(fixture.harness.calls.length, 2, 'no agent call beyond the seeded 2');
-  },
-);
+  fixture.gh.labels.delete(NEEDS_HUMAN_LABEL);
+  const third = await run.runTarget(fixture.options);
+  assert.equal(
+    runFixture.ticketResult(third)?.outcome,
+    'skipped',
+    'a held Execution with Visits needs its row deleted',
+  );
+  assert.equal(fixture.harness.calls.length, 2, 'no agent call beyond the seeded 2');
+});
 
 test('a landed hold comment with a lost response is not posted twice', async (t) => {
   const { runFixture: fixture } = await runFixture.dirtyTicket(t, false);
@@ -304,16 +302,10 @@ test('an ensureWorktree failure without a record is marked and never retried', a
   assert.equal(run.runExitCode(second), 2);
 });
 
-test(
-  'admission holds emit ticket lifecycle events with their Terminal Reason: ' + 'a record on another branch',
-  async (t) => {
-    const fixture = runFixture.fixture(t);
-    await record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed', branch: 'ticket/99-other' }));
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('admission holds emit ticket lifecycle events with their Terminal Reason: a record on another branch', async (t) => {
+  const fixture = runFixture.fixture(t);
+  await record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed', branch: 'ticket/99-other' }));
 
-    await admissionHoldEvents.assertAdmissionHoldEvents(
-      fixture,
-      await run.runTarget(fixture.options),
-      'branch-mismatch',
-    );
-  },
-);
+  await admissionHoldEvents.assertAdmissionHoldEvents(fixture, await run.runTarget(fixture.options), 'branch-mismatch');
+});

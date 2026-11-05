@@ -36,8 +36,8 @@ const LABEL_SETUPS = [
   },
 ];
 for (const { repoLabels, created } of LABEL_SETUPS) {
-  const name = `a Run ensures missing State Labels once immediately before its first label edit: ${repoLabels.length}`;
-  test(`${name} of 4 present`, async (t) => {
+  // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+  test(`a Run ensures missing State Labels once immediately before its first label edit: ${repoLabels.length} of 4 present`, async (t) => {
     const fixture = runFixture.fixture(t, { repoLabels });
     assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0);
     const reads = fixture.gh.calls.filter((call) => isLabelRead(call.args));

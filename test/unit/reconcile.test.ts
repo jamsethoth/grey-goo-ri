@@ -41,47 +41,43 @@ const violating = (fixture: golden.GoldenFixture): integrity.Integrity => ({
   }),
 });
 
-test(
-  'a reset whose evidence was saved but not its completion ' + 'is completed without a second History item',
-  async (t) => {
-    const fixture = await golden.fixture(t);
-    await interpreter.runExecution({
-      ...fixture.options,
-      deps: { ...fixture.options.deps, integrity: violating(fixture) },
-    });
-    const executionRecord = (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
-    executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter(
-      (entry) => !(entry.effect === 'reset' && entry.step === 'complete'),
-    );
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a reset whose evidence was saved but not its completion is completed without a second History item', async (t) => {
+  const fixture = await golden.fixture(t);
+  await interpreter.runExecution({
+    ...fixture.options,
+    deps: { ...fixture.options.deps, integrity: violating(fixture) },
+  });
+  const executionRecord = (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
+  executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter(
+    (entry) => !(entry.effect === 'reset' && entry.step === 'complete'),
+  );
 
-    assert.equal(await reconcile.resets(executionRecord, { git: fixture.options.deps.git }), 'continue');
-    assert.equal(executionRecord.history.length, 1);
-    assert.deepEqual(crashResume.resetEntries(executionRecord), ['intent', 'evidence', 'complete']);
-  },
-);
+  assert.equal(await reconcile.resets(executionRecord, { git: fixture.options.deps.git }), 'continue');
+  assert.equal(executionRecord.history.length, 1);
+  assert.deepEqual(crashResume.resetEntries(executionRecord), ['intent', 'evidence', 'complete']);
+});
 
-test(
-  'a failed HEAD read after the reset of an Integrity Violation ' + 'leaves the History item to Reconciliation, once',
-  async (t) => {
-    const fixture = await golden.fixture(t);
-    fixture.options.deps.integrity = violating(fixture);
-    const git = fixture.options.deps.git;
-    const noted = resetInterruption.notedReset(git);
-    fixture.options.deps.git = {
-      ...noted.git,
-      headSha: async (cwd) => {
-        if (noted.reset()) throw new interpreter.CrashError('head read failed');
-        return git.headSha(cwd);
-      },
-    };
-    await assert.rejects(interpreter.runExecution(fixture.options), /head read failed/);
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a failed HEAD read after the reset of an Integrity Violation leaves the History item to Reconciliation, once', async (t) => {
+  const fixture = await golden.fixture(t);
+  fixture.options.deps.integrity = violating(fixture);
+  const git = fixture.options.deps.git;
+  const noted = resetInterruption.notedReset(git);
+  fixture.options.deps.git = {
+    ...noted.git,
+    headSha: async (cwd) => {
+      if (noted.reset()) throw new interpreter.CrashError('head read failed');
+      return git.headSha(cwd);
+    },
+  };
+  await assert.rejects(interpreter.runExecution(fixture.options), /head read failed/);
 
-    const loaded = (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
-    assert.deepEqual(loaded.history, [], 'no History item is saved without the reset evidence');
-    assert.equal(await reconcile.resets(loaded, { git }), 'continue');
-    assert.equal(loaded.history.length, 1);
-  },
-);
+  const loaded = (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
+  assert.deepEqual(loaded.history, [], 'no History item is saved without the reset evidence');
+  assert.equal(await reconcile.resets(loaded, { git }), 'continue');
+  assert.equal(loaded.history.length, 1);
+});
 
 // A push that landed before the crash is found on the remote by its sha, which Reconciliation saves as its evidence, so
 // the resume completes the push rather than making it again.

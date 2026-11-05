@@ -183,17 +183,11 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason: a
   await admissionHoldEvents.assertAdmissionHoldEvents(fixture, await run.runTarget(fixture.options), 'merge-conflict');
 });
 
-test(
-  'admission holds emit ticket lifecycle events with their ' + 'Terminal Reason: a worktree on another branch',
-  async (t) => {
-    const fixture = runFixture.fixture(t, { integrity: 'real', git: 'real' });
-    await addWorktree(fixture);
-    gitShell.sh(fixture.worktree, 'checkout', '-q', '-b', 'ticket/99-other');
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('admission holds emit ticket lifecycle events with their Terminal Reason: a worktree on another branch', async (t) => {
+  const fixture = runFixture.fixture(t, { integrity: 'real', git: 'real' });
+  await addWorktree(fixture);
+  gitShell.sh(fixture.worktree, 'checkout', '-q', '-b', 'ticket/99-other');
 
-    await admissionHoldEvents.assertAdmissionHoldEvents(
-      fixture,
-      await run.runTarget(fixture.options),
-      'branch-mismatch',
-    );
-  },
-);
+  await admissionHoldEvents.assertAdmissionHoldEvents(fixture, await run.runTarget(fixture.options), 'branch-mismatch');
+});

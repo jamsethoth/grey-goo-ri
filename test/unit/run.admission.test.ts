@@ -119,14 +119,12 @@ test('a ticket reaching done exits 0 and the run events carry the run id and out
   );
 });
 
-test(
-  'a Ticket in a repository reached through a linked ' + 'directory reaches done and publishes no local path',
-  async (t) => {
-    const fixture = runFixture.fixture(t, { linked: true });
-    const results = await run.runTarget(fixture.options);
-    assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
-    assert.ok(fixture.gh.labels.has('gg:state:ready-for-qa'));
-    const published = JSON.stringify(fixture.gh.calls.map(({ args, input }) => [args, input]));
-    assert.ok(!published.includes(basename(fixture.real)), `gh exposes ${basename(fixture.real)}: ${published}`);
-  },
-);
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a Ticket in a repository reached through a linked directory reaches done and publishes no local path', async (t) => {
+  const fixture = runFixture.fixture(t, { linked: true });
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.ok(fixture.gh.labels.has('gg:state:ready-for-qa'));
+  const published = JSON.stringify(fixture.gh.calls.map(({ args, input }) => [args, input]));
+  assert.ok(!published.includes(basename(fixture.real)), `gh exposes ${basename(fixture.real)}: ${published}`);
+});

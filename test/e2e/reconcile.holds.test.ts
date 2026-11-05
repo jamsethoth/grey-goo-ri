@@ -60,8 +60,8 @@ test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
 // Reconciliation holds a moved branch; the hold's comment then crashes. Any git call on resume would replay or check
 // the older commit, which a hold only reports.
 for (const point of Object.keys(crashResume.POINTS) as (keyof typeof crashResume.POINTS)[]) {
-  const name = `a crash ${point} of a hold comment resumes its reporting Actions`;
-  test(`${name} without replaying an older commit`, async (t) => {
+  // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+  test(`a crash ${point} of a hold comment resumes its reporting Actions without replaying an older commit`, async (t) => {
     const fixture = await golden.fixture(t, { git: 'real' });
     await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'before-effect');
     gitShell.sh(fixture.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');

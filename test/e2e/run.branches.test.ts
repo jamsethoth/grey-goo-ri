@@ -44,8 +44,8 @@ function assertSwitchBackAdvice(fixture: RunFixture) {
 }
 
 for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-attempt`]) {
-  const name = 'a resumed execution on another Ticket branch or another branch of its Ticket';
-  test(`${name} is held before recovery: ${branch}`, async (t) => {
+  // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+  test(`a resumed execution on another Ticket branch or another branch of its Ticket is held before recovery: ${branch}`, async (t) => {
     const fixture = runFixture.fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
     const seeded = await runFixture.crashBeforeCommit(fixture);
     gitShell.sh(fixture.worktree, 'checkout', '-q', '-b', branch);

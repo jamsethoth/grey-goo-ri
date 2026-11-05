@@ -166,28 +166,26 @@ test('human override abandons a pending hold before any label cleanup', async (t
   await assertOverrideLanded(overridden);
 });
 
-test(
-  'human override of a pending hold is decided durably when its label cleanup fails, ' + 'and lands on the next Run',
-  async (t) => {
-    const overridden = await overriddenPendingHold(t);
-    const { fixture, mid, cleanup } = overridden;
-    cleanup.fails = true;
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('human override of a pending hold is decided durably when its label cleanup fails, and lands on the next Run', async (t) => {
+  const overridden = await overriddenPendingHold(t);
+  const { fixture, mid, cleanup } = overridden;
+  cleanup.fails = true;
 
-    const failed = await run.runTarget(fixture.options);
-    assert.equal(run.runExitCode(failed), 1, JSON.stringify(failed));
-    const pending = await executionReads.loadTicket(fixture);
-    assert.equal(pending.terminalStop?.abandoned, true, 'the abandonment is decided durably');
-    assert.equal(pending.state, 'active', 'its final state lands with ticket_end');
-    assert.equal(runFixture.endsOf(fixture, mid.execution).length, 0, 'the abandonment has not landed');
+  const failed = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(failed), 1, JSON.stringify(failed));
+  const pending = await executionReads.loadTicket(fixture);
+  assert.equal(pending.terminalStop?.abandoned, true, 'the abandonment is decided durably');
+  assert.equal(pending.state, 'active', 'its final state lands with ticket_end');
+  assert.equal(runFixture.endsOf(fixture, mid.execution).length, 0, 'the abandonment has not landed');
 
-    cleanup.fails = false;
-    const results = await run.runTarget(fixture.options);
-    assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-    assert.equal(runFixture.ticketResult(results)?.outcome, 'abandoned');
-    assert.deepEqual(overridden.states, [true, true], 'abandoned before every label cleanup');
-    await assertOverrideLanded(overridden);
-  },
-);
+  cleanup.fails = false;
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'abandoned');
+  assert.deepEqual(overridden.states, [true, true], 'abandoned before every label cleanup');
+  await assertOverrideLanded(overridden);
+});
 
 test('a pending fault report whose comment lookup fails stays pending and posts no second comment', async (t) => {
   const fixture = runFixture.fixture(t);
