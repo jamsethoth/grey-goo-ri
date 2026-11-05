@@ -35,9 +35,9 @@ test('branchMessages throws when the base is not in the log', async () => {
   await assert.rejects(executionReads.branchMessages(onBranch('d'.repeat(40))), /base d{40} is not in the log/);
 });
 
-// Only a corrupt row is held for a human; any other failure to read the record reaches the caller. These two cases also
-// keep the coverage gate steady: without a process that runs the rethrow, some orders of node's merge of the test
-// processes' ranges leave it uncovered (#281).
+// Only a corrupt row is held for a human; any other failure to read the record reaches the caller. This case also keeps
+// the coverage gate steady: without a process that runs the rethrow, some orders of node's merge of the test processes'
+// ranges leave it uncovered (#281).
 test('a record the State Database cannot open fails with its error, not as a corrupt record', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
   mkdirSync(join(commonDir, 'gg', 'gg.db'), { recursive: true });
