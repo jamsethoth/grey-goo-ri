@@ -52,8 +52,9 @@ export function nodeCommand(t: TestContext, ...args: string[]) {
 
 // A command whose child starts a middle process, which writes midFile, starts a detached grandchild that writes
 // pidFile, and lingers until goFile exists; then it exits, leaving the grandchild an orphan while the command outlives
-// the timeout. The grandchild and the middle are ended when the case ends, but for a middle seen to exit: its pid may
-// be another process's by then. middleExited says whether it was seen to.
+// the timeout. The grandchild and the middle are ended when the case ends, with two exceptions for the middle. One seen
+// to exit is left, as its pid may be another process's by then; middleExited says whether it was seen to. One whose
+// grandchild has not written its pid is left to runShell's cleanup, which can find that grandchild only through it.
 export function orphanChain(t: TestContext, directory: string, name: string) {
   const pidFile = join(directory, `${name}.pid`);
   const midFile = join(directory, `${name}-mid.pid`);
@@ -66,7 +67,9 @@ export function orphanChain(t: TestContext, directory: string, name: string) {
     return exited;
   };
   t.after(() => {
-    processProbe.endProcessIn(pidFile);
+    const grandchild = processProbe.pidIn(pidFile);
+    if (!grandchild) return;
+    processProbe.endProcess(grandchild);
     if (!middleExited()) processProbe.endProcessIn(midFile);
   });
   return { pidFile, midFile, goFile, commandLine, middleExited };
