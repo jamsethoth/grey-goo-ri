@@ -13,6 +13,7 @@ import { EFFECTS, POINTS, crashed, reconcileOptions, withMarker } from '../suppo
 import { NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
 import { loadTicket, runStopEvent, writeAheadSteps } from '../support/execution-reads.ts';
 import { reviewFixture } from '../support/review-flow.ts';
+import * as caseDatabase from '../support/case-database.ts';
 
 // Each Terminal kind crashes at its needs-human label (a fault report's Actions are fault-<effect>), then resumes on a
 // freshly loaded record with the same options.
@@ -247,8 +248,11 @@ test('a corrupt record holds the ticket', async (t) => {
   const decided = await reconcile.reconcile(reconcileOptions(g, err));
   assert.equal(decided.next, 'hold');
   assert.match(decided.reason, /corrupt/);
-  const row = db.prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(golden.TICKET);
-  assert.equal(row.json, corrupt, 'the corrupt record is never discarded');
+  assert.equal(
+    caseDatabase.savedJson(g.commonDir, 'ticket', golden.TICKET),
+    corrupt,
+    'the corrupt record is never discarded',
+  );
 });
 
 // #66: a lookup that fails proves nothing either way. The done comment landed before the crash, so only a working

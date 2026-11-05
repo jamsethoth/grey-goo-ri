@@ -17,8 +17,16 @@ type Repo = fakeGitStore.Repo;
 const { differing, isIgnored, sorted, withinMatcher } = fakeGitPaths;
 const { fail, sha1 } = fakeGitStore;
 
-// The verbs every git call names, with lib/git.ts's parameters; a result no caller reads may be left out.
-type GitVerbs = { [Verb in keyof gitModule.Git]: (...args: Parameters<gitModule.Git[Verb]>) => unknown };
+// The verbs every git call names, with lib/git.ts's parameters and results. push's result, git's output, no caller
+// reads, so the fake returns none.
+type GitVerbs = {
+  [Verb in keyof gitModule.Git]: (
+    ...args: Parameters<gitModule.Git[Verb]>
+  ) => Verb extends 'push' ? Promise<unknown> : ReturnType<gitModule.Git[Verb]>;
+};
+// tsc fails here if the check stops holding results: headSha gives a sha, never null.
+// @ts-expect-error a verb whose result is not lib's is refused
+const refusedWrongResult: GitVerbs['headSha'] = async () => null;
 
 function worktreeVerbs({ store, placeAt, writeFiles }: Parts) {
   // An existing path is reused only as a ticket worktree of this repository.

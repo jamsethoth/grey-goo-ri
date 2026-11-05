@@ -86,10 +86,24 @@ const addUsage = (total: Usage, delta: Usage): Usage =>
     }),
   );
 
-// What run returns for a call that ended with `status`: a killed call keeps none of the script's result or failure.
-function outcomeOf(script: ScriptedResponse, session: Session, delta: Usage, status: string) {
+// A script's failure and result fields, read once the call has written its files and opened its Session, before it
+// waits on a cancel; its response is read when the call returns.
+function scriptedResult(script: ScriptedResponse) {
   const failure = script.failure ? { retryAfterMs: null, message: '', ...script.failure } : null;
   const { usage: _usage, sessionInit, ...overrides } = script.result ?? {};
+  return { failure, sessionInit, overrides };
+}
+
+interface Answered {
+  script: ScriptedResponse;
+  scripted: ReturnType<typeof scriptedResult>;
+  session: Session;
+  delta: Usage;
+}
+
+// What run returns for a call that ended with `status`: a killed call keeps none of the script's result or failure.
+function outcomeOf({ script, scripted, session, delta }: Answered, status: string) {
+  const { failure, sessionInit, overrides } = scripted;
   return {
     response: script.response ?? null,
     result: {
@@ -189,11 +203,12 @@ export function fakeHarness({
     const session = await sessions.open(call.resume);
     const delta = deltaOf(script, contract.emptyUsage(fullCapabilities));
     session.cumulative = addUsage(session.cumulative, delta);
+    const answered = { script, scripted: scriptedResult(script), session, delta };
     if (cancelled) {
       await cancelled;
-      return outcomeOf(script, session, delta, 'killed');
+      return outcomeOf(answered, 'killed');
     }
-    return outcomeOf(script, session, delta, script.failure ? 'failed' : 'completed');
+    return outcomeOf(answered, answered.scripted.failure ? 'failed' : 'completed');
   }
 
   return {

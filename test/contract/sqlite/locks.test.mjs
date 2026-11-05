@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import * as locks from '../../../lib/locks.ts';
 import * as lockHolder from '../../support/lock-holder.ts';
 import * as tempDirectory from '../../support/temp-directory.ts';
+import * as childExit from '../../support/child-exit.ts';
 
 const contender = lockHolder.CONTENDER;
 const locksModule = new URL('../../../lib/locks.ts', import.meta.url);
@@ -74,18 +75,11 @@ test('a killed holder frees the lock', { timeout: 120_000 }, async (t) => {
 
 // Runs an ES module script in a node child started with `flags`, resolving with its exit code, stdout and stderr.
 function runScript(flags, script) {
-  const child = spawn(process.execPath, [...flags, '--input-type=module', '-e', script], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let out = '',
-    err = '';
-  child.stdout.setEncoding('utf8').on('data', (chunk) => {
-    out += chunk;
-  });
-  child.stderr.setEncoding('utf8').on('data', (chunk) => {
-    err += chunk;
-  });
-  return new Promise((resolve) => child.on('close', (code) => resolve({ code, out, err })));
+  return childExit
+    .exitOf(
+      spawn(process.execPath, [...flags, '--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] }),
+    )
+    .then(({ stdout, ...exit }) => ({ ...exit, out: stdout }));
 }
 
 // A lock whose connection only a local variable held would be freed by the first collection; gc() forces one now.

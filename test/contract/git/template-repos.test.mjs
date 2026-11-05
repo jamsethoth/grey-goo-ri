@@ -2,11 +2,11 @@
 // would reach the next case's starting point.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { sh } from '../../support/git-shell.ts';
+import * as tempDirectory from '../../support/temp-directory.ts';
 
 // Equal refs do not show a copy owns its objects: a store shared through a link would pass a ref check.
 const assertNoObject = (repos, sha) => {
@@ -23,23 +23,17 @@ const assertOwnObjects = (...dirs) => {
   }
 };
 
-const tempRoot = (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'gg-git-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  return root;
-};
-
 test('a copied fixture repository is independent of its template', async (t) => {
   const templateRepos = await import('../../support/template-repos.ts');
-  const changed = tempRoot(t);
-  const untouched = tempRoot(t);
+  const changed = tempDirectory.tempDirectory(t, 'gg-git-');
+  const untouched = tempDirectory.tempDirectory(t, 'gg-git-');
   const base = templateRepos.seedRepos(changed);
   templateRepos.seedRepos(untouched);
   writeFileSync(join(changed, 'main', 'a.txt'), 'a');
   sh(join(changed, 'main'), 'add', '-A');
   sh(join(changed, 'main'), 'commit', '-q', '-m', 'one');
   sh(join(changed, 'main'), 'push', '-q', 'origin', 'main');
-  const later = tempRoot(t);
+  const later = tempDirectory.tempDirectory(t, 'gg-git-');
 
   assert.equal(templateRepos.seedRepos(later), base);
   assert.equal(sh(join(untouched, 'main'), 'rev-parse', 'main'), base);
@@ -57,12 +51,12 @@ test('a copied fixture repository is independent of its template', async (t) => 
 
 test("a copied clone pushes to its own origin, not the template's", async (t) => {
   const templateRepos = await import('../../support/template-repos.ts');
-  const pushed = tempRoot(t);
+  const pushed = tempDirectory.tempDirectory(t, 'gg-git-');
   templateRepos.seedRepos(pushed);
   sh(join(pushed, 'main'), 'checkout', '-q', '-b', 'ticket/9-thing');
   sh(join(pushed, 'main'), 'commit', '-q', '--allow-empty', '-m', 'work');
   sh(join(pushed, 'main'), 'push', '-q', 'origin', 'ticket/9-thing');
-  const later = tempRoot(t);
+  const later = tempDirectory.tempDirectory(t, 'gg-git-');
   templateRepos.seedRepos(later);
 
   assert.equal(
