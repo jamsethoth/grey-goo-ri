@@ -9,57 +9,66 @@ test('createIssue keeps malformed output complete for redaction before publicati
   const output = 'x'.repeat(190) + '/private/worktree/secret-file';
   const client = github.createGh(async () => output);
   await assert.rejects(client.createIssue({ title: 'Ticket', body: 'body' }, '/repo'), (err) =>
-    err.message.includes(output),
+    (err as Error).message.includes(output),
   );
 });
 
-// A stand-in for the gh executable: records every argv and answers from `answer(args)`, as gh's stdout.
-const fakeGh = (answer = () => '') => {
-  const calls = [];
-  const gh = async (args, cwd, input) => {
+// A stand-in for the gh executable: records every argv and answers from `answer(args)`, as gh's stdout. Unlike
+// fakeGhModule.fakeGh, it keeps no GitHub state: each case scripts the answers it needs.
+const scriptedGh = (answer: (args: string[]) => unknown = () => '') => {
+  const calls: fakeGhModule.GhCall[] = [];
+  const gh: github.Transport = async (args, cwd, input) => {
     calls.push({ args, cwd, input });
-    const out = await answer(args);
-    return typeof out === 'string' ? out : JSON.stringify(out);
+    const answered = await answer(args);
+    return typeof answered === 'string' ? answered : JSON.stringify(answered);
   };
   return { gh, calls };
 };
 
-const failingGh = (err) =>
-  fakeGh(() => {
-    throw err();
+const failingGh = (failure: () => Error) =>
+  scriptedGh(() => {
+    throw failure();
   });
 
-const labelArgs = (calls) =>
+const labelArgs = (calls: fakeGhModule.GhCall[]) =>
   calls.flatMap(({ args }) =>
-    args.flatMap((a, i) =>
-      ['--add-label', '--remove-label', '--label'].includes(args[i - 1]) || (args[0] === 'label' && i === 2) ? [a] : [],
+    args.flatMap((arg, i) =>
+      ['--add-label', '--remove-label', '--label'].includes(args[i - 1]) || (args[0] === 'label' && i === 2)
+        ? [arg]
+        : [],
     ),
   );
 
+// An Event setLabels reported: its type and its fields.
+type ReportedEvent = [string, Record<string, unknown>];
+
 test('setLabels logs and records a failed label update with the ticket number, and reports failure', async (t) => {
-  const logs = [],
-    events = [];
+  const logs: string[] = [];
+  const events: ReportedEvent[] = [];
   const client = github.createGh(failingGh(() => new Error('HTTP 502')).gh);
   const ok = await client.setLabels(7, { add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }, '/repo', {
-    log: (m) => logs.push(m),
-    ev: (t, d) => events.push([t, d]),
+    log: (message) => logs.push(message),
+    ev: (type, fields) => events.push([type, fields]),
   });
   assert.equal(ok, false);
   assert.ok(
-    logs.some((l) => l.includes('#7') && l.includes('HTTP 502')),
+    logs.some((line) => line.includes('#7') && line.includes('HTTP 502')),
     JSON.stringify(logs),
   );
   assert.ok(
-    events.some(([t, d]) => t === 'label_failed' && d.ticket === 7),
+    events.some(([type, fields]) => type === 'label_failed' && fields.ticket === 7),
     JSON.stringify(events),
   );
 });
 
 test('setLabels returns true and records nothing when the update succeeds', async (t) => {
-  const events = [];
-  const client = github.createGh(fakeGh().gh);
+  const events: string[] = [];
+  const client = github.createGh(scriptedGh().gh);
   assert.equal(
-    await client.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', { log() {}, ev: (t) => events.push(t) }),
+    await client.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', {
+      log() {},
+      ev: (type) => events.push(type),
+    }),
     true,
   );
   assert.deepEqual(events, []);
@@ -67,38 +76,47 @@ test('setLabels returns true and records nothing when the update succeeds', asyn
 
 const ghFailure = () =>
   new Error(
-    "gh issue edit 7 --add-label in-progress exited 1\nfailed to update https://github.com/o/r/issues/7: 'in-progress' not found",
+    'gh issue edit 7 --add-label in-progress exited 1\n' +
+      "failed to update https://github.com/o/r/issues/7: 'in-progress' not found",
   );
 
 test('setLabels keeps the reason from the later lines of the error in the log and the event', async (t) => {
-  const logs = [],
-    events = [];
+  const logs: string[] = [];
+  const events: ReportedEvent[] = [];
   const client = github.createGh(failingGh(ghFailure).gh);
   await client.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', {
-    log: (m) => logs.push(m),
-    ev: (t, d) => events.push([t, d]),
+    log: (message) => logs.push(message),
+    ev: (type, fields) => events.push([type, fields]),
   });
   assert.ok(
-    logs.some((l) => l.includes("'in-progress' not found")),
+    logs.some((line) => line.includes("'in-progress' not found")),
     JSON.stringify(logs),
   );
   assert.ok(
-    events.some(([t, d]) => t === 'label_failed' && d.error.includes("'in-progress' not found")),
+    events.some(
+      ([type, fields]) => type === 'label_failed' && (fields.error as string).includes("'in-progress' not found"),
+    ),
     JSON.stringify(events),
   );
 });
 
 test('error excerpts are bounded', async (t) => {
-  const logs = [];
+  const logs: string[] = [];
   const client = github.createGh(failingGh(() => new Error(`first\n${'x'.repeat(5000)}`)).gh);
-  await client.setLabels(7, {}, '/repo', { log: (m) => logs.push(m), ev() {} });
+  await client.setLabels(7, {}, '/repo', { log: (message) => logs.push(message), ev() {} });
   assert.ok(logs[0].length < 500, `log line of ${logs[0].length} chars`);
   const excerpt = github.errorExcerpt(new Error(`first\n${'x'.repeat(5000)}`));
   assert.ok(excerpt.length <= 300, `excerpt of ${excerpt.length} chars`);
 });
 
 test('isReady is false while a blocking issue is open', () => {
-  const issue = (extra) => ({ number: 7, state: 'OPEN', labels: [], blockedBy: [], ...extra });
+  const issue = (extra?: Partial<github.Issue>) => ({
+    number: 7,
+    state: 'OPEN',
+    labels: [] as github.IssueLabel[],
+    blockedBy: [],
+    ...extra,
+  });
   assert.equal(github.isReady(issue()), true);
   assert.equal(github.isReady(issue({ blockedBy: [{ number: 3, state: 'OPEN' }] })), false);
   assert.equal(github.isReady(issue({ blockedBy: { nodes: [{ number: 3, state: 'OPEN' }] } })), false);
@@ -115,7 +133,8 @@ for (const label of [
   'gg:state:needs-replan',
 ]) {
   test(`isReady is false while the Ticket carries ${label}`, () => {
-    assert.equal(github.isReady({ number: 7, state: 'OPEN', labels: [{ name: label }], blockedBy: [] }), false);
+    const issue = { number: 7, state: 'OPEN', labels: [{ name: label }], blockedBy: [] };
+    assert.equal(github.isReady(issue), false);
   });
 }
 
@@ -145,15 +164,13 @@ for (const [label, reason] of [
   ['x:state:needs-replan', 'carries State Label x:state:needs-replan'],
 ]) {
   test(`readiness with prefix x names the State Label ${label}`, () => {
-    assert.equal(
-      github.readinessReason({ number: 7, state: 'OPEN', labels: [{ name: label }], blockedBy: [] }, { prefix: 'x' }),
-      reason,
-    );
+    const issue = { number: 7, state: 'OPEN', labels: [{ name: label }], blockedBy: [] };
+    assert.equal(github.readinessReason(issue, { prefix: 'x' }), reason);
   });
 }
 
-const viewLabelled = async (t, name) => {
-  const fake = fakeGhModule.fakeGh({ ticket: 7 });
+const viewLabelled = async (name: string) => {
+  const fake = fakeGhModule.fakeGh({ branch: 'ticket/7-x', ticket: 7 });
   fake.labels.add(name);
   const client = github.createGh(fake.gh);
   return client.viewIssue(7, '/repo');
@@ -170,7 +187,7 @@ for (const [prefix, label, reason] of [
   ['Gg', 'GG:STATE:NEEDS-REPLAN', 'carries State Label GG:STATE:NEEDS-REPLAN'],
 ]) {
   test(`readiness with prefix ${prefix} recognises ${label} and preserves its spelling`, async (t) => {
-    const issue = await viewLabelled(t, label);
+    const issue = await viewLabelled(label);
     assert.equal(github.isReady(issue, { prefix }), false);
     assert.equal(github.readinessReason(issue, { prefix }), reason);
   });
@@ -183,7 +200,7 @@ for (const [prefix, label] of [
   ['Gg', 'IN-PROGRESS'],
 ]) {
   test(`readiness with prefix ${prefix} ignores ${label}`, async (t) => {
-    assert.equal(github.readinessReason(await viewLabelled(t, label), { prefix }), null);
+    assert.equal(github.readinessReason(await viewLabelled(label), { prefix }), null);
   });
 }
 
@@ -203,34 +220,34 @@ const eventPages = [
 
 for (const prefix of ['gg', 'Gg']) {
   test(`inProgressSince with prefix ${prefix} matches mixed-case event labels`, async (t) => {
-    const { gh, calls } = fakeGh((args) => (args[0] === 'api' ? eventPages : ''));
+    const { gh, calls } = scriptedGh((args) => (args[0] === 'api' ? eventPages : ''));
     const client = github.createGh(gh);
     assert.equal(await client.inProgressSince(7, '/repo', { prefix }), '2026-10-04T00:00:00Z');
     assert.ok(calls[0].args.includes('--paginate'), JSON.stringify(calls[0].args));
-    assert.match(calls[0].args.at(-1), /\/issues\/7\/events$/);
+    assert.match(calls[0].args.at(-1)!, /\/issues\/7\/events$/);
   });
 }
 
 test('inProgressSince is null when no event adds the in-progress State Label', async (t) => {
-  const client = github.createGh(fakeGh(() => [eventPages[0].slice(1), eventPages[1].slice(1)]).gh);
+  const client = github.createGh(scriptedGh(() => [eventPages[0].slice(1), eventPages[1].slice(1)]).gh);
   assert.equal(await client.inProgressSince(7, '/repo'), null);
 });
 
 test('upsertPr updates an existing PR found by head branch instead of creating', async (t) => {
   const pr = { number: 12, state: 'OPEN', isDraft: true, url: 'https://github.com/o/r/pull/12' };
-  const { gh, calls } = fakeGh((args) => (args[0] === 'pr' && args[1] === 'list' ? [pr] : ''));
+  const { gh, calls } = scriptedGh((args) => (args[0] === 'pr' && args[1] === 'list' ? [pr] : ''));
   const client = github.createGh(gh);
   const got = await client.upsertPr({ branch: 'ticket/7-x', base: 'main', title: 'T', body: 'B' }, '/repo');
   assert.equal(got.number, 12);
   const verbs = calls.map(({ args }) => `${args[0]} ${args[1]}`);
   assert.deepEqual(
-    verbs.filter((v) => v === 'pr list'),
+    verbs.filter((verb) => verb === 'pr list'),
     ['pr list'],
   );
   assert.ok(!verbs.includes('pr create'), JSON.stringify(verbs));
-  const list = calls.find(({ args }) => args[1] === 'list').args;
+  const list = calls.find(({ args }) => args[1] === 'list')!.args;
   assert.equal(list[list.indexOf('--head') + 1], 'ticket/7-x');
-  const edit = calls.find(({ args }) => args[1] === 'edit');
+  const edit = calls.find(({ args }) => args[1] === 'edit')!;
   assert.equal(edit.args[2], '12');
   assert.equal(edit.input, 'B');
 });
@@ -238,9 +255,9 @@ test('upsertPr updates an existing PR found by head branch instead of creating',
 for (const [prefix, expected] of [
   ['gg', ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa']],
   ['x', ['x:state:in-progress', 'x:state:needs-human', 'x:state:needs-replan', 'x:state:ready-for-qa']],
-]) {
+] as [string, string[]][]) {
   test(`ensureLabels creates the four ${prefix}-prefixed state labels`, async (t) => {
-    const { gh, calls } = fakeGh(() => []);
+    const { gh, calls } = scriptedGh(() => []);
     const client = github.createGh(gh);
     await client.ensureLabels('/repo', { prefix });
     const created = calls.filter(({ args }) => args[0] === 'label' && args[1] === 'create').map(({ args }) => args[2]);
@@ -253,7 +270,7 @@ for (const [prefix, expected] of [
 }
 
 test('ensureLabels reads all label pages once and creates only missing State Labels', async (t) => {
-  const { gh, calls } = fakeGh((args) =>
+  const { gh, calls } = scriptedGh((args) =>
     args[0] === 'api'
       ? [[{ name: 'gg:state:in-progress' }, { name: 'unrelated' }], [{ name: 'gg:state:needs-human' }]]
       : '',
@@ -275,7 +292,7 @@ test('ensureLabels reads all label pages once and creates only missing State Lab
 });
 
 test('every label written through gh carries the prefix', async (t) => {
-  const { gh, calls } = fakeGh(() => []);
+  const { gh, calls } = scriptedGh(() => []);
   const client = github.createGh(gh);
   await client.ensureLabels('/repo', { prefix: 'x' });
   await client.editLabels(7, { add: ['x:state:in-progress'], remove: ['x:await:qa-approval'] }, '/repo');
@@ -294,7 +311,7 @@ test('every label written through gh carries the prefix', async (t) => {
     'x:state:in-progress',
   ]);
   assert.ok(
-    !calls.some(({ args }) => args.some((a) => a === 'plan-approved' || a.startsWith('ff:'))),
+    !calls.some(({ args }) => args.some((arg) => arg === 'plan-approved' || arg.startsWith('ff:'))),
     JSON.stringify(calls),
   );
 });
@@ -314,7 +331,10 @@ const commentPages = [
   ],
 ];
 const commentsGh = () =>
-  fakeGh((args) => (args[0] === 'api' ? commentPages : args[0] === 'pr' && args[1] === 'view' ? prView : ''));
+  scriptedGh((args) => {
+    if (args[0] === 'api') return commentPages;
+    return args[0] === 'pr' && args[1] === 'view' ? prView : '';
+  });
 
 test('viewPr reads the PR fields through gh pr view', async (t) => {
   const { gh, calls } = commentsGh();
@@ -322,7 +342,7 @@ test('viewPr reads the PR fields through gh pr view', async (t) => {
   const got = await client.viewPr(12, '/repo');
   assert.equal(got.body, 'PR body');
   assert.equal(got.headRefName, 'ticket/7-x');
-  const view = calls.find(({ args }) => args[0] === 'pr' && args[1] === 'view').args;
+  const view = calls.find(({ args }) => args[0] === 'pr' && args[1] === 'view')!.args;
   assert.equal(view[2], '12');
   assert.deepEqual(view[view.indexOf('--json') + 1].split(',').sort(), [
     'body',
@@ -346,7 +366,7 @@ test("comments reads a PR's comments through gh api", async (t) => {
   const apiCalls = calls.filter(({ args }) => args[0] === 'api');
   assert.equal(apiCalls.length, 1);
   assert.ok(
-    apiCalls[0].args.some((a) => a.includes('/12/comments')),
+    apiCalls[0].args.some((arg) => arg.includes('/12/comments')),
     JSON.stringify(apiCalls[0].args),
   );
 });
@@ -361,18 +381,18 @@ test("comments reads an issue's comments through gh api", async (t) => {
   const apiCalls = calls.filter(({ args }) => args[0] === 'api');
   assert.equal(apiCalls.length, 1);
   assert.ok(
-    apiCalls[0].args.some((a) => a.includes('/7/comments')),
+    apiCalls[0].args.some((arg) => arg.includes('/7/comments')),
     JSON.stringify(apiCalls[0].args),
   );
 });
 
 // GitHub matches label names case-insensitively, and a create can lose a race to another Run.
-const COLLISION = (name) =>
+const COLLISION = (name: string) =>
   new Error(`label with name "${name}" already exists; use --force to update its color and description`);
-const labelsApi = (args) => args[0] === 'api' && args.at(-1).includes('/labels');
+const labelsApi = (args: string[]) => args[0] === 'api' && args.at(-1)!.includes('/labels');
 
 test('ensureLabels accepts differently cased existing State Labels', async (t) => {
-  const { gh, calls } = fakeGh((args) =>
+  const { gh, calls } = scriptedGh((args) =>
     labelsApi(args)
       ? [
           [{ name: 'gg:STATE:in-progress' }, { name: 'unrelated' }],
@@ -396,8 +416,8 @@ test('ensureLabels accepts differently cased existing State Labels', async (t) =
 
 test('ensureLabels accepts a concurrent create after confirming presence', async (t) => {
   let reads = 0;
-  const all = labels.STATE_LABELS.map((n) => ({ name: `GG:state:${n}` }));
-  const { gh, calls } = fakeGh((args) => {
+  const all = labels.STATE_LABELS.map((name) => ({ name: `GG:state:${name}` }));
+  const { gh, calls } = scriptedGh((args) => {
     if (labelsApi(args)) return ++reads === 1 ? [[]] : [all];
     if (args[0] === 'label') throw COLLISION(args[2]);
     return '';
@@ -421,11 +441,11 @@ for (const [name, reread] of [
     },
   ],
   ['the re-read is malformed JSON', () => 'not json'],
-]) {
+] as const) {
   test(`ensureLabels does not accept a failed create when ${name}`, async (t) => {
     const denied = new Error('HTTP 403: label creation denied');
     let reads = 0;
-    const { gh } = fakeGh((args) => {
+    const { gh } = scriptedGh((args) => {
       if (labelsApi(args)) return ++reads === 1 ? [[]] : reread();
       if (args[0] === 'label') throw denied;
       return '';
@@ -436,22 +456,24 @@ for (const [name, reread] of [
 }
 
 test('setLabels reports an unconfirmed setup failure without editing the issue', async (t) => {
-  const logs = [],
-    events = [];
-  const { gh, calls } = fakeGh((args) => {
+  const logs: string[] = [];
+  const events: ReportedEvent[] = [];
+  const { gh, calls } = scriptedGh((args) => {
     if (labelsApi(args)) return [[]];
     if (args[0] === 'label') throw new Error('HTTP 403: label creation denied');
     return '';
   });
   const client = github.createGh(gh);
   const ok = await client.setLabels(7, { add: ['gg:state:in-progress'] }, '/repo', {
-    log: (m) => logs.push(m),
-    ev: (t, d) => events.push([t, d]),
+    log: (message) => logs.push(message),
+    ev: (type, fields) => events.push([type, fields]),
     ensureLabels: () => client.ensureLabels('/repo'),
   });
   assert.equal(ok, false);
   assert.ok(
-    events.some(([t, d]) => t === 'label_failed' && d.error.includes('label creation denied')),
+    events.some(
+      ([type, fields]) => type === 'label_failed' && (fields.error as string).includes('label creation denied'),
+    ),
     JSON.stringify(events),
   );
   assert.ok(!calls.some(({ args }) => args[0] === 'issue' && args[1] === 'edit'), 'the issue is not edited');
@@ -460,7 +482,7 @@ test('setLabels reports an unconfirmed setup failure without editing the issue',
 // #66: a comment POST keeps the response headers a retry needs.
 test('a comment is posted through gh api, and a failed one keeps its status and headers', async (t) => {
   const url = 'https://github.com/o/r/issues/7#issuecomment-5';
-  const { gh, calls } = fakeGh(() =>
+  const { gh, calls } = scriptedGh(() =>
     fakeGhModule.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }),
   );
   const client = github.createGh(gh);
@@ -472,7 +494,7 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
     JSON.stringify(calls),
   );
   assert.deepEqual(
-    calls.map(({ input }) => JSON.parse(input)),
+    calls.map(({ input }) => JSON.parse(input as string)),
     [{ body: 'a "quoted"\nbody' }, { body: 'on the PR' }],
   );
 
@@ -483,7 +505,7 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
       body: { message: 'You have exceeded a secondary rate limit.' },
     });
   });
-  await assert.rejects(rateLimited.comment(7, 'b', '/repo'), (err) => {
+  await assert.rejects(rateLimited.comment(7, 'b', '/repo'), (err: github.GhError) => {
     assert.deepEqual(err.http, { status: 403, headers: { 'retry-after': '7', 'x-ratelimit-remaining': '12' } });
     assert.match(err.message, /secondary rate limit/);
     return true;
@@ -492,10 +514,10 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
 
 // #85: a rate limit whose response gives no wait is read from GitHub's own quota, once.
 const NOW = Date.parse('2026-10-15T00:00:00Z');
-const isProbe = (args) => args[0] === 'api' && args[1] === 'rate_limit';
+const isProbe = (args: string[]) => args[0] === 'api' && args[1] === 'rate_limit';
 
 test('a rate-limited PR write uses the wait GitHub gives', async (t) => {
-  const { gh, calls } = fakeGh((args) => {
+  const { gh, calls } = scriptedGh((args) => {
     if (isProbe(args)) {
       return {
         resources: {
@@ -511,7 +533,7 @@ test('a rate-limited PR write uses the wait GitHub gives', async (t) => {
   const client = github.createGh(gh);
   const err = await client.upsertPr({ branch: 'b', base: 'main', title: 'T', body: 'B' }, '/repo').then(
     () => null,
-    (e) => e,
+    (rejection: Error) => rejection,
   );
 
   assert.match(err?.message ?? '', /API rate limit exceeded/);
@@ -520,7 +542,7 @@ test('a rate-limited PR write uses the wait GitHub gives', async (t) => {
 });
 
 test('a failed rate-limit probe keeps the 60/120 s fallback', async (t) => {
-  const { gh, calls } = fakeGh((args) => {
+  const { gh, calls } = scriptedGh((args) => {
     throw isProbe(args)
       ? new Error('HTTP 502')
       : fakeGhModule.ghError(args, { status: 403, body: { message: 'API rate limit exceeded for user ID 1.' } });
@@ -528,7 +550,7 @@ test('a failed rate-limit probe keeps the 60/120 s fallback', async (t) => {
   const client = github.createGh(gh);
   const err = await client.markReady(7, '/repo').then(
     () => null,
-    (e) => e,
+    (rejection: Error) => rejection,
   );
 
   assert.match(err?.message ?? '', /API rate limit exceeded/, 'the original error');

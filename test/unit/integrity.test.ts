@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,7 +8,7 @@ import * as record from '../../lib/record.ts';
 import { fakeGit } from '../support/fake-git.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
-function newExecution(commonDir, ticket, worktree) {
+function newExecution(commonDir: string, ticket: number, worktree: string) {
   return record.createExecution({
     commonDir,
     ticket,
@@ -22,8 +22,9 @@ function newExecution(commonDir, ticket, worktree) {
   });
 }
 
-// Two ticket records saved on disk, `own` and `other`; activity is read from the records, so no worktree or git is needed.
-async function twoRecords(t) {
+// Two ticket records saved on disk, `own` and `other`; activity is read from the records, so no worktree or git is
+// needed.
+async function twoRecords(t: TestContext) {
   const root = tempDirectory.tempDirectory(t, 'gg-integrity-', (directory) => join(directory, 'own', '.git'));
   const commonDir = join(root, 'own', '.git');
   const ownRecord = newExecution(commonDir, 1, join(root, 'own'));
@@ -34,16 +35,17 @@ async function twoRecords(t) {
 }
 
 // The other ticket's process holds its own copy of the record, as a separate Execution would.
-const otherProcessRecord = (commonDir) => record.load(commonDir, 'ticket', 2);
+const otherProcessRecord = (commonDir: string) =>
+  record.load(commonDir, 'ticket', 2) as Promise<record.ExecutionRecord>;
 
 test('markBusy and markIdle bump the generation and save', async (t) => {
   const { commonDir, ownRecord } = await twoRecords(t);
   await integrity.markBusy(ownRecord);
   assert.deepEqual(ownRecord.activity, { busy: true, generation: 1 });
-  assert.deepEqual((await record.load(commonDir, 'ticket', 1)).activity, { busy: true, generation: 1 });
+  assert.deepEqual((await record.load(commonDir, 'ticket', 1))?.activity, { busy: true, generation: 1 });
   await integrity.markIdle(ownRecord);
   assert.deepEqual(ownRecord.activity, { busy: false, generation: 2 });
-  assert.deepEqual((await record.load(commonDir, 'ticket', 1)).activity, { busy: false, generation: 2 });
+  assert.deepEqual((await record.load(commonDir, 'ticket', 1))?.activity, { busy: false, generation: 2 });
 });
 
 test("readActivity reads another ticket's record from disk", async (t) => {
@@ -69,15 +71,19 @@ test('a workflow file change is an integrity violation', async (t) => {
   const fake = fakeGit();
   const { mainRoot, commonDir } = fake.init(root, { files: { '.github/workflows/ci.yml': 'on: push\n' } });
   const real = integrity.createIntegrity(fake.git);
-  const rec = newExecution(commonDir, 1, mainRoot);
-  const baseline = await real.begin({ record: rec, others: [], protectedPaths: interpreter.protectedFiles({}) });
+  const executionRecord = newExecution(commonDir, 1, mainRoot);
+  const baseline = await real.begin({
+    record: executionRecord,
+    others: [],
+    protectedPaths: interpreter.protectedFiles({}),
+  });
   writeFileSync(join(mainRoot, '.github', 'workflows', 'ci.yml'), 'on: push\njobs: {}\n');
   mkdirSync(join(mainRoot, '.github', 'actions', 'setup'), { recursive: true });
   writeFileSync(join(mainRoot, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
 
   const { violations } = await real.end({
     baseline,
-    record: rec,
+    record: executionRecord,
     others: [],
     access: 'workspace-write',
     protectedPaths: interpreter.protectedFiles({}),

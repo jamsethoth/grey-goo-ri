@@ -15,7 +15,7 @@ for type checking; this ADR settles it and the epic closes it.
 We write gg in TypeScript that Node runs directly. Node 26.13 strips erasable type syntax from `.ts` files with no flag
 and no warning, so there is no build step: `node bin/gg.mjs` and `node --test` run the sources as they are. Modules
 convert from `.mjs` to `.ts` one at a time, in the epic's dependency order, starting with `lib/paths.ts`; no new `.mjs`
-file may be added (`test/unit/layout.test.mjs` holds the list of converted files, which only grows, and the list of
+file may be added (`test/unit/layout.test.ts` holds the list of converted files, which only grows, and the list of
 legacy `.mjs` files, which only shrinks).
 
 `tsconfig.json` sets:

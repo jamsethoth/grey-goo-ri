@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.ts';
 import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.ts';
+import type * as refs from '../../lib/refs.ts';
 import * as render from '../../lib/render.ts';
 import { homedir } from 'node:os';
 import { readFileSync } from 'node:fs';
@@ -20,15 +21,17 @@ const redOutput = 'not ok 1 - widgets render\n  AssertionError: expected widget'
 const testFiles = ['test/widgets.test.mjs', 'test/support/widget-fixture.mjs'];
 const greenInputs = { testFiles, red: { command: 'npm test', output: redOutput } };
 const IMMUTABLE = /committed tests must not be changed/i;
-const fixture = (name) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
+const fixture = (name: string) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
 
 // The shipped Briefs and schemas, as the defaults Layer loads them.
 const SHIPPED = config.loadDefaults().files;
 // A template by its name under defaults/templates/, or gg's own (the nudge is an engine template).
-const text = (name) => SHIPPED[`templates/${name}`]?.bytes ?? render.engineTemplate(name);
-// A shipped Brief by its file name under defaults/templates/, and the recovery Brief with a section per `{ brief, ...check }`.
-const shipped = (name, context) => briefs.brief(`templates/${name}`, text(name), context);
-const recovery = (name, context) =>
+const text = (name: string) => SHIPPED[`templates/${name}`]?.bytes ?? render.engineTemplate(name);
+// A shipped Brief by its file name under defaults/templates/, and the recovery Brief with a section per
+// `{ brief, ...check }`.
+const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(`templates/${name}`, text(name), context);
+type RecoveryContext = briefs.BriefContext & { sections: { brief: string; [field: string]: unknown }[] };
+const recovery = (name: string, context: RecoveryContext) =>
   briefs.recoveryBrief(`templates/${name}`, text(name), {
     ...context,
     sections: context.sections.map(({ brief, ...check }) => ({
@@ -37,13 +40,25 @@ const recovery = (name, context) =>
       ...check,
     })),
   });
-const schema = (name) => JSON.parse(SHIPPED[`schemas/${name}.schema.json`].bytes);
-const SCHEMAS = { RED_SCHEMA: schema('red'), IMPLEMENT_SCHEMA: schema('implement'), REVIEW_SCHEMA: schema('review') };
+// A shipped schema declares its properties and which are required.
+type ShippedSchema = refs.SchemaNode & Required<Pick<refs.SchemaNode, 'properties' | 'required'>>;
+const schema = (name: string): ShippedSchema => JSON.parse(SHIPPED[`schemas/${name}.schema.json`].bytes);
+const SCHEMAS: Record<string, ShippedSchema> = {
+  RED_SCHEMA: schema('red'),
+  IMPLEMENT_SCHEMA: schema('implement'),
+  REVIEW_SCHEMA: schema('review'),
+};
 
-// The fixtures are the builders' output before #105, with its named changes: FIX VISIT, and diagnosis for a blocked Claim.
-for (const [name, { template, opts }] of Object.entries(JSON.parse(fixture('briefs.json')))) {
+// The fixtures are the builders' output before #105, with its named changes: FIX VISIT, and diagnosis for a blocked
+// Claim. Each names its template and the context it renders with.
+const BRIEF_FIXTURES: Record<
+  string,
+  // eslint-disable-next-line id-denylist -- the key briefs.json names the context by
+  { template: string; opts: briefs.BriefContext }
+> = JSON.parse(fixture('briefs.json'));
+for (const [name, briefFixture] of Object.entries(BRIEF_FIXTURES)) {
   test(`each Brief template matches its builder's output: ${name}`, async () => {
-    assert.equal(await shipped(template, opts), fixture(`${name}.txt`));
+    assert.equal(await shipped(briefFixture.template, briefFixture.opts), fixture(`${name}.txt`));
   });
 }
 
@@ -93,7 +108,10 @@ test('an absent optional input renders empty through a direct reference', async 
   });
   assert.match(
     green,
-    /## Committed tests\n\nThe orchestrator committed these failing tests; the test command failed as expected:\n\n```\n\n```\n/,
+    new RegExp(
+      '## Committed tests\n\nThe orchestrator committed these failing tests; the test command failed as expected:' +
+        '\n\n```\n\n```\n',
+    ),
   );
   assert.doesNotMatch(fix, /## Review findings/);
   assert.match(review, /## Green Evidence\nThe test command has no passing run\.\n/);
@@ -141,6 +159,7 @@ test('assertStrict rejects a property missing from required', () => {
     () =>
       briefs.assertStrict({
         type: 'object',
+        // eslint-disable-next-line id-length -- the property the expected error may name
         properties: { a: { type: 'string' } },
         required: [],
         additionalProperties: false,
@@ -153,6 +172,7 @@ test('assertStrict rejects a nested object without additionalProperties', () => 
   const nested = {
     type: 'object',
     properties: {
+      // eslint-disable-next-line id-length -- a property name the schema declares
       list: { type: 'array', items: { type: 'object', properties: { x: { type: 'string' } }, required: ['x'] } },
     },
     required: ['list'],
@@ -161,7 +181,7 @@ test('assertStrict rejects a nested object without additionalProperties', () => 
   assert.throws(() => briefs.assertStrict(nested), /additionalProperties/);
 });
 
-const example = (name) =>
+const example = (name: string) =>
   JSON.parse(readFileSync(new URL(`../fixtures/example/${name}.schema.json`, import.meta.url), 'utf8'));
 
 for (const name of ['red', 'implement', 'review']) {
@@ -218,7 +238,7 @@ test('a schema keyword outside the strict subset is rejected with its path (in a
   });
 });
 
-const inField = (field) => ({
+const inField = (field: unknown) => ({
   type: 'object',
   properties: { field },
   required: ['field'],
@@ -247,7 +267,7 @@ for (const [what, field, message] of [
 }
 
 // Nested under an array of objects, so the path shows every step (PR #138 review).
-const inList = (field) => ({
+const inList = (field: unknown) => ({
   type: 'object',
   properties: { list: { type: 'array', items: inField(field) } },
   required: ['list'],
@@ -280,11 +300,13 @@ for (const [what, field, message] of [
   ['a repeated enum value', { type: 'string', enum: ['ok', 'ok'] }, 'x.schema.json.list[].field: enum repeats "ok"'],
   [
     'a repeated required entry',
+    // eslint-disable-next-line id-length -- the property the expected error names
     { type: 'object', properties: { a: { type: 'string' } }, required: ['a', 'a'], additionalProperties: false },
     'x.schema.json.list[].field: required repeats "a"',
   ],
   [
     'required as a string',
+    // eslint-disable-next-line id-length -- the property the expected error names
     { type: 'object', properties: { a: { type: 'string' } }, required: 'a', additionalProperties: false },
     'x.schema.json.list[].field: required must be a list',
   ],
@@ -379,7 +401,7 @@ test('the claim enum must equal the declared tokens: a schema with no claim is r
 });
 
 // The validator collects every error, so these inputs can arrive from a schema or Flow that already failed (#106).
-const selfList = ['ok'];
+const selfList: unknown[] = ['ok'];
 selfList.push(selfList);
 const numericClaim = {
   type: 'object',
@@ -406,7 +428,7 @@ for (const [what, schema, tokens, message] of [
   ],
 ]) {
   test(`the claim enum must equal the declared tokens: ${what} is an error, not a TypeError`, () => {
-    assert.throws(() => briefs.assertClaimEnum(schema, tokens), { name: 'Error', message });
+    assert.throws(() => briefs.assertClaimEnum(schema as refs.SchemaNode, tokens), { name: 'Error', message });
   });
 }
 
@@ -422,7 +444,7 @@ for (const [name, path, kind] of [
   ['implement', 'qa.steps.expected', { kind: 'list', of: { kind: 'string' } }],
   ['implement', 'qa.edgeCases', { kind: 'list', of: { kind: 'string' } }],
   ['implement', 'definitionOfDone.met', { kind: 'list', of: { kind: 'boolean' } }],
-]) {
+] as [string, string, unknown][]) {
   test(`fieldType types nested objects and arrays of objects (${name} ${path})`, () => {
     assert.deepEqual(briefs.fieldType(example(name), path), kind);
   });
@@ -471,7 +493,7 @@ for (const [what, schema, path, error] of [
   ],
 ]) {
   test(`fieldType returns an error, not a TypeError, for ${what}`, () => {
-    assert.deepEqual(briefs.fieldType(schema, path), { error });
+    assert.deepEqual(briefs.fieldType(schema as refs.SchemaNode, path), { error });
   });
 }
 
@@ -495,7 +517,8 @@ for (const name of ['RED_SCHEMA', 'IMPLEMENT_SCHEMA', 'REVIEW_SCHEMA']) {
   });
 }
 
-const { claim: _claim, ...noClaim } = validRed;
+const noClaim: Partial<typeof validRed> = { ...validRed };
+delete noClaim.claim;
 for (const [what, response] of [
   ['a missing', noClaim],
   ['an uppercase', { ...validRed, claim: 'OK' }],
@@ -503,9 +526,9 @@ for (const [what, response] of [
   ['an unknown', { ...validRed, claim: 'done' }],
 ]) {
   test(`validateResponse rejects ${what} claim, naming the claim`, () => {
-    const out = briefs.validateResponse(SCHEMAS.RED_SCHEMA, response);
-    assert.equal(out.valid, false);
-    assert.match(out.reason, /claim/);
+    const validation = briefs.validateResponse(SCHEMAS.RED_SCHEMA, response);
+    assert.equal(validation.valid, false);
+    assert.match(validation.reason ?? '', /claim/);
   });
 }
 
@@ -520,18 +543,18 @@ test('validateResponse rejects a null response', () => {
 test('validateResponse rejects a property of the wrong type, naming it', () => {
   const wrongType = briefs.validateResponse(SCHEMAS.RED_SCHEMA, { ...validRed, tests: 'widgets render' });
   assert.equal(wrongType.valid, false);
-  assert.match(wrongType.reason, /tests/);
+  assert.match(wrongType.reason ?? '', /tests/);
 });
 
 test('validateResponse rejects a missing required property, naming it', () => {
   const { notes: _notes, ...noNotes } = validRed;
-  assert.match(briefs.validateResponse(SCHEMAS.RED_SCHEMA, noNotes).reason, /notes/);
+  assert.match(briefs.validateResponse(SCHEMAS.RED_SCHEMA, noNotes).reason ?? '', /notes/);
 });
 
 test('validateResponse and assertStrict catch an empty-named property', () => {
   const root = briefs.validateResponse(SCHEMAS.RED_SCHEMA, { ...validRed, '': 'x' });
   assert.equal(root.valid, false);
-  assert.match(root.reason, /not in the schema/);
+  assert.match(root.reason ?? '', /not in the schema/);
   const step = { action: 'a', expected: 'b', '': 'x' };
   const impl = {
     claim: 'ok',
@@ -543,7 +566,7 @@ test('validateResponse and assertStrict catch an empty-named property', () => {
   };
   const nested = briefs.validateResponse(SCHEMAS.IMPLEMENT_SCHEMA, impl);
   assert.equal(nested.valid, false);
-  assert.match(nested.reason, /qa\.steps\[0\]\. is not in the schema/);
+  assert.match(nested.reason ?? '', /qa\.steps\[0\]\. is not in the schema/);
   assert.throws(
     () =>
       briefs.assertStrict({
@@ -557,30 +580,30 @@ test('validateResponse and assertStrict catch an empty-named property', () => {
 });
 
 test('the green brief is a full brief for a fresh session', async () => {
-  const g = await shipped('green.md', { ...base, inputs: greenInputs });
-  assert.match(g, /#7/);
-  assert.ok(g.includes(ticket.body), 'ticket body');
-  assert.ok(g.includes(ticket.branch), 'branch');
-  assert.ok(g.includes('test/widgets.test.mjs'), 'test file test/widgets.test.mjs');
-  assert.ok(g.includes('test/support/widget-fixture.mjs'), 'test file test/support/widget-fixture.mjs');
-  assert.ok(g.includes(redOutput), 'failing red output');
-  assert.ok(g.includes('npm test'), 'command npm test');
-  assert.ok(g.includes('npm run lint'), 'command npm run lint');
-  assert.match(g, /Do not run git add/);
-  assert.ok(!g.includes(worktree), 'no worktree path');
-  assert.doesNotMatch(g, /fix it/i);
+  const green = await shipped('green.md', { ...base, inputs: greenInputs });
+  assert.match(green, /#7/);
+  assert.ok(green.includes(ticket.body), 'ticket body');
+  assert.ok(green.includes(ticket.branch), 'branch');
+  assert.ok(green.includes('test/widgets.test.mjs'), 'test file test/widgets.test.mjs');
+  assert.ok(green.includes('test/support/widget-fixture.mjs'), 'test file test/support/widget-fixture.mjs');
+  assert.ok(green.includes(redOutput), 'failing red output');
+  assert.ok(green.includes('npm test'), 'command npm test');
+  assert.ok(green.includes('npm run lint'), 'command npm run lint');
+  assert.match(green, /Do not run git add/);
+  assert.ok(!green.includes(worktree), 'no worktree path');
+  assert.doesNotMatch(green, /fix it/i);
 });
 
 test('the green brief forbids changing committed tests', async () => {
-  const g = await shipped('green.md', { ...base, inputs: greenInputs });
-  assert.match(g, IMMUTABLE);
-  assert.match(g, /notes/);
-  assert.match(g, /blocked/);
+  const green = await shipped('green.md', { ...base, inputs: greenInputs });
+  assert.match(green, IMMUTABLE);
+  assert.match(green, /notes/);
+  assert.match(green, /blocked/);
 });
 
 // #115: the recovery Brief is the Procedure's frame with one section per failing Check (T4b).
 test('the recovery Brief carries every failing Check its own section, in order', async () => {
-  const r = await recovery('recover.md', {
+  const recoveryBrief = await recovery('recover.md', {
     ...base,
     sections: [
       { brief: 'test-fix.md', id: 'test', kind: 'command', command: 'npm test', output: 'not ok 3 - widgets render' },
@@ -593,20 +616,23 @@ test('the recovery Brief carries every failing Check its own section, in order',
       },
     ],
   });
-  const first = r.indexOf('## The command Check test');
-  const second = r.indexOf('## The command Check lint');
-  assert.ok(first > 0 && second > first, r);
-  assert.ok(r.includes('not ok 3 - widgets render') && r.includes('lib/widgets.mjs: 1 problem'), r);
-  assert.equal(r.match(/## Repo commands/g).length, 1, 'the frame lists the commands once');
+  const first = recoveryBrief.indexOf('## The command Check test');
+  const second = recoveryBrief.indexOf('## The command Check lint');
+  assert.ok(first > 0 && second > first, recoveryBrief);
+  assert.ok(
+    recoveryBrief.includes('not ok 3 - widgets render') && recoveryBrief.includes('lib/widgets.mjs: 1 problem'),
+    recoveryBrief,
+  );
+  assert.equal(recoveryBrief.match(/## Repo commands/g)?.length, 1, 'the frame lists the commands once');
 });
 
 test('the test-fix brief forbids changing committed tests', async () => {
-  const t = await shipped('test-fix.md', { ...base, output: 'not ok 3 - widgets render' });
-  assert.match(t, IMMUTABLE);
-  assert.match(t, /notes/);
-  assert.match(t, /blocked/);
-  assert.doesNotMatch(t, /fix it/i);
-  assert.ok(t.includes('not ok 3 - widgets render'), t);
+  const testFix = await shipped('test-fix.md', { ...base, output: 'not ok 3 - widgets render' });
+  assert.match(testFix, IMMUTABLE);
+  assert.match(testFix, /notes/);
+  assert.match(testFix, /blocked/);
+  assert.doesNotMatch(testFix, /fix it/i);
+  assert.ok(testFix.includes('not ok 3 - widgets render'), testFix);
 });
 
 for (const name of ['RED_SCHEMA', 'REVIEW_SCHEMA', 'IMPLEMENT_SCHEMA']) {
@@ -616,7 +642,7 @@ for (const name of ['RED_SCHEMA', 'REVIEW_SCHEMA', 'IMPLEMENT_SCHEMA']) {
   });
 }
 
-for (const [name, build] of [
+const BUILDS: [string, () => Promise<string>][] = [
   ['red', () => shipped('red.md', base)],
   ['green', () => shipped('green.md', { ...base, inputs: greenInputs })],
   ['fix', () => shipped('fix.md', base)],
@@ -654,7 +680,8 @@ for (const [name, build] of [
         ],
       }),
   ],
-]) {
+];
+for (const [name, build] of BUILDS) {
   test(`the ${name} brief lists declared commands and never the worktree path`, async () => {
     const text = await build();
     assert.ok(text.includes('npm test'), 'lists npm test');
@@ -671,15 +698,15 @@ test('a red brief with no declared commands does not point at AGENTS.md', async 
 
 test('the review brief lists test files changed since the red commit', async () => {
   const diff = 'diff --git a/lib/widgets.mjs b/lib/widgets.mjs\n+export const widget = 1;';
-  const r = await shipped('review.md', {
+  const reviewBrief = await shipped('review.md', {
     ...base,
     inputs: { report: { claim: 'ok' }, red: storedRed },
     diff,
     changedTestFiles: ['test/widgets.test.mjs'],
   });
-  assert.ok(r.includes(diff), 'diff text');
-  assert.ok(r.includes('test/widgets.test.mjs'), 'changed test file');
-  assert.match(r, /red commit/i);
+  assert.ok(reviewBrief.includes(diff), 'diff text');
+  assert.ok(reviewBrief.includes('test/widgets.test.mjs'), 'changed test file');
+  assert.match(reviewBrief, /red commit/i);
   const none = await shipped('review.md', {
     ...base,
     inputs: { report: { claim: 'ok' }, red: storedRed },
@@ -693,16 +720,16 @@ test('the review brief lists test files changed since the red commit', async () 
 test("an excerpt limit applies only to a name the Brief's own context holds", async () => {
   const own = 'x'.repeat(3100);
   const item = 'y'.repeat(3100);
-  const out = await briefs.brief('own.md', '{{output}}|{{#items}}{{output}}{{/items}}', {
+  const rendered = await briefs.brief('own.md', '{{output}}|{{#items}}{{output}}{{/items}}', {
     output: own,
     items: [{ output: item }],
   });
-  assert.equal(out, `${'x'.repeat(3000)}|${item}`);
+  assert.equal(rendered, `${'x'.repeat(3000)}|${item}`);
 });
 
 // An untyped value, such as a History entry's list, prints as JSON, never as [object Object] (#198).
 test('an untyped list of objects renders as JSON', async () => {
   const items = [{ file: 'a.mjs', line: 3 }];
-  const out = await briefs.brief('own.md', '{{items}}', { items });
-  assert.equal(out, JSON.stringify(items, null, 2));
+  const rendered = await briefs.brief('own.md', '{{items}}', { items });
+  assert.equal(rendered, JSON.stringify(items, null, 2));
 });
