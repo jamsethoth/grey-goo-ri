@@ -13,7 +13,7 @@ const MEDIUM = [
   [/['"](?:\.\.\/)+lib\/(?:exec|git)\.ts['"]/, 'imports lib/exec.ts or lib/git.ts'],
   [/\b(?:git|integrity):\s*['"]real['"]/, 'asks for real git'],
   [/\bset(?:Timeout|Interval)\s*\(|['"]node:timers/, 'uses a timer'],
-  [/\b(?:golden|run|support)\.sh\(|\b(?:holdLock|conflict|seedRepos)\(/, 'calls a support helper that spawns'],
+  [/\b(?:golden|run|support|gitShell)\.sh\(|\b(?:holdLock|conflict|seedRepos)\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true })
@@ -132,6 +132,23 @@ test('every file under lib has a row in AGENTS.md', async () => {
   );
 });
 
+// A helper is found by what it does, so no test/support file is named for the lib module it serves (#256's N45).
+const sharingLibNames = (supportFiles, libModules) => {
+  const stem = (path) => path.replace(/^.*\//, '').replace(/\.(?:mjs|ts)$/, '');
+  const libNames = new Set(libModules.map(stem));
+  return supportFiles.filter((path) => libNames.has(stem(path)));
+};
+
+test('no test/support file shares a lib module name', () => {
+  assert.deepEqual(
+    sharingLibNames(['test/support/run.mjs', 'test/support/run-fixture.ts'], ['lib/run.ts', 'lib/flow.ts']),
+    ['test/support/run.mjs'],
+  );
+  const supportFiles = repoFiles('test/support/');
+  assert.ok(supportFiles.includes('test/support/execution-context.ts'), 'the support files are read');
+  assert.deepEqual(sharingLibNames(supportFiles, modules), [], 'name the helper for its job, not its lib module');
+});
+
 // A named import from lib at the start of a line; a string that spells one inside a case does not start a line.
 const NAMED_LIB_IMPORT = /^import\s+(?!\*\s*as\s)[^;]*?\sfrom\s+['"](?:\.\.\/)+lib\//m;
 
@@ -231,6 +248,42 @@ const CONVERTED = [
   'lib/visit-scope.ts',
   'lib/work.ts',
   'scripts/run-suite.ts',
+  'test/support/add-suite.ts',
+  'test/support/case-database.ts',
+  'test/support/child-exit.ts',
+  'test/support/crash-fs.ts',
+  'test/support/crash-resume.ts',
+  'test/support/epic-run.ts',
+  'test/support/event-appender.ts',
+  'test/support/execution-context.ts',
+  'test/support/execution-reads.ts',
+  'test/support/fake-gh.ts',
+  'test/support/fake-git.ts',
+  'test/support/fake-git-paths.ts',
+  'test/support/fake-git-store.ts',
+  'test/support/fake-harness.ts',
+  'test/support/fake-integrity.ts',
+  'test/support/git-shell.ts',
+  'test/support/golden.ts',
+  'test/support/golden-run.ts',
+  'test/support/integrity-worktrees.ts',
+  'test/support/keys.ts',
+  'test/support/latch.ts',
+  'test/support/lock-contender.ts',
+  'test/support/lock-holder.ts',
+  'test/support/lock-stress.ts',
+  'test/support/procedure-actions.ts',
+  'test/support/record-saver.ts',
+  'test/support/repo-lock-contention.ts',
+  'test/support/repo-lock-writer.ts',
+  'test/support/request-tables.ts',
+  'test/support/review-flow.ts',
+  'test/support/run-fixture.ts',
+  'test/support/state-database-open-stress.ts',
+  'test/support/state-database-opener.ts',
+  'test/support/temp-directory.ts',
+  'test/support/template-repos.ts',
+  'test/support/write-lock-holder.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
 const LEGACY_MJS = [
@@ -262,22 +315,6 @@ const LEGACY_MJS = [
   'test/e2e/run.concurrency.test.mjs',
   'test/e2e/run.recovery.test.mjs',
   'test/e2e/run.resume.test.mjs',
-  'test/support/db-opener.mjs',
-  'test/support/event-appender.mjs',
-  'test/support/fake-git.mjs',
-  'test/support/fake-harness.mjs',
-  'test/support/fake-integrity.mjs',
-  'test/support/golden.mjs',
-  'test/support/interpreter.mjs',
-  'test/support/lock-contender.mjs',
-  'test/support/lock-stress.mjs',
-  'test/support/open-stress.mjs',
-  'test/support/reconcile.mjs',
-  'test/support/record-saver.mjs',
-  'test/support/repo-lock-writer.mjs',
-  'test/support/run.mjs',
-  'test/support/template-repos.mjs',
-  'test/support/write-lock-holder.mjs',
   'test/unit/approval.test.mjs',
   'test/unit/briefs.test.mjs',
   'test/unit/checks.test.mjs',
