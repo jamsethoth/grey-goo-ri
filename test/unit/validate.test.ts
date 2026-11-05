@@ -506,11 +506,15 @@ test('a configuration that is not an object is one error, not a throw', () => {
 
 // A pass is the agent Action and the Checks after it (T4, R1a): every Check runs before any effect, so a commit or
 // pr-ready counts only Checks that ran (Q3a), and no effect runs for a Visit that then stops or fails (Q3).
+
+// The example's implement Actions by id, so each order case lists every Action of the order it builds.
+const implementActions = (config: exampleLayer.Layer) =>
+  ['green', 'test', 'commit', 'push', 'pr'].map((id) => procedureActions.actionById(config.procedures.implement, id));
+
 test('a Check after an effect Action is an error', () => {
   const config = exampleLayer.config();
-  const { implement } = config.procedures;
-  const [green, check, commit] = ['green', 'test', 'commit'].map((id) => procedureActions.actionById(implement, id));
-  implement.actions = [green, commit, check, ...implement.actions.slice(3)];
+  const [green, check, commit, push, pr] = implementActions(config);
+  config.procedures.implement.actions = [green, commit, check, push, pr];
   const { errors } = exampleLayer.check(config);
   assert.deepEqual(errors, [
     {
@@ -524,9 +528,8 @@ test('a Check after an effect Action is an error', () => {
 
 test('an agent Action after a Check is an error', () => {
   const config = exampleLayer.config();
-  const { implement } = config.procedures;
-  const [green, check] = ['green', 'test'].map((id) => procedureActions.actionById(implement, id));
-  implement.actions = [check, green, ...implement.actions.slice(2)];
+  const [green, check, commit, push, pr] = implementActions(config);
+  config.procedures.implement.actions = [check, green, commit, push, pr];
   const { errors } = exampleLayer.check(config);
   assert.deepEqual(errors, [
     {
@@ -538,12 +541,9 @@ test('an agent Action after a Check is an error', () => {
 
 test('a comment between the agent Action and its Checks is an error', () => {
   const config = exampleLayer.config();
-  const { implement } = config.procedures;
-  implement.actions = [
-    procedureActions.actionById(implement, 'green'),
-    { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' },
-    ...implement.actions.slice(1),
-  ];
+  const [green, check, commit, push, pr] = implementActions(config);
+  const note = { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' };
+  config.procedures.implement.actions = [green, note, check, commit, push, pr];
   const { errors } = exampleLayer.check(config);
   assert.deepEqual(errors, [
     {
