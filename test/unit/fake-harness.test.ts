@@ -44,10 +44,12 @@ const pendingAfterTurn = (promise: Promise<unknown>) =>
     new Promise((resolve) => setImmediate(() => resolve('pending'))),
   ]);
 
-type Outcome = Awaited<ReturnType<fakeHarnessModule.FakeHarness['run']>>;
+type HarnessCallResult = Awaited<ReturnType<fakeHarnessModule.FakeHarness['run']>>;
 // The contract types usage as unknown; the fake reports every counter as a number.
-const cumulative = (outcome: Outcome) => (outcome.result.usage as { cumulative: Record<string, number> }).cumulative;
-const usage = (outcome: Outcome) => outcome.result.usage as Record<'cumulative' | 'delta', Record<string, unknown>>;
+const cumulative = (outcome: HarnessCallResult) =>
+  (outcome.result.usage as { cumulative: Record<string, number> }).cumulative;
+const usage = (outcome: HarnessCallResult) =>
+  outcome.result.usage as Record<'cumulative' | 'delta', Record<string, unknown>>;
 
 test('a scripted response is returned and files are written into cwd', async () => {
   const { harness, cwd } = await setup({

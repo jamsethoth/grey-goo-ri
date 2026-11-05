@@ -61,7 +61,7 @@ for (const [kind, subject] of [
   });
 }
 
-const impl = {
+const implementationReport = {
   summary: 'Adds the cart total.',
   definitionOfDone: [
     { item: 'Total sums items', met: true, evidence: 'test/cart.test.mjs' },
@@ -79,7 +79,7 @@ const impl = {
 };
 interface PrBodyFields {
   ticket: { number: number };
-  impl: Record<string, unknown>;
+  implementationReport: Record<string, unknown>;
   provenance: unknown[];
   marker: string;
 }
@@ -90,10 +90,19 @@ interface StopFields {
   reason: { text: string } | null;
 }
 // The shipped PR body, review comment and stop comment over the context their Actions give them.
-const prBody = ({ ticket, impl, provenance, marker: actionMarker }: PrBodyFields, redact?: publicText.Redact) =>
+const prBody = (
+  { ticket, implementationReport, provenance, marker: actionMarker }: PrBodyFields,
+  redact?: publicText.Redact,
+) =>
   render.publicBody(
     shipped('pr-body.md'),
-    { ticket, report: impl, red: impl.red, green: impl.green, provenance },
+    {
+      ticket,
+      report: implementationReport,
+      red: implementationReport.red,
+      green: implementationReport.green,
+      provenance,
+    },
     actionMarker,
     redact,
   );
@@ -133,7 +142,7 @@ const provenance = [
 
 test('the PR body carries the marker line and provenance', async () => {
   const actionMarker = marker.formatMarker(parts);
-  const body = await prBody({ ticket: { number: 7 }, impl, provenance, marker: actionMarker });
+  const body = await prBody({ ticket: { number: 7 }, implementationReport, provenance, marker: actionMarker });
   assert.match(body, /^Closes #7/);
   assert.equal(body.trimEnd().split('\n').at(-1), `<!-- gg-action ${actionMarker} -->`);
   assert.deepEqual(asText(marker.parseMarker(body)), asText(parts));
@@ -340,7 +349,7 @@ const fixtureMarker = marker.formatMarker(shapes.parts);
 test(`the PR body template matches its builder's output`, async () => {
   const body = await prBody({
     ticket: { number: 7 },
-    impl: shapes.prImpl,
+    implementationReport: shapes.prImpl,
     provenance: shapes.provenance,
     marker: fixtureMarker,
   });
@@ -498,7 +507,7 @@ const tokenResponse = {
   notes: 'TOKEN notes',
   diagnosis: 'TOKEN diagnosis',
 };
-const tokenImpl = {
+const tokenReport = {
   summary: 'TOKEN summary',
   definitionOfDone: [{ item: 'TOKEN item', met: true, evidence: 'TOKEN evidence' }],
   red: { command: 'TOKEN red', output: 'TOKEN red output' },
@@ -542,7 +551,10 @@ const BUILDERS: [string, (actionMarker: string) => string | Promise<string>][] =
   [
     'prBody',
     (actionMarker) =>
-      prBody({ ticket: { number: 7 }, impl: tokenImpl, provenance: tokenProvenance, marker: actionMarker }, redact),
+      prBody(
+        { ticket: { number: 7 }, implementationReport: tokenReport, provenance: tokenProvenance, marker: actionMarker },
+        redact,
+      ),
   ],
   ['reviewComment', (actionMarker) => reviewComment(tokenReview, tokenProvenance[1], actionMarker, redact)],
   [
@@ -621,7 +633,7 @@ test('marker-shaped agent text does not displace the rendered marker', async () 
   assert.deepEqual(asText(marker.parseMarker(message)), asText(parts));
   const body = await prBody({
     ticket: { number: 7 },
-    impl: { ...impl, summary: fake },
+    implementationReport: { ...implementationReport, summary: fake },
     provenance,
     marker: actionMarker,
   });
