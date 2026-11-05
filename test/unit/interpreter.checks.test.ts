@@ -1,18 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
-import type * as runContext from '../../lib/run-context.ts';
 import { signalsOf } from '../support/action-signals.ts';
 import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';
 import { actionEvent, headSha, intents, subjects } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
 import * as golden from '../support/golden.ts';
-import { RIGHT_ADD, WRONG_ADD, greenFixture, greenTrace, greenWrites, tddTrace } from '../support/golden-run.ts';
+import {
+  RIGHT_ADD,
+  WRONG_ADD,
+  greenFixture,
+  greenTrace,
+  greenWrites,
+  ranToEnd,
+  tddTrace,
+} from '../support/golden-run.ts';
 import * as keys from '../support/keys.ts';
 import { actionById } from '../support/procedure-actions.ts';
-import { MAJOR, fixed, review, reviewed, runReviewFlow } from '../support/review-flow.ts';
+import { MAJOR, fixed, review, reviewFixture, reviewed, runReviewFlow } from '../support/review-flow.ts';
 import { answerAll, answerCommand, editRuns, type SuiteRun } from '../support/suite-runs.ts';
 
 type GoldenFixture = golden.GoldenFixture;
@@ -367,16 +374,10 @@ test('a failed Check produces no evidence output', async (t) => {
 
 test('a tests-fail pass by name match alone carries foundByNameOnly: true in its evidence', async (t) => {
   const output = `Error: ${golden.TEST_NAME} threw\n`;
+  const built = await reviewFixture(t, { [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('ok')) });
   // The runner prints no per-test statuses, only the test's name.
-  const runShell = async (_command: string, options: { cwd: string }) =>
-    existsSync(join(options.cwd, 'lib', 'add.mjs'))
-      ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
-      : { code: 1, output, timedOut: false };
-  const fixture = await runReviewFlow(
-    t,
-    { [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('ok')) },
-    { exec: { runShell } as unknown as runContext.Deps['exec'] },
-  );
+  editRuns(built, (result) => (result.code === 0 ? result : { ...result, output }));
+  const fixture = await ranToEnd(built);
 
   assert.deepEqual(evidenceOf(fixture, 'red', 'red-check'), { command: 'npm test', output, foundByNameOnly: true });
   assert.match(
