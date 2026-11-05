@@ -46,6 +46,36 @@ test(
   },
 );
 
+// The clock starts with the chain's grandchild running and its middle never told to exit.
+test('an orphan case fails when its clock starts while the middle process still runs', CASE, async (t) => {
+  const pidFile = join(scratch, 'middle-runs.pid'); // the grandchild's, as orphanChain names it
+  await assert.rejects(
+    timedOutShell.timedOutOrphan(t, scratch, 'middle-runs', { timeoutMs: 1, ready: () => pidIn(pidFile) > 0 }),
+    /before the middle \d+ exited/,
+  );
+});
+
+// The watcher's ps always fails, so the middle exits with the grandchild never listed.
+test(
+  'an orphan case fails when its clock starts before the watcher has listed the grandchild',
+  POSIX_CASE,
+  async (t) => {
+    caseEnv.psStandIn(t, scratch, 'unlisted-ps', 'exit 1');
+    // as orphanChain names them
+    const [pidFile, midFile, goFile] = ['unlisted.pid', 'unlisted-mid.pid', 'unlisted.go'].map((name) =>
+      join(scratch, name),
+    );
+    const ready = () => {
+      if (pidIn(pidFile) > 0) writeFileSync(goFile, '');
+      return pidIn(midFile) > 0 && !alive(pidIn(midFile));
+    };
+    await assert.rejects(
+      timedOutShell.timedOutOrphan(t, scratch, 'unlisted', { timeoutMs: 1, ready }),
+      /before runShell held the grandchild \d+/,
+    );
+  },
+);
+
 test('runShell reports surviving PIDs and the kill error when termination fails', CASE, async (t) => {
   const { result, pid } = await timedOutShell.timedOutOrphan(t, scratch, 'refused', {
     killPid: () => {
@@ -163,7 +193,7 @@ test(
       commandLine,
       { timeoutMs: 3500, snapshotCommand: listing, onWatch: (watched) => (seen = watched) },
       ready,
-      t.signal,
+      t,
     );
     const mid = pidIn(midFile);
     assert.ok(wasReady, `the watcher never saw the middle ${mid} exit: ${result.output}`);
@@ -230,7 +260,7 @@ test(
       commandLine,
       { timeoutMs: 3500, snapshotCommand: listing },
       () => pidIn(pidFile) > 0,
-      t.signal,
+      t,
     );
     const pid = pidIn(pidFile);
     assert.ok(ready, `grandchild never started: ${result.output}`);

@@ -88,7 +88,7 @@ test(
       ),
       { timeoutMs: 6000 },
       () => existsSync(created),
-      t.signal,
+      t,
     );
     const match = result.output.match(/created pid=(\d+)/);
     const pid = match && Number(match[1]);
@@ -116,7 +116,7 @@ test(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob() },
       () => existsSync(pidFile),
-      t.signal,
+      t,
     );
     const pid = ready ? pidIn(pidFile) : null;
     try {
@@ -144,7 +144,7 @@ test(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob() },
       () => existsSync(pidFile),
-      t.signal,
+      t,
     );
     const pid = ready ? pidIn(pidFile) : null;
     try {
@@ -177,7 +177,7 @@ test(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob(), taskkillCommand: [process.execPath, [childScripts.SLOW_TASKKILL]] },
       () => existsSync(pidFile),
-      t.signal,
+      t,
     );
     const pid = ready ? pidIn(pidFile) : null;
     try {
@@ -202,7 +202,7 @@ test(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob(), taskkillCommand: refusedTaskkill },
       () => existsSync(pidFile),
-      t.signal,
+      t,
     );
     const pid = ready ? pidIn(pidFile) : null;
     try {
@@ -254,7 +254,7 @@ test(
       nodeCommand(t, childScripts.LONG_LIVED, pidFile),
       { timeoutMs: 3000, kernel32: withKernel32({ QueryInformationJobObject: () => 0 }) },
       () => existsSync(pidFile),
-      t.signal,
+      t,
     );
     assert.equal(result.timedOut, true);
     assert.ok(
@@ -301,6 +301,56 @@ test('runShell: job membership larger than the first query buffer is still liste
   }
 });
 
+// Termination is refused and the middle is never told to exit, so only the case's end can end the chain. The inner case
+// is cancelled as a timeout would end it: its cleanup has run before runShell answers, and it stays a failing todo.
+test(
+  'a case that ends before its refused command answers leaves no process of the chain running',
+  WIN_CASE,
+  async (t) => {
+    const { kernel32, members } = kernel32Doubles.refusedTermination();
+    t.after(() => members.forEach(processProbe.endProcess));
+    const pidFile = join(scratch, 'cancelled.pid');
+    const cancel = new AbortController();
+    const cancelled = t.test(
+      'a case that is cancelled',
+      { signal: cancel.signal, todo: 'cancelled on purpose' },
+      (inner) =>
+        timedOutShell.timeOutWhen(
+          childScripts.orphanChain(inner, scratch, 'cancelled').commandLine,
+          { timeoutMs: 1, kernel32 },
+          () => false,
+          inner,
+        ),
+    );
+    await waitFor(() => pidIn(pidFile) > 0, t.signal);
+    cancel.abort();
+    await cancelled;
+    // shell, top, middle and grandchild, and any console host; one left running fails at the case timeout
+    await waitFor(() => members.size >= 4 && ![...members].some(alive), t.signal);
+  },
+);
+
+test(
+  'a case that fails after its refused command answers leaves no process of the chain running',
+  WIN_CASE,
+  async (t) => {
+    const { kernel32, members } = kernel32Doubles.refusedTermination();
+    t.after(() => members.forEach(processProbe.endProcess));
+    const pidFile = join(scratch, 'failed.pid');
+    await t.test('a case that fails', { todo: 'fails on purpose' }, async (inner) => {
+      await timedOutShell.timeOutWhen(
+        childScripts.orphanChain(inner, scratch, 'failed').commandLine,
+        { timeoutMs: 1, kernel32 },
+        () => pidIn(pidFile) > 0,
+        inner,
+      );
+      assert.fail('fails on purpose');
+    });
+    assert.ok(members.size >= 4, JSON.stringify([...members])); // shell, top, middle and grandchild, and any console host
+    await waitFor(() => ![...members].some(alive), t.signal); // one left running fails at the case timeout
+  },
+);
+
 // The PowerShell job helper wrote these notes into the command's own streams, so a command could forge them: a fail
 // note turned an exit 0 into 127, and an empty survivors note with done markers read as a clean cleanup.
 test(
@@ -317,7 +367,7 @@ test(
       nodeCommand(t, childScripts.FORGED_JOB_NOTES, 'clean', pidFile),
       { timeoutMs: 3000, kernel32: withKernel32({ TerminateJobObject: () => 0 }) },
       () => pidIn(pidFile) > 0,
-      t.signal,
+      t,
     );
     assert.equal(result.timedOut, true);
     assert.ok(
@@ -338,7 +388,7 @@ test(
       commandLine,
       { timeoutMs: 4000, kernel32: null },
       () => pidIn(pidFile) > 0,
-      t.signal,
+      t,
     );
     assert.ok(ready, `child never started: ${result.output}`);
     assert.equal(result.timedOut, true);
@@ -427,7 +477,7 @@ test(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob() },
       () => pidIn(pidFile) > 0,
-      t.signal,
+      t,
     );
     survivors = timedOut.survivors;
     assert.ok(ready, `child never started: ${timedOut.output}`);

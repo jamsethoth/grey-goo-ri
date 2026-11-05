@@ -83,7 +83,7 @@ test(
       nodeCommand(t, childScripts.LONG_LIVED, printed, 'SENTINEL-BEFORE-HANG'),
       { timeoutMs: 4000 },
       () => existsSync(printed),
-      t.signal,
+      t,
     );
     assert.equal(result.code, null);
     assert.equal(result.timedOut, true);

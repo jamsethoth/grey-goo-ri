@@ -38,8 +38,9 @@ export async function timeOutWhen(
   commandLine: string,
   { kernel32, ...options }: ShellCaseOptions,
   ready: () => boolean,
-  signal: AbortSignal,
+  t: TestContext,
 ) {
+  const { signal } = t;
   const { runShell } = kernel32 === undefined ? exec : exec.createExec({ kernel32 });
   const clock = new AbortController();
   let settled = false;
@@ -69,7 +70,11 @@ export async function timedOutOrphan(
   t: TestContext,
   directory: string,
   name: string,
-  { beforeClock, ...options }: ShellCaseOptions & { beforeClock?: () => void } = {},
+  {
+    beforeClock,
+    ready: givenReady,
+    ...options
+  }: ShellCaseOptions & { beforeClock?: () => void; ready?: () => boolean } = {},
 ) {
   const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(t, directory, name);
   t.after(() => processProbe.endProcessIn(pidFile));
@@ -86,8 +91,8 @@ export async function timedOutOrphan(
   const { result, ready: wasReady } = await timeOutWhen(
     commandLine,
     { timeoutMs: 3500, ...options, onWatch: (watched) => (seen = watched) },
-    ready,
-    t.signal,
+    givenReady ?? ready,
+    t,
   );
   const pid = processProbe.pidIn(pidFile);
   assert.ok(
