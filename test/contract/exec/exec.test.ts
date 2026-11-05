@@ -127,15 +127,16 @@ test(
 );
 
 test('the result names the containment it used', CASE, async (t) => {
-  const command = nodeCommand(t, childScripts.PRINTS_LINE, 'ran');
+  // built before each run, so a run after the case's timeout stops at nodeCommand's abort check
+  const command = () => nodeCommand(t, childScripts.PRINTS_LINE, 'ran');
   const win = process.platform === 'win32';
-  const contained: exec.ShellResult & { containmentError?: string } = await exec.runShell(command, {
+  const contained: exec.ShellResult & { containmentError?: string } = await exec.runShell(command(), {
     timeoutMs: 60_000,
   });
   assert.equal(contained.containment, win ? 'job' : 'none', contained.output);
   assert.equal(contained.containmentError, undefined);
   for (const kernel32 of [null, kernel32Doubles.noJob()]) {
-    const result = await exec.createExec({ kernel32 }).runShell(command, { timeoutMs: 60_000 });
+    const result = await exec.createExec({ kernel32 }).runShell(command(), { timeoutMs: 60_000 });
     assert.equal(result.code, 0, result.output);
     assert.equal(result.containment, 'none');
     // a Windows call that runs uncontained says so whether or not it times out
