@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -39,7 +39,7 @@ test('tryAcquire returns null while another process holds the lock', async (t) =
 
 // Windows unlocks a terminated process's locks after a delay that depends on system resources, so these wait for the
 // lock itself. A lock that is never freed fails at the case timeout, which aborts t.signal and ends the wait.
-async function acquireWhenFreed(t, commonDir) {
+async function acquireWhenFreed(t: TestContext, commonDir: string) {
   for (;;) {
     const handle = await locks.tryAcquire(commonDir, 'repo');
     if (handle) return handle;
@@ -74,12 +74,12 @@ test('a killed holder frees the lock', { timeout: 120_000 }, async (t) => {
 });
 
 // Runs an ES module script in a node child started with `flags`, resolving with its exit code, stdout and stderr.
-function runScript(flags, script) {
+function runScript(flags: string[], script: string) {
   return childExit
     .exitOf(
       spawn(process.execPath, [...flags, '--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] }),
     )
-    .then(({ stdout, ...exit }) => ({ ...exit, out: stdout }));
+    .then(({ stdout = '', ...exit }) => ({ ...exit, stdout }));
 }
 
 // A lock whose connection only a local variable held would be freed by the first collection; gc() forces one now.
@@ -92,10 +92,10 @@ await new Promise((resolve) => setImmediate(resolve));
 const second = await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo');
 process.stdout.write(JSON.stringify({ owns: !!handle?.db, second }));
 await locks.release(handle);`;
-  const { code, out, err } = await runScript(['--expose-gc'], script);
+  const { code, stdout, err } = await runScript(['--expose-gc'], script);
   assert.deepEqual({ code, err }, { code: 0, err: '' });
   assert.deepEqual(
-    JSON.parse(out),
+    JSON.parse(stdout),
     { owns: true, second: null },
     'the handle owns the connection, and after a collection the lock is still held',
   );
@@ -120,15 +120,15 @@ await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo')
 // the end the clock's time runs out, so a wait the case abandoned at its timeout (`waiting`) reaches its deadline; once
 // it has, the case's own lock (`holding`) is released. In that order, because Windows cannot remove a directory whose
 // lock file is open, and a wait's attempt after the removal would recreate it.
-const timedLocks = (t, during = () => {}) => {
+const timedLocks = (t: TestContext, during: () => unknown = () => {}) => {
   let now = 0;
   let ended = false;
-  const sleeps = [];
-  const open = { holder: null, waits: [] };
+  const sleeps: number[] = [];
+  const open: { holder: locks.LockHandle | null; waits: Promise<unknown>[] } = { holder: null, waits: [] };
   const timed = locks.createLocks({
     clock: {
       now: () => (ended ? Infinity : now),
-      sleep: async (ms) => {
+      sleep: async (ms: number) => {
         sleeps.push(ms);
         await during();
         now += ms;
@@ -143,8 +143,8 @@ const timedLocks = (t, during = () => {}) => {
   return {
     locks: timed,
     sleeps,
-    holding: (handle) => (open.holder = handle),
-    waiting: (promise) => {
+    holding: (handle: locks.LockHandle) => (open.holder = handle),
+    waiting: <Result>(promise: Promise<Result>) => {
       open.waits.push(promise);
       return promise;
     },
@@ -153,7 +153,7 @@ const timedLocks = (t, during = () => {}) => {
 
 // The lock-timing cases are bounded: an acquire that stops sleeping on the injected clock never reaches its deadline.
 test('acquire waits for release', { timeout: 10_000 }, async (t) => {
-  let first;
+  let first: locks.LockHandle;
   const timed = timedLocks(t, () => locks.release(first));
   const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   first = timed.holding(await timed.locks.acquire(commonDir, 'repo'));
@@ -212,8 +212,8 @@ test('withLock releases on throw', async (t) => {
   assert.equal(await locks.withLock(commonDir, 'epic-1', async () => 42), 42);
 });
 
-// Simultaneous BEGIN EXCLUSIVE can hand every contender SQLITE_BUSY (ADR 0008), so no owner is a valid outcome; the lock
-// must then be free, not wedged. Repeating the race is lock-stress.mjs's job, not the suite's.
+// Simultaneous BEGIN EXCLUSIVE can hand every contender SQLITE_BUSY (ADR 0008), so no owner is a valid outcome; the
+// lock must then be free, not wedged. Repeating the race is lock-stress.ts's job, not the suite's.
 test('contending processes never throw and grant at most one owner', { timeout: 120_000 }, async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const children = Array.from({ length: 6 }, () => {
@@ -227,15 +227,17 @@ test('contending processes never throw and grant at most one owner', { timeout: 
   // Every contender has started before any tries, and the owner holds until every contender has reported.
   await Promise.all(children.map(({ lines }) => lines.next()));
   for (const { child } of children) child.stdin.write('go\n');
-  const outputs = await Promise.all(children.map(async ({ lines }) => JSON.parse((await lines.next()).value)));
+  const outputs = await Promise.all(
+    children.map(async ({ lines }) => JSON.parse((await lines.next()).value as string)),
+  );
   for (const { child } of children) child.stdin.end();
   await Promise.all(children.map(({ exited }) => exited));
   assert.deepEqual(
-    outputs.filter((o) => o.error),
+    outputs.filter((output) => output.error),
     [],
     'no contender throws',
   );
-  const won = outputs.filter((o) => o.handle).length;
+  const won = outputs.filter((output) => output.handle).length;
   assert.ok(won <= 1, `at most one owner, got ${won}`);
   const handle = await acquireWhenFreed(t, commonDir);
   assert.ok(handle, 'the lock is free once every contender has exited');

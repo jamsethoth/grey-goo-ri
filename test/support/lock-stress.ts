@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 export const passed = (code: number | null, signal: NodeJS.Signals | null, output: string): boolean =>
   code === 0 && signal === null && /^# fail 0$/m.test(output) && /^# pass [1-9]/m.test(output);
 
-const suite = fileURLToPath(new URL('../contract/sqlite/locks.test.mjs', import.meta.url));
+const suite = fileURLToPath(new URL('../contract/sqlite/locks.test.ts', import.meta.url));
 
 function runOnce(): Promise<{ clean: boolean; output: string }> {
   return new Promise((resolve) => {

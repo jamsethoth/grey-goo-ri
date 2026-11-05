@@ -9,13 +9,13 @@ import { sh } from '../../support/git-shell.ts';
 import * as tempDirectory from '../../support/temp-directory.ts';
 
 // Equal refs do not show a copy owns its objects: a store shared through a link would pass a ref check.
-const assertNoObject = (repos, sha) => {
+const assertNoObject = (repos: string[], sha: string) => {
   for (const cwd of repos)
     assert.equal(spawnSync('git', ['cat-file', '-e', sha], { cwd }).status, 1, `${sha} reached ${cwd}`);
 };
 // A copy borrowing the template's objects through alternates passes the check above, but breaks once the template is
 // repacked or removed.
-const assertOwnObjects = (...dirs) => {
+const assertOwnObjects = (...dirs: string[]) => {
   for (const dir of dirs) {
     for (const store of [join(dir, 'main', '.git', 'objects'), join(dir, 'origin.git', 'objects')]) {
       assert.equal(existsSync(join(store, 'info', 'alternates')), false, `${store} borrows objects`);
