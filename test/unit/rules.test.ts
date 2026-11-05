@@ -1,55 +1,57 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-
-const load = () => import('../../lib/rules.ts');
+import * as checks from '../../lib/checks.ts';
+import * as procedures from '../../lib/procedures.ts';
+import * as rules from '../../lib/rules.ts';
 
 // Every Rule Table of the example Flow (docs/research/user-defined-procedures-example-flow.md).
-const flow = JSON.parse(readFileSync(new URL('../fixtures/rules-flow.json', import.meta.url), 'utf8'));
+const flow: { tables: rules.RuleTable[] } = JSON.parse(
+  readFileSync(new URL('../fixtures/rules-flow.json', import.meta.url), 'utf8'),
+);
 const [testsFailStopped, implementStopped, fixStopped, reviewPassed, reviewStopped] = flow.tables;
 
-const states = { kind: 'enum', values: ['passed', 'failed', 'not-run'] };
+const states: rules.FieldSpec = { kind: 'enum', values: ['passed', 'failed', 'not-run'] };
 
-// A ladder of `pass >= k` rows, from `pass >= n` down to `pass >= 1`, each also on `when`: each row is partly taken by
-// every earlier row.
-const ladder = (name, n, when = {}) => ({
+// A ladder of `pass >= k` rows, from `pass >= rungs` down to `pass >= 1`, each also on `when`: each row is partly
+// taken by every earlier row.
+const ladder = (name: string, rungs: number, when = {}): rules.RuleTable => ({
   name,
-  fields: { pass: { kind: 'integer', min: 1, max: n + 1 } },
-  rows: Array.from({ length: n }, (_, k) => ({ when: { ...when, pass: { '>=': n - k } }, outcome: `o${k}` })),
+  fields: { pass: { kind: 'integer', min: 1, max: rungs + 1 } },
+  rows: Array.from({ length: rungs }, (_, i) => ({ when: { ...when, pass: { '>=': rungs - i } }, outcome: `o${i}` })),
 });
 
-// n booleans, all mentioned by row 0 (every one true); row k > 0 matches b(k) true, so it is partly taken by every
-// earlier row.
-function booleanTable(name, n, rowCount) {
-  const fields = {};
-  const all = {};
-  for (let i = 0; i < n; i++) {
+// `booleans` booleans, all mentioned by row 0 (every one true); row i > 0 matches b(i) true, so it is partly taken by
+// every earlier row.
+function booleanTable(name: string, booleans: number, rowCount: number) {
+  const fields: rules.FieldMap = {};
+  const all: Record<string, rules.Condition> = {};
+  for (let i = 0; i < booleans; i++) {
     fields[`response.b${i}`] = { kind: 'boolean' };
     all[`response.b${i}`] = true;
   }
-  const rows = [{ when: all, outcome: 'all' }];
-  for (let k = 1; k < rowCount; k++) rows.push({ when: { [`response.b${k}`]: true }, outcome: `b${k}` });
+  const rows: rules.RuleRow[] = [{ when: all, outcome: 'all' }];
+  for (let i = 1; i < rowCount; i++) rows.push({ when: { [`response.b${i}`]: true }, outcome: `b${i}` });
   return { name, fields, rows };
 }
 
 // Five 10-value enums, all mentioned by row 0; row k matches one distinct (e0, e1) pair, so no two rows overlap.
-function enumGrid(name, rowCount) {
-  const fields = {};
-  for (let f = 0; f < 5; f++)
-    fields[`response.e${f}`] = { kind: 'enum', values: Array.from({ length: 10 }, (_, v) => `v${v}`) };
-  const rows = [
+function enumGrid(name: string, rowCount: number) {
+  const fields: rules.FieldMap = {};
+  for (let field = 0; field < 5; field++)
+    fields[`response.e${field}`] = { kind: 'enum', values: Array.from({ length: 10 }, (_, value) => `v${value}`) };
+  const rows: rules.RuleRow[] = [
     {
       when: { 'response.e0': 'v0', 'response.e1': 'v0', 'response.e2': 'v0', 'response.e3': 'v0', 'response.e4': 'v0' },
       outcome: 'o0',
     },
   ];
-  for (let k = 1; k < rowCount; k++)
-    rows.push({ when: { 'response.e0': `v${k % 10}`, 'response.e1': `v${Math.floor(k / 10)}` }, outcome: `o${k}` });
+  for (let i = 1; i < rowCount; i++)
+    rows.push({ when: { 'response.e0': `v${i % 10}`, 'response.e1': `v${Math.floor(i / 10)}` }, outcome: `o${i}` });
   return { name, fields, rows };
 }
 
-test('first match picks the earliest matching row', async () => {
-  const rules = await load();
+test('first match picks the earliest matching row', () => {
   const input = { claim: 'ok', check: { 'review-pass': 'passed', repeat: 'failed' }, response: { needsTest: true } };
   assert.equal(rules.evaluate(reviewPassed, input), 0);
   assert.equal(rules.evaluate(reviewPassed, { ...input, claim: 'changes' }), 1);
@@ -67,9 +69,8 @@ test('first match picks the earliest matching row', async () => {
   );
 });
 
-test('an absent input matches no condition on its fields', async () => {
-  const rules = await load();
-  const table = {
+test('an absent input matches no condition on its fields', () => {
+  const table: rules.RuleTable = {
     name: 'fix.passed',
     fields: {
       'inputs.prior.verdict': { kind: 'enum', values: ['ok', 'changes'], absent: true },
@@ -87,12 +88,11 @@ test('an absent input matches no condition on its fields', async () => {
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
   assert.equal(rules.evaluate(table, result.defaultExample), null);
-  assert.equal(result.defaultExample.inputs?.prior?.count, undefined);
+  assert.equal((result.defaultExample as { inputs?: { prior?: { count?: number } } }).inputs?.prior?.count, undefined);
 });
 
-test('a row covered by earlier rows is an error', async () => {
-  const rules = await load();
-  const table = {
+test('a row covered by earlier rows is an error', () => {
+  const table: rules.RuleTable = {
     name: 'implement.failed',
     fields: { 'check.test': states, 'response.flaky': { kind: 'boolean' } },
     rows: [
@@ -113,9 +113,8 @@ test('a row covered by earlier rows is an error', async () => {
   assert.equal(result.defaultExample, null);
 });
 
-test("a partial overlap is a warning naming both rows' conditions and an example input", async () => {
-  const rules = await load();
-  const table = {
+test("a partial overlap is a warning naming both rows' conditions and an example input", () => {
+  const table: rules.RuleTable = {
     name: 'review.passed',
     fields: { claim: { kind: 'enum', values: ['ok', 'changes'] }, 'response.needsTest': { kind: 'boolean' } },
     rows: [
@@ -141,9 +140,8 @@ test("a partial overlap is a warning naming both rows' conditions and an example
   assert.deepEqual(result.defaultExample, { claim: 'changes', response: { needsTest: false } });
 });
 
-test('a run of rows taken the same way is one warning', async () => {
-  const rules = await load();
-  const table = {
+test('a run of rows taken the same way is one warning', () => {
+  const table: rules.RuleTable = {
     name: 'fix.failed',
     fields: { pass: { kind: 'integer', min: 1, max: 5 } },
     rows: [
@@ -156,20 +154,26 @@ test('a run of rows taken the same way is one warning', async () => {
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
   assert.equal(result.warnings.length, 1);
-  const [w] = result.warnings;
-  assert.deepEqual([w.rows, w.earlier, w.from, w.fields], [[1, 3], [[0, 0]], 0, ['pass']]);
-  assert.match(
-    w.message,
-    /^rule table fix\.failed: rows 2-4 are each partly taken by every earlier firing row, all on pass, for example \{"pass":\d\}$/,
+  const [warning] = result.warnings;
+  assert.deepEqual(
+    { rows: warning.rows, earlier: warning.earlier, from: warning.from, fields: warning.fields },
+    { rows: [1, 3], earlier: [[0, 0]], from: 0, fields: ['pass'] },
   );
-  assert.equal(rules.evaluate(table, w.example), 0);
-  assert.equal(rules.evaluate({ ...table, rows: [table.rows[1]] }, w.example), 0);
+  assert.match(
+    warning.message,
+    new RegExp(
+      String.raw`^rule table fix\.failed: rows 2-4 are each partly taken by every earlier firing row, ` +
+        String.raw`all on pass, for example \{"pass":\d\}$`,
+    ),
+  );
+  assert.equal(rules.evaluate(table, warning.example), 0);
+  assert.equal(rules.evaluate({ ...table, rows: [table.rows[1]] }, warning.example), 0);
   assert.equal(result.defaultExample, null);
 });
 
-test('rows taken by the same earlier rows are one warning', async () => {
-  const rules = await load();
-  const table = {
+/* eslint-disable id-length -- the tables' fields n, x and y are the names the expected messages quote */
+test('rows taken by the same earlier rows are one warning', () => {
+  const table: rules.RuleTable = {
     name: 'review.passed',
     fields: { x: { kind: 'boolean' }, y: { kind: 'boolean' } },
     rows: [
@@ -181,15 +185,14 @@ test('rows taken by the same earlier rows are one warning', async () => {
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier, w.from]),
-    [[[1, 2], [[0, 0]], null]],
+    result.warnings.map(({ rows, earlier, from }) => ({ rows, earlier, from })),
+    [{ rows: [1, 2], earlier: [[0, 0]], from: null }],
   );
   assert.match(result.warnings[0].message, /: rows 2-3 are each partly taken by row 1, all on x, y, for example/);
 });
 
-test('a run names only the earlier rows that fire', async () => {
-  const rules = await load();
-  const table = {
+test('a run names only the earlier rows that fire', () => {
+  const table: rules.RuleTable = {
     name: 'fix.failed',
     fields: { n: { kind: 'integer' } },
     rows: [
@@ -201,12 +204,12 @@ test('a run names only the earlier rows that fire', async () => {
   };
   const result = rules.analyse(table);
   assert.deepEqual(
-    result.errors.map((e) => e.row),
+    result.errors.map(({ row }) => row),
     [1],
   );
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier, w.from]),
-    [[[2, 3], [[0, 0]], 0]],
+    result.warnings.map(({ rows, earlier, from }) => ({ rows, earlier, from })),
+    [{ rows: [2, 3], earlier: [[0, 0]], from: 0 }],
   );
   assert.match(
     result.warnings[0].message,
@@ -214,10 +217,9 @@ test('a run names only the earlier rows that fire', async () => {
   );
 });
 
-test('a ladder after an unrelated row is one warning', async () => {
-  const rules = await load();
+test('a ladder after an unrelated row is one warning', () => {
   // Row 1 takes no part of the ladder, so the ladder's rows are each taken by every earlier firing row from row 2.
-  const table = {
+  const table: rules.RuleTable = {
     name: 'fix.failed',
     fields: { mode: { kind: 'boolean' }, pass: { kind: 'integer', min: 1, max: 1_001 } },
     rows: [{ when: { mode: false }, outcome: 'off' }, ...ladder('', 1_000, { mode: true }).rows],
@@ -225,8 +227,8 @@ test('a ladder after an unrelated row is one warning', async () => {
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier, w.from]),
-    [[[2, 1_000], [[1, 1]], 1]],
+    result.warnings.map(({ rows, earlier, from }) => ({ rows, earlier, from })),
+    [{ rows: [2, 1_000], earlier: [[1, 1]], from: 1 }],
   );
   assert.match(
     result.warnings[0].message,
@@ -234,9 +236,8 @@ test('a ladder after an unrelated row is one warning', async () => {
   );
 });
 
-test('a warning names at most ten earlier rows and counts the rest', async () => {
-  const rules = await load();
-  const table = {
+test('a warning names at most ten earlier rows and counts the rest', () => {
+  const table: rules.RuleTable = {
     name: 'plan.passed',
     fields: { n: { kind: 'integer' } },
     rows: [
@@ -258,19 +259,21 @@ test('a warning names at most ten earlier rows and counts the rest', async () =>
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier, w.more]),
-    [[[12, 12], [[0, 9]], 2]],
+    result.warnings.map(({ rows, earlier, more }) => ({ rows, earlier, more })),
+    [{ rows: [12, 12], earlier: [[0, 9]], more: 2 }],
   );
   assert.match(
     result.warnings[0].message,
-    /: row 13 \(n >= 0\) is partly taken by row 1 \(n = 0\), row 2 \(n = 1\), .*, row 10 \(n = 9\), and 2 more rows, for example/,
+    new RegExp(
+      String.raw`: row 13 \(n >= 0\) is partly taken by row 1 \(n = 0\), row 2 \(n = 1\), .*, ` +
+        String.raw`row 10 \(n = 9\), and 2 more rows, for example`,
+    ),
   );
   assert.doesNotMatch(result.warnings[0].message, /row 11 \(/);
 });
 
-test('rows that share their first ten earlier rows but not the rest are separate warnings', async () => {
-  const rules = await load();
-  const table = {
+test('rows that share their first ten earlier rows but not the rest are separate warnings', () => {
+  const table: rules.RuleTable = {
     name: 'plan.passed',
     fields: { n: { kind: 'integer' } },
     rows: [
@@ -294,21 +297,23 @@ test('rows that share their first ten earlier rows but not the rest are separate
   assert.deepEqual(result.errors, []);
   // Row 13 is taken by rows 1-12 and row 14 by rows 1-11: the same first ten, different sets.
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier, w.more]),
+    result.warnings.map(({ rows, earlier, more }) => ({ rows, earlier, more })),
     [
-      [[12, 12], [[0, 9]], 2],
-      [[13, 13], [[0, 9]], 1],
+      { rows: [12, 12], earlier: [[0, 9]], more: 2 },
+      { rows: [13, 13], earlier: [[0, 9]], more: 1 },
     ],
   );
   assert.match(result.warnings[1].message, /, row 10 \(n = 9\), and 1 more row, for example/);
 });
 
-test("analysis leaves the fields' value lists unchanged", async () => {
-  const rules = await load();
+/* eslint-enable id-length */
+
+test("analysis leaves the fields' value lists unchanged", () => {
   const values = Object.freeze(['ok', 'changes']);
-  const table = {
+  const table: rules.RuleTable = {
     name: 'fix.passed',
-    fields: { 'inputs.prior.verdict': { kind: 'enum', values, absent: true } },
+    // Frozen, so analysis would throw if it changed the list.
+    fields: { 'inputs.prior.verdict': { kind: 'enum', values: values as string[], absent: true } },
     rows: [{ when: { 'inputs.prior.verdict': 'changes' }, outcome: 'changes' }],
   };
   const result = rules.analyse(table);
@@ -316,12 +321,11 @@ test("analysis leaves the fields' value lists unchanged", async () => {
   assert.deepEqual(values, ['ok', 'changes']);
 });
 
-test("integer intervals are cut at the table's constants", async () => {
-  const rules = await load();
-  const fields = { 'response.count': { kind: 'integer' } };
+test("integer intervals are cut at the table's constants", () => {
+  const fields: rules.FieldMap = { 'response.count': { kind: 'integer' } };
 
   // Testing only the boundary values 0 and 10 would wrongly call row 3 never-firing; 1 reaches it.
-  const ranges = {
+  const ranges: rules.RuleTable = {
     name: 'plan.passed',
     fields,
     rows: [
@@ -333,18 +337,22 @@ test("integer intervals are cut at the table's constants", async () => {
   const result = rules.analyse(ranges);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier]),
-    [[[2, 2], [[0, 1]]]],
+    result.warnings.map(({ rows, earlier }) => ({ rows, earlier })),
+    [{ rows: [2, 2], earlier: [[0, 1]] }],
   );
   assert.match(
     result.warnings[0].message,
-    /row 3 \(response\.count >= 0 and response\.count <= 10\) is partly taken by row 1 \(response\.count = 0\), row 2 \(response\.count = 10\)/,
+    new RegExp(
+      String.raw`row 3 \(response\.count >= 0 and response\.count <= 10\) ` +
+        String.raw`is partly taken by row 1 \(response\.count = 0\), ` +
+        String.raw`row 2 \(response\.count = 10\)`,
+    ),
   );
   assert.equal(rules.evaluate(ranges, { response: { count: 1 } }), 2);
   assert.notEqual(result.defaultExample, null);
   assert.equal(rules.evaluate(ranges, result.defaultExample), null);
 
-  const covered = {
+  const covered: rules.RuleTable = {
     name: 'plan.failed',
     fields,
     rows: [
@@ -355,7 +363,7 @@ test("integer intervals are cut at the table's constants", async () => {
   };
   const second = rules.analyse(covered);
   assert.deepEqual(
-    second.errors.map((e) => e.row),
+    second.errors.map(({ row }) => row),
     [2],
   );
   assert.equal(second.defaultExample, null);
@@ -366,9 +374,9 @@ test("integer intervals are cut at the table's constants", async () => {
   assert.equal(bounded.defaultExample, null);
 });
 
-test('integer intervals stay exact beyond the safe integers', async () => {
-  const rules = await load();
-  const table = {
+/* eslint-disable id-length -- the field n, as the tables above name it */
+test('integer intervals stay exact beyond the safe integers', () => {
+  const table: rules.RuleTable = {
     name: 'plan.passed',
     fields: { n: { kind: 'integer' } },
     rows: [
@@ -384,9 +392,10 @@ test('integer intervals stay exact beyond the safe integers', async () => {
   assert.equal(rules.evaluate(table, result.defaultExample), null);
 });
 
-test('a witness for a __proto__ path is an own property and leaves prototypes alone', async () => {
-  const rules = await load();
-  const table = {
+/* eslint-enable id-length */
+
+test('a witness for a __proto__ path is an own property and leaves prototypes alone', () => {
+  const table: rules.RuleTable = {
     name: 'review.passed',
     fields: { 'response.__proto__.rulesProbe': { kind: 'boolean' } },
     rows: [{ when: { 'response.__proto__.rulesProbe': true }, outcome: 'ok' }],
@@ -395,12 +404,12 @@ test('a witness for a __proto__ path is an own property and leaves prototypes al
   assert.equal(Object.hasOwn(Object.prototype, 'rulesProbe'), false);
   assert.deepEqual(result.errors, []);
   assert.equal(rules.evaluate(table, result.defaultExample), null);
-  assert.ok(Object.hasOwn(result.defaultExample.response, '__proto__'));
-  assert.equal(Object.getPrototypeOf(result.defaultExample.response), Object.prototype);
+  const witness = result.defaultExample as { response: object };
+  assert.ok(Object.hasOwn(witness.response, '__proto__'));
+  assert.equal(Object.getPrototypeOf(witness.response), Object.prototype);
 });
 
-test("the example Flow's tables have no unreachable or never-firing row", async () => {
-  const rules = await load();
+test("the example Flow's tables have no unreachable or never-firing row", () => {
   assert.deepEqual(rules.analyse(testsFailStopped).errors, []);
   assert.deepEqual(rules.analyse(implementStopped).errors, []);
   assert.deepEqual(rules.analyse(fixStopped).errors, []);
@@ -408,24 +417,31 @@ test("the example Flow's tables have no unreachable or never-firing row", async 
   assert.deepEqual(rules.analyse(reviewStopped).errors, []);
 });
 
-test('the example review table reports three overlaps in two row warnings', async () => {
-  const rules = await load();
+test('the example review table reports three overlaps in two row warnings', () => {
   const result = rules.analyse(reviewPassed);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier]),
+    result.warnings.map(({ rows, earlier }) => ({ rows, earlier })),
     [
-      [[1, 1], [[0, 0]]],
-      [[2, 2], [[0, 1]]],
+      { rows: [1, 1], earlier: [[0, 0]] },
+      { rows: [2, 2], earlier: [[0, 1]] },
     ],
   );
   assert.match(
     result.warnings[0].message,
-    /row 2 \(check\.repeat = failed\) is partly taken by row 1 \(claim = ok and check\.review-pass = passed\), for example/,
+    new RegExp(
+      String.raw`row 2 \(check\.repeat = failed\) ` +
+        String.raw`is partly taken by row 1 \(claim = ok and check\.review-pass = passed\), ` +
+        String.raw`for example`,
+    ),
   );
   assert.match(
     result.warnings[1].message,
-    /row 3 \(response\.needsTest = true\) is partly taken by row 1 \(claim = ok and check\.review-pass = passed\), row 2 \(check\.repeat = failed\), for example/,
+    new RegExp(
+      String.raw`row 3 \(response\.needsTest = true\) ` +
+        String.raw`is partly taken by row 1 \(claim = ok and check\.review-pass = passed\), ` +
+        String.raw`row 2 \(check\.repeat = failed\), for example`,
+    ),
   );
   assert.equal(rules.evaluate(reviewPassed, result.warnings[1].example), 0);
   assert.equal(rules.evaluate({ ...reviewPassed, rows: [reviewPassed.rows[2]] }, result.warnings[1].example), 0);
@@ -435,8 +451,7 @@ test('the example review table reports three overlaps in two row warnings', asyn
 // The heap is not measured: it moves with garbage collection (docs/testing.md rule 1). What analysis holds per pair of
 // rows is bounded by the work limit, whose cases follow; these two pin that a heavy table's result keeps one entry per
 // row, or one warning per run, and never a list per pair.
-test('rows that never fire are one error each, naming no earlier row', async () => {
-  const rules = await load();
+test('rows that never fire are one error each, naming no earlier row', () => {
   const rows = Array.from({ length: 10_000 }, (_, i) => ({ when: {}, outcome: `o${i}` }));
   const result = rules.analyse({ name: 'heavy.passed', fields: {}, rows });
   assert.equal(result.errors.length, 9_999);
@@ -447,8 +462,7 @@ test('rows that never fire are one error each, naming no earlier row', async () 
   assert.deepEqual(result.warnings, []);
 });
 
-test('a long run of overlapping rows is one warning naming only its first taker', async () => {
-  const rules = await load();
+test('a long run of overlapping rows is one warning naming only its first taker', () => {
   const result = rules.analyse(ladder('fix.failed', 3_000));
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.warnings, [
@@ -466,20 +480,18 @@ test('a long run of overlapping rows is one warning naming only its first taker'
   ]);
 });
 
-test('a table just under the work limit is analysed', async () => {
-  const rules = await load();
+test('a table just under the work limit is analysed', () => {
   assert.equal(rules.WORK_LIMIT, 10_000_000);
   // 2**20 points times 9 rows is 9,437,184 row checks.
   const result = rules.analyse(booleanTable('wide.passed', 20, 9));
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.from]),
-    [[[1, 8], 0]],
+    result.warnings.map(({ rows, from }) => ({ rows, from })),
+    [{ rows: [1, 8], from: 0 }],
   );
 });
 
-test('a table exactly at the work limit is analysed', async () => {
-  const rules = await load();
+test('a table exactly at the work limit is analysed', () => {
   assert.equal(rules.WORK_LIMIT, 10_000_000);
   // 10**5 points times 100 rows is exactly 10,000,000 row checks.
   const result = rules.analyse(enumGrid('grid.passed', 100));
@@ -487,8 +499,7 @@ test('a table exactly at the work limit is analysed', async () => {
   assert.deepEqual(result.warnings, []);
 });
 
-test('a table just over it (many booleans) is an error naming the table', async () => {
-  const rules = await load();
+test('a table just over it (many booleans) is an error naming the table', () => {
   assert.equal(rules.WORK_LIMIT, 10_000_000);
   // 2**20 points times 10 rows is 10,485,760 row checks.
   const result = rules.analyse(booleanTable('wide.failed', 20, 10));
@@ -496,18 +507,20 @@ test('a table just over it (many booleans) is an error naming the table', async 
   assert.equal(result.errors[0].row, null);
   assert.match(
     result.errors[0].message,
-    /^rule table wide\.failed needs 10485760 row checks, above the limit of 10000000; its largest fields: response\.b0 \(2 values\)/,
+    new RegExp(
+      String.raw`^rule table wide\.failed needs 10485760 row checks, ` +
+        String.raw`above the limit of 10000000; its largest fields: response\.b0 \(2 values\)`,
+    ),
   );
   assert.deepEqual(result.warnings, []);
 });
 
 // Two Claim tokens' boxes (J16): each box is a whole field map, and the table's domain is their union.
-const tokenBoxes = (fields, ...tokens) =>
+const tokenBoxes = (fields: rules.FieldMap, ...tokens: string[]): rules.FieldMap[] =>
   tokens.map((token) => ({ ...fields, claim: { kind: 'enum', values: [token] } }));
 
-test('a row taken in one box and free in another is partly taken', async () => {
-  const rules = await load();
-  const table = {
+test('a row taken in one box and free in another is partly taken', () => {
+  const table: rules.RuleTable = {
     name: 'review.passed',
     boxes: tokenBoxes({}, 'a', 'b'),
     rows: [
@@ -518,8 +531,8 @@ test('a row taken in one box and free in another is partly taken', async () => {
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier, w.example]),
-    [[[1, 1], [[0, 0]], { claim: 'a' }]],
+    result.warnings.map(({ rows, earlier, example }) => ({ rows, earlier, example })),
+    [{ rows: [1, 1], earlier: [[0, 0]], example: { claim: 'a' } }],
   );
   assert.equal(
     result.warnings[0].message,
@@ -529,9 +542,8 @@ test('a row taken in one box and free in another is partly taken', async () => {
   assert.deepEqual(result.falls, []);
 });
 
-test('a row taken in two boxes by different rows gets one warning naming both', async () => {
-  const rules = await load();
-  const table = {
+test('a row taken in two boxes by different rows gets one warning naming both', () => {
+  const table: rules.RuleTable = {
     name: 'review.passed',
     boxes: tokenBoxes({ 'response.flag': { kind: 'boolean' } }, 'a', 'b', 'c'),
     rows: [
@@ -543,20 +555,23 @@ test('a row taken in two boxes by different rows gets one warning naming both', 
   const result = rules.analyse(table);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(
-    result.warnings.map((w) => [w.rows, w.earlier, w.more]),
-    [[[2, 2], [[0, 1]], 0]],
+    result.warnings.map(({ rows, earlier, more }) => ({ rows, earlier, more })),
+    [{ rows: [2, 2], earlier: [[0, 1]], more: 0 }],
   );
   assert.match(
     result.warnings[0].message,
-    /^rule table review\.passed: row 3 \(response\.flag = true\) is partly taken by row 1 \(claim = a and response\.flag = true\), row 2 \(claim = b and response\.flag = true\), for example /,
+    new RegExp(
+      String.raw`^rule table review\.passed: row 3 \(response\.flag = true\) ` +
+        String.raw`is partly taken by row 1 \(claim = a and response\.flag = true\), ` +
+        String.raw`row 2 \(claim = b and response\.flag = true\), for example `,
+    ),
   );
   // Every box has a false flag that no row matches.
   assert.deepEqual(result.falls, [0, 1, 2]);
   assert.equal(rules.evaluate(table, result.defaultExample), null);
 });
 
-test('the work limit counts every box', async () => {
-  const rules = await load();
+test('the work limit counts every box', () => {
   // Each box is 2**20 points times 5 rows, 5,242,880 row checks; the two together are 10,485,760.
   const { fields, rows } = booleanTable('wide.passed', 20, 5);
   const result = rules.analyse({ name: 'wide.passed', boxes: tokenBoxes(fields, 'a', 'b'), rows });
@@ -569,9 +584,8 @@ test('the work limit counts every box', async () => {
   assert.deepEqual(result.warnings, []);
 });
 
-test('only the boxes with an input no row matches fall', async () => {
-  const rules = await load();
-  const table = {
+test('only the boxes with an input no row matches fall', () => {
+  const table: rules.RuleTable = {
     name: 'review.passed',
     boxes: tokenBoxes({ 'response.flag': { kind: 'boolean' } }, 'a', 'b', 'c'),
     rows: [
@@ -586,21 +600,19 @@ test('only the boxes with an input no row matches fall', async () => {
 });
 
 // The validator accepts an operator by its name in the one table, so each one it accepts must also run (#198).
-test('every operator the validator accepts evaluates in a rule and in a count Check', async () => {
-  const rules = await load();
-  const procedures = await import('../../lib/procedures.ts');
-  const checks = await import('../../lib/checks.ts');
+test('every operator the validator accepts evaluates in a rule and in a count Check', () => {
   assert.deepEqual(procedures.OPS, Object.keys(procedures.COMPARISONS));
-  for (const op of procedures.OPS) {
-    const table = { name: 'count', rows: [{ when: { 'response.n': { [op]: 1 } }, outcome: 'hit' }] };
-    for (const n of [0, 1, 2]) {
-      const expected = procedures.COMPARISONS[op](n, 1);
-      assert.equal(rules.evaluate(table, { response: { n } }) === 0, expected, `rule ${n} ${op} 1`);
-      const findings = Array.from({ length: n }, () => ({ severity: 'minor' }));
+  for (const operator of procedures.OPS) {
+    const table = { name: 'count', rows: [{ when: { 'response.n': { [operator]: 1 } }, outcome: 'hit' }] };
+    for (const count of [0, 1, 2]) {
+      const expected = procedures.COMPARISONS[operator](count, 1);
+      // eslint-disable-next-line id-length -- the response field the rule reads
+      assert.equal(rules.evaluate(table, { response: { n: count } }) === 0, expected, `rule ${count} ${operator} 1`);
+      const findings = Array.from({ length: count }, () => ({ severity: 'minor' }));
       assert.equal(
-        checks.responseCheck({ findings }, { count: 'findings', [op]: 1 }).passed,
+        checks.responseCheck({ findings }, { count: 'findings', [operator]: 1 }).passed,
         expected,
-        `count ${n} ${op} 1`,
+        `count ${count} ${operator} 1`,
       );
     }
   }

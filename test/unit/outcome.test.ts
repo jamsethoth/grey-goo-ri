@@ -1,16 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as outcome from '../../lib/outcome.ts';
+import type * as procedures from '../../lib/procedures.ts';
+import type * as visit from '../../lib/visit.ts';
+
+// A Claim as a case gives it: a valid one without its reason, an invalid one without its token, or none at all.
+type GivenClaim = Partial<visit.ClaimSignal> | null;
+interface GivenSignals {
+  result?: visit.CallSignal;
+  claim?: GivenClaim;
+  checks?: outcome.TableCheck[];
+  retries?: outcome.Signals['retries'];
+  policy?: outcome.ResolutionPolicy;
+}
+// A case's decide input names only the Procedure tables it reads.
+type GivenDecision = Omit<outcome.Deciding, 'claim' | 'procedure'> & {
+  claim: GivenClaim;
+  procedure: Partial<procedures.Procedure>;
+};
+const decided = (input: GivenDecision) => outcome.decide(input as outcome.Deciding);
 
 const none = { transient: 0, rateLimited: 0, timeout: 0, parse: 0 };
-const completed = { status: 'completed', response: { claim: 'ok' }, failure: null };
-const failed = (cls, retryAfterMs = null) => ({
+const completed: visit.CallSignal = { status: 'completed', response: { claim: 'ok' }, failure: null };
+const failed = (failureClass: string, retryAfterMs: number | null = null): visit.CallSignal => ({
   status: 'failed',
   response: null,
-  failure: { failureClass: cls, retryAfterMs },
+  failure: { failureClass, retryAfterMs },
 });
-const claim = (token) => ({ valid: true, token });
-const check = (name, passed, integrity = false) => ({
+const claim = (token: string) => ({ valid: true, token });
+const check = (name: string, passed: boolean, integrity = false) => ({
   name,
   passed,
   integrity,
@@ -18,117 +36,141 @@ const check = (name, passed, integrity = false) => ({
 });
 const integrityOk = check('worktree-unchanged', true, true);
 
-function resolve({ result = completed, claim: c = null, checks = [integrityOk], retries = none, policy } = {}) {
+function resolve({
+  result = completed,
+  claim: claimSignal = null,
+  checks = [integrityOk],
+  retries = none,
+  policy,
+}: GivenSignals = {}) {
   return outcome.resolve(
-    policy ? { result, claim: c, checks, retries, policy } : { result, claim: c, checks, retries },
+    (policy
+      ? { result, claim: claimSignal, checks, retries, policy }
+      : { result, claim: claimSignal, checks, retries }) as outcome.Signals,
   );
 }
 
-function assertRow(r, row, out, direction) {
-  assert.equal(r.row, row);
-  assert.equal(r.outcome, out);
-  assert.equal(r.direction, direction);
+interface Row {
+  row: string;
+  outcome: string;
+  direction: visit.Direction;
 }
+function assertRow(resolution: visit.TableResolution, expected: Row) {
+  assert.equal(resolution.row, expected.row);
+  assert.equal(resolution.outcome, expected.outcome);
+  assert.equal(resolution.direction, expected.direction);
+}
+// The fields a Procedure's tables decide, named so a failed comparison names the field.
+const decisionOf = (resolution: visit.TableResolution) => ({
+  outcome: resolution.outcome,
+  direction: resolution.direction,
+  rule: resolution.rule,
+});
 
 test('DEFAULT_POLICY holds the retry budgets by kind', () => {
   assert.deepEqual(outcome.DEFAULT_POLICY, { transient: 2, rateLimited: 2, timeout: 1, parse: 1 });
 });
 
 test('row integrity-violation: failed integrity check on a completed ok -> integrity-violation', () => {
-  const r = resolve({ claim: claim('ok'), checks: [check('worktree-unchanged', false, true), check('test', true)] });
-  assertRow(r, 'integrity-violation', 'integrity-violation', 'stop');
-  assert.equal(r.check, 'worktree-unchanged');
+  const resolution = resolve({
+    claim: claim('ok'),
+    checks: [check('worktree-unchanged', false, true), check('test', true)],
+  });
+  assertRow(resolution, { row: 'integrity-violation', outcome: 'integrity-violation', direction: 'stop' });
+  assert.equal(resolution.check, 'worktree-unchanged');
 });
 
 test('row transient-retry: failed transient within budget -> transient-retry', () => {
-  const r = resolve({ result: failed('transient', 1500) });
-  assertRow(r, 'transient-retry', 'transient-retry', 'retry');
-  assert.equal(r.retryAfterMs, 1500);
-  assert.equal(r.retryKind, 'transient', 'the budget the retry spends');
+  const resolution = resolve({ result: failed('transient', 1500) });
+  assertRow(resolution, { row: 'transient-retry', outcome: 'transient-retry', direction: 'retry' });
+  assert.equal(resolution.retryAfterMs, 1500);
+  assert.equal(resolution.retryKind, 'transient', 'the budget the retry spends');
 });
 
 test('row transient-retry: failed rate-limited within budget -> transient-retry', () => {
-  const r = resolve({ result: failed('rate-limited', 60000), retries: { ...none, rateLimited: 1 } });
-  assertRow(r, 'transient-retry', 'transient-retry', 'retry');
-  assert.equal(r.retryAfterMs, 60000);
-  assert.equal(r.retryKind, 'rateLimited');
+  const resolution = resolve({ result: failed('rate-limited', 60000), retries: { ...none, rateLimited: 1 } });
+  assertRow(resolution, { row: 'transient-retry', outcome: 'transient-retry', direction: 'retry' });
+  assert.equal(resolution.retryAfterMs, 60000);
+  assert.equal(resolution.retryKind, 'rateLimited');
 });
 
 test('row transient-exhausted: failed transient at budget -> harness-transient', () => {
-  assertRow(
-    resolve({ result: failed('transient'), retries: { ...none, transient: 2 } }),
-    'transient-exhausted',
-    'harness-transient',
-    'stop',
-  );
-  assertRow(
-    resolve({ result: failed('rate-limited'), retries: { ...none, rateLimited: 2 } }),
-    'transient-exhausted',
-    'harness-transient',
-    'stop',
-  );
+  assertRow(resolve({ result: failed('transient'), retries: { ...none, transient: 2 } }), {
+    row: 'transient-exhausted',
+    outcome: 'harness-transient',
+    direction: 'stop',
+  });
+  assertRow(resolve({ result: failed('rate-limited'), retries: { ...none, rateLimited: 2 } }), {
+    row: 'transient-exhausted',
+    outcome: 'harness-transient',
+    direction: 'stop',
+  });
 });
 
-for (const cls of ['auth', 'quota', 'budget']) {
-  test(`row run-stop: failed ${cls} -> run-stop`, () => {
-    const r = resolve({ result: failed(cls) });
-    assertRow(r, 'run-stop', 'run-stop', 'stop');
-    assert.equal(r.failureClass, cls);
+for (const failureClass of ['auth', 'quota', 'budget']) {
+  test(`row run-stop: failed ${failureClass} -> run-stop`, () => {
+    const resolution = resolve({ result: failed(failureClass) });
+    assertRow(resolution, { row: 'run-stop', outcome: 'run-stop', direction: 'stop' });
+    assert.equal(resolution.failureClass, failureClass);
   });
 }
 
-for (const status of ['timed-out', 'killed']) {
+for (const status of ['timed-out', 'killed'] as const) {
   test(`row timeout-retry: ${status} within budget -> timeout-retry`, () => {
-    const r = resolve({ result: { status, response: { claim: 'ok' }, failure: null }, claim: claim('ok') });
-    assertRow(r, 'timeout-retry', 'timeout-retry', 'retry');
-    assert.equal(r.retryKind, 'timeout');
+    const resolution = resolve({ result: { status, response: { claim: 'ok' }, failure: null }, claim: claim('ok') });
+    assertRow(resolution, { row: 'timeout-retry', outcome: 'timeout-retry', direction: 'retry' });
+    assert.equal(resolution.retryKind, 'timeout');
   });
 }
 
 test('row timeout-exhausted: timed-out at budget -> harness-timeout', () => {
-  const r = resolve({
+  const resolution = resolve({
     result: { status: 'timed-out', response: null, failure: null },
     retries: { ...none, timeout: 1 },
   });
-  assertRow(r, 'timeout-exhausted', 'harness-timeout', 'stop');
+  assertRow(resolution, { row: 'timeout-exhausted', outcome: 'harness-timeout', direction: 'stop' });
 });
 
 test('row unknown-failure: failed unknown -> needs-human', () => {
-  assertRow(resolve({ result: failed('unknown') }), 'unknown-failure', 'needs-human', 'stop');
+  assertRow(resolve({ result: failed('unknown') }), {
+    row: 'unknown-failure',
+    outcome: 'needs-human',
+    direction: 'stop',
+  });
 });
 
 test('row parse-retry: completed, invalid claim within budget -> parse-retry', () => {
-  const r = resolve({ claim: { valid: false, reason: 'more than one token' } });
-  assertRow(r, 'parse-retry', 'parse-retry', 'retry');
-  assert.equal(r.retryKind, 'parse');
+  const resolution = resolve({ claim: { valid: false, reason: 'more than one token' } });
+  assertRow(resolution, { row: 'parse-retry', outcome: 'parse-retry', direction: 'retry' });
+  assert.equal(resolution.retryKind, 'parse');
 });
 
 test('row parse-exhausted: completed, invalid claim at budget -> harness-unparsed', () => {
-  const r = resolve({ claim: { valid: false, reason: 'field missing' }, retries: { ...none, parse: 1 } });
-  assertRow(r, 'parse-exhausted', 'harness-unparsed', 'stop');
+  const resolution = resolve({ claim: { valid: false, reason: 'field missing' }, retries: { ...none, parse: 1 } });
+  assertRow(resolution, { row: 'parse-exhausted', outcome: 'harness-unparsed', direction: 'stop' });
 });
 
 // The claim rows are gone (#115): any valid Claim, stop tokens included, hands over to the Procedure's tables (decide).
 for (const token of ['ok', 'blocked', 'changes']) {
   test(`row claimed: completed, valid ${token} -> ${token}, handed to the tables`, () => {
-    const r = resolve({ claim: claim(token), checks: [integrityOk, check('test', false)] });
-    assertRow(r, 'claimed', token, 'advance');
-    assert.deepEqual(r.rule, { table: 'fixed', row: 'claimed' });
-    assert.equal(r.retryKind, null, 'a Check spends no Attempt budget');
+    const resolution = resolve({ claim: claim(token), checks: [integrityOk, check('test', false)] });
+    assertRow(resolution, { row: 'claimed', outcome: token, direction: 'advance' });
+    assert.deepEqual(resolution.rule, { table: 'fixed', row: 'claimed' });
+    assert.equal(resolution.retryKind, null, 'a Check spends no Attempt budget');
   });
 }
 
 test('integrity beats a timed-out result', () => {
-  const r = resolve({
+  const resolution = resolve({
     result: { status: 'timed-out', response: null, failure: null },
     claim: null,
     checks: [check('worktree-unchanged', false, true)],
   });
-  assertRow(r, 'integrity-violation', 'integrity-violation', 'stop');
+  assertRow(resolution, { row: 'integrity-violation', outcome: 'integrity-violation', direction: 'stop' });
 });
 
 test('a stop token beats passing checks', () => {
-  const r = outcome.decide({
+  const resolution = decided({
     result: completed,
     claim: claim('blocked'),
     checks: [integrityOk, check('test', true)],
@@ -137,30 +179,37 @@ test('a stop token beats passing checks', () => {
     procedure: {},
     scope: {},
   });
-  assert.deepEqual([r.outcome, r.direction, r.rule], ['blocked', 'stop', { table: 'stopped', row: null }]);
+  assert.deepEqual(decisionOf(resolution), {
+    outcome: 'blocked',
+    direction: 'stop',
+    rule: { table: 'stopped', row: null },
+  });
 });
 
 test('a completed result with response null and no claim is a parse retry, then parse-exhausted at budget', () => {
-  const result = { status: 'completed', response: null, failure: null };
-  assertRow(resolve({ result, claim: null }), 'parse-retry', 'parse-retry', 'retry');
-  assertRow(
-    resolve({ result, claim: null, retries: { ...none, parse: 1 } }),
-    'parse-exhausted',
-    'harness-unparsed',
-    'stop',
-  );
+  const result: visit.CallSignal = { status: 'completed', response: null, failure: null };
+  assertRow(resolve({ result, claim: null }), { row: 'parse-retry', outcome: 'parse-retry', direction: 'retry' });
+  assertRow(resolve({ result, claim: null, retries: { ...none, parse: 1 } }), {
+    row: 'parse-exhausted',
+    outcome: 'harness-unparsed',
+    direction: 'stop',
+  });
 });
 
 test('a policy overrides the retry budgets', () => {
   const policy = { ...outcome.DEFAULT_POLICY, transient: 0 };
-  assertRow(resolve({ result: failed('transient'), policy }), 'transient-exhausted', 'harness-transient', 'stop');
+  assertRow(resolve({ result: failed('transient'), policy }), {
+    row: 'transient-exhausted',
+    outcome: 'harness-transient',
+    direction: 'stop',
+  });
 });
 
 for (const [status, failure] of [
   ['failed', { failureClass: 'transient', retryAfterMs: null }],
   ['timed-out', null],
   ['killed', null],
-]) {
+] as [visit.CallSignal['status'], visit.HarnessFailure | null][]) {
   test(`a ${status} result with a valid ok claim does not advance`, () => {
     assert.notEqual(
       resolve({ result: { status, response: { claim: 'ok' }, failure }, claim: claim('ok') }).direction,
@@ -180,84 +229,101 @@ test('advance needs completed, a valid claim and no integrity violation', () => 
 });
 
 test('resolve is pure: it does not mutate its inputs', () => {
-  const input = { result: failed('transient', 10), claim: null, checks: [integrityOk], retries: { ...none } };
+  const input: GivenSignals = {
+    result: failed('transient', 10),
+    claim: null,
+    checks: [integrityOk],
+    retries: { ...none },
+  };
   const copy = structuredClone(input);
-  outcome.resolve(input);
+  outcome.resolve(input as outcome.Signals);
   assert.deepEqual(input, copy);
 });
 
 // #115: the Visit's Outcome (Q3d). A Procedure's tables pick among the legitimate Outcomes only after gg's fixed rows.
-test('the decision order is fixed rows, stopped, passed or failed, otherwise', () => {
-  const procedure = {
+const ordered = {
+  procedure: {
     stopped: [{ when: { 'response.reason': 'misscoped' }, outcome: 'misscoped' }],
     passed: [{ when: { pass: 2 }, outcome: 'recovered' }],
     failed: [{ when: { 'check.lint': 'failed' }, outcome: 'lint-failed' }],
     otherwise: 'changes',
-  };
-  const tokens = { ok: { requires: ['test', 'lint'] }, blocked: { stop: true } };
-  const decide = (token, checks, scope, extra = {}) =>
-    outcome.decide({
-      result: completed,
-      claim: claim(token),
-      checks: [integrityOk, ...checks],
-      retries: none,
-      token: tokens[token],
-      procedure,
-      scope: { pass: 1, check: {}, response: {}, ...scope },
-      ...extra,
-    });
+  },
+  tokens: { ok: { requires: ['test', 'lint'] }, blocked: { stop: true } } as Record<string, procedures.ClaimToken>,
+};
+const decideOrdered = (token: string, checks: outcome.TableCheck[], scope: object, extra = {}) =>
+  decided({
+    result: completed,
+    claim: claim(token),
+    checks: [integrityOk, ...checks],
+    retries: none,
+    token: ordered.tokens[token],
+    procedure: ordered.procedure,
+    scope: { pass: 1, check: {}, response: {}, ...scope },
+    ...extra,
+  });
+
+test('the decision order is fixed rows, stopped, passed or failed, otherwise', () => {
   const passing = [check('test', true), check('lint', true)];
 
   // gg's fixed rows come first, whatever the Claim and its tables say.
-  const violated = decide('blocked', [check('worktree-unchanged', false, true)], { response: { reason: 'misscoped' } });
+  const violated = decideOrdered('blocked', [check('worktree-unchanged', false, true)], {
+    response: { reason: 'misscoped' },
+  });
   assert.deepEqual(
-    [violated.outcome, violated.rule],
-    ['integrity-violation', { table: 'fixed', row: 'integrity-violation' }],
+    { outcome: violated.outcome, rule: violated.rule },
+    { outcome: 'integrity-violation', rule: { table: 'fixed', row: 'integrity-violation' } },
   );
   // A stop token goes to the stopped table, else stays the token; passing Checks never override it, nor does otherwise.
-  const misscoped = decide('blocked', passing, { response: { reason: 'misscoped' } });
-  assert.deepEqual(
-    [misscoped.outcome, misscoped.direction, misscoped.rule],
-    ['misscoped', 'stop', { table: 'stopped', row: 0 }],
-  );
-  const blocked = decide('blocked', passing, { response: { reason: 'none' } });
-  assert.deepEqual(
-    [blocked.outcome, blocked.direction, blocked.rule],
-    ['blocked', 'stop', { table: 'stopped', row: null }],
-  );
+  const misscoped = decideOrdered('blocked', passing, { response: { reason: 'misscoped' } });
+  assert.deepEqual(decisionOf(misscoped), {
+    outcome: 'misscoped',
+    direction: 'stop',
+    rule: { table: 'stopped', row: 0 },
+  });
+  const blocked = decideOrdered('blocked', passing, { response: { reason: 'none' } });
+  assert.deepEqual(decisionOf(blocked), {
+    outcome: 'blocked',
+    direction: 'stop',
+    rule: { table: 'stopped', row: null },
+  });
   // Every required Check passed: the passed table, then otherwise.
-  const recovered = decide('ok', passing, { pass: 2 });
-  assert.deepEqual(
-    [recovered.outcome, recovered.direction, recovered.rule],
-    ['recovered', 'advance', { table: 'passed', row: 0 }],
-  );
-  const otherwise = decide('ok', passing, {});
-  assert.deepEqual(
-    [otherwise.outcome, otherwise.direction, otherwise.rule],
-    ['changes', 'advance', { table: 'passed', row: 'otherwise' }],
-  );
+  const recovered = decideOrdered('ok', passing, { pass: 2 });
+  assert.deepEqual(decisionOf(recovered), {
+    outcome: 'recovered',
+    direction: 'advance',
+    rule: { table: 'passed', row: 0 },
+  });
+  const otherwise = decideOrdered('ok', passing, {});
+  assert.deepEqual(decisionOf(otherwise), {
+    outcome: 'changes',
+    direction: 'advance',
+    rule: { table: 'passed', row: 'otherwise' },
+  });
   // A required Check failed: recovery while it is left, then the failed table, then otherwise.
   const failing = [check('test', true), check('lint', false)];
-  const recover = decide('ok', failing, { check: { lint: 'failed' } }, { recoverable: true });
-  assert.deepEqual(
-    [recover.outcome, recover.direction, recover.rule],
-    ['recover', 'retry', { table: 'fixed', row: 'recover' }],
-  );
-  const lintFailed = decide('ok', failing, { check: { lint: 'failed' } });
-  assert.deepEqual(
-    [lintFailed.outcome, lintFailed.direction, lintFailed.rule],
-    ['lint-failed', 'stop', { table: 'failed', row: 0 }],
-  );
-  const failedOtherwise = decide('ok', failing, { check: { lint: 'passed' } });
-  assert.deepEqual(
-    [failedOtherwise.outcome, failedOtherwise.direction, failedOtherwise.rule],
-    ['changes', 'stop', { table: 'failed', row: 'otherwise' }],
-  );
+  const recover = decideOrdered('ok', failing, { check: { lint: 'failed' } }, { recoverable: true });
+  assert.deepEqual(decisionOf(recover), {
+    outcome: 'recover',
+    direction: 'retry',
+    rule: { table: 'fixed', row: 'recover' },
+  });
+  const lintFailed = decideOrdered('ok', failing, { check: { lint: 'failed' } });
+  assert.deepEqual(decisionOf(lintFailed), {
+    outcome: 'lint-failed',
+    direction: 'stop',
+    rule: { table: 'failed', row: 0 },
+  });
+  const failedOtherwise = decideOrdered('ok', failing, { check: { lint: 'passed' } });
+  assert.deepEqual(decisionOf(failedOtherwise), {
+    outcome: 'changes',
+    direction: 'stop',
+    rule: { table: 'failed', row: 'otherwise' },
+  });
 });
 
 test('with no row and no otherwise the Outcome is the token, or failed when a required Check failed', () => {
-  const decide = (checks) =>
-    outcome.decide({
+  const decide = (checks: outcome.TableCheck[]) =>
+    decided({
       result: completed,
       claim: claim('ok'),
       checks: [integrityOk, ...checks],
@@ -266,14 +332,22 @@ test('with no row and no otherwise the Outcome is the token, or failed when a re
       procedure: {},
       scope: { pass: 1, check: {} },
     });
-  const passed = decide([check('test', true)]);
-  assert.deepEqual([passed.outcome, passed.direction, passed.rule], ['ok', 'advance', { table: 'passed', row: null }]);
-  const failed = decide([check('test', false)]);
-  assert.deepEqual([failed.outcome, failed.direction, failed.rule], ['failed', 'stop', { table: 'failed', row: null }]);
+  const allPassed = decide([check('test', true)]);
+  assert.deepEqual(decisionOf(allPassed), {
+    outcome: 'ok',
+    direction: 'advance',
+    rule: { table: 'passed', row: null },
+  });
+  const oneFailed = decide([check('test', false)]);
+  assert.deepEqual(decisionOf(oneFailed), {
+    outcome: 'failed',
+    direction: 'stop',
+    rule: { table: 'failed', row: null },
+  });
 });
 
 test('a passing Integrity Assertion does not count as the required Check it shares a name with', () => {
-  const r = outcome.decide({
+  const resolution = decided({
     result: completed,
     claim: claim('ok'),
     checks: [check('lint', true, true)],
@@ -282,7 +356,11 @@ test('a passing Integrity Assertion does not count as the required Check it shar
     procedure: {},
     scope: { pass: 1, check: {} },
   });
-  assert.deepEqual([r.outcome, r.direction, r.rule], ['failed', 'stop', { table: 'failed', row: null }]);
+  assert.deepEqual(decisionOf(resolution), {
+    outcome: 'failed',
+    direction: 'stop',
+    rule: { table: 'failed', row: null },
+  });
 });
 
 // The key order reaches persisted JSON (the Visit's settled resolution, the Action Event's rule and signals), and
@@ -290,8 +368,8 @@ test('a passing Integrity Assertion does not count as the required Check it shar
 test("the Resolution's keys keep their order from resolve and from decide", () => {
   const keys = ['outcome', 'direction', 'row', 'rule', 'check', 'retryAfterMs', 'retryKind', 'failureClass'];
   assert.deepEqual(Object.keys(resolve({ claim: claim('ok') })), keys);
-  const decide = (checks, extra = {}) =>
-    outcome.decide({
+  const decide = (checks: outcome.TableCheck[], extra = {}) =>
+    decided({
       result: completed,
       claim: claim('ok'),
       checks: [integrityOk, ...checks],
@@ -310,14 +388,14 @@ test("the Resolution's keys keep their order from resolve and from decide", () =
 });
 
 // #66: GitHub and git failures of a remote Action, classified as gh and git report them.
-const http = (status, message, headers = {}) =>
+const http = (status: number, message: string, headers: Record<string, string> = {}) =>
   Object.assign(new Error(`gh: ${message} (HTTP ${status})\ngh api repos/{owner}/{repo}/issues/7/comments`), {
     code: 1,
     http: { status, headers },
   });
 const NOW = 1_790_000_000_000;
 
-for (const [name, err, cls, retryable] of [
+for (const [name, err, failureClass, retryable] of [
   ['a 502', http(502, 'Bad Gateway'), 'transient', true],
   [
     'a 500 from a gh verb',
@@ -378,7 +456,8 @@ for (const [name, err, cls, retryable] of [
     'a status only in the appended command',
     Object.assign(
       new Error(
-        "GraphQL: Head sha can't be blank (createPullRequest)\ngh pr create --draft --title Handle HTTP 502 errors --body-file -",
+        "GraphQL: Head sha can't be blank (createPullRequest)\n" +
+          'gh pr create --draft --title Handle HTTP 502 errors --body-file -',
       ),
       { code: 1, stdout: '', stderr: "GraphQL: Head sha can't be blank (createPullRequest)\n" },
     ),
@@ -390,7 +469,8 @@ for (const [name, err, cls, retryable] of [
     'a git 503',
     Object.assign(
       new Error(
-        "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 503\ngit push origin x",
+        "fatal: unable to access 'https://github.com/o/r.git/': " +
+          'The requested URL returned error: 503\ngit push origin x',
       ),
       {
         code: 128,
@@ -405,7 +485,8 @@ for (const [name, err, cls, retryable] of [
     'a git 429',
     Object.assign(
       new Error(
-        "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429\ngit push origin x",
+        "fatal: unable to access 'https://github.com/o/r.git/': " +
+          'The requested URL returned error: 429\ngit push origin x',
       ),
       {
         code: 128,
@@ -420,7 +501,8 @@ for (const [name, err, cls, retryable] of [
     'a git 403',
     Object.assign(
       new Error(
-        "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\ngit push origin x",
+        "fatal: unable to access 'https://github.com/o/r.git/': " +
+          'The requested URL returned error: 403\ngit push origin x',
       ),
       {
         code: 128,
@@ -435,7 +517,8 @@ for (const [name, err, cls, retryable] of [
     'a git 404',
     Object.assign(
       new Error(
-        "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 404\ngit push origin x",
+        "fatal: unable to access 'https://github.com/o/r.git/': " +
+          'The requested URL returned error: 404\ngit push origin x',
       ),
       {
         code: 128,
@@ -456,15 +539,16 @@ for (const [name, err, cls, retryable] of [
     'transient',
     true,
   ],
-]) {
-  test(`a remote failure is classified: ${name} is ${retryable ? 'a retryable' : 'a final'} ${cls}`, () => {
-    const f = outcome.classifyRemoteFailure(err);
-    assert.equal(f.failureClass, cls);
-    assert.equal(f.retryable, retryable);
+] as [string, outcome.RemoteError, string, boolean][]) {
+  test(`a remote failure is classified: ${name} is ${retryable ? 'a retryable' : 'a final'} ${failureClass}`, () => {
+    const failure = outcome.classifyRemoteFailure(err);
+    assert.equal(failure.failureClass, failureClass);
+    assert.equal(failure.retryable, retryable);
   });
 }
 
-const delay = (err, n) => outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), n, NOW);
+const delay = (err: outcome.RemoteError, retry: number) =>
+  outcome.remoteRetryDelay(outcome.classifyRemoteFailure(err), retry, NOW);
 
 test('a remote failure backs off by its Retry-After first', () => {
   assert.equal(delay(http(403, 'You have exceeded a secondary rate limit.', { 'retry-after': '7' }), 1), 7_000);
@@ -499,27 +583,29 @@ test('a 401 is auth and a 403 that is not a rate limit is permission', () => {
 });
 
 // git's credential failures carry no HTTP status, only git's own words.
-const gitFailure = (stderr) =>
+const gitFailure = (stderr: string) =>
   Object.assign(new Error(`${stderr}\ngit push origin x`), { code: 128, stdout: '', stderr: `${stderr}\n` });
 
 test("git's credential failure is auth", () => {
   for (const stderr of [
-    "remote: Invalid username or token. Password authentication is not supported for Git operations.\nfatal: Authentication failed for 'https://github.com/o/r.git/'",
+    'remote: Invalid username or token. Password authentication is not supported for Git operations.\n' +
+      "fatal: Authentication failed for 'https://github.com/o/r.git/'",
     "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
   ]) {
-    const f = outcome.classifyRemoteFailure(gitFailure(stderr));
-    assert.equal(f.failureClass, 'auth', stderr);
-    assert.equal(f.retryable, false, stderr);
+    const failure = outcome.classifyRemoteFailure(gitFailure(stderr));
+    assert.equal(failure.failureClass, 'auth', stderr);
+    assert.equal(failure.retryable, false, stderr);
   }
 });
 
 test('a push rejection whose output also carries a rate-limit message is rejected', () => {
-  const f = outcome.classifyRemoteFailure(
+  const failure = outcome.classifyRemoteFailure(
     gitFailure(
-      'remote: API rate limit exceeded for user ID 1.\nTo https://github.com/o/r.git\n ! [rejected]        x -> x (fetch first)\nerror: failed to push some refs',
+      'remote: API rate limit exceeded for user ID 1.\nTo https://github.com/o/r.git\n' +
+        ' ! [rejected]        x -> x (fetch first)\nerror: failed to push some refs',
     ),
   );
-  assert.equal(f.failureClass, 'rejected');
+  assert.equal(failure.failureClass, 'rejected');
   const rateLimitOnStdout = Object.assign(new Error('git push origin x'), {
     code: 1,
     stdout: 'remote: API rate limit exceeded for user ID 1.\n',
@@ -544,9 +630,9 @@ test('every class in the table has a reach, and the Harness rows follow it', () 
   });
   const rowOf = { retry: 'transient-retry', run: 'run-stop', ticket: 'unknown-failure' };
   for (const [failureClass, { reach, budget }] of Object.entries(outcome.FAILURE_CLASSES)) {
-    const r = resolve({ result: failed(failureClass), policy: outcome.DEFAULT_POLICY });
-    assert.equal(r.row, rowOf[reach], failureClass);
-    assert.equal(r.retryKind, budget, failureClass);
-    assert.equal(r.failureClass, failureClass);
+    const resolution = resolve({ result: failed(failureClass), policy: outcome.DEFAULT_POLICY });
+    assert.equal(resolution.row, rowOf[reach], failureClass);
+    assert.equal(resolution.retryKind, budget, failureClass);
+    assert.equal(resolution.failureClass, failureClass);
   }
 });
