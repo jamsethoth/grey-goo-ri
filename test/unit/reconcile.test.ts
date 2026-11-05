@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
@@ -8,6 +10,7 @@ import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 
 // The Ticket branch's log from its head: two commits since the base, the base, and the commit the base was cut from.
 const branchLog = [
@@ -29,6 +32,16 @@ test('branchMessages lists the commits since the base, oldest first', async () =
 
 test('branchMessages throws when the base is not in the log', async () => {
   await assert.rejects(executionReads.branchMessages(onBranch('d'.repeat(40))), /base d{40} is not in the log/);
+});
+
+// Only a corrupt row is held for a human; any other failure to read the record reaches the caller.
+test('a record the State Database cannot open fails with its error, not as a corrupt record', async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
+  mkdirSync(join(commonDir, 'gg', 'gg.db'), { recursive: true });
+  await assert.rejects(
+    reconcile.loadExecutionRecord(commonDir, 1),
+    (err: Error) => !(err instanceof record.RecordCorruptError) && /unable to open database file/.test(err.message),
+  );
 });
 
 // An Integrity Violation at red's Attempt, which a reset rolls back.

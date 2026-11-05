@@ -1,19 +1,33 @@
 // lib/git.ts's contract: every case runs against the real module over temp repositories and against the fake git, so a
 // verb whose fake drifts from git fails here. Cases the fake cannot model run on real git alone, at the end.
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as gitModule from '../../../lib/git.ts';
 import * as paths from '../../../lib/paths.ts';
+import type * as fakeGitModule from '../../support/fake-git.ts';
 import * as templateRepos from '../../support/template-repos.ts';
-import { sh } from '../../support/git-shell.ts';
+import * as gitShell from '../../support/git-shell.ts';
 import * as tempDirectory from '../../support/temp-directory.ts';
 
-// A copy of the template's bare origin and its clone, with one commit on main, and the steps a case takes outside gg, in
-// real git.
-function realRepo(t) {
+// A repository and the steps a case takes outside gg, in one git or the other.
+interface Repo {
+  git: gitModule.Git | fakeGitModule.FakeGit['git'];
+  root: string;
+  mainRoot: string;
+  commit: (dir: string, message: string) => string;
+  amend: (dir: string, message: string) => string;
+  branch: (dir: string, name: string) => unknown;
+  detach: (dir: string) => unknown;
+  unstage: (dir: string) => unknown;
+  breakOrigin: (dir: string) => string;
+}
+
+// A copy of the template's bare origin and its clone, with one commit on main, and the steps a case takes outside gg,
+// in real git.
+function realRepo(t: TestContext): Repo {
   const root = tempDirectory.tempDirectory(t, 'gg-git-');
   templateRepos.seedRepos(root);
   const mainRoot = join(root, 'main');
@@ -21,27 +35,27 @@ function realRepo(t) {
     git: gitModule,
     root,
     mainRoot,
-    commit: (dir, message) => {
-      sh(dir, 'add', '-A');
-      sh(dir, 'commit', '-q', '--allow-empty', '-m', message);
-      return sh(dir, 'rev-parse', 'HEAD');
+    commit: (dir: string, message: string) => {
+      gitShell.sh(dir, 'add', '-A');
+      gitShell.sh(dir, 'commit', '-q', '--allow-empty', '-m', message);
+      return gitShell.sh(dir, 'rev-parse', 'HEAD');
     },
-    amend: (dir, message) => {
-      sh(dir, 'commit', '-q', '--amend', '--allow-empty', '-m', message);
-      return sh(dir, 'rev-parse', 'HEAD');
+    amend: (dir: string, message: string) => {
+      gitShell.sh(dir, 'commit', '-q', '--amend', '--allow-empty', '-m', message);
+      return gitShell.sh(dir, 'rev-parse', 'HEAD');
     },
-    branch: (dir, name) => sh(dir, 'checkout', '-q', '-b', name),
-    detach: (dir) => sh(dir, 'checkout', '-q', '--detach'),
-    unstage: (dir) => sh(dir, 'reset', '-q'),
-    breakOrigin: (dir) => {
-      sh(dir, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
+    branch: (dir: string, name: string) => gitShell.sh(dir, 'checkout', '-q', '-b', name),
+    detach: (dir: string) => gitShell.sh(dir, 'checkout', '-q', '--detach'),
+    unstage: (dir: string) => gitShell.sh(dir, 'reset', '-q'),
+    breakOrigin: (dir: string) => {
+      gitShell.sh(dir, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
       return 'gone.git';
     },
   };
 }
 
 // The same, in the fake git's model.
-async function fakeRepo(t) {
+async function fakeRepo(t: TestContext): Promise<Repo> {
   const { fakeGit } = await import('../../support/fake-git.ts');
   const root = tempDirectory.tempDirectory(t, 'gg-git-');
   const fake = fakeGit();
@@ -59,14 +73,16 @@ async function fakeRepo(t) {
   };
 }
 
-for (const [name, repo] of [
+const sides: [string, (t: TestContext) => Repo | Promise<Repo>][] = [
   ['real', realRepo],
   ['fake', fakeRepo],
-]) {
-  const contract = (title, fn, options = {}) => test(`${title} (${name} git)`, options, async (t) => fn(await repo(t)));
+];
+for (const [name, repo] of sides) {
+  const contract = (title: string, run: (repo: Repo) => Promise<void>, options = {}) =>
+    test(`${title} (${name} git)`, options, async (t) => run(await repo(t)));
 
   // Records the tree of a worktree that adds a.txt, as an intent would, and leaves the index at the parent's tree.
-  const recordTree = async ({ git, mainRoot: dir, unstage }) => {
+  const recordTree = async ({ git, mainRoot: dir, unstage }: Repo) => {
     const parent = await git.headSha(dir);
     const parentTree = await git.treeOf(dir, parent);
     writeFileSync(join(dir, 'a.txt'), 'a');
@@ -82,7 +98,7 @@ for (const [name, repo] of [
     assert.equal(await git.commitTree(dir, { message: 'nothing', tree: parentTree, parent }), null);
     const sha = await git.commitTree(dir, { message: 'feat: a', tree, parent });
     assert.equal(await git.headSha(dir), sha);
-    assert.equal(await git.treeOf(dir, sha), tree);
+    assert.equal(await git.treeOf(dir, sha as string), tree);
     assert.deepEqual((await git.commitLog(dir, 'main'))[0].parents, [parent]);
   });
 
@@ -112,7 +128,7 @@ for (const [name, repo] of [
     assert.equal(await git.currentBranch(path), 'ticket/4-title');
     assert.equal(await git.headSha(path), await git.remoteSha(mainRoot, 'main'));
     assert.deepEqual(
-      (await git.listWorktrees(mainRoot)).map((w) => [paths.pathKey(w.path), w.branch]),
+      (await git.listWorktrees(mainRoot)).map((worktree) => [paths.pathKey(worktree.path), worktree.branch]),
       [
         [paths.pathKey(mainRoot), 'main'],
         [paths.pathKey(path), 'ticket/4-title'],
@@ -177,8 +193,8 @@ for (const [name, repo] of [
     async ({ git, root, mainRoot }) => {
       const path = join(root, 'wt', 'ticket-4');
       mkdirSync(path, { recursive: true });
-      await assert.rejects(git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' }), (e) =>
-        e.message.includes(path),
+      await assert.rejects(git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' }), (err: Error) =>
+        err.message.includes(path),
       );
     },
   );
@@ -190,8 +206,8 @@ for (const [name, repo] of [
       await git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' });
       rmSync(path, { recursive: true, force: true });
       mkdirSync(path, { recursive: true });
-      await assert.rejects(git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' }), (e) =>
-        e.message.includes(path),
+      await assert.rejects(git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' }), (err: Error) =>
+        err.message.includes(path),
       );
     },
   );
@@ -203,7 +219,7 @@ for (const [name, repo] of [
     assert.equal(await git.stageAll(dir), true);
     const tree = await git.writeTree(dir);
     assert.match(tree, /^[0-9a-f]{40}$/);
-    const sha = await git.commitStaged(dir, 'test: add a');
+    const sha = (await git.commitStaged(dir, 'test: add a')) as string;
     assert.match(sha, /^[0-9a-f]{40}$/);
     assert.equal(await git.headSha(dir), sha);
     assert.equal(await git.treeOf(dir, sha), tree);
@@ -269,7 +285,7 @@ for (const [name, repo] of [
     'remoteSha surfaces a fetch failure that is not a missing branch',
     async ({ git, mainRoot: dir, breakOrigin }) => {
       const named = breakOrigin(dir);
-      await assert.rejects(git.remoteSha(dir, 'main'), (e) => e.message.includes(named));
+      await assert.rejects(git.remoteSha(dir, 'main'), (err: Error) => err.message.includes(named));
     },
   );
 
@@ -389,7 +405,8 @@ for (const [name, repo] of [
     },
   );
 
-  // A plain :(glob) pathspec ignores case on Windows and reports the pathspec's spelling; :(glob,icase) ignores it everywhere.
+  // A plain :(glob) pathspec ignores case on Windows and reports the pathspec's spelling; :(glob,icase) ignores it
+  // everywhere.
   contract(
     'untrackedPaths within globs ignores case and reports each path as it is on disk',
     async ({ git, mainRoot: dir }) => {
@@ -552,17 +569,17 @@ test('a push writes no upstream into .git/config', async (t) => {
   commit(dir, 'work');
   await gitModule.push(dir, 'ticket/9-thing');
   assert.equal(
-    sh(dir, 'ls-remote', '--heads', 'origin', 'ticket/9-thing').split('\t')[0],
-    sh(dir, 'rev-parse', 'HEAD'),
+    gitShell.sh(dir, 'ls-remote', '--heads', 'origin', 'ticket/9-thing').split('\t')[0],
+    gitShell.sh(dir, 'rev-parse', 'HEAD'),
   );
   assert.equal(spawnSync('git', ['config', '--get', 'branch.ticket/9-thing.remote'], { cwd: dir }).status, 1);
 });
 
 // A git whose index.lock waits are recorded and run `during` in place of the wait.
 function recordWaits(during = () => {}) {
-  const waits = [];
+  const waits: number[] = [];
   const git = gitModule.createGit({
-    sleep: async (ms) => {
+    sleep: async (ms: number) => {
       waits.push(ms);
       during();
     },
@@ -580,19 +597,19 @@ test('a git write retries while index.lock is held and succeeds when it clears',
   assert.deepEqual(waits, [100], 'one wait, after which the lock had cleared');
   const sha = await git.commitStaged(dir, 'test: add a');
   assert.ok(!existsSync(lock));
-  assert.equal(sh(dir, 'rev-parse', 'HEAD'), sha);
-  assert.equal(sh(dir, 'log', '-1', '--format=%s'), 'test: add a');
+  assert.equal(gitShell.sh(dir, 'rev-parse', 'HEAD'), sha);
+  assert.equal(gitShell.sh(dir, 'log', '-1', '--format=%s'), 'test: add a');
 });
 
 test('a git write surfaces the error when index.lock never clears', async (t) => {
   const { mainRoot: dir } = realRepo(t);
-  const before = sh(dir, 'rev-parse', 'HEAD');
+  const before = gitShell.sh(dir, 'rev-parse', 'HEAD');
   writeFileSync(join(dir, '.git', 'index.lock'), '');
   writeFileSync(join(dir, 'a.txt'), 'a');
   const { waits, git } = recordWaits();
-  await assert.rejects(git.stageAll(dir), (e) => e.message.includes('index.lock'));
+  await assert.rejects(git.stageAll(dir), (err: Error) => err.message.includes('index.lock'));
   assert.deepEqual(waits, [100, 200, 400, 800], 'retried with backoff before giving up');
-  assert.equal(sh(dir, 'rev-parse', 'HEAD'), before);
+  assert.equal(gitShell.sh(dir, 'rev-parse', 'HEAD'), before);
 });
 
 test('conflictedPaths names each path of a merge conflict once', async (t) => {
@@ -602,7 +619,7 @@ test('conflictedPaths names each path of a merge conflict once', async (t) => {
   branch(dir, 'other');
   writeFileSync(join(dir, 'a.txt'), 'other\n');
   commit(dir, 'other');
-  sh(dir, 'checkout', '-q', 'main');
+  gitShell.sh(dir, 'checkout', '-q', 'main');
   writeFileSync(join(dir, 'a.txt'), 'main\n');
   commit(dir, 'main');
   assert.equal(spawnSync('git', ['merge', '-q', 'other'], { cwd: dir }).status, 1);

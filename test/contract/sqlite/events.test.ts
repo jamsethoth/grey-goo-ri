@@ -11,7 +11,7 @@ import * as tempDirectory from '../../support/temp-directory.ts';
 const appender = fileURLToPath(new URL('../../support/event-appender.ts', import.meta.url));
 
 // Reads the events table directly, as another SQLite client would.
-function rows(commonDir) {
+function rows(commonDir: string) {
   const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
   try {
     return db
@@ -39,6 +39,6 @@ test('two processes append to the same table without loss', async (t) => {
   assert.equal(rows(dir).length, 400);
   const read = events.readEvents(dir);
   assert.equal(read.length, 400);
-  assert.equal(read.filter((e) => e.run === 'a').length, 200);
-  assert.equal(read.filter((e) => e.run === 'b').length, 200);
+  assert.equal(read.filter((event) => event.run === 'a').length, 200);
+  assert.equal(read.filter((event) => event.run === 'b').length, 200);
 });

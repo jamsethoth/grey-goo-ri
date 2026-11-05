@@ -5,15 +5,16 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as contract from '../../../lib/harnesses/contract.ts';
+import type * as fakeHarnessModule from '../../support/fake-harness.ts';
 
-const dirs = [];
+const dirs: string[] = [];
 after(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
 
-const fakeHarness = async (opts = {}) => {
+const fakeHarness = async (options: Partial<fakeHarnessModule.FakeHarnessOptions> = {}) => {
   const fake = await import('../../support/fake-harness.ts');
   const transcriptDir = await mkdtemp(join(tmpdir(), 'gg-contract-'));
   dirs.push(transcriptDir);
-  return fake.fakeHarness({ transcriptDir, responses: {}, ...opts });
+  return fake.fakeHarness({ transcriptDir, responses: {}, ...options });
 };
 
 test('assertHarness accepts the fake harness', async () => {
@@ -36,7 +37,7 @@ for (const [method, message] of [
   ['doctor', 'harness is missing doctor'],
 ]) {
   test(`assertHarness names a missing ${method}`, async () => {
-    const harness = await fakeHarness();
+    const harness: Record<string, unknown> = await fakeHarness();
     delete harness[method];
     assert.throws(() => contract.assertHarness(harness), { message });
   });
@@ -64,22 +65,26 @@ for (const [field, message] of [
 ]) {
   test(`assertHarness names a missing ${field} capability`, async () => {
     const harness = await fakeHarness();
-    harness.capabilities = { ...harness.capabilities };
-    delete harness.capabilities[field];
+    const capabilities: Record<string, unknown> = { ...harness.capabilities };
+    harness.capabilities = capabilities as typeof harness.capabilities;
+    delete capabilities[field];
     assert.throws(() => contract.assertHarness(harness), { message });
   });
 }
 
 test('every Harness declares the paths that configure it', async () => {
-  const { HARNESSES } = await import('../../../lib/harnesses/shipped.ts');
+  const shipped = await import('../../../lib/harnesses/shipped.ts');
   const modules = readdirSync(new URL('../../../lib/harnesses/', import.meta.url))
-    .filter((f) => !['contract.ts', 'shipped.ts'].includes(f))
-    .map((f) => f.replace(/\.ts$/, ''));
-  assert.deepEqual(Object.keys(HARNESSES).sort(), modules.sort(), 'every Harness module is shipped');
-  assert.deepEqual(Object.fromEntries(Object.entries(HARNESSES).map(([name, h]) => [name, h.protectedPaths])), {
-    claude: ['.claude/', '.mcp.json', 'CLAUDE.md'],
-    codex: ['.codex/', 'AGENTS.md'],
-  });
+    .filter((file) => !['contract.ts', 'shipped.ts'].includes(file))
+    .map((file) => file.replace(/\.ts$/, ''));
+  assert.deepEqual(Object.keys(shipped.HARNESSES).sort(), modules.sort(), 'every Harness module is shipped');
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(shipped.HARNESSES).map(([name, harness]) => [name, harness.protectedPaths])),
+    {
+      claude: ['.claude/', '.mcp.json', 'CLAUDE.md'],
+      codex: ['.codex/', 'AGENTS.md'],
+    },
+  );
   assert.deepEqual((await fakeHarness()).protectedPaths, []);
   assert.deepEqual((await fakeHarness({ protectedPaths: ['.fake/'] })).protectedPaths, ['.fake/']);
 });
