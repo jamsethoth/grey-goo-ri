@@ -80,6 +80,7 @@ function checkAgents(problems: report.Report, config: Value, harnesses: unknown)
   for (const [name, agent] of report.entries(config.agents)) {
     const location = `agents.${name}`;
     const before = problems.errors.length;
+    report.checkName(problems, location, name, { what: 'Agent', carried: false });
     if (!refs.isRecord(agent)) report.error(problems, location, 'an Agent must be an object');
     else {
       report.unknownKeys(problems, agent, flows.AGENT_KEYS, location);

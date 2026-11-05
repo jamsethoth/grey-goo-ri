@@ -128,3 +128,27 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
     });
   }
 }
+
+// A Vertex id with whitespace: its markers would be written, but parseMarker reads back only parts with none (#269).
+const SPACED = 'red tests';
+function spaceTheRedVertex(config) {
+  const { ticket } = config.flows.golden;
+  ticket.vertices[SPACED] = ticket.vertices.red;
+  delete ticket.vertices.red;
+  ticket.entry = SPACED;
+  ticket.vertices.green.inputs = {
+    testFiles: { from: `${SPACED}.commit.files` },
+    red: { from: `${SPACED}.red-check.evidence` },
+  };
+  ticket.vertices.publish.inputs.red = { from: `${SPACED}.red-check.evidence` };
+}
+
+// On main before #269 this Flow was admitted, and a resume after a crash past the commit held the ticket, its Terminal
+// Reason saying the commit "was not made".
+test('a Vertex whose id has whitespace, whose commit a crash could not find by its marker, is kept out', async (t) => {
+  const g = await golden.setup(t);
+  assert.throws(
+    () => golden.configure(g, spaceTheRedVertex),
+    /vertices\.red tests: Vertex id "red tests" must be non-empty with no ":", "\.", "\/", "--" or whitespace/,
+  );
+});

@@ -103,6 +103,7 @@ export function checkInputs(problems: report.Report, location: string, declared:
     report.error(problems, `${location}.inputs`, 'inputs must be an object from name to { from, optional?, pick? }');
   for (const [input, declaration] of report.entries(declared)) {
     const inputLocation = `${location}.inputs.${input}`;
+    report.checkName(problems, inputLocation, input, { what: 'input', carried: true });
     if (!refs.isRecord(declaration)) {
       report.error(problems, inputLocation, 'an input is { from, optional?, pick? }');
       continue;

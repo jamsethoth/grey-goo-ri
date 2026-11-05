@@ -191,6 +191,14 @@ admission (`lib/validate/` holds the lists):
 | `route.<outcome>` | `to`, `max`, `exhausted` | a target is a Vertex id, `{ end: <end> }`, or this edge: the Vertex to go to; optional, the Bound on its traversals and the target when that Bound is exhausted, required with it |
 | `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
 
+The name a Layer gives a Flow, Vertex, Agent, Procedure, Claim token, input or Action is a string with a character
+other than whitespace. A Vertex id, an Action id and an input name are non-empty with no `:`, `.`, `/`, `--` or
+whitespace: the Action Marker (3.5) and the Await and Decide Labels split on `:`, a reference path on `.`, the key an
+Action's retries are saved under joins its parts with `/`, the HTML comment that carries a marker in a PR body or
+comment ends at `-->` or `--!>`, and a marker is read back only when its parts have no whitespace. A
+Procedure name takes the same form. Admission reports a name that breaks the rule at its location (R6d,
+#269).
+
 - Vertex: a `procedure` (3.4), an agent (3.1) when the Procedure has an agent Action, `inputs` read from earlier
   Vertices, and edges. A gate is a Vertex whose Procedure has no agent Action and a `command` Check.
 - An approval vertex is a Vertex whose Procedure ends in an `await-approval` Action, after any Checks and with no
