@@ -7,7 +7,7 @@ import * as interpreter from '../../lib/interpreter.ts';
 export function crashFs(
   root: string,
   active: () => boolean,
-  { op, n: nth, after = false }: { op: 'rm' | 'writeFile'; n: number; after?: boolean },
+  { op, nth, after = false }: { op: 'rm' | 'writeFile'; nth: number; after?: boolean },
 ) {
   const calls = { count: 0 };
   const real = fsPromises[op] as (path: unknown, ...rest: unknown[]) => Promise<void>;
