@@ -120,6 +120,39 @@ test(
   },
 );
 
+// The command's clock starts when the case ends, so its cleanup comes later. A case that ended first would leave that
+// cleanup reading the next case's environment: a stand-in ps it finds there can stop it before its kill.
+test('a case that ends while its command runs does not end before the command is timed out', CASE, async (t) => {
+  const pidFile = join(scratch, 'taken-down.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  let clockRanOut = false;
+  const timers: exec.Timers = {
+    setTimeout: ((fire: () => void, ms: number) =>
+      setTimeout(() => {
+        clockRanOut = true;
+        fire();
+      }, ms)) as typeof globalThis.setTimeout,
+    clearTimeout,
+  };
+  const cancel = new AbortController();
+  const cancelled = t.test(
+    'a case that is cancelled',
+    { signal: cancel.signal, todo: 'cancelled on purpose' },
+    async (inner) => {
+      await timedOutShell.timeOutWhen(
+        childScripts.nodeCommand(inner, childScripts.LONG_LIVED, pidFile),
+        { timeoutMs: 1000, timers },
+        () => false,
+        inner,
+      );
+    },
+  );
+  await waitFor(() => pidIn(pidFile) > 0, t.signal);
+  cancel.abort();
+  await cancelled;
+  assert.ok(clockRanOut, 'the case ended with its command still waiting for its clock');
+});
+
 test('runShell reports surviving PIDs and the kill error when termination fails', CASE, async (t) => {
   const { result, pid } = await timedOutShell.timedOutOrphan(t, scratch, 'refused', {
     killPid: () => {
