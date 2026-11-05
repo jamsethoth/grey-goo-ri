@@ -1,17 +1,21 @@
 // The bare origin.git and its clone main that every real-git test repo starts from, built once per test process:
 // building them costs a test seven git processes. Auto maintenance and gc are off, so no git call spawns another.
-import { execFileSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import * as gitShell from './git-shell.ts';
 
-const sh = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+const sh = gitShell.sh;
 
 export const TEMPLATE_PACKAGE = '{ "scripts": { "test": "node --test" } }\n';
 
-// eslint-disable-next-line no-restricted-syntax -- the template is the test process's, built on first use and never swapped.
-let template;
-function buildTemplate() {
+interface Template {
+  root: string;
+  url: string;
+  base: string;
+}
+
+function buildTemplate(): Template {
   const root = mkdtempSync(join(tmpdir(), 'gg-template-'));
   process.on('exit', () => rmSync(root, { recursive: true, force: true }));
   sh(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git');
@@ -31,16 +35,20 @@ function buildTemplate() {
   return { root, url: sh(mainRoot, 'config', 'remote.origin.url'), base: sh(mainRoot, 'rev-parse', 'main') };
 }
 
+// The template is the test process's, built on first use and never swapped.
+const templates: Template[] = [];
+const template = () => templates[0] ?? (templates[0] = buildTemplate());
+
 // Copies the template's origin.git and main into `dir`, a fresh mkdtemp directory, and returns main's SHA. git records
 // a clone's origin by its real path with forward slashes, so `dir` is the real directory, never a link to it.
-export function seedRepos(dir) {
-  template ??= buildTemplate();
-  cpSync(template.root, dir, { recursive: true });
+export function seedRepos(dir: string): string {
+  const { root, url: templateUrl, base } = template();
+  cpSync(root, dir, { recursive: true });
   const config = join(dir, 'main', '.git', 'config');
   const text = readFileSync(config, 'utf8');
-  const url = `${template.url.slice(0, -`${basename(template.root)}/origin.git`.length)}${basename(dir)}/origin.git`;
-  if (dirname(dir) !== dirname(template.root) || text.split(template.url).length !== 2)
+  const url = `${templateUrl.slice(0, -`${basename(root)}/origin.git`.length)}${basename(dir)}/origin.git`;
+  if (dirname(dir) !== dirname(root) || text.split(templateUrl).length !== 2)
     throw new Error(`cannot point ${config} at ${url}`);
-  writeFileSync(config, text.replace(template.url, url));
-  return template.base;
+  writeFileSync(config, text.replace(templateUrl, url));
+  return base;
 }

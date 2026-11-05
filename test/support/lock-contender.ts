@@ -3,12 +3,13 @@
 // so every contender tries while the owner still holds, however slowly the processes start.
 // The test runner also loads this file with no arguments, where it does nothing.
 import * as locks from '../../lib/locks.ts';
+
 const [commonDir, name, holdMs] = process.argv.slice(2);
-if (commonDir) {
-  let ended;
-  if (holdMs === 'barrier') {
+if (commonDir && name) {
+  const barrier = holdMs === 'barrier';
+  const ended = barrier ? new Promise((resolve) => process.stdin.on('end', resolve)) : null;
+  if (barrier) {
     const go = new Promise((resolve) => process.stdin.once('data', resolve));
-    ended = new Promise((resolve) => process.stdin.on('end', resolve));
     process.stdin.resume();
     process.stdout.write('ready\n');
     await go;
@@ -18,6 +19,7 @@ if (commonDir) {
     process.stdout.write(JSON.stringify({ pid: process.pid, handle }) + '\n');
     if (handle) await (ended ?? new Promise((resolve) => setTimeout(resolve, Number(holdMs))));
   } catch (err) {
-    process.stdout.write(JSON.stringify({ pid: process.pid, error: `${err.code} ${err.message}` }) + '\n');
+    const { code, message } = err as NodeJS.ErrnoException;
+    process.stdout.write(JSON.stringify({ pid: process.pid, error: `${code} ${message}` }) + '\n');
   }
 }

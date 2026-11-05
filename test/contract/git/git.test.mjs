@@ -2,26 +2,19 @@
 // verb whose fake drifts from git fails here. Cases the fake cannot model run on real git alone, at the end.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import * as gitModule from '../../../lib/git.ts';
 import * as paths from '../../../lib/paths.ts';
-import * as templateRepos from '../../support/template-repos.mjs';
-
-const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
-
-const tempRoot = (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'gg-git-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  return root;
-};
+import * as templateRepos from '../../support/template-repos.ts';
+import { sh } from '../../support/git-shell.ts';
+import * as tempDirectory from '../../support/temp-directory.ts';
 
 // A copy of the template's bare origin and its clone, with one commit on main, and the steps a case takes outside gg, in
 // real git.
 function realRepo(t) {
-  const root = tempRoot(t);
+  const root = tempDirectory.tempDirectory(t, 'gg-git-');
   templateRepos.seedRepos(root);
   const mainRoot = join(root, 'main');
   return {
@@ -49,8 +42,8 @@ function realRepo(t) {
 
 // The same, in the fake git's model.
 async function fakeRepo(t) {
-  const { fakeGit } = await import('../../support/fake-git.mjs');
-  const root = tempRoot(t);
+  const { fakeGit } = await import('../../support/fake-git.ts');
+  const root = tempDirectory.tempDirectory(t, 'gg-git-');
   const fake = fakeGit();
   const { mainRoot } = fake.init(root);
   return {

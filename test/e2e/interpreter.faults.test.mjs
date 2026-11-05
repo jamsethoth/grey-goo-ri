@@ -3,18 +3,21 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
-import * as golden from '../support/golden.mjs';
-import { actionEvent, WRONG_ADD, ok, greenSetup, stopReason } from '../support/interpreter.mjs';
+import * as golden from '../support/golden.ts';
+import { actionEvent } from '../support/execution-reads.ts';
+import { WRONG_ADD, greenFixture, greenWrites, stopReason } from '../support/golden-run.ts';
+import * as gitShell from '../support/git-shell.ts';
 
 test('golden: an integrity violation restores the baseline and stops at needs-human', async (t) => {
-  const g = await golden.setup(t, { integrity: 'real' });
+  const g = await golden.fixture(t, { integrity: 'real', git: 'real' });
   const run = g.harness.run;
+  let agentCommit;
   g.harness.run = async (call) => {
     const out = await run(call);
     if (call.phase === 'red') {
-      golden.sh(g.worktree, 'add', '-A');
-      golden.sh(g.worktree, 'commit', '-q', '-m', 'agent commit');
-      g.agentCommit = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+      gitShell.sh(g.worktree, 'add', '-A');
+      gitShell.sh(g.worktree, 'commit', '-q', '-m', 'agent commit');
+      agentCommit = gitShell.sh(g.worktree, 'rev-parse', 'HEAD');
     }
     return out;
   };
@@ -28,14 +31,14 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
     red.integrityViolations.some((v) => v.surface === 'head'),
     JSON.stringify(red.integrityViolations),
   );
-  assert.notEqual(g.agentCommit, g.base);
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base, 'the branch is back at the baseline head');
+  assert.notEqual(agentCommit, g.base);
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', 'HEAD'), g.base, 'the branch is back at the baseline head');
   assert.equal(
-    golden.sh(g.worktree, 'branch', '--contains', g.agentCommit),
+    gitShell.sh(g.worktree, 'branch', '--contains', agentCommit),
     '',
     'the agent commit is gone from the branch',
   );
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '');
+  assert.equal(gitShell.sh(g.worktree, 'status', '--porcelain'), '');
   assert.equal(g.harness.calls.length, 1, 'no retry after a violation');
   const reason = stopReason(g, {
     vertex: 'red',
@@ -50,7 +53,7 @@ test('golden: an integrity violation restores the baseline and stops at needs-hu
 });
 
 test('an integrity violation removes an injected ignored Protected File and restores a pre-existing one', async (t) => {
-  const g = await golden.setup(t, { integrity: 'real' });
+  const g = await golden.fixture(t, { integrity: 'real', git: 'real' });
   mkdirSync(join(g.worktree, '.claude', 'skills', 'injected'), { recursive: true });
   writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
   const local = join(g.worktree, '.claude', 'settings.local.json');
@@ -80,14 +83,14 @@ test('an integrity violation removes an injected ignored Protected File and rest
   assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', 'the pre-existing file keeps its baseline bytes');
 });
 test('a recovery pass that changes the committed test is rolled back to its baseline and stops', async (t) => {
-  const g = await greenSetup(
-    t,
-    {
-      'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-      'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
+  const g = await greenFixture(t, {
+    responses: {
+      'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': greenWrites({ 'lib/add.mjs': WRONG_ADD, 'test/add.test.mjs': '// weakened\n' }),
     },
-    'real',
-  );
+    integrity: 'real',
+    git: 'real',
+  });
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
@@ -96,31 +99,35 @@ test('a recovery pass that changes the committed test is rolled back to its base
   assert.deepEqual(call.integrityViolations, [
     { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
   ]);
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'no forbidden edit or implementation file survives');
+  assert.equal(
+    gitShell.sh(g.worktree, 'status', '--porcelain'),
+    '',
+    'no forbidden edit or implementation file survives',
+  );
   assert.ok(
     !readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'),
     'the committed test bytes are restored',
   );
-  assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'the red commit survives');
+  assert.equal(gitShell.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'the red commit survives');
 });
 
 // Ignored paths survive git clean, so the rollback removes the ignored tests the agent added and only those.
 function excludeTests(g, ...paths) {
   writeFileSync(
-    resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')),
+    resolve(g.worktree, gitShell.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')),
     paths.join(String.fromCharCode(10)),
   );
 }
 
 test('a recovery pass that adds an ignored test file has it removed by the rollback', async (t) => {
-  const g = await greenSetup(
-    t,
-    {
-      'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-      'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
+  const g = await greenFixture(t, {
+    responses: {
+      'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': greenWrites({ 'lib/add.mjs': WRONG_ADD, 'test/injected.test.mjs': 'injected' }),
     },
-    'real',
-  );
+    integrity: 'real',
+    git: 'real',
+  });
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -132,14 +139,14 @@ test('a recovery pass that adds an ignored test file has it removed by the rollb
 });
 
 test('a recovery pass that adds an ignored file under a declared test path outside the default globs has it removed by the rollback', async (t) => {
-  const g = await greenSetup(
-    t,
-    {
-      'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-      'green/1/recover/1': ok({ 'lib/add.mjs': WRONG_ADD, 'spec/injected.mjs': 'injected' }),
+  const g = await greenFixture(t, {
+    responses: {
+      'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': greenWrites({ 'lib/add.mjs': WRONG_ADD, 'spec/injected.mjs': 'injected' }),
     },
-    'real',
-  );
+    integrity: 'real',
+    git: 'real',
+  });
   g.options.testPaths = ['test/**', 'spec/**'];
   excludeTests(g, 'spec/injected.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -152,11 +159,11 @@ test('a recovery pass that adds an ignored file under a declared test path outsi
 });
 
 test('an ignored test file that was there before the call gets its bytes back from the rollback', async (t) => {
-  const g = await greenSetup(
-    t,
-    { 'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) },
-    'real',
-  );
+  const g = await greenFixture(t, {
+    responses: { 'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD, 'test/owner.test.mjs': 'agent' }) },
+    integrity: 'real',
+    git: 'real',
+  });
   excludeTests(g, 'test/owner.test.mjs');
   mkdirSync(join(g.worktree, 'test'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'owner.test.mjs'), 'owner');
@@ -170,14 +177,14 @@ test('an ignored test file that was there before the call gets its bytes back fr
 });
 
 test('an integrity violation on a Protected File also removes an ignored test file the same Attempt added', async (t) => {
-  const g = await greenSetup(
-    t,
-    {
-      'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-      'green/1/recover/1': ok({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
+  const g = await greenFixture(t, {
+    responses: {
+      'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': greenWrites({ 'test/injected.test.mjs': 'injected', 'AGENTS.md': 'agent' }),
     },
-    'real',
-  );
+    integrity: 'real',
+    git: 'real',
+  });
   excludeTests(g, 'test/injected.test.mjs');
   const { outcome } = await interpreter.runExecution(g.options);
 

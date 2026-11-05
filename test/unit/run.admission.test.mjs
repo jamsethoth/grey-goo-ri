@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import * as run from '../../lib/run.ts';
-import { TICKET, fixture, ticketResult } from '../support/run.mjs';
+import { TICKET, fixture, ticketResult } from '../support/run-fixture.ts';
 
 test('gg run runs the Declared Commands of its config, not those of AGENTS.md', async (t) => {
   const f = fixture(t);

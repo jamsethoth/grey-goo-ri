@@ -10,24 +10,25 @@ import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { loadTicket } from '../support/execution-reads.ts';
 import {
-  TICKET,
   BRANCH,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
+  TICKET,
+  dirtyTicket,
+  endsOf,
+  failComment,
+  failHoldLabel,
   fixture,
   seedExecution,
   ticketResult,
-  failComment,
-  endsOf,
-  loadTicket,
-  dirtyTicket,
-  failHoldLabel,
-} from '../support/run.mjs';
+} from '../support/run-fixture.ts';
+import * as caseDatabase from '../support/case-database.ts';
+import * as fakeGhModule from '../support/fake-gh.ts';
 
 test('a hold label failure leaves its label intent open for the next Run', async (t) => {
-  const { f } = await dirtyTicket(t, false);
+  const { runFixture: f } = await dirtyTicket(t, false);
   const failing = failHoldLabel(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   assert.equal(f.comments().length, 1);
@@ -48,7 +49,10 @@ test('a hold label failure leaves its label intent open for the next Run', async
   failing.on = false;
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.equal(f.comments().length, 1, 'the landed comment is reused');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
+  assert.ok(
+    f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL),
+    `the hold labels land: ${[...f.gh.labels]}`,
+  );
   const final = await loadTicket(f);
   assert.equal(final.execution, mid.execution);
   assert.deepEqual(writeAhead.openIntents(final), []);
@@ -57,7 +61,7 @@ test('a hold label failure leaves its label intent open for the next Run', async
 });
 
 test('a seeded hold label failure is finished on the next Run', async (t) => {
-  const { f, seededRec } = await dirtyTicket(t, true);
+  const { runFixture: f, seededRecord: seededRec } = await dirtyTicket(t, true);
   const failing = failHoldLabel(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   assert.equal(f.comments().length, 1);
@@ -78,7 +82,10 @@ test('a seeded hold label failure is finished on the next Run', async (t) => {
   failing.on = false;
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.equal(f.comments().length, 1, 'the landed comment is reused');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
+  assert.ok(
+    f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL),
+    `the hold labels land: ${[...f.gh.labels]}`,
+  );
   const final = await loadTicket(f);
   assert.equal(final.execution, mid.execution);
   assert.deepEqual(
@@ -93,14 +100,14 @@ test('a seeded hold label failure is finished on the next Run', async (t) => {
 // A seeded dirty Ticket whose hold comment failed, under a human needs-human label, with every label edit recording
 // whether the record was abandoned first and failing while `cleanup.fails` is set.
 async function overriddenPendingHold(t) {
-  const { f, seededRec } = await dirtyTicket(t, true);
+  const { runFixture: f, seededRecord: seededRec } = await dirtyTicket(t, true);
   const before = await integrity.snapshot(f.worktree, f.options.deps.git);
   const failing = failComment(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
   const [holdComment] = writeAhead.openIntents(mid).filter((e) => e.effect === 'comment');
   failing.on = false;
-  f.gh.labels.add(NEEDS_HUMAN);
+  f.gh.labels.add(NEEDS_HUMAN_LABEL);
   const inner = f.gh.gh;
   const states = [];
   const cleanup = { fails: false };
@@ -127,7 +134,7 @@ test('human override abandons a pending hold before any label cleanup', async (t
   assert.deepEqual(f.comments(), [], 'the pending hold comment is not replayed');
   assert.deepEqual(f.labelAdds(), [], 'no label is added');
   assert.ok(
-    f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS),
+    f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL),
     `the human hold remains: ${[...f.gh.labels]}`,
   );
   const final = await loadTicket(f);
@@ -148,7 +155,7 @@ test('human override abandons a pending hold before any label cleanup', async (t
   );
   assert.deepEqual(
     final.writeAheadLog.filter((e) => e.step === 'intent' && e.effect === 'label').map((e) => e.payload),
-    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
+    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS_LABEL] }],
     'the cleanup is one write-ahead label Action',
   );
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
@@ -174,7 +181,7 @@ test('human override of a pending hold is decided durably when its label cleanup
   assert.deepEqual(f.comments(), [], 'the pending hold comment is not replayed');
   assert.deepEqual(f.labelAdds(), [], 'no label is added');
   assert.ok(
-    f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS),
+    f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL),
     `the human hold remains: ${[...f.gh.labels]}`,
   );
   const final = await loadTicket(f);
@@ -195,7 +202,7 @@ test('human override of a pending hold is decided durably when its label cleanup
   );
   assert.deepEqual(
     final.writeAheadLog.filter((e) => e.step === 'intent' && e.effect === 'label').map((e) => e.payload),
-    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS] }],
+    [{ ticket: TICKET, add: [], remove: [IN_PROGRESS_LABEL] }],
     'the cleanup is one write-ahead label Action',
   );
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
@@ -213,7 +220,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   const inner = f.gh.gh;
   let mode = 'crash';
   f.options.deps.gh = github.createGh(async (args, cwd, input) => {
-    if (mode === 'crash' && golden.isCommentPost(args)) {
+    if (mode === 'crash' && fakeGhModule.isCommentPost(args)) {
       await inner(args, cwd, input);
       throw new interpreter.CrashError('crash after the fault comment landed');
     }
@@ -249,15 +256,15 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
     final.writeAheadLog.filter((e) => e.actionMarker === open.actionMarker).map((e) => e.step),
     ['intent', 'evidence', 'complete'],
   );
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the label lands');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the label lands');
   assert.equal(final.state, 'fault');
   assert.equal(endsOf(f, final.execution).length, 1);
   assert.match(endsOf(f, final.execution)[0].error, /disk full/);
 });
 
 test('a Terminal saved before ticket_end resumes finalization exactly once', async (t) => {
-  const { f } = await dirtyTicket(t, false);
-  const restore = golden.failAppends(t, (event) => event.type === 'ticket_end');
+  const { runFixture: f } = await dirtyTicket(t, false);
+  const restore = caseDatabase.failAppends(t, (event) => event.type === 'ticket_end');
   const first = await run.runTarget(f.options);
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
   const mid = await loadTicket(f);
@@ -266,7 +273,8 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   assert.equal(endsOf(f, mid.execution).length, 0);
   restore();
   const effects = () =>
-    f.gh.calls.filter((c) => golden.isCommentPost(c.args) || (c.args[0] === 'issue' && c.args[1] === 'edit')).length;
+    f.gh.calls.filter((c) => fakeGhModule.isCommentPost(c.args) || (c.args[0] === 'issue' && c.args[1] === 'edit'))
+      .length;
   const done = effects();
 
   const second = await run.runTarget(f.options);
@@ -278,9 +286,9 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
 });
 
 test('a crash between admission and its hold keeps the decision and its one ticket_start', async (t) => {
-  const { f } = await dirtyTicket(t, false);
+  const { runFixture: f } = await dirtyTicket(t, false);
   // Every update carrying a Terminal stop fails, as if gg died once admission had saved the new record.
-  const restore = golden.failSaves(t, (saved, next) => saved !== undefined && next.terminalStop != null);
+  const restore = caseDatabase.failSaves(t, (saved, next) => saved !== undefined && next.terminalStop != null);
   const first = await run.runTarget(f.options);
   restore();
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
@@ -311,7 +319,7 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
     ...golden.firstVisitResponses,
     'red/1/red/1': { throw: new interpreter.CrashError('gg died during the call') },
   };
-  const f = fixture(t, { responses, labels: [IN_PROGRESS] });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS_LABEL] });
   await seedExecution(f);
   const warning = /including ignored Protected Files\. Check them[^]*before deleting the record/;
 
@@ -331,7 +339,7 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
 
 // An Execution saved before its first Visit, under a human needs-human label.
 async function overriddenBeforeFirstVisit(t) {
-  const f = fixture(t, { labels: [IN_PROGRESS, NEEDS_HUMAN] });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL] });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(
     record.createExecution({
@@ -365,7 +373,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     ],
     'only the in-progress label is removed',
   );
-  assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
+  assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN_LABEL], 'the human hold remains without in-progress');
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
   const final = await loadTicket(f);
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
@@ -375,7 +383,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     ['intent label', 'evidence label', 'complete label'],
     'the cleanup is one write-ahead Action',
   );
-  assert.deepEqual(final.writeAheadLog[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
+  assert.deepEqual(final.writeAheadLog[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS_LABEL] });
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
   assert.deepEqual(
     evs.map((e) => e.type),
@@ -402,7 +410,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     ],
     'only the in-progress label is removed',
   );
-  assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN], 'the human hold remains without in-progress');
+  assert.deepEqual([...f.gh.labels], [NEEDS_HUMAN_LABEL], 'the human hold remains without in-progress');
   assert.deepEqual(await integrity.snapshot(f.worktree, f.options.deps.git), before, 'the worktree is untouched');
   assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n');
   const final = await loadTicket(f);
@@ -413,7 +421,7 @@ test('a human needs-human label before the first Visit prevents admission effect
     ['intent label', 'evidence label', 'complete label'],
     'the cleanup is one write-ahead Action',
   );
-  assert.deepEqual(final.writeAheadLog[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS] });
+  assert.deepEqual(final.writeAheadLog[0].payload, { ticket: TICKET, add: [], remove: [IN_PROGRESS_LABEL] });
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
   assert.deepEqual(
     evs.map((e) => e.type),
@@ -424,7 +432,7 @@ test('a human needs-human label before the first Visit prevents admission effect
 });
 
 test('a human needs-human label prevents admission effects without a record', async (t) => {
-  const f = fixture(t, { labels: [NEEDS_HUMAN] });
+  const f = fixture(t, { labels: [NEEDS_HUMAN_LABEL] });
 
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2, 'needs-human exits 2 without a record');
   assert.equal(f.harness.calls.length, 0, 'no agent started');
@@ -438,7 +446,7 @@ test('a human needs-human label prevents admission effects without a record', as
 });
 
 test('a human needs-human label prevents admission effects with a corrupt record', async (t) => {
-  const f = fixture(t, { labels: [NEEDS_HUMAN] });
+  const f = fixture(t, { labels: [NEEDS_HUMAN_LABEL] });
   sqlite.openDb(f.commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)").run(TICKET, '{');
 
   assert.equal(
@@ -461,8 +469,8 @@ const HUMAN_NEEDS_HUMAN = 'GG:State:Needs-Human';
 const SHOUTED_IN_PROGRESS = 'GG:STATE:IN-PROGRESS';
 
 const MIXED_CASE = [
-  { labels: [HUMAN_NEEDS_HUMAN, SHOUTED_IN_PROGRESS], edits: [['--remove-label', IN_PROGRESS]], states: [true] },
-  { labels: [HUMAN_NEEDS_HUMAN, IN_PROGRESS], edits: [['--remove-label', IN_PROGRESS]], states: [true] },
+  { labels: [HUMAN_NEEDS_HUMAN, SHOUTED_IN_PROGRESS], edits: [['--remove-label', IN_PROGRESS_LABEL]], states: [true] },
+  { labels: [HUMAN_NEEDS_HUMAN, IN_PROGRESS_LABEL], edits: [['--remove-label', IN_PROGRESS_LABEL]], states: [true] },
   { labels: [HUMAN_NEEDS_HUMAN], edits: [], states: [] },
 ];
 for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
@@ -574,7 +582,7 @@ test('admission does not re-add differently cased in-progress', async (t) => {
   assert.equal((await loadTicket(f)).state, 'ready-for-qa');
   assert.deepEqual(f.labelAdds(), ['Gg:state:ready-for-qa'], 'in-progress is not added again');
   assert.ok(
-    ![...f.gh.labels].some((l) => l.toLowerCase() === IN_PROGRESS),
+    ![...f.gh.labels].some((l) => l.toLowerCase() === IN_PROGRESS_LABEL),
     `the Terminal removes it: ${[...f.gh.labels]}`,
   );
 });
@@ -598,7 +606,7 @@ test('a differently cased in-progress without a record is left for Stuck handlin
 });
 
 test('an interrupted reset under a human needs-human label is abandoned before anything is discarded', async (t) => {
-  const f = fixture(t, { labels: [NEEDS_HUMAN] });
+  const f = fixture(t, { labels: [NEEDS_HUMAN_LABEL] });
   // red's Attempt breaks an Integrity Assertion, and gg dies before its reset.
   const integrity = {
     ...f.options.deps.integrity,
@@ -623,7 +631,7 @@ test('an interrupted reset under a human needs-human label is abandoned before a
 const NOT_READY = [{ blockedBy: [{ number: 3, state: 'OPEN' }] }, { state: 'CLOSED' }];
 for (const issue of NOT_READY) {
   test(`a resumed execution still needs its ticket open and unblocked: ${JSON.stringify(issue)}`, async (t) => {
-    const f = fixture(t, { labels: [IN_PROGRESS], issue });
+    const f = fixture(t, { labels: [IN_PROGRESS_LABEL], issue });
     await seedExecution(f, {
       crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }),
     });

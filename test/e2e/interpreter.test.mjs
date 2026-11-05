@@ -4,19 +4,13 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
-import * as golden from '../support/golden.mjs';
-import {
-  TDD_VERTICES,
-  FIRST_VISIT,
-  actionMarker,
-  actionEvent,
-  loadTicket,
-  ticketComments,
-  contendRepoLock,
-  lockedSetup,
-  terminalReasonOf,
-  intents,
-} from '../support/interpreter.mjs';
+import * as golden from '../support/golden.ts';
+import { actionEvent, actionMarker, intents, loadTicket } from '../support/execution-reads.ts';
+import { FIRST_VISIT, TDD_VERTICES, terminalReasonOf } from '../support/golden-run.ts';
+import { contendRepoLock, onLockedGit } from '../support/repo-lock-contention.ts';
+import { ticketComments } from '../support/review-flow.ts';
+import * as fakeGhModule from '../support/fake-gh.ts';
+import * as gitShell from '../support/git-shell.ts';
 
 // The deterministic Actions of a first visit, each an advance at Attempt 1 of its Vertex's first Visit: red runs tests-fail
 // and green runs implement. A call and a Check whose pass passed hand the Claim over (claimed); an effect completed.
@@ -37,7 +31,7 @@ const deterministic = (vertex, action, row) => {
 };
 
 test('golden: a first-visit pass ends at ready-for-qa through publish', async (t) => {
-  const g = await golden.setup(t, { integrity: 'real' });
+  const g = await golden.fixture(t, { integrity: 'real', git: 'real' });
   let draft;
   const { markReady } = g.options.deps.gh;
   g.options.deps.gh = {
@@ -48,23 +42,23 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
     },
   };
   await interpreter.runExecution(g.options);
-  g.events = g.readEvents();
+  const events = g.readEvents();
 
   assert.deepEqual(
-    golden.trace(g.events).filter((e) => TDD_VERTICES.includes(e.vertex)),
+    golden.trace(events).filter((e) => TDD_VERTICES.includes(e.vertex)),
     FIRST_VISIT,
   );
-  const end = g.events.at(-1);
+  const end = events.at(-1);
   assert.equal(end.type, 'ticket_end');
   assert.equal(end.outcome, 'ready-for-qa');
   assert.equal(end.ticket, golden.TICKET);
   // publish has no Agent: its test Check, the PR body re-render and pr-ready, each at Recovery Number 0.
   assert.deepEqual(
-    golden.trace(g.events).filter((e) => e.vertex === 'publish'),
+    golden.trace(events).filter((e) => e.vertex === 'publish'),
     ['test', 'pr', 'pr-ready'].map((action) => ({ vertex: 'publish', action, recovery: 0, attempt: 1, outcome: 'ok' })),
   );
   assert.deepEqual(
-    g.events.filter((e) => e.type === 'action' && e.vertex === 'publish').map((e) => [e.action, e.agent, e.procedure]),
+    events.filter((e) => e.type === 'action' && e.vertex === 'publish').map((e) => [e.action, e.agent, e.procedure]),
     [
       ['test', false, 'publish'],
       ['pr', false, 'publish'],
@@ -85,7 +79,7 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
     rule,
     agent,
   });
-  const actions = g.events.filter((e) => e.type === 'action' && TDD_VERTICES.includes(e.vertex));
+  const actions = events.filter((e) => e.type === 'action' && TDD_VERTICES.includes(e.vertex));
   assert.deepEqual(actions.map(fields), [
     { ...deterministic('red', 'red', 'claimed'), agent: true },
     deterministic('red', 'red-check', 'claimed'),
@@ -118,7 +112,7 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
   assert.equal(typeof green.usage.cumulative.inputTokens, 'number');
 
   // Two commits on the branch, each carrying both trailers.
-  const messages = golden
+  const messages = gitShell
     .sh(g.worktree, 'log', '--format=%B%x00', `${g.base}..HEAD`)
     .split('\0')
     .map((m) => m.trim())
@@ -132,8 +126,8 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
   assert.ok(messages[1].includes('Gg-Vertex: green fake/model-x/high'), messages[1]);
   assert.ok(messages[1].includes(`Gg-Action: ${actionMarker(g, 'green', 'commit')}`), messages[1]);
   assert.equal(
-    golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0],
-    golden.sh(g.worktree, 'rev-parse', 'HEAD'),
+    gitShell.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`).split('\t')[0],
+    gitShell.sh(g.worktree, 'rev-parse', 'HEAD'),
   );
 
   // The draft PR body carries the marker line, the red Evidence and the provenance row.
@@ -148,26 +142,32 @@ test('golden: a first-visit pass ends at ready-for-qa through publish', async (t
     'publish re-renders the PR body',
   );
 
-  assert.deepEqual(g.rec.cursor, { vertex: 'ready-for-qa', visit: 1, action: 'end-label', recovery: 0, attempt: 1 });
-  assert.deepEqual(g.rec.visits, { red: 1, green: 1, publish: 1 });
-  assert.equal(g.rec.state, 'ready-for-qa');
+  assert.deepEqual(g.executionRecord.cursor, {
+    vertex: 'ready-for-qa',
+    visit: 1,
+    action: 'end-label',
+    recovery: 0,
+    attempt: 1,
+  });
+  assert.deepEqual(g.executionRecord.visits, { red: 1, green: 1, publish: 1 });
+  assert.equal(g.executionRecord.state, 'ready-for-qa');
   assert.ok(g.gh.labels.has('gg:state:ready-for-qa'));
   assert.equal(
-    g.rec.terminalReason.text,
-    `publish visit 1 completed every publish Action: test passed. PR #${g.rec.pr} is ready for review.`,
+    g.executionRecord.terminalReason.text,
+    `publish visit 1 completed every publish Action: test passed. PR #${g.executionRecord.pr} is ready for review.`,
   );
 });
 
 // R2d: red committed its tests, then a human edited a tracked file before green started.
 test("a write Vertex on a dirty worktree gg's records do not explain is held", async (t) => {
-  const g = await golden.setup(t, { integrity: 'real' });
+  const g = await golden.fixture(t, { integrity: 'real', git: 'real' });
   const { commitStaged } = g.options.deps.git;
   let edited = null;
   g.options.deps.git = {
     ...g.options.deps.git,
     commitStaged: async (...args) => {
       const sha = await commitStaged(...args);
-      [edited] = golden.sh(g.worktree, 'ls-files').split('\n');
+      [edited] = gitShell.sh(g.worktree, 'ls-files').split('\n');
       writeFileSync(join(g.worktree, edited), 'a human edit\n');
       return sha;
     },
@@ -180,11 +180,11 @@ test("a write Vertex on a dirty worktree gg's records do not explain is held", a
     [actionMarker(g, 'red', 'red')],
     'no green agent runs over unknown changes',
   );
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), `M ${edited}`, 'the human edit survives');
-  assert.match(golden.sh(g.worktree, 'log', '-1', '--format=%s'), /^test: /, "red's commit stays");
-  assert.deepEqual(intents(g.rec, 'reset'), []);
-  assert.equal(g.rec.history.at(-1)?.kind, 'held');
-  assert.deepEqual(g.rec.visits, { red: 1, green: 1 });
+  assert.equal(gitShell.sh(g.worktree, 'status', '--porcelain'), `M ${edited}`, 'the human edit survives');
+  assert.match(gitShell.sh(g.worktree, 'log', '-1', '--format=%s'), /^test: /, "red's commit stays");
+  assert.deepEqual(intents(g.executionRecord, 'reset'), []);
+  assert.equal(g.executionRecord.history.at(-1)?.kind, 'held');
+  assert.deepEqual(g.executionRecord.visits, { red: 1, green: 1 });
   const reason = terminalReasonOf(g);
   assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
   assert.match(reason.text, /uncommitted changes before green/);
@@ -192,13 +192,13 @@ test("a write Vertex on a dirty worktree gg's records do not explain is held", a
 
 // A gh call that changes GitHub: a comment, a label, a label definition or a pull request.
 const ghWrite = (args) =>
-  golden.isCommentPost(args) ||
+  fakeGhModule.isCommentPost(args) ||
   (args[0] === 'issue' && args[1] === 'edit') ||
   (args[0] === 'label' && args[1] === 'create') ||
   (args[0] === 'pr' && ['create', 'edit', 'ready'].includes(args[1]));
 
 test('a run stop during a repo-lock wait skips the queued effect and only needs-human reporting follows', async (t) => {
-  const g = await golden.setup(t, { integrity: 'real' });
+  const g = await golden.fixture(t, { integrity: 'real', git: 'real' });
   const runState = { stop: null, remoteNotBefore: 0 };
   let before;
   let written;
@@ -208,7 +208,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
     before = g.gh.calls.length;
     written = { ...counts };
   });
-  const counts = lockedSetup(g, (verb, n) => {
+  const counts = onLockedGit(g, (verb, n) => {
     if (verb === 'commitStaged' && n === 2) lock.arm();
   });
   const result = await interpreter.runExecution({ ...g.options, runState });
@@ -217,7 +217,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   assert.equal(counts.push ?? 0, 0, 'nothing was pushed');
   assert.deepEqual(counts, written, 'no git write follows the stop');
-  assert.equal(golden.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
+  assert.equal(gitShell.sh(g.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
   const final = await loadTicket(g);
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason.rule, { table: 'fixed', row: 'run-stopped' });
@@ -228,7 +228,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   );
   const writes = g.gh.calls.slice(before).filter((c) => ghWrite(c.args));
   assert.equal(writes.length, 2, JSON.stringify(writes.map((c) => c.args)));
-  assert.ok(golden.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');
+  assert.ok(fakeGhModule.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');
   assert.ok(ticketComments(g).at(-1).body.startsWith('### gg: needs-human'));
   assert.ok(writes[1].args.join(' ').includes('--add-label gg:state:needs-human'), 'the needs-human label');
 });

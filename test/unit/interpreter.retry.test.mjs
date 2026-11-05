@@ -3,27 +3,31 @@ import assert from 'node:assert/strict';
 import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
 import {
-  steps,
-  reviewFlow,
-  prReviewComments,
-  ticketComments,
-  loadTicket,
+  actionEvent,
   attemptMarker,
-  PR,
-  okReview,
-  REVIEW_COMMENT,
-  commentPosts,
-  onPr,
-  crashPost,
+  loadTicket,
   originSha,
   runStopEvent,
-  actionEvent,
-} from '../support/interpreter.mjs';
+  writeAheadSteps,
+} from '../support/execution-reads.ts';
+import {
+  PR,
+  REVIEW_COMMENT,
+  commentPosts,
+  crashPost,
+  okReview,
+  onPr,
+  prReviewComments,
+  reviewFixture,
+  ticketComments,
+} from '../support/review-flow.ts';
+import * as fakeGhModule from '../support/fake-gh.ts';
+import * as keys from '../support/keys.ts';
 
 test('a transient comment failure is retried once and posts one comment', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   const result = await interpreter.runExecution(g.options);
 
@@ -33,7 +37,7 @@ test('a transient comment failure is retried once and posts one comment', async 
   assert.equal(posts[1].input, posts[0].input, 'the retry sends the recorded payload');
   const between = g.gh.calls.slice(g.gh.calls.indexOf(posts[0]) + 1, g.gh.calls.indexOf(posts[1]));
   assert.ok(
-    between.some((c) => golden.isCommentRead(c.args, PR)),
+    between.some((c) => fakeGhModule.isCommentRead(c.args, PR)),
     'the marker lookup runs before the retry',
   );
   const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
@@ -42,20 +46,17 @@ test('a transient comment failure is retried once and posts one comment', async 
   assert.ok(posted.body.includes(marker.markerComment(m)), 'it carries the original Action Marker');
   assert.deepEqual(g.sleeps, [60_000], 'with no Retry-After the retry waits the 60 s fallback');
   const final = await loadTicket(g);
-  assert.deepEqual(steps(final, m), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(writeAheadSteps(final, m), ['intent', 'evidence', 'complete']);
   assert.equal(final.retries[REVIEW_COMMENT].remote.count, 1);
   assert.equal(
-    g
-      .readEvents()
-      .filter((e) => e.type === 'action' && `${e.vertex}/${e.visit}/${e.action}/${e.recovery}` === REVIEW_COMMENT)
-      .length,
+    g.readEvents().filter((e) => e.type === 'action' && keys.retryKey(e) === REVIEW_COMMENT).length,
     1,
     'one Action Event for the retried Action',
   );
 });
 
 test('retry-after is honoured on the fake clock', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(
     onPr({
       status: 403,
@@ -90,7 +91,7 @@ test('retry-after is honoured on the fake clock', async (t) => {
 });
 
 test('an accepted write whose call errored is found by marker, not reposted', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502, afterEffect: true }));
   const result = await interpreter.runExecution(g.options);
 
@@ -100,7 +101,7 @@ test('an accepted write whose call errored is found by marker, not reposted', as
   assert.equal(more.length, 0);
   const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
   const final = await loadTicket(g);
-  assert.deepEqual(steps(final, m), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(writeAheadSteps(final, m), ['intent', 'evidence', 'complete']);
   assert.equal(
     final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence.id,
     posted.id,
@@ -109,7 +110,7 @@ test('an accepted write whose call errored is found by marker, not reposted', as
 });
 
 test('the retry budget survives a crash', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
   g.gh.fail(onPr({ status: 502 }));
   await assert.rejects(
@@ -141,19 +142,19 @@ test('the retry budget survives a crash', async (t) => {
 
 test('auth and non-fast-forward failures are not retried', async (t) => {
   await t.test('an auth failure', async (t) => {
-    const g = await reviewFlow(t, okReview);
+    const g = await reviewFixture(t, okReview);
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     const result = await interpreter.runExecution(g.options);
 
     assert.equal(runStopEvent(g)?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(commentPosts(g).length, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
-    assert.equal(g.rec.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is reserved');
-    assert.match(g.rec.terminalStop.detail, /HTTP 401/, 'the run stop carries the error');
+    assert.equal(g.executionRecord.retries[REVIEW_COMMENT].remote.count, 0, 'no retry is reserved');
+    assert.match(g.executionRecord.terminalStop.detail, /HTTP 401/, 'the run stop carries the error');
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   });
   await t.test('a non-fast-forward push', async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.fixture(t);
     // origin has the Ticket branch at a commit the worktree's branch does not contain.
     const theirs = g.fakeGit.commit(g.mainRoot, 'someone else');
     const { push } = g.options.deps.git;
@@ -171,15 +172,15 @@ test('auth and non-fast-forward failures are not retried', async (t) => {
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.equal(pushes, 1, 'never retried');
     assert.deepEqual(g.sleeps, []);
-    assert.equal(g.rec.retries['green/1/push/0'].remote.count, 0, 'no retry is reserved');
-    assert.match(g.rec.terminalStop.error, /non-fast-forward|rejected/);
+    assert.equal(g.executionRecord.retries['green/1/push/0'].remote.count, 0, 'no retry is reserved');
+    assert.match(g.executionRecord.terminalStop.error, /non-fast-forward|rejected/);
     assert.equal(await originSha(g), theirs, 'nothing was forced');
     assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
   });
 });
 
 test('a human needs-human label during backoff abandons before the retry', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   g.clock.onSleep = () => {
     g.gh.labels.add('Gg:State:Needs-Human');
@@ -188,7 +189,7 @@ test('a human needs-human label during backoff abandons before the retry', async
 
   assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
   assert.equal(
-    g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length,
+    g.gh.calls.filter((c) => fakeGhModule.isCommentPost(c.args)).length,
     1,
     'the retry never ran and nothing else was posted',
   );
@@ -204,7 +205,7 @@ test('a human needs-human label during backoff abandons before the retry', async
 
 test('a retry that crashed as it launched needs a new retry to launch again', async (t) => {
   await t.test('within the budget', async (t) => {
-    const g = await reviewFlow(t, okReview);
+    const g = await reviewFixture(t, okReview);
     g.gh.fail(onPr({ status: 502 }));
     const posts = crashPost(g, 2);
     await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
@@ -217,7 +218,7 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
     assert.equal((await loadTicket(g)).retries[REVIEW_COMMENT].remote.count, 2, 'the relaunch spent the second retry');
   });
   await t.test('with the budget spent', async (t) => {
-    const g = await reviewFlow(t, okReview);
+    const g = await reviewFixture(t, okReview);
     g.gh.fail(onPr({ status: 502 }));
     g.gh.fail(onPr({ status: 502 }));
     const posts = crashPost(g, 3);
@@ -236,7 +237,7 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
 });
 
 test('a cooldown raised while a retry looks for its effect is waited out before the launch', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   const runState = { stop: null, remoteNotBefore: 0 };
   const { comments } = g.options.deps.gh;
@@ -262,15 +263,19 @@ test('a cooldown raised while a retry looks for its effect is waited out before 
 });
 
 test('a human needs-human label during a fault report backoff abandons the Execution', async (t) => {
-  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
-  g.gh.fail({ matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 });
+  const g = await golden.fixture(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
+  g.gh.fail({ matches: (args) => fakeGhModule.isCommentPost(args, golden.TICKET), status: 502 });
   g.clock.onSleep = () => {
     g.gh.labels.add('gg:state:needs-human');
   };
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
-  assert.equal(g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, 1, 'the fault comment is not retried');
+  assert.equal(
+    g.gh.calls.filter((c) => fakeGhModule.isCommentPost(c.args)).length,
+    1,
+    'the fault comment is not retried',
+  );
   assert.ok(
     !g.gh.calls.some((c) => c.args[0] === 'issue' && c.args[1] === 'edit'),
     'no label written: in-progress was not there to remove',
@@ -283,11 +288,11 @@ test('a human needs-human label during a fault report backoff abandons the Execu
 });
 
 test('a first launch that crashed spends the budget when launched again', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   let posts = 0;
   // Every POST crashes as it launches, the first included, so each Run's lookup finds the comment absent.
   g.options.deps.gh = github.createGh(async (args, cwd, input) => {
-    if (golden.isCommentPost(args, PR) && ++posts) throw new interpreter.CrashError('crash as the POST launched');
+    if (fakeGhModule.isCommentPost(args, PR) && ++posts) throw new interpreter.CrashError('crash as the POST launched');
     return g.gh.gh(args, cwd, input);
   });
   const crashed = (err) => err instanceof interpreter.CrashError;
@@ -309,8 +314,8 @@ test('a first launch that crashed spends the budget when launched again', async 
 });
 
 test('a pending report waiting out a sibling cooldown checks the human override again before posting', async (t) => {
-  const g = await golden.setup(t);
-  const onTicket = { matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 };
+  const g = await golden.fixture(t);
+  const onTicket = { matches: (args) => fakeGhModule.isCommentPost(args, golden.TICKET), status: 502 };
   g.gh.fail(onTicket);
   g.gh.fail(onTicket);
   g.gh.fail(onTicket);
@@ -326,7 +331,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
   assert.equal(first.fault, true, JSON.stringify(first));
   const mid = await loadTicket(g);
   assert.ok(interpreter.pendingReport(mid));
-  const posted = g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length;
+  const posted = g.gh.calls.filter((c) => fakeGhModule.isCommentPost(c.args)).length;
 
   // Another Ticket of the next Run is backing off; a human sets needs-human during the wait.
   const runState = { stop: null, remoteNotBefore: g.clock.now() + 7_000 };
@@ -338,14 +343,14 @@ test('a pending report waiting out a sibling cooldown checks the human override 
 
   assert.deepEqual(g.sleeps, [7_000]);
   assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
-  assert.equal(g.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, posted, 'the report is not posted');
+  assert.equal(g.gh.calls.filter((c) => fakeGhModule.isCommentPost(c.args)).length, posted, 'the report is not posted');
   assert.equal((await loadTicket(g)).state, 'abandoned');
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
 });
 
 test('a remote budget that runs out says so in the Terminal Reason', async (t) => {
   await t.test('a transient comment failure', async (t) => {
-    const g = await reviewFlow(t, okReview);
+    const g = await reviewFixture(t, okReview);
     g.gh.fail(onPr({ status: 502 }));
     g.gh.fail(onPr({ status: 502 }));
     g.gh.fail(onPr({ status: 502 }));
@@ -354,7 +359,7 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
     assert.equal(result.fault, true, JSON.stringify(result));
     const text =
       'A transient GitHub failure (HTTP 502) at comment persisted after 2 retries; the error is in this comment and on ticket_end.';
-    assert.equal(g.rec.terminalReason.text, text);
+    assert.equal(g.executionRecord.terminalReason.text, text);
     assert.ok(
       ticketComments(g).some((c) => c.body.includes(`**Terminal Reason:** ${text}`)),
       'the comment carries it',
@@ -372,13 +377,13 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
     assert.match(failed.error, /502/);
   });
   await t.test('an auth failure stops the run, naming the comment', async (t) => {
-    const g = await reviewFlow(t, okReview);
+    const g = await reviewFixture(t, okReview);
     g.gh.fail(onPr({ status: 401, body: { message: 'Bad credentials' } }));
     const result = await interpreter.runExecution(g.options);
 
     assert.equal(runStopEvent(g)?.failureClass, 'auth', JSON.stringify(result));
     assert.equal(
-      g.rec.terminalReason.text,
+      g.executionRecord.terminalReason.text,
       'The comment at comment failed with class auth, which stops the whole run.',
     );
     assert.ok(!g.logs.some((l) => /retries exhausted/.test(l)));
@@ -386,11 +391,11 @@ test('a remote budget that runs out says so in the Terminal Reason', async (t) =
 });
 
 for (const [name, matches] of [
-  ['the comment lookup', (args) => golden.isCommentRead(args, PR)],
+  ['the comment lookup', (args) => fakeGhModule.isCommentRead(args, PR)],
   ['the label read', (args) => args[0] === 'issue' && args[1] === 'view'],
 ]) {
   test(`a transient read inside a retry spends the budget and is never taken for absence: ${name}`, async (t) => {
-    const g = await reviewFlow(t, okReview);
+    const g = await reviewFixture(t, okReview);
     g.gh.fail(onPr({ status: 502 }));
     // The retry's first read fails too; its next one works.
     g.gh.fail({ matches, status: 502 });

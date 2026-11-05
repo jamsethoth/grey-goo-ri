@@ -1,27 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as golden from '../support/golden.mjs';
-import {
-  tddTrace,
-  actionEvent,
-  WRONG_ADD,
-  GREEN_FAIL_OUTPUT,
-  attemptsOf,
-  ticketComments,
-  ok,
-  greenSetup,
-  stopReason,
-  subjects,
-  runStopEvent,
-} from '../support/interpreter.mjs';
+import * as golden from '../support/golden.ts';
+import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';
+import { actionEvent, attemptsOf, runStopEvent, subjects } from '../support/execution-reads.ts';
+import { WRONG_ADD, greenFixture, greenWrites, stopReason, tddTrace } from '../support/golden-run.ts';
+import { ticketComments } from '../support/review-flow.ts';
 
 test('golden: an invalid structured response is retried once with a nudge then stops', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: {
       ...structuredClone(golden.firstVisitResponses),
       'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
@@ -47,7 +38,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
   assert.ok(!nudge.brief.startsWith('GREEN PHASE'), 'attempt 2 gets the nudge, not the green Brief again');
   assert.match(nudge.brief, /structured result/i);
   assert.notEqual(nudge.marker, first.marker, 'the marker names the attempt');
-  assert.equal(g.rec.retries['green/1/green/0'].parse, 1);
+  assert.equal(g.executionRecord.retries['green/1/green/0'].parse, 1);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
   stopReason(g, {
     vertex: 'green',
@@ -60,7 +51,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
 
 test('a needs-replan reached with a rejected response is headed by its end, never the rejected claim', async (t) => {
   const claim = 'ok\n\n## Injected heading';
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: {
       ...structuredClone(golden.firstVisitResponses),
       'green/1/green/1': { files: { 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }, response: null },
@@ -80,9 +71,11 @@ test('a needs-replan reached with a rejected response is headed by its end, neve
 });
 
 test('golden: a failing test Check is recovered once then fails with the Outcome failed', async (t) => {
-  const g = await greenSetup(t, {
-    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
+  const g = await greenFixture(t, {
+    responses: {
+      'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a - b;\n' }),
+    },
   });
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -106,7 +99,7 @@ test('golden: a failing test Check is recovered once then fails with the Outcome
   const exhausted = actionEvent(g, 'green', 'test', 1);
   assert.equal(exhausted.outcome, 'failed');
   assert.deepEqual(exhausted.rule, { table: 'failed', row: null });
-  assert.deepEqual(g.rec.visits, { red: 1, green: 1 }, 'no Edge was traversed for the retry');
+  assert.deepEqual(g.executionRecord.visits, { red: 1, green: 1 }, 'no Edge was traversed for the retry');
   const reason = stopReason(g, {
     vertex: 'green',
     action: 'test',
@@ -124,7 +117,7 @@ test('golden: a failing test Check is recovered once then fails with the Outcome
 
 test('a timed-out result gets one fresh attempt then needs-human', async (t) => {
   const red = golden.firstVisitResponses['red/1/red/1'];
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: {
       'red/1/red/1': { ...red, result: { status: 'timed-out' } },
       'red/1/red/2': { ...red, result: { status: 'timed-out' } },
@@ -142,7 +135,7 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
   );
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.harness.calls[1].resume, 'fake-session-1', 'the fresh Attempt resumes the session');
-  assert.equal(g.rec.retries['red/1/red/0'].timeout, 1);
+  assert.equal(g.executionRecord.retries['red/1/red/0'].timeout, 1);
   const reason = stopReason(g, {
     vertex: 'red',
     action: 'red',
@@ -155,7 +148,7 @@ test('a timed-out result gets one fresh attempt then needs-human', async (t) => 
 
 test('a transient failure is retried within budget honouring retryAfterMs', async (t) => {
   const failed = { files: {}, response: null, failure: { failureClass: 'transient', retryAfterMs: 5 } };
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: {
       'red/1/red/1': failed,
       'red/1/red/2': failed,
@@ -186,7 +179,7 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
   assert.equal(g.harness.calls.length, 3);
   assert.deepEqual(sleeps, [5, 5]);
   assert.equal(clock.now() - start, 10, 'the injected clock advanced by retryAfterMs each time');
-  assert.equal(g.rec.retries['red/1/red/0'].transient, 2);
+  assert.equal(g.executionRecord.retries['red/1/red/0'].transient, 2);
   const reason = stopReason(g, {
     vertex: 'red',
     action: 'red',
@@ -198,7 +191,7 @@ test('a transient failure is retried within budget honouring retryAfterMs', asyn
 });
 
 test('an auth failure stops the run with its class', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const result = await interpreter.runExecution(g.options);
@@ -219,7 +212,7 @@ test('an auth failure stops the run with its class', async (t) => {
 });
 
 test('an auth failure keeps its run stop when the terminal comment fails', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   g.options.deps.gh = {
@@ -235,10 +228,10 @@ test('an auth failure keeps its run stop when the terminal comment fails', async
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 });
 
-const terminalMarker = (g, action) => golden.markerOf(g.rec, 'needs-human', 1, action);
+const terminalMarker = (g, action) => golden.markerOf(g.executionRecord, 'needs-human', 1, action);
 
 test('a fault interrupting a Terminal comment posts its own comment with the error and the interrupted Terminal Reason', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const real = g.options.deps.gh.comment;
@@ -281,7 +274,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
     claim: 'blocked',
     diagnosis: 'The ticket contradicts itself.',
   };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.fixture(t, { responses });
   const blocked = terminalMarker(g, 'end-comment');
   await assert.rejects(
     interpreter.runExecution({ ...g.options, crashAt: { marker: blocked, point: 'before-effect' } }),
@@ -322,7 +315,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
 });
 
 test('a crash inside the fault report replays its comment once on resume', async (t) => {
-  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
+  const g = await golden.fixture(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   const m = terminalMarker(g, 'fault-comment');
   await assert.rejects(
     interpreter.runExecution({ ...g.options, crashAt: { marker: m, point: 'after-effect' } }),
@@ -345,7 +338,7 @@ test('a crash inside the fault report replays its comment once on resume', async
 });
 
 test('a pending fault report keeps its run stop when its comment lookup fails on resume', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   const real = g.options.deps.gh.comment;
@@ -385,7 +378,7 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
 });
 
 test('an unknown failure goes to needs-human without retry', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
   });
   const result = await interpreter.runExecution(g.options);
@@ -405,12 +398,12 @@ test('an unknown failure goes to needs-human without retry', async (t) => {
 });
 
 test('a rejecting harness is an unexpected fault', async (t) => {
-  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
+  const g = await golden.fixture(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.fault, true);
   assert.equal(g.harness.calls.length, 1, 'never retried');
-  assert.equal(g.rec.state, 'fault');
+  assert.equal(g.executionRecord.state, 'fault');
   assert.equal(
     (await record.load(g.commonDir, 'ticket', golden.TICKET)).state,
     'fault',
@@ -424,7 +417,7 @@ test('a rejecting harness is an unexpected fault', async (t) => {
 });
 
 test('a fault whose terminal comment also fails is still recorded as a fault', async (t) => {
-  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
+  const g = await golden.fixture(t, { responses: { 'red/1/red/1': { throw: new Error('harness exploded') } } });
   g.options.deps.gh = {
     ...g.options.deps.gh,
     comment: async () => {
@@ -442,7 +435,7 @@ test('a fault whose terminal comment also fails is still recorded as a fault', a
 });
 
 test('a harness rejecting with an empty error is still a fault', async (t) => {
-  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: new Error() } } });
+  const g = await golden.fixture(t, { responses: { 'red/1/red/1': { throw: new Error() } } });
   const result = await interpreter.runExecution(g.options);
 
   assert.equal(result.fault, true);
@@ -454,7 +447,7 @@ test('a harness rejecting with an empty error is still a fault', async (t) => {
 
 test('a CrashError propagates untouched', async (t) => {
   const crash = new interpreter.CrashError('injected crash');
-  const g = await golden.setup(t, { responses: { 'red/1/red/1': { throw: crash } } });
+  const g = await golden.fixture(t, { responses: { 'red/1/red/1': { throw: crash } } });
   await assert.rejects(interpreter.runExecution(g.options), (err) => err === crash);
 
   assert.equal((await record.load(g.commonDir, 'ticket', golden.TICKET)).state, 'active');
@@ -463,7 +456,7 @@ test('a CrashError propagates untouched', async (t) => {
 });
 
 test('golden: blocked after a red recovery pass stops', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: {
       ...structuredClone(golden.firstVisitResponses),
       'red/1/recover/1': {
@@ -490,9 +483,11 @@ test('golden: blocked after a red recovery pass stops', async (t) => {
 });
 
 test('a persona edit between green and its recovery pass does not reach the recovery call', async (t) => {
-  const g = await greenSetup(t, {
-    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+  const g = await greenFixture(t, {
+    responses: {
+      'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+    },
   });
   const run = g.harness.run;
   g.harness.run = async (call) => {

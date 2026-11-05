@@ -6,11 +6,13 @@ import { pathToFileURL } from 'node:url';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
-import { TICKET, BRANCH, IN_PROGRESS, sh, fixture, seedExecution } from '../support/run.mjs';
+import * as golden from '../support/golden.ts';
+import { IN_PROGRESS_LABEL } from '../support/execution-context.ts';
+import { sh } from '../support/git-shell.ts';
+import { BRANCH, TICKET, fixture, seedExecution } from '../support/run-fixture.ts';
 
 test('an in-progress ticket with a recoverable record is resumed', async (t) => {
-  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
   // The push of the green commit was intended but never made.
   const rec = await seedExecution(f, {
     crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }),

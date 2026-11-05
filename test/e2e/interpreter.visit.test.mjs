@@ -1,47 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as golden from '../support/golden.mjs';
-import {
-  firstVisit,
-  intents,
-  steps,
-  actionMarker,
-  terminalReasonOf,
-  tddTrace,
-  actionEvent,
-} from '../support/interpreter.mjs';
+import * as golden from '../support/golden.ts';
+import { actionEvent, intents } from '../support/execution-reads.ts';
+import { runFirstVisit, tddTrace, terminalReasonOf } from '../support/golden-run.ts';
+import * as gitShell from '../support/git-shell.ts';
 
 test('commits match the recorded intent tree', async (t) => {
-  const g = await firstVisit(t, { git: 'real' });
-  const commits = intents(g.rec, 'commit');
+  const g = await runFirstVisit(t, { git: 'real' });
+  const commits = intents(g.executionRecord, 'commit');
   assert.equal(commits.length, 2);
   const shaOf = (c) =>
-    g.rec.writeAheadLog.find((e) => e.actionMarker === c.actionMarker && e.step === 'evidence').evidence.sha;
+    g.executionRecord.writeAheadLog.find((e) => e.actionMarker === c.actionMarker && e.step === 'evidence').evidence
+      .sha;
   const [testCommit, featCommit] = commits;
-  assert.equal(golden.sh(g.worktree, 'rev-parse', `${shaOf(testCommit)}^{tree}`), testCommit.payload.tree);
-  assert.equal(golden.sh(g.worktree, 'rev-parse', `${shaOf(testCommit)}^`), testCommit.payload.parent);
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', `${shaOf(testCommit)}^{tree}`), testCommit.payload.tree);
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', `${shaOf(testCommit)}^`), testCommit.payload.parent);
   assert.equal(
-    golden.sh(g.worktree, 'log', '-1', '--format=%B', shaOf(testCommit)).trim(),
+    gitShell.sh(g.worktree, 'log', '-1', '--format=%B', shaOf(testCommit)).trim(),
     testCommit.payload.message.trim(),
   );
-  assert.equal(golden.sh(g.worktree, 'rev-parse', `${shaOf(featCommit)}^{tree}`), featCommit.payload.tree);
-  assert.equal(golden.sh(g.worktree, 'rev-parse', `${shaOf(featCommit)}^`), featCommit.payload.parent);
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', `${shaOf(featCommit)}^{tree}`), featCommit.payload.tree);
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', `${shaOf(featCommit)}^`), featCommit.payload.parent);
   assert.equal(
-    golden.sh(g.worktree, 'log', '-1', '--format=%B', shaOf(featCommit)).trim(),
+    gitShell.sh(g.worktree, 'log', '-1', '--format=%B', shaOf(featCommit)).trim(),
     featCommit.payload.message.trim(),
   );
   assert.equal(testCommit.payload.parent, g.base);
-  const red = golden.sh(g.worktree, 'ls-tree', '-r', '--name-only', testCommit.payload.tree);
+  const red = gitShell.sh(g.worktree, 'ls-tree', '-r', '--name-only', testCommit.payload.tree);
   assert.ok(red.includes('test/add.test.mjs'), red);
   assert.ok(!red.includes('lib/add.mjs'), 'the test commit holds only the tests');
 });
 
 test('activity brackets every launched process', async (t) => {
-  const g = await firstVisit(t, { integrity: 'real' });
+  const g = await runFirstVisit(t, { integrity: 'real', git: 'real' });
   assert.deepEqual(
     [...new Set(g.activity.map((a) => a.what.split(/[ .]/)[0]))].sort(),
     ['gh', 'git', 'harness', 'test'],
@@ -59,13 +54,13 @@ test('activity brackets every launched process', async (t) => {
   );
   assert.equal(g.harness.calls.length, 2);
   assert.equal(g.activity.filter((a) => a.what === 'harness').length, 2);
-  assert.equal(g.rec.activity.busy, false);
+  assert.equal(g.executionRecord.activity.busy, false);
 });
 
 test('a green call that changes the committed test is an integrity violation', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['green/1/green/1'].files['test/add.test.mjs'] = "import { add } from '../lib/add.mjs';\n// weakened\n";
-  const g = await golden.setup(t, { responses, integrity: 'real' });
+  const g = await golden.fixture(t, { responses, integrity: 'real', git: 'real' });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'needs-human');
   const greenCall = g.readEvents().find((e) => e.type === 'action' && e.vertex === 'green' && e.action === 'green');
@@ -74,13 +69,13 @@ test('a green call that changes the committed test is an integrity violation', a
   assert.deepEqual(greenCall.integrityViolations, [
     { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
   ]);
-  assert.equal(golden.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'no feat commit after the violation');
+  assert.equal(gitShell.sh(g.worktree, 'rev-list', '--count', 'HEAD'), '2', 'no feat commit after the violation');
 });
 
 test('golden: a failed red is recovered once then fails at needs-human with its work in place', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses, integrity: 'real' });
+  const g = await golden.fixture(t, { responses, integrity: 'real', git: 'real' });
   // The new test passes before any implementation exists, both times.
   g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
   const { outcome } = await interpreter.runExecution(g.options);
@@ -105,15 +100,15 @@ test('golden: a failed red is recovered once then fails at needs-human with its 
     { table: 'fixed', row: 'recover' },
     'the first failing run recovers',
   );
-  assert.equal(golden.sh(g.worktree, 'rev-list', '--count', `${g.base}..HEAD`), '0', 'no commit on the branch');
+  assert.equal(gitShell.sh(g.worktree, 'rev-list', '--count', `${g.base}..HEAD`), '0', 'no commit on the branch');
   assert.equal(
-    golden.sh(g.worktree, 'status', '--porcelain'),
+    gitShell.sh(g.worktree, 'status', '--porcelain'),
     '?? test/',
     "the agent's test stays in the worktree for the human",
   );
-  assert.deepEqual(intents(g.rec, 'reset'), [], 'nothing is reset');
-  assert.deepEqual(g.rec.history, []);
-  assert.deepEqual(writeAhead.openIntents(g.rec), []);
+  assert.deepEqual(intents(g.executionRecord, 'reset'), [], 'nothing is reset');
+  assert.deepEqual(g.executionRecord.history, []);
+  assert.deepEqual(writeAhead.openIntents(g.executionRecord), []);
   assert.equal(g.readEvents().at(-1).outcome, 'needs-human');
 
   const reason = terminalReasonOf(g);
@@ -132,9 +127,12 @@ test('an ignored test file already there at the baseline is not a changed test',
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files = {};
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses, integrity: 'real' });
+  const g = await golden.fixture(t, { responses, integrity: 'real', git: 'real' });
   // Build output under a test glob, ignored and left from before the Visit; red writes no test, in either pass.
-  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/cache/\n');
+  writeFileSync(
+    resolve(g.worktree, gitShell.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')),
+    'test/cache/\n',
+  );
   mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
   const { outcome } = await interpreter.runExecution(g.options);
@@ -149,8 +147,11 @@ test('an ignored test file already there at the baseline counts once the Visit c
   const responses = structuredClone(golden.firstVisitResponses);
   // red rewrites the ignored test file that was there before the Visit, and writes no other.
   responses['red/1/red/1'].files = { 'test/cache/out.json': '{"changed":true}\n' };
-  const g = await golden.setup(t, { responses, integrity: 'real' });
-  writeFileSync(resolve(g.worktree, golden.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')), 'test/cache/\n');
+  const g = await golden.fixture(t, { responses, integrity: 'real', git: 'real' });
+  writeFileSync(
+    resolve(g.worktree, gitShell.sh(g.worktree, 'rev-parse', '--git-path', 'info/exclude')),
+    'test/cache/\n',
+  );
   mkdirSync(join(g.worktree, 'test', 'cache'), { recursive: true });
   writeFileSync(join(g.worktree, 'test', 'cache', 'out.json'), '{}\n');
   await interpreter.runExecution(g.options);
@@ -160,23 +161,23 @@ test('an ignored test file already there at the baseline counts once the Visit c
 });
 
 test('uncommitted changes before red are held at needs-human and nothing is deleted', async (t) => {
-  const g = await golden.setup(t, { integrity: 'real' });
-  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  const g = await golden.fixture(t, { integrity: 'real', git: 'real' });
+  const [tracked] = gitShell.sh(g.worktree, 'ls-files').split('\n');
   writeFileSync(join(g.worktree, tracked), 'a human edit\n');
   writeFileSync(join(g.worktree, 'notes.txt'), 'untracked human work\n');
-  const before = golden.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all');
+  const before = gitShell.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all');
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
   assert.equal(
-    golden.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all'),
+    gitShell.sh(g.worktree, 'status', '--porcelain', '--untracked-files=all'),
     before,
     'every pre-existing change survives',
   );
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
-  assert.deepEqual(intents(g.rec, 'reset'), []);
-  assert.equal(g.rec.history.at(-1)?.kind, 'held');
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', 'HEAD'), g.base);
+  assert.deepEqual(intents(g.executionRecord, 'reset'), []);
+  assert.equal(g.executionRecord.history.at(-1)?.kind, 'held');
   const reason = terminalReasonOf(g);
   assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
   assert.equal(reason.outcome, null);
@@ -187,16 +188,16 @@ test('uncommitted changes before red are held at needs-human and nothing is dele
 test('an assume-unchanged edit before red is held too, so a rollback cannot reset it away', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses, integrity: 'real' });
+  const g = await golden.fixture(t, { responses, integrity: 'real', git: 'real' });
   g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
-  golden.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);
+  const [tracked] = gitShell.sh(g.worktree, 'ls-files').split('\n');
+  gitShell.sh(g.worktree, 'update-index', '--assume-unchanged', tracked);
   writeFileSync(join(g.worktree, tracked), 'a hidden human edit\n');
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
-  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.deepEqual(intents(g.executionRecord, 'reset'), []);
   assert.equal(readFileSync(join(g.worktree, tracked), 'utf8'), 'a hidden human edit\n');
 });
 
@@ -205,17 +206,17 @@ test('a read-only red Vertex is held before unknown changes, so a rollback canno
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files = {};
   responses['red/1/recover/1'] = { files: {}, response: golden.redResponse };
-  const g = await golden.setup(t, { responses, integrity: 'real' });
+  const g = await golden.fixture(t, { responses, integrity: 'real', git: 'real' });
   golden.configure(g, (c) => {
     c.flows.golden.ticket.vertices.red.access = 'read-only';
   });
   g.options.deps.exec = { runShell: async () => ({ code: 0, output: golden.GREEN_OUTPUT, timedOut: false }) };
-  const [tracked] = golden.sh(g.worktree, 'ls-files').split('\n');
+  const [tracked] = gitShell.sh(g.worktree, 'ls-files').split('\n');
   writeFileSync(join(g.worktree, tracked), 'a human edit\n');
   const { outcome } = await interpreter.runExecution(g.options);
 
   assert.equal(outcome, 'needs-human');
   assert.equal(g.harness.calls.length, 0, 'no agent runs over unknown changes');
-  assert.deepEqual(intents(g.rec, 'reset'), []);
+  assert.deepEqual(intents(g.executionRecord, 'reset'), []);
   assert.equal(readFileSync(join(g.worktree, tracked), 'utf8'), 'a human edit\n');
 });

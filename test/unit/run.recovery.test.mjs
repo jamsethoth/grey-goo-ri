@@ -7,24 +7,24 @@ import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { loadTicket } from '../support/execution-reads.ts';
 import {
-  TICKET,
   BRANCH,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
+  TICKET,
+  dirtyTicket,
+  endsOf,
+  failComment,
   fixture,
+  lastRun,
   seedExecution,
   ticketResult,
-  failComment,
-  endsOf,
-  lastRun,
-  loadTicket,
-  dirtyTicket,
-} from '../support/run.mjs';
+} from '../support/run-fixture.ts';
+import * as fakeGhModule from '../support/fake-gh.ts';
 
 test('an admission failure on an active execution is reported as a fault', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL] });
   const seeded = await seedExecution(f, {
     crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }),
   });
@@ -49,7 +49,7 @@ test('an admission failure on an active execution is reported as a fault', async
     writeAhead.openIntents(seeded),
     'the earlier intent is kept',
   );
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL), 'the Ticket is at needs-human');
   assert.ok(
     f.comments().some((b) => b.includes('disk full')),
     `a comment carries the error: ${JSON.stringify(f.comments())}`,
@@ -65,7 +65,7 @@ test('an admission failure on an active execution is reported as a fault', async
 });
 
 test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async (t) => {
-  const { f } = await dirtyTicket(t, false);
+  const { runFixture: f } = await dirtyTicket(t, false);
   const before = await integrity.snapshot(f.worktree, f.options.deps.git);
   const head = await f.options.deps.git.headSha(f.worktree);
   const failing = failComment(f);
@@ -85,8 +85,8 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
   );
   assert.deepEqual(f.comments(), []);
   assert.equal(endsOf(f, mid.execution).length, 0, 'the hold has not landed');
-  assert.equal(f.gh.labels.has(NEEDS_HUMAN), false);
-  assert.equal(f.gh.labels.has(IN_PROGRESS), false);
+  assert.equal(f.gh.labels.has(NEEDS_HUMAN_LABEL), false);
+  assert.equal(f.gh.labels.has(IN_PROGRESS_LABEL), false);
 
   failing.on = false;
   const second = await run.runTarget(f.options);
@@ -100,7 +100,10 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
     f.comments()[0].includes(marker.markerComment(open.actionMarker)),
     'the comment carries the original Action Marker',
   );
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
+  assert.ok(
+    f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL),
+    `the hold labels land: ${[...f.gh.labels]}`,
+  );
   assert.deepEqual(writeAhead.openIntents(final), []);
   const ends = endsOf(f, final.execution);
   assert.equal(ends.length, 1);
@@ -118,7 +121,7 @@ test('a dirty hold whose comment gets HTTP 502 finishes on the next Run', async 
 });
 
 test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run', async (t) => {
-  const { f, seededRec } = await dirtyTicket(t, true);
+  const { runFixture: f, seededRecord: seededRec } = await dirtyTicket(t, true);
   const before = await integrity.snapshot(f.worktree, f.options.deps.git);
   const head = await f.options.deps.git.headSha(f.worktree);
   const failing = failComment(f);
@@ -143,8 +146,8 @@ test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run',
   );
   assert.deepEqual(f.comments(), []);
   assert.equal(endsOf(f, mid.execution).length, 0, 'the hold has not landed');
-  assert.equal(f.gh.labels.has(NEEDS_HUMAN), false);
-  assert.equal(f.gh.labels.has(IN_PROGRESS), true, 'a seeded in-progress label is kept until the hold lands');
+  assert.equal(f.gh.labels.has(NEEDS_HUMAN_LABEL), false);
+  assert.equal(f.gh.labels.has(IN_PROGRESS_LABEL), true, 'a seeded in-progress label is kept until the hold lands');
 
   failing.on = false;
   const second = await run.runTarget(f.options);
@@ -158,7 +161,10 @@ test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run',
     f.comments()[0].includes(marker.markerComment(open.actionMarker)),
     'the comment carries the original Action Marker',
   );
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS), `the hold labels land: ${[...f.gh.labels]}`);
+  assert.ok(
+    f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL),
+    `the hold labels land: ${[...f.gh.labels]}`,
+  );
   assert.deepEqual(
     writeAhead.openIntents(final),
     writeAhead.openIntents(seededRec),
@@ -180,7 +186,7 @@ test('a seeded dirty hold whose comment gets HTTP 502 finishes on the next Run',
 });
 
 test('a resumed pending report emits no second ticket_start', async (t) => {
-  const { f } = await dirtyTicket(t, false);
+  const { runFixture: f } = await dirtyTicket(t, false);
   const failing = failComment(f);
   const first = await run.runTarget(f.options);
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
@@ -194,7 +200,7 @@ test('a resumed pending report emits no second ticket_start', async (t) => {
 });
 
 test('fixing the worktree while a hold comment is pending still finishes the hold, and a fresh hold restarts', async (t) => {
-  const { f } = await dirtyTicket(t, false);
+  const { runFixture: f } = await dirtyTicket(t, false);
   const failing = failComment(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
@@ -209,7 +215,7 @@ test('fixing the worktree while a hold comment is pending still finishes the hol
   assert.equal(endsOf(f, held.execution).length, 1);
   assert.equal(f.harness.calls.length, 0, 'no agent ran');
 
-  f.gh.labels.delete(NEEDS_HUMAN);
+  f.gh.labels.delete(NEEDS_HUMAN_LABEL);
   const third = await run.runTarget(f.options);
   assert.equal(run.runExitCode(third), 0, JSON.stringify(third));
   assert.notEqual((await loadTicket(f)).execution, mid.execution, 'a fresh hold restarts as a new Execution');
@@ -217,7 +223,7 @@ test('fixing the worktree while a hold comment is pending still finishes the hol
 });
 
 test('fixing the worktree while a hold comment is pending still finishes the hold, and a seeded hold stays held', async (t) => {
-  const { f } = await dirtyTicket(t, true);
+  const { runFixture: f } = await dirtyTicket(t, true);
   const failing = failComment(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   const mid = await loadTicket(f);
@@ -232,19 +238,19 @@ test('fixing the worktree while a hold comment is pending still finishes the hol
   assert.equal(endsOf(f, held.execution).length, 1);
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
 
-  f.gh.labels.delete(NEEDS_HUMAN);
+  f.gh.labels.delete(NEEDS_HUMAN_LABEL);
   const third = await run.runTarget(f.options);
   assert.equal(ticketResult(third).outcome, 'skipped', 'a held Execution with Visits needs its row deleted');
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
 });
 
 test('a landed hold comment with a lost response is not posted twice', async (t) => {
-  const { f } = await dirtyTicket(t, false);
+  const { runFixture: f } = await dirtyTicket(t, false);
   failComment(f, { lost: true });
   // The retry looks for the comment by its marker first, so the hold lands within the Run.
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.equal(f.comments().length, 1, 'the marker found it, so it was not posted again');
-  assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args)).length, 1);
+  assert.equal(f.gh.calls.filter((c) => fakeGhModule.isCommentPost(c.args)).length, 1);
   const final = await loadTicket(f);
   const comment = final.writeAheadLog.find((e) => e.step === 'intent' && e.effect === 'comment');
   assert.deepEqual(
@@ -255,7 +261,7 @@ test('a landed hold comment with a lost response is not posted twice', async (t)
     final.writeAheadLog.find((e) => e.actionMarker === comment.actionMarker && e.step === 'evidence').evidence.id,
     f.gh.comments[0].id,
   );
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the label lands');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the label lands');
   assert.equal(final.state, 'held');
 });
 
@@ -281,8 +287,8 @@ test('an ensureWorktree failure without a record is marked and never retried', a
     f.comments().some((b) => b.includes('disk full')),
     JSON.stringify(f.comments()),
   );
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN));
-  assert.ok(!f.labelAdds().includes(IN_PROGRESS), 'in-progress is never set');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL));
+  assert.ok(!f.labelAdds().includes(IN_PROGRESS_LABEL), 'in-progress is never set');
   const evs = f.readEvents().filter((e) => e.ticket === TICKET);
   assert.deepEqual(
     evs.map((e) => (e.type === 'action' ? `${e.action} ${e.recovery}` : e.type)),

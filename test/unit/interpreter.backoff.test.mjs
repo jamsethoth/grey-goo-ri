@@ -6,28 +6,31 @@ import * as github from '../../lib/github.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as run from '../../lib/run.ts';
 import * as interpreter from '../../lib/interpreter.ts';
-import * as record from '../../lib/record.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
 import {
-  steps,
+  actionEvent,
   actionMarker,
-  reviewFlow,
-  prReviewComments,
-  ticketComments,
-  loadTicket,
-  ticketRow,
   attemptMarker,
+  headSha,
+  loadTicket,
+  originSha,
+  runStopEvent,
+  ticketRow,
+  writeAheadSteps,
+} from '../support/execution-reads.ts';
+import {
   PR,
-  okReview,
   REVIEW_COMMENT,
   commentPosts,
-  onPr,
   crashPost,
-  originSha,
-  headSha,
-  actionEvent,
-  runStopEvent,
-} from '../support/interpreter.mjs';
+  okReview,
+  onPr,
+  prReviewComments,
+  reviewFixture,
+  ticketComments,
+} from '../support/review-flow.ts';
+import * as caseDatabase from '../support/case-database.ts';
+import * as fakeGhModule from '../support/fake-gh.ts';
 
 // #83: the pr-upsert, pr-ready and push paths of the in-Action retry, end to end.
 const PUSH = 'green/1/push/0';
@@ -69,13 +72,13 @@ async function retriedOnce(g, result, key, m) {
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.deepEqual(g.sleeps, [60_000]);
   const final = await loadTicket(g);
-  assert.deepEqual(steps(final, m), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(writeAheadSteps(final, m), ['intent', 'evidence', 'complete']);
   assert.equal(final.retries[key].remote.count, 1);
   return final;
 }
 
 test('a transient pr-upsert failure is retried and opens one PR', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   g.gh.fail({ matches: isPr('create'), status: 502 });
   let during;
   g.clock.onSleep = async () => {
@@ -92,7 +95,7 @@ test('a transient pr-upsert failure is retried and opens one PR', async (t) => {
 });
 
 test('an accepted pr-upsert whose call errored is found, not repeated', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   g.gh.fail({ matches: isPr('create'), status: 502, afterEffect: true });
   const result = await interpreter.runExecution(g.options);
 
@@ -104,7 +107,7 @@ test('an accepted pr-upsert whose call errored is found, not repeated', async (t
     number: PR,
     url: g.gh.pr().url,
   });
-  assert.equal(g.rec.pr, PR, 'restored from the found PR');
+  assert.equal(g.executionRecord.pr, PR, 'restored from the found PR');
   assert.equal(final.pr, PR, 'and saved');
   assert.deepEqual(
     prCalls(g, 'ready').map((c) => c.args[2]),
@@ -114,7 +117,7 @@ test('an accepted pr-upsert whose call errored is found, not repeated', async (t
 });
 
 test('a transient pr-ready failure is retried and the PR ends ready', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   g.gh.fail({ matches: isPr('ready'), status: 502 });
   const result = await interpreter.runExecution(g.options);
 
@@ -124,7 +127,7 @@ test('a transient pr-ready failure is retried and the PR ends ready', async (t) 
 });
 
 test('an accepted pr-ready whose call errored is repeated with one state change', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   g.gh.fail({ matches: isPr('ready'), status: 502, afterEffect: true });
   const drafts = [];
   g.options.deps.gh = github.createGh(async (args, cwd, input) => {
@@ -139,7 +142,7 @@ test('an accepted pr-ready whose call errored is repeated with one state change'
 });
 
 test('a transient push failure is retried and pushes once', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   const pushes = pushThrough(g, (n, push) => (n === 1 ? Promise.reject(pushError()) : push()));
   const result = await interpreter.runExecution(g.options);
 
@@ -149,7 +152,7 @@ test('a transient push failure is retried and pushes once', async (t) => {
 });
 
 test('a push that landed but whose call errored is found on origin, not pushed again', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   const unlocked = g.options.deps.git;
   const pushes = pushThrough(g, async (n, push) => {
     await push();
@@ -200,13 +203,13 @@ for (const [name, key, inject, text] of [
   ],
 ]) {
   test(`a ${name} whose retries run out holds with the exhausted reason`, async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.fixture(t);
     inject(g);
     const result = await interpreter.runExecution(g.options);
 
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.deepEqual(g.sleeps, [60_000, 120_000]);
-    assert.equal(g.rec.terminalReason.text, text);
+    assert.equal(g.executionRecord.terminalReason.text, text);
     assert.ok(
       g.logs.some((l) => l.includes(`${key}: transient failure, retries exhausted after 2 of 2`)),
       g.logs.join('\n'),
@@ -242,7 +245,7 @@ for (const [name, key, inject, text] of [
   ],
 ]) {
   test(`a ${name} that crashes after launch spends its saved budget on resume`, async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.fixture(t);
     const launches = inject(g);
     // Two transient failures spend the budget; the second retry crashes as it launches.
     await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
@@ -275,7 +278,7 @@ const rateLimitedFor = (ms) =>
   });
 
 test('a backoff longer than the timer limit sleeps in bounded chunks', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(rateLimitedFor(30 * 24 * HOUR));
   const calls = new Set();
   g.clock.onSleep = () => {
@@ -290,7 +293,7 @@ test('a backoff longer than the timer limit sleeps in bounded chunks', async (t)
 });
 
 test('a backoff keeps one idle generation across timer chunks', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(rateLimitedFor(2 * HOUR));
   const seen = [];
   g.clock.onSleep = async () => {
@@ -311,7 +314,7 @@ for (const [name, deadline, shown] of [
   ['out of range', () => 1e300, '1e+300'],
 ]) {
   test(`an ${name} saved retry deadline is logged and held`, async (t) => {
-    const g = await reviewFlow(t, okReview);
+    const g = await reviewFixture(t, okReview);
     const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
     g.gh.fail(onPr({ status: 502 }));
     await assert.rejects(
@@ -339,7 +342,7 @@ for (const [name, deadline, shown] of [
 }
 
 test('a wait over 31 days from GitHub is held without reserving a retry', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(rateLimitedFor(40 * 24 * HOUR));
   const result = await interpreter.runExecution(g.options);
 
@@ -358,7 +361,7 @@ test('a wait over 31 days from GitHub is held without reserving a retry', async 
 });
 
 test('a run stop during a backoff ends the Execution at needs-human', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   const runState = { stop: null, remoteNotBefore: 0 };
   let saved;
@@ -389,7 +392,7 @@ test('a run stop during a backoff ends the Execution at needs-human', async (t) 
 });
 
 test('a latched run stop does not consume a relaunch retry', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   const posts = crashPost(g, 2);
   await assert.rejects(interpreter.runExecution(g.options), (err) => err instanceof interpreter.CrashError);
@@ -414,7 +417,7 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
 });
 
 test('a rate-limited push keeps the fallback without a probe', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   const limited = () =>
     Object.assign(pushError(), {
       stderr: "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 429",
@@ -428,7 +431,7 @@ test('a rate-limited push keeps the fallback without a probe', async (t) => {
 });
 
 test('a run stop during a pr-ready backoff ends at needs-human without marking ready', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   g.gh.fail({ matches: isPr('ready'), status: 502 });
   const runState = { stop: null, remoteNotBefore: 0 };
   let saved;
@@ -455,10 +458,10 @@ test('a run stop during a pr-ready backoff ends at needs-human without marking r
 });
 
 test('a run stop during the ready-for-qa comment backoff ends at needs-human after pr-ready', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   const DONE_COMMENT = 'ready-for-qa/1/end-comment/0';
   g.gh.fail({
-    matches: (args) => golden.isCommentPost(args, golden.TICKET) && prCalls(g, 'ready').length > 0,
+    matches: (args) => fakeGhModule.isCommentPost(args, golden.TICKET) && prCalls(g, 'ready').length > 0,
     status: 502,
   });
   const runState = { stop: null, remoteNotBefore: 0 };
@@ -486,7 +489,7 @@ test('a run stop during the ready-for-qa comment backoff ends at needs-human aft
 });
 
 test('a run stop during a resume lookup backoff ends at needs-human', async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   const m = attemptMarker(g, 'reviewer', 1, 'comment', 0);
   g.gh.fail(onPr({ status: 502 }));
   await assert.rejects(
@@ -514,9 +517,9 @@ test('a run stop during a resume lookup backoff ends at needs-human', async (t) 
 
 // The backoff's own transition fails: the first save after the retry that flips the worktree `from` busy `to` busy.
 async function failActivitySave(t, from, to) {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
-  golden.failSaves(
+  caseDatabase.failSaves(
     t,
     (saved, next) =>
       saved?.activity.busy === from && next.activity.busy === to && next.retries[REVIEW_COMMENT]?.remote?.count === 1,
@@ -570,7 +573,7 @@ test('a failed busy save after a backoff allows no later save or effect', async 
 });
 
 test("a worktree backing off is idle to other Tickets' integrity checks", async (t) => {
-  const g = await reviewFlow(t, okReview);
+  const g = await reviewFixture(t, okReview);
   g.gh.fail(onPr({ status: 502 }));
   // Another Ticket's Action, in the main checkout, writes into this worktree while it backs off.
   const other = { worktree: g.mainRoot, commonDir: g.commonDir };
@@ -596,7 +599,7 @@ test("a worktree backing off is idle to other Tickets' integrity checks", async 
 const refusedPush = (stderr) => Object.assign(new Error('git push exited 128'), { code: 128, stdout: '', stderr });
 
 test('a remote auth failure stops the run and the next Execution stops before its first Action', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   pushThrough(g, () => Promise.reject(refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")));
   const runState = { stop: null, remoteNotBefore: 0 };
   const result = await interpreter.runExecution({ ...g.options, runState });
@@ -611,7 +614,7 @@ test('a remote auth failure stops the run and the next Execution stops before it
   assert.equal(final.terminalReason.text, 'The push at push failed with class auth, which stops the whole run.');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human']);
 
-  const next = await golden.setup(t);
+  const next = await golden.fixture(t);
   const stopped = await interpreter.runExecution({ ...next.options, runState });
 
   assert.equal(stopped.outcome, 'needs-human', JSON.stringify(stopped));
@@ -625,7 +628,7 @@ test('a remote auth failure stops the run and the next Execution stops before it
 });
 
 test('a remote permission failure faults only its Ticket', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   pushThrough(g, () =>
     Promise.reject(
       refusedPush("fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403\n"),
@@ -647,11 +650,11 @@ test('a remote permission failure faults only its Ticket', async (t) => {
 });
 
 test("a remote auth failure in a Terminal's report latches the run stop and faults its Ticket", async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
   });
   g.gh.fail({
-    matches: (args) => golden.isCommentPost(args, golden.TICKET),
+    matches: (args) => fakeGhModule.isCommentPost(args, golden.TICKET),
     status: 401,
     body: { message: 'Bad credentials' },
   });
@@ -669,10 +672,10 @@ test("a remote auth failure in a Terminal's report latches the run stop and faul
 });
 
 test('a remote run stop whose own report fails becomes a fault that keeps the run stop', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   pushThrough(g, () => Promise.reject(refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")));
   g.gh.fail({
-    matches: (args) => golden.isCommentPost(args, golden.TICKET),
+    matches: (args) => fakeGhModule.isCommentPost(args, golden.TICKET),
     status: 401,
     body: { message: 'Bad credentials' },
   });
@@ -694,10 +697,10 @@ test('a remote run stop whose own report fails becomes a fault that keeps the ru
 });
 
 test("a remote auth failure first met in a fault's report keeps the run stop on the fault", async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'unknown' } } },
   });
-  const onTicket = (args) => golden.isCommentPost(args, golden.TICKET);
+  const onTicket = (args) => fakeGhModule.isCommentPost(args, golden.TICKET);
   g.gh.fail({ matches: onTicket, status: 422, body: { message: 'Validation Failed' } });
   g.gh.fail({ matches: onTicket, status: 401, body: { message: 'Bad credentials' } });
   const runState = { stop: null, remoteNotBefore: 0 };
@@ -721,7 +724,7 @@ test('a remote Action that fails for good records its Action Event with its clas
     ['a push refused with a 403', FORBIDDEN, 'permission', 'fault'],
   ]) {
     await t.test(name, async (t) => {
-      const g = await golden.setup(t);
+      const g = await golden.fixture(t);
       pushThrough(g, () => Promise.reject(refusedPush(stderr)));
       await interpreter.runExecution({ ...g.options, runState: { stop: null, remoteNotBefore: 0 } });
 
@@ -746,11 +749,11 @@ test('a remote Action that fails for good records its Action Event with its clas
 });
 
 test('a run stop survives a human abandonment of its Terminal', async (t) => {
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: { 'red/1/red/1': { files: {}, response: null, failure: { failureClass: 'auth' } } },
   });
   // The run stop's own comment backs off, and a human sets needs-human meanwhile.
-  g.gh.fail({ matches: (args) => golden.isCommentPost(args, golden.TICKET), status: 502 });
+  g.gh.fail({ matches: (args) => fakeGhModule.isCommentPost(args, golden.TICKET), status: 502 });
   g.clock.onSleep = () => {
     g.gh.labels.add('gg:state:needs-human');
   };
@@ -765,7 +768,7 @@ test('a run stop survives a human abandonment of its Terminal', async (t) => {
 });
 
 test('a stop routed to ready-for-qa keeps its run stop when the replacement report fails', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   // A Check-only Vertex after publish whose failing lint Check routes ok and failed to ready-for-qa.
   golden.configure(g, (c) => {
     c.commands.lint = 'npm run lint';
@@ -784,7 +787,7 @@ test('a stop routed to ready-for-qa keeps its run stop when the replacement repo
         : runShell(command, opts),
   };
   // ready-for-qa's comment meets auth, so a run stop replaces it; that run stop's comment then fails in an ordinary way.
-  const onTicket = (args) => golden.isCommentPost(args, golden.TICKET);
+  const onTicket = (args) => fakeGhModule.isCommentPost(args, golden.TICKET);
   g.gh.fail({ matches: onTicket, status: 401, body: { message: 'Bad credentials' } });
   g.gh.fail({ matches: onTicket, status: 422, body: { message: 'Validation Failed' } });
   const runState = { stop: null, remoteNotBefore: 0 };
@@ -798,9 +801,9 @@ test('a stop routed to ready-for-qa keeps its run stop when the replacement repo
 });
 
 test("a failed Action's Event that cannot be saved still stops the run and saves nothing more", async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   pushThrough(g, () => Promise.reject(refusedPush(AUTH_REFUSED)));
-  golden.failAppends(t, (event) => event.type === 'action' && event.action === 'push');
+  caseDatabase.failAppends(t, (event) => event.type === 'action' && event.action === 'push');
   const runState = { stop: null, remoteNotBefore: 0 };
   const err = await interpreter.runExecution({ ...g.options, runState }).then(
     () => null,

@@ -1,33 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
 import {
-  firstVisit,
-  intents,
-  steps,
-  actionMarker,
-  terminalReasonOf,
   actionEvent,
-  loadTicket,
+  actionMarker,
   branchMessages,
-  subjects,
   headSha,
-  greenSetup,
-  ok,
-  WRONG_ADD,
-} from '../support/interpreter.mjs';
+  intents,
+  loadTicket,
+  subjects,
+  writeAheadSteps,
+} from '../support/execution-reads.ts';
+import { WRONG_ADD, greenFixture, greenWrites, runFirstVisit, terminalReasonOf } from '../support/golden-run.ts';
 
 const DONE = ['intent', 'evidence', 'complete'];
 
 test('every side-effect action leaves intent, evidence and completion with the full payload', async (t) => {
-  const g = await firstVisit(t);
+  const g = await runFirstVisit(t);
   assert.deepEqual(
-    g.rec.writeAheadLog.filter((e) => e.step === 'intent').map((i) => [i.effect, steps(g.rec, i.actionMarker)]),
+    g.executionRecord.writeAheadLog
+      .filter((e) => e.step === 'intent')
+      .map((i) => [i.effect, writeAheadSteps(g.executionRecord, i.actionMarker)]),
     [
       ['call', DONE],
       ['commit', DONE],
@@ -41,11 +39,11 @@ test('every side-effect action leaves intent, evidence and completion with the f
       ['label', DONE],
     ],
   );
-  assert.deepEqual(writeAhead.openIntents(g.rec), []);
+  assert.deepEqual(writeAhead.openIntents(g.executionRecord), []);
 
   // Each agent Attempt is write-ahead too, its intent carrying the baseline the Integrity Assertion compares against,
   // which a resume reads back from the State Database.
-  const calls = intents(g.rec, 'call');
+  const calls = intents(g.executionRecord, 'call');
   assert.deepEqual(
     calls.map((c) => c.actionMarker),
     [actionMarker(g, 'red', 'red'), actionMarker(g, 'green', 'green')],
@@ -58,22 +56,23 @@ test('every side-effect action leaves intent, evidence and completion with the f
   );
   assert.equal(saved[0].payload.baseline.head, g.base, 'red compares against the base');
 
-  const commits = intents(g.rec, 'commit');
+  const commits = intents(g.executionRecord, 'commit');
   assert.equal(commits.length, 2);
   assert.deepEqual(Object.keys(commits[0].payload).sort(), ['message', 'parent', 'tree']);
   assert.ok(commits[0].payload.message.includes(`Gg-Action: ${commits[0].actionMarker}`), commits[0].payload.message);
   assert.deepEqual(Object.keys(commits[1].payload).sort(), ['message', 'parent', 'tree']);
   assert.ok(commits[1].payload.message.includes(`Gg-Action: ${commits[1].actionMarker}`), commits[1].payload.message);
   const head = await headSha(g);
-  const evidenceOf = (m) => g.rec.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence;
+  const evidenceOf = (m) =>
+    g.executionRecord.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence;
   assert.equal(evidenceOf(commits[1].actionMarker).sha, head);
 
-  const [push] = intents(g.rec, 'push');
+  const [push] = intents(g.executionRecord, 'push');
   assert.deepEqual(push.payload, { branch: golden.BRANCH, sha: head });
   assert.equal(evidenceOf(push.actionMarker).remoteSha, head);
 
   // publish's re-render is the PR body GitHub shows.
-  const pr = intents(g.rec, 'pr-upsert').at(-1);
+  const pr = intents(g.executionRecord, 'pr-upsert').at(-1);
   assert.equal(pr.payload.branch, golden.BRANCH);
   assert.equal(pr.payload.base, 'main');
   assert.equal(pr.payload.title, 'Add two numbers');
@@ -83,12 +82,12 @@ test('every side-effect action leaves intent, evidence and completion with the f
 
   // pr-ready's saved target: the pushed commit and the tree publish's Check passed on.
   assert.deepEqual(
-    intents(g.rec, 'pr-ready').map((r) => r.payload),
+    intents(g.executionRecord, 'pr-ready').map((r) => r.payload),
     [{ number: 7, sha: head, tree: await g.options.deps.git.treeOf(g.worktree, head) }],
   );
 
   assert.deepEqual(
-    intents(g.rec, 'label').map((l) => l.payload),
+    intents(g.executionRecord, 'label').map((l) => l.payload),
     [{ ticket: golden.TICKET, add: ['gg:state:ready-for-qa'], remove: ['gg:state:in-progress'] }],
     'the ready-for-qa label write goes through the log',
   );
@@ -96,9 +95,11 @@ test('every side-effect action leaves intent, evidence and completion with the f
 
 // green's Visit has two calls when the first fails the Green Check: green, then its recovery pass.
 test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {
-  const g = await greenSetup(t, {
-    'green/1/green/1': ok({ 'lib/add.mjs': WRONG_ADD }),
-    'green/1/recover/1': ok({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+  const g = await greenFixture(t, {
+    responses: {
+      'green/1/green/1': greenWrites({ 'lib/add.mjs': WRONG_ADD }),
+      'green/1/recover/1': greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
+    },
   });
   g.options.testPaths = ['test/**'];
   const { runShell } = g.options.deps.exec;
@@ -108,7 +109,8 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
   g.options.deps.exec = {
     runShell: (command, opts) => {
       commands.push(command);
-      if (g.rec.cursor.vertex === 'green') pinned = structuredClone(g.rec.configurationSnapshot);
+      if (g.executionRecord.cursor.vertex === 'green')
+        pinned = structuredClone(g.executionRecord.configurationSnapshot);
       return runShell(command, opts);
     },
   };
@@ -164,16 +166,16 @@ test('the red commit records a non-ASCII test path unquoted', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   const red = responses['red/1/red/1'];
   red.files = { 'test/añadir.test.mjs': red.files['test/add.test.mjs'] };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.fixture(t, { responses });
   const { outcome } = await interpreter.runExecution(g.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(g.rec.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value.files, [
+  assert.deepEqual(g.executionRecord.outputs.find((o) => o.vertex === 'red' && o.action === 'commit').value.files, [
     'test/añadir.test.mjs',
   ]);
 });
 
 test('ready-for-qa removes in-progress and adds its label', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   g.gh.labels.add('gg:state:in-progress');
   await interpreter.runExecution(g.options);
 
@@ -182,8 +184,8 @@ test('ready-for-qa removes in-progress and adds its label', async (t) => {
   assert.deepEqual([...g.gh.labels], ['gg:state:ready-for-qa']);
   const end = g.readEvents().find((e) => e.type === 'ticket_end');
   assert.equal(end.outcome, 'ready-for-qa');
-  assert.equal(end.execution, g.rec.execution);
-  assert.equal(end.run, g.rec.run);
+  assert.equal(end.execution, g.executionRecord.execution);
+  assert.equal(end.run, g.executionRecord.run);
   assert.ok(end.diffStats, 'ticket_end carries diff stats');
   assert.equal(end.diffStats.testFiles, 1);
 });
@@ -191,7 +193,7 @@ test('ready-for-qa removes in-progress and adds its label', async (t) => {
 test('ready-for-qa counts the files under the pinned testPaths as tests in its diff stats', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   responses['red/1/red/1'].files['checks/add.mjs'] = "import { add } from '../lib/add.mjs';\n";
-  const g = await golden.setup(t, { responses });
+  const g = await golden.fixture(t, { responses });
   g.options.testPaths = ['test/**', 'checks/**'];
   await interpreter.runExecution(g.options);
 
@@ -208,7 +210,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
     claim: 'blocked',
     diagnosis: 'The ticket contradicts itself.',
   };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.fixture(t, { responses });
   g.gh.labels.add('gg:state:in-progress');
   const { outcome } = await interpreter.runExecution(g.options);
 
@@ -218,7 +220,7 @@ test('golden: a blocked claim with passing tests stops at needs-human', async (t
   assert.equal(comment.target, 'issue');
   assert.equal(comment.number, golden.TICKET);
   assert.match(comment.body, /^<!-- gg-action gg:\S+ -->$/m);
-  assert.equal(intents(g.rec, 'comment').length, 1, 'the comment goes through the write-ahead log');
+  assert.equal(intents(g.executionRecord, 'comment').length, 1, 'the comment goes through the write-ahead log');
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)'], 'no feat commit');
   assert.deepEqual([...g.gh.labels], ['gg:state:needs-human'], 'needs-human replaces in-progress');
 
@@ -247,7 +249,7 @@ test("agent-reported test names stay out of a failed red's Terminal Reason and a
   const injected = 'missing\n\n## injected heading';
   responses['red/1/red/1'] = { ...responses['red/1/red/1'], response: { ...golden.redResponse, tests: [injected] } };
   responses['red/1/recover/1'] = { files: {}, response: { ...golden.redResponse, tests: [injected] } };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.fixture(t, { responses });
   await interpreter.runExecution(g.options);
 
   const reason = terminalReasonOf(g);
@@ -259,7 +261,7 @@ test("agent-reported test names stay out of a failed red's Terminal Reason and a
 });
 
 test('the Terminal Reason is saved before any Terminal side effect, so a crash posting the end comment keeps it', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   // A CrashError, since any other throw is now an unexpected fault handled inside runExecution.
   g.options.deps.gh = {
     ...g.options.deps.gh,
@@ -276,14 +278,14 @@ test('the Terminal Reason is saved before any Terminal side effect, so a crash p
 });
 
 test('ready-for-qa carries a Terminal Reason naming the passed Checks and the ready PR', async (t) => {
-  const g = await firstVisit(t);
+  const g = await runFirstVisit(t);
   const reason = terminalReasonOf(g);
   assert.deepEqual(reason.decidedBy, { vertex: 'publish', visit: 1, action: 'pr-ready', recovery: 0 });
   assert.equal(reason.outcome, 'ok');
   assert.deepEqual(reason.rule, { table: 'passed', row: null }, 'no passed row matched, so the token ok');
   assert.equal(
     reason.text,
-    `publish visit 1 completed every publish Action: test passed. PR #${g.rec.pr} is ready for review.`,
+    `publish visit 1 completed every publish Action: test passed. PR #${g.executionRecord.pr} is ready for review.`,
   );
 });
 
@@ -296,15 +298,14 @@ async function redGate(t, { tests, run }) {
     response: { ...golden.redResponse, tests },
   };
   responses['red/1/recover/1'] = { files: {}, response: { ...golden.redResponse, tests } };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.fixture(t, { responses });
   g.options.deps.exec = {
     runShell: async (command, opts) =>
       existsSync(join(opts?.cwd ?? g.worktree, 'lib', 'add.mjs'))
         ? { code: 0, output: golden.GREEN_OUTPUT, timedOut: false }
         : { timedOut: false, ...run },
   };
-  g.result = await interpreter.runExecution(g.options);
-  return g;
+  return { ...g, result: await interpreter.runExecution(g.options) };
 }
 
 const FAIL_OUTPUT = 'not ok 1 - rejects bad input\n# fail 1';
@@ -333,5 +334,5 @@ test('a red run with a nonzero exit naming a reported test is committed as test:
   const g = await redGate(t, { tests: ['rejects bad input'], run: { code: 1, output: FAIL_OUTPUT } });
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)']);
   assert.ok(!g.readEvents().some((e) => e.type === 'action' && e.outcome === 'failed'));
-  assert.deepEqual(g.rec.history, []);
+  assert.deepEqual(g.executionRecord.history, []);
 });

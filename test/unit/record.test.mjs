@@ -9,16 +9,7 @@ import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-
-// A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
-async function tempCommonDir(t) {
-  const dir = await mkdtemp(join(tmpdir(), 'gg-record-'));
-  t.after(async () => {
-    await sqlite.close(dir);
-    await rm(dir, { recursive: true, force: true });
-  });
-  return dir;
-}
+import * as tempDirectory from '../support/temp-directory.ts';
 
 const dbPath = (commonDir) => join(commonDir, 'gg', 'gg.db');
 
@@ -52,7 +43,7 @@ function withoutCommonDir(r) {
 }
 
 test('a fresh Execution Record declares every field it can hold', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
   assert.match(executionRecord.execution, /^8\.[0-9a-f]{6}$/);
   assert.notEqual(newExecution(commonDir).execution, executionRecord.execution);
@@ -109,7 +100,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
 });
 
 test('saving a record never adds a field createExecution did not declare', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
   executionRecord.admission = { kind: 'hold' };
   await assert.rejects(record.save(executionRecord), (err) => {
@@ -126,7 +117,7 @@ test('saving a record never adds a field createExecution did not declare', async
 });
 
 test('saving a record never drops a field createExecution declared', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
   delete executionRecord.admissionStop;
   await assert.rejects(record.save(executionRecord), /\badmissionStop\b/);
@@ -134,7 +125,7 @@ test('saving a record never drops a field createExecution declared', async (t) =
 });
 
 test('a fresh Epic Record declares every field it can hold', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
   const expected = { schemaVersion: 1, epic: 1, planDecision: null, approvalRequest: null };
   assert.deepEqual(withoutCommonDir(epicRecord), expected);
@@ -142,7 +133,7 @@ test('a fresh Epic Record declares every field it can hold', async (t) => {
 });
 
 test('a write-ahead entry carries every field, null where its step has none', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
   await record.intent(executionRecord, 'm1', 'commit', { tree: 't1' });
   await record.evidence(executionRecord, 'm1', { sha: 's1' });
@@ -164,7 +155,7 @@ test('a write-ahead entry carries every field, null where its step has none', as
 });
 
 test('save writes a records row and never a records directory', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const r = newExecution(commonDir);
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
   await record.save(r);
@@ -191,7 +182,7 @@ test('save writes a records row and never a records directory', async (t) => {
 });
 
 test('load returns null for a missing row and the record for a saved one', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const r = newExecution(commonDir);
   await record.save(r);
   assert.equal(await record.load(commonDir, 'ticket', 9), null);
@@ -212,7 +203,7 @@ test('load returns null for a missing row and the record for a saved one', async
 });
 
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const r = newExecution(commonDir);
   await record.intent(r, 'm1', 'commit', { message: 'red' });
   await record.evidence(r, 'm1', { sha: 'deadbeef' });
@@ -234,7 +225,7 @@ test('the write-ahead log records intent, evidence and completion per marker', a
 });
 
 test('a record transition and its event commit together', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   // Every Event insert fails while `appends.failing` is set, as a disk error would.
   const appends = { failing: true };
   const database = record.createStateDatabase({
@@ -276,7 +267,7 @@ test('a record transition and its event commit together', async (t) => {
 });
 
 test('openIntents lists intents without completion oldest first', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const r = newExecution(commonDir);
   await record.intent(r, 'm1', 'commit', {});
   assert.deepEqual(
@@ -297,7 +288,7 @@ test('openIntents lists intents without completion oldest first', async (t) => {
 });
 
 test('loadAll lists every ticket record', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   assert.deepEqual(await record.loadAll(commonDir, 'ticket'), []);
   await record.save(newExecution(commonDir, 8));
   await record.save(newExecution(commonDir, 12));
@@ -310,7 +301,7 @@ test('loadAll lists every ticket record', async (t) => {
 });
 
 test('loadAll reports a corrupt row and an unknown schemaVersion and returns the rest', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   await record.save(newExecution(commonDir, 8));
   const unknown = JSON.stringify({ schemaVersion: 99, ticket: 10 });
   withDb(commonDir, (db) => {
@@ -347,7 +338,7 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
 });
 
 test('a record written before Action ids is corrupt, not misread', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   // Its cursor names a phase and ordinal, which a resume would read as an Action id and a Recovery Number.
   await record.save(newExecution(commonDir, 8));
   const old = {
@@ -367,12 +358,12 @@ test('a record written before Action ids is corrupt, not misread', async (t) => 
 // SQLite's busy handler is not fair, so on a loaded Windows runner another process's burst of writes held a save off
 // past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136).
 test('the State Database waits up to 60 s for another writer', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   assert.deepEqual({ ...sqlite.openDb(commonDir).prepare('PRAGMA busy_timeout').get() }, { timeout: 60_000 });
 });
 
 test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
   await sqlite.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
   const firstSeen = () =>
@@ -390,7 +381,7 @@ test('saveConfig stores a pinned configuration once per hash and loadConfig read
 });
 
 test('an unknown database version is refused by name', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   mkdirSync(join(commonDir, 'gg'));
   const db = new DatabaseSync(dbPath(commonDir));
   db.exec('PRAGMA user_version = 2');
@@ -410,7 +401,7 @@ test('an unknown database version is refused by name', async (t) => {
 // Another gg process writing events must not starve a new connection: on a loaded Windows runner two appenders saw
 // `database is locked` from openDb's write transaction once its busy_timeout ran out.
 test('opening an existing State Database does not wait for a writer', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   sqlite.openDb(commonDir);
   await sqlite.close(commonDir);
   const writer = new DatabaseSync(dbPath(commonDir));
@@ -430,7 +421,7 @@ test('opening an existing State Database does not wait for a writer', async (t) 
 });
 
 test('openDb shares one connection between spellings of the same directory', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const db = sqlite.openDb(commonDir);
   // String concatenation, not join: join would normalise the segments before openDb sees them.
   assert.equal(sqlite.openDb(`${commonDir}/./gg/../`), db, 'a relative-segment spelling hits the cache');

@@ -1,20 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import * as checks from '../../lib/checks.ts';
 import * as git from '../../lib/git.ts';
-
-function tempDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-checks-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
-}
+import * as tempDirectory from '../support/temp-directory.ts';
 
 test('test immutability lists added, renamed and modified test paths and ignores lib', async (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-checks-');
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
   g('init', '-q', '-b', 'main');
   g('config', 'user.name', 't');
@@ -46,7 +40,7 @@ test('test immutability lists added, renamed and modified test paths and ignores
 });
 
 test('test immutability sees non-ASCII and git-ignored test paths', async (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-checks-');
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
   g('init', '-q', '-b', 'main');
   g('config', 'user.name', 't');
@@ -67,7 +61,7 @@ test('test immutability sees non-ASCII and git-ignored test paths', async (t) =>
 });
 
 test('test immutability sees a test added under an ignored directory but not installed dependencies', async (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-checks-');
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
   g('init', '-q', '-b', 'main');
   g('config', 'user.name', 't');
@@ -90,7 +84,7 @@ test('test immutability sees a test added under an ignored directory but not ins
 // so every glob preflight accepts must select the same paths in both.
 // Each glob is asserted alone, so one that breaks cannot hide behind another that selects the same path.
 test('git and the test path matcher select the same paths for every kind of glob preflight accepts', async (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-checks-');
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   mkdirSync(join(dir, 'spec', 'unit'), { recursive: true });
   mkdirSync(join(dir, 'specs'));
@@ -136,7 +130,7 @@ test('git and the test path matcher select the same paths for every kind of glob
 });
 
 test('git and the test path matcher both ignore case', async (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-checks-');
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   mkdirSync(join(dir, 'Spec'));
   mkdirSync(join(dir, 'deep'));
@@ -155,7 +149,7 @@ test('git and the test path matcher both ignore case', async (t) => {
 });
 
 test('git and the test path matcher fold ASCII case only', async (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-checks-');
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   mkdirSync(join(dir, 'spec'));
   mkdirSync(join(dir, 'lib'));

@@ -2,6 +2,7 @@
 // The test runner also loads this file with no arguments, where it does nothing.
 import * as events from '../../lib/events.ts';
 import * as sqlite from '../../lib/sqlite.ts';
+
 const [commonDir, run, count] = process.argv.slice(2);
 if (commonDir) {
   const log = events.eventLog(commonDir, { run });

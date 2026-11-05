@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
-import { TICKET, BRANCH, IN_PROGRESS, fixture, ticketResult } from '../support/run.mjs';
+import { IN_PROGRESS_LABEL } from '../support/execution-context.ts';
+import { BRANCH, TICKET, fixture, ticketResult } from '../support/run-fixture.ts';
 
 // An Execution that cannot be admitted, fresh or active, is marked as a fault, never left to retry.
 test('sibling discovery failure prevents agent execution: a fresh Ticket', async (t) => {
@@ -22,7 +23,7 @@ test('sibling discovery failure prevents agent execution: a fresh Ticket', async
 });
 
 test('sibling discovery failure prevents agent execution: an active Execution', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL] });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   await record.save(
     record.createExecution({
@@ -52,7 +53,7 @@ test('sibling discovery failure prevents agent execution: an active Execution', 
 });
 
 test('a fault before the first visit still records its action events', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL] });
   const rec = record.createExecution({
     commonDir: f.commonDir,
     ticket: TICKET,

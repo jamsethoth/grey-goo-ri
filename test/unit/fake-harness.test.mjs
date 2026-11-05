@@ -8,7 +8,7 @@ const dirs = [];
 after(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
 
 const setup = async (opts = {}) => {
-  const fake = await import('../support/fake-harness.mjs');
+  const fake = await import('../support/fake-harness.ts');
   const transcriptDir = await mkdtemp(join(tmpdir(), 'gg-fake-transcripts-'));
   const cwd = await mkdtemp(join(tmpdir(), 'gg-fake-cwd-'));
   dirs.push(transcriptDir, cwd);

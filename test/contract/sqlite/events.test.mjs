@@ -1,25 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as events from '../../../lib/events.ts';
-import * as sqlite from '../../../lib/sqlite.ts';
+import * as childExit from '../../support/child-exit.ts';
+import * as tempDirectory from '../../support/temp-directory.ts';
 
-const appender = fileURLToPath(new URL('../../support/event-appender.mjs', import.meta.url));
-
-// The State Database is closed before the directory is removed, as Windows requires.
-function tempDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-events-'));
-  t.after(() => {
-    sqlite.close(dir);
-    rmSync(dir, { recursive: true, force: true });
-  });
-  return dir;
-}
+const appender = fileURLToPath(new URL('../../support/event-appender.ts', import.meta.url));
 
 // Reads the events table directly, as another SQLite client would.
 function rows(commonDir) {
@@ -35,18 +24,12 @@ function rows(commonDir) {
 }
 
 test('two processes append to the same table without loss', async (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   const exits = await Promise.all(
-    ['a', 'b'].map(
-      (run) =>
-        new Promise((resolve) => {
-          const child = spawn(process.execPath, [appender, dir, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] });
-          let err = '';
-          child.stderr.on('data', (chunk) => {
-            err += chunk;
-          });
-          child.on('close', (code) => resolve({ run, code, err }));
-        }),
+    ['a', 'b'].map((run) =>
+      childExit
+        .exitOf(spawn(process.execPath, [appender, dir, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] }))
+        .then((exit) => ({ run, ...exit })),
     ),
   );
   assert.deepEqual(exits, [

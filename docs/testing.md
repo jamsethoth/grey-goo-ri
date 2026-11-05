@@ -76,12 +76,12 @@ gg's doubles:
 
 | Double | Replaces | Contract |
 | --- | --- | --- |
-| `test/support/fake-harness.mjs` | the Claude Code and Codex harnesses | `test/contract/harness/` |
-| `fakeGh` (`test/support/golden.mjs`), passed as `github.createGh(fake.gh)` | the `gh` transport | none: gh is never run in tests |
-| the `runShell` in `golden.setup` (`test/support/golden.mjs`), returning red or green output | running the suite | none: `test/contract/exec/` covers the real `runShell` |
+| `test/support/fake-harness.ts` | the Claude Code and Codex harnesses | `test/contract/harness/` |
+| `fakeGh` (`test/support/fake-gh.ts`), passed as `github.createGh(fake.gh)` | the `gh` transport | none: gh is never run in tests |
+| `addSuite` (`test/support/add-suite.ts`), the `runShell` the fixtures pass, returning red or green output | running the suite | none: `test/contract/exec/` covers the real `runShell` |
 | the injected clock and `crashAt` points | time and crashes | not needed: no external system |
-| fake integrity (#140), `test/support/fake-integrity.mjs` | integrity snapshots; its untracked files and Test Immutability are lib's own over the fake git | `test/contract/integrity/` (#218) |
-| fake git (#144), `test/support/fake-git.mjs` | `lib/git.ts` | `test/contract/git/` (#144) |
+| fake integrity (#140), `test/support/fake-integrity.ts` | integrity snapshots; its untracked files and Test Immutability are lib's own over the fake git | `test/contract/integrity/` (#218) |
+| fake git (#144), `test/support/fake-git.ts` | `lib/git.ts` | `test/contract/git/` (#144) |
 
 #144 kept both integrities: the fake one for tests whose subject is not git behaviour, because it is faster, and
 the real one over real git for tests whose subject is git behaviour, because it is what they check. The third option,
@@ -99,12 +99,12 @@ options it builds, so none outlives the case:
 
 | Seam | What a test does with it |
 | --- | --- |
-| the `clock` option (`{ now, sleep, every }`; `golden.setup`'s `clock.beat()`) | moves time, records backoffs, fires a heartbeat |
-| the `gh` option, `github.createGh(transport)` | answers and records every gh call (`fakeGh`), or fails a chosen one |
+| the `clock` option (`{ now, sleep, every }`; `golden.fixture`'s `clock.beat()`) | moves time, records backoffs, fires a heartbeat |
+| the `gh` option, `github.createGh(transport)` | answers and records every gh call (`fakeGh`), or fails a chosen one (`ghThrough`) |
 | the `git` option; `git.createGit({ sleep })` | runs over the fake git; records runGit's index.lock waits |
 | the `locks` option, `locks.createLocks({ clock, wrapAttempt })` | times every lock wait, the 60 s default and the 600 s repo-lock waits included; sees a lock attempt, or contends it (`contendRepoLock`) |
-| the `database` option, `record.createStateDatabase({ beforeSave, beforeAppend })` (`golden.caseDatabase(t)`, with `golden.onSave`, `golden.failSaves` and `golden.failAppends`) | sees or fails a chosen save or Event insert |
-| the `integrity` option; `integrity.createIntegrity(git, fs, locks)` (`golden.crashFs`) | runs the fake integrity; crashes a restore's write |
+| the `database` option, `record.createStateDatabase({ beforeSave, beforeAppend })` (`caseDatabase(t)`, with `onSave`, `failSaves` and `failAppends`, in `test/support/case-database.ts`) | sees or fails a chosen save or Event insert |
+| the `integrity` option; `integrity.createIntegrity(git, fs, locks)` (`crashFs`, `test/support/crash-fs.ts`) | runs the fake integrity; crashes a restore's write |
 | the `exec` option | answers the suite's command with red or green output |
 | `exec.runShell`'s `testHooks` option: `timers`, `onWatch`, `signal` and the rest | moves the timeout clock; sees which descendants the POSIX watcher has listed |
 | `exec.createExec({ kernel32 })` | runs Windows commands with no `node:ffi` (`null`) or with kernel32 calls that fail |
@@ -142,7 +142,7 @@ of `run.branches` are in `test/unit/run.branches.test.mjs` and its real-git case
 `lib/git.ts`, asks for real git, uses a timer, or calls a support helper that spawns.
 
 That check reads source text, so it misses a spawn it has no pattern for: a support helper imported and called bare
-(`sh(...)` rather than `golden.sh(...)`), a new support helper that spawns, or a lib function reached without its fake.
+(`sh(...)` rather than `gitShell.sh(...)`), a new support helper that spawns, or a lib function reached without its fake.
 A slip costs speed, not coverage: the full stage still runs the case, and the fast stage's wall time shows the
 regression. A new support helper that spawns is added to the check's list in the same change.
 

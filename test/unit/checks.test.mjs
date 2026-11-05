@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
-import { fakeGit } from '../support/fake-git.mjs';
+import { fakeGit } from '../support/fake-git.ts';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
 

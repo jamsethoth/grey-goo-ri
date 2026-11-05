@@ -6,21 +6,11 @@ import * as integrity from '../../lib/integrity.ts';
 import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
-import {
-  TICKET,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
-  fixture,
-  ticketResult,
-  EPIC,
-  epicOf,
-  worktreeOf,
-  addsLabel,
-  gate,
-  ticketHarnesses,
-  hookGh,
-} from '../support/run.mjs';
+import { EPIC, addsLabel, epicOf, ticketHarnesses, worktreeOf } from '../support/epic-run.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { latch } from '../support/latch.ts';
+import { TICKET, fixture, hookGh, ticketResult } from '../support/run-fixture.ts';
+import * as fakeGhModule from '../support/fake-gh.ts';
 
 test('a held ticket lock skips the ticket', async (t) => {
   const f = fixture(t);
@@ -52,8 +42,11 @@ test('in-progress is set only after the worktree exists', async (t) => {
   mkdirSync(f.worktree, { recursive: true });
   writeFileSync(join(f.worktree, 'stray.txt'), 'not a worktree\n');
   await run.runTarget(f.options).catch(() => {});
-  assert.ok(!f.labelAdds().includes(IN_PROGRESS), `in-progress was never added: ${JSON.stringify(f.labelAdds())}`);
-  assert.ok(!f.gh.labels.has(IN_PROGRESS));
+  assert.ok(
+    !f.labelAdds().includes(IN_PROGRESS_LABEL),
+    `in-progress was never added: ${JSON.stringify(f.labelAdds())}`,
+  );
+  assert.ok(!f.gh.labels.has(IN_PROGRESS_LABEL));
   assert.equal(f.harness.calls.length, 0);
 });
 
@@ -115,7 +108,7 @@ const issue = (number, labels = [], extra = {}) => ({
 
 test('epicProblem explains an epic with no sub-issues or nothing ready', () => {
   assert.match(run.epicProblem([], []), /no sub-issues/i);
-  const busy = [issue(2, [IN_PROGRESS])];
+  const busy = [issue(2, [IN_PROGRESS_LABEL])];
   assert.match(run.epicProblem(busy, []), /nothing ready/i);
   assert.equal(run.epicProblem([issue(3)], [issue(3)]), null);
 });
@@ -124,7 +117,7 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
   const f = fixture(t, { issues: epicOf([21, 22, 23], { 23: { blockedBy: [{ number: 21, state: 'OPEN' }] } }) });
   f.options.target = EPIC;
   // Each red call waits for the other, so the two Executions overlap under maxParallel 2.
-  const both = gate();
+  const both = latch();
   let reds = 0;
   ticketHarnesses(f, [21, 22], {
     before: async (n, call) => {
@@ -165,8 +158,8 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
 });
 
 test('mapConcurrently never exceeds its limit and keeps result order', async () => {
-  const started = [gate(), gate(), gate(), gate(), gate()];
-  const finish = [gate(), gate(), gate(), gate(), gate()];
+  const started = [latch(), latch(), latch(), latch(), latch()];
+  const finish = [latch(), latch(), latch(), latch(), latch()];
   let live = 0,
     peak = 0;
   const pending = run.mapConcurrently([1, 2, 3, 4, 5], 2, async (x) => {
@@ -195,10 +188,10 @@ test('mapConcurrently never exceeds its limit and keeps result order', async () 
 test('an auth failure stops every active ticket and records the class on run_end', { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { issues: epicOf([21, 22]) });
   f.options.target = EPIC;
-  const bInCall = gate();
-  const aEnded = gate();
+  const bInCall = latch();
+  const aEnded = latch();
   hookGh(f, async (args) => {
-    if (addsLabel(args, 21, NEEDS_HUMAN)) aEnded.open();
+    if (addsLabel(args, 21, NEEDS_HUMAN_LABEL)) aEnded.open();
   });
   // A's red call fails with auth while B is inside its own red call; B's call returns once A has ended.
   ticketHarnesses(f, [21, 22], {
@@ -249,8 +242,8 @@ test(
     f.options.target = EPIC;
     // A directory where B's ticket-lock database belongs cannot be opened, so taking B's lock throws.
     mkdirSync(join(f.commonDir, 'gg', 'locks', 'ticket-22.db'), { recursive: true });
-    const bFailed = gate();
-    const aEnded = gate();
+    const bFailed = latch();
+    const aEnded = latch();
     f.options.log = (m) => {
       f.logs.push(m);
       if (m.startsWith('[main] #22 ERROR')) bFailed.open();
@@ -330,19 +323,20 @@ test('a rate limit on one Ticket delays the next GitHub write of the other', { t
   const f = fixture(t, { issues: epicOf([21, 22]) });
   f.options.target = EPIC;
   f.gh.fail({
-    matches: (args) => golden.isCommentPost(args, 21),
+    matches: (args) => fakeGhModule.isCommentPost(args, 21),
     status: 403,
     headers: { 'Retry-After': '7' },
     body: { message: 'You have exceeded a secondary rate limit.' },
   });
-  const aWaiting = gate();
+  const aWaiting = latch();
   const sleeps = [];
   let wake;
   const woken = new Promise((resolve) => {
     wake = resolve;
   });
   const bCalls = () =>
-    f.gh.calls.filter((c) => c.args.some((a) => a.startsWith('ticket/22-')) || golden.isCommentPost(c.args, 22)).length;
+    f.gh.calls.filter((c) => c.args.some((a) => a.startsWith('ticket/22-')) || fakeGhModule.isCommentPost(c.args, 22))
+      .length;
   // A backs off first; B's wait moves the shared clock once, to A's deadline, and wakes both.
   f.options.deps.clock = {
     ...f.clock,
@@ -378,7 +372,7 @@ test('a rate limit on one Ticket delays the next GitHub write of the other', { t
     "B waited out A's Retry-After",
   );
   assert.equal(sleeps[1].bCalls, 0, 'before any GitHub write of B');
-  assert.equal(f.gh.calls.filter((c) => golden.isCommentPost(c.args, 21)).length, 2);
+  assert.equal(f.gh.calls.filter((c) => fakeGhModule.isCommentPost(c.args, 21)).length, 2);
   assert.equal(f.gh.comments.filter((c) => c.number === 21).length, 1);
 });
 

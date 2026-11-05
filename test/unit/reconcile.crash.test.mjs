@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
-import * as golden from '../support/golden.mjs';
-import { branchMessages } from '../support/interpreter.mjs';
-import { stepsOf, originSha, withMarker, loadTicket, EFFECTS, POINTS, crashed } from '../support/reconcile.mjs';
+import * as golden from '../support/golden.ts';
+import { EFFECTS, POINTS, crashed, withMarker } from '../support/crash-resume.ts';
+import { branchMessages, loadTicket, originSha, writeAheadSteps } from '../support/execution-reads.ts';
+import * as keys from '../support/keys.ts';
 
 // T18: crash-and-resume golden traces. Each side-effect Action of the one-Vertex Flow is crashed at one of three points
 // by runExecution's test-only crashAt, then resumed by a second runExecution on a freshly loaded record.
@@ -66,10 +67,10 @@ const ACTED = [
 for (const [action, effect] of Object.entries(EFFECTS)) {
   for (const [point, expect] of Object.entries(POINTS)) {
     test(expect.name(action), async (t) => {
-      const g = await golden.setup(t);
-      const { m, loaded } = await crashed(g, effect.at, point);
+      const g = await golden.fixture(t);
+      const { actionMarker: m, loaded } = await crashed(g, effect.place, point);
       assert.equal(await effect.happened(g, m), expect.happened, `the crash came ${point}`);
-      assert.deepEqual(stepsOf(loaded, m), expect.steps, `the log as the crash ${point} left it`);
+      assert.deepEqual(writeAheadSteps(loaded, m), expect.steps, `the log as the crash ${point} left it`);
 
       const result = await interpreter.runExecution({ ...g.options, record: loaded });
       assert.equal(result.outcome, 'ready-for-qa');
@@ -80,7 +81,7 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
         g
           .readEvents()
           .filter((e) => e.type === 'action')
-          .map((e) => `${e.vertex}/${e.visit}/${e.action}/${e.recovery}/${e.attempt}`),
+          .map((e) => keys.eventKey(e)),
         ACTED,
       );
       assert.deepEqual(
@@ -90,7 +91,10 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
 
       assert.deepEqual(
         (await branchMessages(g)).map((b) => marker.formatMarker(marker.parseMarker(b))),
-        [golden.markerOf(g.rec, 'red', 1, 'commit', 0), golden.markerOf(g.rec, 'green', 1, 'commit', 0)],
+        [
+          golden.markerOf(g.executionRecord, 'red', 1, 'commit', 0),
+          golden.markerOf(g.executionRecord, 'green', 1, 'commit', 0),
+        ],
         'one commit per commit intent',
       );
       assert.equal(
@@ -115,7 +119,7 @@ for (const [action, effect] of Object.entries(EFFECTS)) {
       );
       assert.equal(sha256(g.gh.pr().body), upsert.payload.bodyHash, 'the PR body is the intended one');
 
-      const done = golden.markerOf(g.rec, ...EFFECTS.comment.at);
+      const done = golden.markerOf(g.executionRecord, ...EFFECTS.comment.place);
       const posted = withMarker(
         g.gh.comments.map((c) => c.body),
         done,
@@ -146,7 +150,7 @@ function spaceTheRedVertex(config) {
 // On main before #269 this Flow was admitted, and a resume after a crash past the commit held the ticket, its Terminal
 // Reason saying the commit "was not made".
 test('a Vertex whose id has whitespace, whose commit a crash could not find by its marker, is kept out', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   assert.throws(
     () => golden.configure(g, spaceTheRedVertex),
     /vertices\.red tests: Vertex id "red tests" must be non-empty with no ":", "\.", "\/", "--" or whitespace/,

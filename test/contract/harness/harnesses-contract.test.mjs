@@ -10,7 +10,7 @@ const dirs = [];
 after(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
 
 const fakeHarness = async (opts = {}) => {
-  const fake = await import('../../support/fake-harness.mjs');
+  const fake = await import('../../support/fake-harness.ts');
   const transcriptDir = await mkdtemp(join(tmpdir(), 'gg-contract-'));
   dirs.push(transcriptDir);
   return fake.fakeHarness({ transcriptDir, responses: {}, ...opts });

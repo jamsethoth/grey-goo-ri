@@ -24,7 +24,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   rules apply to `.ts` files; `test/unit/layout.test.mjs` lists the converted and legacy files.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
-  git (`test/support/fake-git.mjs`); real git in temp repositories only for the `lib/git.ts` contract suite, tests whose
+  git (`test/support/fake-git.ts`); real git in temp repositories only for the `lib/git.ts` contract suite, tests whose
   subject is git behaviour (integrity snapshots and violations, rollback of real files, Test Immutability, dirty state,
   admission's dirty, conflict and branch checks, Reconciliation against git state, the repo lock), and a few end-to-end
   runs.
@@ -118,7 +118,6 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - The stubs marked in Layout: `gg init`, `plan`, `publish`, `work`, `trace` and `stats` print "not implemented".
 - The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
-- `test/support/interpreter.mjs`, `run.mjs` and `reconcile.mjs` share lib module names but are test helpers.
 - `git.ts`, `locks.ts` and `record.ts` also export the functions of their real instance, for callers that take no
   seam (`gg doctor`, contract suites, helper processes); code on a Run's path uses the deps it was passed instead.
 
@@ -133,14 +132,16 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   with `lib/run-context.ts` and `lib/visit-runner.ts`.
 - A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
-- A contract suite and its fake: `test/contract/git/git.test.mjs` and `test/support/fake-git.mjs`.
+- A contract suite and its fake: `test/contract/git/git.test.mjs` and `test/support/fake-git.ts`.
+- A fake typed against the interface it stands in for: `test/support/fake-git.ts` (lib/git.ts's `Git`) and
+  `test/support/fake-gh.ts` (lib/github.ts's transport).
 
 ## Do not copy
 
 Each is rewritten by its ticket; until then, do not take its patterns:
 
 - `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210), `test/unit/run.holds.test.mjs` (#211),
-  `test/contract/exec/exec.test.mjs` (#212), `test/support/run.mjs` (#208).
+  `test/contract/exec/exec.test.mjs` (#212).
 
 ## Tests
 
@@ -160,7 +161,11 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 - A fake's contract suite lives under `test/contract/<boundary>/` and runs its cases against the real module and the fake;
   `lib/git.ts`'s is `test/contract/git/`.
 - Fixtures live under `test/fixtures/` as JSON or text.
-- Shared helpers live under `test/support/`; the runner lists them as passing empty files.
+- Shared helpers live under `test/support/`, one helper per job, each file named for that job and never for the lib
+  module it serves (`test/unit/layout.test.mjs`). A fixture builder says whether it runs the Execution:
+  `golden.fixture`, `greenFixture`, `reviewFixture` and the run fixture build one; `runFirstVisit` and
+  `runReviewFlow` run it. A case asks for real git by name (`git: 'real'`); real integrity alone runs over the fake
+  git.
 - Spawn `process.execPath` directly, never a shell.
 
 ## Commands

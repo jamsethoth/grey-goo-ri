@@ -9,23 +9,14 @@ import * as integrity from '../../lib/integrity.ts';
 import * as locks from '../../lib/locks.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
-import * as sqlite from '../../lib/sqlite.ts';
 import * as run from '../../lib/run.ts';
-import {
-  BRANCH,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
-  sh,
-  fixture,
-  holdLock,
-  epicOf,
-  EPIC,
-  worktreeOf,
-  addsLabel,
-  gate,
-  ticketHarnesses,
-  hookGh,
-} from '../support/run.mjs';
+import * as sqlite from '../../lib/sqlite.ts';
+import { EPIC, addsLabel, epicOf, ticketHarnesses, worktreeOf } from '../support/epic-run.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { sh } from '../support/git-shell.ts';
+import { latch } from '../support/latch.ts';
+import { holdLock } from '../support/lock-holder.ts';
+import { BRANCH, fixture, hookGh } from '../support/run-fixture.ts';
 
 // The Runs below use the real integrity over the fake git: their subject is the repo lock and which worktree a change is
 // attributed to, not git. Over real git, every git process of every snapshot was theirs, and under a full suite run
@@ -188,9 +179,9 @@ test('an orchestrator commit waits for the repo lock', { timeout: 120_000 }, asy
 test('a stray write into an idle worktree is attributed to the running action', { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real', git: 'fake' });
   f.options.target = EPIC;
-  const aAdmitted = gate();
-  const bIdle = gate();
-  const aEnded = gate();
+  const aAdmitted = latch();
+  const bIdle = latch();
+  const aEnded = latch();
   // B starts only after A's admission has read the worktree list: B's ticket lock attempt waits for it. So only a
   // worktree list read per Attempt can see B.
   f.options.deps.locks = locks.createLocks({
@@ -201,15 +192,15 @@ test('a stray write into an idle worktree is attributed to the running action', 
   });
   // A runs its Execution while B is admitted and idle, and B goes on only once A has ended.
   hookGh(f, async (args) => {
-    if (addsLabel(args, 21, IN_PROGRESS)) {
+    if (addsLabel(args, 21, IN_PROGRESS_LABEL)) {
       aAdmitted.open();
       await bIdle.wait();
     }
-    if (addsLabel(args, 22, IN_PROGRESS)) {
+    if (addsLabel(args, 22, IN_PROGRESS_LABEL)) {
       bIdle.open();
       await aEnded.wait();
     }
-    if (addsLabel(args, 21, NEEDS_HUMAN)) aEnded.open();
+    if (addsLabel(args, 21, NEEDS_HUMAN_LABEL)) aEnded.open();
   });
   let bActivity;
   ticketHarnesses(f, [21, 22], {
@@ -235,11 +226,11 @@ test('a stray write into an idle worktree is attributed to the running action', 
 test("a busy worktree is never attributed to another ticket's action", { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { issues: epicOf([21, 22]), integrity: 'real', git: 'fake' });
   f.options.target = EPIC;
-  const bBusy = gate();
-  const aEnded = gate();
+  const bBusy = latch();
+  const aEnded = latch();
   // A starts only once B is inside its red call, and B's call returns only once A has ended.
   hookGh(f, async (args) => {
-    if (addsLabel(args, 21, IN_PROGRESS)) await bBusy.wait();
+    if (addsLabel(args, 21, IN_PROGRESS_LABEL)) await bBusy.wait();
     if (addsLabel(args, 21, 'gg:state:ready-for-qa')) aEnded.open();
   });
   let bActivity;
@@ -271,7 +262,7 @@ test("a busy worktree is never attributed to another ticket's action", { timeout
   assert.deepEqual(flagged, [], 'no Action of A carries a violation');
 });
 
-const repoLockWriter = fileURLToPath(new URL('../support/repo-lock-writer.mjs', import.meta.url));
+const repoLockWriter = fileURLToPath(new URL('../support/repo-lock-writer.ts', import.meta.url));
 
 test('two processes serialise orchestrator git writes on the repo lock', { timeout: 120_000 }, async (t) => {
   const f = fixture(t, { git: 'real' });

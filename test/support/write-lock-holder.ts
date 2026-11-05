@@ -3,13 +3,14 @@
 // The test runner also loads this file with no arguments, where it does nothing.
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
+
 const [commonDir, ms] = process.argv.slice(2);
 if (commonDir) {
-  const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
-  db.exec('BEGIN IMMEDIATE');
+  const database = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
+  database.exec('BEGIN IMMEDIATE');
   setTimeout(() => {
-    db.exec('COMMIT');
-    db.close();
+    database.exec('COMMIT');
+    database.close();
   }, Number(ms));
   process.stdout.write('held\n');
 }
