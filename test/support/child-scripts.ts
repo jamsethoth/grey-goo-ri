@@ -24,7 +24,8 @@ export const FORGED_JOB_NOTES = childScript('forged-job-notes');
 export const BREAKAWAY_CHILD = childScript('breakaway-child');
 
 // The command line that runs node with these arguments. No value is written into it: each is set in an environment
-// variable for the case, and the line names the variable, which the shell expands once and never parses again. So a
+// variable for the case, and the line names the variable in double quotes. sh never parses an expanded "$NAME" again;
+// cmd.exe expands %NAME% once and then parses the line, where the quotes keep `&`, `|`, `^` and the like plain. So a
 // `$`, `%` or `&` in a path stays a plain character, where a quoted path would be expanded by sh or cmd.exe. A name is
 // derived from its value, so two commands in one case never give one name two values.
 export function nodeCommand(t: TestContext, ...args: string[]) {
@@ -34,6 +35,10 @@ export function nodeCommand(t: TestContext, ...args: string[]) {
     .map((value) => {
       // cmd.exe leaves %NAME% as it is when NAME is empty, so an empty argument is written as one.
       if (value === '') return '""';
+      // A " would close cmd.exe's quotes early; no Windows path holds one, so it is refused, never escaped.
+      if (process.platform === 'win32' && value.includes('"')) {
+        throw new Error(`nodeCommand cannot pass a " to cmd.exe: ${value}`);
+      }
       const name = `GG_TEST_ARG_${createHash('sha256').update(value).digest('hex').slice(0, 16).toUpperCase()}`;
       // set once per case: a second caseEnv would restore the value the first had set, after the first removed it
       if (process.env[name] !== value) caseEnv.caseEnv(t, { [name]: value });
