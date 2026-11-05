@@ -36,7 +36,7 @@ export async function assertAdmissionHoldEvents(
   assert.equal(ticketEnd.outcome, 'needs-human');
   assert.deepEqual(ticketEnd.terminalReason, executionRecord.terminalReason);
   assert.doesNotMatch(
-    executionRecord.terminalReason?.text ?? '',
+    executionRecord.terminalReason?.text as string,
     /re-run|DELETE FROM/,
     'the Terminal Reason is one sentence; the advice is in the comment',
   );

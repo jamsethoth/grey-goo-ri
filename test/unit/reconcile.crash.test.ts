@@ -10,7 +10,7 @@ import * as crashResume from '../support/crash-resume.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as keys from '../support/keys.ts';
 
-// T18: crash-and-resume golden traces. Each side-effect Action of the golden red, green and publish Flow is crashed at
+// Crash-and-resume golden traces (T18). Each side-effect Action of the golden red, green and publish Flow is crashed at
 // one of three points by runExecution's test-only crashAt, then resumed by a second runExecution on a freshly loaded
 // record.
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
