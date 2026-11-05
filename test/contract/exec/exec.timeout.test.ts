@@ -247,7 +247,12 @@ test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
   await waitFor(() => existsSync(pidFile), t.signal); // a sleeper that never starts fails at the case timeout
   const pid = pidIn(pidFile);
   try {
-    const result = await exec.runShell(childScripts.nodeCommand(childScripts.LONG_LIVED), { timeoutMs: 800 });
+    const result = await exec.runShell(
+      childScripts.nodeCommand(childScripts.LONG_LIVED, join(scratch, 'unrelated-hang.pid')),
+      {
+        timeoutMs: 800,
+      },
+    );
     assert.equal(result.timedOut, true);
     assert.ok(alive(pid), 'unrelated orphan was killed');
   } finally {

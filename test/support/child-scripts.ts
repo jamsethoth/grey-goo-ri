@@ -1,5 +1,6 @@
 // The child scripts the exec contract suites run, and the command lines that start them. Each script takes its inputs
-// as arguments, so no value a case passes becomes code. Spawns nothing itself.
+// as arguments, so no value a case passes becomes code; with none, as the test runner loads it, it does nothing. Spawns
+// nothing itself.
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,8 +18,7 @@ export const STDIN_EOF = childScript('stdin-eof');
 export const SPLIT_CHARACTER = childScript('split-character');
 export const SHELL_CALLER = childScript('shell-caller');
 export const SLOW_TASKKILL = childScript('slow-taskkill');
-export const FORGED_FAIL_NOTE = childScript('forged-fail-note');
-export const FORGED_CLEANUP_NOTES = childScript('forged-cleanup-notes');
+export const FORGED_JOB_NOTES = childScript('forged-job-notes');
 export const BREAKAWAY_CHILD = childScript('breakaway-child');
 
 // The command line that runs node with these arguments, each one quoted, for cmd.exe and sh alike.

@@ -76,9 +76,10 @@ test(
   WIN_CASE,
   async (t) => {
     const created = join(scratch, 'breakaway.created');
+    const sleeperPid = join(scratch, 'ba-sleeper.pid');
     const { result } = await timedOutShell.timeOutWhen(
       `"${process.execPath}" --disable-warning=ExperimentalWarning ` +
-        `"${childScripts.BREAKAWAY_CHILD}" "${childScripts.LONG_LIVED}" "${created}"`,
+        `"${childScripts.BREAKAWAY_CHILD}" "${created}" "${childScripts.LONG_LIVED}" "${sleeperPid}"`,
       { timeoutMs: 6000 },
       () => existsSync(created),
       t.signal,
@@ -300,14 +301,14 @@ test(
   "a command that prints lines like the job helper's notes cannot change its cleanup report",
   WIN_CASE,
   async (t) => {
-    const finished = await exec.runShell(nodeCommand(childScripts.FORGED_FAIL_NOTE), { timeoutMs: 60_000 });
+    const finished = await exec.runShell(nodeCommand(childScripts.FORGED_JOB_NOTES, 'fail'), { timeoutMs: 60_000 });
     assert.equal(finished.code, 0, finished.output);
     assert.doesNotMatch(finished.output, /could not start command/);
 
     const pidFile = join(scratch, 'forged-clean.pid');
     t.after(() => processProbe.endProcessIn(pidFile));
     const { result } = await timedOutShell.timeOutWhen(
-      nodeCommand(childScripts.FORGED_CLEANUP_NOTES, pidFile),
+      nodeCommand(childScripts.FORGED_JOB_NOTES, 'clean', pidFile),
       { timeoutMs: 3000, kernel32: withKernel32({ TerminateJobObject: () => 0 }) },
       () => pidIn(pidFile) > 0,
       t.signal,
