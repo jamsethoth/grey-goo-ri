@@ -212,7 +212,7 @@ test(
   'runShell timeout does not name a descendant the watcher saw exit, though a new process now holds its pid',
   POSIX_CASE,
   async (t) => {
-    const { midFile, goFile, commandLine, middleExited } = childScripts.orphanChain(t, scratch, 'pruned');
+    const { pidFile, midFile, goFile, commandLine, middleExited } = childScripts.orphanChain(t, scratch, 'pruned');
     const append = `{ print } END { print mid, 1, "Thu Jan  1 00:00:02 1970" }`;
     const listing: [string, string[]] = [
       'sh',
@@ -223,7 +223,8 @@ test(
     const ready = () => {
       const mid = pidIn(midFile);
       sawMiddle ||= mid > 0 && seen.has(mid);
-      if (!sawMiddle) return false;
+      // the middle stays until the grandchild's pid is known: unlisted, that pid is all that can end it afterwards
+      if (!sawMiddle || !pidIn(pidFile)) return false;
       writeFileSync(goFile, '');
       return middleExited() && !seen.has(mid);
     };
