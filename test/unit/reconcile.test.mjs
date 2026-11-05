@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
-import * as golden from '../support/golden.mjs';
-import * as interpreterSupport from '../support/interpreter.mjs';
-import { resetEntries, crashed, EFFECTS, originSha, reconcileArgs, stepsOf } from '../support/reconcile.mjs';
+import * as golden from '../support/golden.ts';
+import { EFFECTS, crashed, reconcileOptions, resetEntries } from '../support/crash-resume.ts';
+import { originSha, writeAheadSteps } from '../support/execution-reads.ts';
+import * as executionReads from '../support/execution-reads.ts';
 
 // The Ticket branch's log from its head: two commits since the base, the base, and the commit the base was cut from.
 const branchLog = [
@@ -21,11 +22,11 @@ const onBranch = (base) => ({
 });
 
 test('branchMessages lists the commits since the base, oldest first', async () => {
-  assert.deepEqual(await interpreterSupport.branchMessages(onBranch('a'.repeat(40))), ['feat: a', 'feat: b']);
+  assert.deepEqual(await executionReads.branchMessages(onBranch('a'.repeat(40))), ['feat: a', 'feat: b']);
 });
 
 test('branchMessages throws when the base is not in the log', async () => {
-  await assert.rejects(interpreterSupport.branchMessages(onBranch('d'.repeat(40))), /base d{40} is not in the log/);
+  await assert.rejects(executionReads.branchMessages(onBranch('d'.repeat(40))), /base d{40} is not in the log/);
 });
 
 // An Integrity Violation at red's Attempt, which a reset rolls back.
@@ -35,7 +36,7 @@ const violating = (g) => ({
 });
 
 test('a reset whose evidence was saved but not its completion is completed without a second History item', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   await interpreter.runExecution({ ...g.options, deps: { ...g.options.deps, integrity: violating(g) } });
   const rec = await record.load(g.commonDir, 'ticket', golden.TICKET);
   rec.writeAheadLog = rec.writeAheadLog.filter((e) => !(e.effect === 'reset' && e.step === 'complete'));
@@ -46,7 +47,7 @@ test('a reset whose evidence was saved but not its completion is completed witho
 });
 
 test('a failed HEAD read after the reset of an Integrity Violation leaves the History item to Reconciliation, once', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   g.options.deps.integrity = violating(g);
   const git = g.options.deps.git;
   let reset = false;
@@ -72,12 +73,12 @@ test('a failed HEAD read after the reset of an Integrity Violation leaves the Hi
 // A push that landed before the crash is found on the remote by its sha, which Reconciliation saves as its evidence, so
 // the resume completes the push rather than making it again.
 test('a push that landed before a crash is found by its remote sha', async (t) => {
-  const g = await golden.setup(t);
-  const { m, loaded } = await crashed(g, EFFECTS.push.at, 'after-effect');
+  const g = await golden.fixture(t);
+  const { actionMarker: m, loaded } = await crashed(g, EFFECTS.push.place, 'after-effect');
   const pushed = await originSha(g);
 
-  const decided = await reconcile.reconcile(reconcileArgs(g, loaded));
+  const decided = await reconcile.reconcile(reconcileOptions(g, loaded));
   assert.equal(decided.next, 'continue');
-  assert.deepEqual(stepsOf(loaded, m), ['intent', 'evidence']);
+  assert.deepEqual(writeAheadSteps(loaded, m), ['intent', 'evidence']);
   assert.deepEqual(loaded.writeAheadLog.findLast((e) => e.actionMarker === m).evidence, { remoteSha: pushed });
 });

@@ -1,42 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as locks from '../../../lib/locks.ts';
+import * as lockHolder from '../../support/lock-holder.ts';
+import * as tempDirectory from '../../support/temp-directory.ts';
 
-const contender = fileURLToPath(new URL('../../support/lock-contender.mjs', import.meta.url));
+const contender = lockHolder.CONTENDER;
 const locksModule = new URL('../../../lib/locks.ts', import.meta.url);
 
-async function tempCommonDir(t) {
-  const dir = await mkdtemp(join(tmpdir(), 'gg-locks-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-// Spawns a process that holds the lock, resolving with the child once it has printed its handle.
-function startHolder(t, args) {
-  const child = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'inherit'] });
-  t.after(() => child.kill());
-  const exited = new Promise((resolve) => child.on('exit', resolve));
-  return new Promise((resolve, reject) => {
-    let out = '';
-    child.stdout.on('data', (chunk) => {
-      out += chunk;
-      try {
-        resolve({ child, exited, report: JSON.parse(out) });
-      } catch {}
-    });
-    child.on('exit', () => reject(new Error(`holder exited before reporting: ${out}`)));
-  });
-}
-
 test('tryAcquire returns null while the lock is held', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const handle = await locks.tryAcquire(commonDir, 'ticket-8');
   assert.ok(handle);
   assert.equal(handle.path, join(commonDir, 'gg', 'locks', 'ticket-8.db'));
@@ -50,8 +27,8 @@ test('tryAcquire returns null while the lock is held', async (t) => {
 });
 
 test('tryAcquire returns null while another process holds the lock', async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const { child, exited, report } = await startHolder(t, [contender, commonDir, 'repo', '60000']);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
+  const { child, exited, report } = await lockHolder.holdLock(t, commonDir, 'repo', 60_000);
   assert.ok(report.handle, 'the child holds the lock');
   assert.equal(report.handle.path, join(commonDir, 'gg', 'locks', 'repo.db'));
   assert.equal(await locks.tryAcquire(commonDir, 'repo'), null);
@@ -70,11 +47,11 @@ async function acquireWhenFreed(t, commonDir) {
 }
 
 test('a holder that exits without release frees the lock', { timeout: 120_000 }, async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 const handle = await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo');
 process.stdout.write(JSON.stringify({ handle }), () => process.exit(0));`;
-  const { exited, report } = await startHolder(t, ['--input-type=module', '-e', script]);
+  const { exited, report } = await lockHolder.startHolder(t, ['--input-type=module', '-e', script]);
   assert.ok(report.handle, 'the child held the lock');
   assert.equal(report.handle.path, join(commonDir, 'gg', 'locks', 'repo.db'));
   await exited;
@@ -84,8 +61,8 @@ process.stdout.write(JSON.stringify({ handle }), () => process.exit(0));`;
 });
 
 test('a killed holder frees the lock', { timeout: 120_000 }, async (t) => {
-  const commonDir = await tempCommonDir(t);
-  const { child, exited, report } = await startHolder(t, [contender, commonDir, 'repo', '60000']);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
+  const { child, exited, report } = await lockHolder.holdLock(t, commonDir, 'repo', 60_000);
   assert.ok(report.handle, 'the child holds the lock');
   assert.equal(report.handle.path, join(commonDir, 'gg', 'locks', 'repo.db'));
   child.kill();
@@ -113,7 +90,7 @@ function runScript(flags, script) {
 
 // A lock whose connection only a local variable held would be freed by the first collection; gc() forces one now.
 test('a handle keeps the lock while it is referenced', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 const handle = await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo');
 globalThis.gc();
@@ -133,7 +110,7 @@ await locks.release(handle);`;
 test('the lock module needs no experimental flag for node:sqlite', async (t) => {
   const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.engines.node, '>=26.13');
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
 await locks.release(await locks.tryAcquire(${JSON.stringify(commonDir)}, 'repo'));`;
   const { code, err } = await runScript([], script);
@@ -184,7 +161,7 @@ const timedLocks = (t, during = () => {}) => {
 test('acquire waits for release', { timeout: 10_000 }, async (t) => {
   let first;
   const timed = timedLocks(t, () => locks.release(first));
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   first = timed.holding(await timed.locks.acquire(commonDir, 'repo'));
   const second = await timed.waiting(timed.locks.acquire(commonDir, 'repo', { timeoutMs: 5_000, pollMs: 20 }));
   assert.equal(second.waited, true, 'waited for the holder');
@@ -194,7 +171,7 @@ test('acquire waits for release', { timeout: 10_000 }, async (t) => {
 
 test('acquire times out', { timeout: 10_000 }, async (t) => {
   const timed = timedLocks(t);
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const first = timed.holding(await timed.locks.acquire(commonDir, 'repo'));
   await assert.rejects(timed.waiting(timed.locks.acquire(commonDir, 'repo', { timeoutMs: 150, pollMs: 50 })), (err) => {
     assert.ok(err instanceof locks.LockTimeoutError);
@@ -206,7 +183,7 @@ test('acquire times out', { timeout: 10_000 }, async (t) => {
 
 test('withLock forwards its acquisition timeout without invoking the callback', { timeout: 10_000 }, async (t) => {
   const timed = timedLocks(t);
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const first = timed.holding(await timed.locks.acquire(commonDir, 'repo'));
   let ran = false;
   await assert.rejects(
@@ -227,7 +204,7 @@ test('withLock forwards its acquisition timeout without invoking the callback', 
 });
 
 test('withLock releases on throw', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   await assert.rejects(
     locks.withLock(commonDir, 'epic-1', async () => {
       assert.equal(await locks.tryAcquire(commonDir, 'epic-1'), null, 'held inside fn');
@@ -244,7 +221,7 @@ test('withLock releases on throw', async (t) => {
 // Simultaneous BEGIN EXCLUSIVE can hand every contender SQLITE_BUSY (ADR 0008), so no owner is a valid outcome; the lock
 // must then be free, not wedged. Repeating the race is lock-stress.mjs's job, not the suite's.
 test('contending processes never throw and grant at most one owner', { timeout: 120_000 }, async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const children = Array.from({ length: 6 }, () => {
     const child = spawn(process.execPath, [contender, commonDir, 'repo', 'barrier'], {
       stdio: ['pipe', 'pipe', 'inherit'],
@@ -272,7 +249,7 @@ test('contending processes never throw and grant at most one owner', { timeout: 
 });
 
 test('the stress loop counts a run as clean only on exit 0 with a # fail 0 summary', async () => {
-  const stress = await import('../../support/lock-stress.mjs');
+  const stress = await import('../../support/lock-stress.ts');
   const tap = '# tests 6\n# pass 6\n# fail 0\n';
   assert.equal(stress.passed(0, null, tap), true);
   assert.equal(stress.passed(1, null, ''), false, 'an empty-output failure is not clean');

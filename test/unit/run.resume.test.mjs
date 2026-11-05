@@ -6,20 +6,12 @@ import { basename, join } from 'node:path';
 import * as marker from '../../lib/marker.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
-import * as sqlite from '../../lib/sqlite.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
-import { fakeHarness } from '../support/fake-harness.mjs';
-import {
-  TICKET,
-  BRANCH,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
-  fixture,
-  ticketResult,
-  failComment,
-  failHoldLabel,
-} from '../support/run.mjs';
+import * as sqlite from '../../lib/sqlite.ts';
+import * as golden from '../support/golden.ts';
+import { fakeHarness } from '../support/fake-harness.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { BRANCH, TICKET, failComment, failHoldLabel, fixture, ticketResult } from '../support/run-fixture.ts';
 
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 
@@ -57,7 +49,7 @@ test('a flow mixing harnesses runs each vertex on its own harness', async (t) =>
 });
 
 test('an in-progress ticket without a record is skipped', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL] });
   await run.runTarget(f.options);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
   assert.ok(
@@ -71,13 +63,13 @@ test('an in-progress ticket without a record is skipped', async (t) => {
     [['issue', 'view']],
     'no repository label setup on a Stuck Ticket',
   );
-  assert.ok(f.gh.labels.has(IN_PROGRESS), 'the State Label is left for Stuck handling');
+  assert.ok(f.gh.labels.has(IN_PROGRESS_LABEL), 'the State Label is left for Stuck handling');
 });
 
 // A fault report leaves the comment intent of the Terminal it interrupted open for good.
 for (const state of ['ready-for-qa', 'fault', 'abandoned']) {
   test(`a finished record with open intents is not resumed: ${state}`, async (t) => {
-    const f = fixture(t, { labels: [IN_PROGRESS] });
+    const f = fixture(t, { labels: [IN_PROGRESS_LABEL] });
     await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
     const rec = record.createExecution({
       commonDir: f.commonDir,
@@ -161,7 +153,7 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
 
 // A corrupt row stands for a Ticket whose worktree and in-progress label an earlier Run left behind.
 async function corruptTicket(t) {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL] });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   sqlite
@@ -176,13 +168,13 @@ test('a corrupt-record hold whose label failed is not posted twice', async (t) =
   const failing = failHoldLabel(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   assert.equal(f.comments().length, 1);
-  assert.equal(f.gh.labels.has(NEEDS_HUMAN), false);
+  assert.equal(f.gh.labels.has(NEEDS_HUMAN_LABEL), false);
 
   failing.on = false;
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.equal(f.comments().length, 1, 'the landed comment is found by its marker, not reposted');
   assert.ok(marker.parseMarker(f.comments()[0]), 'the corrupt-record comment carries an Action Marker');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS));
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL));
 });
 
 test('a corrupt-record hold whose comment failed is posted once on the next run', async (t) => {
@@ -190,18 +182,18 @@ test('a corrupt-record hold whose comment failed is posted once on the next run'
   const failing = failComment(f);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 1);
   assert.deepEqual(f.comments(), []);
-  assert.equal(f.gh.labels.has(NEEDS_HUMAN), false);
+  assert.equal(f.gh.labels.has(NEEDS_HUMAN_LABEL), false);
 
   failing.on = false;
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 2);
   assert.equal(f.comments().length, 1);
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN) && !f.gh.labels.has(IN_PROGRESS));
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL) && !f.gh.labels.has(IN_PROGRESS_LABEL));
   await run.runTarget(f.options);
   assert.equal(f.comments().length, 1, 'a labelled corrupt record is not commented again');
 });
 
 test('a corrupt record found at admission is held through reconcile', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS] });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL] });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const corrupt = '{ "schemaVersion": 1, "log": [';
@@ -213,7 +205,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
   assert.ok(
     f.comments().some((b) => b.includes(`Execution Record ticket-${TICKET}`) && b.includes('SQLite client')),
     `a comment names the record: ${JSON.stringify(f.comments())}`,

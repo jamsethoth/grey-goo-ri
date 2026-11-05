@@ -1,13 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
-import * as sqlite from '../../lib/sqlite.ts';
-import { fakeGit } from '../support/fake-git.mjs';
+import { fakeGit } from '../support/fake-git.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 
 function newExecution(commonDir, ticket, worktree) {
   return record.createExecution({
@@ -25,12 +24,8 @@ function newExecution(commonDir, ticket, worktree) {
 
 // Two ticket records saved on disk, `own` and `other`; activity is read from the records, so no worktree or git is needed.
 async function twoRecords(t) {
-  const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
+  const root = tempDirectory.tempDirectory(t, 'gg-integrity-', (directory) => join(directory, 'own', '.git'));
   const commonDir = join(root, 'own', '.git');
-  t.after(() => {
-    sqlite.close(commonDir);
-    rmSync(root, { recursive: true, force: true });
-  });
   const ownRecord = newExecution(commonDir, 1, join(root, 'own'));
   await record.save(ownRecord);
   const other = join(root, 'other');
@@ -70,13 +65,9 @@ test('sameFile never takes an absent file for the same', () => {
 });
 
 test('a workflow file change is an integrity violation', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'gg-integrity-'));
+  const root = tempDirectory.tempDirectory(t, 'gg-integrity-', (directory) => join(directory, 'main', '.git'));
   const fake = fakeGit();
   const { mainRoot, commonDir } = fake.init(root, { files: { '.github/workflows/ci.yml': 'on: push\n' } });
-  t.after(() => {
-    sqlite.close(commonDir);
-    rmSync(root, { recursive: true, force: true });
-  });
   const real = integrity.createIntegrity(fake.git);
   const rec = newExecution(commonDir, 1, mainRoot);
   const baseline = await real.begin({ record: rec, others: [], protectedPaths: interpreter.protectedFiles({}) });

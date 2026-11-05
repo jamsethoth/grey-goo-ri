@@ -2,9 +2,10 @@
 // The test runner also loads this file with no arguments, where it does nothing.
 import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
+
 const [commonDir, ticket, count, worktree] = process.argv.slice(2);
 if (commonDir) {
-  const r = record.createExecution({
+  const executionRecord = record.createExecution({
     commonDir,
     ticket: Number(ticket),
     epic: 1,
@@ -16,8 +17,8 @@ if (commonDir) {
     base: 'main',
   });
   for (let i = 1; i <= Number(count); i++) {
-    r.activity = { busy: i % 2 === 1, generation: i };
-    await record.save(r);
+    executionRecord.activity = { busy: i % 2 === 1, generation: i };
+    await record.save(executionRecord);
   }
   sqlite.close(commonDir);
 }

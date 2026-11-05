@@ -10,10 +10,11 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import * as sqlite from '../../lib/sqlite.ts';
+
 const [commonDir, gated] = process.argv.slice(2);
 if (commonDir) {
   const exec = DatabaseSync.prototype.exec;
-  DatabaseSync.prototype.exec = function (sql) {
+  DatabaseSync.prototype.exec = function (this: DatabaseSync, sql: string) {
     if (sql === 'BEGIN EXCLUSIVE') process.stdout.write('locking\n');
     try {
       return exec.call(this, sql);
@@ -23,7 +24,7 @@ if (commonDir) {
     }
   };
   const prepare = DatabaseSync.prototype.prepare;
-  DatabaseSync.prototype.prepare = function (sql) {
+  DatabaseSync.prototype.prepare = function (this: DatabaseSync, sql: string) {
     if (sql === 'PRAGMA journal_mode = WAL') {
       process.stdout.write(`switching ${existsSync(join(commonDir, 'released')) ? 'released' : 'held'}\n`);
     }

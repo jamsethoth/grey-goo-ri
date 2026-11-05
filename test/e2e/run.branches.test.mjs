@@ -8,23 +8,22 @@ import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { sh } from '../support/git-shell.ts';
 import {
-  TICKET,
   BRANCH,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
-  sh,
+  TICKET,
+  conflict,
+  crashBeforeCommit,
   fixture,
   seedExecution,
   ticketResult,
-  conflict,
-  crashBeforeCommit,
-} from '../support/run.mjs';
+} from '../support/run-fixture.ts';
 
 for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-attempt`]) {
   test(`a resumed execution on another Ticket branch or another branch of its Ticket is held before recovery: ${branch}`, async (t) => {
-    const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+    const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
     const seeded = await crashBeforeCommit(f);
     sh(f.worktree, 'checkout', '-q', '-b', branch);
     const head = sh(f.worktree, 'rev-parse', 'HEAD');
@@ -34,8 +33,8 @@ for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-atte
 
     const results = await run.runTarget(f.options);
     assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-    assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
-    assert.ok(!f.gh.labels.has(IN_PROGRESS), 'in-progress is removed');
+    assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
+    assert.ok(!f.gh.labels.has(IN_PROGRESS_LABEL), 'in-progress is removed');
     assert.ok(
       f.comments().some((b) => b.includes(BRANCH) && b.includes(branch)),
       `the hold names both branches: ${JSON.stringify(f.comments())}`,
@@ -93,7 +92,7 @@ for (const { branch, checkout, current } of REFUSED) {
 
     const results = await run.runTarget(f.options);
     assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-    assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+    assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
     assert.ok(
       f.comments().some((b) => b.includes(branch) && b.includes(`ticket/${TICKET}-*`)),
       `the hold names the actual and required branches: ${JSON.stringify(f.comments())}`,
@@ -103,7 +102,7 @@ for (const { branch, checkout, current } of REFUSED) {
         .comments()
         .some((b) =>
           b.includes(
-            `Switch the worktree back to a \`ticket/${TICKET}-*\` branch or remove it, then remove the ${NEEDS_HUMAN} label and re-run gg run ${TICKET}.`,
+            `Switch the worktree back to a \`ticket/${TICKET}-*\` branch or remove it, then remove the ${NEEDS_HUMAN_LABEL} label and re-run gg run ${TICKET}.`,
           ),
         ),
       `the hold says how to recover: ${JSON.stringify(f.comments())}`,
@@ -172,14 +171,14 @@ async function foreignBranchRecord(f, branch) {
 
 test('resume refuses a recorded branch belonging to another Ticket: its worktree exists', async (t) => {
   const branch = 'ticket/99-other';
-  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch, base: 'main' });
   const rec = await foreignBranchRecord(f, branch);
   const before = await integrity.snapshot(f.worktree, f.options.deps.git);
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
   assert.ok(
     f.comments().some((b) => b.includes(branch) && b.includes(`ticket/${TICKET}-*`)),
     `the hold names the recorded and required branches: ${JSON.stringify(f.comments())}`,
@@ -216,12 +215,12 @@ test('resume refuses a recorded branch belonging to another Ticket: its worktree
 
 test('resume refuses a recorded branch belonging to another Ticket: its worktree is missing', async (t) => {
   const branch = 'ticket/99-other';
-  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
   const rec = await foreignBranchRecord(f, branch);
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
   assert.ok(
     f.comments().some((b) => b.includes(branch) && b.includes(`ticket/${TICKET}-*`)),
     `the hold names the recorded and required branches: ${JSON.stringify(f.comments())}`,
@@ -255,7 +254,7 @@ test('resume refuses a recorded branch belonging to another Ticket: its worktree
 // Ticket 99 if `siblingRecord`), whose red call writes into the sibling.
 async function siblingOverwrite(t, { seeded, siblingRecord, siblingBranch }) {
   const responses = structuredClone(golden.firstVisitResponses);
-  const f = fixture(t, { responses, labels: seeded ? [IN_PROGRESS] : [], integrity: 'real' });
+  const f = fixture(t, { responses, labels: seeded ? [IN_PROGRESS_LABEL] : [], integrity: 'real', git: 'real' });
   // Outside the configured worktree root, so only git's worktree list can find it.
   const sibling = join(f.root, 'elsewhere', 'ticket-99');
   sh(f.mainRoot, 'worktree', 'add', '-q', '-b', siblingBranch, sibling, 'main');
@@ -326,7 +325,7 @@ for (const row of SIBLINGS) {
 }
 
 test('admission excludes non-ticket worktrees from sibling assertions', async (t) => {
-  const f = fixture(t, { integrity: 'real' });
+  const f = fixture(t, { integrity: 'real', git: 'real' });
   // git write-tree refuses an unmerged index, so a snapshot of this worktree would fault.
   const scratch = join(f.root, 'scratch');
   sh(f.mainRoot, 'worktree', 'add', '-q', '-b', 'scratch', scratch, 'main');
@@ -342,7 +341,7 @@ test(
   'admission excludes its own worktree, listed in another case, from sibling assertions',
   { skip: process.platform !== 'win32' && 'case-insensitive paths are Windows only' },
   async (t) => {
-    const f = fixture(t, { integrity: 'real' });
+    const f = fixture(t, { integrity: 'real', git: 'real' });
     const git = f.options.deps.git;
     f.options.deps.git = {
       ...git,
@@ -356,7 +355,7 @@ test(
 );
 
 test('a resumed execution detached at the recorded SHA is held before recovery', async (t) => {
-  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
   const seeded = await crashBeforeCommit(f);
   const head = sh(f.worktree, 'rev-parse', 'HEAD');
   sh(f.worktree, 'checkout', '-q', '--detach', head);
@@ -365,7 +364,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN));
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL));
   assert.ok(
     f.comments().some((b) => b.includes('detached HEAD') && b.includes(BRANCH)),
     'the hold names the detached HEAD and recorded branch',
@@ -400,7 +399,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
 });
 
 test('a resumed execution stopped mid-rebase is held without changing the rebase', async (t) => {
-  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
   const seeded = await seedExecution(f, {
     crashAt: (r) => ({ marker: golden.markerOf(r, 'red', 1, 'commit', 0), point: 'after-completion' }),
   });
@@ -426,7 +425,7 @@ test('a resumed execution stopped mid-rebase is held without changing the rebase
 });
 
 test('an unexpected branch query failure faults before recovery', async (t) => {
-  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
   const seeded = await crashBeforeCommit(f);
   const before = await integrity.snapshot(f.worktree, f.options.deps.git);
   f.options.deps.git = {

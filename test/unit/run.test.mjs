@@ -9,19 +9,11 @@ import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
-import {
-  TICKET,
-  BRANCH,
-  IN_PROGRESS,
-  fixture,
-  ticketResult,
-  failComment,
-  lastRun,
-  EPIC,
-  epicOf,
-  loadTicket,
-} from '../support/run.mjs';
+import { EPIC, epicOf } from '../support/epic-run.ts';
+import { IN_PROGRESS_LABEL } from '../support/execution-context.ts';
+import { loadTicket } from '../support/execution-reads.ts';
+import { BRANCH, TICKET, failComment, fixture, lastRun, ticketResult } from '../support/run-fixture.ts';
+import * as caseDatabase from '../support/case-database.ts';
 
 const LABEL_SETUPS = [
   {
@@ -161,7 +153,7 @@ for (const [issue, reason] of NOT_READY) {
 
 test('every line a Run prints names its repository, in the terminal and in run.log', async (t) => {
   // A fault whose report gets HTTP 502 and whose label edit fails logs from run, the interpreter and github.
-  const f = fixture(t, { labels: [IN_PROGRESS], failEdit: true });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL], failEdit: true });
   const rec = record.createExecution({
     commonDir: f.commonDir,
     ticket: TICKET,
@@ -401,7 +393,7 @@ test('an admission hold saves an admission stop that declares every field', asyn
     }),
   );
   const saved = [];
-  golden.onSave(t, (next) => saved.push(structuredClone(next)));
+  caseDatabase.onSave(t, (next) => saved.push(structuredClone(next)));
 
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));

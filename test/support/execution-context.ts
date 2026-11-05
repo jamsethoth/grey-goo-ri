@@ -2,8 +2,6 @@
 // fake gh transport and an injected clock. Each case gets its own and removes it when it ends.
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as effects from '../../lib/effects.ts';
 import * as events from '../../lib/events.ts';
@@ -12,11 +10,13 @@ import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as remoteEffects from '../../lib/remote-effects.ts';
 import * as publicText from '../../lib/public-text.ts';
-import * as sqlite from '../../lib/sqlite.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
-import * as golden from './golden.mjs';
+import * as fakeGhModule from './fake-gh.ts';
+import * as golden from './golden.ts';
+import * as tempDirectory from './temp-directory.ts';
 
-export const TICKET = golden.TICKET;
+export { TICKET } from './golden.ts';
+const { TICKET } = golden;
 export const NEEDS_HUMAN_LABEL = 'gg:state:needs-human';
 export const IN_PROGRESS_LABEL = 'gg:state:in-progress';
 
@@ -25,11 +25,7 @@ interface EmittedEvent extends Record<string, unknown> {
 }
 
 export async function executionContext(t: TestContext) {
-  const commonDir = await mkdtemp(join(tmpdir(), 'gg-effects-'));
-  t.after(async () => {
-    sqlite.close(commonDir);
-    await rm(commonDir, { recursive: true, force: true });
-  });
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-effects-');
   const executionRecord = record.createExecution({
     commonDir,
     ticket: TICKET,
@@ -40,7 +36,7 @@ export async function executionContext(t: TestContext) {
     branch: golden.BRANCH,
     base: 'main',
   });
-  const fakeGh = golden.fakeGh({ branch: golden.BRANCH });
+  const fakeGh = fakeGhModule.fakeGh({ branch: golden.BRANCH, ticket: TICKET });
   const sleeps: number[] = [];
   const logs: string[] = [];
   const emitted: EmittedEvent[] = [];
@@ -87,7 +83,7 @@ export type ExecutionContext = Awaited<ReturnType<typeof executionContext>>['con
 export const PUSH_REF = { vertex: 'green', visit: 1, procedure: 'implement', action: 'push', recovery: 0 };
 
 // The fake gh's comment post, which a case fails with an HTTP status.
-export const commentPost = (args: string[]) => golden.isCommentPost(args);
+export const commentPost = (args: string[]) => fakeGhModule.isCommentPost(args);
 
 // A remote comment Action on the Ticket at PUSH_REF, as the comment Action posts it: its body carries its marker.
 function commentEffect(context: ExecutionContext) {

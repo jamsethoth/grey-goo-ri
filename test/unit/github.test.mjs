@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as github from '../../lib/github.ts';
 import * as labels from '../../lib/labels.ts';
 import * as outcome from '../../lib/outcome.ts';
-import * as golden from '../support/golden.mjs';
+import * as fakeGhModule from '../support/fake-gh.ts';
 
 test('createIssue keeps malformed output complete for redaction before publication', async (t) => {
   const output = 'x'.repeat(190) + '/private/worktree/secret-file';
@@ -153,7 +153,7 @@ for (const [label, reason] of [
 }
 
 const viewLabelled = async (t, name) => {
-  const fake = golden.fakeGh({ ticket: 7 });
+  const fake = fakeGhModule.fakeGh({ ticket: 7 });
   fake.labels.add(name);
   const client = github.createGh(fake.gh);
   return client.viewIssue(7, '/repo');
@@ -461,14 +461,14 @@ test('setLabels reports an unconfirmed setup failure without editing the issue',
 test('a comment is posted through gh api, and a failed one keeps its status and headers', async (t) => {
   const url = 'https://github.com/o/r/issues/7#issuecomment-5';
   const { gh, calls } = fakeGh(() =>
-    golden.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }),
+    fakeGhModule.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }),
   );
   const client = github.createGh(gh);
   assert.equal(await client.comment(7, 'a "quoted"\nbody', '/repo'), url);
   assert.equal(await client.comment(7, 'on the PR', '/repo'), url);
   assert.equal(github.commentId(url), 5);
   assert.ok(
-    calls.every(({ args }) => golden.isCommentPost(args, 7) && args.includes('--include')),
+    calls.every(({ args }) => fakeGhModule.isCommentPost(args, 7) && args.includes('--include')),
     JSON.stringify(calls),
   );
   assert.deepEqual(
@@ -477,7 +477,7 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
   );
 
   const rateLimited = github.createGh(async (args) => {
-    throw golden.ghError(args, {
+    throw fakeGhModule.ghError(args, {
       status: 403,
       headers: { 'Retry-After': '7', 'X-RateLimit-Remaining': '12' },
       body: { message: 'You have exceeded a secondary rate limit.' },
@@ -506,7 +506,7 @@ test('a rate-limited PR write uses the wait GitHub gives', async (t) => {
     }
     if (args[0] === 'pr' && args[1] === 'list') return [];
     // gh pr create goes through GraphQL, whose rate limit has no HTTP status.
-    throw golden.ghError(args, { stderr: 'GraphQL: API rate limit exceeded for user ID 1.' });
+    throw fakeGhModule.ghError(args, { stderr: 'GraphQL: API rate limit exceeded for user ID 1.' });
   });
   const client = github.createGh(gh);
   const err = await client.upsertPr({ branch: 'b', base: 'main', title: 'T', body: 'B' }, '/repo').then(
@@ -523,7 +523,7 @@ test('a failed rate-limit probe keeps the 60/120 s fallback', async (t) => {
   const { gh, calls } = fakeGh((args) => {
     throw isProbe(args)
       ? new Error('HTTP 502')
-      : golden.ghError(args, { status: 403, body: { message: 'API rate limit exceeded for user ID 1.' } });
+      : fakeGhModule.ghError(args, { status: 403, body: { message: 'API rate limit exceeded for user ID 1.' } });
   });
   const client = github.createGh(gh);
   const err = await client.markReady(7, '/repo').then(

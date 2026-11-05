@@ -5,9 +5,7 @@ import * as effects from '../../lib/effects.ts';
 import * as record from '../../lib/record.ts';
 import * as visit from '../../lib/visit.ts';
 import * as support from '../support/execution-context.ts';
-
-const stepsOf = (executionRecord: record.ExecutionRecord, actionMarker: string) =>
-  executionRecord.writeAheadLog.filter((entry) => entry.actionMarker === actionMarker).map((entry) => entry.step);
+import * as executionReads from '../support/execution-reads.ts';
 
 test('the activity bracket marks the worktree busy while its function runs and idle after', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
@@ -51,7 +49,7 @@ test('a side effect is logged as intent, evidence and completion, and returns it
     perform: async () => ({ head: 'abc' }),
   });
   assert.deepEqual(evidence, { head: 'abc' });
-  assert.deepEqual(stepsOf(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
 });
 
 test('a proven side effect is not made again: its saved evidence is returned and the Action completed', async (t) => {
@@ -65,7 +63,7 @@ test('a proven side effect is not made again: its saved evidence is returned and
     perform: async () => assert.fail('a proven effect is made again'),
   });
   assert.deepEqual(evidence, { head: 'saved' });
-  assert.deepEqual(stepsOf(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
 });
 
 test('a deferred side effect is left for finish to complete', async (t) => {
@@ -79,7 +77,7 @@ test('a deferred side effect is left for finish to complete', async (t) => {
     deferred: true,
   });
   assert.deepEqual(evidence, { head: 'abc' });
-  assert.deepEqual(stepsOf(executionRecord, 'gg:m'), ['intent', 'evidence']);
+  assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence']);
 });
 
 test('an open intent is redone with its intended payload, not the one given now', async (t) => {
@@ -162,7 +160,7 @@ test('finish completes a marked Action with its evidence once, and returns a com
     actionMarker: 'gg:m',
     evidence: { remoteSha: 'abc' },
   });
-  assert.deepEqual(stepsOf(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
+  assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
   assert.equal(executionRecord.visitState, null, 'a Terminal Action or a retry settles nothing');
   assert.equal(
     await effects.finish(context, { actionRef, startedAt: 5, resolution, actionMarker: 'gg:m' }),
@@ -213,7 +211,7 @@ test('a completed side effect finishes as effect-completed', async (t) => {
     row: 'effect-completed',
     rule: { table: 'fixed', row: 'effect-completed' },
   });
-  assert.deepEqual(stepsOf(executionRecord, 'gg:m'), ['intent', 'complete']);
+  assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'complete']);
   assert.deepEqual(
     emitted.map((event) => [event.action, event.outcome, event.rule]),
     [['push', 'ok', { table: 'fixed', row: 'effect-completed' }]],

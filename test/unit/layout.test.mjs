@@ -150,12 +150,13 @@ test('no test/support file shares a lib module name', () => {
 });
 
 // A named import from lib at the start of a line; a string that spells one inside a case does not start a line.
-const NAMED_LIB_IMPORT = /^import\s+(?!\*\s*as\s)[^;]*?\sfrom\s+['"](?:\.\.\/)+lib\//m;
+const NAMED_LIB_IMPORT = /^import\s+(?!(?:type\s+)?\*\s*as\s)[^;]*?\sfrom\s+['"](?:\.\.\/)+lib\//m;
 
 test('tests import lib modules as namespaces', () => {
   assert.equal(NAMED_LIB_IMPORT.test("import { pathKey } from '../../lib/paths.ts';"), true);
   assert.equal(NAMED_LIB_IMPORT.test("import {\n  a,\n  b,\n} from '../../../lib/git.ts';"), true);
   assert.equal(NAMED_LIB_IMPORT.test("import * as paths from '../../lib/paths.ts';"), false);
+  assert.equal(NAMED_LIB_IMPORT.test("import type * as paths from '../../lib/paths.ts';"), false);
   assert.equal(NAMED_LIB_IMPORT.test('  "import { add } from \'../lib/add.mjs\';\\n",'), false);
   assert.equal(NAMED_LIB_IMPORT.test("import { join } from 'node:path';\nimport * as x from '../lib/x.mjs';"), false);
   const testFiles = repoFiles('test/').filter((path) => /\.(?:mjs|ts)$/.test(path));

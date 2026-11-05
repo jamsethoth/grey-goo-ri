@@ -3,14 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as gitModule from '../../../lib/git.ts';
 import * as paths from '../../../lib/paths.ts';
-import * as templateRepos from '../../support/template-repos.mjs';
-
-const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
+import * as templateRepos from '../../support/template-repos.ts';
+import { sh } from '../../support/git-shell.ts';
 
 const tempRoot = (t) => {
   const root = mkdtempSync(join(tmpdir(), 'gg-git-'));
@@ -49,7 +48,7 @@ function realRepo(t) {
 
 // The same, in the fake git's model.
 async function fakeRepo(t) {
-  const { fakeGit } = await import('../../support/fake-git.mjs');
+  const { fakeGit } = await import('../../support/fake-git.ts');
   const root = tempRoot(t);
   const fake = fakeGit();
   const { mainRoot } = fake.init(root);

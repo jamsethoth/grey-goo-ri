@@ -1,7 +1,7 @@
 # Harness interface
 
 Every Harness module (`lib/harnesses/claude.ts`, `lib/harnesses/codex.ts`, and the test fake in
-`test/support/fake-harness.mjs`) exports an object with the same contract. `assertHarness(obj)` in
+`test/support/fake-harness.ts`) exports an object with the same contract. `assertHarness(obj)` in
 `lib/harnesses/contract.ts` checks it and throws naming the first missing method or Capability field. Behaviour is
 decided by request section 3.2; Usage token rules by section 3.7.
 

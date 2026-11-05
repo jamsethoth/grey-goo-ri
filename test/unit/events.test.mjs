@@ -6,18 +6,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
 import * as events from '../../lib/events.ts';
-import * as sqlite from '../../lib/sqlite.ts';
-import { fakeGit } from '../support/fake-git.mjs';
-
-// The State Database is closed before the directory is removed, as Windows requires.
-function tempDir(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-events-'));
-  t.after(() => {
-    sqlite.close(dir);
-    rmSync(dir, { recursive: true, force: true });
-  });
-  return dir;
-}
+import { fakeGit } from '../support/fake-git.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 
 // Reads the events table directly, as another SQLite client would.
 function rows(commonDir) {
@@ -113,7 +103,7 @@ const agentRequired = [
 ];
 
 test('an action event carries schema version 2 and every required field', (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   const log = events.eventLog(dir, { run: 'r1' });
   const event = events.actionEvent(actionFields());
   log(event.type, event);
@@ -220,7 +210,7 @@ test('actionEvent accepts every optional key together', () => {
 });
 
 test('an Event carries schemaVersion and time', (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   events.eventLog(dir, { run: 'r1' })('run_start');
   const [event] = events.readEvents(dir);
   assert.deepEqual(Object.keys(event), ['schemaVersion', 'time', 'type', 'run']);
@@ -329,7 +319,7 @@ test('actionEvent accepts Usage members whose counts are all null', () => {
 });
 
 test('eventLog validates every event before appending it', (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   const log = events.eventLog(dir);
   assert.throws(() => log('action', {}), /\bflow\b/);
   assert.throws(() => log('stage_call', { run: 'r1' }), /\bstage_call\b/);
@@ -373,7 +363,7 @@ for (const type of ['toString', 'constructor', '__proto__']) {
 }
 
 test('eventLog appends a row with the identity columns and the full event', (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   events.eventLog(dir, { run: 'r1' })('ticket_start', { execution: 'e1', ticket: 7 });
   assert.deepEqual(
     readdirSync(join(dir, 'gg')).filter((f) => !f.startsWith('gg.db') && f !== 'locks'),
@@ -402,7 +392,7 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
 });
 
 test('readEvents returns events in insertion order', (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   const log = events.eventLog(dir, { run: 'r1' });
   log('run_start');
   log('ticket_start', { execution: 'e1', ticket: 7 });
@@ -429,7 +419,7 @@ test('readEvents returns events in insertion order', (t) => {
 });
 
 test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
-  const dir = tempDir(t);
+  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   const log = events.eventLog(dir, { run: 'r1' });
   log('ticket_start', { execution: '7.aaa', ticket: 7 });
   log('run_end');
@@ -440,7 +430,7 @@ test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
 });
 
 test('readEvents on a fresh directory returns nothing', (t) => {
-  assert.deepEqual(events.readEvents(tempDir(t)), []);
+  assert.deepEqual(events.readEvents(tempDirectory.tempDirectory(t, 'gg-events-')), []);
 });
 
 test('diffStats splits test and non-test insertions', () => {

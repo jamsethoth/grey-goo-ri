@@ -7,25 +7,18 @@ import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
-import * as golden from '../support/golden.mjs';
-import {
-  TICKET,
-  BRANCH,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
-  sh,
-  fixture,
-  seedExecution,
-  conflict,
-  lastRun,
-  loadTicket,
-} from '../support/run.mjs';
+import * as golden from '../support/golden.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { loadTicket } from '../support/execution-reads.ts';
+import { sh } from '../support/git-shell.ts';
+import { BRANCH, TICKET, conflict, fixture, lastRun, seedExecution } from '../support/run-fixture.ts';
+import * as crashFs from '../support/crash-fs.ts';
 
 test('agent-made dirty state proven by the record is discarded', async (t) => {
   const responses = structuredClone(golden.firstVisitResponses);
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
-  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   const git = {
     ...f.options.deps.git,
     resetTo: async () => {
@@ -57,7 +50,7 @@ test('changes made after an interrupted reset are held, not discarded', async (t
   const responses = structuredClone(golden.firstVisitResponses);
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
-  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   const git = {
     ...f.options.deps.git,
     resetTo: async () => {
@@ -72,7 +65,7 @@ test('changes made after an interrupted reset are held, not discarded', async (t
   assert.equal(run.runExitCode(results), 2);
   assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n', 'the human file is untouched');
   assert.ok(existsSync(join(f.worktree, 'test', 'add.test.mjs')), 'nothing was discarded');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
   assert.ok(
     f.comments().some((b) => b.includes('human.txt')),
     `a comment carries the diff stat: ${JSON.stringify(f.comments())}`,
@@ -84,7 +77,7 @@ test('an ignored test added after an interrupted reset is held, not deleted', as
   const responses = structuredClone(golden.firstVisitResponses);
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
-  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   const git = {
     ...f.options.deps.git,
     resetTo: async () => {
@@ -111,7 +104,7 @@ test('a human change staged after an interrupted reset is held, not discarded', 
   const responses = structuredClone(golden.firstVisitResponses);
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
-  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   const git = {
     ...f.options.deps.git,
     resetTo: async () => {
@@ -137,7 +130,7 @@ test('an interrupted reset whose intent predates the index fingerprint is held',
   const responses = structuredClone(golden.firstVisitResponses);
   // red writes a Protected File: an Integrity Violation, whose reset crashes.
   responses['red/1/red/1'].files['.agents/injected.json'] = '{}\n';
-  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   const git = {
     ...f.options.deps.git,
     resetTo: async () => {
@@ -161,7 +154,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
     '.claude/settings.local.json': '{"agent":true}\n',
     '.claude/agent.json': '{}\n',
   });
-  const f = fixture(t, { responses, labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { responses, labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   mkdirSync(join(f.worktree, '.claude'));
   writeFileSync(join(f.worktree, '.claude', '.gitignore'), '*\n');
@@ -177,7 +170,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   // Crashed after the extra is removed and the changed file deleted, before its rewrite.
   const crashing = integrity.createIntegrity(
     git,
-    golden.crashFs(f.worktree, () => reset, { op: 'rm', n: 2, after: true }),
+    crashFs.crashFs(f.worktree, () => reset, { op: 'rm', n: 2, after: true }),
   );
   const seeded = await seedExecution(f, { git, integrity: crashing });
   assert.ok(!existsSync(join(f.worktree, '.claude', 'settings.local.json')), 'the crash came mid-restore');
@@ -227,7 +220,7 @@ async function assertAdmissionHoldEvents(f, results, hold) {
 }
 
 test('admission holds emit ticket lifecycle events with their Terminal Reason: a dirty worktree', async (t) => {
-  const f = fixture(t, { integrity: 'real' });
+  const f = fixture(t, { integrity: 'real', git: 'real' });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   writeFileSync(join(f.worktree, 'notes.txt'), 'mine\n');
 
@@ -235,7 +228,7 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason: a
 });
 
 test('admission holds emit ticket lifecycle events with their Terminal Reason: a merge conflict', async (t) => {
-  const f = fixture(t, { integrity: 'real' });
+  const f = fixture(t, { integrity: 'real', git: 'real' });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   conflict(f.worktree);
 
@@ -243,7 +236,7 @@ test('admission holds emit ticket lifecycle events with their Terminal Reason: a
 });
 
 test('admission holds emit ticket lifecycle events with their Terminal Reason: a worktree on another branch', async (t) => {
-  const f = fixture(t, { integrity: 'real' });
+  const f = fixture(t, { integrity: 'real', git: 'real' });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   sh(f.worktree, 'checkout', '-q', '-b', 'ticket/99-other');
 

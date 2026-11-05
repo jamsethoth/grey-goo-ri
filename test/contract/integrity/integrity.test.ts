@@ -1,4 +1,4 @@
-// The fake integrity's contract: each case runs against lib/integrity.ts and test/support/fake-integrity.mjs, so the
+// The fake integrity's contract: each case runs against lib/integrity.ts and test/support/fake-integrity.ts, so the
 // violations the unit tier routes on, the untracked files it rolls back and the Test Immutability it checks keep the
 // real shape. The real side runs over real git and the fake side over the git it is given.
 import { test, type TestContext } from 'node:test';
@@ -7,10 +7,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as checks from '../../../lib/checks.ts';
-import * as gitModule from '../../../lib/git.ts';
 import * as integrity from '../../../lib/integrity.ts';
-import * as fakeGitModule from '../../support/fake-git.mjs';
-import * as fakeIntegrityModule from '../../support/fake-integrity.mjs';
+import * as gitModule from '../../../lib/git.ts';
+import * as fakeGitModule from '../../support/fake-git.ts';
+import * as fakeIntegrityModule from '../../support/fake-integrity.ts';
+import * as gitShell from '../../support/git-shell.ts';
 import * as worktrees from '../../support/integrity-worktrees.ts';
 
 type Fake = ReturnType<typeof fakeIntegrityModule.fakeIntegrity>;
@@ -61,8 +62,8 @@ const SCENARIOS: Scenario[] = [
     ],
     real: ({ own }) => {
       writeFileSync(join(own, 'b.txt'), 'b\n');
-      worktrees.sh(own, ['add', 'b.txt']);
-      worktrees.sh(own, ['commit', '-q', '-m', 'agent commit']);
+      gitShell.sh(own, 'add', 'b.txt');
+      gitShell.sh(own, 'commit', '-q', '-m', 'agent commit');
     },
     fake: (fake, { own }) => {
       fake.write(own, 'b.txt');
@@ -159,16 +160,16 @@ const SIDES: Side[] = [
       t.after(() => rmSync(root, { recursive: true, force: true }));
       const mainRoot = join(root, 'main');
       mkdirSync(mainRoot);
-      worktrees.sh(mainRoot, ['init', '-q', '-b', 'main']);
-      worktrees.sh(mainRoot, ['config', 'user.name', 't']);
-      worktrees.sh(mainRoot, ['config', 'user.email', 't@t']);
+      gitShell.sh(mainRoot, 'init', '-q', '-b', 'main');
+      gitShell.sh(mainRoot, 'config', 'user.name', 't');
+      gitShell.sh(mainRoot, 'config', 'user.email', 't@t');
       for (const [path, text] of Object.entries(files)) {
         mkdirSync(join(mainRoot, path, '..'), { recursive: true });
         writeFileSync(join(mainRoot, path), text);
       }
-      worktrees.sh(mainRoot, ['add', '-A']);
-      worktrees.sh(mainRoot, ['commit', '-q', '-m', 'init']);
-      return { mainRoot, base: worktrees.sh(mainRoot, ['rev-parse', 'HEAD']), git: gitModule };
+      gitShell.sh(mainRoot, 'add', '-A');
+      gitShell.sh(mainRoot, 'commit', '-q', '-m', 'init');
+      return { mainRoot, base: gitShell.sh(mainRoot, 'rev-parse', 'HEAD'), git: gitModule };
     },
     bound: (git: object) => ({
       integrity: integrity.createIntegrity(git as integrity.IntegrityGit),
@@ -184,7 +185,8 @@ const SIDES: Side[] = [
       const fake = fakeGitModule.fakeGit();
       return { ...fake.init(root, { files }), git: fake.git };
     },
-    bound: (git: object) => fakeIntegrityModule.fakeIntegrity({ git }),
+    bound: (git: object) =>
+      fakeIntegrityModule.fakeIntegrity({ git: git as integrity.IntegrityGit & checks.ChangedPaths }),
   },
 ];
 

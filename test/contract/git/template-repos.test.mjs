@@ -3,11 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { sh } from '../../support/git-shell.ts';
 
-const sh = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8' }).trim();
 // Equal refs do not show a copy owns its objects: a store shared through a link would pass a ref check.
 const assertNoObject = (repos, sha) => {
   for (const cwd of repos)
@@ -30,7 +30,7 @@ const tempRoot = (t) => {
 };
 
 test('a copied fixture repository is independent of its template', async (t) => {
-  const templateRepos = await import('../../support/template-repos.mjs');
+  const templateRepos = await import('../../support/template-repos.ts');
   const changed = tempRoot(t);
   const untouched = tempRoot(t);
   const base = templateRepos.seedRepos(changed);
@@ -56,7 +56,7 @@ test('a copied fixture repository is independent of its template', async (t) => 
 });
 
 test("a copied clone pushes to its own origin, not the template's", async (t) => {
-  const templateRepos = await import('../../support/template-repos.mjs');
+  const templateRepos = await import('../../support/template-repos.ts');
   const pushed = tempRoot(t);
   templateRepos.seedRepos(pushed);
   sh(join(pushed, 'main'), 'checkout', '-q', '-b', 'ticket/9-thing');

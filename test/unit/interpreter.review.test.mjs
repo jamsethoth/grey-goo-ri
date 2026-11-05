@@ -5,25 +5,23 @@ import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as marker from '../../lib/marker.ts';
 import * as checks from '../../lib/checks.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
+import { branchMessages, headSha, originSha } from '../support/execution-reads.ts';
 import {
+  MAJOR,
   REVIEWER_PERSONA,
   finding,
-  review,
-  reviewed,
   fixed,
-  MAJOR,
-  reviewSetup,
-  reviewFlow,
   prReviewComments,
+  review,
+  reviewFixture,
   reviewStopReason,
-  branchMessages,
-  originSha,
-  headSha,
-} from '../support/interpreter.mjs';
+  reviewed,
+  runReviewFlow,
+} from '../support/review-flow.ts';
 
 test('golden: a changes verdict routes into the fix vertex and back to review, then publish to ready-for-qa', async (t) => {
-  const g = await reviewSetup(t, {
+  const g = await runReviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/2/review/1': reviewed(review('ok', [finding('minor', 'lib/add.mjs', 'name the parameters')])),
@@ -74,13 +72,13 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
     g.actions.filter((e) => e.vertex === 'implementer-fix').map((e) => e.procedure),
     ['fix', 'fix', 'fix', 'fix', 'fix'],
   );
-  assert.equal(g.at('reviewer', 1, 'review', 0)[0].outcome, 'changes');
+  assert.equal(g.actionsAt('reviewer', 1, 'review', 0)[0].outcome, 'changes');
   assert.deepEqual(
-    g.at('reviewer', 1, 'review', 0)[0].rule,
+    g.actionsAt('reviewer', 1, 'review', 0)[0].rule,
     { table: 'fixed', row: 'claimed' },
     'a changes claim is handed to the review tables',
   );
-  assert.equal(g.at('reviewer', 2, 'review', 0)[0].outcome, 'ok');
+  assert.equal(g.actionsAt('reviewer', 2, 'review', 0)[0].outcome, 'ok');
 
   // The review is a read-only call with the diff and the captured Red and Green Evidence in its Brief.
   const [review1, fix, review2] = g.harness.calls.slice(2);
@@ -93,7 +91,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   assert.equal(fix.resume, null, 'fix never resumes');
   assert.ok(fix.brief.includes(MAJOR.issue), 'the Findings are in the fix Brief');
   assert.equal(fix.access, 'workspace-write');
-  assert.equal(g.at('implementer-fix', 1, 'fix', 0)[0].sessionLineage, null);
+  assert.equal(g.actionsAt('implementer-fix', 1, 'fix', 0)[0].sessionLineage, null);
   assert.equal(review2.access, 'read-only');
 
   const messages = await branchMessages(g);
@@ -115,10 +113,10 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
   );
   assert.equal(g.gh.pr().isDraft, false);
 
-  assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1);
-  assert.deepEqual(g.rec.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
+  assert.equal(g.executionRecord.traversals['reviewer->implementer-fix:changes'], 1);
+  assert.deepEqual(g.executionRecord.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
   assert.deepEqual(
-    g.rec.outputs.filter((o) => o.action === 'repeat').map((o) => [o.vertex, o.visit]),
+    g.executionRecord.outputs.filter((o) => o.action === 'repeat').map((o) => [o.vertex, o.visit]),
     [
       ['reviewer', 1],
       ['reviewer', 2],
@@ -129,7 +127,7 @@ test('golden: a changes verdict routes into the fix vertex and back to review, t
 });
 
 test('a restart at the review-to-fix boundary runs the pending fix with the saved edge count', async (t) => {
-  const g = await reviewFlow(t, {
+  const g = await reviewFixture(t, {
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/2/review/1': reviewed(review('ok')),
@@ -138,7 +136,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
     c.flows.golden.ticket.vertices.reviewer.route.changes.max = 1;
   });
   // Before the fix Attempt's intent: one interrupted after it would be held instead.
-  const fix = golden.markerOf(g.rec, 'implementer-fix', 1, 'fix');
+  const fix = golden.markerOf(g.executionRecord, 'implementer-fix', 1, 'fix');
   await assert.rejects(
     interpreter.runExecution({ ...g.options, crashAt: { marker: fix, point: 'before-intent' } }),
     (err) => err instanceof interpreter.CrashError,
@@ -160,7 +158,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
 });
 
 test('two reviewer vertices keep their own sessions and provenance rows', async (t) => {
-  const g = await reviewFlow(t, {
+  const g = await reviewFixture(t, {
     'reviewer/1/review/1': reviewed(review('ok')),
     'reviewer-2/1/review/1': reviewed(review('ok')),
   });
@@ -173,19 +171,19 @@ test('two reviewer vertices keep their own sessions and provenance rows', async 
       route: { ...vertices.reviewer.route, ok: 'publish' },
     };
   });
-  g.result = await interpreter.runExecution(g.options);
+  const result = await interpreter.runExecution(g.options);
 
-  assert.equal(g.result.outcome, 'ready-for-qa');
+  assert.equal(result.outcome, 'ready-for-qa');
   assert.ok(
-    g.rec.sessions['reviewer/1/review'] && g.rec.sessions['reviewer-2/1/review'],
-    JSON.stringify(Object.keys(g.rec.sessions)),
+    g.executionRecord.sessions['reviewer/1/review'] && g.executionRecord.sessions['reviewer-2/1/review'],
+    JSON.stringify(Object.keys(g.executionRecord.sessions)),
   );
   assert.match(g.gh.pr().body, /^\| reviewer \| fake \| model-r \| high \| /m, 'the first reviewer row survives');
   assert.match(g.gh.pr().body, /^\| reviewer-2 \| fake \| model-s \| high \| /m);
 });
 
 test('the changes edge exhausts after max traversals to needs-human', async (t) => {
-  const g = await reviewSetup(t, {
+  const g = await runReviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
     'reviewer/2/review/1': reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
@@ -195,12 +193,12 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
 
   assert.equal(g.result.outcome, 'needs-human');
   assert.equal(
-    g.rec.traversals['reviewer->implementer-fix:changes'],
+    g.executionRecord.traversals['reviewer->implementer-fix:changes'],
     2,
     'two changes verdicts traverse the edge twice',
   );
-  assert.equal(g.rec.visits['implementer-fix'], 2);
-  assert.equal(g.rec.visits.reviewer, 3);
+  assert.equal(g.executionRecord.visits['implementer-fix'], 2);
+  assert.equal(g.executionRecord.visits.reviewer, 3);
   assert.equal(g.harness.calls.filter((c) => c.brief.startsWith('FIX VISIT')).length, 2, 'no third fix call');
   assert.deepEqual(
     g.actions.filter((e) => e.vertex === 'implementer-fix' && e.visit === 3),
@@ -221,22 +219,22 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
 });
 
 test('golden: a review ok without evidence routes as changes through the passed table', async (t) => {
-  const g = await reviewSetup(t, {
+  const g = await runReviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('ok', [finding('blocker', 'lib/add.mjs', 'add drops the second argument')])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => b + a;\n' }),
     'reviewer/2/review/1': reviewed(review('ok')),
   });
 
-  const checked = g.at('reviewer', 1, 'review-pass', 0);
+  const checked = g.actionsAt('reviewer', 1, 'review-pass', 0);
   assert.equal(checked.length, 1, 'review-pass is evaluated once on the Structured Response');
   assert.equal(checked[0].signals.claim.token, 'ok', 'the agent claimed ok');
   assert.deepEqual(checked[0].signals.checks, [{ id: 'review-pass', kind: 'response', state: 'failed', tree: null }]);
   // No Claim requires review-pass (P5a), so the review still comments and updates the PR.
   assert.equal(checked[0].outcome, 'ok');
-  assert.equal(g.at('reviewer', 1, 'comment', 0).length, 1);
-  assert.equal(g.at('reviewer', 1, 'pr', 0).length, 1);
+  assert.equal(g.actionsAt('reviewer', 1, 'comment', 0).length, 1);
+  assert.equal(g.actionsAt('reviewer', 1, 'pr', 0).length, 1);
   // The passed table's only ok row needs review-pass passed, so the Visit routes by otherwise: changes.
-  assert.equal(g.rec.traversals['reviewer->implementer-fix:changes'], 1, 'the changes edge is taken');
+  assert.equal(g.executionRecord.traversals['reviewer->implementer-fix:changes'], 1, 'the changes edge is taken');
   assert.equal(g.result.outcome, 'ready-for-qa');
 });
 
@@ -246,7 +244,7 @@ test('a repeated findings hash is flagged', async (t) => {
     finding('major', 'test/add.test.mjs', 'the test misses negatives on line 9'),
     { ...MAJOR, issue: 'add ignores non-number input at line 7' },
   ];
-  const g = await reviewSetup(t, {
+  const g = await runReviewFlow(t, {
     'reviewer/1/review/1': reviewed(review('changes', same)),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // tried\n' }),
     'reviewer/2/review/1': reviewed(review('changes', reworded)),
@@ -254,11 +252,11 @@ test('a repeated findings hash is flagged', async (t) => {
     'reviewer/3/review/1': reviewed(review('ok')),
   });
 
-  const [first, second] = g.rec.outputs.filter((o) => o.action === 'repeat');
+  const [first, second] = g.executionRecord.outputs.filter((o) => o.action === 'repeat');
   assert.deepEqual([first.vertex, first.visit, second.vertex, second.visit], ['reviewer', 1, 'reviewer', 2]);
   assert.equal(first.value.findingsHash, checks.findingsHash(same));
   assert.equal(second.value.findingsHash, first.value.findingsHash, 'normalised Findings hash the same');
-  const hashed = (visit) => g.at('reviewer', visit, 'repeat', 0)[0];
+  const hashed = (visit) => g.actionsAt('reviewer', visit, 'repeat', 0)[0];
   assert.deepEqual(
     hashed(1).signals.checks,
     [{ id: 'repeat', kind: 'repeat', state: 'passed', tree: null }],
@@ -270,7 +268,7 @@ test('a repeated findings hash is flagged', async (t) => {
     'the second review is a repeat',
   );
   assert.deepEqual(
-    g.rec.traversals,
+    g.executionRecord.traversals,
     { 'reviewer->implementer-fix:changes': 1, 'reviewer->senior-dev:repeat': 1 },
     'the repeat routes as repeat',
   );
@@ -278,7 +276,7 @@ test('a repeated findings hash is flagged', async (t) => {
 });
 
 test('the review lists the test files changed since red under the testPaths pinned at its Visit entry', async (t) => {
-  const g = await reviewFlow(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
+  const g = await reviewFixture(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
   g.options.testPaths = ['test/**', 'lib/**'];
   // Test Immutability always passes here, and classifies what the Execution changed by the globs it is given.
   g.options.testImmutability = async (cwd, baseline, globs) => ({
@@ -298,7 +296,7 @@ test('the review lists the test files changed since red under the testPaths pinn
 
   assert.equal(outcome, 'ready-for-qa');
   assert.deepEqual(
-    g.rec.configurationSnapshot.testPaths,
+    g.executionRecord.configurationSnapshot.testPaths,
     ['test/**'],
     'publish, the last Visit, pinned the edited testPaths at its own entry',
   );
@@ -311,7 +309,7 @@ test('the review lists the test files changed since red under the testPaths pinn
 });
 
 test('the branch diff and changed test files are read for the review Brief and not again for its nudge', async (t) => {
-  const g = await reviewFlow(t, {
+  const g = await reviewFixture(t, {
     'reviewer/1/review/1': reviewed(null),
     'reviewer/1/review/2': reviewed(review('ok')),
   });
@@ -344,7 +342,7 @@ test('the branch diff and changed test files are read for the review Brief and n
 
 // W5: a comment Action with `target: ticket` posts on the Ticket, under its own marker, not on the PR.
 test('a comment Action with target ticket posts on the Ticket', async (t) => {
-  const g = await reviewSetup(
+  const g = await runReviewFlow(
     t,
     { 'reviewer/1/review/1': reviewed(review('ok')) },
     {
@@ -356,18 +354,21 @@ test('a comment Action with target ticket posts on the Ticket', async (t) => {
 
   assert.equal(g.result.outcome, 'ready-for-qa');
   assert.deepEqual(prReviewComments(g), [], 'nothing on the PR');
-  const m = golden.markerOf(g.rec, 'reviewer', 1, 'comment');
+  const m = golden.markerOf(g.executionRecord, 'reviewer', 1, 'comment');
   const posted = g.gh.comments.filter((c) => c.number === golden.TICKET && c.body.includes(marker.markerComment(m)));
   assert.equal(posted.length, 1);
   assert.match(posted[0].body, /### gg review/);
-  assert.deepEqual(g.rec.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'intent').payload.target, {
-    kind: 'issue',
-    number: golden.TICKET,
-  });
+  assert.deepEqual(
+    g.executionRecord.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'intent').payload.target,
+    {
+      kind: 'issue',
+      number: golden.TICKET,
+    },
+  );
 });
 
 test("the review comment names the reviewer's Persona with its hash", async (t) => {
-  const g = await reviewSetup(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
+  const g = await runReviewFlow(t, { 'reviewer/1/review/1': reviewed(review('ok')) });
   const hash = config.sha256(REVIEWER_PERSONA).slice(0, 12);
   assert.match(prReviewComments(g)[0].body, new RegExp(`, persona reviewer\\.md@${hash}_`));
 });

@@ -6,31 +6,34 @@ import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as golden from '../support/golden.mjs';
-import { withMarker, loadTicket, EFFECTS, POINTS, crashed, NEEDS_HUMAN, reconcileArgs } from '../support/reconcile.mjs';
+import * as golden from '../support/golden.ts';
+import { EFFECTS, POINTS, crashed, reconcileOptions, withMarker } from '../support/crash-resume.ts';
+import { NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { loadTicket } from '../support/execution-reads.ts';
+import * as gitShell from '../support/git-shell.ts';
 
 test('a needs-human label overrides a mid-action record', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  await crashed(g, EFFECTS.commit.at, 'before-effect');
-  g.gh.labels.add(NEEDS_HUMAN);
-  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
-  const status = golden.sh(g.worktree, 'status', '--porcelain');
+  const g = await golden.fixture(t, { git: 'real' });
+  await crashed(g, EFFECTS.commit.place, 'before-effect');
+  g.gh.labels.add(NEEDS_HUMAN_LABEL);
+  const head = gitShell.sh(g.worktree, 'rev-parse', 'HEAD');
+  const status = gitShell.sh(g.worktree, 'status', '--porcelain');
 
-  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  const decided = await reconcile.reconcile(reconcileOptions(g, await loadTicket(g)));
   assert.equal(decided.next, 'abandon');
   assert.equal((await loadTicket(g)).state, 'active', 'Reconciliation only decides the abandonment');
 
   await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
   assert.equal((await loadTicket(g)).state, 'abandoned');
   assert.equal(g.harness.calls.length, 2, 'the Execution is not resumed');
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'the intended commit is not made');
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'the intended commit is not made');
+  assert.equal(gitShell.sh(g.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
   assert.equal(g.gh.pr(), null);
 });
 
 test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  golden.sh(g.worktree, 'config', 'core.quotePath', 'true');
+  const g = await golden.fixture(t, { git: 'real' });
+  gitShell.sh(g.worktree, 'config', 'core.quotePath', 'true');
   writeFileSync(join(g.worktree, 'café notes.txt'), 'mine\n');
   const { stat } = await reconcile.dirtyState(null, { git: g.options.deps.git, worktree: g.worktree });
   assert.ok(stat.includes(' café notes.txt (untracked)\n'), stat);
@@ -40,11 +43,11 @@ test('dirtyState lists a non-ASCII untracked name verbatim', async (t) => {
 // older commit, which a hold only reports.
 for (const point of Object.keys(POINTS)) {
   test(`a crash ${point} of a hold comment resumes its reporting Actions without replaying an older commit`, async (t) => {
-    const g = await golden.setup(t, { git: 'real' });
-    await crashed(g, EFFECTS.commit.at, 'before-effect');
-    golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
-    const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
-    const hold = golden.markerOf(g.rec, 'needs-human', 1, 'hold-comment', 0);
+    const g = await golden.fixture(t, { git: 'real' });
+    await crashed(g, EFFECTS.commit.place, 'before-effect');
+    gitShell.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+    const head = gitShell.sh(g.worktree, 'rev-parse', 'HEAD');
+    const hold = golden.markerOf(g.executionRecord, 'needs-human', 1, 'hold-comment', 0);
     await assert.rejects(
       interpreter.runExecution({ ...g.options, record: await loadTicket(g), crashAt: { marker: hold, point } }),
       (err) => err instanceof interpreter.CrashError,
@@ -75,25 +78,25 @@ for (const point of Object.keys(POINTS)) {
       1,
       'the hold comment is posted once',
     );
-    assert.ok(g.gh.labels.has(NEEDS_HUMAN));
+    assert.ok(g.gh.labels.has(NEEDS_HUMAN_LABEL));
     assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
-    assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
+    assert.equal(gitShell.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing was committed');
     assert.equal(g.harness.calls.length, 2);
   });
 }
 
 test('a hold report never looks up an older open PR-comment intent', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  await crashed(g, EFFECTS.commit.at, 'before-effect');
+  const g = await golden.fixture(t, { git: 'real' });
+  await crashed(g, EFFECTS.commit.place, 'before-effect');
   // An earlier review comment on the PR crashed before its completion.
-  const older = golden.markerOf(g.rec, 'reviewer', 1, 'pr', 0);
+  const older = golden.markerOf(g.executionRecord, 'reviewer', 1, 'pr', 0);
   await record.intent(await loadTicket(g), older, 'comment', {
     target: { kind: 'pr', number: 7 },
     body: 'x',
     bodyHash: 'h',
   });
-  golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
-  const hold = golden.markerOf(g.rec, 'needs-human', 1, 'hold-comment', 0);
+  gitShell.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+  const hold = golden.markerOf(g.executionRecord, 'needs-human', 1, 'hold-comment', 0);
   await assert.rejects(
     interpreter.runExecution({
       ...g.options,

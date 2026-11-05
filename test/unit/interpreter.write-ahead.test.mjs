@@ -5,26 +5,15 @@ import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
-import * as golden from '../support/golden.mjs';
-import {
-  FIRST_VISIT,
-  steps,
-  actionMarker,
-  tddTrace,
-  attemptsOf,
-  review,
-  reviewed,
-  fixed,
-  MAJOR,
-  reviewFlow,
-  ticketComments,
-  loadTicket,
-  attemptMarker,
-} from '../support/interpreter.mjs';
+import * as golden from '../support/golden.ts';
+import { actionMarker, attemptMarker, attemptsOf, loadTicket, writeAheadSteps } from '../support/execution-reads.ts';
+import { FIRST_VISIT, tddTrace } from '../support/golden-run.ts';
+import { MAJOR, fixed, review, reviewFixture, reviewed, ticketComments } from '../support/review-flow.ts';
+import * as caseDatabase from '../support/case-database.ts';
 
 test('a completed call is not rerun after a crash before the next action', async (t) => {
   await t.test('a red call', async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.fixture(t);
     await assert.rejects(
       interpreter.runExecution({
         ...g.options,
@@ -39,7 +28,7 @@ test('a completed call is not rerun after a crash before the next action', async
     assert.deepEqual(tddTrace(g), FIRST_VISIT, 'one Action Event per Action');
   });
   await t.test('a review with a changes result', async (t) => {
-    const g = await reviewFlow(t, {
+    const g = await reviewFixture(t, {
       'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
       'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
       'reviewer/2/review/1': reviewed(review('ok')),
@@ -75,7 +64,7 @@ for (const [name, agentWrites] of [
   ['with a clean worktree', () => {}],
 ]) {
   test(`an interrupted call that changed an ignored protected file is held: ${name}`, async (t) => {
-    const g = await golden.setup(t);
+    const g = await golden.fixture(t);
     mkdirSync(join(g.worktree, '.claude'), { recursive: true });
     writeFileSync(join(g.worktree, '.claude', '.gitignore'), '*\n');
     const local = join(g.worktree, '.claude', 'settings.local.json');
@@ -115,7 +104,7 @@ for (const [name, agentWrites] of [
 }
 
 test('the repeat Check appends once per visit across a crash', async (t) => {
-  const g = await reviewFlow(t, {
+  const g = await reviewFixture(t, {
     'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
     'implementer-fix/1/fix/1': fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
     'reviewer/2/review/1': reviewed(review('ok')),
@@ -161,9 +150,9 @@ test('the terminal stop survives a crash before the first terminal action', asyn
     claim: 'blocked',
     diagnosis: 'NOTES-7f3: the ticket contradicts itself.',
   };
-  const g = await golden.setup(t, { responses });
+  const g = await golden.fixture(t, { responses });
   // Every save carrying a Terminal stop fails, as if gg died once the Terminal cursor was saved.
-  const restore = golden.failSaves(t, (saved, next) => next.terminalStop != null);
+  const restore = caseDatabase.failSaves(t, (saved, next) => next.terminalStop != null);
   await assert.rejects(
     interpreter.runExecution(g.options),
     (err) => err instanceof record.RecordSaveError && err.cause.message === 'disk I/O error',
@@ -182,7 +171,7 @@ test('the terminal stop survives a crash before the first terminal action', asyn
 
 test('attempt numbering continues after resume', async (t) => {
   const red = golden.firstVisitResponses['red/1/red/1'];
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: {
       ...structuredClone(golden.firstVisitResponses),
       'red/1/red/1': { ...red, result: { status: 'timed-out' } },
@@ -214,8 +203,8 @@ test('attempt numbering continues after resume', async (t) => {
 });
 
 test('a failed Event insert at an Action completion saves nothing more of that record', async (t) => {
-  const g = await golden.setup(t);
-  golden.failAppends(t, (event) => event.type === 'action' && event.vertex === 'red' && event.action === 'red');
+  const g = await golden.fixture(t);
+  caseDatabase.failAppends(t, (event) => event.type === 'action' && event.vertex === 'red' && event.action === 'red');
   const err = await interpreter.runExecution(g.options).then(
     () => null,
     (e) => e,
@@ -225,13 +214,13 @@ test('a failed Event insert at an Action completion saves nothing more of that r
   const saved = await loadTicket(g);
   assert.equal(saved.state, 'active', 'no fault is saved over the failed transition');
   assert.deepEqual(saved.sessions, {}, 'the call result rolled back with its Event');
-  assert.deepEqual(steps(saved, actionMarker(g, 'red', 'red')), ['intent']);
+  assert.deepEqual(writeAheadSteps(saved, actionMarker(g, 'red', 'red')), ['intent']);
   assert.ok(!g.readEvents().some((e) => e.type === 'action' || e.type === 'ticket_end'));
   assert.equal(g.gh.comments.length, 0);
 });
 
 test('a label update whose failure was saved before its completion is retried on resume', async (t) => {
-  const g = await golden.setup(t);
+  const g = await golden.fixture(t);
   const ev = g.options.events;
   let crashed = false;
   // The ready-for-qa label does not land, and gg dies as that Action records its Event: { ok: false } is saved, uncompleted.
@@ -264,7 +253,7 @@ test('a label update whose failure was saved before its completion is retried on
   const result = await interpreter.runExecution({ ...g.options, events, record: mid });
   assert.equal(result.outcome, 'ready-for-qa');
   assert.ok(g.gh.labels.has('gg:state:ready-for-qa'), 'the failed label update is made on resume');
-  assert.equal(steps(await loadTicket(g), label).at(-1), 'complete');
+  assert.equal(writeAheadSteps(await loadTicket(g), label).at(-1), 'complete');
   assert.equal(g.readEvents().filter((e) => e.type === 'ticket_end').length, 1);
 });
 
@@ -275,7 +264,7 @@ for (const [name, dropTranscript, resume] of [
 ]) {
   test(`a record saved before write-ahead Attempts resumes its retried call from the saved session and budget: ${name}`, async (t) => {
     const red = golden.firstVisitResponses['red/1/red/1'];
-    const g = await golden.setup(t, {
+    const g = await golden.fixture(t, {
       responses: {
         ...structuredClone(golden.firstVisitResponses),
         'red/1/red/1': { ...red, result: { status: 'timed-out' } },
@@ -320,8 +309,8 @@ for (const [kind, opts, state] of [
   ],
 ]) {
   test(`a ${kind} whose ticket_end fails is not saved as finished`, async (t) => {
-    const g = await golden.setup(t);
-    const restore = golden.failAppends(t, (event) => event.type === 'ticket_end');
+    const g = await golden.fixture(t);
+    const restore = caseDatabase.failAppends(t, (event) => event.type === 'ticket_end');
     const err = await interpreter.runExecution({ ...g.options, ...opts }).then(
       () => null,
       (e) => e,
@@ -340,7 +329,7 @@ for (const [kind, opts, state] of [
 
 test('the record carries the last heartbeat of a running call', async (t) => {
   const red = golden.firstVisitResponses['red/1/red/1'];
-  const g = await golden.setup(t, {
+  const g = await golden.fixture(t, {
     responses: {
       ...structuredClone(golden.firstVisitResponses),
       'red/1/red/1': { ...red, hang: true },

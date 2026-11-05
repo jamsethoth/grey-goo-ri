@@ -4,58 +4,61 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
-import * as golden from '../support/golden.mjs';
-import { originSha, loadTicket, EFFECTS, crashed, NEEDS_HUMAN, reconcileArgs } from '../support/reconcile.mjs';
+import * as golden from '../support/golden.ts';
+import { EFFECTS, crashed, reconcileOptions } from '../support/crash-resume.ts';
+import { NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { loadTicket, originSha } from '../support/execution-reads.ts';
+import * as gitShell from '../support/git-shell.ts';
 
 test('an amended commit with the marker holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  const { m } = await crashed(g, EFFECTS.commit.at, 'after-effect');
+  const g = await golden.fixture(t, { git: 'real' });
+  const { actionMarker: m } = await crashed(g, EFFECTS.commit.place, 'after-effect');
   // A human amends the gg commit between the crash and the resume: same marker and parent, different tree.
   writeFileSync(join(g.worktree, 'lib', 'extra.mjs'), 'export const extra = 1;\n');
-  golden.sh(g.worktree, 'add', 'lib/extra.mjs');
-  golden.sh(g.worktree, 'commit', '-q', '--amend', '--no-edit');
+  gitShell.sh(g.worktree, 'add', 'lib/extra.mjs');
+  gitShell.sh(g.worktree, 'commit', '-q', '--amend', '--no-edit');
   writeFileSync(join(g.worktree, 'notes.txt'), 'a human note\n');
-  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
-  const status = golden.sh(g.worktree, 'status', '--porcelain');
+  const head = gitShell.sh(g.worktree, 'rev-parse', 'HEAD');
+  const status = gitShell.sh(g.worktree, 'status', '--porcelain');
 
-  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  const decided = await reconcile.reconcile(reconcileOptions(g, await loadTicket(g)));
   assert.equal(decided.next, 'hold');
   assert.ok(decided.reason.includes(m), `the reason names the marker: ${decided.reason}`);
 
   await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
   const final = await loadTicket(g);
   assert.equal(final.state, 'held');
-  assert.ok(g.gh.labels.has(NEEDS_HUMAN), 'the ticket is labelled needs-human');
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
+  assert.ok(g.gh.labels.has(NEEDS_HUMAN_LABEL), 'the ticket is labelled needs-human');
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
+  assert.equal(gitShell.sh(g.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
   assert.ok(existsSync(join(g.worktree, 'notes.txt')));
   assert.equal(await originSha(g), null, 'nothing is pushed');
   assert.equal(g.harness.calls.length, 2);
 });
 
 test('a commit amended after its completion was saved holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  const { m } = await crashed(g, EFFECTS.commit.at, 'after-completion');
+  const g = await golden.fixture(t, { git: 'real' });
+  const { actionMarker: m } = await crashed(g, EFFECTS.commit.place, 'after-completion');
   // The commit is complete in the record, so no open intent points at it; the amend keeps its marker.
   writeFileSync(join(g.worktree, 'lib', 'extra.mjs'), 'export const extra = 1;\n');
-  golden.sh(g.worktree, 'add', 'lib/extra.mjs');
-  golden.sh(g.worktree, 'commit', '-q', '--amend', '--no-edit');
-  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+  gitShell.sh(g.worktree, 'add', 'lib/extra.mjs');
+  gitShell.sh(g.worktree, 'commit', '-q', '--amend', '--no-edit');
+  const head = gitShell.sh(g.worktree, 'rev-parse', 'HEAD');
 
-  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  const decided = await reconcile.reconcile(reconcileOptions(g, await loadTicket(g)));
   assert.equal(decided.next, 'hold');
   assert.ok(decided.reason.includes(m), `the reason names the marker: ${decided.reason}`);
 
   await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
   assert.equal((await loadTicket(g)).state, 'held');
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
   assert.equal(await originSha(g), null, 'the amended commit is not published');
   assert.equal(g.harness.calls.length, 2);
 });
 
 test('a crash before the commit replays the intended tree, not a human edit', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
+  const g = await golden.fixture(t, { git: 'real' });
+  const { actionMarker: m } = await crashed(g, EFFECTS.commit.place, 'before-effect');
   writeFileSync(join(g.worktree, 'notes.txt'), 'a human note\n');
 
   const result = await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
@@ -71,34 +74,34 @@ test('a crash before the commit replays the intended tree, not a human edit', as
   assert.equal(g.gh.pr().isDraft, true);
   const { payload } = final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'intent');
   const { sha } = final.writeAheadLog.find((e) => e.actionMarker === m && e.step === 'evidence').evidence;
-  assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^{tree}`), payload.tree, 'the commit has the intended tree');
-  assert.equal(golden.sh(g.worktree, 'rev-parse', `${sha}^`), payload.parent, 'and the intended parent');
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', `${sha}^{tree}`), payload.tree, 'the commit has the intended tree');
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', `${sha}^`), payload.parent, 'and the intended parent');
   assert.equal(readFileSync(join(g.worktree, 'notes.txt'), 'utf8'), 'a human note\n', 'the human edit is kept');
-  assert.match(golden.sh(g.worktree, 'status', '--porcelain'), /\?\? notes\.txt/, 'and left uncommitted');
+  assert.match(gitShell.sh(g.worktree, 'status', '--porcelain'), /\?\? notes\.txt/, 'and left uncommitted');
 });
 
 test('a branch moved before the commit replay holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  const { m } = await crashed(g, EFFECTS.commit.at, 'before-effect');
-  golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
-  const head = golden.sh(g.worktree, 'rev-parse', 'HEAD');
+  const g = await golden.fixture(t, { git: 'real' });
+  const { actionMarker: m } = await crashed(g, EFFECTS.commit.place, 'before-effect');
+  gitShell.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+  const head = gitShell.sh(g.worktree, 'rev-parse', 'HEAD');
 
-  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  const decided = await reconcile.reconcile(reconcileOptions(g, await loadTicket(g)));
   assert.equal(decided.next, 'hold');
   assert.ok(decided.reason.includes(m), decided.reason);
 
   await interpreter.runExecution({ ...g.options, record: await loadTicket(g) });
   assert.equal((await loadTicket(g)).state, 'held');
-  assert.equal(golden.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
+  assert.equal(gitShell.sh(g.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
   assert.equal(await originSha(g), null, 'nothing is pushed');
 });
 
 test('a branch moved before the push replay holds the ticket', async (t) => {
-  const g = await golden.setup(t, { git: 'real' });
-  const { m } = await crashed(g, EFFECTS.push.at, 'before-effect');
-  golden.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
+  const g = await golden.fixture(t, { git: 'real' });
+  const { actionMarker: m } = await crashed(g, EFFECTS.push.place, 'before-effect');
+  gitShell.sh(g.worktree, 'commit', '-q', '--allow-empty', '-m', 'a human commit');
 
-  const decided = await reconcile.reconcile(reconcileArgs(g, await loadTicket(g)));
+  const decided = await reconcile.reconcile(reconcileOptions(g, await loadTicket(g)));
   assert.equal(decided.next, 'hold');
   assert.ok(decided.reason.includes(m), decided.reason);
 
@@ -112,7 +115,7 @@ test('a branch moved before the push replay holds the ticket', async (t) => {
 // rollback the agent's.
 for (const point of ['before-effect', 'after-effect', 'after-completion']) {
   test(`a crash ${point} of an integrity violation rollback does not call the harness again`, async (t) => {
-    const g = await golden.setup(t, { integrity: 'real' });
+    const g = await golden.fixture(t, { integrity: 'real', git: 'real' });
     const run = g.harness.run;
     g.harness.run = async (call) => {
       const out = await run(call);

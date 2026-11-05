@@ -1,38 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as locks from '../../../lib/locks.ts';
 import * as record from '../../../lib/record.ts';
 import * as sqlite from '../../../lib/sqlite.ts';
+import * as lockHolder from '../../support/lock-holder.ts';
+import * as childExit from '../../support/child-exit.ts';
+import * as tempDirectory from '../../support/temp-directory.ts';
 
-const saver = fileURLToPath(new URL('../../support/record-saver.mjs', import.meta.url));
-const contender = fileURLToPath(new URL('../../support/lock-contender.mjs', import.meta.url));
-const opener = fileURLToPath(new URL('../../support/db-opener.mjs', import.meta.url));
-const holderScript = fileURLToPath(new URL('../../support/write-lock-holder.mjs', import.meta.url));
-
-// A temp commonDir whose database connection is closed before the directory is removed, as Windows requires.
-async function tempCommonDir(t) {
-  const dir = await mkdtemp(join(tmpdir(), 'gg-record-'));
-  t.after(async () => {
-    await sqlite.close(dir);
-    await rm(dir, { recursive: true, force: true });
-  });
-  return dir;
-}
+const saver = fileURLToPath(new URL('../../support/record-saver.ts', import.meta.url));
+const opener = fileURLToPath(new URL('../../support/state-database-opener.ts', import.meta.url));
+const holderScript = fileURLToPath(new URL('../../support/write-lock-holder.ts', import.meta.url));
 
 const dbPath = (commonDir) => join(commonDir, 'gg', 'gg.db');
 
 // Cases that wait for another process to reach a lock or exit: one that never does fails at this bound.
 const CASE = { timeout: 120_000 };
 
-// Another gg process opening the State Database (support/db-opener.mjs). said(text) resolves once it has printed text,
+// Another gg process opening the State Database (support/state-database-opener.ts). said(text) resolves once it has printed text,
 // and rejects with its exit if it closes without printing it; exit resolves with its code, output and error text. A gated
 // opener waits after loading until go() is called.
 function openInChild(commonDir, { gated = false } = {}) {
@@ -71,7 +61,7 @@ test('an open that finds no tables waits for the first opener, not for its saves
   // Plays the first opener: holds the open lock while it creates the tables, then saves until the second opener exits.
   // A second opener that read the old version must not wait on the database write lock behind those saves: had it
   // waited, the busy timeout would fail it, since the saves end only once it has exited.
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   mkdirSync(join(commonDir, 'gg', 'locks'), { recursive: true });
   const db = new DatabaseSync(dbPath(commonDir));
   const lock = new DatabaseSync(join(commonDir, 'gg', 'locks', 'open.db'));
@@ -103,20 +93,14 @@ test('an open that finds no tables waits for the first opener, not for its saves
 });
 
 test('two processes save different records concurrently without loss', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const exits = await Promise.all(
-    [1, 2].map(
-      (ticket) =>
-        new Promise((resolve) => {
-          const child = spawn(process.execPath, [saver, commonDir, String(ticket), '200'], {
-            stdio: ['ignore', 'ignore', 'pipe'],
-          });
-          let err = '';
-          child.stderr.on('data', (chunk) => {
-            err += chunk;
-          });
-          child.on('close', (code) => resolve({ ticket, code, err }));
-        }),
+    [1, 2].map((ticket) =>
+      childExit
+        .exitOf(
+          spawn(process.execPath, [saver, commonDir, String(ticket), '200'], { stdio: ['ignore', 'ignore', 'pipe'] }),
+        )
+        .then((exit) => ({ ticket, ...exit })),
     ),
   );
   assert.deepEqual(exits, [
@@ -147,7 +131,7 @@ test('two processes save different records concurrently without loss', async (t)
 // past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136, ADR 0015). The save
 // runs in this process, so the time it blocks is the time it waited for the other process's lock.
 test('a save waits out another process that holds the write lock for longer than 5 s', CASE, async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   sqlite.openDb(commonDir);
   const holder = spawn(process.execPath, [holderScript, commonDir, '8000'], { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => {
@@ -178,25 +162,18 @@ const tickets = [1, 2, 3, 4, 5, 6, 7, 8];
 
 // Another gg process opening the State Database and saving one record, resolving with its exit.
 function saveOnce(commonDir, ticket) {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [saver, commonDir, String(ticket), '1'], {
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
-    let err = '';
-    child.stderr.on('data', (chunk) => {
-      err += chunk;
-    });
-    child.on('close', (code) => resolve({ ticket, code, err }));
-  });
+  return childExit
+    .exitOf(spawn(process.execPath, [saver, commonDir, String(ticket), '1'], { stdio: ['ignore', 'ignore', 'pipe'] }))
+    .then((exit) => ({ ticket, ...exit }));
 }
 
 const allOk = tickets.map((ticket) => ({ ticket, code: 0, err: '' }));
 const journalMode = (commonDir) => withDb(commonDir, (db) => db.prepare('PRAGMA journal_mode').get().journal_mode);
 
 // Without the open lock about one open in 100-200 failed with SQLITE_BUSY here. One round shows the wiring; the race
-// itself needs many rounds, which `node test/support/open-stress.mjs` runs outside the suite.
+// itself needs many rounds, which `node test/support/state-database-open-stress.ts` runs outside the suite.
 test('eight processes creating one new database at once all open it in WAL mode', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   assert.deepEqual(await Promise.all(tickets.map((ticket) => saveOnce(commonDir, ticket))), allOk);
   assert.equal(journalMode(commonDir), 'wal');
 });
@@ -215,7 +192,7 @@ test(
       await Promise.all(running.map(({ exit }) => exit));
       if (openLock?.db.isOpen) await locks.release(openLock);
     });
-    const commonDir = await tempCommonDir(t);
+    const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
     openLock = await locks.tryAcquire(commonDir, 'open');
     assert.ok(openLock);
     for (const _ of tickets) openers.push(openInChild(commonDir, { gated: true }));
@@ -247,17 +224,16 @@ test(
 
 test('an opener of a new database proceeds when the process holding the open lock dies', CASE, async (t) => {
   let holder;
-  t.after(() => holder?.kill()); // before the temp directory's removal, which throws while the holder has the lock open
-  const commonDir = await tempCommonDir(t);
-  holder = spawn(process.execPath, [contender, commonDir, 'open', '600000'], { stdio: ['ignore', 'pipe', 'inherit'] });
-  const report = await new Promise((resolve) => holder.stdout.once('data', (chunk) => resolve(JSON.parse(chunk))));
-  assert.ok(report.handle, 'the child holds the open lock');
+  t.after(() => holder?.child.kill()); // before the temp directory's removal, which throws while the holder has the lock open
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  holder = await lockHolder.holdLock(t, commonDir, 'open');
+  assert.ok(holder.report.handle, 'the child holds the open lock');
   const { child, said, exit } = openInChild(commonDir);
   t.after(() => {
     if (child.exitCode === null) child.kill();
   });
   await said('locking');
-  holder.kill();
+  await holder.release();
   const { code, err } = await exit;
   assert.deepEqual({ code, err }, { code: 0, err: '' });
   assert.equal(journalMode(commonDir), 'wal');
@@ -269,7 +245,7 @@ test(
   'an opener of a new database fails with SQLITE_BUSY after the 5 s busy timeout when the open lock is never released',
   CASE,
   async (t) => {
-    const commonDir = await tempCommonDir(t);
+    const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
     const openLock = await locks.tryAcquire(commonDir, 'open');
     const { code, out, err } = await openInChild(commonDir).exit.finally(() => locks.release(openLock));
     assert.notEqual(code, 0);
@@ -279,7 +255,7 @@ test(
 );
 
 test('an opener of an existing WAL database does not wait for the open lock', async (t) => {
-  const commonDir = await tempCommonDir(t);
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   sqlite.openDb(commonDir);
   await sqlite.close(commonDir);
   const openLock = await locks.tryAcquire(commonDir, 'open');

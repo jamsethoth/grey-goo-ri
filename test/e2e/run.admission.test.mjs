@@ -7,22 +7,21 @@ import * as record from '../../lib/record.ts';
 import * as sqlite from '../../lib/sqlite.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
+import * as golden from '../support/golden.ts';
+import { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } from '../support/execution-context.ts';
+import { sh } from '../support/git-shell.ts';
 import {
-  TICKET,
   BRANCH,
-  IN_PROGRESS,
-  NEEDS_HUMAN,
-  sh,
+  TICKET,
+  conflict,
+  crashBeforeCommit,
   fixture,
   seedExecution,
   ticketResult,
-  conflict,
-  crashBeforeCommit,
-} from '../support/run.mjs';
-import * as golden from '../support/golden.mjs';
+} from '../support/run-fixture.ts';
 
 test('unknown dirty state is held with the diff stat', async (t) => {
-  const f = fixture(t, { integrity: 'real' });
+  const f = fixture(t, { integrity: 'real', git: 'real' });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   const edited = '{ "scripts": { "test": "node --test" }, "human": true }\n';
   writeFileSync(join(f.worktree, 'package.json'), edited);
@@ -32,7 +31,7 @@ test('unknown dirty state is held with the diff stat', async (t) => {
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2);
   assert.equal(f.harness.calls.length, 0, 'no agent started');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
   assert.ok(
     f.comments().some((b) => b.includes('package.json')),
     `a comment carries the diff stat: ${JSON.stringify(f.comments())}`,
@@ -42,7 +41,7 @@ test('unknown dirty state is held with the diff stat', async (t) => {
       .comments()
       .some((b) =>
         b.includes(
-          `Commit, stash or remove these changes in the worktree, then remove the ${NEEDS_HUMAN} label and re-run gg run ${TICKET}.`,
+          `Commit, stash or remove these changes in the worktree, then remove the ${NEEDS_HUMAN_LABEL} label and re-run gg run ${TICKET}.`,
         ),
       ),
   );
@@ -59,13 +58,13 @@ test('unknown dirty state is held with the diff stat', async (t) => {
   );
   sh(f.worktree, 'restore', 'package.json');
   rmSync(join(f.worktree, 'notes.txt'));
-  f.gh.labels.delete(NEEDS_HUMAN);
+  f.gh.labels.delete(NEEDS_HUMAN_LABEL);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 0, 'following the advice starts the Ticket');
 });
 
 function assertConflictHeld(f, results, before) {
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
   assert.ok(
     f.comments().some((b) => b.includes('conflict.txt')),
     `a comment carries the diff stat: ${JSON.stringify(f.comments())}`,
@@ -96,12 +95,12 @@ test('a merge conflict at ticket start is held with the diff stat', async (t) =>
   writeFileSync(join(f.worktree, 'conflict.txt'), 'resolved\n');
   sh(f.worktree, 'add', 'conflict.txt');
   sh(f.worktree, 'commit', '-q', '-m', 'resolve conflict');
-  f.gh.labels.delete(NEEDS_HUMAN);
+  f.gh.labels.delete(NEEDS_HUMAN_LABEL);
   assert.equal(run.runExitCode(await run.runTarget(f.options)), 0, 'following the advice starts the Ticket');
 });
 
 test('dirty hold advice explains how a held Execution Record can be inspected and restarted', async (t) => {
-  const f = fixture(t, { integrity: 'real' });
+  const f = fixture(t, { integrity: 'real', git: 'real' });
   await f.options.deps.git.ensureWorktree({ mainRoot: f.mainRoot, path: f.worktree, branch: BRANCH, base: 'main' });
   f.options.cwd = f.worktree;
   const rec = record.createExecution({
@@ -145,7 +144,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
     'the recovery advice is in the comment, not the Terminal Reason',
   );
   rmSync(join(f.worktree, 'human.txt'));
-  f.gh.labels.delete(NEEDS_HUMAN);
+  f.gh.labels.delete(NEEDS_HUMAN_LABEL);
   assert.equal(
     ticketResult(await run.runTarget(f.options)).outcome,
     'skipped',
@@ -164,7 +163,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
 });
 
 test('a merge conflict in the worktree of a resumed execution is held, not faulted', async (t) => {
-  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS] });
+  const f = fixture(t, { git: 'real', labels: [IN_PROGRESS_LABEL] });
   await seedExecution(f, {
     crashAt: (r) => ({ marker: golden.markerOf(r, 'green', 1, 'push', 0), point: 'before-effect' }),
   });
@@ -176,7 +175,7 @@ test('a merge conflict in the worktree of a resumed execution is held, not fault
 });
 
 test('a commit interrupted before it landed is admitted and replayed', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   const seeded = await crashBeforeCommit(f);
   assert.deepEqual(
     writeAhead.openIntents(seeded).map((e) => e.effect),
@@ -194,7 +193,7 @@ test('a commit interrupted before it landed is admitted and replayed', async (t)
 });
 
 test('a commit interrupted before it landed is held once a human changed the worktree', async (t) => {
-  const f = fixture(t, { labels: [IN_PROGRESS], integrity: 'real' });
+  const f = fixture(t, { labels: [IN_PROGRESS_LABEL], integrity: 'real', git: 'real' });
   await crashBeforeCommit(f);
   writeFileSync(join(f.worktree, 'human.txt'), 'mine\n');
   const staged = sh(f.worktree, 'diff', '--cached', '--name-only');
@@ -202,7 +201,7 @@ test('a commit interrupted before it landed is held once a human changed the wor
   const results = await run.runTarget(f.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
   assert.equal(f.harness.calls.length, 2, 'no agent call beyond the seeded 2');
-  assert.ok(f.gh.labels.has(NEEDS_HUMAN), 'the Ticket is at needs-human');
+  assert.ok(f.gh.labels.has(NEEDS_HUMAN_LABEL), 'the Ticket is at needs-human');
   assert.equal(readFileSync(join(f.worktree, 'human.txt'), 'utf8'), 'mine\n', 'the human file is untouched');
   assert.equal(sh(f.worktree, 'diff', '--cached', '--name-only'), staged, 'the staged changes are untouched');
   assert.equal((await record.load(f.commonDir, 'ticket', TICKET)).state, 'held');

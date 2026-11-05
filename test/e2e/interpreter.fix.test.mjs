@@ -3,24 +3,25 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
-import * as golden from '../support/golden.mjs';
+import * as golden from '../support/golden.ts';
+import { subjects } from '../support/execution-reads.ts';
 import {
-  finding,
-  review,
-  reviewed,
-  fixed,
   MAJOR,
-  reviewSetup,
-  reviewFlow,
+  finding,
+  fixed,
   prReviewComments,
+  review,
+  reviewFixture,
   reviewStopReason,
-  subjects,
-} from '../support/interpreter.mjs';
+  reviewed,
+  runReviewFlow,
+} from '../support/review-flow.ts';
+import * as gitShell from '../support/git-shell.ts';
 
 const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
 
 test('a fix that changes an unnamed test is an integrity violation', async (t) => {
-  const g = await reviewSetup(
+  const g = await runReviewFlow(
     t,
     {
       'reviewer/1/review/1': reviewed(review('changes', [MAJOR])),
@@ -29,17 +30,17 @@ test('a fix that changes an unnamed test is an integrity violation', async (t) =
         'test/add.test.mjs': '// weakened\n',
       }),
     },
-    { integrity: 'real' },
+    { integrity: 'real', git: 'real' },
   );
 
   assert.equal(g.result.outcome, 'needs-human');
-  const call = g.at('implementer-fix', 1, 'fix', 0)[0];
+  const call = g.actionsAt('implementer-fix', 1, 'fix', 0)[0];
   assert.equal(call?.outcome, 'integrity-violation');
   assert.deepEqual(call.integrityViolations, [
     { worktree: g.worktree, surface: 'committed tests', before: null, after: ['test/add.test.mjs'] },
   ]);
   assert.deepEqual(await subjects(g), ['test: Add two numbers (#15)', 'feat: Add two numbers (#15)'], 'no fix commit');
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the fix edit is rolled back');
+  assert.equal(gitShell.sh(g.worktree, 'status', '--porcelain'), '', 'the fix edit is rolled back');
   assert.ok(!readFileSync(join(g.worktree, 'test', 'add.test.mjs'), 'utf8').includes('weakened'));
   const reason = reviewStopReason(g);
   assert.deepEqual(reason.decidedBy, { vertex: 'implementer-fix', visit: 1, action: 'fix', recovery: 0 });
@@ -48,7 +49,7 @@ test('a fix that changes an unnamed test is an integrity violation', async (t) =
 
 test('a fix that changes a named test moves the immutability baseline', async (t) => {
   const TEST_EDIT = "import { add } from '../lib/add.mjs';\n// covers negatives\n";
-  const g = await reviewSetup(
+  const g = await runReviewFlow(
     t,
     {
       'reviewer/1/review/1': reviewed(
@@ -64,10 +65,10 @@ test('a fix that changes a named test moves the immutability baseline', async (t
   );
 
   assert.equal(g.result.outcome, 'ready-for-qa');
-  const first = g.at('implementer-fix', 1, 'test', 0)[0];
+  const first = g.actionsAt('implementer-fix', 1, 'test', 0)[0];
   assert.equal(first?.outcome, 'ok', `fix visit 1: ${first?.rule}`);
   assert.equal(first.integrityViolations, null, 'fix visit 1 has no violations');
-  const second = g.at('implementer-fix', 2, 'test', 0)[0];
+  const second = g.actionsAt('implementer-fix', 2, 'test', 0)[0];
   assert.equal(second?.outcome, 'ok', `fix visit 2: ${second?.rule}`);
   assert.equal(second.integrityViolations, null, 'fix visit 2 has no violations');
   assert.deepEqual(
@@ -90,7 +91,7 @@ test('a fix that changes a named test moves the immutability baseline', async (t
 
 test('a fix with no edits keeps the moved immutability baseline', async (t) => {
   const TEST_EDIT = "import { add } from '../lib/add.mjs';\n// covers negatives\n";
-  const g = await reviewFlow(
+  const g = await reviewFixture(
     t,
     {
       'reviewer/1/review/1': reviewed(
@@ -128,22 +129,22 @@ test('a fix with no edits keeps the moved immutability baseline', async (t) => {
 });
 
 test('a review that changes the tree is an integrity violation', async (t) => {
-  const g = await reviewSetup(
+  const g = await runReviewFlow(
     t,
     {
       'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
     },
-    { integrity: 'real' },
+    { integrity: 'real', git: 'real' },
   );
 
   assert.equal(g.result.outcome, 'needs-human');
-  const call = g.at('reviewer', 1, 'review', 0)[0];
+  const call = g.actionsAt('reviewer', 1, 'review', 0)[0];
   assert.equal(call?.outcome, 'integrity-violation');
   assert.ok(
     call.integrityViolations.some((v) => v.surface === 'tree'),
     JSON.stringify(call.integrityViolations),
   );
-  assert.equal(golden.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
+  assert.equal(gitShell.sh(g.worktree, 'status', '--porcelain'), '', 'the reviewer edit is rolled back');
   // The reset checks the file out again, so core.autocrlf may give it CRLF line endings on Windows.
   assert.equal(readFileSync(join(g.worktree, 'lib', 'add.mjs'), 'utf8').replace(/\r\n/g, '\n'), RIGHT_ADD);
   assert.equal(prReviewComments(g).length, 0, 'no review comment after a violation');
@@ -154,19 +155,19 @@ test('a review that changes the tree is an integrity violation', async (t) => {
 });
 
 test('a review on a workspace-write agent is still read-only', async (t) => {
-  const g = await reviewFlow(
+  const g = await reviewFixture(
     t,
     {
       'reviewer/1/review/1': reviewed(review('ok'), { 'lib/add.mjs': 'export const add = () => "reviewer edit";\n' }),
     },
-    { integrity: 'real' },
+    { integrity: 'real', git: 'real' },
   );
   golden.configure(g, (c) => {
     c.agents.reviewer.access = 'workspace-write';
   });
-  g.result = await interpreter.runExecution(g.options);
+  const result = await interpreter.runExecution(g.options);
 
-  assert.equal(g.result.outcome, 'needs-human');
+  assert.equal(result.outcome, 'needs-human');
   const [, , reviewCall] = g.harness.calls;
   assert.deepEqual(reviewCall.schema, JSON.parse(g.files['schemas/review.schema.json'].bytes), 'the review call');
   assert.equal(reviewCall.access, 'read-only', 'the Harness runs the review read-only');
