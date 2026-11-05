@@ -31,14 +31,16 @@ export const BREAKAWAY_CHILD = childScript('breakaway-child');
 export function nodeCommand(t: TestContext, ...args: string[]) {
   // A case past its timeout has run its cleanup, so a variable set now would outlive it.
   t.signal.throwIfAborted();
+  // A " would close cmd.exe's quotes early; no Windows path holds one, so it is refused, never escaped, before any
+  // variable is set.
+  const quoted = args.find((value) => value.includes('"'));
+  if (process.platform === 'win32' && quoted !== undefined) {
+    throw new Error(`nodeCommand cannot pass a " to cmd.exe: ${quoted}`);
+  }
   return [process.execPath, ...args]
     .map((value) => {
       // cmd.exe leaves %NAME% as it is when NAME is empty, so an empty argument is written as one.
       if (value === '') return '""';
-      // A " would close cmd.exe's quotes early; no Windows path holds one, so it is refused, never escaped.
-      if (process.platform === 'win32' && value.includes('"')) {
-        throw new Error(`nodeCommand cannot pass a " to cmd.exe: ${value}`);
-      }
       const name = `GG_TEST_ARG_${createHash('sha256').update(value).digest('hex').slice(0, 16).toUpperCase()}`;
       // set once per case: a second caseEnv would restore the value the first had set, after the first removed it
       if (process.env[name] !== value) caseEnv.caseEnv(t, { [name]: value });
