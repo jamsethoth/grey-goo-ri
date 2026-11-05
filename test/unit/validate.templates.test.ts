@@ -8,25 +8,6 @@ import * as exampleLayer from '../support/example-layer.ts';
 const VERTICES = 'flows.default.ticket.vertices';
 
 // #116 (Y20, L2): every name a template reads resolves in the scope of each Vertex that uses it.
-// The example's templates, each naming nothing, with `changes` in place of one.
-const templates = (changes = {}) => ({
-  ...Object.fromEntries(
-    [
-      'red.md',
-      'green.md',
-      'fix.md',
-      'review.md',
-      'recover.md',
-      'still-green.md',
-      'test-fix.md',
-      'blocked.md',
-      'pr-body.md',
-      'review-comment.md',
-    ].map((name) => [name, `${name}\n`]),
-  ),
-  ...changes,
-});
-
 test('a template that names an undeclared input is an error at its Action', () => {
   const { errors } = exampleLayer.check(
     exampleLayer.config(),
