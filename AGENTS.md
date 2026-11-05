@@ -140,8 +140,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 Each is rewritten by its ticket; until then, do not take its patterns:
 
-- `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210),
-  `test/contract/exec/exec.test.mjs` (#212).
+- `test/unit/interpreter.test.mjs` (#210), `test/contract/exec/exec.test.mjs` (#212).
 
 ## Tests
 
