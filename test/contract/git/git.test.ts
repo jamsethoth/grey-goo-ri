@@ -9,7 +9,7 @@ import * as gitModule from '../../../lib/git.ts';
 import * as paths from '../../../lib/paths.ts';
 import type * as fakeGitModule from '../../support/fake-git.ts';
 import * as templateRepos from '../../support/template-repos.ts';
-import { sh } from '../../support/git-shell.ts';
+import * as gitShell from '../../support/git-shell.ts';
 import * as tempDirectory from '../../support/temp-directory.ts';
 
 // A repository and the steps a case takes outside gg, in one git or the other.
@@ -36,19 +36,19 @@ function realRepo(t: TestContext): Repo {
     root,
     mainRoot,
     commit: (dir: string, message: string) => {
-      sh(dir, 'add', '-A');
-      sh(dir, 'commit', '-q', '--allow-empty', '-m', message);
-      return sh(dir, 'rev-parse', 'HEAD');
+      gitShell.sh(dir, 'add', '-A');
+      gitShell.sh(dir, 'commit', '-q', '--allow-empty', '-m', message);
+      return gitShell.sh(dir, 'rev-parse', 'HEAD');
     },
     amend: (dir: string, message: string) => {
-      sh(dir, 'commit', '-q', '--amend', '--allow-empty', '-m', message);
-      return sh(dir, 'rev-parse', 'HEAD');
+      gitShell.sh(dir, 'commit', '-q', '--amend', '--allow-empty', '-m', message);
+      return gitShell.sh(dir, 'rev-parse', 'HEAD');
     },
-    branch: (dir: string, name: string) => sh(dir, 'checkout', '-q', '-b', name),
-    detach: (dir: string) => sh(dir, 'checkout', '-q', '--detach'),
-    unstage: (dir: string) => sh(dir, 'reset', '-q'),
+    branch: (dir: string, name: string) => gitShell.sh(dir, 'checkout', '-q', '-b', name),
+    detach: (dir: string) => gitShell.sh(dir, 'checkout', '-q', '--detach'),
+    unstage: (dir: string) => gitShell.sh(dir, 'reset', '-q'),
     breakOrigin: (dir: string) => {
-      sh(dir, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
+      gitShell.sh(dir, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
       return 'gone.git';
     },
   };
@@ -569,8 +569,8 @@ test('a push writes no upstream into .git/config', async (t) => {
   commit(dir, 'work');
   await gitModule.push(dir, 'ticket/9-thing');
   assert.equal(
-    sh(dir, 'ls-remote', '--heads', 'origin', 'ticket/9-thing').split('\t')[0],
-    sh(dir, 'rev-parse', 'HEAD'),
+    gitShell.sh(dir, 'ls-remote', '--heads', 'origin', 'ticket/9-thing').split('\t')[0],
+    gitShell.sh(dir, 'rev-parse', 'HEAD'),
   );
   assert.equal(spawnSync('git', ['config', '--get', 'branch.ticket/9-thing.remote'], { cwd: dir }).status, 1);
 });
@@ -597,19 +597,19 @@ test('a git write retries while index.lock is held and succeeds when it clears',
   assert.deepEqual(waits, [100], 'one wait, after which the lock had cleared');
   const sha = await git.commitStaged(dir, 'test: add a');
   assert.ok(!existsSync(lock));
-  assert.equal(sh(dir, 'rev-parse', 'HEAD'), sha);
-  assert.equal(sh(dir, 'log', '-1', '--format=%s'), 'test: add a');
+  assert.equal(gitShell.sh(dir, 'rev-parse', 'HEAD'), sha);
+  assert.equal(gitShell.sh(dir, 'log', '-1', '--format=%s'), 'test: add a');
 });
 
 test('a git write surfaces the error when index.lock never clears', async (t) => {
   const { mainRoot: dir } = realRepo(t);
-  const before = sh(dir, 'rev-parse', 'HEAD');
+  const before = gitShell.sh(dir, 'rev-parse', 'HEAD');
   writeFileSync(join(dir, '.git', 'index.lock'), '');
   writeFileSync(join(dir, 'a.txt'), 'a');
   const { waits, git } = recordWaits();
   await assert.rejects(git.stageAll(dir), (err: Error) => err.message.includes('index.lock'));
   assert.deepEqual(waits, [100, 200, 400, 800], 'retried with backoff before giving up');
-  assert.equal(sh(dir, 'rev-parse', 'HEAD'), before);
+  assert.equal(gitShell.sh(dir, 'rev-parse', 'HEAD'), before);
 });
 
 test('conflictedPaths names each path of a merge conflict once', async (t) => {
@@ -619,7 +619,7 @@ test('conflictedPaths names each path of a merge conflict once', async (t) => {
   branch(dir, 'other');
   writeFileSync(join(dir, 'a.txt'), 'other\n');
   commit(dir, 'other');
-  sh(dir, 'checkout', '-q', 'main');
+  gitShell.sh(dir, 'checkout', '-q', 'main');
   writeFileSync(join(dir, 'a.txt'), 'main\n');
   commit(dir, 'main');
   assert.equal(spawnSync('git', ['merge', '-q', 'other'], { cwd: dir }).status, 1);
