@@ -82,6 +82,13 @@ export const tddTrace = (fixture: Pick<GoldenFixture, 'readEvents'>) =>
 
 // T17's error paths: every non-advance row of the transition table, reached through the interpreter.
 export const WRONG_ADD = 'export const add = () => 0;\n';
+export const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
+
+// green's Action Events as `action/recovery`, in order.
+export const greenTrace = (fixture: Pick<GoldenFixture, 'readEvents'>) =>
+  tddTrace(fixture)
+    .filter((event) => event.vertex === 'green')
+    .map((event) => `${event.action}/${event.recovery}`);
 
 // A green Attempt's script: it writes `files` and reports the golden green response.
 export const greenWrites = (files: Record<string, string>): fakeHarness.ScriptedResponse => ({
