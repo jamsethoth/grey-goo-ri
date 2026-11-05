@@ -124,7 +124,7 @@ test('production label comparisons use the shared helper', () => {
     /payload\.add\.includes\(/,
     /\.label\??\.name\s*===/,
   ];
-  for (const file of readdirSync(lib).filter((name) => name.endsWith('.ts'))) {
+  for (const file of readdirSync(lib, { recursive: true, encoding: 'utf8' }).filter((name) => name.endsWith('.ts'))) {
     const source = readFileSync(new URL(file, lib), 'utf8');
     for (const pattern of banned) assert.doesNotMatch(source, pattern, file);
   }
