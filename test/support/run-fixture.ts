@@ -180,7 +180,9 @@ export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) 
       ...(fakeIntegrity && { integrity: fakeIntegrity.integrity }),
     } as runContext.Deps,
     cwd: mainRoot,
-    log: (line: string) => logs.push(line),
+    log: (line: string): void => {
+      logs.push(line);
+    },
     ...(fakeIntegrity && { testImmutability: fakeIntegrity.testImmutability }),
   } satisfies runModule.RunOptions;
   return {
@@ -284,6 +286,15 @@ export const crashBeforeCommit = (runFixture: RunFixture) =>
     }),
   });
 
+// green's push was intended, and the process died before it was made.
+export const crashBeforePush = (runFixture: RunFixture) =>
+  seedExecution(runFixture, {
+    crashAt: (executionRecord) => ({
+      marker: golden.markerOf(executionRecord, 'green', 1, 'push', 0),
+      point: 'before-effect',
+    }),
+  });
+
 // A merge conflict left in the worktree: conflict.txt at stages 1 to 3 with the markers on disk. git write-tree refuses
 // such an index, so the snapshot cannot fingerprint it.
 export function conflict(worktree: string) {
@@ -317,7 +328,9 @@ export async function dirtyTicket(t: TestContext, seeded: boolean) {
 export const ticketResult = <Result extends { ticket: number }>(results: Result[]) =>
   results.find((result) => result.ticket === TICKET);
 export const endsOf = (runFixture: RunFixture, execution: string) =>
-  runFixture.readEvents().filter((event) => event.type === 'ticket_end' && event.execution === execution);
+  runFixture
+    .readEvents()
+    .filter((event): event is events.TicketEndEvent => event.type === 'ticket_end' && event.execution === execution);
 export const lastRun = (runFixture: RunFixture) =>
   runFixture.readEvents().findLast((event) => event.type === 'run_start')?.run;
 

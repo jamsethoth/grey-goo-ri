@@ -88,7 +88,7 @@ the real one over real git for tests whose subject is git behaviour, because it 
 the real integrity over the fake git, was measured slower (221 s against 181 s) and failed three cases on ignored
 Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152). It still serves a case that
 needs the real integrity (its busy flags, generations, repo lock waits or Test Immutability) but not git, with no
-ignored Protected File: the concurrent Runs of `test/e2e/run.concurrency.test.mjs`, the queued writes of
+ignored Protected File: the concurrent Runs of `test/e2e/run.concurrency.test.ts`, the queued writes of
 `test/e2e/interpreter.retry.test.mjs` and the moved immutability baselines of `test/e2e/interpreter.fix.test.mjs` use
 it, since over real git their snapshots' git processes took them up to 444 s under a full suite run (#187).
 
@@ -142,8 +142,8 @@ stands in for are checked in one place, and `fast harness` selects it after a ch
 
 A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`
 as before. A module whose cases have different sizes has a file in each directory under the same name: the small cases
-of `run.branches` are in `test/unit/run.branches.test.mjs` and its real-git cases in `test/e2e/run.branches.test.mjs`.
-`test/unit/layout.test.mjs` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.ts` or
+of `run.branches` are in `test/unit/run.branches.test.ts` and its real-git cases in `test/e2e/run.branches.test.ts`.
+`test/unit/layout.test.ts` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.ts` or
 `lib/git.ts`, asks for real git, uses a timer, or calls a support helper that spawns.
 
 That check reads source text, so it misses a spawn it has no pattern for: a support helper imported and called bare
