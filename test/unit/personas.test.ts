@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const persona = (name) => readFile(new URL(`../../defaults/personas/${name}.md`, import.meta.url), 'utf8');
+const persona = (name: string) => readFile(new URL(`../../defaults/personas/${name}.md`, import.meta.url), 'utf8');
 // ff's personas asked for PASS and a "blocked" status; every Claim token is now lowercase (GLOSSARY.md, Verdict).
 const UPPERCASE_CLAIMS = /\b(?:OK|PASS|CHANGES|REPEAT|BLOCKED|MISSCOPED)\b/;
 

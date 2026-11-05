@@ -1,41 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 
-const fixture = (name) => readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url), 'utf8');
+const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 
-const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const file = (bytes) => ({ bytes, hash: sha256(bytes) });
-
-// The example Layer as loadLayers gives it: its schemas loaded beside it, and a template naming nothing for each template
-// it names (its own templates arrive with #120).
+// The example Layer as loadLayers gives it: its schemas loaded beside it, and a template naming nothing for each
+// template it names (its own templates arrive with #120).
 function example() {
-  const config = JSON.parse(fixture('gg.json'));
-  for (const agent of Object.values(config.agents)) agent.harness = 'fake';
-  config.files = Object.fromEntries([
-    ...['red', 'implement', 'review'].map((p) => [`${p}.schema.json`, file(fixture(`${p}.schema.json`))]),
-    ...[
-      'red.md',
-      'green.md',
-      'fix.md',
-      'review.md',
-      'recover.md',
-      'still-green.md',
-      'test-fix.md',
-      'blocked.md',
-      'pr-body.md',
-      'review-comment.md',
-    ].map((name) => [name, file(`${name}\n`)]),
+  const layer = exampleLayer.config();
+  layer.files = Object.fromEntries([
+    ...exampleLayer.SCHEMA_NAMES.map((name) => [name, file(exampleLayer.fixtureText(name))]),
+    ...Object.entries(exampleLayer.templates()).map(([name, text]) => [name, file(text)]),
   ]);
-  return config;
+  return layer;
 }
 
 test("gg doctor prints each Vertex's Procedure, Checks, tables and Outcomes", () => {
   const { text, exitCode } = doctor.doctor({ config: example(), harnesses: { fake: {} } });
-  assert.equal(text, fixture('doctor.txt').replaceAll('\r\n', '\n'));
+  assert.equal(text, exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n'));
   assert.equal(exitCode, 0);
 });
 
@@ -73,7 +57,8 @@ test('gg doctor reports a Procedure name with a colon at its location', () => {
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
-      '\nerror: procedures.base:check: Procedure "base:check" must be non-empty with no ":", ".", "/", "--" or whitespace\n',
+      '\nerror: procedures.base:check: Procedure "base:check" must be non-empty with no ":", ".", "/", "--" or ' +
+        'whitespace\n',
     ),
     text,
   );
@@ -86,7 +71,8 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
   assert.equal(exitCode, 1);
   assert.ok(
     text.endsWith(
-      '\nerror: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or workspace-write\n1 error, 2 warnings\n',
+      '\nerror: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or ' +
+        'workspace-write\n1 error, 2 warnings\n',
     ),
     text,
   );
@@ -99,7 +85,8 @@ test('gg doctor reports an Outcome named after an Object.prototype property as r
   assert.equal(exitCode, 1);
   assert.equal(
     text,
-    'error: procedures.tests-fail.stopped[0]: outcome "toString" is reserved: every object inherits a property of that name from Object.prototype\n1 error\n',
+    'error: procedures.tests-fail.stopped[0]: outcome "toString" is reserved: every object inherits a property of ' +
+      'that name from Object.prototype\n1 error\n',
   );
 });
 
@@ -112,14 +99,15 @@ test('gg doctor reads schemas from the loaded Layer files', () => {
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
-      '\nerror: procedures.review.claimTokens: review.schema.json: claim: enum "ok" | "changes" does not equal the declared tokens "ok" | "changes" | "blocked"\n',
+      '\nerror: procedures.review.claimTokens: review.schema.json: claim: enum "ok" | "changes" does not equal the ' +
+        'declared tokens "ok" | "changes" | "blocked"\n',
     ),
     text,
   );
 });
 
 test('gg doctor accepts the shipped defaults once a harness is set', () => {
-  const shipped = config.loadDefaults();
+  const shipped: exampleLayer.Layer = config.loadDefaults();
   shipped.agents.implementer.harness = 'fake';
   shipped.agents.reviewer.harness = 'fake';
   shipped.commands = { test: 'npm test' };
@@ -128,8 +116,10 @@ test('gg doctor accepts the shipped defaults once a harness is set', () => {
   // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.
   assert.ok(
     text.endsWith(
-      '\nwarning: procedures.review.passed: rule table review.passed: row 2 (check.repeat = failed) is partly taken by ' +
-        'row 1 (claim = ok and check.review-pass = passed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}}\n' +
+      '\nwarning: procedures.review.passed: rule table review.passed: ' +
+        'row 2 (check.repeat = failed) is partly taken by ' +
+        'row 1 (claim = ok and check.review-pass = passed), ' +
+        'for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}}\n' +
         '0 errors, 1 warning\n',
     ),
     text,

@@ -9,7 +9,7 @@ import * as flow from '../../lib/flow.ts';
 test('writeResolved writes the flow and hash to the run directory', (t) => {
   const runDir = mkdtempSync(join(tmpdir(), 'gg-flow-'));
   t.after(() => rmSync(runDir, { recursive: true, force: true }));
-  const resolved = config.loadDefaults().flows.default;
+  const resolved = (config.loadDefaults().flows as Record<string, unknown>).default;
   const hash = 'a'.repeat(64);
   flow.writeResolved(runDir, resolved, hash);
   assert.deepEqual(JSON.parse(readFileSync(join(runDir, 'flow.json'), 'utf8')), resolved);
