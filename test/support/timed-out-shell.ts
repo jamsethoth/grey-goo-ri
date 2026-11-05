@@ -32,8 +32,9 @@ export const shellOptions = ({ cwd, timeoutMs, ...testHooks }: ShellCaseOptions 
 
 // Runs commandLine with its timeout clock held until ready() holds, so the processes a case checks exist before the
 // timeout fires however slowly they start. ready is false when the command ended first.
-// The case's own signal ends the wait too, and then the command is timed out before the case fails.
-// options.kernel32, when given, is the FFI runShell runs on.
+// The case's own signal ends the wait too, and then the command is timed out before the case fails. The processes the
+// run names are ended when the case ends; a case past its timeout ends before the run answers, so then they are ended
+// when it answers. options.kernel32, when given, is the FFI runShell runs on.
 export async function timeOutWhen(
   commandLine: string,
   { kernel32, ...options }: ShellCaseOptions,
@@ -43,6 +44,13 @@ export async function timeOutWhen(
   const { signal } = t;
   const { runShell } = kernel32 === undefined ? exec : exec.createExec({ kernel32 });
   const clock = new AbortController();
+  const named: number[] = [];
+  const endNamed = () => named.forEach((pid) => processProbe.endProcess(pid));
+  let caseEnded = false;
+  t.after(() => {
+    caseEnded = true;
+    endNamed();
+  });
   let settled = false;
   let wasReady = false;
   const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal })).finally(() => {
@@ -55,7 +63,13 @@ export async function timeOutWhen(
     // also when ready() throws, as it can once a failed case's files are gone: the command is timed out and cleaned up
     // before the case goes on, and the error ready() threw is the one the case reports
     clock.abort();
-    await running.catch(() => {});
+    await running.then(
+      ({ survivors = [], leftovers = [] }) => {
+        named.push(...survivors.map((survivor) => survivor.pid), ...leftovers);
+        if (caseEnded) endNamed();
+      },
+      () => {},
+    );
   }
   const result = (await running) as TimedOutResult;
   signal.throwIfAborted();
@@ -64,8 +78,9 @@ export async function timeOutWhen(
 
 // Times out an orphan chain once runShell holds its grandchild (on POSIX, once its watcher has listed it; on Windows
 // the job holds it from the start) and the middle has then exited, so the grandchild is an orphan however slowly the
-// processes start and are listed. beforeClock runs just before the clock starts; options go to runShell. The
-// grandchild is killed when the case ends.
+// processes start and are listed. beforeClock runs just before the clock starts; options go to runShell; ready, when
+// given, replaces the wait for that order. A clock that started out of that order fails the case: the order is read
+// again as the clock starts, since the cleanup that follows ends the middle whatever its order was.
 export async function timedOutOrphan(
   t: TestContext,
   directory: string,
@@ -76,22 +91,31 @@ export async function timedOutOrphan(
     ...options
   }: ShellCaseOptions & { beforeClock?: () => void; ready?: () => boolean } = {},
 ) {
-  const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(t, directory, name);
-  t.after(() => processProbe.endProcessIn(pidFile));
+  const { pidFile, midFile, goFile, commandLine, middleExited } = childScripts.orphanChain(t, directory, name);
   let seen: commandCleanup.Seen = new Map();
-  const ready = () => {
+  const held = () => {
     const pid = processProbe.pidIn(pidFile);
-    if (!pid || (process.platform !== 'win32' && !seen.has(pid))) return false;
+    return pid > 0 && (process.platform === 'win32' || seen.has(pid));
+  };
+  const inOrder = () => {
+    if (!held()) return false;
     writeFileSync(goFile, '');
-    const mid = processProbe.pidIn(midFile);
-    if (!mid || processProbe.alive(mid)) return false;
+    if (!middleExited()) return false;
     beforeClock?.();
     return true;
+  };
+  let heldAtClock = false;
+  let exitedAtClock = false;
+  const ready = () => {
+    const isReady = (givenReady ?? inOrder)();
+    heldAtClock = held();
+    exitedAtClock = middleExited();
+    return isReady;
   };
   const { result, ready: wasReady } = await timeOutWhen(
     commandLine,
     { timeoutMs: 3500, ...options, onWatch: (watched) => (seen = watched) },
-    givenReady ?? ready,
+    ready,
     t,
   );
   const pid = processProbe.pidIn(pidFile);
@@ -99,5 +123,7 @@ export async function timedOutOrphan(
     wasReady,
     `the chain ended before runShell held its grandchild ${pid} and the middle exited: ${result.output}`,
   );
+  assert.ok(exitedAtClock, `the clock started before the middle ${processProbe.pidIn(midFile)} exited`);
+  assert.ok(heldAtClock, `the clock started before runShell held the grandchild ${pid}`);
   return { result, pid };
 }

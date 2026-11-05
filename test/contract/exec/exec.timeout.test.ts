@@ -83,18 +83,13 @@ test('runShell reports surviving PIDs and the kill error when termination fails'
     },
     kernel32: kernel32Doubles.withKernel32({ TerminateJobObject: () => 0 }),
   });
-  try {
-    assert.equal(result.timedOut, true);
-    assert.ok(
-      result.survivors.some(
-        (survivor) => survivor.pid === pid && /EPERM refused|termination refused/.test(survivor.error),
-      ),
-      JSON.stringify(result.survivors),
-    );
-  } finally {
-    // a refused termination leaves the shell running too
-    for (const survivor of result.survivors) processProbe.endProcess(survivor.pid);
-  }
+  assert.equal(result.timedOut, true);
+  assert.ok(
+    result.survivors.some(
+      (survivor) => survivor.pid === pid && /EPERM refused|termination refused/.test(survivor.error),
+    ),
+    JSON.stringify(result.survivors),
+  );
 });
 
 test(
@@ -173,8 +168,7 @@ test(
   'runShell timeout does not name a descendant the watcher saw exit, though a new process now holds its pid',
   POSIX_CASE,
   async (t) => {
-    const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(t, scratch, 'pruned');
-    t.after(() => processProbe.endProcessIn(pidFile));
+    const { midFile, goFile, commandLine, middleExited } = childScripts.orphanChain(t, scratch, 'pruned');
     const append = `{ print } END { print mid, 1, "Thu Jan  1 00:00:02 1970" }`;
     const listing: [string, string[]] = [
       'sh',
@@ -187,16 +181,16 @@ test(
       sawMiddle ||= mid > 0 && seen.has(mid);
       if (!sawMiddle) return false;
       writeFileSync(goFile, '');
-      return !alive(mid) && !seen.has(mid);
+      return middleExited() && !seen.has(mid);
     };
-    const { result, ready: wasReady } = await timedOutShell.timeOutWhen(
+    const { result } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 3500, snapshotCommand: listing, onWatch: (watched) => (seen = watched) },
       ready,
       t,
     );
     const mid = pidIn(midFile);
-    assert.ok(wasReady, `the watcher never saw the middle ${mid} exit: ${result.output}`);
+    assert.ok(sawMiddle && !seen.has(mid), `the watcher never saw the middle ${mid} exit: ${result.output}`);
     assert.equal(result.timedOut, true);
     assert.deepEqual(result.cleanupErrors, []);
     assert.ok(
@@ -255,7 +249,6 @@ test(
     ];
     caseEnv.psStandIn(t, scratch, 'blind-ps', 'exit 1');
     const { pidFile, commandLine } = childScripts.orphanChain(t, scratch, 'blind');
-    t.after(() => processProbe.endProcessIn(pidFile));
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 3500, snapshotCommand: listing },

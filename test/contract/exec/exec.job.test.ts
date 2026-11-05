@@ -77,6 +77,7 @@ test(
   async (t) => {
     const created = join(scratch, 'breakaway.created');
     const sleeperPid = join(scratch, 'ba-sleeper.pid');
+    t.after(() => processProbe.endProcessIn(sleeperPid));
     const { result } = await timedOutShell.timeOutWhen(
       nodeCommand(
         t,
@@ -119,18 +120,14 @@ test(
       t,
     );
     const pid = ready ? pidIn(pidFile) : null;
-    try {
-      assert.equal(result.timedOut, true);
-      assert.ok(
-        result.cleanupErrors.some((error) => /job object unavailable/.test(error)),
-        JSON.stringify(result.cleanupErrors),
-      );
-      assert.ok(pid, 'child never started');
-      // a child still linked to the shell that is left running fails at the case timeout
-      await waitFor(() => !alive(pid), t.signal);
-    } finally {
-      if (pid) processProbe.endProcess(pid);
-    }
+    assert.equal(result.timedOut, true);
+    assert.ok(
+      result.cleanupErrors.some((error) => /job object unavailable/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
+    assert.ok(pid, 'child never started');
+    // a child still linked to the shell that is left running fails at the case timeout
+    await waitFor(() => !alive(pid), t.signal);
   },
 );
 
@@ -147,21 +144,17 @@ test(
       t,
     );
     const pid = ready ? pidIn(pidFile) : null;
-    try {
-      assert.equal(result.timedOut, true);
-      assert.ok(
-        result.cleanupErrors.some((error) => /job object unavailable/.test(error)),
-        JSON.stringify(result.cleanupErrors),
-      );
-      assert.ok(pid, 'child never started');
-      // a child still linked to the shell that is neither killed nor named with an error fails at the case timeout
-      await waitFor(
-        () => !alive(pid) || result.survivors.some((survivor) => survivor.pid === pid && survivor.error),
-        t.signal,
-      );
-    } finally {
-      if (pid) processProbe.endProcess(pid);
-    }
+    assert.equal(result.timedOut, true);
+    assert.ok(
+      result.cleanupErrors.some((error) => /job object unavailable/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
+    assert.ok(pid, 'child never started');
+    // a child still linked to the shell that is neither killed nor named with an error fails at the case timeout
+    await waitFor(
+      () => !alive(pid) || result.survivors.some((survivor) => survivor.pid === pid && survivor.error),
+      t.signal,
+    );
   },
 );
 
@@ -180,16 +173,11 @@ test(
       t,
     );
     const pid = ready ? pidIn(pidFile) : null;
-    try {
-      assert.equal(result.timedOut, true);
-      assert.ok(pid, 'child never started');
-      assert.ok(!result.cleanupErrors.some((error) => /taskkill/.test(error)), JSON.stringify(result.cleanupErrors));
-      // a child still linked to the shell that is left running fails at the case timeout
-      await waitFor(() => !alive(pid), t.signal);
-    } finally {
-      for (const survivor of result.survivors) processProbe.endProcess(survivor.pid);
-      if (pid) processProbe.endProcess(pid);
-    }
+    assert.equal(result.timedOut, true);
+    assert.ok(pid, 'child never started');
+    assert.ok(!result.cleanupErrors.some((error) => /taskkill/.test(error)), JSON.stringify(result.cleanupErrors));
+    // a child still linked to the shell that is left running fails at the case timeout
+    await waitFor(() => !alive(pid), t.signal);
   },
 );
 
@@ -205,21 +193,16 @@ test(
       t,
     );
     const pid = ready ? pidIn(pidFile) : null;
-    try {
-      assert.equal(result.timedOut, true);
-      assert.ok(pid, 'child never started');
-      assert.ok(
-        result.survivors.some((survivor) => survivor.pid === pid),
-        `linked child ${pid} missing from ${JSON.stringify(result.survivors)}`,
-      );
-      assert.ok(
-        result.cleanupErrors.some((error) => /taskkill/.test(error)),
-        JSON.stringify(result.cleanupErrors),
-      );
-    } finally {
-      for (const survivor of result.survivors) processProbe.endProcess(survivor.pid);
-      if (pid) processProbe.endProcess(pid);
-    }
+    assert.equal(result.timedOut, true);
+    assert.ok(pid, 'child never started');
+    assert.ok(
+      result.survivors.some((survivor) => survivor.pid === pid),
+      `linked child ${pid} missing from ${JSON.stringify(result.survivors)}`,
+    );
+    assert.ok(
+      result.cleanupErrors.some((error) => /taskkill/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
   },
 );
 
@@ -289,16 +272,12 @@ test('runShell: job membership larger than the first query buffer is still liste
     },
   });
   const { result, pid } = await timedOutShell.timedOutOrphan(t, scratch, 'smallbuf', { kernel32 });
-  try {
-    assert.ok(refused > 0, 'no list was too small');
-    assert.ok(result.survivors.length >= 3, JSON.stringify(result.survivors)); // shell, top and grandchild
-    assert.ok(
-      result.survivors.some((survivor) => survivor.pid === pid),
-      JSON.stringify(result.survivors),
-    );
-  } finally {
-    for (const survivor of result.survivors) processProbe.endProcess(survivor.pid);
-  }
+  assert.ok(refused > 0, 'no list was too small');
+  assert.ok(result.survivors.length >= 3, JSON.stringify(result.survivors)); // shell, top and grandchild
+  assert.ok(
+    result.survivors.some((survivor) => survivor.pid === pid),
+    JSON.stringify(result.survivors),
+  );
 });
 
 // Termination is refused and the middle is never told to exit, so only the case's end can end the chain. The inner case
@@ -314,13 +293,14 @@ test(
     const cancelled = t.test(
       'a case that is cancelled',
       { signal: cancel.signal, todo: 'cancelled on purpose' },
-      (inner) =>
-        timedOutShell.timeOutWhen(
+      async (inner) => {
+        await timedOutShell.timeOutWhen(
           childScripts.orphanChain(inner, scratch, 'cancelled').commandLine,
           { timeoutMs: 1, kernel32 },
           () => false,
           inner,
-        ),
+        );
+      },
     );
     await waitFor(() => pidIn(pidFile) > 0, t.signal);
     cancel.abort();
@@ -346,7 +326,8 @@ test(
       );
       assert.fail('fails on purpose');
     });
-    assert.ok(members.size >= 4, JSON.stringify([...members])); // shell, top, middle and grandchild, and any console host
+    // shell, top, middle and grandchild, and any console host
+    assert.ok(members.size >= 4, JSON.stringify([...members]));
     await waitFor(() => ![...members].some(alive), t.signal); // one left running fails at the case timeout
   },
 );
@@ -383,7 +364,6 @@ test(
   options.UNSANDBOXED_WIN_CASE,
   async (t) => {
     const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'noffi');
-    t.after(() => processProbe.endProcessIn(pidFile));
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 4000, kernel32: null },
@@ -471,7 +451,6 @@ test(
         spawnSync(`${process.env.SystemRoot}\\System32\\taskkill.exe`, ['/T', '/F', '/PID', String(pid)], {
           windowsHide: true,
         });
-      processProbe.endProcessIn(pidFile);
     });
     const { result: timedOut, ready } = await timedOutShell.timeOutWhen(
       commandLine,

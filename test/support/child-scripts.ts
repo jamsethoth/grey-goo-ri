@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as caseEnv from './case-env.ts';
+import * as processProbe from './process-probe.ts';
 
 // How long a test process lives unless it is killed: longer than any case, so no command ends on its own first.
 export const LIVES_MS = 600_000;
@@ -51,17 +52,29 @@ export function nodeCommand(t: TestContext, ...args: string[]) {
 
 // A command whose child starts a middle process, which writes midFile, starts a detached grandchild that writes
 // pidFile, and lingers until goFile exists; then it exits, leaving the grandchild an orphan while the command outlives
-// the timeout.
+// the timeout. The grandchild and the middle are ended when the case ends, but for a middle seen to exit: its pid may
+// be another process's by then. middleExited says whether it was seen to.
 export function orphanChain(t: TestContext, directory: string, name: string) {
   const pidFile = join(directory, `${name}.pid`);
   const midFile = join(directory, `${name}-mid.pid`);
   const goFile = join(directory, `${name}.go`);
   const commandLine = nodeCommand(t, CHILD_STARTER, ORPHAN_MIDDLE, midFile, goFile, LONG_LIVED, pidFile);
-  return { pidFile, midFile, goFile, commandLine };
+  let exited = false;
+  const middleExited = () => {
+    const mid = processProbe.pidIn(midFile);
+    exited ||= mid > 0 && !processProbe.alive(mid);
+    return exited;
+  };
+  t.after(() => {
+    processProbe.endProcessIn(pidFile);
+    if (!middleExited()) processProbe.endProcessIn(midFile);
+  });
+  return { pidFile, midFile, goFile, commandLine, middleExited };
 }
 
-// A command whose child, still linked to the shell, writes pidFile.
+// A command whose child, still linked to the shell, writes pidFile. That child is ended when the case ends.
 export function linkedChild(t: TestContext, directory: string, name: string) {
   const pidFile = join(directory, `${name}.pid`);
+  t.after(() => processProbe.endProcessIn(pidFile));
   return { pidFile, commandLine: nodeCommand(t, CHILD_STARTER, LONG_LIVED, pidFile) };
 }
