@@ -132,7 +132,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   with `lib/run-context.ts` and `lib/visit-runner.ts`.
 - A new unit test: `test/unit/record.test.mjs` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
-- A contract suite and its fake: `test/contract/git/git.test.mjs` and `test/support/fake-git.ts`.
+- A contract suite and its fake: `test/contract/git/git.test.ts` and `test/support/fake-git.ts`.
 - A fake typed against the interface it stands in for: `test/support/fake-git.ts` (lib/git.ts's `Git`) and
   `test/support/fake-gh.ts` (lib/github.ts's transport).
 
@@ -140,8 +140,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 Each is rewritten by its ticket; until then, do not take its patterns:
 
-- `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210), `test/unit/run.holds.test.mjs` (#211),
-  `test/contract/exec/exec.test.mjs` (#212).
+- `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210), `test/unit/run.holds.test.mjs` (#211).
 
 ## Tests
 

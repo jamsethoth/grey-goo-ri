@@ -21,15 +21,15 @@ entry point since #199 (ADR 0019).
    processes, which no injected clock reaches. None compares one process's clock with another's: two processes'
    `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
    saw of the other's writes (#260):
-   - `test/contract/sqlite/record.test.mjs`, `a save waits out another process that holds the write lock for longer
+   - `test/contract/sqlite/record.test.ts`, `a save waits out another process that holds the write lock for longer
      than 5 s`: a save waiting past the 5 s busy timeout ADR 0015 replaced is the behaviour.
-   - `test/contract/exec/exec.test.mjs`, `runShell: when the job cannot be set up, a slow taskkill still takes down
+   - `test/contract/exec/exec.job.test.ts`, `runShell: when the job cannot be set up, a slow taskkill still takes down
      the process tree`: its taskkill takes 31 s, longer than the 30 s ceiling `runShell` once had, to show no ceiling
      is left.
-   - `test/contract/exec/exec.test.mjs`, `runShell timeout kills an orphan its watcher listed, however slowly ps
+   - `test/contract/exec/exec.timeout.test.ts`, `runShell timeout kills an orphan its watcher listed, however slowly ps
      answers`: its `ps` answers after 2 s and then 5 s, past the 1.5 s listing budget and the 2 s start-time
      tolerance `runShell` once had (POSIX only).
-   - `test/contract/sqlite/record.test.mjs`, `openers of a new database queue while the open lock is held and all
+   - `test/contract/sqlite/record.test.ts`, `openers of a new database queue while the open lock is held and all
      succeed once it is released`: it holds the lock a second longer so an opener that got past it shows itself (#188);
      each opener then reports whether the marker the parent writes just before the release was there when it switched.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
@@ -134,6 +134,11 @@ that leaves the machine. Aim for most tests small; a medium test exists to show 
 | `test/contract/<boundary>/` | one narrow suite per external boundary (`git`, `harness`, `integrity`, `sqlite`, `exec`), run against the real module and its fake, or against the real system where there is no fake | medium |
 | `test/e2e/` | the full runs and the git-behaviour wiring: the golden traces that run on real git (those over the fakes are in `test/unit/`), and the interpreter, Run and Reconciliation cases whose subject is real git (integrity rollback, admission's dirty, conflict and branch checks, crash and resume, the repo lock), the Runs over the fake git that the real integrity or a lock-holding process makes medium (`run.concurrency`'s attribution and repo-lock Runs, `interpreter.retry`'s queued writes, `interpreter.fix`'s moved baselines), and the `gg` CLI | medium or large |
 | `test/support/`, `test/fixtures/` | helpers, fakes and data | |
+
+`test/contract/harness/` spawns nothing, so by what it touches it is small, yet it stays a contract suite (#212). It is
+the fake harness's contract (see Test doubles): the cases every Harness must pass, which the fake runs today and the
+Claude Code and Codex Harnesses run once they are built. Kept with the other boundaries, the fake and the modules it
+stands in for are checked in one place, and `fast harness` selects it after a change to either.
 
 A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`
 as before. A module whose cases have different sizes has a file in each directory under the same name: the small cases
