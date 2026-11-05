@@ -122,7 +122,7 @@ export interface GoldenConfig {
   commands: Record<string, string>;
   testPaths: string[];
   agents: Record<string, ReturnType<typeof implementerAgent>>;
-  procedures: Record<string, { actions: { id: string; [key: string]: unknown }[] }>;
+  procedures: Record<string, { actions: { id: string; [key: string]: unknown }[]; [key: string]: unknown }>;
   flows: Record<string, ConfiguredFlow>;
   files: config.LayerFiles;
 }

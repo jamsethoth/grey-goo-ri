@@ -9,3 +9,12 @@ export function actionById<Procedure extends { actions: { id: string }[] }>(
     throw new Error(`the Procedure has no Action ${id}: ${procedure.actions.map((other) => other.id).join(', ')}`);
   return action;
 }
+
+// Puts `action` where the Action of a Procedure with id `id` stood, replacing that Action and every key it declared.
+export function replaceAction<Action extends { id: string }>(
+  procedure: { actions: Action[] },
+  id: string,
+  action: Action,
+): void {
+  procedure.actions[procedure.actions.indexOf(actionById(procedure, id))] = action;
+}
