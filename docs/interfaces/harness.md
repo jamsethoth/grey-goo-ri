@@ -25,7 +25,7 @@ decided by request section 3.2; Usage token rules by section 3.7.
 plus every shipped Harness's `protectedPaths`, whichever Harnesses the Agents use; `bin/gg.ts` builds that union with
 `protectedFiles` (`lib/interpreter.ts`) and passes it to the Run, so the interpreter imports no Harness module.
 `protectedFiles` fails, naming the Harness, when a `protectedPaths` is not an array of paths. No module outside
-`lib/harnesses/` names a Harness (`test/unit/harness-boundary.test.mjs`).
+`lib/harnesses/` names a Harness (`test/unit/layout.test.ts`).
 
 ## Capability matrix
 

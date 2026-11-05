@@ -20,10 +20,10 @@ for (const [prefix, state, awaiting, decide] of [
   ['x', 'x:state:needs-replan', 'x:await:plan-approval', 'x:decide:qa-approval:needs-changes'],
 ]) {
   test(`parse with prefix ${prefix} recognises state, await and decide labels`, () => {
-    const l = labels.labels(prefix);
-    assert.deepEqual(l.parse(state), { family: 'state', name: 'needs-replan' });
-    assert.deepEqual(l.parse(awaiting), { family: 'await', vertex: 'plan-approval' });
-    assert.deepEqual(l.parse(decide), { family: 'decide', vertex: 'qa-approval', outcome: 'needs-changes' });
+    const names = labels.labels(prefix);
+    assert.deepEqual(names.parse(state), { family: 'state', name: 'needs-replan' });
+    assert.deepEqual(names.parse(awaiting), { family: 'await', vertex: 'plan-approval' });
+    assert.deepEqual(names.parse(decide), { family: 'decide', vertex: 'qa-approval', outcome: 'needs-changes' });
   });
 }
 
@@ -99,18 +99,18 @@ for (const [prefix, label, name] of [
 
 for (const prefix of ['gg', 'Gg']) {
   test(`parse with prefix ${prefix} recognises mixed-case prefixes and families without rewriting identifiers`, () => {
-    const l = labels.labels(prefix);
-    assert.deepEqual(l.parse('gG:Await:Plan-Approval'), { family: 'await', vertex: 'Plan-Approval' });
-    assert.deepEqual(l.parse('GG:DECIDE:QA-Approval:Needs-Changes'), {
+    const names = labels.labels(prefix);
+    assert.deepEqual(names.parse('gG:Await:Plan-Approval'), { family: 'await', vertex: 'Plan-Approval' });
+    assert.deepEqual(names.parse('GG:DECIDE:QA-Approval:Needs-Changes'), {
       family: 'decide',
       vertex: 'QA-Approval',
       outcome: 'Needs-Changes',
     });
-    assert.equal(l.parse('X:STATE:IN-PROGRESS'), null);
-    assert.equal(l.parse('IN-PROGRESS'), null);
-    assert.equal(l.parse('GG:OTHER:thing'), null);
-    assert.equal(l.parse('GG:DECIDE:qa-approval'), null);
-    assert.equal(l.parse('GG:STATE:in-progress:extra'), null);
+    assert.equal(names.parse('X:STATE:IN-PROGRESS'), null);
+    assert.equal(names.parse('IN-PROGRESS'), null);
+    assert.equal(names.parse('GG:OTHER:thing'), null);
+    assert.equal(names.parse('GG:DECIDE:qa-approval'), null);
+    assert.equal(names.parse('GG:STATE:in-progress:extra'), null);
   });
 }
 
@@ -124,7 +124,7 @@ test('production label comparisons use the shared helper', () => {
     /payload\.add\.includes\(/,
     /\.label\??\.name\s*===/,
   ];
-  for (const file of readdirSync(lib).filter((f) => f.endsWith('.mjs'))) {
+  for (const file of readdirSync(lib).filter((name) => name.endsWith('.ts'))) {
     const source = readFileSync(new URL(file, lib), 'utf8');
     for (const pattern of banned) assert.doesNotMatch(source, pattern, file);
   }

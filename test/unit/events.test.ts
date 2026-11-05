@@ -9,14 +9,25 @@ import * as events from '../../lib/events.ts';
 import { fakeGit } from '../support/fake-git.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
+// A row of the events table.
+interface EventRow {
+  id: number;
+  ts: string;
+  type: string;
+  run: string | null;
+  execution: string | null;
+  ticket: number | null;
+  json: string;
+}
+
 // Reads the events table directly, as another SQLite client would.
-function rows(commonDir) {
+function rows(commonDir: string): EventRow[] {
   const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
   try {
     return db
       .prepare('SELECT id, ts, type, run, execution, ticket, json FROM events ORDER BY id')
       .all()
-      .map((row) => ({ ...row }));
+      .map((row) => ({ ...row }) as unknown as EventRow);
   } finally {
     db.close();
   }
@@ -102,6 +113,53 @@ const agentRequired = [
   'commandsRun',
 ];
 
+// The keys of a persisted Action Event, in the order it is written.
+const ACTION_EVENT_KEYS = [
+  'schemaVersion',
+  'time',
+  'type',
+  'flow',
+  'configHash',
+  'launchProfile',
+  'confinement',
+  'ticket',
+  'run',
+  'execution',
+  'vertex',
+  'visit',
+  'procedure',
+  'action',
+  'recovery',
+  'attempt',
+  'durationMs',
+  'outcome',
+  'direction',
+  'signals',
+  'rule',
+  'agent',
+  'harness',
+  'agentCliVersion',
+  'model',
+  'effort',
+  'personaHash',
+  'tools',
+  'sessionInit',
+  'sessionId',
+  'sessionLineage',
+  'transcriptPath',
+  'usage',
+  'exitCode',
+  'exitSignal',
+  'finalEventSubtype',
+  'permissionDenials',
+  'commandsRun',
+  'check',
+  'integrityViolations',
+  'retryAfterMs',
+  'failureClass',
+  'error',
+];
+
 test('an action event carries schema version 2 and every required field', (t) => {
   const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   const log = events.eventLog(dir, { run: 'r1' });
@@ -117,70 +175,26 @@ test('an action event carries schema version 2 and every required field', (t) =>
   assert.equal(back.schemaVersion, 2);
   assert.equal(back.type, 'action');
   assert.equal(typeof back.time, 'string');
-  assert.deepEqual(Object.keys(back), [
-    'schemaVersion',
-    'time',
-    'type',
-    'flow',
-    'configHash',
-    'launchProfile',
-    'confinement',
-    'ticket',
-    'run',
-    'execution',
-    'vertex',
-    'visit',
-    'procedure',
-    'action',
-    'recovery',
-    'attempt',
-    'durationMs',
-    'outcome',
-    'direction',
-    'signals',
-    'rule',
-    'agent',
-    'harness',
-    'agentCliVersion',
-    'model',
-    'effort',
-    'personaHash',
-    'tools',
-    'sessionInit',
-    'sessionId',
-    'sessionLineage',
-    'transcriptPath',
-    'usage',
-    'exitCode',
-    'exitSignal',
-    'finalEventSubtype',
-    'permissionDenials',
-    'commandsRun',
-    'check',
-    'integrityViolations',
-    'retryAfterMs',
-    'failureClass',
-    'error',
-  ]);
+  assert.deepEqual(Object.keys(back), ACTION_EVENT_KEYS);
   assert.equal(back.launchProfile, null);
   assert.equal(back.confinement, null);
   assert.deepEqual(back.usage, { cumulative: usage(), delta: usage() });
   assert.deepEqual(
-    events.readEvents(dir).map((e) => e.type),
+    events.readEvents(dir).map((event) => event.type),
     ['action', 'run_end'],
   );
 });
 
 for (const key of [...required, ...agentRequired]) {
   test(`actionEvent throws naming a missing required field: ${key}`, () => {
-    const fields = actionFields();
+    const fields: Record<string, unknown> = actionFields();
     delete fields[key];
     assert.throws(() => events.actionEvent(fields), new RegExp(`\\b${key}\\b`));
   });
 }
 
 test('actionEvent needs none of the agent fields when agent is false', () => {
-  const check = Object.fromEntries(Object.entries(actionFields()).filter(([k]) => required.includes(k)));
+  const check = Object.fromEntries(Object.entries(actionFields()).filter(([key]) => required.includes(key)));
   assert.equal(events.actionEvent({ ...check, agent: false }).type, 'action');
 });
 
@@ -197,7 +211,8 @@ const optional = {
 };
 for (const [key, value] of Object.entries(optional)) {
   test(`actionEvent accepts the optional key ${key}`, () => {
-    assert.equal(events.actionEvent({ ...actionFields(), [key]: value })[key], value);
+    const event: Record<string, unknown> = events.actionEvent({ ...actionFields(), [key]: value });
+    assert.equal(event[key], value);
   });
 }
 
@@ -221,7 +236,7 @@ test('an Event carries schemaVersion and time', (t) => {
 const OPTIONAL_KEYS = ['check', 'integrityViolations', 'retryAfterMs', 'failureClass', 'error'];
 
 test('an agent Action Event declares every field, null where it was not given', () => {
-  const event = events.actionEvent(actionFields());
+  const event: Record<string, unknown> = events.actionEvent(actionFields());
   assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...agentRequired, ...OPTIONAL_KEYS]);
   assert.deepEqual(
     OPTIONAL_KEYS.map((key) => event[key]),
@@ -231,7 +246,7 @@ test('an agent Action Event declares every field, null where it was not given', 
 
 test('a deterministic Action Event declares every field of its shape', () => {
   const check = Object.fromEntries(Object.entries(actionFields()).filter(([key]) => required.includes(key)));
-  const event = events.actionEvent(check);
+  const event: Record<string, unknown> = events.actionEvent(check);
   assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...OPTIONAL_KEYS]);
   assert.deepEqual(
     ['agent', ...OPTIONAL_KEYS].map((key) => event[key]),
@@ -254,7 +269,7 @@ test('a deterministic Action Event carries failureClass, null unless the Action 
 });
 
 test('a Lifecycle Event declares every field of its type, null where it was not given', () => {
-  const exact = (actual, expected) => {
+  const exact = (actual: object, expected: object) => {
     assert.deepEqual(actual, expected);
     assert.deepEqual(Object.keys(actual), Object.keys(expected));
   };
@@ -294,7 +309,7 @@ for (const key of [...required, ...agentRequired]) {
   });
 }
 
-const BAD_USAGE = [
+const BAD_USAGE: [string, unknown][] = [
   ['null', null],
   ['an empty object', {}],
   ['no delta', { cumulative: usage() }],
@@ -322,7 +337,7 @@ test('eventLog validates every event before appending it', (t) => {
   const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   const log = events.eventLog(dir);
   assert.throws(() => log('action', {}), /\bflow\b/);
-  assert.throws(() => log('stage_call', { run: 'r1' }), /\bstage_call\b/);
+  assert.throws(() => log('stage_call' as events.LifecycleType, { run: 'r1' }), /\bstage_call\b/);
   assert.throws(() => log('run_start', { run: 'r1', schemaVersion: 1 }), /\bschemaVersion\b/);
   assert.throws(() => log('run_start', { run: 'r1', time: 'then' }), /\btime\b/);
   assert.throws(() => log('run_start', { run: 'r1', type: 'run_end' }), /\btype\b/);
@@ -352,13 +367,16 @@ test('lifecycle events validate their required fields per type', () => {
   );
   assert.throws(() => events.lifecycleEvent('label_failed', { ticket: 7, change: 'add gg:ready' }), /\berror\b/);
   assert.throws(() => events.lifecycleEvent('run_start', { run: 'r1', extra: 1 }), /\bextra\b/);
-  assert.throws(() => events.lifecycleEvent('stage_call', { run: 'r1' }), /\bstage_call\b/);
+  assert.throws(() => events.lifecycleEvent('stage_call' as events.LifecycleType, { run: 'r1' }), /\bstage_call\b/);
 });
 
 // A type named after an Object member is no lifecycle type, though LIFECYCLE[type] finds something for it.
 for (const type of ['toString', 'constructor', '__proto__']) {
   test(`lifecycleEvent refuses the type ${type}, which only Object.prototype defines`, () => {
-    assert.throws(() => events.lifecycleEvent(type, { run: 'r1' }), new RegExp(`unknown lifecycle event type ${type}`));
+    assert.throws(
+      () => events.lifecycleEvent(type as events.LifecycleType, { run: 'r1' }),
+      new RegExp(`unknown lifecycle event type ${type}`),
+    );
   });
 }
 
@@ -366,7 +384,7 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
   const dir = tempDirectory.tempDirectory(t, 'gg-events-');
   events.eventLog(dir, { run: 'r1' })('ticket_start', { execution: 'e1', ticket: 7 });
   assert.deepEqual(
-    readdirSync(join(dir, 'gg')).filter((f) => !f.startsWith('gg.db') && f !== 'locks'),
+    readdirSync(join(dir, 'gg')).filter((name) => !name.startsWith('gg.db') && name !== 'locks'),
     [],
     'only the State Database and its open lock are written',
   );
@@ -402,7 +420,7 @@ test('readEvents returns events in insertion order', (t) => {
   log('run_end');
   const read = events.readEvents(dir);
   assert.deepEqual(
-    read.map((e) => [e.type, e.recovery ?? null]),
+    read.map((event) => [event.type, (event as { recovery?: number }).recovery ?? null]),
     [
       ['run_start', null],
       ['ticket_start', null],
@@ -434,7 +452,7 @@ test('readEvents on a fresh directory returns nothing', (t) => {
 });
 
 test('diffStats splits test and non-test insertions', () => {
-  const s = events.diffStats(
+  const stats = events.diffStats(
     [
       { path: 'src/cart.mjs', insertions: 3, deletions: 1 },
       { path: 'test/cart.test.mjs', insertions: 10, deletions: 0 },
@@ -443,7 +461,7 @@ test('diffStats splits test and non-test insertions', () => {
     ],
     checks.DEFAULT_TEST_GLOBS,
   );
-  assert.deepEqual(s, { files: 4, insertions: 15, deletions: 3, testFiles: 2, testInsertions: 12 });
+  assert.deepEqual(stats, { files: 4, insertions: 15, deletions: 3, testFiles: 2, testInsertions: 12 });
 });
 
 // Each path is one that either the old stats regex or the default globs took for a test, and the other did not, or a
@@ -453,9 +471,9 @@ test('diffStats counts exactly the files Test Immutability treats as tests', asy
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const fake = fakeGit();
   const { mainRoot, base } = fake.init(root);
-  const add = (p) => {
-    mkdirSync(dirname(join(mainRoot, p)), { recursive: true });
-    writeFileSync(join(mainRoot, p), 'x\n');
+  const add = (path: string) => {
+    mkdirSync(dirname(join(mainRoot, path)), { recursive: true });
+    writeFileSync(join(mainRoot, path), 'x\n');
   };
   add('test/b.mjs');
   add('Tests/a.mjs');
@@ -484,12 +502,12 @@ test('diffStats counts exactly the files Test Immutability treats as tests', asy
 });
 
 test('diffStats counts a declared test path outside the default globs', () => {
-  const s = events.diffStats(
+  const stats = events.diffStats(
     [
       { path: 'e2e/cart.mjs', insertions: 5, deletions: 0 },
       { path: 'lib/cart.mjs', insertions: 1, deletions: 0 },
     ],
     ['e2e/**'],
   );
-  assert.deepEqual(s, { files: 2, insertions: 6, deletions: 0, testFiles: 1, testInsertions: 5 });
+  assert.deepEqual(stats, { files: 2, insertions: 6, deletions: 0, testFiles: 1, testInsertions: 5 });
 });

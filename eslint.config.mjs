@@ -1,5 +1,5 @@
 // The readability rules of grey-goo-ri epic #193 (ADR 0018). They apply to .ts files only: an .mjs file is legacy until
-// its ticket converts it, and no new .mjs file may be added (test/unit/layout.test.mjs). Agents read these messages, so
+// its ticket converts it, and no new .mjs file may be added (test/unit/layout.test.ts). Agents read these messages, so
 // each custom one says how to fix.
 import { defineConfig } from 'eslint/config';
 import stylistic from '@stylistic/eslint-plugin';

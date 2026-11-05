@@ -11,19 +11,19 @@ import * as sqlite from '../../lib/sqlite.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
-const dbPath = (commonDir) => join(commonDir, 'gg', 'gg.db');
+const dbPath = (commonDir: string) => join(commonDir, 'gg', 'gg.db');
 
 // Reads and writes rows directly, as another SQLite client would.
-function withDb(commonDir, fn) {
+function withDb<Result>(commonDir: string, query: (db: DatabaseSync) => Result) {
   const db = new DatabaseSync(dbPath(commonDir));
   try {
-    return fn(db);
+    return query(db);
   } finally {
     db.close();
   }
 }
 
-function newExecution(commonDir, ticket = 8) {
+function newExecution(commonDir: string, ticket = 8) {
   return record.createExecution({
     commonDir,
     ticket,
@@ -37,8 +37,8 @@ function newExecution(commonDir, ticket = 8) {
   });
 }
 
-function withoutCommonDir(r) {
-  const { commonDir, ...rest } = r;
+function withoutCommonDir<Saved extends { commonDir: string }>(savedRecord: Saved) {
+  const { commonDir, ...rest } = savedRecord;
   return rest;
 }
 
@@ -102,16 +102,16 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
 test('saving a record never adds a field createExecution did not declare', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
-  executionRecord.admission = { kind: 'hold' };
-  await assert.rejects(record.save(executionRecord), (err) => {
-    assert.ok(err instanceof record.RecordSaveError, err.stack);
+  Object.assign(executionRecord, { admission: { kind: 'hold' } });
+  await assert.rejects(record.save(executionRecord), (err: Error) => {
+    assert.ok(err instanceof record.RecordSaveError, String(err.stack));
     assert.match(err.message, /\badmission\b/);
     return true;
   });
   assert.equal(await record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
 
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
-  epicRecord.approval = null;
+  Object.assign(epicRecord, { approval: null });
   await assert.rejects(record.save(epicRecord), /\bapproval\b/);
   assert.equal(await record.load(commonDir, 'epic', 1), null, 'nothing is saved');
 });
@@ -119,7 +119,7 @@ test('saving a record never adds a field createExecution did not declare', async
 test('saving a record never drops a field createExecution declared', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
-  delete executionRecord.admissionStop;
+  delete (executionRecord as Partial<record.ExecutionRecord>).admissionStop;
   await assert.rejects(record.save(executionRecord), /\badmissionStop\b/);
   assert.equal(await record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
 });
@@ -156,14 +156,14 @@ test('a write-ahead entry carries every field, null where its step has none', as
 
 test('save writes a records row and never a records directory', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const r = newExecution(commonDir);
+  const executionRecord = newExecution(commonDir);
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
-  await record.save(r);
+  await record.save(executionRecord);
   await record.save(epic);
   assert.ok(existsSync(dbPath(commonDir)), 'gg/gg.db exists');
   assert.ok(!existsSync(join(commonDir, 'gg', 'records')), 'no gg/records directory');
   withDb(commonDir, (db) => {
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 1);
+    assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 1);
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
@@ -173,29 +173,31 @@ test('save writes a records row and never a records directory', async (t) => {
       .prepare('SELECT kind, n, json FROM records ORDER BY kind')
       .all()
       .map((row) => ({ ...row }));
+    /* eslint-disable id-length -- n is the records table's column */
     assert.deepEqual(rows, [
       { kind: 'epic', n: 1, json: JSON.stringify(withoutCommonDir(epic), null, 2) + '\n' },
-      { kind: 'ticket', n: 8, json: JSON.stringify(withoutCommonDir(r), null, 2) + '\n' },
+      { kind: 'ticket', n: 8, json: JSON.stringify(withoutCommonDir(executionRecord), null, 2) + '\n' },
     ]);
+    /* eslint-enable id-length */
   });
   assert.equal(sqlite.DB_SCHEMA_VERSION, 1);
 });
 
 test('load returns null for a missing row and the record for a saved one', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const r = newExecution(commonDir);
-  await record.save(r);
+  const executionRecord = newExecution(commonDir);
+  await record.save(executionRecord);
   assert.equal(await record.load(commonDir, 'ticket', 9), null);
   assert.equal(await record.load(commonDir, 'epic', 8), null);
   // Changed behind the module's back, so the load must come from the row.
   withDb(commonDir, (db) => {
     db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8").run(
-      JSON.stringify({ ...withoutCommonDir(r), state: 'ready-for-qa' }),
+      JSON.stringify({ ...withoutCommonDir(executionRecord), state: 'ready-for-qa' }),
     );
   });
   const loaded = await record.load(commonDir, 'ticket', 8);
-  assert.equal(loaded.commonDir, commonDir);
-  assert.deepEqual(loaded, { ...r, state: 'ready-for-qa' });
+  assert.equal(loaded?.commonDir, commonDir);
+  assert.deepEqual(loaded, { ...executionRecord, state: 'ready-for-qa' });
 
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
   await record.save(epic);
@@ -204,12 +206,12 @@ test('load returns null for a missing row and the record for a saved one', async
 
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const r = newExecution(commonDir);
-  await record.intent(r, 'm1', 'commit', { message: 'red' });
-  await record.evidence(r, 'm1', { sha: 'deadbeef' });
-  await record.complete(r, 'm1');
+  const executionRecord = newExecution(commonDir);
+  await record.intent(executionRecord, 'm1', 'commit', { message: 'red' });
+  await record.evidence(executionRecord, 'm1', { sha: 'deadbeef' });
+  await record.complete(executionRecord, 'm1');
   assert.deepEqual(
-    r.writeAheadLog.map(({ time, ...e }) => e),
+    executionRecord.writeAheadLog.map(({ time, ...entry }) => entry),
     [
       { step: 'intent', actionMarker: 'm1', effect: 'commit', payload: { message: 'red' }, evidence: null },
       { step: 'evidence', actionMarker: 'm1', effect: 'commit', payload: null, evidence: { sha: 'deadbeef' } },
@@ -217,11 +219,11 @@ test('the write-ahead log records intent, evidence and completion per marker', a
     ],
   );
   assert.deepEqual(
-    r.writeAheadLog.map((e) => typeof e.time),
+    executionRecord.writeAheadLog.map((entry) => typeof entry.time),
     ['string', 'string', 'string'],
   );
   const loaded = await record.load(commonDir, 'ticket', 8);
-  assert.deepEqual(loaded.writeAheadLog, r.writeAheadLog, 'each step saves');
+  assert.deepEqual(loaded?.writeAheadLog, executionRecord.writeAheadLog, 'each step saves');
 });
 
 test('a record transition and its event commit together', async (t) => {
@@ -233,34 +235,38 @@ test('a record transition and its event commit together', async (t) => {
       if (appends.failing) throw new Error('disk I/O error');
     },
   });
-  const ev = events.eventLog(commonDir, { run: 'run-1', ticket: 8 }, database);
-  const r = newExecution(commonDir);
-  const eventTypes = () => events.readEvents(commonDir).map((e) => e.type);
-  const start = () => ev('ticket_start', { execution: r.execution });
+  const eventLog = events.eventLog(commonDir, { run: 'run-1', ticket: 8 }, database);
+  const executionRecord = newExecution(commonDir);
+  const eventTypes = () => events.readEvents(commonDir).map((event) => event.type);
+  const start = () => eventLog('ticket_start', { execution: executionRecord.execution });
 
-  await assert.rejects(record.save(r, start), (err) => err.name === 'RecordSaveError', 'a failed Event fails the save');
+  await assert.rejects(
+    record.save(executionRecord, start),
+    (err: Error) => err.name === 'RecordSaveError',
+    'a failed Event fails the save',
+  );
   assert.equal(await record.load(commonDir, 'ticket', 8), null, 'no record is created without its Event');
   appends.failing = false;
-  await record.save(r, start);
-  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active');
+  await record.save(executionRecord, start);
+  assert.equal((await record.load(commonDir, 'ticket', 8))?.state, 'active');
   assert.deepEqual(eventTypes(), ['ticket_start']);
 
   appends.failing = true;
-  r.state = 'held';
+  executionRecord.state = 'held';
   await assert.rejects(
-    record.save(r, () => ev('ticket_end', { execution: r.execution })),
-    (err) => err.name === 'RecordSaveError',
+    record.save(executionRecord, () => eventLog('ticket_end', { execution: executionRecord.execution })),
+    (err: Error) => err.name === 'RecordSaveError',
   );
-  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'active', 'the previous row stays');
+  assert.equal((await record.load(commonDir, 'ticket', 8))?.state, 'active', 'the previous row stays');
   assert.deepEqual(eventTypes(), ['ticket_start'], 'and no Event lands');
   appends.failing = false;
-  await record.save(r, () => ev('ticket_end', { execution: r.execution }));
-  assert.equal((await record.load(commonDir, 'ticket', 8)).state, 'held');
+  await record.save(executionRecord, () => eventLog('ticket_end', { execution: executionRecord.execution }));
+  assert.equal((await record.load(commonDir, 'ticket', 8))?.state, 'held');
   assert.deepEqual(eventTypes(), ['ticket_start', 'ticket_end']);
-  r.state = 'ready-for-qa';
-  await record.save(r);
+  executionRecord.state = 'ready-for-qa';
+  await record.save(executionRecord);
   assert.equal(
-    (await record.load(commonDir, 'ticket', 8)).state,
+    (await record.load(commonDir, 'ticket', 8))?.state,
     'ready-for-qa',
     'a plain save still works after a rollback',
   );
@@ -268,23 +274,23 @@ test('a record transition and its event commit together', async (t) => {
 
 test('openIntents lists intents without completion oldest first', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const r = newExecution(commonDir);
-  await record.intent(r, 'm1', 'commit', {});
+  const executionRecord = newExecution(commonDir);
+  await record.intent(executionRecord, 'm1', 'commit', {});
   assert.deepEqual(
-    writeAhead.openIntents(r).map((e) => e.actionMarker ?? e),
+    writeAhead.openIntents(executionRecord).map((entry) => entry.actionMarker ?? entry),
     ['m1'],
   );
-  await record.intent(r, 'm2', 'push', {});
-  await record.intent(r, 'm3', 'comment', {});
-  await record.evidence(r, 'm2', { ok: true });
-  await record.complete(r, 'm2');
+  await record.intent(executionRecord, 'm2', 'push', {});
+  await record.intent(executionRecord, 'm3', 'comment', {});
+  await record.evidence(executionRecord, 'm2', { ok: true });
+  await record.complete(executionRecord, 'm2');
   assert.deepEqual(
-    writeAhead.openIntents(r).map((e) => e.actionMarker ?? e),
+    writeAhead.openIntents(executionRecord).map((entry) => entry.actionMarker ?? entry),
     ['m1', 'm3'],
   );
-  await record.complete(r, 'm1');
-  await record.complete(r, 'm3');
-  assert.deepEqual(writeAhead.openIntents(r), []);
+  await record.complete(executionRecord, 'm1');
+  await record.complete(executionRecord, 'm3');
+  assert.deepEqual(writeAhead.openIntents(executionRecord), []);
 });
 
 test('loadAll lists every ticket record', async (t) => {
@@ -295,7 +301,7 @@ test('loadAll lists every ticket record', async (t) => {
   await record.save(record.createEpicRecord({ commonDir, epic: 1 }));
   const all = await record.loadAll(commonDir, 'ticket');
   assert.deepEqual(
-    all.map((r) => r.ticket).sort((a, b) => a - b),
+    all.map((executionRecord) => executionRecord.ticket).sort((left, right) => left - right),
     [8, 12],
   );
 });
@@ -309,7 +315,7 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
     insert.run('ticket', 9, '{');
     insert.run('ticket', 10, unknown);
   });
-  const isCorrupt = (name) => (err) => {
+  const isCorrupt = (name: string) => (err: record.RecordCorruptError) => {
     assert.ok(err instanceof record.RecordCorruptError);
     assert.ok(err.file.includes(dbPath(commonDir)), `${err.file} names the database`);
     assert.ok(err.file.includes(name), `${err.file} names ${name}`);
@@ -319,19 +325,20 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
   await assert.rejects(record.load(commonDir, 'ticket', 9), isCorrupt('ticket-9'));
   await assert.rejects(record.load(commonDir, 'ticket', 10), isCorrupt('ticket-10'));
 
-  const corrupt = [];
+  const corrupt: record.RecordCorruptError[] = [];
   const records = await record.loadAll(commonDir, 'ticket', { onCorrupt: (err) => corrupt.push(err) });
   assert.deepEqual(
-    records.map((r) => r.ticket),
+    records.map((executionRecord) => executionRecord.ticket),
     [8],
   );
   assert.equal(corrupt.length, 2);
-  const byName = corrupt.sort((a, b) => a.file.localeCompare(b.file));
+  const byName = corrupt.sort((left, right) => left.file.localeCompare(right.file));
   isCorrupt('ticket-10')(byName[0]);
   isCorrupt('ticket-9')(byName[1]);
 
   withDb(commonDir, (db) => {
-    const json = (n) => db.prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(n).json;
+    const json = (recordNumber: number) =>
+      db.prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = ?").get(recordNumber)?.json;
     assert.equal(json(9), '{', 'the corrupt row is left untouched');
     assert.equal(json(10), unknown);
   });
@@ -345,13 +352,13 @@ test('a record written before Action ids is corrupt, not misread', async (t) => 
     ...newExecution(commonDir, 11),
     cursor: { vertex: 'green', visit: 1, phase: 'green', ordinal: 3, attempt: 1 },
   };
-  delete old.commonDir;
+  delete (old as { commonDir?: string }).commonDir;
   withDb(commonDir, (db) =>
     db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run('ticket', 11, JSON.stringify(old)),
   );
   await assert.rejects(
     record.load(commonDir, 'ticket', 11),
-    (err) => err instanceof record.RecordCorruptError && /Recovery Number/.test(err.message),
+    (err: Error) => err instanceof record.RecordCorruptError && /Recovery Number/.test(err.message),
   );
 });
 
@@ -367,15 +374,18 @@ test('saveConfig stores a pinned configuration once per hash and loadConfig read
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
   await sqlite.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
   const firstSeen = () =>
-    withDb(commonDir, (db) => db.prepare("SELECT firstSeen FROM configs WHERE hash = 'hash-1'").get().firstSeen);
+    withDb(commonDir, (db) => db.prepare("SELECT firstSeen FROM configs WHERE hash = 'hash-1'").get()?.firstSeen);
   const first = firstSeen();
-  assert.ok(!Number.isNaN(Date.parse(first)) && new Date(first).toISOString() === first, `${first} is an ISO time`);
+  assert.ok(
+    typeof first === 'string' && !Number.isNaN(Date.parse(first)) && new Date(first).toISOString() === first,
+    `${first} is an ISO time`,
+  );
   // An older firstSeen than any save could write, so a second save that replaced it would show.
   const older = '2020-01-01T00:00:00.000Z';
   withDb(commonDir, (db) => db.prepare("UPDATE configs SET firstSeen = ? WHERE hash = 'hash-1'").run(older));
   await sqlite.saveConfig(commonDir, 'hash-1', JSON.stringify(pinned));
   assert.equal(firstSeen(), older, 'the second save keeps the first firstSeen');
-  withDb(commonDir, (db) => assert.equal(db.prepare('SELECT count(*) AS n FROM configs').get().n, 1));
+  withDb(commonDir, (db) => assert.equal(db.prepare('SELECT count(*) AS n FROM configs').get()?.n, 1));
   assert.deepEqual(await sqlite.loadConfig(commonDir, 'hash-1'), pinned);
   assert.equal(await sqlite.loadConfig(commonDir, 'hash-2'), null);
 });
@@ -388,7 +398,7 @@ test('an unknown database version is refused by name', async (t) => {
   db.close();
   assert.throws(
     () => sqlite.openDb(commonDir),
-    (err) => {
+    (err: Error) => {
       assert.ok(!(err instanceof TypeError), `not a missing function: ${err.message}`);
       assert.ok(err.message.includes(dbPath(commonDir)), `${err.message} names the database`);
       assert.match(err.message, /\b2\b/);
@@ -410,7 +420,7 @@ test('opening an existing State Database does not wait for a writer', async (t) 
     // The writer holds its lock until this case ends, so an openDb that waited for it would fail with SQLITE_BUSY.
     const db = sqlite.openDb(commonDir);
     assert.equal(
-      db.prepare('SELECT count(*) AS n FROM records').get().n,
+      db.prepare('SELECT count(*) AS n FROM records').get()?.n,
       0,
       'reads still work while the writer holds its lock',
     );
@@ -441,6 +451,6 @@ test('close releases the database so the directory can be removed', async (t) =>
   assert.ok(!existsSync(commonDir));
   // A later call opens a fresh connection rather than reusing the closed one.
   await record.save(newExecution(commonDir));
-  assert.equal((await record.load(commonDir, 'ticket', 8)).ticket, 8);
+  assert.equal((await record.load(commonDir, 'ticket', 8))?.ticket, 8);
   await sqlite.close(commonDir);
 });
