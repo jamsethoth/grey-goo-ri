@@ -28,8 +28,12 @@ export const BREAKAWAY_CHILD = childScript('breakaway-child');
 // `$`, `%` or `&` in a path stays a plain character, where a quoted path would be expanded by sh or cmd.exe. A name is
 // derived from its value, so two commands in one case never give one name two values.
 export function nodeCommand(t: TestContext, ...args: string[]) {
+  // A case past its timeout has run its cleanup, so a variable set now would outlive it.
+  t.signal.throwIfAborted();
   return [process.execPath, ...args]
     .map((value) => {
+      // cmd.exe leaves %NAME% as it is when NAME is empty, so an empty argument is written as one.
+      if (value === '') return '""';
       const name = `GG_TEST_ARG_${createHash('sha256').update(value).digest('hex').slice(0, 16).toUpperCase()}`;
       // set once per case: a second caseEnv would restore the value the first had set, after the first removed it
       if (process.env[name] !== value) caseEnv.caseEnv(t, { [name]: value });
