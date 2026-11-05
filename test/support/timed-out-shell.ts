@@ -71,7 +71,7 @@ export async function timedOutOrphan(
   name: string,
   { beforeClock, ...options }: ShellCaseOptions & { beforeClock?: () => void } = {},
 ) {
-  const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(directory, name);
+  const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(t, directory, name);
   t.after(() => processProbe.endProcessIn(pidFile));
   let seen: commandCleanup.Seen = new Map();
   const ready = () => {

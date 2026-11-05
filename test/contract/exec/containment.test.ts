@@ -19,7 +19,7 @@ test('a job names the processes it holds, leaving out the console host of its sh
   const pidFile = join(dir, 'sleeper.pid');
   const { child, job } = containment.start(
     kernel32,
-    childScripts.nodeCommand(childScripts.LONG_LIVED, pidFile),
+    childScripts.nodeCommand(t, childScripts.LONG_LIVED, pidFile),
     undefined,
   );
   assert.ok(job, 'the job was not set up');

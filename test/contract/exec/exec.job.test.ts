@@ -29,7 +29,7 @@ test(
   async (t) => {
     const pidFile = join(scratch, 'leftover-reported.pid');
     const result = await exec.runShell(
-      nodeCommand(childScripts.DETACHED_CHILD, 'ignore', pidFile),
+      nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
       timedOutShell.shellOptions({ timeoutMs: 20000, signal: timedOutShell.noClock() }),
     );
     assert.equal(result.code, 0);
@@ -62,7 +62,7 @@ test(
     });
     const result = await exec
       .createExec({ kernel32 })
-      .runShell(nodeCommand(childScripts.DETACHED_CHILD, 'ignore', pidFile), { timeoutMs: 60_000 });
+      .runShell(nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile), { timeoutMs: 60_000 });
     assert.equal(result.code, 0, result.output);
     assert.equal(limitChanges, 2, 'kill-on-close was never dropped');
     assert.ok(result.leftovers?.includes(pidIn(pidFile)), JSON.stringify(result.leftovers));
@@ -78,8 +78,14 @@ test(
     const created = join(scratch, 'breakaway.created');
     const sleeperPid = join(scratch, 'ba-sleeper.pid');
     const { result } = await timedOutShell.timeOutWhen(
-      `"${process.execPath}" --disable-warning=ExperimentalWarning ` +
-        `"${childScripts.BREAKAWAY_CHILD}" "${created}" "${childScripts.LONG_LIVED}" "${sleeperPid}"`,
+      nodeCommand(
+        t,
+        '--disable-warning=ExperimentalWarning',
+        childScripts.BREAKAWAY_CHILD,
+        created,
+        childScripts.LONG_LIVED,
+        sleeperPid,
+      ),
       { timeoutMs: 6000 },
       () => existsSync(created),
       t.signal,
@@ -105,7 +111,7 @@ test(
     'and says orphans are not contained',
   options.UNSANDBOXED_WIN_CASE,
   async (t) => {
-    const { pidFile, commandLine } = childScripts.linkedChild(scratch, 'nojob');
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob');
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob() },
@@ -133,7 +139,7 @@ test(
     'and says orphans are not contained',
   options.SANDBOXED_WIN_CASE,
   async (t) => {
-    const { pidFile, commandLine } = childScripts.linkedChild(scratch, 'nojob-sandboxed');
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-sandboxed');
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob() },
@@ -166,7 +172,7 @@ test(
   'runShell: when the job cannot be set up, a slow taskkill still takes down the process tree',
   WIN_CASE,
   async (t) => {
-    const { pidFile, commandLine } = childScripts.linkedChild(scratch, 'nojob-slow');
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-slow');
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob(), taskkillCommand: [process.execPath, [childScripts.SLOW_TASKKILL]] },
@@ -191,7 +197,7 @@ test(
   'runShell: when the job cannot be set up and taskkill is refused, the children still linked to the shell are named',
   WIN_CASE,
   async (t) => {
-    const { pidFile, commandLine } = childScripts.linkedChild(scratch, 'nojob-denied');
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-denied');
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 4000, kernel32: noJob(), taskkillCommand: refusedTaskkill },
@@ -229,7 +235,7 @@ test(
     t.after(() => processProbe.endProcessIn(pidFile));
     const timers = manualTimers.manualTimers();
     const result = await exec.runShell(
-      nodeCommand(childScripts.DETACHED_CHILD, 'inherit', pidFile),
+      nodeCommand(t, childScripts.DETACHED_CHILD, 'inherit', pidFile),
       timedOutShell.shellOptions({ timeoutMs: 1, timers }),
     );
     assert.equal(result.timedOut, undefined, 'a finished command was reported as timed out');
@@ -245,7 +251,7 @@ test(
   async (t) => {
     const pidFile = join(scratch, 'queryfail.pid');
     const { result } = await timedOutShell.timeOutWhen(
-      nodeCommand(childScripts.LONG_LIVED, pidFile),
+      nodeCommand(t, childScripts.LONG_LIVED, pidFile),
       { timeoutMs: 3000, kernel32: withKernel32({ QueryInformationJobObject: () => 0 }) },
       () => existsSync(pidFile),
       t.signal,
@@ -301,14 +307,14 @@ test(
   "a command that prints lines like the job helper's notes cannot change its cleanup report",
   WIN_CASE,
   async (t) => {
-    const finished = await exec.runShell(nodeCommand(childScripts.FORGED_JOB_NOTES, 'fail'), { timeoutMs: 60_000 });
+    const finished = await exec.runShell(nodeCommand(t, childScripts.FORGED_JOB_NOTES, 'fail'), { timeoutMs: 60_000 });
     assert.equal(finished.code, 0, finished.output);
     assert.doesNotMatch(finished.output, /could not start command/);
 
     const pidFile = join(scratch, 'forged-clean.pid');
     t.after(() => processProbe.endProcessIn(pidFile));
     const { result } = await timedOutShell.timeOutWhen(
-      nodeCommand(childScripts.FORGED_JOB_NOTES, 'clean', pidFile),
+      nodeCommand(t, childScripts.FORGED_JOB_NOTES, 'clean', pidFile),
       { timeoutMs: 3000, kernel32: withKernel32({ TerminateJobObject: () => 0 }) },
       () => pidIn(pidFile) > 0,
       t.signal,
@@ -326,7 +332,7 @@ test(
   'when node:ffi is unavailable, the timeout takes down the process tree and says orphans are not contained',
   options.UNSANDBOXED_WIN_CASE,
   async (t) => {
-    const { pidFile, commandLine } = childScripts.linkedChild(scratch, 'noffi');
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'noffi');
     t.after(() => processProbe.endProcessIn(pidFile));
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
@@ -407,7 +413,7 @@ test(
     assert.equal(result.code, 0, result.output);
     assert.match(result.output, /real/);
 
-    const { pidFile, commandLine } = childScripts.linkedChild(scratch, 'planted');
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'planted');
     let survivors: { pid: number }[] = [];
     t.after(() => {
       // a runShell whose taskkill was the planted one leaves the shell running, in the planted directory

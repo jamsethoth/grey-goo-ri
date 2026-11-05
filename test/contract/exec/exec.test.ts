@@ -29,26 +29,26 @@ test('run: child that exits early while 5 MB of stdin is written resolves/reject
   await assert.rejects(exec.run(process.execPath, args, { input }), (err: exec.CommandError) => err.code === 3);
 });
 
-test('run and runShell read a multi-byte character split across chunks exactly', async () => {
+test('run and runShell read a multi-byte character split across chunks exactly', async (t) => {
   assert.equal((await exec.run(process.execPath, [childScripts.SPLIT_CHARACTER, '200'])).stdout.trim(), '€');
-  assert.equal((await exec.runShell(nodeCommand(childScripts.SPLIT_CHARACTER, '200'))).output.trim(), '€');
+  assert.equal((await exec.runShell(nodeCommand(t, childScripts.SPLIT_CHARACTER, '200'))).output.trim(), '€');
 });
 
 // Not timed out is the promptness check: a command left waiting on stdin would run until the case timeout. A
 // wall-clock bound here measured the Windows job helper's cold start (8 to 15 s early in a loaded suite), so it was
 // dropped, with the owner's approval, from this ported case.
-test('runShell: a command waiting for stdin EOF returns promptly', CASE, async () => {
+test('runShell: a command waiting for stdin EOF returns promptly', CASE, async (t) => {
   const result = await exec.runShell(
-    nodeCommand(childScripts.STDIN_EOF, 'eof'),
+    nodeCommand(t, childScripts.STDIN_EOF, 'eof'),
     shellOptions({ timeoutMs: 20000, signal: noClock() }),
   );
   assert.equal(result.timedOut, undefined, result.output);
   assert.match(result.output, /eof/);
 });
 
-test('runShell with a timeout still returns the exit code and output of a command that finishes', CASE, async () => {
+test('runShell with a timeout still returns the exit code and output of a command that finishes', CASE, async (t) => {
   const result = await exec.runShell(
-    nodeCommand(childScripts.PRINTS_LINE, 'hi', '7'),
+    nodeCommand(t, childScripts.PRINTS_LINE, 'hi', '7'),
     shellOptions({ timeoutMs: 20000, signal: noClock() }),
   );
   assert.equal(result.code, 7);
@@ -59,15 +59,15 @@ test('runShell with a timeout still returns the exit code and output of a comman
 });
 
 // The budget is the case timeout: the command never ends on its own, so a runShell that waited for it could not pass.
-test('runShell: a command outliving timeoutMs returns within budget, flagged as timed out', CASE, async () => {
-  const result = await exec.runShell(nodeCommand(childScripts.LONG_LIVED, join(scratch, 'sleep.pid')), {
+test('runShell: a command outliving timeoutMs returns within budget, flagged as timed out', CASE, async (t) => {
+  const result = await exec.runShell(nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'sleep.pid')), {
     timeoutMs: 500,
   });
   assert.equal(result.timedOut, true);
 });
 
-test('a timeout note names gg', CASE, async () => {
-  const result = await exec.runShell(nodeCommand(childScripts.LONG_LIVED, join(scratch, 'sleep-note.pid')), {
+test('a timeout note names gg', CASE, async (t) => {
+  const result = await exec.runShell(nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'sleep-note.pid')), {
     timeoutMs: 500,
   });
   assert.match(result.output, /\n\[gg: timed out after 500 ms\]/);
@@ -80,7 +80,7 @@ test(
   async (t) => {
     const printed = join(scratch, 'sentinel.printed');
     const { result } = await timedOutShell.timeOutWhen(
-      nodeCommand(childScripts.LONG_LIVED, printed, 'SENTINEL-BEFORE-HANG'),
+      nodeCommand(t, childScripts.LONG_LIVED, printed, 'SENTINEL-BEFORE-HANG'),
       { timeoutMs: 4000 },
       () => existsSync(printed),
       t.signal,
@@ -111,7 +111,7 @@ test(
   async (t) => {
     const pidFile = join(scratch, 'leftover.pid');
     const result = await exec.runShell(
-      nodeCommand(childScripts.DETACHED_CHILD, 'ignore', pidFile),
+      nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
       shellOptions({ timeoutMs: 20000, signal: noClock() }),
     );
     assert.equal(result.code, 0);
@@ -126,8 +126,8 @@ test(
   },
 );
 
-test('the result names the containment it used', CASE, async () => {
-  const command = nodeCommand(childScripts.PRINTS_LINE, 'ran');
+test('the result names the containment it used', CASE, async (t) => {
+  const command = nodeCommand(t, childScripts.PRINTS_LINE, 'ran');
   const win = process.platform === 'win32';
   const contained: exec.ShellResult & { containmentError?: string } = await exec.runShell(command, {
     timeoutMs: 60_000,
@@ -145,10 +145,10 @@ test('the result names the containment it used', CASE, async () => {
 
 // The case moves runShell's clock itself, and never past the timeout: a clock that waited for an abort the signal had
 // already given would never fire.
-test('runShell: a signal aborted before the call starts the timeout clock at the call', CASE, async () => {
+test('runShell: a signal aborted before the call starts the timeout clock at the call', CASE, async (t) => {
   const timers = manualTimers.manualTimers();
   const running = exec.runShell(
-    nodeCommand(childScripts.LONG_LIVED, join(scratch, 'aborted-early.pid')),
+    nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'aborted-early.pid')),
     shellOptions({ timeoutMs: 7000, signal: AbortSignal.abort(), timers }),
   );
   timers.tick(7000);

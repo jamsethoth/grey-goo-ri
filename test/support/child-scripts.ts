@@ -1,8 +1,10 @@
 // The child scripts the exec contract suites run, and the command lines that start them. Each script takes its inputs
-// as arguments, so no value a case passes becomes code; with none, as the test runner loads it, it does nothing. Spawns
-// nothing itself.
+// as arguments; with none, as the test runner loads it, it does nothing. Spawns nothing itself.
+import type { TestContext } from 'node:test';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as caseEnv from './case-env.ts';
 
 // How long a test process lives unless it is killed: longer than any case, so no command ends on its own first.
 export const LIVES_MS = 600_000;
@@ -21,22 +23,34 @@ export const SLOW_TASKKILL = childScript('slow-taskkill');
 export const FORGED_JOB_NOTES = childScript('forged-job-notes');
 export const BREAKAWAY_CHILD = childScript('breakaway-child');
 
-// The command line that runs node with these arguments, each one quoted, for cmd.exe and sh alike.
-export const nodeCommand = (...args: string[]) => [process.execPath, ...args].map((arg) => `"${arg}"`).join(' ');
+// The command line that runs node with these arguments. No value is written into it: each is set in an environment
+// variable for the case, and the line names the variable, which the shell expands once and never parses again. So a
+// `$`, `%` or `&` in a path stays a plain character, where a quoted path would be expanded by sh or cmd.exe. A name is
+// derived from its value, so two commands in one case never give one name two values.
+export function nodeCommand(t: TestContext, ...args: string[]) {
+  return [process.execPath, ...args]
+    .map((value) => {
+      const name = `GG_TEST_ARG_${createHash('sha256').update(value).digest('hex').slice(0, 16).toUpperCase()}`;
+      // set once per case: a second caseEnv would restore the value the first had set, after the first removed it
+      if (process.env[name] !== value) caseEnv.caseEnv(t, { [name]: value });
+      return process.platform === 'win32' ? `"%${name}%"` : `"$${name}"`;
+    })
+    .join(' ');
+}
 
 // A command whose child starts a middle process, which writes midFile, starts a detached grandchild that writes
 // pidFile, and lingers until goFile exists; then it exits, leaving the grandchild an orphan while the command outlives
 // the timeout.
-export function orphanChain(directory: string, name: string) {
+export function orphanChain(t: TestContext, directory: string, name: string) {
   const pidFile = join(directory, `${name}.pid`);
   const midFile = join(directory, `${name}-mid.pid`);
   const goFile = join(directory, `${name}.go`);
-  const commandLine = nodeCommand(CHILD_STARTER, ORPHAN_MIDDLE, midFile, goFile, LONG_LIVED, pidFile);
+  const commandLine = nodeCommand(t, CHILD_STARTER, ORPHAN_MIDDLE, midFile, goFile, LONG_LIVED, pidFile);
   return { pidFile, midFile, goFile, commandLine };
 }
 
 // A command whose child, still linked to the shell, writes pidFile.
-export function linkedChild(directory: string, name: string) {
+export function linkedChild(t: TestContext, directory: string, name: string) {
   const pidFile = join(directory, `${name}.pid`);
-  return { pidFile, commandLine: nodeCommand(CHILD_STARTER, LONG_LIVED, pidFile) };
+  return { pidFile, commandLine: nodeCommand(t, CHILD_STARTER, LONG_LIVED, pidFile) };
 }

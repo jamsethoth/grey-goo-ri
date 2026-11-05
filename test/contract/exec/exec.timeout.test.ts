@@ -143,7 +143,7 @@ test(
   'runShell timeout does not name a descendant the watcher saw exit, though a new process now holds its pid',
   POSIX_CASE,
   async (t) => {
-    const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(scratch, 'pruned');
+    const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(t, scratch, 'pruned');
     t.after(() => processProbe.endProcessIn(pidFile));
     const append = `{ print } END { print mid, 1, "Thu Jan  1 00:00:02 1970" }`;
     const listing: [string, string[]] = [
@@ -197,7 +197,7 @@ test(
     t.after(() => processProbe.endProcessIn(holderPid));
     // it writes its pid so that a failed case can end it: it waits for the ps, and the caller's kill does not reach it
     const quitPid = join(scratch, 'stalled-quit.pid');
-    const quit = childScripts.nodeCommand(childScripts.WAITS_FOR_FILE, psPid, quitPid);
+    const quit = childScripts.nodeCommand(t, childScripts.WAITS_FOR_FILE, psPid, quitPid);
     const child = spawn(process.execPath, [childScripts.SHELL_CALLER, quit], {
       stdio: ['ignore', 'ignore', 'inherit'],
     });
@@ -224,7 +224,7 @@ test(
       ['-c', 'PATH="$1" exec ps -e -o pid=,ppid=,lstart=', 'sh', process.env.PATH ?? ''],
     ];
     caseEnv.psStandIn(t, scratch, 'blind-ps', 'exit 1');
-    const { pidFile, commandLine } = childScripts.orphanChain(scratch, 'blind');
+    const { pidFile, commandLine } = childScripts.orphanChain(t, scratch, 'blind');
     t.after(() => processProbe.endProcessIn(pidFile));
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
@@ -248,7 +248,7 @@ test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
   const pid = pidIn(pidFile);
   try {
     const result = await exec.runShell(
-      childScripts.nodeCommand(childScripts.LONG_LIVED, join(scratch, 'unrelated-hang.pid')),
+      childScripts.nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'unrelated-hang.pid')),
       {
         timeoutMs: 800,
       },
