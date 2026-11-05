@@ -76,6 +76,50 @@ test(
   },
 );
 
+// The case ends with the grandchild running and its pid not yet in the file the chain's cleanup reads, here a file it
+// never writes, and the watcher's ps always fails. Only the listing at the timeout can find it, through its parent, so
+// the case's end must leave the parent to that listing.
+test(
+  'a case that ends before its grandchild writes its pid does not leave that grandchild running',
+  POSIX_CASE,
+  async (t) => {
+    const listing: [string, string[]] = [
+      'sh',
+      ['-c', 'PATH="$1" exec ps -e -o pid=,ppid=,lstart=', 'sh', process.env.PATH ?? ''],
+    ];
+    caseEnv.psStandIn(t, scratch, 'unwritten-ps', 'exit 1');
+    const grandchildPid = join(scratch, 'unwritten-grandchild.pid');
+    t.after(() => processProbe.endProcessIn(grandchildPid));
+    const cancel = new AbortController();
+    const cancelled = t.test(
+      'a case that is cancelled',
+      { signal: cancel.signal, todo: 'cancelled on purpose' },
+      async (inner) => {
+        const { midFile, goFile } = childScripts.orphanChain(inner, scratch, 'unwritten');
+        await timedOutShell.timeOutWhen(
+          childScripts.nodeCommand(
+            inner,
+            childScripts.CHILD_STARTER,
+            childScripts.ORPHAN_MIDDLE,
+            midFile,
+            goFile,
+            childScripts.LONG_LIVED,
+            grandchildPid,
+          ),
+          { timeoutMs: 1, snapshotCommand: listing },
+          () => false,
+          inner,
+        );
+      },
+    );
+    await waitFor(() => pidIn(grandchildPid) > 0, t.signal);
+    const pid = pidIn(grandchildPid);
+    cancel.abort();
+    await cancelled;
+    await waitFor(() => !alive(pid), t.signal); // a grandchild left running fails at the case timeout
+  },
+);
+
 test('runShell reports surviving PIDs and the kill error when termination fails', CASE, async (t) => {
   const { result, pid } = await timedOutShell.timedOutOrphan(t, scratch, 'refused', {
     killPid: () => {

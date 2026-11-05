@@ -288,7 +288,8 @@ test(
   async (t) => {
     const { kernel32, members } = kernel32Doubles.refusedTermination();
     t.after(() => members.forEach(processProbe.endProcess));
-    const pidFile = join(scratch, 'cancelled.pid');
+    // as orphanChain names them
+    const [pidFile, midFile] = ['cancelled.pid', 'cancelled-mid.pid'].map((name) => join(scratch, name));
     const cancel = new AbortController();
     const cancelled = t.test(
       'a case that is cancelled',
@@ -303,10 +304,12 @@ test(
       },
     );
     await waitFor(() => pidIn(pidFile) > 0, t.signal);
+    const chain = [pidIn(pidFile), pidIn(midFile)];
     cancel.abort();
     await cancelled;
-    // shell, top, middle and grandchild, and any console host; one left running fails at the case timeout
-    await waitFor(() => members.size >= 4 && ![...members].some(alive), t.signal);
+    // The case's end may have ended those two before the job is listed, but the shell and top are always listed. One
+    // left running fails at the case timeout.
+    await waitFor(() => members.size >= 2 && ![...members, ...chain].some(alive), t.signal);
   },
 );
 
