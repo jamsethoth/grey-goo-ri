@@ -281,7 +281,7 @@ test('runShell: job membership larger than the first query buffer is still liste
 });
 
 // Termination is refused and the middle is never told to exit, so only the case's end can end the chain. The inner case
-// is cancelled as a timeout would end it: its cleanup has run before runShell answers, and it stays a failing todo.
+// is cancelled as a timeout would end it: its cleanup starts before runShell answers, and it stays a failing todo.
 test(
   'a case that ends before its refused command answers leaves no process of the chain running',
   WIN_CASE,

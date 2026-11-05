@@ -9,6 +9,7 @@ import type * as containment from '../../lib/containment.ts';
 import * as exec from '../../lib/exec.ts';
 import * as childScripts from './child-scripts.ts';
 import * as processProbe from './process-probe.ts';
+import * as shellCaseOptions from './shell-case-options.ts';
 
 // runShell's real inputs, cwd and timeoutMs, and its test hooks, with the FFI it runs on when one is given.
 export type ShellCaseOptions = {
@@ -32,9 +33,10 @@ export const shellOptions = ({ cwd, timeoutMs, ...testHooks }: ShellCaseOptions 
 
 // Runs commandLine with its timeout clock held until ready() holds, so the processes a case checks exist before the
 // timeout fires however slowly they start. ready is false when the command ended first.
-// The case's own signal ends the wait too, and then the command is timed out before the case fails. The processes the
-// run names are ended when the case ends; a case past its timeout ends before the run answers, so then they are ended
-// when it answers. options.kernel32, when given, is the FFI runShell runs on.
+// The case's own signal ends the wait too, and then the command is timed out before the case fails.
+// The case's end waits for the run, also at its timeout, while the case's body still waits, and then ends what the run
+// names: a cleanup that outlasted the case would read the next case's environment. The bound is for a run that never
+// answers. options.kernel32, when given, is the FFI runShell runs on.
 export async function timeOutWhen(
   commandLine: string,
   { kernel32, ...options }: ShellCaseOptions,
@@ -44,18 +46,24 @@ export async function timeOutWhen(
   const { signal } = t;
   const { runShell } = kernel32 === undefined ? exec : exec.createExec({ kernel32 });
   const clock = new AbortController();
-  const named: number[] = [];
-  const endNamed = () => named.forEach((pid) => processProbe.endProcess(pid));
-  let caseEnded = false;
-  t.after(() => {
-    caseEnded = true;
-    endNamed();
-  });
   let settled = false;
   let wasReady = false;
   const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal })).finally(() => {
     settled = true;
   });
+  t.after(
+    async () => {
+      clock.abort();
+      await running.then(
+        ({ survivors = [], leftovers = [] }) => {
+          for (const survivor of survivors) processProbe.endProcess(survivor.pid);
+          for (const pid of leftovers) processProbe.endProcess(pid);
+        },
+        () => {},
+      );
+    },
+    { timeout: shellCaseOptions.CASE.timeout },
+  );
   try {
     while (!settled && !signal.aborted && !ready()) await sleep(50);
     wasReady = !signal.aborted && ready();
@@ -63,13 +71,7 @@ export async function timeOutWhen(
     // also when ready() throws, as it can once a failed case's files are gone: the command is timed out and cleaned up
     // before the case goes on, and the error ready() threw is the one the case reports
     clock.abort();
-    await running.then(
-      ({ survivors = [], leftovers = [] }) => {
-        named.push(...survivors.map((survivor) => survivor.pid), ...leftovers);
-        if (caseEnded) endNamed();
-      },
-      () => {},
-    );
+    await running.catch(() => {});
   }
   const result = (await running) as TimedOutResult;
   signal.throwIfAborted();
