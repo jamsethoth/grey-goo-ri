@@ -86,7 +86,7 @@ export function withinMatcher(within: integrity.Within | undefined): PathTest {
   const fold = process.platform === 'win32' ? (text: string) => text.toLowerCase() : (text: string) => text;
   const under = (within.paths ?? []).map((path) => fold(path.replace(/\/+$/, '')));
   // git reads a glob preflight accepts as its :(glob,icase) pathspec the way the test path matcher does
-  // (test/e2e/checks.test.mjs shows it), so the fake reads every glob with that matcher.
+  // (test/e2e/checks.test.ts shows it), so the fake reads every glob with that matcher.
   const globbed = checks.testPathMatcher(within.globs ?? []);
   const excluded = checks.testPathMatcher(within.exclude ?? []);
   const included = (path: string) =>
