@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { matchesGlob, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as runSuite from '../../scripts/run-suite.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const launcherUrl = new URL('../../scripts/run-suite.ts', import.meta.url);
@@ -16,42 +17,37 @@ const checks = [
   ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
 ];
 
-test('the full stage runs node --test over the whole suite in the repo root, at most twelve files at once', async () => {
-  const runSuite = await import(launcherUrl);
-  const cmd = runSuite.suiteCommand({}, []);
-  assert.equal(cmd.command, process.execPath);
-  assert.deepEqual(cmd.steps.at(-1), ['--test', concurrency]);
-  assert.equal(resolve(cmd.cwd), resolve(root));
+test('the full stage runs node --test over the whole suite in the repo root, at most twelve files at once', () => {
+  const suite = runSuite.suiteCommand({}, []);
+  assert.equal(suite.command, process.execPath);
+  assert.deepEqual(suite.steps.at(-1), ['--test', concurrency]);
+  assert.equal(resolve(suite.cwd), resolve(root));
 });
 
-test('the full stage runs the format check, lint and the type check before the tests', async () => {
-  const runSuite = await import(launcherUrl);
+test('the full stage runs the format check, lint and the type check before the tests', () => {
   assert.deepEqual(runSuite.suiteCommand({}, []).steps, [...checks, ['--test', concurrency]]);
 });
 
-test('the fast stage runs the format check, lint and the type check before the tests', async () => {
-  const runSuite = await import(launcherUrl);
+test('the fast stage runs the format check, lint and the type check before the tests', () => {
   assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps, [
     ...checks,
     ['--test', concurrency, 'test/unit/**/*.test.{mjs,ts}'],
   ]);
 });
 
-test('the fast stage runs only test/unit and the contract suites it is given', async () => {
-  const runSuite = await import(launcherUrl);
-  const cmd = runSuite.suiteCommand({}, ['fast', 'sqlite', 'git']);
-  assert.deepEqual(cmd.steps.at(-1), [
+test('the fast stage runs only test/unit and the contract suites it is given', () => {
+  const suite = runSuite.suiteCommand({}, ['fast', 'sqlite', 'git']);
+  assert.deepEqual(suite.steps.at(-1), [
     '--test',
     concurrency,
     'test/unit/**/*.test.{mjs,ts}',
     'test/contract/sqlite/**/*.test.{mjs,ts}',
     'test/contract/git/**/*.test.{mjs,ts}',
   ]);
-  assert.equal(resolve(cmd.cwd), resolve(root));
+  assert.equal(resolve(suite.cwd), resolve(root));
 });
 
-test('the fast stage with no boundary runs only test/unit', async () => {
-  const runSuite = await import(launcherUrl);
+test('the fast stage with no boundary runs only test/unit', () => {
   assert.deepEqual(runSuite.suiteCommand({}, ['fast']).steps.at(-1), [
     '--test',
     concurrency,
@@ -59,23 +55,20 @@ test('the fast stage with no boundary runs only test/unit', async () => {
   ]);
 });
 
-test('the check stage runs the format check, lint and the type check and no tests', async () => {
-  const runSuite = await import(launcherUrl);
+test('the check stage runs the format check, lint and the type check and no tests', () => {
   assert.deepEqual(runSuite.suiteCommand({}, ['check']).steps, checks);
 });
 
-test('the check stage takes no boundary names', async () => {
-  const runSuite = await import(launcherUrl);
+test('the check stage takes no boundary names', () => {
   assert.throws(() => runSuite.suiteCommand({}, ['check', 'git']), {
     name: 'SuiteUsageError',
     message: /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]\n\s+node scripts\/run-suite\.ts check\n/,
   });
 });
 
-test('the coverage stage runs test/unit with coverage of lib/ outside its process boundaries, and no checks', async () => {
-  const runSuite = await import(launcherUrl);
-  const cmd = runSuite.suiteCommand({}, ['coverage']);
-  assert.deepEqual(cmd.steps, [
+test('the coverage stage runs test/unit with coverage of lib/ outside its process boundaries, and no checks', () => {
+  const suite = runSuite.suiteCommand({}, ['coverage']);
+  assert.deepEqual(suite.steps, [
     [
       '--test',
       concurrency,
@@ -93,18 +86,16 @@ test('the coverage stage runs test/unit with coverage of lib/ outside its proces
       'test/unit/**/*.test.{mjs,ts}',
     ],
   ]);
-  assert.equal(cmd.coverage, 'check');
+  assert.equal(suite.coverage, 'check');
 });
 
-test('coverage update runs the same tests and records a rise', async () => {
-  const runSuite = await import(launcherUrl);
-  const cmd = runSuite.suiteCommand({}, ['coverage', 'update']);
-  assert.deepEqual(cmd.steps, runSuite.suiteCommand({}, ['coverage']).steps);
-  assert.equal(cmd.coverage, 'update');
+test('coverage update runs the same tests and records a rise', () => {
+  const suite = runSuite.suiteCommand({}, ['coverage', 'update']);
+  assert.deepEqual(suite.steps, runSuite.suiteCommand({}, ['coverage']).steps);
+  assert.equal(suite.coverage, 'update');
 });
 
-test('coverage totals sum every file of an lcov report, floored to two places', async () => {
-  const runSuite = await import(launcherUrl);
+test('coverage totals sum every file of an lcov report, floored to two places', () => {
   const lcov = [
     'SF:lib/a.ts',
     'FNF:2',
@@ -125,32 +116,28 @@ test('coverage totals sum every file of an lcov report, floored to two places', 
   assert.deepEqual(runSuite.coverageTotals(lcov), { lines: 33.33, functions: 66.66 });
 });
 
-test('coverage that falls below the recorded figures is reported as a fall', async () => {
-  const runSuite = await import(launcherUrl);
+test('coverage that falls below the recorded figures is reported as a fall', () => {
   assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.31, functions: 97.25 }), {
     fell: ['lines 98.32 -> 98.31'],
     rose: [],
   });
 });
 
-test('coverage above the recorded figures is reported as a rise to record', async () => {
-  const runSuite = await import(launcherUrl);
+test('coverage above the recorded figures is reported as a rise to record', () => {
   assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.32, functions: 97.3 }), {
     fell: [],
     rose: ['functions 97.25 -> 97.3'],
   });
 });
 
-test('coverage equal to the recorded figures neither falls nor rises', async () => {
-  const runSuite = await import(launcherUrl);
+test('coverage equal to the recorded figures neither falls nor rises', () => {
   assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.32, functions: 97.25 }), {
     fell: [],
     rose: [],
   });
 });
 
-test('a platform with no recorded figures has risen', async () => {
-  const runSuite = await import(launcherUrl);
+test('a platform with no recorded figures has risen', () => {
   assert.deepEqual(runSuite.compareCoverage(undefined, { lines: 98.32, functions: 97.25 }), {
     fell: [],
     rose: ['lines unrecorded -> 98.32', 'functions unrecorded -> 97.25'],
@@ -163,7 +150,7 @@ test('every platform CI runs has recorded coverage figures', async () => {
 });
 
 // ADR 0016: anything outside the closed set stops the launcher before it runs anything.
-const refused = [
+const refused: [string, string[]][] = [
   ['a node flag in place of the stage', ['--import=x']],
   ['a stage other than fast', ['full']],
   ['a flag after fast', ['fast', '--test-name-pattern=x']],
@@ -176,8 +163,7 @@ const refused = [
   ['a flag after coverage update', ['coverage', 'update', '--test-name-pattern=x']],
 ];
 for (const [what, argv] of refused) {
-  test(`the launcher refuses ${what}`, async () => {
-    const runSuite = await import(launcherUrl);
+  test(`the launcher refuses ${what}`, () => {
     assert.throws(() => runSuite.suiteCommand({}, argv), {
       name: 'SuiteUsageError',
       message: /^usage: node scripts\/run-suite\.ts \[fast \[boundary \.\.\.\]\]/,
@@ -185,8 +171,7 @@ for (const [what, argv] of refused) {
   });
 }
 
-test('suiteCommand drops NODE_OPTIONS, NODE_PATH and npm_config_* and keeps the rest', async () => {
-  const runSuite = await import(launcherUrl);
+test('suiteCommand drops NODE_OPTIONS, NODE_PATH and npm_config_* and keeps the rest', () => {
   const { env } = runSuite.suiteCommand(
     { NODE_OPTIONS: '--import=x', NODE_PATH: 'p', npm_config_node_options: '--import=x', KEEP: '1' },
     [],

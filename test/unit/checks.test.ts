@@ -6,29 +6,29 @@ import { join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
 import { fakeGit } from '../support/fake-git.ts';
 
-const fixture = (name) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
+const fixture = (name: string) => readFileSync(new URL(`../fixtures/runner-output/${name}`, import.meta.url), 'utf8');
 
 test('red check: a timed-out run is rejected even if it printed the test name', () => {
-  const r = checks.redCheck({ code: null, timedOut: true, output: 'not ok - rejects bad input' }, [
+  const red = checks.redCheck({ code: null, timedOut: true, output: 'not ok - rejects bad input' }, [
     'rejects bad input',
   ]);
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /timed out/i);
+  assert.equal(red.ok, false);
+  assert.match(red.reason ?? '', /timed out/i);
 });
 
 test('red check: runner-not-found is rejected', () => {
-  const r = checks.redCheck(
+  const red = checks.redCheck(
     { code: 127, output: 'rejects bad input\n[gg: could not start command (win32 error 2)]\n' },
     ['rejects bad input'],
   );
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /could not start|not found/i);
+  assert.equal(red.ok, false);
+  assert.match(red.reason ?? '', /could not start|not found/i);
 });
 
 test('red check: nonzero exit without the reported test names is rejected', () => {
-  const r = checks.redCheck({ code: 1, output: 'SyntaxError: unexpected token' }, ['rejects bad input']);
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /rejects bad input/);
+  const red = checks.redCheck({ code: 1, output: 'SyntaxError: unexpected token' }, ['rejects bad input']);
+  assert.equal(red.ok, false);
+  assert.match(red.reason ?? '', /rejects bad input/);
 });
 
 test('red check: nonzero exit naming a reported failing test is accepted', () => {
@@ -42,20 +42,21 @@ test('red check requires the named test to be failing where the runner reports p
   assert.equal(accepted.ok, true);
   assert.ok(!accepted.foundByNameOnly);
   // The name appears in the output, but the runner reports that test passing; only an unrelated test failed.
-  const r = checks.redCheck({ code: 1, output: fixture('node-spec-counterexample.txt') }, ['rejects bad input']);
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /rejects bad input/);
-  assert.match(r.reason, /pass/i);
+  const red = checks.redCheck({ code: 1, output: fixture('node-spec-counterexample.txt') }, ['rejects bad input']);
+  assert.equal(red.ok, false);
+  assert.match(red.reason ?? '', /rejects bad input/);
+  assert.match(red.reason ?? '', /pass/i);
 });
 
 test('red check reads coloured node:test spec output', () => {
   // As printed by node --test with FORCE_COLOR=1.
   const output =
-    '\x1b[32m✔ rejects bad input \x1b[90m(0.93ms)\x1b[39m\x1b[39m\n\x1b[31m✖ old unrelated test \x1b[90m(1.55ms)\x1b[39m\x1b[39m\n';
-  const r = checks.redCheck({ code: 1, output }, ['rejects bad input']);
-  assert.equal(r.ok, false);
-  assert.ok(!r.foundByNameOnly);
-  assert.match(r.reason, /pass/i);
+    '\x1b[32m✔ rejects bad input \x1b[90m(0.93ms)\x1b[39m\x1b[39m\n' +
+    '\x1b[31m✖ old unrelated test \x1b[90m(1.55ms)\x1b[39m\x1b[39m\n';
+  const red = checks.redCheck({ code: 1, output }, ['rejects bad input']);
+  assert.equal(red.ok, false);
+  assert.ok(!red.foundByNameOnly);
+  assert.match(red.reason ?? '', /pass/i);
   assert.deepEqual(checks.redCheck({ code: 1, output }, ['old unrelated test']), { ok: true });
 });
 
@@ -70,17 +71,18 @@ test('red check matches a full pytest identifier', () => {
   );
 });
 
-// tap-directives.txt is as printed by node --test --test-reporter=tap: only "old unrelated test" causes the nonzero exit.
+// tap-directives.txt is as printed by node --test --test-reporter=tap: only "old unrelated test" causes the nonzero
+// exit.
 test('red check rejects a test that TAP reports as TODO', () => {
-  const r = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['new test']);
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /TODO or SKIP/);
+  const red = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['new test']);
+  assert.equal(red.ok, false);
+  assert.match(red.reason ?? '', /TODO or SKIP/);
 });
 
 test('red check rejects a test that TAP reports as SKIP', () => {
-  const r = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['skipped one']);
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /TODO or SKIP/);
+  const red = checks.redCheck({ code: 1, output: fixture('tap-directives.txt') }, ['skipped one']);
+  assert.equal(red.ok, false);
+  assert.match(red.reason ?? '', /TODO or SKIP/);
 });
 
 test('red check takes a lone TAP TODO line as per-test status, not grounds for the substring fallback', () => {
@@ -100,24 +102,24 @@ test('red check decodes an escaped backslash and hash in a passing TAP test name
     'passes with \\ backslash and # hash',
   ]);
   assert.equal(passing.ok, false);
-  assert.match(passing.reason, /pass/i);
+  assert.match(passing.reason ?? '', /pass/i);
 });
 
 test('red check keeps a genuine TAP failure whatever order a same-named TODO or SKIP appears in', () => {
-  const tap = (...lines) => lines.join('\n') + '\n';
+  const tap = (...lines: string[]) => lines.join('\n') + '\n';
   const failThenTodo = tap('not ok 1 - dup', 'not ok 2 - dup # TODO', 'ok 3 - dup # SKIP');
   const todoThenFail = tap('not ok 1 - dup # TODO', 'ok 2 - dup # SKIP', 'not ok 3 - dup');
   assert.deepEqual(checks.redCheck({ code: 1, output: failThenTodo }, ['dup']), { ok: true });
   assert.deepEqual(checks.redCheck({ code: 1, output: todoThenFail }, ['dup']), { ok: true });
   const onlyExcused = checks.redCheck({ code: 1, output: tap('not ok 1 - dup # TODO', 'ok 2 - dup # SKIP') }, ['dup']);
   assert.equal(onlyExcused.ok, false);
-  assert.match(onlyExcused.reason, /TODO or SKIP/);
+  assert.match(onlyExcused.reason ?? '', /TODO or SKIP/);
 });
 
 test('red check falls back to the substring rule and marks it found by name only', () => {
-  const r = checks.redCheck({ code: 1, output: fixture('no-status.txt') }, ['rejects bad input']);
-  assert.equal(r.ok, true);
-  assert.equal(r.foundByNameOnly, true);
+  const red = checks.redCheck({ code: 1, output: fixture('no-status.txt') }, ['rejects bad input']);
+  assert.equal(red.ok, true);
+  assert.equal(red.foundByNameOnly, true);
 });
 
 // Default jest output for several files: no ✓ or ✕ lines, one `● suite › test` heading per failure.
@@ -174,24 +176,24 @@ test('red check reports a passing named test before an excused one', () => {
 });
 
 test('findings hash ignores whitespace, order and line numbers', () => {
-  const a = [
+  const findings = [
     { severity: 'major', file: 'lib/a.mjs', issue: 'Off by one at lib/a.mjs:12 in the loop', fix: 'x' },
     { severity: 'minor', file: 'lib/b.mjs', issue: 'Unused   variable on line 40', fix: 'y' },
     { severity: 'blocker', file: 'lib/c.mjs', issue: 'Throws at L7', fix: 'z' },
   ];
-  const b = [
+  const reordered = [
     { severity: 'blocker', file: 'lib/c.mjs', issue: '  Throws   at L99 ', fix: 'other' },
     { severity: 'major', file: 'lib/a.mjs', issue: 'Off by one at lib/a.mjs:345\n in the loop', fix: 'x' },
     { severity: 'minor', file: 'lib/b.mjs', issue: 'Unused variable on line 3', fix: 'y' },
   ];
-  const h = checks.findingsHash(a);
-  assert.match(h, /^[0-9a-f]{64}$/);
-  assert.equal(checks.findingsHash(b), h);
+  const hash = checks.findingsHash(findings);
+  assert.match(hash, /^[0-9a-f]{64}$/);
+  assert.equal(checks.findingsHash(reordered), hash);
 });
 
 test('findings hash changes with severity', () => {
-  const f = (severity) => [{ severity, file: 'lib/a.mjs', issue: 'Off by one', fix: 'x' }];
-  assert.notEqual(checks.findingsHash(f('major')), checks.findingsHash(f('minor')));
+  const findingsOf = (severity: string) => [{ severity, file: 'lib/a.mjs', issue: 'Off by one', fix: 'x' }];
+  assert.notEqual(checks.findingsHash(findingsOf('major')), checks.findingsHash(findingsOf('minor')));
 });
 
 const review = {
@@ -241,17 +243,17 @@ for (const [name, response, reason] of REVIEW_FAILS) {
 }
 
 test('green check reports a timeout as failed', async () => {
-  const calls = [];
-  const runShell = async (command, opts) => {
-    calls.push([command, opts]);
+  const calls: [string, { cwd: string; timeoutMs: number }][] = [];
+  const runShell = async (command: string, options: { cwd: string; timeoutMs: number }) => {
+    calls.push([command, options]);
     return { code: null, timedOut: true, output: 'still running' };
   };
-  const r = await checks.greenCheck('npm test', 'C:/repo', { runShell });
-  assert.equal(r.timedOut, true);
-  assert.equal(r.passed, false);
-  assert.equal(r.code, null);
-  assert.equal(r.output, 'still running');
-  assert.equal(typeof r.durationMs, 'number');
+  const green = await checks.greenCheck('npm test', 'C:/repo', { runShell });
+  assert.equal(green.timedOut, true);
+  assert.equal(green.passed, false);
+  assert.equal(green.code, null);
+  assert.equal(green.output, 'still running');
+  assert.equal(typeof green.durationMs, 'number');
   assert.deepEqual(calls, [['npm test', { cwd: 'C:/repo', timeoutMs: 30 * 60_000 }]]);
 });
 

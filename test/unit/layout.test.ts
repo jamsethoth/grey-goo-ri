@@ -7,8 +7,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
 // What makes a test medium (docs/testing.md, "Test sizes"), as it shows in a test file's source.
-// shortcut: a text check misses a bare `sh(` or an unlisted spawning helper; a runtime guard if the fast stage slows (docs/testing.md, "Considered and deferred").
-const MEDIUM = [
+// shortcut: a text check misses a bare `sh(` or an unlisted spawning helper; a runtime guard if the fast stage slows
+// (docs/testing.md, "Considered and deferred").
+const MEDIUM: [RegExp, string][] = [
   [/['"](?:node:)?child_process['"]/, 'imports node:child_process'],
   [/['"](?:\.\.\/)+lib\/(?:exec|git)\.ts['"]/, 'imports lib/exec.ts or lib/git.ts'],
   [/\b(?:git|integrity):\s*['"]real['"]/, 'asks for real git'],
@@ -16,9 +17,9 @@ const MEDIUM = [
   [/\b(?:golden|run|support|gitShell)\.sh\(|\b(?:holdLock|conflict|seedRepos)\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
-const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true })
-  .map((f) => f.split('\\').join('/'))
-  .filter((f) => /\.test\.(?:mjs|ts)$/.test(f) && f !== 'layout.test.mjs');
+const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
+  .map((file) => file.split('\\').join('/'))
+  .filter((file) => /\.test\.(?:mjs|ts)$/.test(file) && file !== 'layout.test.ts');
 
 const marked = [
   ["import { spawn } from 'node:child_process';", 'imports node:child_process'],
@@ -33,7 +34,7 @@ const marked = [
 for (const [text, what] of marked) {
   test(`the size check flags a unit file that ${what}: ${text}`, () => {
     assert.deepEqual(
-      MEDIUM.filter(([re]) => re.test(text)).map(([, w]) => w),
+      MEDIUM.filter(([re]) => re.test(text)).map(([, flagged]) => flagged),
       [what],
     );
   });
@@ -49,7 +50,7 @@ for (const file of unitFiles) {
   });
 }
 const SKIPPED = new Set(['.git', 'node_modules']);
-function repoFiles(dir = '') {
+function repoFiles(dir = ''): string[] {
   return readdirSync(root + dir, { withFileTypes: true }).flatMap((entry) => {
     const path = dir + entry.name;
     if (SKIPPED.has(entry.name)) return [];
@@ -60,11 +61,11 @@ function repoFiles(dir = '') {
 const modules = repoFiles('lib/').filter((path) => /\.(?:mjs|ts)$/.test(path));
 
 // The paths the AGENTS.md layout table names; a row ending in / covers the files under it.
-const layoutRows = (agents) => {
+const layoutRows = (agents: string) => {
   const section = /^## Layout$([\s\S]*?)^## /m.exec(agents)?.[1] ?? '';
   return [...section.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]);
 };
-const unlistedFiles = (files, rows) =>
+const unlistedFiles = (files: string[], rows: string[]) =>
   files.filter((path) => !rows.some((row) => row === path || (row.endsWith('/') && path.startsWith(row))));
 
 test('every module under lib imports', async () => {
@@ -73,7 +74,7 @@ test('every module under lib imports', async () => {
   assert.match(agents, /^## Tests$/m);
   assert.doesNotMatch(agents, /The layout section here grows with the code/);
   for (const path of modules) {
-    const mod = await import(pathToFileURL(root + path));
+    const mod = await import(pathToFileURL(root + path).href);
     assert.equal(typeof mod, 'object', path);
   }
 });
@@ -94,9 +95,9 @@ test('every file under lib is scanned', () => {
 // (`run.branches.test.mjs`), and never a grab-bag name that says nothing of its job (Angular's style guide).
 const FILE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.(?:mjs|ts)$/;
 const GRAB_BAG = /^(?:utils?|helpers?|common|misc|shared)\./;
-const misnamed = (files) =>
+const misnamed = (files: string[]) =>
   files.filter((path) => {
-    const name = path.split('/').at(-1);
+    const name = path.split('/').at(-1) ?? '';
     return !FILE_NAME.test(name) || GRAB_BAG.test(name);
   });
 
@@ -133,8 +134,8 @@ test('every file under lib has a row in AGENTS.md', async () => {
 });
 
 // A helper is found by what it does, so no test/support file is named for the lib module it serves (#256's N45).
-const sharingLibNames = (supportFiles, libModules) => {
-  const stem = (path) => path.replace(/^.*\//, '').replace(/\.(?:mjs|ts)$/, '');
+const sharingLibNames = (supportFiles: string[], libModules: string[]) => {
+  const stem = (path: string) => path.replace(/^.*\//, '').replace(/\.(?:mjs|ts)$/, '');
   const libNames = new Set(libModules.map(stem));
   return supportFiles.filter((path) => libNames.has(stem(path)));
 };
@@ -169,9 +170,9 @@ test('tests import lib modules as namespaces', () => {
 
 // lib/git.ts is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
 test('no module outside lib/git.ts passes git a command line', async () => {
-  const git = await import(pathToFileURL(`${root}lib/git.ts`));
+  const git = await import(pathToFileURL(`${root}lib/git.ts`).href);
   assert.equal(git.runGit, undefined, 'runGit is not exported');
-  const raw = [
+  const raw: [RegExp, string][] = [
     [/\brunGit\b/, 'runGit'],
     [/\b(?:run|spawn|spawnSync|execFile|execFileSync)\(\s*['"`]git['"`]/, 'a spawned git'],
     [/\^\{|\.\.\.HEAD|refs\/heads\/|['"`]HEAD['"`]/, 'git ref syntax'],
@@ -179,10 +180,29 @@ test('no module outside lib/git.ts passes git a command line', async () => {
     // bin/gg.ts passes lib/git.ts in; a module that imported it could fall back to it instead of the git it was given.
     [/from ['"`]\.\/git\.ts['"`]/, 'an import of lib/git.ts'],
   ];
-  for (const path of [...modules.filter((m) => m !== 'lib/git.ts'), 'bin/gg.ts', 'scripts/run-suite.ts']) {
+  for (const path of [...modules.filter((path) => path !== 'lib/git.ts'), 'bin/gg.ts', 'scripts/run-suite.ts']) {
     const text = await readFile(root + path, 'utf8');
     for (const [re, what] of raw) assert.doesNotMatch(text, re, `${path} builds ${what}`);
   }
+});
+
+// Every file gg runs from, except lib/harnesses/, the one place a Harness is named.
+const filesOutsideHarnesses = [...repoFiles('lib/'), ...repoFiles('bin/')].filter(
+  (path) => !path.startsWith('lib/harnesses/'),
+);
+const HARNESS_NAMES = /claude|codex|CLAUDE\.md|\.codex/i;
+
+test('no module outside lib/harnesses names a Harness', () => {
+  assert.ok(
+    filesOutsideHarnesses.includes('lib/interpreter.ts') && filesOutsideHarnesses.includes('bin/gg.ts'),
+    `scanned ${filesOutsideHarnesses.join(', ')}`,
+  );
+  const named = filesOutsideHarnesses.flatMap((path) =>
+    readFileSync(root + path, 'utf8')
+      .split('\n')
+      .flatMap((line, i) => (HARNESS_NAMES.test(line) ? [`${path}:${i + 1}: ${line.trim()}`] : [])),
+  );
+  assert.deepEqual(named, []);
 });
 
 // ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
@@ -260,6 +280,7 @@ const CONVERTED = [
   'test/e2e/run.recovery.test.ts',
   'test/e2e/run.redaction.test.ts',
   'test/e2e/run.resume.test.ts',
+  'test/support/action-marker-parts.ts',
   'test/support/add-suite.ts',
   'test/support/admission-hold-events.ts',
   'test/support/after-phase.ts',
@@ -301,10 +322,26 @@ const CONVERTED = [
   'test/support/template-repos.ts',
   'test/support/unvisited-execution.ts',
   'test/support/write-lock-holder.ts',
+  'test/unit/approval.test.ts',
+  'test/unit/briefs.test.ts',
+  'test/unit/checks.test.ts',
+  'test/unit/events.test.ts',
+  'test/unit/fake-harness.test.ts',
+  'test/unit/github.test.ts',
+  'test/unit/integrity.test.ts',
+  'test/unit/labels.test.ts',
+  'test/unit/layout.test.ts',
+  'test/unit/marker.test.ts',
+  'test/unit/outcome.test.ts',
+  'test/unit/public-text.test.ts',
   'test/unit/reconcile.crash.test.ts',
   'test/unit/reconcile.holds.test.ts',
   'test/unit/reconcile.replay.test.ts',
   'test/unit/reconcile.test.ts',
+  'test/unit/record.test.ts',
+  'test/unit/render.test.ts',
+  'test/unit/rules.test.ts',
+  'test/unit/run-suite.test.ts',
   'test/unit/run.admission.test.ts',
   'test/unit/run.branches.test.ts',
   'test/unit/run.concurrency.test.ts',
@@ -335,18 +372,10 @@ const LEGACY_MJS = [
   'test/e2e/interpreter.visit.test.mjs',
   'test/e2e/interpreter.write-ahead.test.mjs',
   'test/e2e/run-suite.test.mjs',
-  'test/unit/approval.test.mjs',
-  'test/unit/briefs.test.mjs',
-  'test/unit/checks.test.mjs',
   'test/unit/config.test.mjs',
   'test/unit/defaults.test.mjs',
   'test/unit/doctor.test.mjs',
-  'test/unit/events.test.mjs',
-  'test/unit/fake-harness.test.mjs',
   'test/unit/flow.test.mjs',
-  'test/unit/github.test.mjs',
-  'test/unit/harness-boundary.test.mjs',
-  'test/unit/integrity.test.mjs',
   'test/unit/interpreter.backoff.test.mjs',
   'test/unit/interpreter.faults.test.mjs',
   'test/unit/interpreter.fix.test.mjs',
@@ -355,20 +384,12 @@ const LEGACY_MJS = [
   'test/unit/interpreter.test.mjs',
   'test/unit/interpreter.visit.test.mjs',
   'test/unit/interpreter.write-ahead.test.mjs',
-  'test/unit/labels.test.mjs',
-  'test/unit/layout.test.mjs',
-  'test/unit/marker.test.mjs',
-  'test/unit/outcome.test.mjs',
   'test/unit/personas.test.mjs',
   'test/unit/procedures.test.mjs',
-  'test/unit/record.test.mjs',
   'test/unit/refs.test.mjs',
-  'test/unit/render.test.mjs',
-  'test/unit/rules.test.mjs',
-  'test/unit/run-suite.test.mjs',
   'test/unit/validate.test.mjs',
 ];
-const unlistedMjs = (files) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
+const unlistedMjs = (files: string[]) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
   const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
@@ -382,7 +403,7 @@ test('package.json is private, so npm refuses to publish gg until it is built fo
 });
 
 // Only the range forms package.json uses: a bound like `<27` or a union has no single major to compare.
-const rangeMajor = (range) => {
+const rangeMajor = (range: string) => {
   const match = /^(?:\^|~|>=)(\d+)(?:\.\d+){0,2}$/.exec(range);
   assert.ok(match, `${range} is a ^, ~ or >= range`);
   return match[1];

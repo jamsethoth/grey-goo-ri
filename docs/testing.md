@@ -138,7 +138,7 @@ that leaves the machine. Aim for most tests small; a medium test exists to show 
 A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`
 as before. A module whose cases have different sizes has a file in each directory under the same name: the small cases
 of `run.branches` are in `test/unit/run.branches.test.ts` and its real-git cases in `test/e2e/run.branches.test.ts`.
-`test/unit/layout.test.mjs` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.ts` or
+`test/unit/layout.test.ts` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.ts` or
 `lib/git.ts`, asks for real git, uses a timer, or calls a support helper that spawns.
 
 That check reads source text, so it misses a spawn it has no pattern for: a support helper imported and called bare
