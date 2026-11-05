@@ -130,17 +130,11 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   `lib/terminal-report.ts`; options objects in place of positional flags (`effects.sideEffect`, `effects.finish`).
 - A long function cut into named steps, its context declared as one type and built in one place: `lib/interpreter.ts`,
   with `lib/run-context.ts` and `lib/visit-runner.ts`.
-- A new unit test: `test/unit/record.test.ts` and `test/unit/interpreter.retry.test.mjs` (one behaviour per case,
+- A new unit test: `test/unit/record.test.ts` and `test/unit/interpreter.retry.test.ts` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
 - A contract suite and its fake: `test/contract/git/git.test.ts` and `test/support/fake-git.ts`.
 - A fake typed against the interface it stands in for: `test/support/fake-git.ts` (lib/git.ts's `Git`) and
   `test/support/fake-gh.ts` (lib/github.ts's transport).
-
-## Do not copy
-
-Each is rewritten by its ticket; until then, do not take its patterns:
-
-- `test/unit/validate.test.mjs` (#209), `test/unit/interpreter.test.mjs` (#210).
 
 ## Tests
 

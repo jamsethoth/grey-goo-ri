@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.ts';
+import * as validate from '../../lib/validate/index.ts';
+import type * as exampleLayer from '../support/example-layer.ts';
 
 const defaultsDir = fileURLToPath(new URL('../../defaults/', import.meta.url));
 // The inputs of the shipped Flow (#113): green reads red's tests and Red Evidence; the reviewer and publish the latest
@@ -78,37 +80,36 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
   });
 });
 
-test("defaults/gg.json declares the shipped Procedures in the validator's shape", async () => {
-  const { validate } = await import('../../lib/validate/index.ts');
-  const c = config.loadDefaults();
-  c.agents.implementer.harness = 'fake';
-  c.agents.reviewer.harness = 'fake';
-  c.commands = { test: 'npm test' };
-  const { flows, errors } = validate(c, {
+test("defaults/gg.json declares the shipped Procedures in the validator's shape", () => {
+  const defaults: exampleLayer.Layer = config.loadDefaults();
+  defaults.agents.implementer.harness = 'fake';
+  defaults.agents.reviewer.harness = 'fake';
+  defaults.commands = { test: 'npm test' };
+  const { flows, errors } = validate.validate(defaults, {
     harnesses: { fake: {} },
-    readSchema: (name) => JSON.parse(config.layerFile(c.files, name)),
-    readTemplate: (name) => config.layerFile(c.files, name),
-  });
+    readSchema: (name) => JSON.parse(config.layerFile(defaults.files, name)),
+    readTemplate: (name) => config.layerFile(defaults.files, name),
+  }) as exampleLayer.Checked;
   assert.deepEqual(errors, []);
   const { procedures } = flows.default;
   assert.deepEqual(
-    procedures['tests-fail'].actions.map((a) => [a.id, a.do].join(':')),
+    procedures['tests-fail'].actions.map((action) => [action.id, action.do].join(':')),
     ['red:agent', 'red-check:check', 'commit:commit'],
   );
   assert.deepEqual(
-    procedures.implement.actions.map((a) => [a.id, a.do].join(':')),
+    procedures.implement.actions.map((action) => [action.id, action.do].join(':')),
     ['green:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert'],
   );
   assert.deepEqual(
-    procedures.fix.actions.map((a) => [a.id, a.do].join(':')),
+    procedures.fix.actions.map((action) => [action.id, action.do].join(':')),
     ['fix:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert'],
   );
   assert.deepEqual(
-    procedures.review.actions.map((a) => [a.id, a.do].join(':')),
+    procedures.review.actions.map((action) => [action.id, action.do].join(':')),
     ['review:agent', 'review-pass:check', 'repeat:check', 'comment:comment', 'pr:pr-upsert'],
   );
   assert.deepEqual(
-    procedures.publish.actions.map((a) => [a.id, a.do].join(':')),
+    procedures.publish.actions.map((action) => [action.id, action.do].join(':')),
     ['test:check', 'pr:pr-upsert', 'pr-ready:pr-ready'],
   );
   assert.deepEqual(procedures.implement.claimTokens, {
@@ -124,7 +125,8 @@ test("defaults/gg.json declares the shipped Procedures in the validator's shape"
 });
 
 test('the shipped schemas spell the Definition of Done and the red and green evidence in full', () => {
-  const fields = (name) => JSON.parse(readFileSync(`${defaultsDir}schemas/${name}.schema.json`, 'utf8')).required;
+  const fields = (name: string) =>
+    JSON.parse(readFileSync(`${defaultsDir}schemas/${name}.schema.json`, 'utf8')).required;
   assert.deepEqual(fields('implement'), ['claim', 'summary', 'definitionOfDone', 'qa', 'diagnosis', 'notes']);
   assert.deepEqual(fields('review'), [
     'claim',

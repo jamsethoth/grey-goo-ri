@@ -89,7 +89,7 @@ the real integrity over the fake git, was measured slower (221 s against 181 s) 
 Protected Files, which the fake git's ignore model does not cover (grey-goo-ri PR #152). It still serves a case that
 needs the real integrity (its busy flags, generations, repo lock waits or Test Immutability) but not git, with no
 ignored Protected File: the concurrent Runs of `test/e2e/run.concurrency.test.ts`, the queued writes of
-`test/e2e/interpreter.retry.test.mjs` and the moved immutability baselines of `test/e2e/interpreter.fix.test.mjs` use
+`test/e2e/interpreter.retry.test.ts` and the moved immutability baselines of `test/e2e/interpreter.fix.test.ts` use
 it, since over real git their snapshots' git processes took them up to 444 s under a full suite run (#187).
 
 The seams `lib/` offers a test (#153), in place of fixed waits, patched built-in modules and SQL triggers. Each is a
