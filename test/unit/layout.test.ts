@@ -325,6 +325,7 @@ const CONVERTED = [
   'test/support/child-scripts/split-character.ts',
   'test/support/child-scripts/stdin-eof.ts',
   'test/support/child-scripts/waits-for-file.ts',
+  'test/support/committing-repo.ts',
   'test/support/crash-fs.ts',
   'test/support/crash-resume.ts',
   'test/support/epic-run.ts',
@@ -425,13 +426,7 @@ const CONVERTED = [
   'test/unit/validate.test.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
-const LEGACY_MJS = [
-  'eslint.config.mjs',
-  'test/e2e/checks.test.mjs',
-  'test/e2e/gg.test.mjs',
-  'test/e2e/integrity.test.mjs',
-  'test/e2e/run-suite.test.mjs',
-];
+const LEGACY_MJS = ['eslint.config.mjs'];
 const unlistedMjs = (files: string[]) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {

@@ -23,6 +23,15 @@ function newExecution(commonDir: string, ticket: number, worktree: string) {
   });
 }
 
+// An initialized worktree with no commit in a temp directory, for the rollback cases.
+export function emptyWorktree(t: TestContext) {
+  const root = tempDirectory.tempDirectory(t, 'gg-integrity-');
+  const worktree = join(root, 'wt');
+  mkdirSync(worktree);
+  sh(worktree, 'init', '-q', '-b', 'main');
+  return { root, worktree };
+}
+
 // `own` is the agent's worktree and `other` an idle one, each owned by a ticket record saved in the State Database.
 export async function twoWorktrees(t: TestContext) {
   const root = tempDirectory.tempDirectory(t, 'gg-integrity-', (directory) => join(directory, 'own', '.git'));
