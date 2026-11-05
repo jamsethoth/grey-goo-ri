@@ -18,6 +18,7 @@ const MEDIUM: [RegExp, string][] = [
     /\b(?:golden|run|support|gitShell)\.sh\(|\b(?:holdLock|conflict|seedRepos|timeOutWhen|timedOutOrphan)\(/,
     'calls a support helper that spawns',
   ],
+  [/\b(?:committingRepo|emptyWorktree|twoWorktrees)\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
@@ -33,6 +34,9 @@ const marked = [
   ["import { setTimeout as sleep } from 'node:timers/promises';", 'uses a timer'],
   ['golden.sh(g.worktree, "log")', 'calls a support helper that spawns'],
   ['run.holdLock(t, f.commonDir, "repo")', 'calls a support helper that spawns'],
+  ['committingRepo.committingRepo(t)', 'calls a support helper that spawns'],
+  ['worktrees.emptyWorktree(t)', 'calls a support helper that spawns'],
+  ['worktrees.twoWorktrees(t)', 'calls a support helper that spawns'],
 ];
 for (const [text, what] of marked) {
   test(`the size check flags a unit file that ${what}: ${text}`, () => {
