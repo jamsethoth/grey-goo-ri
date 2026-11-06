@@ -284,7 +284,7 @@ test(
 // With no listing, what taskkill left cannot be known, so its failure is reported even with the shell gone.
 test(
   'runShell: when node:ffi is unavailable, a taskkill that fails with the shell gone is reported',
-  WIN_CASE,
+  options.UNSANDBOXED_WIN_CASE,
   async (t) => {
     const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'noffi-shell-gone');
     t.after(() => processProbe.endProcessIn(pidFile));
@@ -299,6 +299,7 @@ test(
       t.signal,
     );
     assert.ok(ready, `child never started: ${result.output}`);
+    assert.deepEqual(result.survivors, [], 'the shell is gone, and nothing else can be named with no listing');
     assert.ok(
       result.cleanupErrors.some((error) => /taskkill/.test(error)),
       JSON.stringify(result.cleanupErrors),
