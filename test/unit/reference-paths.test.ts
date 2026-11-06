@@ -39,7 +39,10 @@ test("resolve types a path through a scope, keeping gg's integer bounds", () => 
     type: { kind: 'integer', min: 1, max: 2 },
     node: scope.properties.pass,
   });
-  assert.deepEqual(referencePaths.resolve(scope, 'pass.x'), { error: '"pass.x" is not defined' });
+  assert.deepEqual(referencePaths.resolve(scope, 'pass.x'), {
+    code: 'undefined-reference',
+    error: '"pass.x" is not defined',
+  });
 });
 
 test("resolve in read mode types a path as read reads it: a list by length or index, never its items' fields", () => {
@@ -51,6 +54,7 @@ test("resolve in read mode types a path as read reads it: a list by length or in
     'typing projects',
   );
   assert.deepEqual(referencePaths.resolve(scope, 'findings.file', 'defined', { read: true }), {
+    code: 'reference-into-list',
     error: '"findings.file": "findings" is a list, so a path reads only its length or an item by index',
     list: 'findings',
   });

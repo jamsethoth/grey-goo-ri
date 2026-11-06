@@ -1,14 +1,35 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as validate from '../../lib/validate/index.ts';
+import * as report from '../../lib/validate/report.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 import * as requestTables from '../support/request-tables.ts';
 
-// Every expected error and warning is a Problem, whose persisted key is `at` (lib/validate/report.ts).
+// A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
 
 const VERTICES = 'flows.default.ticket.vertices';
+
+test('every Problem code is one closed list of readable kebab-case names, not decision ids', () => {
+  // @ts-expect-error -- a decision id is not a listed code, so report.error would not take it
+  const decisionId: report.ProblemCode = 'H7';
+  assert.equal(report.PROBLEM_CODES.includes(decisionId), false);
+  assert.deepEqual(
+    report.PROBLEM_CODES.filter((code) => !/^[a-z]+(-[a-z]+)+$/.test(code)),
+    [],
+  );
+});
+
+test('a Problem carries its code beside its location and message', () => {
+  const problems = report.newReport();
+  report.error(problems, 'flows', 'no-flow-declared', 'an error');
+  report.warn(problems, 'agents.spare', 'unused-agent', 'a warning');
+  assert.deepEqual(problems, {
+    errors: [{ at: 'flows', code: 'no-flow-declared', message: 'an error' }],
+    warnings: [{ at: 'agents.spare', code: 'unused-agent', message: 'a warning' }],
+  });
+});
 
 test('the example Flow resolves with no errors', () => {
   const { errors } = exampleLayer.check(exampleLayer.config());
@@ -17,10 +38,10 @@ test('the example Flow resolves with no errors', () => {
 
 test("the example Flow warns only of the review table's two intended overlaps", () => {
   const { warnings } = exampleLayer.check(exampleLayer.config());
-  assert.deepEqual(
-    warnings.map((warning) => warning.at),
-    ['procedures.review.passed', 'procedures.review.passed'],
-  );
+  assert.deepEqual(exampleLayer.firedRules(warnings), [
+    { at: 'procedures.review.passed', code: 'overlapping-rows' },
+    { at: 'procedures.review.passed', code: 'overlapping-rows' },
+  ]);
   assert.match(
     warnings[0].message,
     /^rule table review\.passed: row 2 \(check\.repeat = failed\) is partly taken by row 1 /,
@@ -97,12 +118,10 @@ test('a Procedure with no agent Action has the implicit Claim ok requiring every
 test('a Procedure with no agent Action that declares claimTokens is an error', () => {
   const config = exampleLayer.config();
   config.procedures['base-check'].claimTokens = { ok: { requires: ['test'] } };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'procedures.base-check.claimTokens',
-      message:
-        'a Procedure with no agent Action declares no claimTokens: its implicit Claim ok requires every Check it ' +
-        'declares',
+      code: 'claim-tokens-without-agent-action',
     },
   ]);
 });
@@ -120,10 +139,10 @@ test("a Vertex's own access outside the Permission Intents is an error at the Ve
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.green.access = 'read-write';
   const { errors } = exampleLayer.check(config);
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: `${VERTICES}.green.access`,
-      message: 'access "read-write" is not a Permission Intent: read-only or workspace-write',
+      code: 'unknown-permission-intent',
     },
   ]);
 });
@@ -134,14 +153,14 @@ test('a Claim token named failed or harness-timeout is an error', () => {
   config.procedures['tests-fail'].claimTokens['harness-timeout'] = { stop: true };
   const files = exampleLayer.schemas();
   files['red.schema.json'].properties.claim.enum = ['ok', 'blocked', 'failed', 'harness-timeout'];
-  assert.deepEqual(exampleLayer.check(config, files).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config, files).errors), [
     {
       at: 'procedures.tests-fail.claimTokens.failed',
-      message: 'Claim token "failed" is reserved for the engine: failed, an end name or harness-*',
+      code: 'reserved-name',
     },
     {
       at: 'procedures.tests-fail.claimTokens.harness-timeout',
-      message: 'Claim token "harness-timeout" is reserved for the engine: failed, an end name or harness-*',
+      code: 'reserved-name',
     },
   ]);
 });
@@ -150,27 +169,25 @@ test('a table outcome or otherwise named after an end is an error', () => {
   const config = exampleLayer.config();
   config.procedures.review.otherwise = 'needs-replan';
   config.procedures['tests-fail'].stopped[0].outcome = 'needs-human';
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'procedures.tests-fail.stopped[0]',
-      message: 'outcome "needs-human" is reserved for the engine: failed, an end name or harness-*',
+      code: 'reserved-name',
     },
     {
       at: 'procedures.review.otherwise',
-      message: 'otherwise "needs-replan" is reserved for the engine: failed, an end name or harness-*',
+      code: 'reserved-name',
     },
   ]);
 });
-
-const INHERITED = 'is reserved: every object inherits a property of that name from Object.prototype';
 
 test('a Vertex named __proto__ is an error, never dropped', () => {
   const config = exampleLayer.config();
   const { vertices } = config.flows.default.ticket;
   // JSON.parse and spread make __proto__ an own key, as a Layer's JSON does; assignment would set the prototype.
   config.flows.default.ticket.vertices = { ...vertices, ...JSON.parse('{"__proto__": {"procedure": "base-check"}}') };
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.__proto__`, message: `Vertex id "__proto__" ${INHERITED}` },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.__proto__`, code: 'inherited-name' },
   ]);
 });
 
@@ -201,26 +218,23 @@ test('a name of an Object.prototype property is reserved wherever the configurat
     },
   };
   const ticketLocation = 'flows.propertyIsEnumerable.ticket';
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'agents.valueOf', message: `Agent "valueOf" ${INHERITED}` },
-    { at: 'procedures.tests-fail.claimTokens.isPrototypeOf', message: `Claim token "isPrototypeOf" ${INHERITED}` },
-    { at: 'procedures.tests-fail.stopped[0]', message: `outcome "toString" ${INHERITED}` },
-    { at: 'procedures.review.otherwise', message: `otherwise "toLocaleString" ${INHERITED}` },
-    { at: 'procedures.gate.actions[0]', message: `Action id "constructor" ${INHERITED}` },
-    { at: 'procedures.hasOwnProperty', message: `Procedure "hasOwnProperty" ${INHERITED}` },
-    { at: 'flows.propertyIsEnumerable', message: `Flow "propertyIsEnumerable" ${INHERITED}` },
-    { at: `${ticketLocation}.routes.toString`, message: `route key "toString" ${INHERITED}` },
-    { at: `${ticketLocation}.vertices.valueOf`, message: `Vertex id "valueOf" ${INHERITED}` },
-    { at: `${ticketLocation}.vertices.valueOf.inputs.constructor`, message: `input "constructor" ${INHERITED}` },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.valueOf', code: 'inherited-name' },
+    { at: 'procedures.tests-fail.claimTokens.isPrototypeOf', code: 'inherited-name' },
+    { at: 'procedures.tests-fail.stopped[0]', code: 'inherited-name' },
+    { at: 'procedures.review.otherwise', code: 'inherited-name' },
+    { at: 'procedures.gate.actions[0]', code: 'inherited-name' },
+    { at: 'procedures.hasOwnProperty', code: 'inherited-name' },
+    { at: 'flows.propertyIsEnumerable', code: 'inherited-name' },
+    { at: `${ticketLocation}.routes.toString`, code: 'inherited-name' },
+    { at: `${ticketLocation}.vertices.valueOf`, code: 'inherited-name' },
+    { at: `${ticketLocation}.vertices.valueOf.inputs.constructor`, code: 'inherited-name' },
     {
       at: `${ticketLocation}.vertices.valueOf.route.__lookupGetter__`,
-      message: `route key "__lookupGetter__" ${INHERITED}`,
+      code: 'inherited-name',
     },
   ]);
 });
-
-const CARRIED = 'must be non-empty with no ":", ".", "/", "--" or whitespace';
-const BLANK = 'must not be empty or only whitespace';
 
 // Each form a carried name may not take, named for the case.
 const CARRIED_BREAKS = [
@@ -241,8 +255,8 @@ for (const [id, form] of CARRIED_BREAKS) {
   test(`an Action id ${form} is an error`, () => {
     const config = exampleLayer.config();
     procedureActions.actionById(config.procedures['base-check'], 'test').id = id;
-    assert.deepEqual(exampleLayer.check(config).errors, [
-      { at: 'procedures.base-check.actions[0]', message: `Action id ${JSON.stringify(id)} ${CARRIED}` },
+    assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+      { at: 'procedures.base-check.actions[0]', code: 'invalid-name' },
     ]);
   });
 }
@@ -258,8 +272,8 @@ for (const [id, form] of CARRIED_BREAKS) {
   test(`a Vertex id ${form} is an error at its location`, () => {
     const config = exampleLayer.config();
     config.flows.names = oneVertexFlow(id);
-    assert.deepEqual(exampleLayer.check(config).errors, [
-      { at: `flows.names.ticket.vertices.${id}`, message: `Vertex id ${JSON.stringify(id)} ${CARRIED}` },
+    assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+      { at: `flows.names.ticket.vertices.${id}`, code: 'invalid-name' },
     ]);
   });
 }
@@ -269,8 +283,8 @@ for (const [name, form] of CARRIED_BREAKS) {
     const config = exampleLayer.config();
     config.procedures[name] = config.procedures['base-check'];
     config.flows.default.ticket.vertices.baseline.procedure = name;
-    assert.deepEqual(exampleLayer.check(config).errors, [
-      { at: `procedures.${name}`, message: `Procedure ${JSON.stringify(name)} ${CARRIED}` },
+    assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+      { at: `procedures.${name}`, code: 'invalid-name' },
     ]);
   });
 }
@@ -281,8 +295,8 @@ for (const [name, form] of CARRIED_BREAKS) {
     config.flows.default.ticket.vertices['implementer-fix'].inputs[name] = { from: 'red.commit.files' };
     const inputLocation = `flows.default.ticket.vertices.implementer-fix.inputs.${name}`;
     assert.deepEqual(
-      exampleLayer.check(config).errors.filter((problem) => problem.at === inputLocation),
-      [{ at: inputLocation, message: `input ${JSON.stringify(name)} ${CARRIED}` }],
+      exampleLayer.firedRules(exampleLayer.check(config).errors.filter((problem) => problem.at === inputLocation)),
+      [{ at: inputLocation, code: 'invalid-name' }],
     );
   });
 }
@@ -292,9 +306,9 @@ for (const [name, form] of BLANK_BREAKS) {
     const config = exampleLayer.config();
     config.agents[name] = config.agents.senior;
     config.flows[name] = oneVertexFlow('only');
-    assert.deepEqual(exampleLayer.check(config).errors, [
-      { at: `agents.${name}`, message: `Agent ${JSON.stringify(name)} ${BLANK}` },
-      { at: `flows.${name}`, message: `Flow ${JSON.stringify(name)} ${BLANK}` },
+    assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+      { at: `agents.${name}`, code: 'invalid-name' },
+      { at: `flows.${name}`, code: 'invalid-name' },
     ]);
   });
 
@@ -303,8 +317,8 @@ for (const [name, form] of BLANK_BREAKS) {
     config.procedures['tests-fail'].claimTokens[name] = { stop: true };
     const tokenLocation = `procedures.tests-fail.claimTokens.${name}`;
     assert.deepEqual(
-      exampleLayer.check(config).errors.filter((problem) => problem.at === tokenLocation),
-      [{ at: tokenLocation, message: `Claim token ${JSON.stringify(name)} ${BLANK}` }],
+      exampleLayer.firedRules(exampleLayer.check(config).errors.filter((problem) => problem.at === tokenLocation)),
+      [{ at: tokenLocation, code: 'invalid-name' }],
     );
   });
 }
@@ -312,12 +326,10 @@ for (const [name, form] of BLANK_BREAKS) {
 test("a configuration without a Flow names the request's key tables, not gg init", () => {
   const config = exampleLayer.config();
   delete config.flows;
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows',
-      message:
-        'no Flow is declared; docs/requests/node-harness-dag.md tables the keys of a Flow (3.3) and of a Procedure ' +
-        '(3.4)',
+      code: 'no-flow-declared',
     },
   ]);
 });
@@ -329,16 +341,16 @@ test('a repeated Action id is an error', () => {
   pr.do = 'push';
   delete pr.body;
   delete pr.with;
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'procedures.publish.actions[1]', message: 'Action id "test" is repeated' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.publish.actions[1]', code: 'repeated-action-id' },
   ]);
 });
 
 test('a second agent Action in a Procedure is an error', () => {
   const config = exampleLayer.config();
   config.procedures.review.actions.push({ id: 'again', do: 'agent', brief: 'review.md', schema: 'review.schema.json' });
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'procedures.review.actions[5]', message: 'a Procedure has at most one agent Action' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.review.actions[5]', code: 'second-agent-action' },
   ]);
 });
 
@@ -346,9 +358,9 @@ test('an unknown key is an error naming it', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.red.rout = {};
   procedureActions.actionById(config.procedures.publish, 'pr-ready').draft = true;
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'procedures.publish.actions[2]', message: 'unknown key "draft"' },
-    { at: `${VERTICES}.red`, message: 'unknown key "rout"' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.publish.actions[2]', code: 'unknown-key' },
+    { at: `${VERTICES}.red`, code: 'unknown-key' },
   ]);
 });
 
@@ -356,14 +368,14 @@ test('an unknown Action kind or Check kind is an error', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures.publish, 'pr-ready').do = 'merge';
   procedureActions.actionById(config.procedures['base-check'], 'test').kind = 'changes';
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'procedures.base-check.actions[0]',
-      message: 'Check kind "changes" is not one of command, tests-fail, response, repeat',
+      code: 'unknown-check-kind',
     },
     {
       at: 'procedures.publish.actions[2]',
-      message: 'do "merge" is not one of agent, check, commit, push, pr-upsert, pr-ready, comment, await-approval',
+      code: 'unknown-action-kind',
     },
   ]);
 });
@@ -371,8 +383,8 @@ test('an unknown Action kind or Check kind is an error', () => {
 test('a token requiring an Action that is not a Check is an error', () => {
   const config = exampleLayer.config();
   config.procedures.implement.claimTokens.ok.requires = ['commit'];
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'procedures.implement.claimTokens.ok', message: 'requires "commit", which is not a Check of this Procedure' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.implement.claimTokens.ok', code: 'undeclared-check' },
   ]);
 });
 
@@ -380,9 +392,9 @@ test('a Vertex naming an undeclared Procedure or Agent is an error', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.red.procedure = 'red';
   config.flows.default.ticket.vertices.green.use = 'coder';
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.red`, message: 'procedure "red" is not declared' },
-    { at: `${VERTICES}.green`, message: 'uses agent "coder", which is not declared' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.red`, code: 'undeclared-procedure' },
+    { at: `${VERTICES}.green`, code: 'undeclared-agent' },
   ]);
 });
 
@@ -390,9 +402,9 @@ test('an agent Procedure on a Vertex with no Agent, or an Agent on an agentless 
   const config = exampleLayer.config();
   delete config.flows.default.ticket.vertices.red.use;
   config.flows.default.ticket.vertices.publish.use = 'implementer';
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.red`, message: 'procedure tests-fail has an agent Action, so the Vertex needs an Agent' },
-    { at: `${VERTICES}.publish`, message: 'procedure publish has no agent Action, so the Vertex takes no Agent' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.red`, code: 'vertex-needs-agent' },
+    { at: `${VERTICES}.publish`, code: 'vertex-takes-no-agent' },
   ]);
 });
 
@@ -400,9 +412,9 @@ test('an Agent with no harness or an unregistered one is an error', () => {
   const config = exampleLayer.config();
   delete config.agents.reviewer.harness;
   config.agents.senior.harness = 'other';
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'agents.reviewer', message: 'agent reviewer names no harness; set one in a user or repository Layer' },
-    { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.reviewer', code: 'harness-unset' },
+    { at: 'agents.senior', code: 'harness-unregistered' },
   ]);
 });
 
@@ -413,12 +425,12 @@ test("an Agent with no harness is one error at the Agent, which a Vertex's own h
   config.flows.default.ticket.vertices.reviewer.harness = 'fake';
   delete config.flows.default.ticket.vertices.red.use;
   config.flows.default.ticket.vertices.red.model = 'opus';
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'agents.reviewer', message: 'agent reviewer names no harness; set one in a user or repository Layer' },
-    { at: 'agents.senior', message: 'agent senior names no harness; set one in a user or repository Layer' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.reviewer', code: 'harness-unset' },
+    { at: 'agents.senior', code: 'harness-unset' },
     {
       at: `${VERTICES}.red`,
-      message: 'the agent of Vertex red names no harness; set one in a user or repository Layer',
+      code: 'harness-unset',
     },
   ]);
 });
@@ -426,8 +438,8 @@ test("an Agent with no harness is one error at the Agent, which a Vertex's own h
 test('an empty Agent is one error at the Agent, not one per Vertex that uses it', () => {
   const config = exampleLayer.config();
   config.agents.senior = {};
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'agents.senior', message: 'agent senior names no harness; set one in a user or repository Layer' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.senior', code: 'harness-unset' },
   ]);
 });
 
@@ -436,10 +448,10 @@ test('an unused Agent naming an unregistered harness is an error', () => {
   config.agents.spare = { persona: 'implementer.md', harness: 'other' };
   config.agents.blank = 'spare.md';
   config.agents.bare = { persona: 'implementer.md' };
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
-    { at: 'agents.blank', message: 'an Agent must be an object' },
-    { at: 'agents.bare', message: 'agent bare names no harness; set one in a user or repository Layer' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.spare', code: 'harness-unregistered' },
+    { at: 'agents.blank', code: 'not-an-object' },
+    { at: 'agents.bare', code: 'harness-unset' },
   ]);
 });
 
@@ -448,19 +460,18 @@ test('an Agent no Vertex uses is a warning', () => {
   config.agents.spare = { persona: 'implementer.md', harness: 'fake' };
   const { errors, warnings } = exampleLayer.check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(
-    warnings.filter((warning) => warning.at.startsWith('agents.')),
-    [{ at: 'agents.spare', message: 'agent spare is used by no Vertex' }],
-  );
+  assert.deepEqual(exampleLayer.firedRules(warnings.filter((warning) => warning.at.startsWith('agents.'))), [
+    { at: 'agents.spare', code: 'unused-agent' },
+  ]);
 });
 
 test("an Agent's error is reported once however many Vertices use it", () => {
   const config = exampleLayer.config();
   config.agents.senior.harness = 'other';
   config.flows.default.ticket.vertices['senior-dev'].harness = 'missing';
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
-    { at: `${VERTICES}.senior-dev`, message: 'agent senior names harness "missing", which is not registered' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.senior', code: 'harness-unregistered' },
+    { at: `${VERTICES}.senior-dev`, code: 'harness-unregistered' },
   ]);
 });
 
@@ -471,12 +482,12 @@ test('a Vertex named after an end, cleanup or done is an error', () => {
   config.flows.default.ticket.vertices['needs-human'] = { procedure: 'base-check' };
   config.flows.default.ticket.vertices['ready-for-qa'] = { procedure: 'base-check' };
   config.flows.default.ticket.vertices['needs-replan'] = { procedure: 'base-check' };
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.cleanup`, message: 'Vertex id "cleanup" is reserved: an end name, cleanup or done' },
-    { at: `${VERTICES}.done`, message: 'Vertex id "done" is reserved: an end name, cleanup or done' },
-    { at: `${VERTICES}.needs-human`, message: 'Vertex id "needs-human" is reserved: an end name, cleanup or done' },
-    { at: `${VERTICES}.ready-for-qa`, message: 'Vertex id "ready-for-qa" is reserved: an end name, cleanup or done' },
-    { at: `${VERTICES}.needs-replan`, message: 'Vertex id "needs-replan" is reserved: an end name, cleanup or done' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.cleanup`, code: 'reserved-name' },
+    { at: `${VERTICES}.done`, code: 'reserved-name' },
+    { at: `${VERTICES}.needs-human`, code: 'reserved-name' },
+    { at: `${VERTICES}.ready-for-qa`, code: 'reserved-name' },
+    { at: `${VERTICES}.needs-replan`, code: 'reserved-name' },
   ]);
 });
 
@@ -489,19 +500,19 @@ test('a Flow without plan: null or a positive actionCap is an error', () => {
     actionCap: 20,
     ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check' } } },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'flows.default', message: 'plan is required: null when the Flow has no Epic-level planning' },
-    { at: 'flows.default.actionCap', message: 'actionCap must be a positive integer' },
-    { at: 'flows.light.plan', message: 'plan must be null until Epic planning is built' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'flows.default', code: 'plan-missing' },
+    { at: 'flows.default.actionCap', code: 'not-a-positive-integer' },
+    { at: 'flows.light.plan', code: 'plan-not-null' },
   ]);
 });
 
 test('a configuration that is not an object is one error, not a throw', () => {
-  assert.deepEqual(validate.validate(null, { harnesses: {}, readSchema: () => ({}) }), {
-    flows: {},
-    errors: [{ at: '(root)', message: 'the configuration must be an object' }],
-    warnings: [],
-  });
+  const { flows, errors, warnings } = validate.validate(null, { harnesses: {}, readSchema: () => ({}) });
+  assert.deepEqual(
+    { flows, errors: exampleLayer.firedRules(errors), warnings },
+    { flows: {}, errors: [{ at: '(root)', code: 'not-an-object' }], warnings: [] },
+  );
 });
 
 // A pass is the agent Action and the Checks after it (T4, R1a): every Check runs before any effect, so a commit or
@@ -516,12 +527,10 @@ test('a Check after an effect Action is an error', () => {
   const [green, check, commit, push, pr] = implementActions(config);
   config.procedures.implement.actions = [green, commit, check, push, pr];
   const { errors } = exampleLayer.check(config);
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: 'procedures.implement.actions[2]',
-      message:
-        'Check test comes after commit Action commit; every Check comes before any effect, so no effect runs before ' +
-        'its pass is decided',
+      code: 'check-after-effect',
     },
   ]);
 });
@@ -531,10 +540,10 @@ test('an agent Action after a Check is an error', () => {
   const [green, check, commit, push, pr] = implementActions(config);
   config.procedures.implement.actions = [check, green, commit, push, pr];
   const { errors } = exampleLayer.check(config);
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: 'procedures.implement.actions[1]',
-      message: 'the agent Action comes first, so a recovery pass runs every Check again after it',
+      code: 'agent-action-not-first',
     },
   ]);
 });
@@ -545,12 +554,10 @@ test('a comment between the agent Action and its Checks is an error', () => {
   const note = { id: 'note', do: 'comment', target: 'ticket', body: 'note.md' };
   config.procedures.implement.actions = [green, note, check, commit, push, pr];
   const { errors } = exampleLayer.check(config);
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: 'procedures.implement.actions[2]',
-      message:
-        'Check test comes after comment Action note; every Check comes before any effect, so no effect runs before ' +
-        'its pass is decided',
+      code: 'check-after-effect',
     },
   ]);
 });
@@ -559,10 +566,10 @@ test('a commit in a Procedure with no agent Action is an error', () => {
   const config = exampleLayer.config();
   config.procedures['base-check'].actions.push({ id: 'commit', do: 'commit', type: 'chore' });
   const { errors } = exampleLayer.check(config);
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: 'procedures.base-check.actions[1]',
-      message: "a commit carries the agent Action's summary, which this Procedure lacks",
+      code: 'needs-agent-action',
     },
   ]);
 });
@@ -573,8 +580,8 @@ test("a Vertex's maxVisits is an unknown key: its Bound is max, as on an edge", 
   vertex.maxVisits = vertex.max;
   delete vertex.max;
   delete vertex.exhausted;
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.senior-dev`, message: 'unknown key "maxVisits"' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.senior-dev`, code: 'unknown-key' },
   ]);
 });
 
@@ -608,15 +615,17 @@ for (const [oldKey, write, location] of RENAMED_KEYS) {
   test(`a Layer written with a renamed key fails admission as an unknown key: ${oldKey} at ${location}`, () => {
     const config = exampleLayer.config();
     write(config);
-    const unknown = exampleLayer.check(config).errors.filter((problem) => problem.message.startsWith('unknown key'));
-    assert.deepEqual(unknown, [{ at: location, message: `unknown key "${oldKey}"` }]);
+    const unknown = exampleLayer.check(config).errors.filter((problem) => problem.code === 'unknown-key');
+    assert.deepEqual(exampleLayer.firedRules(unknown), [{ at: location, code: 'unknown-key' }]);
   });
 }
 
 test('an Agent with a key no Agent declares is an error at agents.<name>', () => {
   const config = exampleLayer.config();
   config.agents.reviewer.modle = 'opus';
-  assert.deepEqual(exampleLayer.check(config).errors, [{ at: 'agents.reviewer', message: 'unknown key "modle"' }]);
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.reviewer', code: 'unknown-key' },
+  ]);
 });
 
 test('an Agent and a Vertex may declare a resolutionPolicy', () => {

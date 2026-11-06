@@ -3,8 +3,12 @@
 import * as labels from '../labels.ts';
 import * as referencePaths from '../reference-paths.ts';
 
+export const PROBLEM_CODES = ['H7'] as const;
+export type ProblemCode = (typeof PROBLEM_CODES)[number];
+
 // `at` is the key gg doctor and admission print and tests read, so it keeps the short name the rules otherwise deny.
 export interface Problem {
+  code?: ProblemCode;
   // eslint-disable-next-line id-denylist -- the persisted key of every error and warning
   at: string;
   message: string;

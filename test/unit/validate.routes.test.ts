@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 
-// Every expected error and warning is a Problem, whose persisted key is `at` (lib/validate/report.ts).
+// A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
 
 const VERTICES = 'flows.default.ticket.vertices';
@@ -11,20 +11,15 @@ const VERTICES = 'flows.default.ticket.vertices';
 // A ticket's routes that end every Outcome no Vertex routes at needs-human.
 const UNROUTED_NEEDS_HUMAN = { '*': { end: 'needs-human' } };
 
-// The error for an Outcome whose route reaches ready-for-qa without passing the Vertex that runs pr-ready.
-const skipsPrReady = (outcome: string) =>
-  `Outcome ${outcome} reaches end ready-for-qa on a route that may skip pr-ready; admission checks routes, not runs, ` +
-  'so route it through the Vertex that runs pr-ready';
-
 test('a route or entry naming no Vertex is an error', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.entry = 'start';
   config.flows.default.ticket.vertices.green.route.ok = 'review';
   config.flows.default.ticket.vertices.reviewer.route.retest.exhausted = 'senior';
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'flows.default.ticket.entry', message: '"start" is not a Vertex' },
-    { at: `${VERTICES}.green.route.ok`, message: '"review" is not a Vertex' },
-    { at: `${VERTICES}.reviewer.route.retest`, message: '"senior" is not a Vertex' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'flows.default.ticket.entry', code: 'unknown-vertex' },
+    { at: `${VERTICES}.green.route.ok`, code: 'unknown-vertex' },
+    { at: `${VERTICES}.reviewer.route.retest`, code: 'unknown-vertex' },
   ]);
 });
 
@@ -32,12 +27,12 @@ test('an end naming done or no end is an error', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.publish.route.ok = { end: 'done' };
   config.flows.default.ticket.routes['*'] = { end: 'merged' };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows.default.ticket.routes.*',
-      message: 'end "merged" is not one of ready-for-qa, needs-human, needs-replan',
+      code: 'unknown-end',
     },
-    { at: `${VERTICES}.publish.route.ok`, message: 'end "done" is the human-only end, which no route may name' },
+    { at: `${VERTICES}.publish.route.ok`, code: 'human-only-end' },
   ]);
 });
 
@@ -46,8 +41,8 @@ test('an unrouted Outcome is an error', () => {
   delete config.flows.default.ticket.routes['*'];
   config.flows.default.ticket.routes.blocked = { end: 'needs-human' };
   delete config.flows.default.ticket.vertices.reviewer.route.repeat;
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.reviewer`, message: "Outcome repeat is not routed by the Vertex or the Flow's routes" },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.reviewer`, code: 'unrouted-outcome' },
   ]);
 });
 
@@ -72,12 +67,10 @@ test('the engine Outcomes default to end: needs-human', () => {
 test('a cycle bounded only by the Action Cap is an error', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows.default.ticket',
-      message:
-        'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound ' +
-        'a cycle',
+      code: 'unbounded-cycle',
     },
   ]);
 });
@@ -89,12 +82,10 @@ test("a cycle through an edge's exhausted target is not bounded by that edge's m
     max: 2,
     exhausted: 'implementer-fix',
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows.default.ticket',
-      message:
-        'the cycle through reviewer, implementer-fix has no edge or Vertex with max; the Action Cap does not bound ' +
-        'a cycle',
+      code: 'unbounded-cycle',
     },
   ]);
 });
@@ -119,10 +110,10 @@ test('an agentless Vertex may be the entry', () => {
 test('a path to ready-for-qa without pr-ready is an error', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.reviewer.route.ok = { end: 'ready-for-qa' };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.reviewer`,
-      message: skipsPrReady('ok'),
+      code: 'pr-ready-skippable',
     },
   ]);
 });
@@ -131,10 +122,10 @@ test('pr-ready in a Procedure whose token requires no Check is an error', () => 
   const config = exampleLayer.config();
   const { publish } = config.procedures;
   publish.actions = publish.actions.filter((action: { id: string }) => action.id !== 'test');
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'procedures.publish.actions[1]',
-      message: 'pr-ready publishes only after passing Checks, but Claim token ok requires none',
+      code: 'pr-ready-without-checks',
     },
   ]);
 });
@@ -143,17 +134,14 @@ test('a passing write path without a commit is an error', () => {
   const config = exampleLayer.config();
   const { implement } = config.procedures;
   implement.actions = implement.actions.filter((action: { id: string }) => action.id !== 'commit');
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.green`,
-      message:
-        'Vertex green writes, so it must commit on every passing path, but procedure implement has no commit Action',
+      code: 'write-without-commit',
     },
     {
       at: `${VERTICES}.senior-green`,
-      message:
-        'Vertex senior-green writes, so it must commit on every passing path, but procedure implement has no commit ' +
-        'Action',
+      code: 'write-without-commit',
     },
   ]);
 });
@@ -161,14 +149,14 @@ test('a passing write path without a commit is an error', () => {
 test('a write Vertex whose committing token requires no Check is an error', () => {
   const config = exampleLayer.config();
   config.procedures.fix.claimTokens.ok.requires = [];
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.implementer-fix`,
-      message: 'Vertex implementer-fix writes, so its committing Claim token ok must require a Check',
+      code: 'commit-without-check',
     },
     {
       at: `${VERTICES}.senior-dev`,
-      message: 'Vertex senior-dev writes, so its committing Claim token ok must require a Check',
+      code: 'commit-without-check',
     },
   ]);
 });
@@ -178,9 +166,9 @@ test('an unreachable Vertex is a warning', () => {
   config.flows.default.ticket.vertices.orphan = { procedure: 'base-check', route: { ok: 'red' } };
   const { errors, warnings } = exampleLayer.check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), {
+  assert.deepEqual(exampleLayer.firedRules(warnings).at(-1), {
     at: `${VERTICES}.orphan`,
-    message: 'Vertex orphan is not reachable from the entry',
+    code: 'unreachable-vertex',
   });
 });
 
@@ -230,10 +218,10 @@ test('the graph checks wait until no other check fails', () => {
   procedureActions.actionById(config.procedures.implement, 'test').command = 'lint';
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
   const { errors, flows } = exampleLayer.check(config);
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: 'procedures.implement.actions[1]',
-      message: 'Check test names command "lint", which the repository Layer does not declare',
+      code: 'undeclared-command',
     },
   ]);
   assert.deepEqual(flows.default.ticket.vertices.reviewer.routing.changes, {
@@ -248,16 +236,16 @@ test('malformed routing is an error, never a throw, in the graph checks', () => 
   config.flows.default.ticket.vertices['senior-green'].exhausted = ['nowhere'];
   config.flows.default.ticket.vertices.reviewer.route.retest = { to: 'red', max: 2, exhausted: 7 };
   config.flows.default.ticket.vertices['senior-dev'].max = 'one';
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.senior-green.exhausted`,
-      message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }',
+      code: 'malformed-route-target',
     },
     {
       at: `${VERTICES}.reviewer.route.retest`,
-      message: 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }',
+      code: 'malformed-route-target',
     },
-    { at: `${VERTICES}.senior-dev.max`, message: 'max must be a positive integer' },
+    { at: `${VERTICES}.senior-dev.max`, code: 'not-a-positive-integer' },
   ]);
 });
 
@@ -273,10 +261,10 @@ test("a Vertex's exhausted target is a landing of every route into it", () => {
       /* eslint-enable id-length */
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows.default.ticket.vertices.q',
-      message: skipsPrReady('ok'),
+      code: 'pr-ready-skippable',
     },
   ]);
 });
@@ -302,9 +290,9 @@ test('a bound without an exhausted target is an error', () => {
   const config = exampleLayer.config();
   delete config.flows.default.ticket.vertices.green.route['bad-test'].exhausted;
   delete config.flows.default.ticket.vertices['senior-dev'].exhausted;
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.green.route.bad-test`, message: 'an edge with max names its exhausted target' },
-    { at: `${VERTICES}.senior-dev`, message: 'a Vertex with max names its exhausted target' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.green.route.bad-test`, code: 'max-without-exhausted' },
+    { at: `${VERTICES}.senior-dev`, code: 'max-without-exhausted' },
   ]);
 });
 
@@ -340,10 +328,10 @@ test('pr-ready counts only from the passed table', () => {
       },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.ship`,
-      message: skipsPrReady('blocked'),
+      code: 'pr-ready-skippable',
     },
   ]);
 });
@@ -373,10 +361,10 @@ test('a loop of exhausted targets is an error', () => {
       /* eslint-enable id-length */
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows.default.ticket',
-      message: 'the exhausted targets of x, y form a loop: once their Visits reach max, no Vertex is ever entered',
+      code: 'exhausted-loop',
     },
   ]);
 });
@@ -385,9 +373,9 @@ test('an exhausted target without a bound is an error', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.red.exhausted = { end: 'needs-human' };
   config.flows.default.ticket.vertices.green.route.ok = { to: 'reviewer', exhausted: { end: 'needs-human' } };
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: `${VERTICES}.red`, message: 'a Vertex names exhausted only with max' },
-    { at: `${VERTICES}.green.route.ok`, message: 'an edge names exhausted only with max' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: `${VERTICES}.red`, code: 'exhausted-without-max' },
+    { at: `${VERTICES}.green.route.ok`, code: 'exhausted-without-max' },
   ]);
 });
 
@@ -407,20 +395,20 @@ test("a Flow's graph checks wait only for its own errors and those outside every
   };
   const first = exampleLayer.config();
   first.flows = { unrouted, misspelt };
-  assert.deepEqual(exampleLayer.check(first).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(first).errors), [
     {
       at: 'flows.unrouted.ticket.vertices.gate',
-      message: "Outcome ok is not routed by the Vertex or the Flow's routes",
+      code: 'unrouted-outcome',
     },
-    { at: 'flows.misspelt.ticket.vertices.gate', message: 'unknown key "rout"' },
+    { at: 'flows.misspelt.ticket.vertices.gate', code: 'unknown-key' },
   ]);
   const second = exampleLayer.config();
   second.flows = { misspelt, unrouted };
-  assert.deepEqual(exampleLayer.check(second).errors, [
-    { at: 'flows.misspelt.ticket.vertices.gate', message: 'unknown key "rout"' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(second).errors), [
+    { at: 'flows.misspelt.ticket.vertices.gate', code: 'unknown-key' },
     {
       at: 'flows.unrouted.ticket.vertices.gate',
-      message: "Outcome ok is not routed by the Vertex or the Flow's routes",
+      code: 'unrouted-outcome',
     },
   ]);
 });
@@ -433,10 +421,10 @@ test("an error outside every Flow holds every Flow's graph checks", () => {
     actionCap: 20,
     ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'procedures.base-check.actions[0]',
-      message: 'Check test names command "lint", which the repository Layer does not declare',
+      code: 'undeclared-command',
     },
   ]);
 });
@@ -449,10 +437,10 @@ test('a Vertex whose exhausted target is itself is a loop', () => {
     // eslint-disable-next-line id-length -- a single-letter Vertex id, as the expected Problem names it
     vertices: { x: { procedure: 'base-check', max: 1, exhausted: 'x', route: { ok: { end: 'needs-human' } } } },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows.default.ticket',
-      message: 'the exhausted targets of x form a loop: once their Visits reach max, no Vertex is ever entered',
+      code: 'exhausted-loop',
     },
   ]);
 });
@@ -471,10 +459,10 @@ test('a loop of exhausted targets reached through a tail names only the loop, on
       /* eslint-enable id-length */
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: 'flows.default.ticket',
-      message: 'the exhausted targets of a, b form a loop: once their Visits reach max, no Vertex is ever entered',
+      code: 'exhausted-loop',
     },
   ]);
 });
@@ -489,12 +477,12 @@ test("an Agent's error holds the graph checks of the Flows that use it, and only
     actionCap: 20,
     ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
-    { at: 'agents.senior', message: 'agent senior names harness "other", which is not registered' },
-    { at: 'agents.spare', message: 'agent spare names harness "other", which is not registered' },
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.senior', code: 'harness-unregistered' },
+    { at: 'agents.spare', code: 'harness-unregistered' },
     {
       at: 'flows.unrouted.ticket.vertices.gate',
-      message: "Outcome ok is not routed by the Vertex or the Flow's routes",
+      code: 'unrouted-outcome',
     },
   ]);
 });

@@ -103,13 +103,13 @@ test('a row covered by earlier rows is an error', () => {
     ],
   };
   const result = rules.analyse(table);
-  assert.deepEqual(result.errors, [
-    {
-      row: 2,
-      message: 'rule table implement.failed: row 3 (never) never fires: earlier rows match every input it matches',
-    },
-    { row: 3, message: 'rule table implement.failed: row 4 (nothing) is unreachable: it matches no input' },
-  ]);
+  assert.deepEqual(
+    result.errors.map(({ row, code }) => ({ row, code })),
+    [
+      { row: 2, code: 'never-firing-row' },
+      { row: 3, code: 'unreachable-row' },
+    ],
+  );
   assert.equal(result.defaultExample, null);
 });
 
@@ -132,6 +132,7 @@ test("a partial overlap is a warning naming both rows' conditions and an example
       from: null,
       fields: ['claim', 'response.needsTest'],
       example: { claim: 'ok', response: { needsTest: true } },
+      code: 'overlapping-rows',
       message:
         'rule table review.passed: row 2 (response.needsTest = true) is partly taken by ' +
         'row 1 (claim = ok), for example {"claim":"ok","response":{"needsTest":true}}',
@@ -457,6 +458,7 @@ test('rows that never fire are one error each, naming no earlier row', () => {
   assert.equal(result.errors.length, 9_999);
   assert.deepEqual(result.errors.at(-1), {
     row: 9_999,
+    code: 'never-firing-row',
     message: 'rule table heavy.passed: row 10000 (o9999) never fires: earlier rows match every input it matches',
   });
   assert.deepEqual(result.warnings, []);
@@ -473,6 +475,7 @@ test('a long run of overlapping rows is one warning naming only its first taker'
       from: 0,
       fields: ['pass'],
       example: { pass: 3_000 },
+      code: 'overlapping-rows',
       message:
         'rule table fix.failed: rows 2-3000 are each partly taken by every earlier firing row, all on pass, ' +
         'for example {"pass":3000}',
@@ -505,6 +508,7 @@ test('a table just over it (many booleans) is an error naming the table', () => 
   const result = rules.analyse(booleanTable('wide.failed', 20, 10));
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].row, null);
+  assert.equal(result.errors[0].code, 'rule-table-too-large');
   assert.match(
     result.errors[0].message,
     new RegExp(
@@ -577,6 +581,7 @@ test('the work limit counts every box', () => {
   const result = rules.analyse({ name: 'wide.passed', boxes: tokenBoxes(fields, 'a', 'b'), rows });
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].row, null);
+  assert.equal(result.errors[0].code, 'rule-table-too-large');
   assert.match(
     result.errors[0].message,
     /^rule table wide\.passed needs 10485760 row checks, above the limit of 10000000; /,
