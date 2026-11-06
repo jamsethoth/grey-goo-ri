@@ -102,8 +102,8 @@ export function killPlan(rootPid: number, seen: Seen, { processes, error }: List
 }
 
 // A job's members still running once its command has exited. A member still exiting is in the job but no longer in
-// the snapshot. windowsHide makes libuv start cmd.exe with CREATE_NO_WINDOW, so it gets a conhost.exe of its own in the
-// job, which ends just after cmd.exe does.
+// the snapshot. windowsHide makes libuv start cmd.exe with CREATE_NO_WINDOW, so it gets a conhost.exe of its own, which
+// ends just after cmd.exe does. That host is in the job unless it started before cmd.exe was put there.
 export function leftoverPids(members: number[], entries: ProcessEntry[], commandPid: number): number[] {
   const running = new Set(
     entries

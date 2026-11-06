@@ -14,7 +14,10 @@ entry point since #199 (ADR 0019).
 
 1. **Tests are deterministic.** The same tree and command give the same result
    (`docs/research/user-defined-procedures-decisions.md`, J1-J3). A failure that does not reproduce is a defect in
-   the test or the environment, diagnosed and fixed at its root, never re-run past. A test waits on the event it
+   the test or the environment, diagnosed and fixed at its root, never re-run past. A failing run, local or in CI, is
+   classified before anything else: caused by the change and fixed, a defect elsewhere and ticketed with its log, or the
+   environment, with the evidence. A re-run gathers evidence, and its pass does not clear the failure (#285). A test
+   waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
    wall clock. Four cases measure real time, recorded as exceptions because their subject is real time across
@@ -160,7 +163,10 @@ Four stages, ordered by speed:
 | **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.ts` | before a PR is marked ready, and in CI on every PR |
 | **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.ts coverage` (ADR 0016, amended) | in CI as its own `coverage (<os>)` job on each platform, beside the suite jobs; locally with `coverage update` when a change raises coverage |
 
-Coverage only climbs. The coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
+The coverage stage runs in one process (`--test-isolation=none`), so its figures do not depend on the order node reads
+coverage files in, and a test that ends the process fails the stage; the other stages keep a process per file (ADR 0016,
+amended). Coverage only climbs. The
+coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
 recorded, so the next change cannot spend the gain. `node scripts/run-suite.ts coverage update` records a rise; CI's
 failure message prints the other platform's figures to paste. The measured set is what a small test can reach: `lib/`

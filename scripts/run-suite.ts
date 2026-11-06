@@ -1,7 +1,7 @@
 // The one command Codex may run outside its sandbox (ADR 0010). It takes a stage from a closed set (ADR 0016) and drops
 // every environment variable that could make node load other code.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +83,9 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
   // The check job and the suite stages already run CHECKS, so the coverage stage runs only the measured tests.
   if (argv[0] === 'coverage') {
     if (argv.length > 2 || (argv.length === 2 && argv[1] !== 'update')) throw new SuiteUsageError();
-    const test = ['--test', `--test-concurrency=${concurrency}`, '--experimental-test-coverage'];
+    // One process, so no merge: node merges each process's coverage in directory order, and a line's count can depend
+    // on that order, so the same tree could pass or fail (grey-goo-ri issue #285, ADR 0016).
+    const test = ['--test', '--test-isolation=none', '--experimental-test-coverage'];
     // include-all counts a module no test loads, so a new untested file lowers the figures instead of hiding.
     const scope = ['--test-coverage-include-all', '--test-coverage-include=lib/**'];
     const reporters = ['--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=lcov'];
@@ -104,9 +106,8 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
   return { ...base, steps };
 }
 
-// The summed line and function totals of an lcov report as percentages, floored to two places. Branches are left out:
-// node merges each test process's V8 branch ranges, so the branches found in one file move by one or two between runs
-// of the same tree.
+// The summed line and function totals of an lcov report as percentages, floored to two places. Branches are printed but
+// not held (ADR 0016).
 export function coverageTotals(lcov: string): Record<'lines' | 'functions', number> {
   const sum = { LF: 0, LH: 0, FNF: 0, FNH: 0 };
   for (const [, key, count] of lcov.matchAll(/^(LF|LH|FNF|FNH):(\d+)\r?$/gm))
@@ -134,7 +135,12 @@ export function compareCoverage(
 function ratchet(mode: 'check' | 'update'): number {
   const path = join(root, BASELINE);
   const baseline = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
-  const current = coverageTotals(readFileSync(join(root, LCOV), 'utf8'));
+  const report = existsSync(join(root, LCOV)) ? readFileSync(join(root, LCOV), 'utf8') : '';
+  if (!/^LF:[1-9]/m.test(report)) {
+    console.error(`coverage measured no lines: a unit test ended the process early, or lib/ has nothing to measure.`);
+    return 1;
+  }
+  const current = coverageTotals(report);
   const { fell, rose } = compareCoverage(baseline[process.platform], current);
   const figures = `${process.platform}: ${JSON.stringify(current)}`;
   if (fell.length) {
@@ -175,8 +181,12 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     console.error(`${missing.join(' and ')} not found: run npm ci first`);
     process.exit(1);
   }
-  // node's lcov reporter does not create its destination's directory.
-  if (suite.coverage) mkdirSync(join(root, dirname(LCOV)), { recursive: true });
+  if (suite.coverage) {
+    // node's lcov reporter does not create its destination's directory. A run that ends early writes no report, so an
+    // earlier run's must not be there to read.
+    mkdirSync(join(root, dirname(LCOV)), { recursive: true });
+    rmSync(join(root, LCOV), { force: true });
+  }
   // Steps run in order and the first failure stops the stage, so a format, lint or type error is the last thing
   // printed.
   for (const args of suite.steps) {

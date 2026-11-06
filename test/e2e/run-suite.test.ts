@@ -55,8 +55,42 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
   const run = (argv: string[]) =>
     spawnSync(process.execPath, [join(root, 'scripts', 'run-suite.ts'), ...argv], { encoding: 'utf8', env });
   const steps = () => (existsSync(join(root, 'steps.log')) ? readFileSync(join(root, 'steps.log'), 'utf8') : '');
-  return { run, steps };
+  return { root, run, steps };
 }
+
+// One process runs every test file, so a test calling process.exit(0) ends the whole stage with exit 0 and no report.
+// What an earlier run left must not pass for this run's report (#285).
+function endedEarly(t: TestContext) {
+  const copy = launcherCopy(t);
+  writeFileSync(join(copy.root, 'test', 'unit', 'early.test.mjs'), 'process.exit(0);\n');
+  mkdirSync(join(copy.root, 'coverage'));
+  writeFileSync(join(copy.root, 'coverage', 'lcov.info'), 'SF:lib/a.ts\nFNF:1\nFNH:1\nLF:1\nLH:1\nend_of_record\n');
+  const held = { lines: 100, functions: 100 };
+  writeFileSync(join(copy.root, 'coverage-baseline.json'), JSON.stringify({ [process.platform]: held }));
+  return copy;
+}
+
+test("a coverage stage whose test ends the process early fails, and does not read an earlier run's report", (t) => {
+  const copy = endedEarly(t);
+  const result = copy.run(['coverage']);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /measured no lines/);
+});
+
+test('coverage update records nothing when a test ends the process early', (t) => {
+  const copy = endedEarly(t);
+  const before = readFileSync(join(copy.root, 'coverage-baseline.json'), 'utf8');
+  const result = copy.run(['coverage', 'update']);
+  assert.equal(result.status, 1, result.stdout);
+  assert.equal(readFileSync(join(copy.root, 'coverage-baseline.json'), 'utf8'), before);
+});
+
+test('a coverage stage that measures no lines fails', (t) => {
+  const copy = launcherCopy(t);
+  const result = copy.run(['coverage']);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /measured no lines/);
+});
 
 test('the check stage runs the format check, lint and the type check in that order, no tests, and exits 0', (t) => {
   const copy = launcherCopy(t);

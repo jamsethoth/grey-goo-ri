@@ -66,12 +66,12 @@ test('the check stage takes no boundary names', () => {
   });
 });
 
-test('the coverage stage runs test/unit with coverage of lib/ outside its process boundaries, and no checks', () => {
+test('the coverage stage runs test/unit in one process over lib/ outside its boundaries, with no checks', () => {
   const suite = runSuite.suiteCommand({}, ['coverage']);
   assert.deepEqual(suite.steps, [
     [
       '--test',
-      concurrency,
+      '--test-isolation=none',
       '--experimental-test-coverage',
       '--test-coverage-include-all',
       '--test-coverage-include=lib/**',

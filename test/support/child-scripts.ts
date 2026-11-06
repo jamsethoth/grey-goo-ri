@@ -14,6 +14,7 @@ const childScript = (name: string) => fileURLToPath(new URL(`./child-scripts/${n
 export const LONG_LIVED = childScript('long-lived');
 export const ORPHAN_MIDDLE = childScript('orphan-middle');
 export const CHILD_STARTER = childScript('child-starter');
+export const LINKED_STARTER = childScript('linked-starter');
 export const DETACHED_CHILD = childScript('detached-child');
 export const WAITS_FOR_FILE = childScript('waits-for-file');
 export const PRINTS_LINE = childScript('prints-line');
@@ -21,6 +22,7 @@ export const STDIN_EOF = childScript('stdin-eof');
 export const SPLIT_CHARACTER = childScript('split-character');
 export const SHELL_CALLER = childScript('shell-caller');
 export const SLOW_TASKKILL = childScript('slow-taskkill');
+export const FAILING_TASKKILL = childScript('failing-taskkill');
 export const FORGED_JOB_NOTES = childScript('forged-job-notes');
 export const BREAKAWAY_CHILD = childScript('breakaway-child');
 
@@ -79,5 +81,5 @@ export function orphanChain(t: TestContext, directory: string, name: string) {
 export function linkedChild(t: TestContext, directory: string, name: string) {
   const pidFile = join(directory, `${name}.pid`);
   t.after(() => processProbe.endProcessIn(pidFile));
-  return { pidFile, commandLine: nodeCommand(t, CHILD_STARTER, LONG_LIVED, pidFile) };
+  return { pidFile, commandLine: nodeCommand(t, LINKED_STARTER, LONG_LIVED, pidFile) };
 }

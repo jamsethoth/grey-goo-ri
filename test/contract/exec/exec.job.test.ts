@@ -201,6 +201,87 @@ test(
   },
 );
 
+// taskkill /T ends the children first and cmd.exe can exit on its own once they go, so the kill of the shell fails: 9
+// of 120 takedowns under load, as "Access is denied" or "no running instance" (#285). What is left alive decides.
+test(
+  'runShell: when the job cannot be set up, a taskkill that fails with the tree down reports no failure',
+  WIN_CASE,
+  async (t) => {
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-tree-down');
+    const { result, ready } = await timedOutShell.timeOutWhen(
+      commandLine,
+      {
+        timeoutMs: 4000,
+        kernel32: noJob(),
+        taskkillCommand: [process.execPath, [childScripts.FAILING_TASKKILL, 'tree']],
+      },
+      () => pidIn(pidFile) > 0,
+      t,
+    );
+    assert.ok(ready, `child never started: ${result.output}`);
+    assert.equal(result.timedOut, true);
+    assert.deepEqual(result.survivors, []);
+    assert.ok(!result.cleanupErrors.some((error) => /taskkill/.test(error)), JSON.stringify(result.cleanupErrors));
+  },
+);
+
+test(
+  'runShell: when the job cannot be set up, a taskkill that fails with a child left names it, not the gone shell',
+  WIN_CASE,
+  async (t) => {
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-child-left');
+    const { result, ready } = await timedOutShell.timeOutWhen(
+      commandLine,
+      {
+        timeoutMs: 4000,
+        kernel32: noJob(),
+        taskkillCommand: [process.execPath, [childScripts.FAILING_TASKKILL, 'shell']],
+      },
+      () => pidIn(pidFile) > 0,
+      t,
+    );
+    const pid = pidIn(pidFile);
+    assert.ok(ready, `child never started: ${result.output}`);
+    assert.ok(
+      result.survivors.some((survivor) => survivor.pid === pid),
+      `linked child ${pid} missing from ${JSON.stringify(result.survivors)}`,
+    );
+    assert.ok(
+      result.survivors.every((survivor) => alive(survivor.pid)),
+      `a process already gone is named as a survivor: ${JSON.stringify(result.survivors)}`,
+    );
+    assert.ok(
+      result.cleanupErrors.some((error) => /taskkill/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
+  },
+);
+
+// With no listing, what taskkill left cannot be known, so its failure is reported even with the shell gone.
+test(
+  'runShell: when node:ffi is unavailable, a taskkill that fails with the shell gone is reported',
+  options.UNSANDBOXED_WIN_CASE,
+  async (t) => {
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'noffi-shell-gone');
+    const { result, ready } = await timedOutShell.timeOutWhen(
+      commandLine,
+      {
+        timeoutMs: 4000,
+        kernel32: null,
+        taskkillCommand: [process.execPath, [childScripts.FAILING_TASKKILL, 'shell']],
+      },
+      () => pidIn(pidFile) > 0,
+      t,
+    );
+    assert.ok(ready, `child never started: ${result.output}`);
+    assert.deepEqual(result.survivors, [], 'the shell is gone, and nothing else can be named with no listing');
+    assert.ok(
+      result.cleanupErrors.some((error) => /taskkill/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
+  },
+);
+
 // The leftover holds the output pipes, so they never close: runShell answers once the command exits. Its clock moves
 // only when the case moves it, so the call cannot end by timing out; the case moves it past the timeout only once
 // the call has answered, when a timer the finish left armed would fire.
