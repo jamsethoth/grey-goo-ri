@@ -283,6 +283,11 @@ const THROWN_CLASSES_FLAGGED = [
     "export class AError extends Error {\n  later() {\n    this.name = 'AError';\n  }\n}\n",
   ],
   ['with its name on a static field', "export class AError extends Error {\n  static name = 'AError';\n}\n"],
+  ['with its name on a computed field', "export class AError extends Error {\n  [name] = 'AError';\n}\n"],
+  [
+    'with its name set through a computed key',
+    "export class AError extends Error {\n  constructor() {\n    super('x');\n    this[name] = 'AError';\n  }\n}\n",
+  ],
   ['with its name in another class', `export class AError extends Error {}\nexport class Other {\n${FIELD}}\n`],
   ['with a generic', 'export class AError<Value> extends Error {\n  value?: Value;\n}\n'],
   ['with a nested generic', 'export class AError<Value extends Array<number>> extends Error {\n  value?: Value;\n}\n'],

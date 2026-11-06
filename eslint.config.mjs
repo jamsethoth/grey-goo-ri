@@ -80,6 +80,7 @@ const fieldSetsName = ({ type, key, value, computed, static: isStatic }, classNa
 const assignsName = ({ type, left, right }, className) =>
   type === 'AssignmentExpression' &&
   left.object?.type === 'ThisExpression' &&
+  !left.computed &&
   left.property.name === 'name' &&
   right.value === className;
 const constructorSetsName = ({ type, kind, value }, className) =>
