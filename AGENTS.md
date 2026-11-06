@@ -20,8 +20,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   stock Node on native Windows. npm dependencies are allowed when they earn their place; prefer node
   built-ins. Never adopt an agentic workflow framework (ADR 0001).
 - Node's type stripping runs the sources, with no build step (ADR 0018): every code file is `.ts`, and
-  `test/unit/layout.test.ts` fails on any other. The one JavaScript file is `eslint.config.mjs`, since ESLint 10.14 loads a `.ts` config only through the optional `jiti` package or an unstable
-  flag. Erasable syntax only (no enums, namespaces or parameter properties). The strict ESLint rules apply to every file.
+  `test/unit/layout.test.ts` fails on any other. The one JavaScript file is `eslint.config.mjs`, since ESLint 10.14
+  loads a `.ts` config only through the optional `jiti` package or an unstable flag. Erasable syntax only (no enums,
+  namespaces or parameter properties). The strict ESLint rules apply to every file.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
   git (`test/support/fake-git.ts`); real git in temp repositories only for the `lib/git.ts` contract suite, tests whose
