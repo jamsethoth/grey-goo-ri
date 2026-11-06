@@ -8,7 +8,7 @@ import * as contract from '../../../lib/harnesses/contract.ts';
 import type * as fakeHarnessModule from '../../support/fake-harness.ts';
 
 const dirs: string[] = [];
-after(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
+after(() => Promise.all(dirs.map((directory) => rm(directory, { recursive: true, force: true }))));
 
 const fakeHarness = async (options: Partial<fakeHarnessModule.FakeHarnessOptions> = {}) => {
   const fake = await import('../../support/fake-harness.ts');

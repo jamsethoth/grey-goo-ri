@@ -2,6 +2,9 @@
 
 # User-defined steps, outcomes and routing in workflow platforms, and LLM output inside deterministic processes
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Research for gg (grey-goo-ri). Researched 2026-10-21. Every platform claim carries a source key (`[S#]`) that resolves
 to a URL in the Sources list at the end. A statement tagged **(inference)** was not checked against a source; one tagged
 **(not checked)** is general knowledge I did not verify in this pass. Read for context, not edited: `lib/outcome.mjs`,

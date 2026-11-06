@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ESLint } from 'eslint';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -23,7 +24,7 @@ const MEDIUM: [RegExp, string][] = [
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
   .map((file) => file.split('\\').join('/'))
-  .filter((file) => /\.test\.(?:mjs|ts)$/.test(file) && file !== 'layout.test.ts');
+  .filter((file) => file.endsWith('.test.ts') && file !== 'layout.test.ts');
 
 const marked = [
   ["import { spawn } from 'node:child_process';", 'imports node:child_process'],
@@ -57,15 +58,21 @@ for (const file of unitFiles) {
   });
 }
 const SKIPPED = new Set(['.git', 'node_modules']);
-function repoFiles(dir = ''): string[] {
-  return readdirSync(root + dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = dir + entry.name;
-    if (SKIPPED.has(entry.name)) return [];
+// Tools write these at a checkout's root, ignored or untracked: none of it is gg's code. Elsewhere the names are free.
+const TOOL_OUTPUT = new Set(['.claude', 'coverage']);
+const isSkipped = (path: string) => SKIPPED.has(path.split('/').at(-1) ?? '') || TOOL_OUTPUT.has(path);
+function repoFiles(directory = ''): string[] {
+  return readdirSync(root + directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = directory + entry.name;
+    if (isSkipped(path)) return [];
     return entry.isDirectory() ? repoFiles(`${path}/`) : [path];
   });
 }
 // Every module under lib, so a new one is scanned without joining a list (grey-goo-ri issue #219).
-const modules = repoFiles('lib/').filter((path) => /\.(?:mjs|ts)$/.test(path));
+const modules = repoFiles('lib/').filter((path) => path.endsWith('.ts'));
+const codeFiles = ['lib/', 'bin/', 'scripts/', 'test/']
+  .flatMap((directory) => repoFiles(directory))
+  .filter((path) => path.endsWith('.ts'));
 
 // The paths the AGENTS.md layout table names; a row ending in / covers the files under it.
 const layoutRows = (agents: string) => {
@@ -99,8 +106,8 @@ test('every file under lib is scanned', () => {
 });
 
 // A code file is named in lowercase words joined by hyphens, with a dot only before an area or test suffix
-// (`run.branches.test.mjs`), and never a grab-bag name that says nothing of its job (Angular's style guide).
-const FILE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.(?:mjs|ts)$/;
+// (`run.branches.test.ts`), and never a grab-bag name that says nothing of its job (Angular's style guide).
+const FILE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.ts$/;
 const GRAB_BAG = /^(?:utils?|helpers?|common|misc|shared)\./;
 const misnamed = (files: string[]) =>
   files.filter((path) => {
@@ -109,27 +116,23 @@ const misnamed = (files: string[]) =>
   });
 
 test('every code file is named in lowercase hyphenated words for its job', () => {
-  const samples = [
-    'lib/process-tree.ts',
-    'test/unit/run.branches.test.mjs',
-    'lib/processTree.ts',
-    'lib/write_ahead.ts',
-  ];
+  const samples = ['lib/process-tree.ts', 'test/unit/run.branches.test.ts', 'lib/processTree.ts', 'lib/write_ahead.ts'];
   assert.deepEqual(misnamed([...samples, 'lib/utils.ts']), [
     'lib/processTree.ts',
     'lib/write_ahead.ts',
     'lib/utils.ts',
   ]);
-  const code = ['lib/', 'bin/', 'scripts/', 'test/']
-    .flatMap((dir) => repoFiles(dir))
-    .filter((path) => /\.(?:mjs|ts)$/.test(path));
-  assert.ok(code.includes('lib/process-tree.ts') && code.includes('bin/gg.ts'), 'the code files are read');
-  assert.deepEqual(misnamed(code), [], 'rename the file: lowercase words joined by hyphens, named for what it does');
+  assert.ok(codeFiles.includes('lib/process-tree.ts') && codeFiles.includes('bin/gg.ts'), 'the code files are read');
+  assert.deepEqual(
+    misnamed(codeFiles),
+    [],
+    'rename the file: lowercase words joined by hyphens, named for what it does',
+  );
 });
 
 test('every file under lib has a row in AGENTS.md', async () => {
-  const sampleRows = ['lib/a.mjs', 'lib/templates/'];
-  assert.deepEqual(unlistedFiles(['lib/a.mjs', 'lib/templates/t.md', 'lib/b.mjs'], sampleRows), ['lib/b.mjs']);
+  const sampleRows = ['lib/a.ts', 'lib/templates/'];
+  assert.deepEqual(unlistedFiles(['lib/a.ts', 'lib/templates/t.md', 'lib/b.ts'], sampleRows), ['lib/b.ts']);
   const rows = layoutRows(await readFile(`${root}AGENTS.md`, 'utf8'));
   assert.ok(rows.includes('lib/validate/') && rows.includes('bin/gg.ts'), 'the layout table is read');
   assert.deepEqual(unlistedFiles(repoFiles('lib/'), rows), [], 'add a row to the AGENTS.md layout table');
@@ -142,37 +145,19 @@ test('every file under lib has a row in AGENTS.md', async () => {
 
 // A helper is found by what it does, so no test/support file is named for the lib module it serves (#256's N45).
 const sharingLibNames = (supportFiles: string[], libModules: string[]) => {
-  const stem = (path: string) => path.replace(/^.*\//, '').replace(/\.(?:mjs|ts)$/, '');
+  const stem = (path: string) => path.replace(/^.*\//, '').replace(/\.ts$/, '');
   const libNames = new Set(libModules.map(stem));
   return supportFiles.filter((path) => libNames.has(stem(path)));
 };
 
 test('no test/support file shares a lib module name', () => {
   assert.deepEqual(
-    sharingLibNames(['test/support/run.mjs', 'test/support/run-fixture.ts'], ['lib/run.ts', 'lib/flow.ts']),
-    ['test/support/run.mjs'],
+    sharingLibNames(['test/support/run.ts', 'test/support/run-fixture.ts'], ['lib/run.ts', 'lib/flow.ts']),
+    ['test/support/run.ts'],
   );
   const supportFiles = repoFiles('test/support/');
   assert.ok(supportFiles.includes('test/support/execution-context.ts'), 'the support files are read');
   assert.deepEqual(sharingLibNames(supportFiles, modules), [], 'name the helper for its job, not its lib module');
-});
-
-// A named import from lib at the start of a line; a string that spells one inside a case does not start a line.
-const NAMED_LIB_IMPORT = /^import\s+(?!(?:type\s+)?\*\s*as\s)[^;]*?\sfrom\s+['"](?:\.\.\/)+lib\//m;
-
-test('tests import lib modules as namespaces', () => {
-  assert.equal(NAMED_LIB_IMPORT.test("import { pathKey } from '../../lib/paths.ts';"), true);
-  assert.equal(NAMED_LIB_IMPORT.test("import {\n  a,\n  b,\n} from '../../../lib/git.ts';"), true);
-  assert.equal(NAMED_LIB_IMPORT.test("import * as paths from '../../lib/paths.ts';"), false);
-  assert.equal(NAMED_LIB_IMPORT.test("import type * as paths from '../../lib/paths.ts';"), false);
-  assert.equal(NAMED_LIB_IMPORT.test('  "import { add } from \'../lib/add.mjs\';\\n",'), false);
-  assert.equal(NAMED_LIB_IMPORT.test("import { join } from 'node:path';\nimport * as x from '../lib/x.mjs';"), false);
-  const testFiles = repoFiles('test/').filter((path) => /\.(?:mjs|ts)$/.test(path));
-  assert.deepEqual(
-    testFiles.filter((path) => NAMED_LIB_IMPORT.test(readFileSync(root + path, 'utf8'))),
-    [],
-    'import a lib module as `import * as name`',
-  );
 });
 
 // lib/git.ts is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
@@ -212,228 +197,11 @@ test('no module outside lib/harnesses names a Harness', () => {
   assert.deepEqual(named, []);
 });
 
-// ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
-const CONVERTED = [
-  'bin/gg.ts',
-  'lib/agent-action.ts',
-  'lib/agent-call.ts',
-  'lib/approval.ts',
-  'lib/bounds.ts',
-  'lib/briefs.ts',
-  'lib/check-action.ts',
-  'lib/checks.ts',
-  'lib/command-cleanup.ts',
-  'lib/config.ts',
-  'lib/doctor.ts',
-  'lib/effect-actions.ts',
-  'lib/effect-errors.ts',
-  'lib/effect-evidence.ts',
-  'lib/effects.ts',
-  'lib/events.ts',
-  'lib/exec.ts',
-  'lib/flow.ts',
-  'lib/git.ts',
-  'lib/github.ts',
-  'lib/harnesses/claude.ts',
-  'lib/harnesses/codex.ts',
-  'lib/harnesses/contract.ts',
-  'lib/harnesses/shipped.ts',
-  'lib/integrity.ts',
-  'lib/interpreter.ts',
-  'lib/labels.ts',
-  'lib/locks.ts',
-  'lib/marker.ts',
-  'lib/options.ts',
-  'lib/outcome.ts',
-  'lib/paths.ts',
-  'lib/plan.ts',
-  'lib/procedures.ts',
-  'lib/process-tree.ts',
-  'lib/publish.ts',
-  'lib/reconcile.ts',
-  'lib/record.ts',
-  'lib/refs.ts',
-  'lib/remote-effects.ts',
-  'lib/render.ts',
-  'lib/rules.ts',
-  'lib/run-context.ts',
-  'lib/run.ts',
-  'lib/stats.ts',
-  'lib/terminal-report.ts',
-  'lib/terminal.ts',
-  'lib/trace.ts',
-  'lib/validate/actions.ts',
-  'lib/validate/conditions.ts',
-  'lib/validate/flows.ts',
-  'lib/validate/graph.ts',
-  'lib/validate/index.ts',
-  'lib/validate/inputs.ts',
-  'lib/validate/procedures.ts',
-  'lib/validate/references.ts',
-  'lib/validate/report.ts',
-  'lib/validate/templates.ts',
-  'lib/visit-runner.ts',
-  'lib/visit-scope.ts',
-  'lib/work.ts',
-  'scripts/run-suite.ts',
-  'test/contract/exec/exec.job.test.ts',
-  'test/contract/exec/exec.test.ts',
-  'test/contract/exec/exec.timeout.test.ts',
-  'test/contract/git/git.test.ts',
-  'test/contract/git/template-repos.test.ts',
-  'test/contract/harness/harnesses.test.ts',
-  'test/contract/sqlite/events.test.ts',
-  'test/contract/sqlite/integrity.test.ts',
-  'test/contract/sqlite/locks.test.ts',
-  'test/contract/sqlite/record.test.ts',
-  'test/e2e/checks.test.ts',
-  'test/e2e/gg.test.ts',
-  'test/e2e/integrity.test.ts',
-  'test/e2e/interpreter.faults.test.ts',
-  'test/e2e/interpreter.fix.test.ts',
-  'test/e2e/interpreter.retry.test.ts',
-  'test/e2e/interpreter.test.ts',
-  'test/e2e/interpreter.visit.test.ts',
-  'test/e2e/interpreter.write-ahead.test.ts',
-  'test/e2e/reconcile.crash.test.ts',
-  'test/e2e/reconcile.holds.test.ts',
-  'test/e2e/reconcile.replay.test.ts',
-  'test/e2e/reconcile.test.ts',
-  'test/e2e/run-suite.test.ts',
-  'test/e2e/run.admission.test.ts',
-  'test/e2e/run.branch-names.test.ts',
-  'test/e2e/run.branches.test.ts',
-  'test/e2e/run.concurrency.test.ts',
-  'test/e2e/run.recovery.test.ts',
-  'test/e2e/run.redaction.test.ts',
-  'test/e2e/run.resume.test.ts',
-  'test/support/action-marker-parts.ts',
-  'test/support/action-signals.ts',
-  'test/support/add-suite.ts',
-  'test/support/admission-hold-events.ts',
-  'test/support/after-phase.ts',
-  'test/support/backoff-run-stop.ts',
-  'test/support/case-database.ts',
-  'test/support/case-env.ts',
-  'test/support/child-exit.ts',
-  'test/support/child-scripts.ts',
-  'test/support/child-scripts/breakaway-child.ts',
-  'test/support/child-scripts/child-starter.ts',
-  'test/support/child-scripts/detached-child.ts',
-  'test/support/child-scripts/failing-taskkill.ts',
-  'test/support/child-scripts/forged-job-notes.ts',
-  'test/support/child-scripts/linked-starter.ts',
-  'test/support/child-scripts/long-lived.ts',
-  'test/support/child-scripts/orphan-middle.ts',
-  'test/support/child-scripts/prints-line.ts',
-  'test/support/child-scripts/shell-caller.ts',
-  'test/support/child-scripts/slow-taskkill.ts',
-  'test/support/child-scripts/split-character.ts',
-  'test/support/child-scripts/stdin-eof.ts',
-  'test/support/child-scripts/waits-for-file.ts',
-  'test/support/committing-repo.ts',
-  'test/support/crash-fs.ts',
-  'test/support/crash-resume.ts',
-  'test/support/epic-run.ts',
-  'test/support/event-appender.ts',
-  'test/support/example-layer.ts',
-  'test/support/execution-context.ts',
-  'test/support/execution-reads.ts',
-  'test/support/failing-git.ts',
-  'test/support/fake-gh.ts',
-  'test/support/fake-git.ts',
-  'test/support/fake-git-paths.ts',
-  'test/support/fake-git-store.ts',
-  'test/support/fake-harness.ts',
-  'test/support/fake-integrity.ts',
-  'test/support/first-visit.ts',
-  'test/support/git-shell.ts',
-  'test/support/golden.ts',
-  'test/support/golden-run.ts',
-  'test/support/harness-runs.ts',
-  'test/support/integrity-worktrees.ts',
-  'test/support/kernel32-doubles.ts',
-  'test/support/keys.ts',
-  'test/support/latch.ts',
-  'test/support/lock-contender.ts',
-  'test/support/lock-holder.ts',
-  'test/support/lock-stress.ts',
-  'test/support/manual-timers.ts',
-  'test/support/procedure-actions.ts',
-  'test/support/process-probe.ts',
-  'test/support/record-saver.ts',
-  'test/support/remote-failures.ts',
-  'test/support/repo-lock-contention.ts',
-  'test/support/repo-lock-writer.ts',
-  'test/support/request-tables.ts',
-  'test/support/reset-interruption.ts',
-  'test/support/review-flow.ts',
-  'test/support/run-fixture.ts',
-  'test/support/shell-case-options.ts',
-  'test/support/state-database-open-stress.ts',
-  'test/support/state-database-opener.ts',
-  'test/support/suite-runs.ts',
-  'test/support/temp-directory.ts',
-  'test/support/template-repos.ts',
-  'test/support/timed-out-shell.ts',
-  'test/support/unvisited-execution.ts',
-  'test/support/write-lock-holder.ts',
-  'test/unit/approval.test.ts',
-  'test/unit/briefs.test.ts',
-  'test/unit/checks.test.ts',
-  'test/unit/config.test.ts',
-  'test/unit/defaults.test.ts',
-  'test/unit/doctor.test.ts',
-  'test/unit/events.test.ts',
-  'test/unit/fake-harness.test.ts',
-  'test/unit/flow.test.ts',
-  'test/unit/github.test.ts',
-  'test/unit/integrity.test.ts',
-  'test/unit/interpreter.backoff.test.ts',
-  'test/unit/interpreter.bounds.test.ts',
-  'test/unit/interpreter.checks.test.ts',
-  'test/unit/interpreter.faults.test.ts',
-  'test/unit/interpreter.fix.test.ts',
-  'test/unit/interpreter.inputs.test.ts',
-  'test/unit/interpreter.procedures.test.ts',
-  'test/unit/interpreter.retry.test.ts',
-  'test/unit/interpreter.review.test.ts',
-  'test/unit/interpreter.test.ts',
-  'test/unit/interpreter.visit.test.ts',
-  'test/unit/interpreter.write-ahead.test.ts',
-  'test/unit/labels.test.ts',
-  'test/unit/layout.test.ts',
-  'test/unit/marker.test.ts',
-  'test/unit/outcome.test.ts',
-  'test/unit/personas.test.ts',
-  'test/unit/procedures.test.ts',
-  'test/unit/public-text.test.ts',
-  'test/unit/reconcile.crash.test.ts',
-  'test/unit/reconcile.holds.test.ts',
-  'test/unit/reconcile.replay.test.ts',
-  'test/unit/reconcile.test.ts',
-  'test/unit/record.test.ts',
-  'test/unit/refs.test.ts',
-  'test/unit/render.test.ts',
-  'test/unit/rules.test.ts',
-  'test/unit/run-suite.test.ts',
-  'test/unit/run.admission.test.ts',
-  'test/unit/run.branches.test.ts',
-  'test/unit/run.concurrency.test.ts',
-  'test/unit/run.holds.test.ts',
-  'test/unit/run.recovery.test.ts',
-  'test/unit/run.redaction.test.ts',
-  'test/unit/run.resume.test.ts',
-  'test/unit/run.test.ts',
-  'test/unit/validate.inputs.test.ts',
-  'test/unit/validate.routes.test.ts',
-  'test/unit/validate.schemas.test.ts',
-  'test/unit/validate.templates.test.ts',
-  'test/unit/validate.test.ts',
-];
-// Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
+// The one JavaScript file: ESLint 10.14 loads a .ts config only through the optional jiti package or an unstable flag.
+// Revisit when ESLint loads TypeScript configs natively.
 const LEGACY_MJS = ['eslint.config.mjs'];
-const unlistedMjs = (files: string[]) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
+const unlistedJavaScript = (files: string[]) =>
+  files.filter((path) => /\.(?:[cm]?js|[cm]ts)$/.test(path) && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
   const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
@@ -466,19 +234,165 @@ test('the major check reads ^, ~ and >= ranges and fails on any other', () => {
   }
 });
 
-test('every module in the converted list is TypeScript', () => {
-  for (const path of CONVERTED) {
-    assert.ok(existsSync(root + path), `${path} exists`);
-    assert.ok(!existsSync(root + path.replace(/\.ts$/, '.mjs')), `${path} has no .mjs twin`);
-  }
+test('no JavaScript file is left in the code tree', () => {
+  const samples = ['lib/new.mjs', 'bin/new.js', 'test/new.cjs', 'test/new.mts', 'test/new.cts'];
+  assert.deepEqual(unlistedJavaScript([...LEGACY_MJS, ...samples, 'lib/new.ts']), samples);
+  assert.deepEqual(unlistedJavaScript(repoFiles()), [], 'write the file as .ts (ADR 0018)');
+  assert.ok(existsSync(root + LEGACY_MJS[0]), 'a converted file leaves LEGACY_MJS');
 });
 
-test('a new .mjs file fails the layout test', () => {
-  assert.deepEqual(unlistedMjs([...LEGACY_MJS, 'lib/new.mjs']), ['lib/new.mjs']);
-  assert.deepEqual(unlistedMjs(repoFiles()), [], 'write a new module as .ts (ADR 0018)');
+test('the scans skip tool output at the root only, and .git and node_modules anywhere', () => {
+  const paths = ['.claude', 'coverage', '.git', 'node_modules', 'test/node_modules', 'test/coverage', 'lib/.claude'];
+  assert.deepEqual(paths.filter(isSkipped), ['.claude', 'coverage', '.git', 'node_modules', 'test/node_modules']);
+});
+
+const eslint = new ESLint({ cwd: root });
+const lintFindings = async (filePath: string, text: string) => {
+  const [result] = await eslint.lintText(text, { filePath });
+  return result.messages.map((message) => message.ruleId);
+};
+
+test('the strict rules apply to a JavaScript file too', async () => {
+  assert.deepEqual(await lintFindings('scripts/sample.mjs', 'export const cfg = 1;\n'), ['id-denylist']);
+});
+
+test('lint denies the name dir', async () => {
+  assert.deepEqual(await lintFindings('lib/sample.ts', 'export const dir = 1;\n'), ['id-denylist']);
+});
+
+// A thrown class's name shows in String(err) and the first line of its stack. The rule reads parsed code, so a comment
+// or a string that spells the name is not one, and any header is read.
+const FIELD = "  name = 'AError';\n";
+const IN_CONSTRUCTOR = "  constructor() {\n    super('x');\n    this.name = 'AError';\n  }\n";
+const THROWN_CLASSES_FLAGGED = [
+  ['with no name', 'export class AError extends Error {}\n'],
+  ['with another name in a field', "export class AError extends Error {\n  name = 'BError';\n}\n"],
+  [
+    'with another name in its constructor',
+    `export class AError extends Error {\n${IN_CONSTRUCTOR.replace('AError', 'BError')}}\n`,
+  ],
+  ['with its name in a line comment', "export class AError extends Error {}\n// name = 'AError';\n"],
+  ['with its name in a block comment', "export class AError extends Error {}\n/*\nname = 'AError';\n*/\n"],
+  ['with its name in a string', 'export class AError extends Error {}\nexport const note = "name = \'AError\'";\n'],
+  [
+    'with its name in a template literal',
+    "export class AError extends Error {}\nexport const note = `\nname = 'AError';\n`;\n",
+  ],
+  [
+    'with its name in a method',
+    "export class AError extends Error {\n  later() {\n    this.name = 'AError';\n  }\n}\n",
+  ],
+  ['with its name on a static field', "export class AError extends Error {\n  static name = 'AError';\n}\n"],
+  [
+    'with its name set on another object',
+    `export class AError extends Error {\n${IN_CONSTRUCTOR.replace('this.name', 'other.name')}}\n`,
+  ],
+  ['with its name on a computed field', "export class AError extends Error {\n  [name] = 'AError';\n}\n"],
+  ['with its name on a private field', "export class AError extends Error {\n  #name = 'AError';\n}\n"],
+  [
+    'with its name set on a private field',
+    `export class AError extends Error {\n  #name = '';\n${IN_CONSTRUCTOR.replace('this.name', 'this.#name')}}\n`,
+  ],
+  [
+    'with its name added to, not set',
+    "export class AError extends Error {\n  constructor() {\n    super('x');\n    this.name += 'AError';\n  }\n}\n",
+  ],
+  [
+    'with its name set through a computed key',
+    "export class AError extends Error {\n  constructor() {\n    super('x');\n    this[name] = 'AError';\n  }\n}\n",
+  ],
+  ['with its name in another class', `export class AError extends Error {}\nexport class Other {\n${FIELD}}\n`],
+  ['with a generic', 'export class AError<Value> extends Error {\n  value?: Value;\n}\n'],
+  ['with a nested generic', 'export class AError<Value extends Array<number>> extends Error {\n  value?: Value;\n}\n'],
+  ['with a generic over lines', 'export class AError<\n  Value,\n> extends Error {\n  value?: Value;\n}\n'],
+  ['with its header over lines', 'export class AError\n  extends Error {}\n'],
+  ['through a namespace', 'export class AError extends exec.CommandError {}\n'],
+  ['through a deeper namespace', 'export class AError extends outer.exec.CommandError {}\n'],
+  ['as a class expression', 'export const made = class AError extends Error {};\n'],
+  ['with no Error suffix', "export class Thing extends Error {\n  name = 'Thing';\n}\n"],
+  [
+    'with no Error suffix, through a namespace',
+    "export class Thing extends exec.CommandError {\n  name = 'Thing';\n}\n",
+  ],
+];
+const THROWN_CLASSES_PASSED = [
+  ['its name in a field', `export class AError extends Error {\n${FIELD}}\n`],
+  ['its name in its constructor', `export class AError extends Error {\n${IN_CONSTRUCTOR}}\n`],
+  [
+    'a generic and a namespace',
+    `export class AError<Value> extends exec.CommandError {\n${FIELD}  value?: Value;\n}\n`,
+  ],
+];
+const OTHER_CLASSES_PASSED = [
+  ['a plain superclass', 'export class Thing extends Base {}\n'],
+  ['a generic superclass', 'export class Thing<Value> extends Base<Value> {}\n'],
+  ['a comment that looks like an error class', 'export class Thing<Value> extends Base<Value> {} // > extends Error\n'],
+];
+for (const [what, text] of THROWN_CLASSES_FLAGGED) {
+  test(`lint fails a thrown class ${what}`, async () => {
+    assert.deepEqual(await lintFindings('lib/sample.ts', text), ['gg/thrown-class']);
+  });
+}
+for (const [what, text] of [...THROWN_CLASSES_PASSED, ...OTHER_CLASSES_PASSED]) {
+  test(`lint passes a class with ${what}`, async () => {
+    assert.deepEqual(await lintFindings('lib/sample.ts', text), []);
+  });
+}
+
+test('lint reads a thrown class in every kind of code file', async () => {
+  const thrown = ['gg/thrown-class'];
+  const text = 'export class AError extends Error {}\n';
+  assert.deepEqual(await lintFindings('test/support/sample.ts', text), thrown);
+  assert.deepEqual(await lintFindings('test/unit/sample.test.ts', text), thrown);
+  assert.deepEqual(await lintFindings('bin/sample.ts', text), thrown);
+  assert.deepEqual(await lintFindings('scripts/sample.mjs', text), thrown);
+});
+
+// The rule keeps each call naming its module (#237). It reads parsed code, so an import a case spells in a string is
+// not one.
+test('lint fails a named import from lib in a test file, and not one spelled in a string', async () => {
+  const sample = 'test/unit/sample.test.ts';
+  assert.deepEqual(await lintFindings(sample, "import { pathKey } from '../../lib/paths.ts';\n"), [
+    'no-restricted-syntax',
+  ]);
+  assert.deepEqual(await lintFindings(sample, "import * as paths from '../../lib/paths.ts';\n"), []);
+  assert.deepEqual(await lintFindings(sample, "export const text = `\nimport { add } from '../lib/add.ts';\n`;\n"), []);
+});
+
+test('lint fails a type imported by name from lib in a test file, and allows it inside lib', async () => {
+  const sample = 'test/support/sample.ts';
+  const restricted = ['no-restricted-syntax'];
+  assert.deepEqual(await lintFindings(sample, "import type { Deps } from '../../lib/run-context.ts';\n"), restricted);
+  assert.deepEqual(await lintFindings(sample, "import { type Deps } from '../../lib/run-context.ts';\n"), restricted);
+  assert.deepEqual(await lintFindings(sample, "import type * as runContext from '../../lib/run-context.ts';\n"), []);
+  assert.deepEqual(await lintFindings('lib/sample.ts', "import type { Deps } from './run-context.ts';\n"), []);
+});
+
+// Documents agents read for today's paths. An ADR or a docs/research record is dated: it names paths as they were.
+const LIVING_DOCUMENTS = [
+  'AGENTS.md',
+  'GLOSSARY.md',
+  'README.md',
+  'docs/adr/0014-procedures-are-data.md',
+  'docs/interfaces/harness.md',
+  'docs/library-survey.md',
+  'docs/requests/node-harness-dag.md',
+  'docs/testing.md',
+];
+// A path from the repository root, so not node_modules/eslint/bin/eslint.js or another project's src/lib/x.ts.
+const CODE_PATH = /(?<![\w/.-])(?:lib|bin|scripts)\/[\w/.-]*\.(?:[cm]?js|ts)\b/g;
+const codePathsIn = (text: string) => [...text.matchAll(CODE_PATH)].map((match) => match[0]);
+
+test('a living document names only code files that exist', () => {
   assert.deepEqual(
-    LEGACY_MJS.filter((path) => !existsSync(root + path)),
+    codePathsIn('See `lib/gone.mjs:12`, bin/gg.ts. Then node_modules/eslint/bin/eslint.js, src/lib/a.ts'),
+    ['lib/gone.mjs', 'bin/gg.ts'],
+  );
+  const named = LIVING_DOCUMENTS.flatMap((document) => codePathsIn(readFileSync(root + document, 'utf8')));
+  assert.ok(named.includes('lib/paths.ts'), 'the documents are read');
+  assert.deepEqual(
+    named.filter((path) => !existsSync(root + path)),
     [],
-    'a converted file leaves LEGACY_MJS',
+    'name the file as it is today',
   );
 });

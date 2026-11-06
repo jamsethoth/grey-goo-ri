@@ -23,6 +23,7 @@ export interface RunOptions {
 // A command that ran and exited nonzero, with its output, so a catch site can tell it from a spawn failure (a missing
 // executable), which rejects with the plain error spawn gives.
 export class CommandError extends Error {
+  name = 'CommandError';
   code: number | null;
   stdout: string;
   stderr: string;

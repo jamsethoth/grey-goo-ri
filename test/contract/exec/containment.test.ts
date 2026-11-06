@@ -14,8 +14,8 @@ const ascending = (left: number, right: number) => left - right;
 
 // A shell in a job, with a sleeper it started: the job, and the two pids in ascending order.
 async function shellWithSleeper(t: TestContext, kernel32: containment.Kernel32 | null) {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-containment-'));
-  const pidFile = join(dir, 'sleeper.pid');
+  const directory = mkdtempSync(join(tmpdir(), 'gg-containment-'));
+  const pidFile = join(directory, 'sleeper.pid');
   const { child, job } = containment.start(
     kernel32,
     childScripts.nodeCommand(t, childScripts.LONG_LIVED, pidFile),
@@ -28,7 +28,7 @@ async function shellWithSleeper(t: TestContext, kernel32: containment.Kernel32 |
     await job.emptied();
     job.close();
   });
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
   child.stdout?.resume();
   child.stderr?.resume();
   // a sleeper that never starts fails at the case timeout

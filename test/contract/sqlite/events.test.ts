@@ -24,11 +24,11 @@ function rows(commonDir: string) {
 }
 
 test('two processes append to the same table without loss', async (t) => {
-  const dir = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
   const exits = await Promise.all(
     ['a', 'b'].map((run) =>
       childExit
-        .exitOf(spawn(process.execPath, [appender, dir, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] }))
+        .exitOf(spawn(process.execPath, [appender, directory, run, '200'], { stdio: ['ignore', 'ignore', 'pipe'] }))
         .then((exit) => ({ run, ...exit })),
     ),
   );
@@ -36,8 +36,8 @@ test('two processes append to the same table without loss', async (t) => {
     { run: 'a', code: 0, err: '' },
     { run: 'b', code: 0, err: '' },
   ]);
-  assert.equal(rows(dir).length, 400);
-  const read = events.readEvents(dir);
+  assert.equal(rows(directory).length, 400);
+  const read = events.readEvents(directory);
   assert.equal(read.length, 400);
   assert.equal(read.filter((event) => event.run === 'a').length, 200);
   assert.equal(read.filter((event) => event.run === 'b').length, 200);

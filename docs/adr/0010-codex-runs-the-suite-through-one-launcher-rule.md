@@ -5,6 +5,9 @@ date: 2026-10-16
 
 # Codex runs the test suite outside its sandbox through one allow-listed launcher
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Codex reviews and QA runs on native Windows execute inside Codex's Windows sandbox (MXC). The suite needs things that
 sandbox blocks: spawning git and MSYS `sh`, hard links, and renames inside `TEMP`. The limits are known upstream and
 open in the Codex issue tracker, so a Codex review reports "suite unverified" instead of real counts. The Codex plugin

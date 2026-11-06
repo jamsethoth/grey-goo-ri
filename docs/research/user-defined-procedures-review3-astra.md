@@ -1,5 +1,8 @@
 # User-defined Procedures: design review round 3, Astra (raw)
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Codex `gpt-6-astra`, effort high, read-only, two runs in one thread (2026-10-22). Run 1 could not read the main
 checkout; run 2 compared against main at bd60df9 through `git show bd60df9:<path>` and numbered from A3.
 

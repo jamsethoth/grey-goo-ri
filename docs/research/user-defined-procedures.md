@@ -1,5 +1,8 @@
 # User-defined Procedures, Actions and Outcomes: research and options
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Research for the planning session on letting a repository owner define their own Procedures, Actions and Outcomes
 without changing gg. 2026-10-21. Two independent research tracks were run from one brief and merged here:
 

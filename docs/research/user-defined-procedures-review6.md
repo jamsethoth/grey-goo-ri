@@ -1,5 +1,8 @@
 # User-defined Procedures: review round 6, all issues, merged
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 On 2026-10-22 two new reviewers, Astra (gpt-6-astra, high) and Fable, reviewed the whole Epic as filed: issue #101,
 its 22 tickets (issues #102–#123), and issues #23 and #68. They worked from one brief, with an export of GitHub, and
 did not read the earlier reviews. Their reports are in [the raw reviews](user-defined-procedures-review6-raw.md). Each

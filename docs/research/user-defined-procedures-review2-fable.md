@@ -1,5 +1,8 @@
 # Design review, round 2: user-defined Procedures (decisions at 486babf)
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Reviewer: Fable 5.1, read-only. Code references are to main at bd60df9. *(inference)* marks what was not checked against code.
 
 ## Blocking

@@ -240,13 +240,13 @@ function removeLink(link: string) {
 
 // The layout npm link and npm install -g <checkout> make: node_modules/grey-goo-ri links to the checkout.
 function linkedInstall(t: TestContext) {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-linked-'));
-  const link = join(dir, 'node_modules', 'grey-goo-ri');
+  const directory = mkdtempSync(join(tmpdir(), 'gg-linked-'));
+  const link = join(directory, 'node_modules', 'grey-goo-ri');
   t.after(() => {
     removeLink(link);
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true });
   });
-  mkdirSync(join(dir, 'node_modules'));
+  mkdirSync(join(directory, 'node_modules'));
   symlinkSync(root, link, process.platform === 'win32' ? 'junction' : 'dir');
   return link;
 }

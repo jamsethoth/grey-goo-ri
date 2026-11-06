@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import * as fakeHarnessModule from '../support/fake-harness.ts';
 
 const dirs: string[] = [];
-after(() => Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true }))));
+after(() => Promise.all(dirs.map((directory) => rm(directory, { recursive: true, force: true }))));
 
 const setup = async (options: fakeHarnessModule.FakeHarnessOptions = {}) => {
   const transcriptDir = await mkdtemp(join(tmpdir(), 'gg-fake-transcripts-'));

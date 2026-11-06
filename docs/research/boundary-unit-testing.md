@@ -1,5 +1,8 @@
 # Unit-testing code at process and OS boundaries
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Research note, 2026-11-03, against the tree at bdfb599. Line numbers refer to that tree. Upstream sources were read
 on 2026-11-03 at the branch named in each link.
 

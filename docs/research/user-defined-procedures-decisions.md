@@ -1,5 +1,8 @@
 # User-defined Procedures, Actions and Outcomes: decisions
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 The running record of the planning session. The research behind it is in
 [user-defined-procedures.md](user-defined-procedures.md).
 

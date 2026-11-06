@@ -285,8 +285,8 @@ function humanSteps({ store, placeAt, headOf, move, addAll, writeFiles }: Parts)
     writeFiles(mainRoot, store.tree(tree));
     return { mainRoot, commonDir, base };
   }
-  const commitAs = (dir: string, message: string, parentsOf: (place: Place) => string[], stage: boolean) => {
-    const place = placeAt(dir);
+  const commitAs = (directory: string, message: string, parentsOf: (place: Place) => string[], stage: boolean) => {
+    const place = placeAt(directory);
     if (stage) place.worktree.index = addAll(place.worktree);
     const sha = store.putCommit(store.putTree(place.worktree.index), parentsOf(place), message);
     move(place, sha);
@@ -294,25 +294,25 @@ function humanSteps({ store, placeAt, headOf, move, addAll, writeFiles }: Parts)
   };
   return {
     init,
-    commit: (dir: string, message: string) => commitAs(dir, message, (place) => [headOf(place)], true),
-    amend: (dir: string, message: string) =>
-      commitAs(dir, message, (place) => store.commit(headOf(place)).parents, false),
-    branch: (dir: string, name: string) => {
-      const place = placeAt(dir);
+    commit: (directory: string, message: string) => commitAs(directory, message, (place) => [headOf(place)], true),
+    amend: (directory: string, message: string) =>
+      commitAs(directory, message, (place) => store.commit(headOf(place)).parents, false),
+    branch: (directory: string, name: string) => {
+      const place = placeAt(directory);
       place.repo.branches.set(name, headOf(place));
       place.worktree.branch = name;
     },
-    detach: (dir: string) => {
-      const place = placeAt(dir);
+    detach: (directory: string) => {
+      const place = placeAt(directory);
       place.worktree.head = headOf(place);
       place.worktree.branch = null;
     },
-    unstage: (dir: string) => {
-      const place = placeAt(dir);
+    unstage: (directory: string) => {
+      const place = placeAt(directory);
       place.worktree.index = new Map(store.tree(store.commit(headOf(place)).tree));
     },
-    breakOrigin: (dir: string) => {
-      const { repo } = placeAt(dir);
+    breakOrigin: (directory: string) => {
+      const { repo } = placeAt(directory);
       repo.reachable = false;
       repo.url = join(dirname(repo.url), 'gone.git');
       return 'gone.git';
