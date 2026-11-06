@@ -137,7 +137,7 @@ function ratchet(mode: 'check' | 'update'): number {
   const baseline = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
   const report = existsSync(join(root, LCOV)) ? readFileSync(join(root, LCOV), 'utf8') : '';
   if (!/^LF:[1-9]/m.test(report)) {
-    console.error(`coverage measured no lines: a unit test ended the process early, or none loaded lib/.`);
+    console.error(`coverage measured no lines: a unit test ended the process early, or lib/ has nothing to measure.`);
     return 1;
   }
   const current = coverageTotals(report);
