@@ -35,8 +35,9 @@ export const shellOptions = ({ cwd, timeoutMs, ...testHooks }: ShellCaseOptions 
 // timeout fires however slowly they start. ready is false when the command ended first.
 // The case's own signal ends the wait too, and then the command is timed out before the case fails.
 // The case's end waits for the run, also at its timeout, while the case's body still waits, and then ends what the run
-// names: a cleanup that outlasted the case would read the next case's environment. The bound is for a run that never
-// answers. options.kernel32, when given, is the FFI runShell runs on.
+// names: a cleanup that outlasted the case would read the next case's environment. The bound lets the file's later
+// cases run when a run never answers; it ends nothing, so what that run holds still keeps the file open.
+// options.kernel32, when given, is the FFI runShell runs on.
 export async function timeOutWhen(
   commandLine: string,
   { kernel32, ...options }: ShellCaseOptions,

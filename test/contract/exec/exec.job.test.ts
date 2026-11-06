@@ -28,21 +28,16 @@ test(
   WIN_CASE,
   async (t) => {
     const pidFile = join(scratch, 'leftover-reported.pid');
+    t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec.runShell(
       nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
       timedOutShell.shellOptions({ timeoutMs: 20000, signal: timedOutShell.noClock() }),
     );
     assert.equal(result.code, 0);
-    // a background process that never starts fails at the case timeout
-    await waitFor(() => existsSync(pidFile), t.signal);
     const pid = pidIn(pidFile);
-    try {
-      assert.ok(result.leftovers?.includes(pid), JSON.stringify(result.leftovers));
-      assert.match(result.output, /left running: pid/);
-      assert.ok(alive(pid), 'background process was killed');
-    } finally {
-      processProbe.endProcess(pid);
-    }
+    assert.ok(result.leftovers?.includes(pid), JSON.stringify(result.leftovers));
+    assert.match(result.output, /left running: pid/);
+    assert.ok(alive(pid), 'background process was killed');
   },
 );
 

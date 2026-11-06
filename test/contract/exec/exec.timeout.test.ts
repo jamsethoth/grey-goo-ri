@@ -125,12 +125,12 @@ test(
 test('a case that ends while its command runs does not end before the command is timed out', CASE, async (t) => {
   const pidFile = join(scratch, 'taken-down.pid');
   t.after(() => processProbe.endProcessIn(pidFile));
-  let clockRanOut = false;
+  let timedOut = false;
   const timers: exec.Timers = {
-    setTimeout: ((fire: () => void, ms: number) =>
-      setTimeout(() => {
-        clockRanOut = true;
-        fire();
+    setTimeout: ((fire: () => Promise<void>, ms: number) =>
+      setTimeout(async () => {
+        await fire();
+        timedOut = true;
       }, ms)) as typeof globalThis.setTimeout,
     clearTimeout,
   };
@@ -150,7 +150,7 @@ test('a case that ends while its command runs does not end before the command is
   await waitFor(() => pidIn(pidFile) > 0, t.signal);
   cancel.abort();
   await cancelled;
-  assert.ok(clockRanOut, 'the case ended with its command still waiting for its clock');
+  assert.ok(timedOut, 'the case ended with its command not yet taken down');
 });
 
 test('runShell reports surviving PIDs and the kill error when termination fails', CASE, async (t) => {
@@ -343,20 +343,15 @@ test(
 
 test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
   const pidFile = join(scratch, 'unrelated.pid');
-  // the sleeper's parent exits once it has started: an orphan unrelated to the shell below
+  t.after(() => processProbe.endProcessIn(pidFile));
+  // the sleeper's parent exits once it has started it: an orphan unrelated to the shell below
   await exec.run(process.execPath, [childScripts.DETACHED_CHILD, 'ignore', pidFile]);
-  await waitFor(() => existsSync(pidFile), t.signal); // a sleeper that never starts fails at the case timeout
-  const pid = pidIn(pidFile);
-  try {
-    const result = await exec.runShell(
-      childScripts.nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'unrelated-hang.pid')),
-      {
-        timeoutMs: 800,
-      },
-    );
-    assert.equal(result.timedOut, true);
-    assert.ok(alive(pid), 'unrelated orphan was killed');
-  } finally {
-    processProbe.endProcess(pid);
-  }
+  const result = await exec.runShell(
+    childScripts.nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'unrelated-hang.pid')),
+    {
+      timeoutMs: 800,
+    },
+  );
+  assert.equal(result.timedOut, true);
+  assert.ok(alive(pidIn(pidFile)), 'unrelated orphan was killed');
 });

@@ -110,19 +110,13 @@ test(
   { ...CASE, skip: process.platform === 'win32' && 'Windows also reports them: see exec.job.test.ts' },
   async (t) => {
     const pidFile = join(scratch, 'leftover.pid');
+    t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec.runShell(
       nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
       shellOptions({ timeoutMs: 20000, signal: noClock() }),
     );
     assert.equal(result.code, 0);
-    // a background process that never starts fails at the case timeout
-    await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
-    const pid = processProbe.pidIn(pidFile);
-    try {
-      assert.ok(processProbe.alive(pid), 'background process was killed');
-    } finally {
-      processProbe.endProcess(pid);
-    }
+    assert.ok(processProbe.alive(processProbe.pidIn(pidFile)), 'background process was killed');
   },
 );
 
