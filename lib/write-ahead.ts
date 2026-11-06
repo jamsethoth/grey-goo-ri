@@ -50,7 +50,7 @@ export const evidenceOf = (
   executionRecord: record.ExecutionRecord,
   actionMarker: string,
 ): WriteAheadEntry | undefined =>
-  executionRecord.writeAheadLog.findLast(
+  executionRecord.writeAheadLog.find(
     (entry) => entry.actionMarker === actionMarker && entry.step === 'evidence' && entry.evidence?.ok !== false,
   );
 
