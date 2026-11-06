@@ -14,11 +14,11 @@ interface GivenSignals {
   policy?: outcome.ResolutionPolicy;
 }
 // A case's decide input names only the Procedure tables it reads.
-type GivenDecision = Omit<outcome.Deciding, 'claim' | 'procedure'> & {
+type GivenDecision = Omit<outcome.DecideInput, 'claim' | 'procedure'> & {
   claim: GivenClaim;
   procedure: Partial<procedures.Procedure>;
 };
-const decided = (input: GivenDecision) => outcome.decide(input as outcome.Deciding);
+const decided = (input: GivenDecision) => outcome.decide(input as outcome.DecideInput);
 
 const none = { transient: 0, rateLimited: 0, timeout: 0, parse: 0 };
 const completed: visit.CallSignal = { status: 'completed', response: { claim: 'ok' }, failure: null };
@@ -67,8 +67,8 @@ const decisionOf = (resolution: visit.TableResolution) => ({
   rule: resolution.rule,
 });
 
-test('DEFAULT_POLICY holds the retry budgets by kind', () => {
-  assert.deepEqual(outcome.DEFAULT_POLICY, { transient: 2, rateLimited: 2, timeout: 1, parse: 1 });
+test('DEFAULT_RESOLUTION_POLICY holds the retry budgets by kind', () => {
+  assert.deepEqual(outcome.DEFAULT_RESOLUTION_POLICY, { transient: 2, rateLimited: 2, timeout: 1, parse: 1 });
 });
 
 test('row integrity-violation: failed integrity check on a completed ok -> integrity-violation', () => {
@@ -197,7 +197,7 @@ test('a completed result with response null and no claim is a parse retry, then 
 });
 
 test('a policy overrides the retry budgets', () => {
-  const policy = { ...outcome.DEFAULT_POLICY, transient: 0 };
+  const policy = { ...outcome.DEFAULT_RESOLUTION_POLICY, transient: 0 };
   assertRow(resolve({ result: failed('transient'), policy }), {
     row: 'transient-exhausted',
     outcome: 'harness-transient',
@@ -630,7 +630,7 @@ test('every class in the table has a reach, and the Harness rows follow it', () 
   });
   const rowOf = { retry: 'transient-retry', run: 'run-stop', ticket: 'unknown-failure' };
   for (const [failureClass, { reach, budget }] of Object.entries(outcome.FAILURE_CLASSES)) {
-    const resolution = resolve({ result: failed(failureClass), policy: outcome.DEFAULT_POLICY });
+    const resolution = resolve({ result: failed(failureClass), policy: outcome.DEFAULT_RESOLUTION_POLICY });
     assert.equal(resolution.row, rowOf[reach], failureClass);
     assert.equal(resolution.retryKind, budget, failureClass);
     assert.equal(resolution.failureClass, failureClass);

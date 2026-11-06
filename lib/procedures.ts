@@ -2,7 +2,7 @@
 // as `<action id>.<output>` (W2). The Procedures themselves are configuration, declared in a Layer; the interpreter
 // runs each kind.
 
-import type * as refs from './refs.ts';
+import type * as referencePaths from './reference-paths.ts';
 import type * as rules from './rules.ts';
 
 export const ACTION_KEYS = {
@@ -54,8 +54,8 @@ export const COMPARISONS = {
   '=': (left: number, right: number) => left === right,
 };
 export type Operator = keyof typeof COMPARISONS;
-export const OPS = Object.keys(COMPARISONS) as Operator[];
-export const CONDITION_KEYS = ['field', 'is', 'none', 'any', 'all', 'count', 'where', ...OPS];
+export const OPERATORS = Object.keys(COMPARISONS) as Operator[];
+export const CONDITION_KEYS = ['field', 'is', 'none', 'any', 'all', 'count', 'where', ...OPERATORS];
 export const CHECK_KEYS = {
   command: ['command', 'reuse'],
   'tests-fail': ['command', 'testNames'],
@@ -65,7 +65,7 @@ export const CHECK_KEYS = {
 export type CheckKind = keyof typeof CHECK_KEYS;
 
 // Strict like a response schema's objects, so an output and a response field of the same fields are one type.
-export const object = (properties: Record<string, refs.SchemaNode>) => ({
+export const object = (properties: Record<string, referencePaths.SchemaNode>) => ({
   type: 'object',
   properties,
   required: Object.keys(properties),
@@ -74,8 +74,8 @@ export const object = (properties: Record<string, refs.SchemaNode>) => ({
 export const STRING = { type: 'string' };
 export const INTEGER = { type: 'integer' };
 export const STRING_LIST = { type: 'array', items: STRING };
-// gg's own outputs: a Check's evidence (checks.evidence), an Action's cleanup (L11, exec's survivors) and a Vertex's
-// rescue (W3), whose diffStat is events.diffStats' totals.
+// gg's own outputs: a Check's evidence (checks.checkEvidence), an Action's cleanup (L11, exec's survivors) and a
+// Vertex's rescue (W3), whose diffStat is events.diffStats' totals.
 const EVIDENCE = object({ command: STRING, output: STRING });
 // A tests-fail pass found by the test's name alone says so (J8).
 const RED_EVIDENCE = object({ command: STRING, output: STRING, foundByNameOnly: { type: 'boolean' } });
@@ -96,7 +96,7 @@ export const RESCUE = object({
 });
 // What each Check kind produces: a command or tests-fail Check runs a command, so it declares evidence and the cleanup
 // L11 will write; a response or repeat Check runs no command, so it has neither.
-const CHECK_OUTPUTS: Record<CheckKind, Record<string, refs.SchemaNode>> = {
+const CHECK_OUTPUTS: Record<CheckKind, Record<string, referencePaths.SchemaNode>> = {
   command: { evidence: EVIDENCE, cleanup: CLEANUP },
   'tests-fail': { evidence: RED_EVIDENCE, cleanup: CLEANUP },
   response: {},
@@ -104,7 +104,7 @@ const CHECK_OUTPUTS: Record<CheckKind, Record<string, refs.SchemaNode>> = {
 };
 
 // What each Action kind produces; an agent's response is typed by its schema.
-export function outputs(action: Action, schema: refs.SchemaNode) {
+export function outputs(action: Action, schema: referencePaths.SchemaNode) {
   if (action.do === 'agent') return object({ response: schema, cleanup: CLEANUP });
   if (action.do === 'check') return object(CHECK_OUTPUTS[action.kind as CheckKind] ?? {});
   if (action.do === 'commit') return object({ files: STRING_LIST });

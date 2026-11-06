@@ -113,7 +113,8 @@ const FINDERS: Record<string, FindEffect | undefined> = {
   async label({ payload }, { issueLabels }) {
     const { add, remove } = payload as LabelPayload;
     const shown =
-      add.every((label) => labels.has(issueLabels, label)) && remove.every((label) => !labels.has(issueLabels, label));
+      add.every((label) => labels.hasLabel(issueLabels, label)) &&
+      remove.every((label) => !labels.hasLabel(issueLabels, label));
     return shown ? found({ ok: true }) : ABSENT;
   },
 };

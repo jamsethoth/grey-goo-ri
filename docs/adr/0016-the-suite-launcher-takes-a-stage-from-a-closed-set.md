@@ -49,7 +49,7 @@ process. With a process per file, node merges each process's coverage in directo
 on that order (the merge nodejs/node#66860 reports), so the same tree could pass or fail: 6 of 22 first attempts fell on the trees that
 could, each by the same two lines. With one process there is no merge. On real runners the figures were identical in 12
 of 12 jobs across both platforms, in about the same time as before, though a local run takes about four times as long.
-The recorded figures fell from 98.75% to 98.58% of lines, by hand as above, because 19 lines no test ran are no longer
+The recorded figures fell from 98.76% to 98.59% of lines, by hand as above, because 19 lines no test ran are no longer
 counted. 36 more lines no test ran still count, because node marks a line uncovered only when a zero range spans all of
 it. The other stages keep a process per file, so tests are still isolated there, and a test that leaks state into a later
 file shows only here. Counting lines from each process's own ranges would also stop counting the 36, for about 60 lines of

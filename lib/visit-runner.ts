@@ -15,7 +15,7 @@ import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
 import type * as terminalReport from './terminal-report.ts';
@@ -34,7 +34,7 @@ export interface VisitEnd {
 }
 // The last Action the Visit ran and its result.
 interface Ran {
-  actionIdentity: marker.ActionRef;
+  actionIdentity: marker.ActionIdentity;
   resolution: ActionResolution;
 }
 
@@ -57,15 +57,16 @@ function resolveInputs(
   return Object.fromEntries(
     Object.entries(declared).map(([name, { from, optional, pick }]) => {
       const sources = [from].flat().map((ref) => {
-        const [vertex, action, ...path] = refs.parse(ref).steps ?? [];
+        const [vertex, action, ...path] = referencePaths.parse(ref).steps ?? [];
         return { vertex, action, path: path.join('.') };
       });
       for (const output of executionRecord.outputs.toReversed()) {
         for (const source of sources) {
           const matches = output.vertex === source.vertex && output.action === source.action;
-          const value = matches ? refs.read(output.value, source.path) : undefined;
+          const value = matches ? referencePaths.read(output.value, source.path) : undefined;
           if (value === undefined) continue;
-          const picked = pick === undefined ? value : (value as unknown[]).map((item) => refs.read(item, pick));
+          const picked =
+            pick === undefined ? value : (value as unknown[]).map((item) => referencePaths.read(item, pick));
           return [
             name,
             { value: picked, vertex: output.vertex, visit: output.visit, action: output.action, absent: false },
@@ -120,7 +121,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
 // explains, as at admission (R2d); anything else is Held before any agent runs.
 async function heldDirty(runContext: RunContext, vertexId: string): Promise<VisitEnd | null> {
   const executionRecord = runContext.record;
-  const dirty = await effects.bracket(runContext, () =>
+  const dirty = await effects.whileBusy(runContext, () =>
     reconcile.dirtyState(executionRecord, {
       git: runContext.git,
       worktree: executionRecord.worktree,
@@ -283,7 +284,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
   const signals = Object.values(state.checks);
   const checked =
     state.proc.passed.length && signals.some((signal) => signal.tree)
-      ? await effects.bracket(runContext, () => visitScope.fresh(runContext, signals))
+      ? await effects.whileBusy(runContext, () => visitScope.fresh(runContext, signals))
       : signals;
   const { claim, signal } = state.call ?? visitScope.IMPLICIT_OK;
   const { outcome: outcomeName, rule } = outcome.decide({
@@ -320,7 +321,7 @@ function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity,
     history: {
       kind: 'integrity violation',
       text:
-        `Attempt ${resolution.attempt} of ${terminal.whereOf(actionIdentity)} changed ` +
+        `Attempt ${resolution.attempt} of ${terminal.actionText(actionIdentity)} changed ` +
         `${resolution.surfaces!.join(' and ')}; the worktree was restored to its baseline head.`,
     },
     untracked: integrity.rollbackSet(baseline, runContext.protectedPaths, checks.testPathSet(testPaths)),
@@ -331,12 +332,12 @@ function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity,
 // git clean leaves, so a crash after the reset can still finish the restore.
 async function discard(
   runContext: RunContext,
-  { actionIdentity, ...reset }: { actionIdentity: marker.ActionRef } & Omit<visit.ResetPayload, 'left'>,
+  { actionIdentity, ...reset }: { actionIdentity: marker.ActionIdentity } & Omit<visit.ResetPayload, 'left'>,
 ) {
   const { record: executionRecord, git } = runContext;
   // The worktree as the agent left it: at admission, only dirty state that still matches this is proven the agent's.
   // The ignored Protected Files and tests are in it too: the tree cannot see them, but the restore rewrites them.
-  const left = await effects.bracket(runContext, async () => ({
+  const left = await effects.whileBusy(runContext, async () => ({
     ...(await runContext.integrity.snapshot(executionRecord.worktree)),
     files: reset.untracked
       ? await runContext.integrity.ignoredFiles(executionRecord.worktree, reset.untracked.within)
@@ -346,7 +347,7 @@ async function discard(
     ...reset,
     left: { head: left.head, index: left.index, tree: left.tree, files: left.files },
   };
-  await effects.bracket(runContext, () =>
+  await effects.whileBusy(runContext, () =>
     effects.sideEffect(runContext, {
       actionMarker: runContext.markerOf(actionIdentity),
       effect: 'reset',

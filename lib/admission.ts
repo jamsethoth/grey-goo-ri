@@ -82,7 +82,7 @@ interface Decided {
 // An end is its own State Label; an abandonment leaves the human's needs-human.
 const stateOf = (outcome: string) => {
   if (outcome === 'abandoned') return labels.NEEDS_HUMAN;
-  return (labels.ENDS as readonly string[]).includes(outcome) ? outcome : undefined;
+  return (labels.END_STATES as readonly string[]).includes(outcome) ? outcome : undefined;
 };
 
 // Admission's hold, abandonment or fault is saved with every field, so a reader never meets a missing key.
@@ -105,7 +105,7 @@ const setLabels = (admitting: Admitting, change: github.LabelChange) =>
 
 function skip(admitting: Admitting, reason: string): TicketResult {
   admitting.context.log(`#${admitting.ticket} skipped: ${reason}`);
-  const needsHuman = labels.has(admitting.issueLabels, admitting.state(labels.NEEDS_HUMAN));
+  const needsHuman = labels.hasLabel(admitting.issueLabels, admitting.state(labels.NEEDS_HUMAN));
   return { ticket: admitting.ticket, outcome: 'skipped', ...(needsHuman && { state: labels.NEEDS_HUMAN }) };
 }
 
@@ -116,7 +116,7 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
   const ticket = issue.number;
   const cwd = repo.mainRoot;
   const recordLocation = relative(cwd, join(repo.gitCommonDir, 'gg', 'gg.db')).replaceAll('\\', '/');
-  const state = labels.labels(layers.labelPrefix).state;
+  const state = labels.labelsFor(layers.labelPrefix).state;
   const recovery =
     `Inspect the row first in the State Database at ${recordLocation} (relative to the main checkout) using a SQLite ` +
     'client. After preserving your changes, delete it with ' +
@@ -148,7 +148,7 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
 async function holdCorruptRecord(admitting: Admitting, corrupt: record.RecordCorruptError): Promise<TicketResult> {
   const { context, ticket, cwd, state } = admitting;
   const { gh } = context.deps;
-  if (labels.has(admitting.issueLabels, state(labels.NEEDS_HUMAN)))
+  if (labels.hasLabel(admitting.issueLabels, state(labels.NEEDS_HUMAN)))
     return skip(admitting, `it is labelled ${state(labels.NEEDS_HUMAN)}`);
   const { reason } = await reconcile.reconcile({
     corrupt,
@@ -197,7 +197,7 @@ function notResumedSkip(admitting: Admitting): TicketResult | null {
     );
   if (executionRecord && executionRecord.state !== 'active')
     return skip(admitting, `its Execution Record is finished (${executionRecord.state}); it is not resumed`);
-  if (!executionRecord && labels.has(admitting.issueLabels, state('in-progress')))
+  if (!executionRecord && labels.hasLabel(admitting.issueLabels, state('in-progress')))
     return skip(admitting, `it is labelled ${state('in-progress')} with no Execution Record behind it`);
   return null;
 }
@@ -211,7 +211,7 @@ async function startTicket(
 ) {
   if (admitting.started) return;
   const { context, ticket } = admitting;
-  admitting.executionRecord ??= record.createExecution({
+  admitting.executionRecord ??= record.createExecutionRecord({
     commonDir: context.repo.gitCommonDir,
     ticket,
     epic: context.epic,
@@ -321,7 +321,7 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
       ({ worktree } = ready);
     }
     await startTicket(admitting, worktree, decided.admission);
-    if (!decided.admission && !labels.has(admitting.issueLabels, admitting.state('in-progress')))
+    if (!decided.admission && !labels.hasLabel(admitting.issueLabels, admitting.state('in-progress')))
       await setLabels(admitting, { add: [admitting.state('in-progress')] });
   } catch (err) {
     if (err instanceof record.RecordSaveError) throw err;

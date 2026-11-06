@@ -1,7 +1,7 @@
 import * as config from './config.ts';
 import type * as exec from './exec.ts';
 import * as procedures from './procedures.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 
 // A test's status in a runner's output: failed, passed, or the TODO or SKIP directive that excuses it.
 type TestStatus = boolean | string;
@@ -128,7 +128,7 @@ export async function greenCheck(
 // Evidence stays raw for agent Briefs and is redacted where it is published. Its storage cut keeps whole lines only: a
 // partial first line could start inside a local path, where redaction no longer recognises it.
 const EVIDENCE_LIMIT = 65_536;
-export function evidence(command: string, result: { output?: unknown }) {
+export function checkEvidence(command: string, result: { output?: unknown }) {
   const output = String(result.output ?? '');
   const cut = output.length - EVIDENCE_LIMIT;
   if (cut <= 0) return { command, output };
@@ -232,10 +232,10 @@ const QUANTIFIERS = { none: (count: number) => count === 0, any: (count: number)
 // A quantified condition's reasons: how many items matched `where`, against what was expected.
 function quantifierFailures(response: unknown, condition: ResponseCondition) {
   const [form] = (['none', 'any', 'all', 'count'] as const).filter((key) => Object.hasOwn(condition, key));
-  const items = (refs.read(response, condition[form]) ?? []) as Record<string, unknown>[];
+  const items = (referencePaths.read(response, condition[form]) ?? []) as Record<string, unknown>[];
   const where = Object.entries(condition.where ?? {});
   const matching = items.filter((item) => where.every(([field, value]) => [value].flat().includes(item[field]))).length;
-  const operator = procedures.OPS.find((key) => Object.hasOwn(condition, key));
+  const operator = procedures.OPERATORS.find((key) => Object.hasOwn(condition, key));
   // The validator rejects a count with no comparison; one that slips through fails rather than throws.
   if (form === 'count' && !operator) return [`the count of ${condition.count} names no comparison`];
   let held;
@@ -260,7 +260,7 @@ function quantifierFailures(response: unknown, condition: ResponseCondition) {
 function failures(response: unknown, condition: ResponseCondition): string[] {
   if (condition.allOf) return condition.allOf.flatMap((each) => failures(response, each));
   if (Object.hasOwn(condition, 'field')) {
-    const value = refs.read(response, condition.field);
+    const value = referencePaths.read(response, condition.field);
     return value === condition.is
       ? []
       : [`${condition.field} is ${JSON.stringify(value)}, expected ${JSON.stringify(condition.is)}`];

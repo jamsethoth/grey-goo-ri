@@ -2,7 +2,7 @@ import type { TestContext } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 
 // A temp directory removed when the case ends. The State Database at `commonDirOf(directory)` is closed first, since
 // Windows will not remove an open database file. GG_KEEP_TEMP keeps the directory and names it, for debugging a case.
@@ -13,7 +13,7 @@ export function tempDirectory(t: TestContext, prefix: string, commonDirOf = (dir
     return directory;
   }
   t.after(() => {
-    sqlite.close(commonDirOf(directory));
+    stateDatabase.close(commonDirOf(directory));
     rmSync(directory, { recursive: true, force: true });
   });
   return directory;

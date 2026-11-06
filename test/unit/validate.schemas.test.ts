@@ -511,7 +511,8 @@ test('a row partly taken only across Claim tokens is warned once', () => {
   ]);
 });
 
-// A reference gg reads at run time is typed as it is read (refs.read): into a list only by length or an index.
+// A reference gg reads at run time is typed as it is read (referencePaths.read): into a list only by length or an
+// index.
 test('a with alias that steps into a list of objects is an error', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures.fix, 'pr').with.files = 'inputs.findings.file';

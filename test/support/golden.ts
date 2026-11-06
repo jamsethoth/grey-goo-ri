@@ -224,7 +224,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   const commonDir = join(mainRoot, '.git');
   const configured = goldenConfig();
   const flow = resolve(configured);
-  const executionRecord = record.createExecution({
+  const executionRecord = record.createExecutionRecord({
     commonDir,
     ticket: TICKET,
     epic: 1,

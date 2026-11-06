@@ -1,7 +1,7 @@
 // Append-only event log, schema 2: one row per Event in the events table of the State Database.
 import * as checks from './checks.ts';
 import * as record from './record.ts';
-import * as sqlite from './sqlite.ts';
+import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 
 // Each Event shape is declared once, as its fields in their saved key order, each required or optional: the
@@ -207,8 +207,8 @@ export function eventLog(
     database.beforeAppend(event);
     // Not every Event carries the indexed columns' fields.
     const columns = event as Partial<Record<'run' | 'execution' | 'ticket', string | number | null>>;
-    sqlite
-      .openDb(commonDir)
+    stateDatabase
+      .open(commonDir)
       .prepare('INSERT INTO events (ts, type, run, execution, ticket, json) VALUES (?, ?, ?, ?, ?, ?)')
       .run(
         event.time,
@@ -222,8 +222,8 @@ export function eventLog(
 }
 
 export function readEvents(commonDir: string): Event[] {
-  return sqlite
-    .openDb(commonDir)
+  return stateDatabase
+    .open(commonDir)
     .prepare('SELECT json FROM events ORDER BY id')
     .all()
     .map((row) => JSON.parse(row.json as string) as Event);
@@ -231,16 +231,16 @@ export function readEvents(commonDir: string): Event[] {
 
 // One Execution's Events, in the order they were appended.
 export const executionEvents = (commonDir: string, execution: string): Event[] =>
-  sqlite
-    .openDb(commonDir)
+  stateDatabase
+    .open(commonDir)
     .prepare('SELECT json FROM events WHERE execution = ? ORDER BY id')
     .all(execution)
     .map((row) => JSON.parse(row.json as string) as Event);
 
 // An Execution's Terminal has landed once its ticket_end is in the log.
 export const hasTicketEnd = (commonDir: string, execution: string): boolean =>
-  !!sqlite
-    .openDb(commonDir)
+  !!stateDatabase
+    .open(commonDir)
     .prepare("SELECT 1 FROM events WHERE execution = ? AND type = 'ticket_end' LIMIT 1")
     .get(execution);
 

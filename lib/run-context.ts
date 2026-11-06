@@ -256,7 +256,7 @@ function attachActionMethods(runContext: RunContext) {
 }
 
 // The cursor moves to the Action, saved before it runs.
-async function enter(runContext: RunContext, actionIdentity: marker.ActionRef) {
+async function enter(runContext: RunContext, actionIdentity: marker.ActionIdentity) {
   const executionRecord = runContext.record;
   const cursor = executionRecord.cursor;
   // A resume re-entering the cursor's own Action continues at its Attempt.

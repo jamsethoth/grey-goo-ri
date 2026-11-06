@@ -11,7 +11,7 @@ export const PROTECTED = ['.agents/', '.claude/', '.codex/', '.mcp.json', 'AGENT
 const sh = gitShell.sh;
 
 function newExecution(commonDir: string, ticket: number, worktree: string) {
-  return record.createExecution({
+  return record.createExecutionRecord({
     commonDir,
     ticket,
     flow: { name: 'default', entry: 'implement' },

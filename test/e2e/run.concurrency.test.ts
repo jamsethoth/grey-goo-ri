@@ -11,7 +11,7 @@ import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import type * as runContext from '../../lib/run-context.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as epicRun from '../support/epic-run.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as gitShell from '../support/git-shell.ts';
@@ -310,8 +310,8 @@ function assertOneEventsTable(fixture: RunFixture) {
     ],
     'both processes appended to the one events table, in insertion order',
   );
-  const rows = sqlite
-    .openDb(fixture.commonDir)
+  const rows = stateDatabase
+    .open(fixture.commonDir)
     .prepare('SELECT json FROM events ORDER BY id')
     .all()
     .map((row) => JSON.parse((row as { json: string }).json));

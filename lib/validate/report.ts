@@ -1,7 +1,7 @@
 // The validator's findings, one report passed to each part that checks, and the value tests every part shares.
 
 import * as labels from '../labels.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 
 // `at` is the key gg doctor and admission print and tests read, so it keeps the short name the rules otherwise deny.
 export interface Problem {
@@ -34,10 +34,10 @@ export const dedupe = (list: Problem[]) => [
 ];
 
 // A string key only: Object.hasOwn would coerce a list such as ["push"] to the key it spells.
-export function has<T extends object>(value: T, key: unknown): key is Extract<keyof T, string>;
-export function has(value: unknown, key: unknown): key is string;
-export function has(value: unknown, key: unknown) {
-  return typeof key === 'string' && refs.isRecord(value) && Object.hasOwn(value, key);
+export function hasOwnKey<T extends object>(value: T, key: unknown): key is Extract<keyof T, string>;
+export function hasOwnKey(value: unknown, key: unknown): key is string;
+export function hasOwnKey(value: unknown, key: unknown) {
+  return typeof key === 'string' && referencePaths.isRecord(value) && Object.hasOwn(value, key);
 }
 export const isName = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 // Every configured name has a character other than whitespace. A carried one has no ":", ".", "/", "--" or whitespace
@@ -58,9 +58,9 @@ export function checkName(
   return valid;
 }
 export const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;
-export const entries = (value: unknown) => (refs.isRecord(value) ? Object.entries(value) : []);
+export const entries = (value: unknown) => (referencePaths.isRecord(value) ? Object.entries(value) : []);
 export const unique = <T>(list: T[]) => [...new Set(list)];
 // What a Procedure's Outcomes and Claim tokens may not be named.
 export const isReserved = (name: string) =>
-  name === 'failed' || (labels.ENDS as string[]).includes(name) || name.startsWith('harness-');
+  name === 'failed' || (labels.END_STATES as string[]).includes(name) || name.startsWith('harness-');
 export const RESERVED = 'is reserved for the engine: failed, an end name or harness-*';

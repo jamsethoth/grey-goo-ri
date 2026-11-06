@@ -46,8 +46,8 @@ function worktreeStates(head: string) {
   return { state, snapshot };
 }
 
-type BeginOptions = Parameters<integrityModule.Integrity['begin']>[0];
-type EndOptions = Parameters<integrityModule.Integrity['end']>[0];
+type TakeBaselineOptions = Parameters<integrityModule.Integrity['takeBaseline']>[0];
+type FindViolationsOptions = Parameters<integrityModule.Integrity['findViolations']>[0];
 
 function assertions(
   { state, snapshot }: ReturnType<typeof worktreeStates>,
@@ -62,7 +62,7 @@ function assertions(
     untrackedFiles: (worktree, within) => integrityModule.untrackedFiles(worktree, within, git),
     ignoredFiles: (worktree, within) => integrityModule.ignoredFiles(worktree, within, git),
     restoreUntracked: (worktree, set) => integrityModule.restoreUntracked(worktree, set, git),
-    async begin({ record: executionRecord, others, testPaths }: BeginOptions) {
+    async takeBaseline({ record: executionRecord, others, testPaths }: TakeBaselineOptions) {
       const own = await snapshot(executionRecord.worktree);
       const idle: integrityModule.IntegrityBaseline['idle'] = {};
       for (const other of others) idle[other] = { generation: 0, snapshot: await snapshot(other) };
@@ -70,8 +70,8 @@ function assertions(
       const tests = await integrityModule.untrackedFiles(executionRecord.worktree, testPaths, git);
       return { head: own.head, own, idle, untracked: {}, tests };
     },
-    // Protected writes count from the last begin: an Attempt's end always follows its own begin.
-    async end({ baseline, record: executionRecord, others, access, protectedPaths }: EndOptions) {
+    // Protected writes count from the last takeBaseline: an Attempt's findViolations always follows its own.
+    async findViolations({ baseline, record: executionRecord, others, access, protectedPaths }: FindViolationsOptions) {
       const worktree = executionRecord.worktree;
       const surfaces: Surface[] = access === 'read-only' ? ['head', 'index', 'tree'] : ['head', 'index'];
       const violations: integrityModule.IntegrityViolation[] = diff(

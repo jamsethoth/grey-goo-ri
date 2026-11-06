@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type * as admission from '../../lib/admission.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
 import * as executionContext from '../support/execution-context.ts';
@@ -154,7 +154,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
     .comments()
     .join('\n')
     .match(/`(DELETE FROM records WHERE kind = 'ticket' AND n = \d+;)`/)?.[1] as string;
-  sqlite.openDb(fixture.commonDir).exec(statement);
+  stateDatabase.open(fixture.commonDir).exec(statement);
   assert.equal(
     run.runExitCode(await run.runTarget(fixture.options)),
     0,

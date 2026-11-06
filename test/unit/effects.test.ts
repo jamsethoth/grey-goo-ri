@@ -7,37 +7,29 @@ import * as visit from '../../lib/visit.ts';
 import * as support from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
 
-test('the activity bracket marks the worktree busy while its function runs and idle after', async (t) => {
+test('whileBusy marks the worktree busy while its function runs and idle after', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
-  const during = await effects.bracket(context, async () => ({ ...executionRecord.activity }));
+  const during = await effects.whileBusy(context, async () => ({ ...executionRecord.activity }));
   assert.deepEqual(during, { busy: true, generation: 1 });
   assert.deepEqual(executionRecord.activity, { busy: false, generation: 2 });
 });
 
-test('the activity bracket marks the worktree idle after a failure, but leaves it busy after a crash', async (t) => {
+test('whileBusy marks the worktree idle after a failure, but leaves it busy after a crash', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   await assert.rejects(
-    effects.bracket(context, async () => {
+    effects.whileBusy(context, async () => {
       throw new Error('gh failed');
     }),
     /gh failed/,
   );
   assert.deepEqual(executionRecord.activity, { busy: false, generation: 2 });
   await assert.rejects(
-    effects.bracket(context, async () => {
+    effects.whileBusy(context, async () => {
       throw new effectErrors.CrashError('crash');
     }),
     effectErrors.CrashError,
   );
   assert.deepEqual(executionRecord.activity, { busy: true, generation: 3 });
-});
-
-test("logged finds a marker's write-ahead entry by its step", async (t) => {
-  const { executionRecord } = await support.executionContext(t);
-  await record.intent(executionRecord, 'gg:m', 'push', { branch: 'b', sha: 'abc' });
-  assert.deepEqual(effects.logged(executionRecord, 'gg:m', 'intent')?.payload, { branch: 'b', sha: 'abc' });
-  assert.equal(effects.logged(executionRecord, 'gg:m', 'complete'), undefined);
-  assert.equal(effects.logged(executionRecord, 'gg:other', 'intent'), undefined);
 });
 
 test('a side effect is logged as intent, evidence and completion, and returns its evidence', async (t) => {
@@ -66,7 +58,7 @@ test('a proven side effect is not made again: its saved evidence is returned and
   assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
 });
 
-test('a deferred side effect is left for finish to complete', async (t) => {
+test('a deferred side effect is left for saveResolution to complete', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const perform = async () => ({ head: 'abc' });
   const evidence = await effects.sideEffect(context, {
@@ -93,7 +85,7 @@ test('an open intent is redone with its intended payload, not the one given now'
   assert.equal(executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent').length, 1);
 });
 
-test("finish saves a Flow Action's settled resolution with its Action Event", async (t) => {
+test("saveResolution saves a Flow Action's settled resolution with its Action Event", async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
   executionRecord.visitState = {
     recovery: 0,
@@ -115,9 +107,9 @@ test("finish saves a Flow Action's settled resolution with its Action Event", as
     retryKind: null,
     failureClass: null,
   };
-  const actionRef = { ...support.PUSH_REF, action: 'test' };
-  const finished = await effects.finish(context, {
-    actionRef,
+  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, action: 'test' };
+  const finished = await effects.saveResolution(context, {
+    actionIdentity,
     startedAt: 5,
     resolution,
     fields: { check: 'test' },
@@ -126,7 +118,7 @@ test("finish saves a Flow Action's settled resolution with its Action Event", as
   assert.deepEqual(executionRecord.visitState.settled, { action: 'test', recovery: 0, resolution });
   assert.deepEqual(emitted, [
     {
-      ...actionRef,
+      ...actionIdentity,
       startedAt: 5,
       outcome: 'ok',
       direction: 'advance',
@@ -139,7 +131,8 @@ test("finish saves a Flow Action's settled resolution with its Action Event", as
   assert.deepEqual(saved?.visitState?.settled, { action: 'test', recovery: 0, resolution });
 });
 
-test('finish completes a marked Action with its evidence once, and returns a completed one unsaved', async (t) => {
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('saveResolution completes a marked Action with its evidence once, and returns a completed one unsaved', async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
   await record.intent(executionRecord, 'gg:m', 'push', {});
   const resolution: visit.TableResolution = {
@@ -152,9 +145,9 @@ test('finish completes a marked Action with its evidence once, and returns a com
     retryKind: null,
     failureClass: null,
   };
-  const actionRef = { ...support.PUSH_REF, procedure: null };
-  await effects.finish(context, {
-    actionRef,
+  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, procedure: null };
+  await effects.saveResolution(context, {
+    actionIdentity,
     startedAt: 5,
     resolution,
     actionMarker: 'gg:m',
@@ -163,7 +156,7 @@ test('finish completes a marked Action with its evidence once, and returns a com
   assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
   assert.equal(executionRecord.visitState, null, 'a Terminal Action or a retry settles nothing');
   assert.equal(
-    await effects.finish(context, { actionRef, startedAt: 5, resolution, actionMarker: 'gg:m' }),
+    await effects.saveResolution(context, { actionIdentity, startedAt: 5, resolution, actionMarker: 'gg:m' }),
     resolution,
   );
   assert.equal(emitted.length, 1, 'a completed Action records no second Event');
@@ -191,8 +184,8 @@ test("a Flow Action's retry is not settled, so a resumed Visit runs the Action a
     retryKind: 'transient',
     failureClass: 'transient',
   };
-  const actionRef = { ...support.PUSH_REF, action: 'green' };
-  await effects.finish(context, { actionRef, startedAt: 5, resolution });
+  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, action: 'green' };
+  await effects.saveResolution(context, { actionIdentity, startedAt: 5, resolution });
   assert.equal(executionRecord.visitState.settled, null);
   assert.deepEqual(
     emitted.map((event) => [event.action, event.direction]),
@@ -204,8 +197,8 @@ test("a Flow Action's retry is not settled, so a resumed Visit runs the Action a
 test('a completed side effect finishes as effect-completed', async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
   await record.intent(executionRecord, 'gg:m', 'push', {});
-  const actionRef = { ...support.PUSH_REF, procedure: null };
-  assert.deepEqual(await effects.effectDone(context, actionRef, 5, 'gg:m'), {
+  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, procedure: null };
+  assert.deepEqual(await effects.completeEffect(context, actionIdentity, 5, 'gg:m'), {
     outcome: 'ok',
     direction: 'advance',
     row: 'effect-completed',

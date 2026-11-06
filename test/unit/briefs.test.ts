@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.ts';
 import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.ts';
-import type * as refs from '../../lib/refs.ts';
+import type * as referencePaths from '../../lib/reference-paths.ts';
 import * as render from '../../lib/render.ts';
 import { homedir } from 'node:os';
 import { readFileSync } from 'node:fs';
@@ -41,7 +41,7 @@ const recovery = (name: string, context: RecoveryContext) =>
     })),
   });
 // A shipped schema declares its properties and which are required.
-type ShippedSchema = refs.SchemaNode & Required<Pick<refs.SchemaNode, 'properties' | 'required'>>;
+type ShippedSchema = referencePaths.SchemaNode & Required<Pick<referencePaths.SchemaNode, 'properties' | 'required'>>;
 const schema = (name: string): ShippedSchema => JSON.parse(SHIPPED[`schemas/${name}.schema.json`].bytes);
 const SCHEMAS: Record<string, ShippedSchema> = {
   RED_SCHEMA: schema('red'),
@@ -127,7 +127,9 @@ for (const name of ['test-fix.md', 'still-green.md']) {
 }
 
 const evidencePath = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.mjs`;
-const storedRed = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n` });
+const storedRed = checks.checkEvidence('npm test', {
+  output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n`,
+});
 
 test('stored Check evidence reaches the green Brief unredacted', async () => {
   const green = await shipped('green.md', { ...base, inputs: { testFiles: testFiles, red: storedRed } });
@@ -428,7 +430,10 @@ for (const [what, schema, tokens, message] of [
   ],
 ]) {
   test(`the claim enum must equal the declared tokens: ${what} is an error, not a TypeError`, () => {
-    assert.throws(() => briefs.assertClaimEnum(schema as refs.SchemaNode, tokens), { name: 'Error', message });
+    assert.throws(() => briefs.assertClaimEnum(schema as referencePaths.SchemaNode, tokens), {
+      name: 'Error',
+      message,
+    });
   });
 }
 
@@ -493,7 +498,7 @@ for (const [what, schema, path, error] of [
   ],
 ]) {
   test(`fieldType returns an error, not a TypeError, for ${what}`, () => {
-    assert.deepEqual(briefs.fieldType(schema as refs.SchemaNode, path), { error });
+    assert.deepEqual(briefs.fieldType(schema as referencePaths.SchemaNode, path), { error });
   });
 }
 

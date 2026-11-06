@@ -6,7 +6,7 @@ import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as executionReads from '../support/execution-reads.ts';
@@ -49,7 +49,7 @@ test('a record the State Database cannot open fails with its error, not as a cor
 
 test('a corrupt row loads as corrupt, not as an error', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
-  sqlite.openDb(commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', 1, '{')").run();
+  stateDatabase.open(commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', 1, '{')").run();
   const loaded = await reconcile.loadExecutionRecord(commonDir, 1);
   assert.equal(loaded.executionRecord, null);
   assert.ok(loaded.corrupt instanceof record.RecordCorruptError);
@@ -59,7 +59,7 @@ test('a corrupt row loads as corrupt, not as an error', async (t) => {
 // An Integrity Violation at red's Attempt, which a reset rolls back.
 const violating = (fixture: golden.GoldenFixture): integrity.Integrity => ({
   ...(fixture.options.deps.integrity as integrity.Integrity),
-  end: async () => ({
+  findViolations: async () => ({
     violations: [
       { worktree: fixture.worktree, surface: 'head', before: fixture.base, after: 'a'.repeat(40) },
     ] as integrity.IntegrityViolation[],

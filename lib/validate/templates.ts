@@ -2,7 +2,7 @@
 // frame, a PR body, a comment and a stop's comment, each at a Vertex, with `inputs` its inputs.
 
 import * as procedures from '../procedures.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import * as render from '../render.ts';
 import type * as checked from './procedures.ts';
 import * as references from './references.ts';
@@ -11,7 +11,7 @@ import * as report from './report.ts';
 // What a template may name of gg's own context (Y20): a Brief's Ticket, base branch, commands, History, diff and
 // changed test files; a recovery frame's sections and each section's Check; a public template's Ticket, provenance,
 // Agent and marker. A History entry or provenance row is untyped, so a name inside a section over one is not checked.
-const ANY_LIST = { type: 'array', items: refs.ANY };
+const ANY_LIST = { type: 'array', items: referencePaths.ANY };
 const TICKET = procedures.object({
   number: procedures.INTEGER,
   title: procedures.STRING,
@@ -32,7 +32,7 @@ const SECTION = {
   command: procedures.STRING,
   output: procedures.STRING,
   reason: procedures.STRING,
-  failure: refs.ANY,
+  failure: referencePaths.ANY,
   recoverable: { type: 'boolean' },
 };
 const AGENT = procedures.object({
@@ -59,7 +59,7 @@ interface TemplateTag {
 type TemplateNode = string | TemplateTag;
 type Template = { nodes: TemplateNode[]; error?: undefined } | { error: string; nodes?: undefined };
 export type TemplateReader = (name: string) => Template;
-type Scope = Record<string, refs.SchemaNode>;
+type Scope = Record<string, referencePaths.SchemaNode>;
 
 // Each template read and parsed once, however many Vertices render it; none when no reader is given.
 export function templateReader(readTemplate: ((name: string) => string) | undefined): TemplateReader | null {
@@ -77,29 +77,39 @@ export function templateReader(readTemplate: ((name: string) => string) | undefi
   };
 }
 
-function lookup(node: refs.SchemaNode, name: string) {
-  const resolved = refs.resolve(node, name, 'defined', { read: true });
+function lookup(node: referencePaths.SchemaNode, name: string) {
+  const resolved = referencePaths.resolve(node, name, 'defined', { read: true });
   if (resolved.error === undefined || resolved.list === undefined) return resolved;
   return { error: `${resolved.error}; read its items in a section, {{#${resolved.list}}}`, node: undefined };
 }
 
 // A name reads the innermost section item that holds its first segment, then the scope (render.renderTemplate); an item
 // of unknown shape may hold any name. A path is typed as rendering reads it.
-function nodeOf(problems: string[], tag: TemplateTag, items: refs.SchemaNode[], scope: refs.SchemaNode) {
-  if (tag.name === '.') return items[0] ?? refs.ANY;
-  const head = refs.parse(tag.name).steps?.[0] as string;
+function nodeOf(
+  problems: string[],
+  tag: TemplateTag,
+  items: referencePaths.SchemaNode[],
+  scope: referencePaths.SchemaNode,
+) {
+  if (tag.name === '.') return items[0] ?? referencePaths.ANY;
+  const head = referencePaths.parse(tag.name).steps?.[0] as string;
   const item = items.find(
     (shape) =>
-      shape === refs.ANY ||
-      (shape.type === 'object' && refs.isRecord(shape.properties) && Object.hasOwn(shape.properties, head)),
+      shape === referencePaths.ANY ||
+      (shape.type === 'object' && referencePaths.isRecord(shape.properties) && Object.hasOwn(shape.properties, head)),
   );
-  const resolved: { node?: refs.SchemaNode; error?: string } =
-    item === refs.ANY ? { node: refs.ANY } : lookup(item ?? scope, tag.name);
+  const resolved: { node?: referencePaths.SchemaNode; error?: string } =
+    item === referencePaths.ANY ? { node: referencePaths.ANY } : lookup(item ?? scope, tag.name);
   if (resolved.error) problems.push(`{{${tag.name}}}: ${resolved.error}`);
-  return resolved.node ?? refs.ANY;
+  return resolved.node ?? referencePaths.ANY;
 }
 
-function walk(problems: string[], nodes: TemplateNode[], items: refs.SchemaNode[], scope: refs.SchemaNode) {
+function walk(
+  problems: string[],
+  nodes: TemplateNode[],
+  items: referencePaths.SchemaNode[],
+  scope: referencePaths.SchemaNode,
+) {
   for (const tag of nodes) {
     if (typeof tag === 'string') continue;
     if (tag.fence) {
@@ -108,13 +118,13 @@ function walk(problems: string[], nodes: TemplateNode[], items: refs.SchemaNode[
     }
     const node = nodeOf(problems, tag, items, scope);
     // A section renders once per list item, or once with its value; an inverted one keeps the scope it is in.
-    const inner = node.type === 'array' ? (node.items as refs.SchemaNode) : node;
+    const inner = node.type === 'array' ? (node.items as referencePaths.SchemaNode) : node;
     if (tag.children) walk(problems, tag.children, tag.inverted ? items : [inner, ...items], scope);
   }
 }
 
 // The problems of a template's names in `scope`.
-function templateProblems(nodes: TemplateNode[], scope: refs.SchemaNode) {
+function templateProblems(nodes: TemplateNode[], scope: referencePaths.SchemaNode) {
   const problems: string[] = [];
   walk(problems, nodes, [], scope);
   return report.unique(problems);
@@ -136,9 +146,9 @@ function readTemplate(reading: Reading, place: { where: string; key: string }, n
 // A PR body reads the Visit, each `with` name bound to the node its path reads, the Ticket and the provenance.
 function prBodyScope(action: Record<string, unknown>, visitScope: Scope): Scope {
   const bound = Object.fromEntries(
-    Object.entries(refs.isRecord(action.with) ? action.with : {}).map(([key, path]) => [
+    Object.entries(referencePaths.isRecord(action.with) ? action.with : {}).map(([key, path]) => [
       key,
-      refs.resolve(procedures.object(visitScope), path, 'defined', { read: true }).node ?? refs.ANY,
+      referencePaths.resolve(procedures.object(visitScope), path, 'defined', { read: true }).node ?? referencePaths.ANY,
     ]),
   );
   return { ...visitScope, ...bound, ticket: TICKET, provenance: ANY_LIST, marker: procedures.STRING };
@@ -147,7 +157,7 @@ function prBodyScope(action: Record<string, unknown>, visitScope: Scope): Scope 
 function actionTemplates(reading: Reading, proc: checked.CheckedProcedure, visitScope: Scope) {
   const brief = { ...visitScope, ...BRIEF };
   proc.actions.forEach((action, index) => {
-    if (!refs.isRecord(action)) return;
+    if (!referencePaths.isRecord(action)) return;
     const where = `actions[${index}]`;
     if (action.do === 'agent') readTemplate(reading, { where, key: 'brief' }, action.brief, brief);
     if (action.do === 'check')
@@ -162,12 +172,16 @@ function actionTemplates(reading: Reading, proc: checked.CheckedProcedure, visit
 }
 
 // Each name every template of the Procedure reads, in a Vertex's scope (`inputs` its inputs).
-export function templateRefs(proc: checked.CheckedProcedure, inputs: refs.SchemaNode, reader: TemplateReader | null) {
+export function templateReferences(
+  proc: checked.CheckedProcedure,
+  inputs: referencePaths.SchemaNode,
+  reader: TemplateReader | null,
+) {
   if (!reader) return [];
   const reading: Reading = { reader, found: [] };
-  const visitScope: Scope = references.visitScope(proc, 'passed', inputs);
+  const visitScope: Scope = references.visitScopeSchema(proc, 'passed', inputs);
   actionTemplates(reading, proc, visitScope);
-  if (refs.isRecord(proc.recover)) {
+  if (referencePaths.isRecord(proc.recover)) {
     const scope = { ...visitScope, ...BRIEF, sections: procedures.STRING_LIST };
     readTemplate(reading, { where: 'recover', key: 'brief' }, proc.recover.brief, scope);
   }

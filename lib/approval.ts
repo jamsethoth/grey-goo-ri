@@ -76,7 +76,7 @@ const byTime = (left: string, right: string): number => (left < right ? -1 : Num
 interface DecisionScope {
   approvalRequest: PendingInstance;
   issueLabels: string[];
-  names: labels.LabelNames;
+  names: labels.GgLabels;
   accepts: (actor: string | undefined) => boolean;
 }
 
@@ -91,13 +91,13 @@ function decisionsAfter(
     // A Decision survives only while its label is on the issue, whatever the order of events in one second says.
     if (
       parsed?.family !== 'decide' ||
-      !labels.has([parsed.vertex], approvalRequest.vertex) ||
-      !labels.has(issueLabels, labelOf(issueEvent))
+      !labels.hasLabel([parsed.vertex], approvalRequest.vertex) ||
+      !labels.hasLabel(issueLabels, labelOf(issueEvent))
     )
       return [];
     const removed = after
       .slice(i + 1)
-      .some((later) => later.event === 'unlabeled' && labels.has([labelOf(later)], labelOf(issueEvent)));
+      .some((later) => later.event === 'unlabeled' && labels.hasLabel([labelOf(later)], labelOf(issueEvent)));
     if (removed) return [];
     const actor = issueEvent.actor?.login;
     if (!accepts(actor)) return [];
@@ -128,21 +128,21 @@ export function read({
 }): DecisionRead {
   if (!approvalRequest) return { kind: 'missing' };
   const permission = new Map(Object.entries(permissions).map(([login, level]) => [login.toLowerCase(), level]));
-  const names = labels.labels(prefix);
+  const names = labels.labelsFor(prefix);
   const awaiting = names.await(approvalRequest.vertex);
   // Whether the Await Label is on comes from the issue, not from the order of a retirement and a request in one second.
-  if (!labels.has(issueLabels, awaiting)) return { kind: 'missing' };
+  if (!labels.hasLabel(issueLabels, awaiting)) return { kind: 'missing' };
   // GitHub documents no order for issue events and their ids do not follow time; created_at has one-second
   // resolution, so the stable sort keeps GitHub's own order within a second.
   const events = timeline.toSorted((left, right) => byTime(left.created_at, right.created_at));
   // Every request first retires the earlier ones (request 3.5), so the latest Await Label event is this instance's.
   const last = events.findLastIndex(
-    (issueEvent) => issueEvent.event === 'labeled' && labels.has([labelOf(issueEvent)], awaiting),
+    (issueEvent) => issueEvent.event === 'labeled' && labels.hasLabel([labelOf(issueEvent)], awaiting),
   );
   if (last < 0) return { kind: 'missing' };
   if (current !== approvalRequest.digest) return { kind: 'stale' };
   const accepts = (actor: string | undefined) =>
-    WRITE.includes(permission.get(actor?.toLowerCase() as string) as string) || labels.has(approvers, actor ?? '');
+    WRITE.includes(permission.get(actor?.toLowerCase() as string) as string) || labels.hasLabel(approvers, actor ?? '');
   const decisions = decisionsAfter(events.slice(last + 1), { approvalRequest, issueLabels, names, accepts });
   if (decisions.length > 1) return { kind: 'ambiguous', decisions };
   return decisions.length ? { kind: 'consume', decision: decisions[0] as Decision } : { kind: 'waiting' };

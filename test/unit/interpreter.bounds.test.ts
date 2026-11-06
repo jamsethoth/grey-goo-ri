@@ -606,7 +606,7 @@ async function secondTicket(fixture: GoldenFixture) {
   const branch = 'ticket/16-add-again';
   const worktree = join(fixture.root, 'wt', 'ticket-16');
   await fixture.options.deps.git.ensureWorktree({ mainRoot: fixture.mainRoot, path: worktree, branch, base: 'main' });
-  const next = record.createExecution({
+  const next = record.createExecutionRecord({
     commonDir: fixture.commonDir,
     ticket: 16,
     epic: 1,

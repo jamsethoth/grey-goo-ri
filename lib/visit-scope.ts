@@ -1,11 +1,11 @@
-// What every Action of a Visit reads and writes: its scope, its outputs, the claimed token, the transition table's
+// What every Action of a Visit reads and writes: its scope, its outputs, the claimed token, the Transition Table's
 // view of its Signals, and settle, which decides whether a pass's result ends the Visit.
 import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 
@@ -27,7 +27,7 @@ export type ActionResolution = visit.Resolution &
 
 // One Action as the Visit runs it: its identity, its declaration, and the Visit's progress.
 export interface Running {
-  actionIdentity: marker.ActionRef;
+  actionIdentity: marker.ActionIdentity;
   action: procedures.Action;
   state: RunningVisit;
 }
@@ -40,7 +40,7 @@ export const IMPLICIT_OK: Omit<visit.AgentCall, 'baseline'> = {
   signal: { status: 'completed', response: { claim: 'ok' }, failure: null },
 };
 
-// The transition table's view of an Action's Signals: the Integrity Assertions, then the Check signals.
+// The Transition Table's view of an Action's Signals: the Integrity Assertions, then the Check signals.
 export const resolverChecks = (
   integrityRows: { name: string; passed: boolean }[],
   signals: visit.CheckSignal[],
@@ -58,7 +58,7 @@ export const tokenOf = (state: RunningVisit): procedures.ClaimToken => state.cla
 // (`checkSignals`, when given, are the states to read).
 export function scopeOf(
   executionRecord: record.ExecutionRecord,
-  actionIdentity: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   state: RunningVisit,
   checkSignals: Record<string, visit.CheckSignal> | visit.CheckSignal[] = state.checks,
 ): Record<string, unknown> {
@@ -76,12 +76,12 @@ export const bind = (executionRecord: record.ExecutionRecord, { actionIdentity, 
   Object.fromEntries(
     Object.entries((action.with as Record<string, string> | undefined) ?? {}).map(([name, ref]) => [
       name,
-      refs.read(scopeOf(executionRecord, actionIdentity, state), ref),
+      referencePaths.read(scopeOf(executionRecord, actionIdentity, state), ref),
     ]),
   );
 
 // The entry an Action's outputs are kept in, if it has one yet.
-export const outputOf = (executionRecord: record.ExecutionRecord, actionIdentity: marker.ActionRef) =>
+export const outputOf = (executionRecord: record.ExecutionRecord, actionIdentity: marker.ActionIdentity) =>
   executionRecord.outputs.find(
     (output) =>
       output.vertex === actionIdentity.vertex &&
@@ -93,7 +93,7 @@ export const outputOf = (executionRecord: record.ExecutionRecord, actionIdentity
 // resumed one, replaces its fields, so a reference reads the Action's last pass.
 export function recordOutput(
   executionRecord: record.ExecutionRecord,
-  actionIdentity: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   value: Record<string, unknown>,
 ) {
   const entry = outputOf(executionRecord, actionIdentity);
@@ -108,8 +108,8 @@ export function recordOutput(
 }
 
 // A Check counts only on the tree it checked, so a pass on an older tree reads as failed (R1b). A response or repeat
-// Check reads no tree and never goes stale, so the worktree is read only when a signal has one (a git process: bracket
-// it).
+// Check reads no tree and never goes stale, so the worktree is read only when a signal has one (a git process: run it
+// under whileBusy).
 export async function fresh(runContext: RunContext, signals: visit.CheckSignal[]): Promise<visit.CheckSignal[]> {
   if (!signals.some((signal) => signal.tree)) return signals;
   const { tree } = await integrity.snapshot(runContext.record.worktree, runContext.git, runContext.locks);
@@ -125,7 +125,7 @@ export async function fresh(runContext: RunContext, signals: visit.CheckSignal[]
 // Reason.
 export function settle(
   executionRecord: record.ExecutionRecord,
-  actionIdentity: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   state: RunningVisit,
   input: outcome.Signals,
 ): visit.TableResolution {

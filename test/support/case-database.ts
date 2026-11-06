@@ -2,7 +2,7 @@
 import type { TestContext } from 'node:test';
 import type * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 
 type Saved = record.ExecutionRecord | record.EpicRecord;
 type SaveHook = (next: Saved) => void;
@@ -11,7 +11,10 @@ type AppendHook = (event: events.Event) => void;
 // A saved record's JSON as its row holds it, or undefined when none is saved, read without awaiting, for a getter that
 // cannot await.
 export function savedJson(commonDir: string, kind: 'ticket' | 'epic', number: number): string | undefined {
-  const row = sqlite.openDb(commonDir).prepare('SELECT json FROM records WHERE kind = ? AND n = ?').get(kind, number);
+  const row = stateDatabase
+    .open(commonDir)
+    .prepare('SELECT json FROM records WHERE kind = ? AND n = ?')
+    .get(kind, number);
   return row?.json as string | undefined;
 }
 

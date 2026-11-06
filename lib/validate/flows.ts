@@ -5,7 +5,7 @@ import * as config from '../config.ts';
 import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
 import * as procedures from '../procedures.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import * as graph from './graph.ts';
 import * as inputs from './inputs.ts';
 import * as checked from './procedures.ts';
@@ -36,19 +36,19 @@ export const TICKET_KEYS = ['entry', 'routes', 'vertices'];
 // A route target is a Vertex id, { end }, or this edge form.
 export const EDGE_KEYS = ['to', 'max', 'exhausted'];
 // `cleanup` is the Pending cleanup hold's Await Label (L11) and `done` the human-only end (L12).
-const RESERVED_VERTICES: string[] = [...labels.ENDS, 'cleanup', 'done'];
+const RESERVED_VERTICES: string[] = [...labels.END_STATES, 'cleanup', 'done'];
 // What an Agent asks for (Permission Intents). Integrity treats any access but read-only as a write, so a typo such as
 // read-write would run as workspace-write.
 export const PERMISSION_INTENTS = ['read-only', 'workspace-write'];
 
 type Value = Record<string, unknown>;
-type Falls = checked.Falls;
+type FallThroughs = checked.FallThroughs;
 // What checking a Flow reads beyond the Flow itself.
-export interface Checking {
+export interface FlowContext {
   report: report.Report;
   config: Value;
   procedures: Record<string, checked.CheckedProcedure | undefined>;
-  procedureFalls: Record<string, Falls>;
+  procedureFalls: Record<string, FallThroughs>;
   failedAgents: Set<unknown>;
   harnesses: unknown;
   reader: templates.TemplateReader | null;
@@ -64,11 +64,11 @@ interface VertexPlace {
 interface FlowState {
   location: string;
   vertices: Value;
-  sources: refs.SchemaNode;
+  sources: referencePaths.SchemaNode;
   resolved: Record<string, graph.ResolvedVertex>;
   used: Set<string>;
   procs: Record<string, checked.CheckedProcedure | undefined>;
-  fallsOf: Record<string, Falls>;
+  fallsOf: Record<string, FallThroughs>;
   held: boolean;
 }
 
@@ -80,7 +80,7 @@ export function checkAccess(problems: report.Report, location: string, access: u
 }
 
 export function checkHarness(
-  checking: Pick<Checking, 'report' | 'harnesses'>,
+  checking: Pick<FlowContext, 'report' | 'harnesses'>,
   label: string,
   harness: unknown,
   location: string,
@@ -88,18 +88,22 @@ export function checkHarness(
   const problems = checking.report;
   if (harness == null)
     report.error(problems, location, `${label} names no harness; set one in a user or repository Layer`);
-  else if (!report.has(checking.harnesses, harness))
+  else if (!report.hasOwnKey(checking.harnesses, harness))
     report.error(problems, location, `${label} names harness ${JSON.stringify(harness)}, which is not registered`);
 }
 
 function checkTarget(problems: report.Report, location: string, target: unknown, vertices: Value) {
   if (typeof target === 'string') {
     if (!Object.hasOwn(vertices, target)) report.error(problems, location, `${JSON.stringify(target)} is not a Vertex`);
-  } else if (refs.isRecord(target) && Object.hasOwn(target, 'end') && Object.keys(target).length === 1) {
+  } else if (referencePaths.isRecord(target) && Object.hasOwn(target, 'end') && Object.keys(target).length === 1) {
     if (target.end === 'done')
       report.error(problems, location, 'end "done" is the human-only end, which no route may name');
     else if (!flow.isEnd(target.end))
-      report.error(problems, location, `end ${JSON.stringify(target.end)} is not one of ${labels.ENDS.join(', ')}`);
+      report.error(
+        problems,
+        location,
+        `end ${JSON.stringify(target.end)} is not one of ${labels.END_STATES.join(', ')}`,
+      );
   } else {
     report.error(problems, location, 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }');
   }
@@ -107,7 +111,8 @@ function checkTarget(problems: report.Report, location: string, target: unknown,
 
 // A route's target may also be an edge, which bounds its traversals.
 function checkRouteTarget(problems: report.Report, location: string, target: unknown, vertices: Value) {
-  if (!(refs.isRecord(target) && Object.hasOwn(target, 'to'))) return checkTarget(problems, location, target, vertices);
+  if (!(referencePaths.isRecord(target) && Object.hasOwn(target, 'to')))
+    return checkTarget(problems, location, target, vertices);
   report.unknownKeys(problems, target, EDGE_KEYS, location);
   checkTarget(problems, location, target.to, vertices);
   if (target.max !== undefined && !report.isCount(target.max))
@@ -129,15 +134,16 @@ function checkFlowKeys(problems: report.Report, location: string, declaration: V
     report.error(problems, `${location}.plan`, 'plan must be null until Epic planning is built');
   if (!report.isCount(declaration.actionCap))
     report.error(problems, `${location}.actionCap`, 'actionCap must be a positive integer');
-  const ticket = refs.isRecord(declaration.ticket) ? declaration.ticket : {};
-  if (!refs.isRecord(declaration.ticket)) report.error(problems, `${location}.ticket`, 'ticket must be an object');
+  const ticket = referencePaths.isRecord(declaration.ticket) ? declaration.ticket : {};
+  if (!referencePaths.isRecord(declaration.ticket))
+    report.error(problems, `${location}.ticket`, 'ticket must be an object');
   report.unknownKeys(problems, ticket, TICKET_KEYS, `${location}.ticket`);
-  const vertices = refs.isRecord(ticket.vertices) ? ticket.vertices : {};
+  const vertices = referencePaths.isRecord(ticket.vertices) ? ticket.vertices : {};
   if (!Object.keys(vertices).length)
     report.error(problems, `${location}.ticket.vertices`, 'vertices must be a non-empty object');
   if (typeof ticket.entry !== 'string' || !Object.hasOwn(vertices, ticket.entry))
     report.error(problems, `${location}.ticket.entry`, `${JSON.stringify(ticket.entry)} is not a Vertex`);
-  if (ticket.routes !== undefined && !refs.isRecord(ticket.routes))
+  if (ticket.routes !== undefined && !referencePaths.isRecord(ticket.routes))
     report.error(problems, `${location}.ticket.routes`, 'routes must be an object from Outcome to target');
   for (const [outcome, target] of report.entries(ticket.routes))
     checkRouteTarget(problems, `${location}.ticket.routes.${outcome}`, target, vertices);
@@ -146,12 +152,12 @@ function checkFlowKeys(problems: report.Report, location: string, declaration: V
 
 // A Vertex names an Agent that is not declared, or gives one to a Procedure with no agent Action.
 function refusesAgent(
-  checking: Checking,
+  checking: FlowContext,
   given: { vertex: Value; overrides: Value; location: string },
   proc?: checked.CheckedProcedure,
 ) {
   const { vertex, overrides, location } = given;
-  if (vertex.use !== undefined && !report.has(checking.config.agents, vertex.use)) {
+  if (vertex.use !== undefined && !report.hasOwnKey(checking.config.agents, vertex.use)) {
     report.error(checking.report, location, `uses agent ${JSON.stringify(vertex.use)}, which is not declared`);
     return true;
   }
@@ -165,7 +171,7 @@ function refusesAgent(
 
 // The Agent a Vertex runs, the declared Agent under the Vertex's own Agent keys, or null when it takes none.
 function vertexAgent(
-  checking: Checking,
+  checking: FlowContext,
   place: VertexPlace,
   vertex: Value,
   proc?: checked.CheckedProcedure,
@@ -177,7 +183,7 @@ function vertexAgent(
   if (refusesAgent(checking, { vertex, overrides, location }, proc)) return null;
   const declared = vertex.use === undefined ? {} : (agents as Value)[vertex.use as string];
   // A declared Agent that is not an object, or names an unregistered harness, is reported at agents.<name>.
-  if (!proc?.agent || !refs.isRecord(declared)) return null;
+  if (!proc?.agent || !referencePaths.isRecord(declared)) return null;
   const merged: Value = { ...declared, ...overrides };
   if (vertex.use === undefined && !Object.keys(merged).length) {
     report.error(problems, location, `procedure ${proc.name} has an agent Action, so the Vertex needs an Agent`);
@@ -194,7 +200,7 @@ function vertexAgent(
 function checkVertexRoutes(problems: report.Report, location: string, vertex: Value, vertices: Value) {
   for (const [outcome, target] of report.entries(vertex.route))
     checkRouteTarget(problems, `${location}.route.${outcome}`, target, vertices);
-  if (vertex.route !== undefined && !refs.isRecord(vertex.route))
+  if (vertex.route !== undefined && !referencePaths.isRecord(vertex.route))
     report.error(problems, `${location}.route`, 'route must be an object from Outcome to target');
   if (vertex.max !== undefined && !report.isCount(vertex.max))
     report.error(problems, `${location}.max`, 'max must be a positive integer');
@@ -207,18 +213,23 @@ function checkVertexRoutes(problems: report.Report, location: string, vertex: Va
 
 // The Procedure's references and templates typed in the Vertex's scope; the tokens some input falls through each
 // table for, alone or here.
-function vertexFalls(checking: Checking, location: string, typed: inputs.TypedInputs, proc: checked.CheckedProcedure) {
+function vertexFalls(
+  checking: FlowContext,
+  location: string,
+  typed: inputs.TypedInputs,
+  proc: checked.CheckedProcedure,
+) {
   const locate = (where: string) => `${location} (procedure ${proc.name}).${where}`;
   const falls = {
     ...(checking.procedureFalls[proc.name] ?? {}),
-    ...references.runRefs(checking.report, proc, {
+    ...references.checkReferences(checking.report, proc, {
       inputs: procedures.object(typed.nodes),
       optional: (input) => typed.inputs[input]?.optional === true,
       atVertex: true,
       locate,
     }),
   };
-  for (const found of templates.templateRefs(proc, procedures.object(typed.nodes), checking.reader))
+  for (const found of templates.templateReferences(proc, procedures.object(typed.nodes), checking.reader))
     report.error(checking.report, locate(found.where), found.message);
   return falls;
 }
@@ -226,7 +237,7 @@ function vertexFalls(checking: Checking, location: string, typed: inputs.TypedIn
 // A Vertex as the Resolved Flow carries it. A Procedure's read-only caps its Agent's access.
 function resolveVertex(
   vertex: Value,
-  resolved: { agent: Value | null; inputs: Record<string, inputs.ResolvedInput>; falls: Falls },
+  resolved: { agent: Value | null; inputs: Record<string, inputs.ResolvedInput>; falls: FallThroughs },
   proc?: checked.CheckedProcedure,
 ): graph.ResolvedVertex {
   const { agent, falls } = resolved;
@@ -245,17 +256,19 @@ function resolveVertex(
   };
 }
 
-function checkVertex(checking: Checking, state: FlowState, id: string, vertex: unknown) {
+function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
   const problems = checking.report;
   const location = `${state.location}.ticket.vertices.${id}`;
   report.checkName(problems, location, id, { what: 'Vertex id', carried: true });
   if (RESERVED_VERTICES.includes(id))
     report.error(problems, location, `Vertex id ${JSON.stringify(id)} is reserved: an end name, cleanup or done`);
-  if (!refs.isRecord(vertex)) return report.error(problems, location, 'a Vertex must be an object');
+  if (!referencePaths.isRecord(vertex)) return report.error(problems, location, 'a Vertex must be an object');
   report.unknownKeys(problems, vertex, [...VERTEX_KEYS, ...AGENT_KEYS], location);
   checkAccess(problems, `${location}.access`, vertex.access);
-  const proc = report.has(checking.procedures, vertex.procedure) ? checking.procedures[vertex.procedure] : undefined;
-  if (!report.has(checking.config.procedures, vertex.procedure))
+  const proc = report.hasOwnKey(checking.procedures, vertex.procedure)
+    ? checking.procedures[vertex.procedure]
+    : undefined;
+  if (!report.hasOwnKey(checking.config.procedures, vertex.procedure))
     report.error(problems, location, `procedure ${JSON.stringify(vertex.procedure)} is not declared`);
   if (proc) state.used.add(proc.name);
   if (checking.failedAgents.has(vertex.use)) state.held = true;
@@ -269,7 +282,7 @@ function checkVertex(checking: Checking, state: FlowState, id: string, vertex: u
 }
 
 // Each Procedure a Vertex uses, as declared and hashed, so a resumed Visit can tell it has changed (S6).
-function usedProcedures(checking: Checking, used: Set<string>) {
+function usedProcedures(checking: FlowContext, used: Set<string>) {
   return Object.fromEntries(
     [...used].map((name) => {
       const proc = checking.procedures[name] as checked.CheckedProcedure;
@@ -282,12 +295,12 @@ function usedProcedures(checking: Checking, used: Set<string>) {
 }
 
 // Checks one declared Flow and gives its Resolved Flow, or reports that it is not an object.
-export function checkFlow(checking: Checking, name: string, declaration: unknown) {
+export function checkFlow(checking: FlowContext, name: string, declaration: unknown) {
   const location = `flows.${name}`;
   const problems = checking.report;
   const start = problems.errors.length;
   report.checkName(problems, location, name, { what: 'Flow', carried: false });
-  if (!refs.isRecord(declaration)) {
+  if (!referencePaths.isRecord(declaration)) {
     report.error(problems, location, 'a Flow must be an object');
     return undefined;
   }

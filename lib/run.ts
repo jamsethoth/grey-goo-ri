@@ -14,7 +14,7 @@ import * as locksModule from './locks.ts';
 import * as record from './record.ts';
 import type * as runContext from './run-context.ts';
 import type * as report from './validate/report.ts';
-import * as sqlite from './sqlite.ts';
+import * as stateDatabase from './state-database.ts';
 import * as validator from './validate/index.ts';
 
 type TicketResult = admission.TicketResult;
@@ -238,7 +238,7 @@ function startRun(
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
   const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
   flowModule.writeResolved(runDir, flow, hash);
-  sqlite.saveConfig(repo.gitCommonDir, hash, JSON.stringify(pinned));
+  stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, JSON.stringify(pinned));
   const runLog = (message: string) => {
     const line = named(message);
     appendFileSync(join(runDir, 'run.log'), `${new Date().toISOString()} ${line}\n`);
@@ -321,11 +321,11 @@ async function runTicket(issue: github.Issue, context: admission.AdmissionContex
     lock = await locks.tryAcquire(context.repo.gitCommonDir, `ticket-${ticket}`);
     if (!lock) {
       context.log(`#${ticket} skipped: another process holds the ticket-${ticket} lock`);
-      const needsHuman = labels.labels(context.config.labelPrefix).state(labels.NEEDS_HUMAN);
+      const needsHuman = labels.labelsFor(context.config.labelPrefix).state(labels.NEEDS_HUMAN);
       return {
         ticket,
         outcome: 'skipped',
-        ...(labels.has(gh.labelNames(issue), needsHuman) && { state: labels.NEEDS_HUMAN }),
+        ...(labels.hasLabel(gh.labelNames(issue), needsHuman) && { state: labels.NEEDS_HUMAN }),
       };
     }
     result = await admission.admit(issue, context);

@@ -32,7 +32,7 @@ test('a run stop from a remote Action names the Action, not a harness call', () 
 
 // The error a remote comment at the green Vertex's push Action ends with, once the fake gh has failed it as queued.
 function remoteError(context: support.ExecutionContext) {
-  context.record.cursor = { ...support.PUSH_REF, attempt: 1 };
+  context.record.cursor = { ...support.PUSH_ACTION_IDENTITY, attempt: 1 };
   return support.rejection(support.remoteComment(context));
 }
 const ticketEnds = (commonDir: string, execution: string) =>
@@ -86,7 +86,7 @@ test("an abandonment posts nothing, removes in-progress, and lands abandoned und
 
 test('an unexpected fault names the Action it stopped at and posts its error', async (t) => {
   const { context, executionRecord, fakeGh } = await support.executionContext(t);
-  executionRecord.cursor = { ...support.PUSH_REF, recovery: 1, attempt: 1 };
+  executionRecord.cursor = { ...support.PUSH_ACTION_IDENTITY, recovery: 1, attempt: 1 };
   const result = await terminal.fault(context, new Error('git exploded'));
   assert.deepEqual(result, { outcome: 'needs-human', fault: true });
   assert.equal(executionRecord.state, 'fault');
@@ -151,15 +151,15 @@ test('a Terminal Reason names the deciding Action, its Outcome and its rule', ()
 });
 
 test('a Terminal Reason names an Action by its id, and its recovery pass when it has one', () => {
-  assert.equal(terminal.whereOf({ action: 'green', recovery: 0 }), 'green');
-  assert.equal(terminal.whereOf({ action: 'green', recovery: 2 }), 'green (recovery 2)');
+  assert.equal(terminal.actionText({ action: 'green', recovery: 0 }), 'green');
+  assert.equal(terminal.actionText({ action: 'green', recovery: 2 }), 'green (recovery 2)');
 });
 
 test('a run stop found during a backoff ends the Execution at needs-human, naming the Action it stopped', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
-  executionRecord.cursor = { ...support.PUSH_REF, attempt: 1 };
+  executionRecord.cursor = { ...support.PUSH_ACTION_IDENTITY, attempt: 1 };
   context.runState.stop = { failureClass: 'auth', ticket: 21, source: 'push' };
-  const result = await terminal.decide(context, { next: 'run-stopped', retrying: true, reason: 'Stopped.' });
+  const result = await terminal.endEarly(context, { next: 'run-stopped', retrying: true, reason: 'Stopped.' });
   assert.deepEqual(result, { outcome: 'needs-human' });
   assert.deepEqual(executionRecord.terminalReason, {
     decidedBy: { vertex: 'green', visit: 1, action: 'push', recovery: 0 },
@@ -173,8 +173,8 @@ test('a run stop found during a backoff ends the Execution at needs-human, namin
 
 test("a remote Action's run stop is decided as a run-stop Terminal with its class and detail", async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
-  executionRecord.cursor = { ...support.PUSH_REF, attempt: 1 };
-  await terminal.decide(context, {
+  executionRecord.cursor = { ...support.PUSH_ACTION_IDENTITY, attempt: 1 };
+  await terminal.endEarly(context, {
     next: 'run-stop',
     failureClass: 'auth',
     source: 'push',
@@ -192,14 +192,14 @@ test("a remote Action's run stop is decided as a run-stop Terminal with its clas
 
 test('a hold or an abandonment is decided as its own Terminal', async (t) => {
   const held = await support.executionContext(t);
-  assert.deepEqual(await terminal.decide(held.context, { next: 'hold', name: 'conflict', reason: 'It conflicts.' }), {
+  assert.deepEqual(await terminal.endEarly(held.context, { next: 'hold', name: 'conflict', reason: 'It conflicts.' }), {
     outcome: 'needs-human',
     held: true,
   });
   assert.deepEqual(held.executionRecord.terminalReason?.decidedBy, { hold: 'conflict' });
   const abandoned = await support.executionContext(t);
   assert.deepEqual(
-    await terminal.decide(abandoned.context, {
+    await terminal.endEarly(abandoned.context, {
       next: 'abandon',
       cursor: abandoned.executionRecord.cursor,
       reason: 'A human took it.',

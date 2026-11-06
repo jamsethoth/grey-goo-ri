@@ -6,7 +6,7 @@ import * as marker from '../../lib/marker.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as golden from '../support/golden.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as executionContext from '../support/execution-context.ts';
@@ -144,8 +144,8 @@ async function corruptTicket(t: TestContext) {
   const { mainRoot, worktree } = fixture;
   await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   fixture.options.cwd = fixture.worktree;
-  sqlite
-    .openDb(fixture.commonDir)
+  stateDatabase
+    .open(fixture.commonDir)
     .prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', ?, ?)")
     .run(TICKET, CORRUPT);
   return fixture;

@@ -4,9 +4,9 @@ import * as checks from './checks.ts';
 import * as effects from './effects.ts';
 import * as integrity from './integrity.ts';
 import type * as procedures from './procedures.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
-import * as sqlite from './sqlite.ts';
+import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
 
@@ -41,13 +41,13 @@ const commandLine = (runContext: RunContext, action: procedures.Action) =>
 // stands in for the run, and its output says which run (L8, L13); a failure is never reused.
 async function commandCheck(runContext: RunContext, { action, tree }: Checking): Promise<Checked> {
   const line = commandLine(runContext, action);
-  const reused = action.reuse === 'tree' ? sqlite.reusablePass(runContext.record.commonDir, tree!, line) : null;
+  const reused = action.reuse === 'tree' ? stateDatabase.reusablePass(runContext.record.commonDir, tree!, line) : null;
   if (reused) {
     const output = `Reused the passing run of ${reused.marker} on this tree.\n${reused.output}`;
     return { passed: true, ran: false, output, evidence: { command: line, output } };
   }
   const run = await checks.greenCheck(line, runContext.record.worktree, { runShell: runContext.exec.runShell });
-  const evidence = checks.evidence(line, run);
+  const evidence = checks.checkEvidence(line, run);
   // A non-zero exit is recoverable; a timeout or a command that could not start is not (T4c).
   return {
     passed: run.passed,
@@ -83,11 +83,11 @@ async function testsFailCheck(runContext: RunContext, { actionIdentity, action, 
   }
   const line = commandLine(runContext, action);
   const run = await checks.greenCheck(line, executionRecord.worktree, { runShell: runContext.exec.runShell });
-  const named = refs.read(visitScope.scopeOf(executionRecord, actionIdentity, state), action.testNames);
+  const named = referencePaths.read(visitScope.scopeOf(executionRecord, actionIdentity, state), action.testNames);
   const red = checks.redCheck(run, (named as string[] | undefined) ?? []);
   // A pass found by the test's name alone, with no per-test statuses, says so for the reviewer (J8).
   const evidence = {
-    ...checks.evidence(line, run),
+    ...checks.checkEvidence(line, run),
     ...(red.ok && red.foundByNameOnly && { foundByNameOnly: true }),
   };
   // Named tests that passed, or that the output does not name, are recoverable (T4c, N5); a timeout or a runner that
@@ -119,7 +119,7 @@ const CHECK_KINDS: Record<procedures.CheckKind, CheckKind> = {
   repeat: {
     tree: false,
     async run(runContext, { actionIdentity, action, state }) {
-      const list = refs.read(visitScope.scopeOf(runContext.record, actionIdentity, state), action.list);
+      const list = referencePaths.read(visitScope.scopeOf(runContext.record, actionIdentity, state), action.list);
       const hash = checks.findingsHash(
         (list as Record<string, unknown>[] | undefined) ?? [],
         action.fields as string[],
@@ -165,7 +165,7 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
     tree: checked.tree ?? null,
   };
   if (action.reuse === 'tree' && checked.ran) {
-    sqlite.saveCheckResult(executionRecord.commonDir, {
+    stateDatabase.saveCheckResult(executionRecord.commonDir, {
       tree: signal.tree!,
       command: checked.evidence!.command,
       state: signal.state,
@@ -189,7 +189,7 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
   return signal;
 }
 
-// A failure's output is diagnosis, not proof: it travels with the signal on the Event and to the Terminal comment
+// A failure's output is diagnosis, not Evidence: it travels with the signal on the Event and to the Terminal comment
 // instead of into the outputs (N9). Only a worktree Check starts processes in the worktree, so only it is bracketed
 // (request 3.6).
 export async function check(runContext: RunContext, running: visitScope.Running): Promise<visitScope.ActionResolution> {
@@ -197,7 +197,7 @@ export async function check(runContext: RunContext, running: visitScope.Running)
   const startedAt = runContext.clock.now();
   const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;
   const work = () => runCheck(runContext, running);
-  const checked = CHECK_KINDS[action.kind!].tree ? await effects.bracket(runContext, work) : await work();
+  const checked = CHECK_KINDS[action.kind!].tree ? await effects.whileBusy(runContext, work) : await work();
   const signal = keepResult(runContext, running, checked);
   const output = signal.state === 'failed' ? checked.output : undefined;
   const resolution = visitScope.settle(runContext.record, actionIdentity, state, {
@@ -206,8 +206,8 @@ export async function check(runContext: RunContext, running: visitScope.Running)
     checks: visitScope.resolverChecks([], [signal]),
     retries: {},
   });
-  return effects.finish(runContext, {
-    actionRef: actionIdentity,
+  return effects.saveResolution(runContext, {
+    actionIdentity,
     startedAt,
     resolution: { reason: checked.reason ?? null, signal, output: output ?? null, ...resolution },
     fields: {

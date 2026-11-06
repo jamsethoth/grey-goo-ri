@@ -9,7 +9,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 
 const [commonDir, gated] = process.argv.slice(2);
 if (commonDir) {
@@ -31,8 +31,8 @@ if (commonDir) {
     return prepare.call(this, sql);
   };
   const open = () => {
-    sqlite.openDb(commonDir);
-    sqlite.close(commonDir);
+    stateDatabase.open(commonDir);
+    stateDatabase.close(commonDir);
   };
   if (gated === 'gated') {
     let input = '';

@@ -2,7 +2,7 @@
 // input one type (T6), and `pick` typed in each item of a list.
 
 import * as procedures from '../procedures.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import type * as checked from './procedures.ts';
 import * as report from './report.ts';
 
@@ -18,18 +18,18 @@ export interface ResolvedInput {
 // A Vertex's inputs, and the node each reads as, for the scope of `inputs`.
 export interface TypedInputs {
   inputs: Record<string, ResolvedInput>;
-  nodes: Record<string, refs.SchemaNode>;
+  nodes: Record<string, referencePaths.SchemaNode>;
 }
 interface Source {
   source: unknown;
-  node: refs.SchemaNode;
+  node: referencePaths.SchemaNode;
 }
 
 // Two schemas are one type when they differ only in key order or in the order of required or enum.
-const typeKey = (node: refs.SchemaNode) =>
+const typeKey = (node: referencePaths.SchemaNode) =>
   JSON.stringify(node, (key, value: unknown) => {
     if (Array.isArray(value) && (key === 'required' || key === 'enum')) return [...value].sort();
-    if (!refs.isRecord(value)) return value;
+    if (!referencePaths.isRecord(value)) return value;
     return Object.fromEntries(
       Object.keys(value)
         .sort()
@@ -42,10 +42,13 @@ export function sourceScope(procs: Record<string, checked.CheckedProcedure | und
   return procedures.object(
     Object.fromEntries(
       Object.entries(vertices).map(([id, vertex]) => {
-        const proc = refs.isRecord(vertex) && report.has(procs, vertex.procedure) ? procs[vertex.procedure] : undefined;
-        if (!proc) return [id, refs.ANY];
+        const proc =
+          referencePaths.isRecord(vertex) && report.hasOwnKey(procs, vertex.procedure)
+            ? procs[vertex.procedure]
+            : undefined;
+        if (!proc) return [id, referencePaths.ANY];
         const actions = proc.actions.filter(
-          (action) => refs.isRecord(action) && typeof action.id === 'string',
+          (action) => referencePaths.isRecord(action) && typeof action.id === 'string',
         ) as procedures.Action[];
         const outputs = actions.map((action) => [action.id, procedures.outputs(action, proc.schema)]);
         return [id, procedures.object({ rescue: procedures.RESCUE, ...Object.fromEntries(outputs) })];
@@ -55,15 +58,15 @@ export function sourceScope(procs: Record<string, checked.CheckedProcedure | und
 }
 
 // The first source that types, after checking every source has its type (T6).
-function firstSource(problems: report.Report, location: string, from: unknown[], scope: refs.SchemaNode) {
+function firstSource(problems: report.Report, location: string, from: unknown[], scope: referencePaths.SchemaNode) {
   let first: Source | null = null;
   for (const source of from) {
-    const resolved = refs.resolve(scope, source, 'defined', { read: true });
+    const resolved = referencePaths.resolve(scope, source, 'defined', { read: true });
     if (resolved.error !== undefined) {
       report.error(problems, location, resolved.error);
       continue;
     }
-    if (resolved.node === refs.ANY) continue;
+    if (resolved.node === referencePaths.ANY) continue;
     if (!first) first = { source, node: resolved.node };
     else if (typeKey(first.node) !== typeKey(resolved.node)) {
       const sources = `${JSON.stringify(first.source)} and ${JSON.stringify(source)}`;
@@ -75,36 +78,41 @@ function firstSource(problems: report.Report, location: string, from: unknown[],
 
 // The node an input reads as: its sources' type, or a list of what `pick` reads in each item.
 function pickedNode(problems: report.Report, location: string, pick: unknown, first: Source | null) {
-  const node = first?.node ?? refs.ANY;
+  const node = first?.node ?? referencePaths.ANY;
   if (pick === undefined) return node;
-  if (node === refs.ANY) {
-    const parsed = refs.parse(pick);
+  if (node === referencePaths.ANY) {
+    const parsed = referencePaths.parse(pick);
     if (parsed.error) report.error(problems, location, `pick: ${parsed.error}`);
     return node;
   }
-  const type = refs.kindOf(node);
-  if (!(type?.kind === 'list' && (type as { of: refs.FieldType | null }).of?.kind === 'object')) {
+  const type = referencePaths.kindOf(node);
+  if (!(type?.kind === 'list' && (type as { of: referencePaths.FieldType | null }).of?.kind === 'object')) {
     const source = JSON.stringify((first as Source).source);
     report.error(problems, location, `pick needs a list of objects; ${source} is ${JSON.stringify(type)}`);
-    return refs.ANY;
+    return referencePaths.ANY;
   }
   // The interpreter reads `pick` in each item, so it is typed in an item, as it is read.
-  const resolved = refs.resolve(node.items as refs.SchemaNode, pick, 'defined', { read: true });
+  const resolved = referencePaths.resolve(node.items as referencePaths.SchemaNode, pick, 'defined', { read: true });
   if (resolved.error) {
     report.error(problems, location, `pick: ${resolved.error}`);
-    return refs.ANY;
+    return referencePaths.ANY;
   }
   return { type: 'array', items: resolved.node };
 }
 
-export function checkInputs(problems: report.Report, location: string, declared: unknown, scope: refs.SchemaNode) {
+export function checkInputs(
+  problems: report.Report,
+  location: string,
+  declared: unknown,
+  scope: referencePaths.SchemaNode,
+) {
   const typed: TypedInputs = { inputs: {}, nodes: {} };
-  if (declared !== undefined && !refs.isRecord(declared))
+  if (declared !== undefined && !referencePaths.isRecord(declared))
     report.error(problems, `${location}.inputs`, 'inputs must be an object from name to { from, optional?, pick? }');
   for (const [input, declaration] of report.entries(declared)) {
     const inputLocation = `${location}.inputs.${input}`;
     report.checkName(problems, inputLocation, input, { what: 'input', carried: true });
-    if (!refs.isRecord(declaration)) {
+    if (!referencePaths.isRecord(declaration)) {
       report.error(problems, inputLocation, 'an input is { from, optional?, pick? }');
       continue;
     }

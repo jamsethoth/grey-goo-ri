@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 
 export const DEFAULTS_DIRECTORY = fileURLToPath(new URL('../defaults/', import.meta.url));
 export const EXAMPLES_DIRECTORY = fileURLToPath(new URL('../examples/', import.meta.url));
@@ -88,8 +88,8 @@ function rejectRepoOnly(layer: Layer, file: string): void {
   if (key) throw new Error(`${file}: ${key} may be set only in a repository Layer`);
 }
 
-const values = (value: unknown): unknown[] => (refs.isRecord(value) ? Object.values(value) : []);
-const field = (value: unknown, key: string): unknown => (refs.isRecord(value) ? value[key] : undefined);
+const values = (value: unknown): unknown[] => (referencePaths.isRecord(value) ? Object.values(value) : []);
+const field = (value: unknown, key: string): unknown => (referencePaths.isRecord(value) ? value[key] : undefined);
 
 // The file names a Layer's own JSON declares, at the keys that name a file: an Agent's or inline Vertex's `persona`, an
 // Action's `brief`, `schema`, `body` and `recoverBrief`, a Procedure's `recover.brief` and a Claim token's `comment`.
@@ -153,7 +153,7 @@ export function loadDefaults(): Config {
 
 // Objects merge key by key at every depth; anything else in the later Layer replaces the earlier value.
 const merge = (base: unknown, layer: unknown): unknown =>
-  refs.isRecord(base) && refs.isRecord(layer)
+  referencePaths.isRecord(base) && referencePaths.isRecord(layer)
     ? Object.fromEntries(
         [...new Set([...Object.keys(base), ...Object.keys(layer)])].map((key) => [
           key,
@@ -168,7 +168,7 @@ const WHOLE = ['flows', 'procedures'];
 const mergeLayer = (base: Layer, layer: Layer): Layer => ({
   ...(merge(base, layer) as Layer),
   ...Object.fromEntries(
-    WHOLE.filter((key) => refs.isRecord(base[key]) && refs.isRecord(layer[key])).map((key) => [
+    WHOLE.filter((key) => referencePaths.isRecord(base[key]) && referencePaths.isRecord(layer[key])).map((key) => [
       key,
       { ...(base[key] as Layer), ...(layer[key] as Layer) },
     ]),
@@ -194,7 +194,7 @@ export function loadLayers(repoRoot: string, home = homedir()): Config {
 
 // A file a Layer named, by that name (loadLayers's `files`).
 export function layerFile(files: unknown, name: unknown): string {
-  if (!refs.isRecord(files) || !Object.hasOwn(files, name as string))
+  if (!referencePaths.isRecord(files) || !Object.hasOwn(files, name as string))
     throw new Error(`no Layer names file ${JSON.stringify(name)}`);
   return (files as LayerFiles)[name as string].bytes;
 }
@@ -264,7 +264,7 @@ export function testPathsProblems(testPaths: unknown, file: string): string[] {
 // The repository Layer's Declared Commands as preflight failures, each naming `file`; none for a valid set with a test.
 export function commandProblems(declared: unknown, file: string): string[] {
   const commands = declared === undefined ? {} : declared;
-  if (!refs.isRecord(commands)) return [`${file}: commands must be an object from name to command line`];
+  if (!referencePaths.isRecord(commands)) return [`${file}: commands must be an object from name to command line`];
   const problems: string[] = [];
   for (const [name, line] of Object.entries(commands)) {
     if (!/^[a-z][a-z0-9-]*$/.test(name)) problems.push(`${file}: command name "${name}" must match [a-z][a-z0-9-]*`);
