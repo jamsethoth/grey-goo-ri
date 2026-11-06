@@ -46,6 +46,113 @@ test(
   },
 );
 
+// The clock starts with the chain's grandchild running and its middle never told to exit.
+test('an orphan case fails when its clock starts while the middle process still runs', CASE, async (t) => {
+  const pidFile = join(scratch, 'middle-runs.pid'); // the grandchild's, as orphanChain names it
+  await assert.rejects(
+    timedOutShell.timedOutOrphan(t, scratch, 'middle-runs', { timeoutMs: 1, ready: () => pidIn(pidFile) > 0 }),
+    /before the middle \d+ exited/,
+  );
+});
+
+// The watcher's ps always fails, so the middle exits with the grandchild never listed.
+test(
+  'an orphan case fails when its clock starts before the watcher has listed the grandchild',
+  POSIX_CASE,
+  async (t) => {
+    caseEnv.psStandIn(t, scratch, 'unlisted-ps', 'exit 1');
+    // as orphanChain names them
+    const [pidFile, midFile, goFile] = ['unlisted.pid', 'unlisted-mid.pid', 'unlisted.go'].map((name) =>
+      join(scratch, name),
+    );
+    const ready = () => {
+      if (pidIn(pidFile) > 0) writeFileSync(goFile, '');
+      return pidIn(midFile) > 0 && !alive(pidIn(midFile));
+    };
+    await assert.rejects(
+      timedOutShell.timedOutOrphan(t, scratch, 'unlisted', { timeoutMs: 1, ready }),
+      /before runShell held the grandchild \d+/,
+    );
+  },
+);
+
+// The case ends with the grandchild running and its pid not yet in the file the chain's cleanup reads, here a file it
+// never writes, and the watcher's ps always fails. Only the listing at the timeout can find it, through its parent, so
+// the case's end must leave the parent to that listing.
+test(
+  'a case that ends before its grandchild writes its pid does not leave that grandchild running',
+  POSIX_CASE,
+  async (t) => {
+    const listing: [string, string[]] = [
+      'sh',
+      ['-c', 'PATH="$1" exec ps -e -o pid=,ppid=,lstart=', 'sh', process.env.PATH ?? ''],
+    ];
+    caseEnv.psStandIn(t, scratch, 'unwritten-ps', 'exit 1');
+    const grandchildPid = join(scratch, 'unwritten-grandchild.pid');
+    t.after(() => processProbe.endProcessIn(grandchildPid));
+    const cancel = new AbortController();
+    const cancelled = t.test(
+      'a case that is cancelled',
+      { signal: cancel.signal, todo: 'cancelled on purpose' },
+      async (inner) => {
+        const { midFile, goFile } = childScripts.orphanChain(inner, scratch, 'unwritten');
+        await timedOutShell.timeOutWhen(
+          childScripts.nodeCommand(
+            inner,
+            childScripts.CHILD_STARTER,
+            childScripts.ORPHAN_MIDDLE,
+            midFile,
+            goFile,
+            childScripts.LONG_LIVED,
+            grandchildPid,
+          ),
+          { timeoutMs: 1, snapshotCommand: listing },
+          () => false,
+          inner,
+        );
+      },
+    );
+    await waitFor(() => pidIn(grandchildPid) > 0, t.signal);
+    const pid = pidIn(grandchildPid);
+    cancel.abort();
+    await cancelled;
+    await waitFor(() => !alive(pid), t.signal); // a grandchild left running fails at the case timeout
+  },
+);
+
+// The command's clock starts when the case ends, so its cleanup comes later. A case that ended first would leave that
+// cleanup reading the next case's environment: a stand-in ps it finds there can stop it before its kill.
+test('a case that ends while its command runs does not end before the command is timed out', CASE, async (t) => {
+  const pidFile = join(scratch, 'taken-down.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  let timedOut = false;
+  const timers: exec.Timers = {
+    setTimeout: ((fire: () => Promise<void>, ms: number) =>
+      setTimeout(async () => {
+        await fire();
+        timedOut = true;
+      }, ms)) as typeof globalThis.setTimeout,
+    clearTimeout,
+  };
+  const cancel = new AbortController();
+  const cancelled = t.test(
+    'a case that is cancelled',
+    { signal: cancel.signal, todo: 'cancelled on purpose' },
+    async (inner) => {
+      await timedOutShell.timeOutWhen(
+        childScripts.nodeCommand(inner, childScripts.LONG_LIVED, pidFile),
+        { timeoutMs: 1000, timers },
+        () => false,
+        inner,
+      );
+    },
+  );
+  await waitFor(() => pidIn(pidFile) > 0, t.signal);
+  cancel.abort();
+  await cancelled;
+  assert.ok(timedOut, 'the case ended with its command not yet taken down');
+});
+
 test('runShell reports surviving PIDs and the kill error when termination fails', CASE, async (t) => {
   const { result, pid } = await timedOutShell.timedOutOrphan(t, scratch, 'refused', {
     killPid: () => {
@@ -53,18 +160,13 @@ test('runShell reports surviving PIDs and the kill error when termination fails'
     },
     kernel32: kernel32Doubles.withKernel32({ TerminateJobObject: () => 0 }),
   });
-  try {
-    assert.equal(result.timedOut, true);
-    assert.ok(
-      result.survivors.some(
-        (survivor) => survivor.pid === pid && /EPERM refused|termination refused/.test(survivor.error),
-      ),
-      JSON.stringify(result.survivors),
-    );
-  } finally {
-    // a refused termination leaves the shell running too
-    for (const survivor of result.survivors) processProbe.endProcess(survivor.pid);
-  }
+  assert.equal(result.timedOut, true);
+  assert.ok(
+    result.survivors.some(
+      (survivor) => survivor.pid === pid && /EPERM refused|termination refused/.test(survivor.error),
+    ),
+    JSON.stringify(result.survivors),
+  );
 });
 
 test(
@@ -143,8 +245,7 @@ test(
   'runShell timeout does not name a descendant the watcher saw exit, though a new process now holds its pid',
   POSIX_CASE,
   async (t) => {
-    const { pidFile, midFile, goFile, commandLine } = childScripts.orphanChain(t, scratch, 'pruned');
-    t.after(() => processProbe.endProcessIn(pidFile));
+    const { pidFile, midFile, goFile, commandLine, middleExited } = childScripts.orphanChain(t, scratch, 'pruned');
     const append = `{ print } END { print mid, 1, "Thu Jan  1 00:00:02 1970" }`;
     const listing: [string, string[]] = [
       'sh',
@@ -155,18 +256,19 @@ test(
     const ready = () => {
       const mid = pidIn(midFile);
       sawMiddle ||= mid > 0 && seen.has(mid);
-      if (!sawMiddle) return false;
+      // the middle stays until the grandchild's pid is known: unlisted, that pid is all that can end it afterwards
+      if (!sawMiddle || !pidIn(pidFile)) return false;
       writeFileSync(goFile, '');
-      return !alive(mid) && !seen.has(mid);
+      return middleExited() && !seen.has(mid);
     };
-    const { result, ready: wasReady } = await timedOutShell.timeOutWhen(
+    const { result } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 3500, snapshotCommand: listing, onWatch: (watched) => (seen = watched) },
       ready,
-      t.signal,
+      t,
     );
     const mid = pidIn(midFile);
-    assert.ok(wasReady, `the watcher never saw the middle ${mid} exit: ${result.output}`);
+    assert.ok(sawMiddle && !seen.has(mid), `the watcher never saw the middle ${mid} exit: ${result.output}`);
     assert.equal(result.timedOut, true);
     assert.deepEqual(result.cleanupErrors, []);
     assert.ok(
@@ -225,12 +327,11 @@ test(
     ];
     caseEnv.psStandIn(t, scratch, 'blind-ps', 'exit 1');
     const { pidFile, commandLine } = childScripts.orphanChain(t, scratch, 'blind');
-    t.after(() => processProbe.endProcessIn(pidFile));
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       { timeoutMs: 3500, snapshotCommand: listing },
       () => pidIn(pidFile) > 0,
-      t.signal,
+      t,
     );
     const pid = pidIn(pidFile);
     assert.ok(ready, `grandchild never started: ${result.output}`);
@@ -242,20 +343,15 @@ test(
 
 test('runShell timeout leaves an unrelated orphan alone', CASE, async (t) => {
   const pidFile = join(scratch, 'unrelated.pid');
-  // the sleeper's parent exits once it has started: an orphan unrelated to the shell below
+  t.after(() => processProbe.endProcessIn(pidFile));
+  // the sleeper's parent exits once it has started it: an orphan unrelated to the shell below
   await exec.run(process.execPath, [childScripts.DETACHED_CHILD, 'ignore', pidFile]);
-  await waitFor(() => existsSync(pidFile), t.signal); // a sleeper that never starts fails at the case timeout
-  const pid = pidIn(pidFile);
-  try {
-    const result = await exec.runShell(
-      childScripts.nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'unrelated-hang.pid')),
-      {
-        timeoutMs: 800,
-      },
-    );
-    assert.equal(result.timedOut, true);
-    assert.ok(alive(pid), 'unrelated orphan was killed');
-  } finally {
-    processProbe.endProcess(pid);
-  }
+  const result = await exec.runShell(
+    childScripts.nodeCommand(t, childScripts.LONG_LIVED, join(scratch, 'unrelated-hang.pid')),
+    {
+      timeoutMs: 800,
+    },
+  );
+  assert.equal(result.timedOut, true);
+  assert.ok(alive(pidIn(pidFile)), 'unrelated orphan was killed');
 });

@@ -83,13 +83,19 @@ test(
       nodeCommand(t, childScripts.LONG_LIVED, printed, 'SENTINEL-BEFORE-HANG'),
       { timeoutMs: 4000 },
       () => existsSync(printed),
-      t.signal,
+      t,
     );
     assert.equal(result.code, null);
     assert.equal(result.timedOut, true);
     assert.match(result.output, /SENTINEL-BEFORE-HANG/);
   },
 );
+
+// process.kill(0, 0) signals the caller's own group, so a pid never written would read as a running process.
+test('checking a process whose pid was never written fails the case', () => {
+  assert.throws(() => processProbe.alive(0), /no process to check: the pid is 0/);
+  assert.throws(() => processProbe.alive(NaN), /no process to check: the pid is NaN/);
+});
 
 test("a case's environment variables are restored after the case even when it fails", async (t) => {
   caseEnv.caseEnv(t, { GG_TEST_ENV_PROBE: 'before' });
@@ -110,19 +116,13 @@ test(
   { ...CASE, skip: process.platform === 'win32' && 'Windows also reports them: see exec.job.test.ts' },
   async (t) => {
     const pidFile = join(scratch, 'leftover.pid');
+    t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec.runShell(
       nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
       shellOptions({ timeoutMs: 20000, signal: noClock() }),
     );
     assert.equal(result.code, 0);
-    // a background process that never starts fails at the case timeout
-    await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
-    const pid = processProbe.pidIn(pidFile);
-    try {
-      assert.ok(processProbe.alive(pid), 'background process was killed');
-    } finally {
-      processProbe.endProcess(pid);
-    }
+    assert.ok(processProbe.alive(processProbe.pidIn(pidFile)), 'background process was killed');
   },
 );
 
