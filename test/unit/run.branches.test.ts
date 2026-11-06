@@ -43,6 +43,11 @@ test('a fault before the first visit still records its action events', async (t)
 
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 1);
+  assert.match(runFixture.ticketResult(results)?.error as string, /disk full/);
+  const ticketEnd = fixture
+    .readEvents()
+    .find((event): event is events.TicketEndEvent => event.type === 'ticket_end' && event.ticket === TICKET);
+  assert.match(ticketEnd?.error as string, /disk full/);
   const actions = fixture
     .readEvents()
     .filter((event): event is events.ActionEvent => event.type === 'action' && event.ticket === TICKET);
