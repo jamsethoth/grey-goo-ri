@@ -91,6 +91,12 @@ test(
   },
 );
 
+// process.kill(0, 0) signals the caller's own group, so a pid never written would read as a running process.
+test('checking a process whose pid was never written fails the case', () => {
+  assert.throws(() => processProbe.alive(0), /no process to check: the pid is 0/);
+  assert.throws(() => processProbe.alive(NaN), /no process to check: the pid is NaN/);
+});
+
 test("a case's environment variables are restored after the case even when it fails", async (t) => {
   caseEnv.caseEnv(t, { GG_TEST_ENV_PROBE: 'before' });
   let release = () => {};
