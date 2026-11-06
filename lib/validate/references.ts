@@ -2,7 +2,7 @@
 // Vertex, with that Vertex's inputs. A table whose fields all type is analysed (rules.ts).
 
 import * as procedures from '../procedures.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import * as rules from '../rules.ts';
 import * as conditions from './conditions.ts';
 import * as checked from './procedures.ts';
@@ -24,24 +24,24 @@ interface Typed {
 }
 // What a typing reads of where it runs: the scope of `inputs`, and whether an input is optional.
 interface Typing {
-  inputs: refs.SchemaNode;
+  inputs: referencePaths.SchemaNode;
   optional: (input: string) => boolean;
 }
 interface Reference {
   where: string;
   path: unknown;
-  scope: refs.SchemaNode;
+  scope: referencePaths.SchemaNode;
 }
 // Why a typed reference cannot be read as its parameter needs, or null.
-type Want = (type: refs.FieldType, node: refs.SchemaNode, path: unknown) => string | null;
+type Want = (type: referencePaths.FieldType, node: referencePaths.SchemaNode, path: unknown) => string | null;
 
 // What a Visit reads of itself: its own outputs by Action id and its `inputs` (record.visitScope), and the response.
-export const ownScope = (proc: checked.CheckedProcedure, inputs: refs.SchemaNode) => ({
+export const ownScope = (proc: checked.CheckedProcedure, inputs: referencePaths.SchemaNode) => ({
   ...(proc.agent && { response: proc.schema }),
   inputs,
   ...Object.fromEntries(
     proc.actions
-      .filter((action) => refs.isRecord(action) && typeof action.id === 'string')
+      .filter((action) => referencePaths.isRecord(action) && typeof action.id === 'string')
       .map((action) => [
         (action as procedures.Action).id,
         procedures.outputs(action as procedures.Action, proc.schema),
@@ -49,8 +49,8 @@ export const ownScope = (proc: checked.CheckedProcedure, inputs: refs.SchemaNode
   ),
 });
 // ...and the Claim token, the pass and each Check's state, as a reference reads them in `table`.
-export function visitScope(proc: checked.CheckedProcedure, table: checked.Table, inputs: refs.SchemaNode) {
-  const recoverMax = refs.isRecord(proc.recover) ? proc.recover.max : undefined;
+export function visitScope(proc: checked.CheckedProcedure, table: checked.Table, inputs: referencePaths.SchemaNode) {
+  const recoverMax = referencePaths.isRecord(proc.recover) ? proc.recover.max : undefined;
   return {
     claim: { type: 'string', enum: proc.tokens[table] },
     pass: { type: 'integer', min: 1, max: 1 + (report.isCount(recoverMax) ? recoverMax : 0) },
@@ -61,8 +61,8 @@ export function visitScope(proc: checked.CheckedProcedure, table: checked.Table,
   };
 }
 
-function typeRef(found: Found[], reference: Reference, want: Want) {
-  const resolved = refs.resolve(reference.scope, reference.path, 'defined', { read: true });
+function typeReference(found: Found[], reference: Reference, want: Want) {
+  const resolved = referencePaths.resolve(reference.scope, reference.path, 'defined', { read: true });
   const message = resolved.error ?? (resolved.type && want(resolved.type, resolved.node, reference.path));
   if (message) found.push({ where: reference.where, path: reference.path, message });
   return resolved;
@@ -71,7 +71,7 @@ function typeRef(found: Found[], reference: Reference, want: Want) {
 const stringList =
   (label: string): Want =>
   (type, _, path) =>
-    type.kind === 'list' && (type as { of: refs.FieldType | null }).of?.kind === 'string'
+    type.kind === 'list' && (type as { of: referencePaths.FieldType | null }).of?.kind === 'string'
       ? null
       : `${label} must read a list of strings; ${JSON.stringify(path)} is ${JSON.stringify(type)}`;
 const anyType: Want = () => null;
@@ -87,19 +87,19 @@ const repeatList =
   };
 
 // `tests: named` and each Action's reference parameters, all read when the Visit passes.
-function actionRefs(found: Found[], proc: checked.CheckedProcedure, scope: refs.SchemaNode) {
-  if (refs.isRecord(proc.tests))
-    typeRef(found, { where: 'tests', path: proc.tests.named, scope }, stringList('tests: named'));
+function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope: referencePaths.SchemaNode) {
+  if (referencePaths.isRecord(proc.tests))
+    typeReference(found, { where: 'tests', path: proc.tests.named, scope }, stringList('tests: named'));
   proc.actions.forEach((action, index) => {
-    if (!refs.isRecord(action)) return;
+    if (!referencePaths.isRecord(action)) return;
     const where = `actions[${index}]`;
     if (action.do === 'check' && action.kind === 'tests-fail')
-      typeRef(found, { where, path: action.testNames, scope }, stringList('testNames'));
+      typeReference(found, { where, path: action.testNames, scope }, stringList('testNames'));
     if (action.do === 'check' && action.kind === 'repeat')
-      typeRef(found, { where, path: action.list, scope }, repeatList(action));
+      typeReference(found, { where, path: action.list, scope }, repeatList(action));
     if (action.do === 'pr-upsert') {
-      for (const path of Object.values(refs.isRecord(action.with) ? action.with : {}))
-        typeRef(found, { where, path, scope }, anyType);
+      for (const path of Object.values(referencePaths.isRecord(action.with) ? action.with : {}))
+        typeReference(found, { where, path, scope }, anyType);
     }
   });
 }
@@ -107,7 +107,7 @@ function actionRefs(found: Found[], proc: checked.CheckedProcedure, scope: refs.
 function validCondition(condition: unknown) {
   if (typeof condition === 'string' || typeof condition === 'boolean' || Number.isInteger(condition)) return true;
   return (
-    refs.isRecord(condition) &&
+    referencePaths.isRecord(condition) &&
     Object.keys(condition).length > 0 &&
     Object.entries(condition).every(
       ([op, value]) => (procedures.OPS as string[]).includes(op) && Number.isInteger(value),
@@ -125,7 +125,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
     found.push({ where, path, message });
     return null;
   }
-  const { type, error } = typeRef(found, reference, (fieldType) =>
+  const { type, error } = typeReference(found, reference, (fieldType) =>
     RULE_KINDS.includes(fieldType.kind as string)
       ? null
       : `rule field ${JSON.stringify(path)} is ${JSON.stringify(fieldType)}; ` +
@@ -145,7 +145,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
     return null;
   }
   // An absent optional input is a value of the domain (T10).
-  const steps = refs.parse(path).steps as string[];
+  const steps = referencePaths.parse(path).steps as string[];
   return { ...type, ...(steps[0] === 'inputs' && typing.optional(steps[1]) && { absent: true }) } as rules.FieldSpec;
 }
 
@@ -155,7 +155,7 @@ function tableFields(found: Found[], proc: checked.CheckedProcedure, table: chec
   let typed = !proc.malformed.has(table);
   const scope = procedures.object(visitScope(proc, table, typing.inputs));
   proc.tables[table].forEach((row, index) => {
-    if (!refs.isRecord(row) || !refs.isRecord(row.when)) return;
+    if (!referencePaths.isRecord(row) || !referencePaths.isRecord(row.when)) return;
     for (const [path, condition] of Object.entries(row.when)) {
       const field = fieldOf(found, { where: `${table}[${index}]`, path, scope }, condition, typing);
       if (field) fields[path] = field;
@@ -166,9 +166,9 @@ function tableFields(found: Found[], proc: checked.CheckedProcedure, table: chec
 }
 
 // Every typed reference of a Procedure, given a scope for `inputs`, and each table whose fields all type.
-export function typeRefs(proc: checked.CheckedProcedure, typing: Typing) {
+export function typeReferences(proc: checked.CheckedProcedure, typing: Typing) {
   const found: Found[] = [];
-  actionRefs(found, proc, procedures.object(visitScope(proc, 'passed', typing.inputs)));
+  actionReferences(found, proc, procedures.object(visitScope(proc, 'passed', typing.inputs)));
   const falls: Partial<Record<checked.Table, Typed>> = {};
   for (const table of checked.TABLES) {
     const { fields, typed } = tableFields(found, proc, table, typing);
@@ -203,7 +203,7 @@ function analyseTable(proc: checked.CheckedProcedure, table: checked.Table, { fi
     boxes: boxes.map(({ token, checks }) =>
       Object.fromEntries(
         Object.entries(fields).map(([path, spec]) => {
-          const [head, id] = refs.parse(path).steps as string[];
+          const [head, id] = referencePaths.parse(path).steps as string[];
           if (head === 'claim') return [path, { kind: 'enum', values: [token] }];
           return [path, head === 'check' && Object.hasOwn(checks, id) ? { kind: 'enum', values: checks[id] } : spec];
         }),
@@ -217,18 +217,18 @@ function analyseTable(proc: checked.CheckedProcedure, table: checked.Table, { fi
   };
 }
 
-const isInputPath = (path: unknown) => typeof path === 'string' && refs.parse(path).steps?.[0] === 'inputs';
+const isInputPath = (path: unknown) => typeof path === 'string' && referencePaths.parse(path).steps?.[0] === 'inputs';
 
 // Where a typing runs: alone (`atVertex` false) it reports everything but the references to `inputs` and the tables
 // that read one, which each Vertex using the Procedure reports in its own scope. `locate` gives a finding's location.
-export interface RefsRun extends Typing {
+export interface ReferenceContext extends Typing {
   atVertex: boolean;
   locate: (where: string) => string;
 }
 
 // A Procedure's typed references, typed alone or at a Vertex; the tokens some input falls through each table for.
-export function runRefs(problems: report.Report, proc: checked.CheckedProcedure, run: RefsRun) {
-  const { found, falls } = typeRefs(proc, run);
+export function checkReferences(problems: report.Report, proc: checked.CheckedProcedure, run: ReferenceContext) {
+  const { found, falls } = typeReferences(proc, run);
   for (const finding of found)
     if (run.atVertex === isInputPath(finding.path)) report.error(problems, run.locate(finding.where), finding.message);
   const result: Partial<Record<checked.Table, string[]>> = {};

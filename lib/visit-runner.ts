@@ -15,7 +15,7 @@ import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
 import type * as terminalReport from './terminal-report.ts';
@@ -57,15 +57,16 @@ function resolveInputs(
   return Object.fromEntries(
     Object.entries(declared).map(([name, { from, optional, pick }]) => {
       const sources = [from].flat().map((ref) => {
-        const [vertex, action, ...path] = refs.parse(ref).steps ?? [];
+        const [vertex, action, ...path] = referencePaths.parse(ref).steps ?? [];
         return { vertex, action, path: path.join('.') };
       });
       for (const output of executionRecord.outputs.toReversed()) {
         for (const source of sources) {
           const matches = output.vertex === source.vertex && output.action === source.action;
-          const value = matches ? refs.read(output.value, source.path) : undefined;
+          const value = matches ? referencePaths.read(output.value, source.path) : undefined;
           if (value === undefined) continue;
-          const picked = pick === undefined ? value : (value as unknown[]).map((item) => refs.read(item, pick));
+          const picked =
+            pick === undefined ? value : (value as unknown[]).map((item) => referencePaths.read(item, pick));
           return [
             name,
             { value: picked, vertex: output.vertex, visit: output.visit, action: output.action, absent: false },

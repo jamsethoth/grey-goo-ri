@@ -5,7 +5,7 @@
 import * as briefs from '../briefs.ts';
 import * as procedures from '../procedures.ts';
 import * as outcome from '../outcome.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import * as actionChecks from './actions.ts';
 import * as conditions from './conditions.ts';
 import * as report from './report.ts';
@@ -38,7 +38,7 @@ export interface CheckedProcedure {
   name: string;
   location: string;
   agent: Value | null;
-  schema: refs.SchemaNode;
+  schema: referencePaths.SchemaNode;
   actions: unknown[];
   checks: Value[];
   checkIds: unknown[];
@@ -59,7 +59,7 @@ export const required = (proc: CheckedProcedure, token: string) => requiredOf(pr
 
 // A stop token, or one requiring Checks of this Procedure; either way the form the Resolved Flow carries.
 function checkClaimToken(problems: report.Report, token: unknown, checkIds: unknown[], location: string) {
-  if (!refs.isRecord(token)) {
+  if (!referencePaths.isRecord(token)) {
     report.error(problems, location, CLAIM_TOKEN_SHAPE);
     return { requires: [] };
   }
@@ -100,7 +100,7 @@ function checkClaimTokens(
     return { ok: { requires: checkIds as string[] } };
   }
   const declaredTokens = declaration.claimTokens;
-  if (!refs.isRecord(declaredTokens) || !Object.keys(declaredTokens).length) {
+  if (!referencePaths.isRecord(declaredTokens) || !Object.keys(declaredTokens).length) {
     report.error(problems, `${location}.claimTokens`, 'a Procedure with an agent Action declares its claimTokens');
     return {};
   }
@@ -112,7 +112,7 @@ function checkClaimTokens(
       report.error(problems, atToken, `Claim token ${JSON.stringify(token)} ${report.RESERVED}`);
     claimTokens[token] = checkClaimToken(problems, form, checkIds, atToken);
   }
-  if (declared.schema !== refs.ANY) {
+  if (declared.schema !== referencePaths.ANY) {
     try {
       briefs.assertClaimEnum(declared.schema, Object.keys(declaredTokens));
     } catch (err) {
@@ -124,7 +124,7 @@ function checkClaimTokens(
 
 function checkSettings(problems: report.Report, location: string, declaration: Value, declared: actionChecks.Declared) {
   const tests = declaration.tests ?? 'frozen';
-  const named = refs.isRecord(tests) && Object.keys(tests).length === 1 && Object.hasOwn(tests, 'named');
+  const named = referencePaths.isRecord(tests) && Object.keys(tests).length === 1 && Object.hasOwn(tests, 'named');
   if (!(tests === 'frozen' || tests === 'write' || named))
     report.error(problems, `${location}.tests`, 'tests must be frozen, write or { named: <reference path> }');
   if (declaration.access !== undefined && declaration.access !== 'read-only')
@@ -132,7 +132,7 @@ function checkSettings(problems: report.Report, location: string, declaration: V
   const { recover } = declaration;
   if (recover === undefined) return tests;
   const wellFormed =
-    refs.isRecord(recover) &&
+    referencePaths.isRecord(recover) &&
     report.isCount(recover.max) &&
     report.isName(recover.brief) &&
     Object.keys(recover).length === 2;
@@ -158,8 +158,8 @@ function checkTables(problems: report.Report, location: string, declaration: Val
     rows.forEach((row: unknown, index) => {
       const atRow = `${location}.${table}[${index}]`;
       const wellFormed =
-        refs.isRecord(row) &&
-        refs.isRecord(row.when) &&
+        referencePaths.isRecord(row) &&
+        referencePaths.isRecord(row.when) &&
         typeof row.outcome === 'string' &&
         Object.keys(row).length === 2;
       if (!wellFormed) {
@@ -211,7 +211,7 @@ function checkResponseConditions(problems: report.Report, declared: actionChecks
 
 // pr-ready runs only on fresh passing Checks, so every token it can run under requires one (R11d).
 function checkPrReady(problems: report.Report, proc: CheckedProcedure) {
-  const ready = proc.actions.findIndex((action) => refs.isRecord(action) && action.do === 'pr-ready');
+  const ready = proc.actions.findIndex((action) => referencePaths.isRecord(action) && action.do === 'pr-ready');
   for (const token of ready === -1 ? [] : proc.tokens.passed) {
     if (!proc.claimTokens[token].requires?.length) {
       report.error(
@@ -241,7 +241,7 @@ export function checkProcedure(
   const location = `procedures.${name}`;
   const problems = declaring.report;
   report.checkName(problems, location, name, { what: 'Procedure', carried: true });
-  if (!refs.isRecord(declaration)) {
+  if (!referencePaths.isRecord(declaration)) {
     report.error(problems, location, 'a Procedure must be an object');
     return undefined;
   }
@@ -251,7 +251,7 @@ export function checkProcedure(
   const declared = actionChecks.checkActions(declaring, actions, location);
   if (!declared.agent) {
     actions.forEach((action, index) => {
-      if (refs.isRecord(action) && action.do === 'commit')
+      if (referencePaths.isRecord(action) && action.do === 'commit')
         report.error(
           problems,
           `${location}.actions[${index}]`,
@@ -296,7 +296,7 @@ export function outcomesOf(proc: CheckedProcedure, falls: Falls) {
   const found: string[] = [];
   const add = (table: Table, fallback: (fell: string[]) => unknown[]) => {
     if (!tokens[table].length) return;
-    const rows = tables[table].map((row) => (refs.isRecord(row) ? row.outcome : undefined));
+    const rows = tables[table].map((row) => (referencePaths.isRecord(row) ? row.outcome : undefined));
     found.push(...(rows.filter((name) => typeof name === 'string') as string[]));
     const fell = falls[table] ?? tokens[table];
     if (fell.length) found.push(...(fallback(fell) as string[]));

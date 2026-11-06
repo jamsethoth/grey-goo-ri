@@ -9,7 +9,7 @@ import * as effects from './effects.ts';
 import type * as integrity from './integrity.ts';
 import * as marker from './marker.ts';
 import * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as render from './render.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
@@ -168,7 +168,7 @@ function callOf(
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
-  const schema = JSON.parse(config.layerFile(runContext.files, action.schema)) as refs.SchemaNode;
+  const schema = JSON.parse(config.layerFile(runContext.files, action.schema)) as referencePaths.SchemaNode;
   return {
     marker: actionMarker,
     vertex: actionIdentity.vertex,

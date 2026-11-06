@@ -1,7 +1,7 @@
 // The Flow validator (V1): everything the configuration decides, checked before any agent runs, giving each Flow's
 // Resolved Flow plus errors and warnings. `gg doctor` and `gg run` admission share it.
 
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import * as flows from './flows.ts';
 import * as procedures from './procedures.ts';
 import * as references from './references.ts';
@@ -24,7 +24,7 @@ export interface Sources {
 
 const INHERITED = Object.getOwnPropertyNames(Object.prototype);
 const PROTOTYPE = 'is reserved: every object inherits a property of that name from Object.prototype';
-const field = (value: unknown, key: string) => (refs.isRecord(value) ? value[key] : undefined);
+const field = (value: unknown, key: string) => (referencePaths.isRecord(value) ? value[key] : undefined);
 
 // Each name the configuration gives that a plain object already has, which as a key is dropped (__proto__) or read as
 // the inherited property (H10).
@@ -81,7 +81,7 @@ function checkAgents(problems: report.Report, config: Value, harnesses: unknown)
     const location = `agents.${name}`;
     const before = problems.errors.length;
     report.checkName(problems, location, name, { what: 'Agent', carried: false });
-    if (!refs.isRecord(agent)) report.error(problems, location, 'an Agent must be an object');
+    if (!referencePaths.isRecord(agent)) report.error(problems, location, 'an Agent must be an object');
     else {
       report.unknownKeys(problems, agent, flows.AGENT_KEYS, location);
       flows.checkHarness({ report: problems, harnesses }, `agent ${name}`, agent.harness, location);
@@ -102,8 +102,8 @@ function checkProcedures(problems: report.Report, config: Value, readSchema: Sou
   const procedureFalls: Record<string, Partial<Record<procedures.Table, string[]>>> = {};
   for (const proc of Object.values(checkedProcedures)) {
     if (!proc) continue;
-    procedureFalls[proc.name] = references.runRefs(problems, proc, {
-      inputs: refs.ANY,
+    procedureFalls[proc.name] = references.checkReferences(problems, proc, {
+      inputs: referencePaths.ANY,
       optional: () => false,
       atVertex: false,
       locate: (where) => `${proc.location}.${where}`,
@@ -114,21 +114,21 @@ function checkProcedures(problems: report.Report, config: Value, readSchema: Sou
 
 export function validate(config: unknown, { harnesses, readSchema, readTemplate }: Sources) {
   const problems = report.newReport();
-  if (!refs.isRecord(config)) {
+  if (!referencePaths.isRecord(config)) {
     report.error(problems, '(root)', 'the configuration must be an object');
     return { flows: {}, ...problems };
   }
   // Every later check keys plain objects by the configuration's names, so none runs while one is inherited (H10).
   const inherited = inheritedNames(config);
   if (inherited.length) return { flows: {}, errors: inherited, warnings: [] };
-  if (config.procedures !== undefined && !refs.isRecord(config.procedures))
+  if (config.procedures !== undefined && !referencePaths.isRecord(config.procedures))
     report.error(problems, 'procedures', 'procedures must be an object from name to Procedure');
-  if (config.agents !== undefined && !refs.isRecord(config.agents))
+  if (config.agents !== undefined && !referencePaths.isRecord(config.agents))
     report.error(problems, 'agents', 'agents must be an object from name to Agent');
   const { checkedProcedures, procedureFalls } = checkProcedures(problems, config, readSchema);
   const sharedErrors = problems.errors.length;
   const failedAgents = checkAgents(problems, config, harnesses);
-  if (config.flows !== undefined && !refs.isRecord(config.flows))
+  if (config.flows !== undefined && !referencePaths.isRecord(config.flows))
     report.error(problems, 'flows', 'flows must be an object from name to Flow');
   else if (!Object.keys(config.flows ?? {}).length) {
     report.error(

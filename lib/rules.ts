@@ -1,7 +1,7 @@
 // Rule Tables: first-match evaluation and exact analysis over the table's finite domain partition (R8, V5, N2).
 
 import type * as procedures from './procedures.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as ruleDomain from './rule-domain.ts';
 
 export type RuleValue = string | number | boolean;
@@ -56,7 +56,9 @@ const NAMED = 10;
 
 export function evaluate(table: { rows: RuleRow[] }, input: unknown) {
   const i = table.rows.findIndex((row) =>
-    Object.entries(row.when).every(([path, condition]) => ruleDomain.matches(condition, refs.read(input, path))),
+    Object.entries(row.when).every(([path, condition]) =>
+      ruleDomain.matches(condition, referencePaths.read(input, path)),
+    ),
   );
   return i < 0 ? null : i;
 }

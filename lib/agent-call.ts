@@ -4,7 +4,7 @@ import * as checks from './checks.ts';
 import * as effectErrors from './effect-errors.ts';
 import type * as integrity from './integrity.ts';
 import * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 import type * as visitScope from './visit-scope.ts';
@@ -62,7 +62,7 @@ async function changedTests(
   const { tests } = state.proc;
   if (typeof tests === 'object' && tests?.named) {
     const named = new Set(
-      (refs.read(
+      (referencePaths.read(
         { ...record.visitScope(executionRecord, actionIdentity), response: called.response },
         tests.named,
       ) as string[]) ?? [],

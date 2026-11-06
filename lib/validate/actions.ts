@@ -2,7 +2,7 @@
 
 import * as briefs from '../briefs.ts';
 import * as procedures from '../procedures.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import * as report from './report.ts';
 
 // The heads of gg's own reference paths, so an Action id never shadows one.
@@ -11,7 +11,7 @@ const HEADS = ['claim', 'pass', 'check', 'response', 'inputs', 'rescue'];
 type Value = Record<string, unknown>;
 // A schema read once, however many Procedures name it; one that cannot be used types as ANY and reports its error.
 export interface LoadedSchema {
-  node: refs.SchemaNode;
+  node: referencePaths.SchemaNode;
   error?: string;
 }
 // What checking a Procedure reads beyond the Procedure itself.
@@ -26,7 +26,7 @@ export interface Declaring {
 export interface Declared {
   ids: unknown[];
   agent: Value | null;
-  schema: refs.SchemaNode;
+  schema: referencePaths.SchemaNode;
   schemaName: string | null;
   checks: Value[];
   responseConditions: [Value, string][];
@@ -44,13 +44,13 @@ function readSchema(read: Declaring['readSchema'], name: string): LoadedSchema {
   try {
     schema = read(name);
   } catch (err) {
-    return { node: refs.ANY, error: `schema ${name} cannot be read: ${(err as Error).message}` };
+    return { node: referencePaths.ANY, error: `schema ${name} cannot be read: ${(err as Error).message}` };
   }
   try {
     briefs.assertStrict(schema);
-    return { node: schema as refs.SchemaNode };
+    return { node: schema as referencePaths.SchemaNode };
   } catch (err) {
-    return { node: refs.ANY, error: `${name}: ${(err as Error).message}` };
+    return { node: referencePaths.ANY, error: `${name}: ${(err as Error).message}` };
   }
 }
 
@@ -71,7 +71,7 @@ function checkActionId(problems: report.Report, ids: unknown[], id: unknown, loc
 
 function checkAction(declaring: Declaring, declared: Declared, action: unknown, location: string) {
   const problems = declaring.report;
-  if (!refs.isRecord(action)) return report.error(problems, location, 'an Action must be an object');
+  if (!referencePaths.isRecord(action)) return report.error(problems, location, 'an Action must be an object');
   checkActionId(problems, declared.ids, action.id, location);
   declared.ids.push(action.id);
   const kinds = Object.keys(procedures.ACTION_KEYS).join(', ');
@@ -129,7 +129,7 @@ function checkEffectAction(problems: report.Report, action: Value, location: str
     if (!report.isName(action.type)) report.error(problems, location, 'type must name the commit type');
   } else if (action.do === 'pr-upsert') {
     requireFile(problems, action, 'body', location);
-    if (action.with !== undefined && !refs.isRecord(action.with))
+    if (action.with !== undefined && !referencePaths.isRecord(action.with))
       report.error(problems, location, 'with must be an object of reference paths');
   } else if (action.do === 'comment') {
     if (action.target !== 'pr' && action.target !== 'ticket')
@@ -148,7 +148,7 @@ export function checkActions(declaring: Declaring, actions: unknown[], location:
   const declared: Declared = {
     ids: [],
     agent: null,
-    schema: refs.ANY,
+    schema: referencePaths.ANY,
     schemaName: null,
     checks: [],
     responseConditions: [],
@@ -161,7 +161,7 @@ export function checkActions(declaring: Declaring, actions: unknown[], location:
 // and every Check before any effect, so a commit or pr-ready counts only Checks that ran (Q3a) and no effect runs for a
 // Visit that then stops or fails (Q3).
 export function checkOrder(problems: report.Report, location: string, actions: unknown[]) {
-  const agentAt = actions.findIndex((action) => refs.isRecord(action) && action.do === 'agent');
+  const agentAt = actions.findIndex((action) => referencePaths.isRecord(action) && action.do === 'agent');
   if (agentAt > 0) {
     report.error(
       problems,
@@ -171,7 +171,7 @@ export function checkOrder(problems: report.Report, location: string, actions: u
   }
   const effect = actions.find(
     (action) =>
-      refs.isRecord(action) &&
+      referencePaths.isRecord(action) &&
       report.has(procedures.ACTION_KEYS, action.do) &&
       action.do !== 'agent' &&
       action.do !== 'check',
@@ -179,7 +179,7 @@ export function checkOrder(problems: report.Report, location: string, actions: u
   if (!effect) return;
   const effectAt = actions.indexOf(effect);
   actions.forEach((action, index) => {
-    if (refs.isRecord(action) && action.do === 'check' && index > effectAt) {
+    if (referencePaths.isRecord(action) && action.do === 'check' && index > effectAt) {
       report.error(
         problems,
         `${location}.actions[${index}]`,

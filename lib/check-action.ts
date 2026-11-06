@@ -4,7 +4,7 @@ import * as checks from './checks.ts';
 import * as effects from './effects.ts';
 import * as integrity from './integrity.ts';
 import type * as procedures from './procedures.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
@@ -83,7 +83,7 @@ async function testsFailCheck(runContext: RunContext, { actionIdentity, action, 
   }
   const line = commandLine(runContext, action);
   const run = await checks.greenCheck(line, executionRecord.worktree, { runShell: runContext.exec.runShell });
-  const named = refs.read(visitScope.scopeOf(executionRecord, actionIdentity, state), action.testNames);
+  const named = referencePaths.read(visitScope.scopeOf(executionRecord, actionIdentity, state), action.testNames);
   const red = checks.redCheck(run, (named as string[] | undefined) ?? []);
   // A pass found by the test's name alone, with no per-test statuses, says so for the reviewer (J8).
   const evidence = {
@@ -119,7 +119,7 @@ const CHECK_KINDS: Record<procedures.CheckKind, CheckKind> = {
   repeat: {
     tree: false,
     async run(runContext, { actionIdentity, action, state }) {
-      const list = refs.read(visitScope.scopeOf(runContext.record, actionIdentity, state), action.list);
+      const list = referencePaths.read(visitScope.scopeOf(runContext.record, actionIdentity, state), action.list);
       const hash = checks.findingsHash(
         (list as Record<string, unknown>[] | undefined) ?? [],
         action.fields as string[],

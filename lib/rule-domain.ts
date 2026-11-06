@@ -3,7 +3,7 @@
 // warnings from.
 
 import * as procedures from './procedures.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type * as rules from './rules.ts';
 
 // The nearest integer on either side of `constant`; beyond 2**53 doubles are integers one ulp apart, so step the bit
@@ -155,7 +155,7 @@ export function example(domain: Domain, [box, ...indices]: Point) {
   const input: Record<string, unknown> = {};
   domain.paths.forEach((path, field) => {
     const value = domain.values[box][field][indices[field]];
-    if (value !== undefined) refs.write(input, path, value);
+    if (value !== undefined) referencePaths.write(input, path, value);
   });
   return input;
 }

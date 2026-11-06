@@ -2,7 +2,7 @@
 // as `<action id>.<output>` (W2). The Procedures themselves are configuration, declared in a Layer; the interpreter
 // runs each kind.
 
-import type * as refs from './refs.ts';
+import type * as referencePaths from './reference-paths.ts';
 import type * as rules from './rules.ts';
 
 export const ACTION_KEYS = {
@@ -65,7 +65,7 @@ export const CHECK_KEYS = {
 export type CheckKind = keyof typeof CHECK_KEYS;
 
 // Strict like a response schema's objects, so an output and a response field of the same fields are one type.
-export const object = (properties: Record<string, refs.SchemaNode>) => ({
+export const object = (properties: Record<string, referencePaths.SchemaNode>) => ({
   type: 'object',
   properties,
   required: Object.keys(properties),
@@ -96,7 +96,7 @@ export const RESCUE = object({
 });
 // What each Check kind produces: a command or tests-fail Check runs a command, so it declares evidence and the cleanup
 // L11 will write; a response or repeat Check runs no command, so it has neither.
-const CHECK_OUTPUTS: Record<CheckKind, Record<string, refs.SchemaNode>> = {
+const CHECK_OUTPUTS: Record<CheckKind, Record<string, referencePaths.SchemaNode>> = {
   command: { evidence: EVIDENCE, cleanup: CLEANUP },
   'tests-fail': { evidence: RED_EVIDENCE, cleanup: CLEANUP },
   response: {},
@@ -104,7 +104,7 @@ const CHECK_OUTPUTS: Record<CheckKind, Record<string, refs.SchemaNode>> = {
 };
 
 // What each Action kind produces; an agent's response is typed by its schema.
-export function outputs(action: Action, schema: refs.SchemaNode) {
+export function outputs(action: Action, schema: referencePaths.SchemaNode) {
   if (action.do === 'agent') return object({ response: schema, cleanup: CLEANUP });
   if (action.do === 'check') return object(CHECK_OUTPUTS[action.kind as CheckKind] ?? {});
   if (action.do === 'commit') return object({ files: STRING_LIST });

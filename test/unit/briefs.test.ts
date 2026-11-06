@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.ts';
 import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.ts';
-import type * as refs from '../../lib/refs.ts';
+import type * as referencePaths from '../../lib/reference-paths.ts';
 import * as render from '../../lib/render.ts';
 import { homedir } from 'node:os';
 import { readFileSync } from 'node:fs';
@@ -41,7 +41,7 @@ const recovery = (name: string, context: RecoveryContext) =>
     })),
   });
 // A shipped schema declares its properties and which are required.
-type ShippedSchema = refs.SchemaNode & Required<Pick<refs.SchemaNode, 'properties' | 'required'>>;
+type ShippedSchema = referencePaths.SchemaNode & Required<Pick<referencePaths.SchemaNode, 'properties' | 'required'>>;
 const schema = (name: string): ShippedSchema => JSON.parse(SHIPPED[`schemas/${name}.schema.json`].bytes);
 const SCHEMAS: Record<string, ShippedSchema> = {
   RED_SCHEMA: schema('red'),
@@ -428,7 +428,10 @@ for (const [what, schema, tokens, message] of [
   ],
 ]) {
   test(`the claim enum must equal the declared tokens: ${what} is an error, not a TypeError`, () => {
-    assert.throws(() => briefs.assertClaimEnum(schema as refs.SchemaNode, tokens), { name: 'Error', message });
+    assert.throws(() => briefs.assertClaimEnum(schema as referencePaths.SchemaNode, tokens), {
+      name: 'Error',
+      message,
+    });
   });
 }
 
@@ -493,7 +496,7 @@ for (const [what, schema, path, error] of [
   ],
 ]) {
   test(`fieldType returns an error, not a TypeError, for ${what}`, () => {
-    assert.deepEqual(briefs.fieldType(schema as refs.SchemaNode, path), { error });
+    assert.deepEqual(briefs.fieldType(schema as referencePaths.SchemaNode, path), { error });
   });
 }
 

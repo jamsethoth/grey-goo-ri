@@ -6,7 +6,7 @@
 
 import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
-import * as refs from '../refs.ts';
+import * as referencePaths from '../reference-paths.ts';
 import type * as inputs from './inputs.ts';
 import * as checked from './procedures.ts';
 import * as report from './report.ts';
@@ -66,7 +66,7 @@ function leaves(id: string, proc: checked.CheckedProcedure, ending: Case, rescue
   const passed = ending.table === 'passed';
   const keys = [];
   for (const action of ending.table === null ? [] : proc.actions) {
-    if (!refs.isRecord(action) || typeof action.id !== 'string') continue;
+    if (!referencePaths.isRecord(action) || typeof action.id !== 'string') continue;
     if (action.do === 'agent') keys.push(`${id}.${action.id}.response`);
     else if (passed && action.do === 'check' && checked.required(proc, ending.token as string).includes(action.id))
       keys.push(`${id}.${action.id}.evidence`);
@@ -111,14 +111,14 @@ function landingsOf(
   exhausted = false,
   seen: string[] = [],
 ): Landing[] {
-  if (refs.isRecord(target) && Object.hasOwn(target, 'to')) {
+  if (referencePaths.isRecord(target) && Object.hasOwn(target, 'to')) {
     const bounded = report.isCount(target.max);
     return [
       ...landingsOf(resolved, target.to, exhausted, seen),
       ...(bounded ? landingsOf(resolved, target.exhausted ?? flow.NEEDS_HUMAN_ROUTE, true, seen) : []),
     ];
   }
-  if (refs.isRecord(target)) return flow.isEnd(target.end) ? [{ end: target.end, exhausted }] : [];
+  if (referencePaths.isRecord(target)) return flow.isEnd(target.end) ? [{ end: target.end, exhausted }] : [];
   if (typeof target !== 'string' || !Object.hasOwn(resolved, target) || seen.includes(target)) return [];
   const vertex = resolved[target];
   const next = vertex.exhausted ?? flow.NEEDS_HUMAN_ROUTE;
@@ -140,7 +140,7 @@ function workOf(write: boolean, cases: Case[], landings: Landing[]) {
 // A writing Vertex commits on every passing path, under a Claim token that requires a Check.
 function checkWrites(fail: (where: string, message: string) => void, id: string, proc: checked.CheckedProcedure) {
   if (!proc.tokens.passed.length) return;
-  if (!proc.actions.some((action) => refs.isRecord(action) && action.do === 'commit')) {
+  if (!proc.actions.some((action) => referencePaths.isRecord(action) && action.do === 'commit')) {
     fail(
       id,
       `Vertex ${id} writes, so it must commit on every passing path, but procedure ${proc.name} has no commit Action`,
@@ -181,7 +181,7 @@ function routeEdges(problems: report.Report, graph: Graph) {
         configurable: true,
       });
       const target = route.target;
-      const bounded = refs.isRecord(target) && report.isCount(target.max) ? target.to : null;
+      const bounded = referencePaths.isRecord(target) && report.isCount(target.max) ? target.to : null;
       edges.push({ from: id, outcome: name, landings, bounded, cases: mine, write });
     }
   }
@@ -243,7 +243,7 @@ function checkExhaustedLoops(problems: report.Report, graph: Graph) {
 
 // The facts the graph checks reason over: each input's sources, as the outputs that produce them, and pr-ready.
 const producer = (source: unknown) => {
-  const [vertex, action, output] = refs.parse(source).steps as string[];
+  const [vertex, action, output] = referencePaths.parse(source).steps as string[];
   return action === 'rescue' ? `${vertex}.rescue` : `${vertex}.${action}.${output}`;
 };
 function groupsOf(resolved: Record<string, ResolvedVertex>) {

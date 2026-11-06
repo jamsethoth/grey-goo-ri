@@ -5,7 +5,7 @@ import type * as marker from './marker.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 
@@ -76,7 +76,7 @@ export const bind = (executionRecord: record.ExecutionRecord, { actionIdentity, 
   Object.fromEntries(
     Object.entries((action.with as Record<string, string> | undefined) ?? {}).map(([name, ref]) => [
       name,
-      refs.read(scopeOf(executionRecord, actionIdentity, state), ref),
+      referencePaths.read(scopeOf(executionRecord, actionIdentity, state), ref),
     ]),
   );
 

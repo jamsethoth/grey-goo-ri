@@ -2,7 +2,7 @@
 // defaults/schemas/), and stays inside the strict subset below, which every Harness accepts
 // (docs/interfaces/harness.md, `run(call)`).
 
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as publicText from './public-text.ts';
 import * as render from './render.ts';
 import type * as visit from './visit.ts';
@@ -43,7 +43,7 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
 // An object node requires exactly its properties, each reachable by a dotted path, and allows no others.
 function assertObject(schema: Record<string, unknown>, path: string) {
   const keys = Object.keys(schema.properties ?? {});
-  if (schema.properties !== undefined && !refs.isRecord(schema.properties))
+  if (schema.properties !== undefined && !referencePaths.isRecord(schema.properties))
     throw new Error(`${path}: properties must be an object`);
   if (schema.additionalProperties !== false) throw new Error(`${path}: object lacks additionalProperties: false`);
   if (!Array.isArray(schema.required)) throw new Error(`${path}: required must be a list`);
@@ -62,7 +62,7 @@ function assertObject(schema: Record<string, unknown>, path: string) {
 }
 
 export function assertStrict(schema: unknown, path = '(root)') {
-  if (!refs.isRecord(schema)) throw new Error(`${path}: schema must be an object`);
+  if (!referencePaths.isRecord(schema)) throw new Error(`${path}: schema must be an object`);
   assertKeywords(schema, path);
   if (schema.type === 'array' && schema.items === undefined) throw new Error(`${path}: array lacks items`);
   if (schema.type === 'object') assertObject(schema, path);
@@ -71,9 +71,9 @@ export function assertStrict(schema: unknown, path = '(root)') {
 
 const prefix = (path: string) => (path ? `${path}.` : '');
 
-function objectMismatch(schema: refs.SchemaNode, value: unknown, path: string): string | null {
+function objectMismatch(schema: referencePaths.SchemaNode, value: unknown, path: string): string | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return `${path} must be an object`;
-  const properties = schema.properties as Record<string, refs.SchemaNode>;
+  const properties = schema.properties as Record<string, referencePaths.SchemaNode>;
   for (const key of schema.required as string[]) {
     if (!Object.hasOwn(value, key)) return `${prefix(path)}${key} is missing`;
     const reason = mismatch(properties[key], (value as Record<string, unknown>)[key], path ? `${path}.${key}` : key);
@@ -83,16 +83,16 @@ function objectMismatch(schema: refs.SchemaNode, value: unknown, path: string): 
   return extra !== undefined ? `${prefix(path)}${extra} is not in the schema` : null;
 }
 
-function arrayMismatch(schema: refs.SchemaNode, value: unknown, path: string) {
+function arrayMismatch(schema: referencePaths.SchemaNode, value: unknown, path: string) {
   if (!Array.isArray(value)) return `${path} must be an array`;
   for (let i = 0; i < value.length; i++) {
-    const reason = mismatch(schema.items as refs.SchemaNode, value[i], `${path}[${i}]`);
+    const reason = mismatch(schema.items as referencePaths.SchemaNode, value[i], `${path}[${i}]`);
     if (reason) return reason;
   }
   return null;
 }
 
-function mismatch(schema: refs.SchemaNode, value: unknown, path: string): string | null {
+function mismatch(schema: referencePaths.SchemaNode, value: unknown, path: string): string | null {
   if (schema.type === 'object') return objectMismatch(schema, value, path);
   if (schema.type === 'array') return arrayMismatch(schema, value, path);
   if (schema.type === 'integer') return Number.isInteger(value) ? null : `${path} must be an integer`;
@@ -102,7 +102,7 @@ function mismatch(schema: refs.SchemaNode, value: unknown, path: string): string
 }
 
 // The Claim signal, saved with the Visit and the Action Event: every field present, null where it has none.
-export function validateResponse(schema: refs.SchemaNode, response: unknown): visit.ClaimSignal {
+export function validateResponse(schema: referencePaths.SchemaNode, response: unknown): visit.ClaimSignal {
   if (response == null) return { valid: false, token: null, reason: 'no structured response' };
   const reason = mismatch(schema, response, '');
   return reason
@@ -113,7 +113,7 @@ export function validateResponse(schema: refs.SchemaNode, response: unknown): vi
 const quoted = (list: unknown[]) => (list.length ? list.map((value) => JSON.stringify(value)).join(' | ') : '(none)');
 
 // Tokens are matched exactly, so values that differ only in case would be a Claim nobody can route (V1).
-export function assertClaimEnum(schema: refs.SchemaNode | undefined, tokens: unknown) {
+export function assertClaimEnum(schema: referencePaths.SchemaNode | undefined, tokens: unknown) {
   const values = schema?.properties?.claim?.enum;
   if (!values) throw new Error('claim: the schema has no claim enum');
   assertStrict(schema.properties?.claim, 'claim');
@@ -134,14 +134,14 @@ export function assertClaimEnum(schema: refs.SchemaNode | undefined, tokens: unk
 }
 
 // A path steps through arrays implicitly: findings.severity is a list of the severity enum.
-export function fieldType(schema: refs.SchemaNode, path: unknown) {
-  if (typeof path !== 'string') return { error: refs.parse(path).error };
+export function fieldType(schema: referencePaths.SchemaNode, path: unknown) {
+  if (typeof path !== 'string') return { error: referencePaths.parse(path).error };
   try {
     assertStrict(schema);
   } catch (err) {
     return { error: `${JSON.stringify(path)}: the schema is outside the strict subset (${(err as Error).message})` };
   }
-  const { type, error } = refs.resolve(schema, path, 'a field of the schema');
+  const { type, error } = referencePaths.resolve(schema, path, 'a field of the schema');
   return error ? { error } : type;
 }
 
@@ -171,7 +171,7 @@ export interface BriefSection {
 // How a Brief prints a value: an excerpt where its context names a limit, an object as JSON, else the value itself.
 function printed(limits: Record<string, number>, value: unknown, ref: string, item: unknown) {
   if (!item && Object.hasOwn(limits, ref)) return publicText.publicTail(value, String, limits[ref]);
-  if (refs.isRecord(value) || (Array.isArray(value) && value.some(refs.isRecord)))
+  if (referencePaths.isRecord(value) || (Array.isArray(value) && value.some(referencePaths.isRecord)))
     return JSON.stringify(value, null, 2);
   return value ?? '';
 }
