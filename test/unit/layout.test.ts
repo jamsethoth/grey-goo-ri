@@ -287,7 +287,7 @@ const THROWN_CLASSES_FLAGGED = [
   ['with its name on a private field', "export class AError extends Error {\n  #name = 'AError';\n}\n"],
   [
     'with its name set on a private field',
-    "export class AError extends Error {\n  #name = '';\n  constructor() {\n    super('x');\n    this.#name = 'AError';\n  }\n}\n",
+    `export class AError extends Error {\n  #name = '';\n${IN_CONSTRUCTOR.replace('this.name', 'this.#name')}}\n`,
   ],
   [
     'with its name added to, not set',
