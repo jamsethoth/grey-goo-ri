@@ -117,8 +117,12 @@ async function takeDownTree(
 ): Promise<commandCleanup.Cleanup> {
   const cleanupErrors = [containmentError] as string[];
   let linked: number[] = [];
+  let listed = false;
   try {
-    if (kernel32) linked = containment.linkedDescendants(kernel32, rootPid);
+    if (kernel32) {
+      linked = containment.linkedDescendants(kernel32, rootPid);
+      listed = true;
+    }
   } catch (err) {
     cleanupErrors.push(
       `could not list the command's descendants (${(err as Error).message}); they are not verified gone`,
@@ -127,14 +131,15 @@ async function takeDownTree(
   const [command, args] = taskkillCommand ?? [`${containment.SYSTEM32}\\taskkill.exe`, ['/T', '/F', '/PID']];
   const result = await processTree.runHelper([command, [...args, String(rootPid)]]);
   if (result.code === 0 || result.code === 128) return { survivors: [], cleanupErrors }; // 128: already gone
+  // taskkill /T ends the children first and cmd.exe can exit on its own once they go, so the kill of the shell can fail
+  // with the tree down, for more than one reason in the Windows language (#285). What is left alive decides, when the
+  // tree could be listed.
+  const alive = [rootPid, ...linked].filter(processTree.isAlive);
+  if (listed && !alive.length) return { survivors: [], cleanupErrors };
   cleanupErrors.push(
     `taskkill on command pid ${rootPid} failed: exit ${result.code}: ${(result.stderr || result.stdout).trim()}`,
   );
-  const survivors = [rootPid, ...linked.filter(processTree.isAlive)].map((pid) => ({
-    pid,
-    error: 'still running after cleanup',
-  }));
-  return { survivors, cleanupErrors };
+  return { survivors: alive.map((pid) => ({ pid, error: 'still running after cleanup' })), cleanupErrors };
 }
 
 // How a shell command was held: in a job (Windows: the command and all it starts), or not, with containmentError saying
