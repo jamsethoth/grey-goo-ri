@@ -230,6 +230,7 @@ test(
   WIN_CASE,
   async (t) => {
     const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-tree-down');
+    t.after(() => processProbe.endProcessIn(pidFile)); // its starter ends with it
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       {
@@ -252,6 +253,7 @@ test(
   WIN_CASE,
   async (t) => {
     const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-child-left');
+    t.after(() => processProbe.endProcessIn(pidFile)); // its starter ends with it
     const { result, ready } = await timedOutShell.timeOutWhen(
       commandLine,
       {
@@ -263,11 +265,6 @@ test(
       t.signal,
     );
     const pid = pidIn(pidFile);
-    // the shell's other child is named too, and the child's starter outlives any case
-    t.after(() => {
-      for (const survivor of result.survivors) processProbe.endProcess(survivor.pid);
-      processProbe.endProcess(pid);
-    });
     assert.ok(ready, `child never started: ${result.output}`);
     assert.ok(
       result.survivors.some((survivor) => survivor.pid === pid),
@@ -277,6 +274,31 @@ test(
       result.survivors.every((survivor) => alive(survivor.pid)),
       `a process already gone is named as a survivor: ${JSON.stringify(result.survivors)}`,
     );
+    assert.ok(
+      result.cleanupErrors.some((error) => /taskkill/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
+  },
+);
+
+// With no listing, what taskkill left cannot be known, so its failure is reported even with the shell gone.
+test(
+  'runShell: when node:ffi is unavailable, a taskkill that fails with the shell gone is reported',
+  WIN_CASE,
+  async (t) => {
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'noffi-shell-gone');
+    t.after(() => processProbe.endProcessIn(pidFile));
+    const { result, ready } = await timedOutShell.timeOutWhen(
+      commandLine,
+      {
+        timeoutMs: 4000,
+        kernel32: null,
+        taskkillCommand: [process.execPath, [childScripts.FAILING_TASKKILL, 'shell']],
+      },
+      () => pidIn(pidFile) > 0,
+      t.signal,
+    );
+    assert.ok(ready, `child never started: ${result.output}`);
     assert.ok(
       result.cleanupErrors.some((error) => /taskkill/.test(error)),
       JSON.stringify(result.cleanupErrors),

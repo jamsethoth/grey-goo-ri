@@ -13,6 +13,7 @@ const childScript = (name: string) => fileURLToPath(new URL(`./child-scripts/${n
 export const LONG_LIVED = childScript('long-lived');
 export const ORPHAN_MIDDLE = childScript('orphan-middle');
 export const CHILD_STARTER = childScript('child-starter');
+export const LINKED_STARTER = childScript('linked-starter');
 export const DETACHED_CHILD = childScript('detached-child');
 export const WAITS_FOR_FILE = childScript('waits-for-file');
 export const PRINTS_LINE = childScript('prints-line');
@@ -64,5 +65,5 @@ export function orphanChain(t: TestContext, directory: string, name: string) {
 // A command whose child, still linked to the shell, writes pidFile.
 export function linkedChild(t: TestContext, directory: string, name: string) {
   const pidFile = join(directory, `${name}.pid`);
-  return { pidFile, commandLine: nodeCommand(t, CHILD_STARTER, LONG_LIVED, pidFile) };
+  return { pidFile, commandLine: nodeCommand(t, LINKED_STARTER, LONG_LIVED, pidFile) };
 }
