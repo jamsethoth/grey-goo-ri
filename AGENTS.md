@@ -148,10 +148,11 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
   full runs and the real-git wiring). `test/unit/layout.test.ts` checks `test/unit/`.
 - A module's tests of one size go in `<directory>/<module>.test.ts`. A large module may also have area files
   `<directory>/<module>.<area>.test.ts`; new tests for it still go in `<directory>/<module>.test.ts`. node runs files in
-  parallel but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an area file.
+  parallel but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an
+  area file.
 - Tests import modules as namespaces (`import * as record from '../../lib/record.ts'`) and call `record.fn()`, so each
   call names its module, and in a focused `node --test` run, which strips types unchecked, a missing export fails inside
-  the case. ESLint's `namespaceImport` enforces it.
+  the case. ESLint enforces it, for a test file's type imports too.
 - A test for a module that does not exist yet imports a stub module: its exports with their final signatures, each
   returning a wrong value.
 - Ported test files follow the port rule above and rewrite static named imports to namespace imports.

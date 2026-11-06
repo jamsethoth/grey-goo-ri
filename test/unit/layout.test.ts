@@ -57,9 +57,10 @@ for (const file of unitFiles) {
     );
   });
 }
-// Tools write under these, in a checkout's ignored or untracked files: none of it is gg's code.
-const SKIPPED = new Set(['.git', 'node_modules', '.claude', 'coverage']);
-const isSkipped = (path: string) => SKIPPED.has(path.split('/').at(-1) ?? '');
+const SKIPPED = new Set(['.git', 'node_modules']);
+// Tools write these at a checkout's root, ignored or untracked: none of it is gg's code. Elsewhere the names are free.
+const TOOL_OUTPUT = new Set(['.claude', 'coverage']);
+const isSkipped = (path: string) => SKIPPED.has(path.split('/').at(-1) ?? '') || TOOL_OUTPUT.has(path);
 function repoFiles(directory = ''): string[] {
   return readdirSync(root + directory, { withFileTypes: true }).flatMap((entry) => {
     const path = directory + entry.name;
@@ -248,9 +249,10 @@ test('the scans skip tool output at the root only, and .git and node_modules any
 // A thrown class's name shows in String(err) and the first line of its stack. Lint checks the class name's suffix
 // (below); this checks the name it sets, as a class field or in its constructor. This file is left out: its samples
 // spell both.
-// shortcut: an uncalled method that sets the name on its own line still passes; parse the class if one ever does.
+// shortcut: the name alone on a line passes wherever that line is, in an uncalled method, a block comment or a template
+// literal; parse the class if one ever hides a missing name.
 const errorClassesWithoutName = (text: string) =>
-  [...text.matchAll(/\bclass (\w+)(?:<[^>]*>)?\s+extends\s+(?:\w+\.)*\w*Error\b/g)]
+  [...text.matchAll(/\bclass (\w+)(?:<.*?>)?\s+extends\s+(?:\w+\.)*\w*Error\b/g)]
     .map((match) => match[1])
     .filter((className) => !new RegExp(`^\\s*(?:this\\.)?name = '${className}';$`, 'm').test(text));
 
