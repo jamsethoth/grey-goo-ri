@@ -112,3 +112,7 @@ export function leftoverPids(members: number[], entries: ProcessEntry[], command
   );
   return members.filter((pid) => running.has(pid));
 }
+
+export function strayProcesses(_members: number[], _entries: ProcessEntry[], _selfPid: number): ProcessEntry[] {
+  return [];
+}

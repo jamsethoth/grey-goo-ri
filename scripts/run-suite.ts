@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { availableParallelism } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type * as commandCleanup from '../lib/command-cleanup.ts';
+import type * as containment from '../lib/containment.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const USAGE = `usage: node scripts/run-suite.ts [fast [boundary ...]]
@@ -46,6 +48,7 @@ export interface SuiteCommand {
   env: Record<string, string | undefined>;
   steps: string[][];
   coverage?: 'check' | 'update';
+  census?: true;
 }
 
 // No arguments is the full stage. `fast` is test/unit/ plus the named contract suites, whose paths are built from the
@@ -163,6 +166,16 @@ function ratchet(mode: 'check' | 'update'): number {
       `or set ${figures} in ${BASELINE}.`,
   );
   return 1;
+}
+
+export type Strays = () => commandCleanup.ProcessEntry[];
+
+export async function holdStage(_given?: containment.Kernel32 | null): Promise<Strays | string> {
+  return '';
+}
+
+export async function census(_strays: Strays): Promise<{ failed: boolean; report: string }> {
+  return { failed: false, report: '' };
 }
 
 const self = fileURLToPath(import.meta.url);

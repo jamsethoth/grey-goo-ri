@@ -1,9 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as processProbe from '../support/process-probe.ts';
+import * as options from '../support/shell-case-options.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const launcher = fileURLToPath(new URL('../../scripts/run-suite.ts', import.meta.url));
@@ -35,7 +37,10 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
   mkdirSync(join(root, 'scripts'));
   mkdirSync(join(root, 'test', 'contract'), { recursive: true });
   mkdirSync(join(root, 'test', 'unit'));
+  mkdirSync(join(root, 'lib'));
   copyFileSync(launcher, join(root, 'scripts', 'run-suite.ts'));
+  for (const name of ['containment.ts', 'command-cleanup.ts'])
+    copyFileSync(fileURLToPath(new URL(`../../lib/${name}`, import.meta.url)), join(root, 'lib', name));
   const step = (name: string, code: number) =>
     `require('node:fs').appendFileSync('steps.log', '${name}\\n'); process.exit(${code});\n`;
   if (installed) {
@@ -52,10 +57,41 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
   );
   // The runner running this file sets NODE_TEST_CONTEXT, which would make the copy's own node --test run no file.
   const { NODE_TEST_CONTEXT: _runnerContext, ...env } = process.env;
-  const run = (argv: string[]) =>
-    spawnSync(process.execPath, [join(root, 'scripts', 'run-suite.ts'), ...argv], { encoding: 'utf8', env });
+  const run = (argv: string[], nodeFlags: string[] = []) =>
+    spawnSync(process.execPath, [...nodeFlags, join(root, 'scripts', 'run-suite.ts'), ...argv], {
+      encoding: 'utf8',
+      env,
+    });
   const steps = () => (existsSync(join(root, 'steps.log')) ? readFileSync(join(root, 'steps.log'), 'utf8') : '');
   return { root, run, steps };
+}
+
+// A copy whose one test leaves a detached process running, holding no pipe, so nothing but a census shows it: it writes
+// the process's pid to leak.pid, and the process's command line carries a mark to find it by. Ended when the case ends,
+// for a stage that left it running. A failing copy's test also fails.
+function leakyCopy(t: TestContext, { fails = false } = {}) {
+  // first in, first out: the process is ended while its pid file is still there
+  let pidFile = '';
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const copy = launcherCopy(t);
+  pidFile = join(copy.root, 'leak.pid');
+  writeFileSync(
+    join(copy.root, 'test', 'unit', 'leak.test.mjs'),
+    `import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { test } from 'node:test';
+test('leaves a process running', () => {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000) // sample-leftover'], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  writeFileSync('leak.pid', String(child.pid));
+  if (${fails}) throw new Error('fails on purpose');
+});
+`,
+  );
+  return { ...copy, pidFile };
 }
 
 // One process runs every test file, so a test calling process.exit(0) ends the whole stage with exit 0 and no report.
@@ -87,6 +123,7 @@ test('coverage update records nothing when a test ends the process early', (t) =
 
 test('a coverage stage that measures no lines fails', (t) => {
   const copy = launcherCopy(t);
+  rmSync(join(copy.root, 'lib'), { recursive: true }); // nothing to measure
   const result = copy.run(['coverage']);
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /measured no lines/);
@@ -105,10 +142,61 @@ test('a failing lint step stops the check stage with its exit code before the ty
   assert.equal(copy.steps(), 'prettier\neslint\n');
 });
 
+test('the check stage takes no census and says nothing of one', (t) => {
+  const result = launcherCopy(t).run(['check']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout + result.stderr, /census/);
+});
+
+test('the process a census names is ended, and none is left after the stage', options.WIN_CASE, async (t) => {
+  const copy = leakyCopy(t);
+  assert.equal(copy.run(['fast']).status, 1);
+  const pid = processProbe.pidIn(copy.pidFile);
+  assert.ok(pid > 0, 'the sample case never started its process');
+  await processProbe.waitFor(() => !processProbe.alive(pid), t.signal); // one left running fails at the case timeout
+});
+
+test(
+  'a stage whose tests fail still names what they left running, and exits with their code',
+  options.WIN_CASE,
+  (t) => {
+    const copy = leakyCopy(t, { fails: true });
+    const result = copy.run(['fast']);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stdout, /fails on purpose/);
+    assert.match(result.stderr, /sample-leftover/);
+  },
+);
+
+// Run with node:ffi off, so it says the same on every platform: off Windows there is no boundary at all.
+test('a stage with no boundary says the census did not run, and passes on its tests alone', (t) => {
+  const result = launcherCopy(t).run(['fast'], ['--no-experimental-ffi']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /^census did not run: /m);
+});
+
 for (const [stage, argv] of [
   ['full', []],
   ['fast', ['fast']],
 ] as [string, string[]][]) {
+  test(`the ${stage} stage fails when a case leaves a process running, and names it`, options.WIN_CASE, (t) => {
+    const copy = leakyCopy(t);
+    const result = copy.run(argv);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stdout, /^ℹ pass 1$/m);
+    assert.ok(
+      result.stderr.includes(`pid ${processProbe.pidIn(copy.pidFile)}: `),
+      `the leftover's pid is not named: ${result.stderr}`,
+    );
+    assert.match(result.stderr, /setTimeout\(\(\) => \{\}, 600000\) \/\/ sample-leftover/);
+  });
+
+  test(`the ${stage} stage that leaves nothing says its census found nothing`, options.WIN_CASE, (t) => {
+    const result = launcherCopy(t).run(argv);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /^census: no process left$/m);
+  });
+
   // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
   test(`the ${stage} stage runs the format check, lint, the type check and the tests in that order and exits 0`, (t) => {
     const copy = launcherCopy(t);
