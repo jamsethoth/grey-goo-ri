@@ -42,13 +42,13 @@ for (const name of ['implementer.md', 'reviewer.md']) {
 }
 
 test('loadLayers reads the Layer identified by layerPath', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-layer-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const file = config.layerPath(dir);
-  assert.equal(file, join(dir, '.agents', 'gg', 'gg.json'));
-  mkdirSync(join(dir, '.agents', 'gg'), { recursive: true });
+  const directory = mkdtempSync(join(tmpdir(), 'gg-layer-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const file = config.layerPath(directory);
+  assert.equal(file, join(directory, '.agents', 'gg', 'gg.json'));
+  mkdirSync(join(directory, '.agents', 'gg'), { recursive: true });
   writeFileSync(file, JSON.stringify({ baseBranch: 'layer-base' }));
-  assert.equal(config.loadLayers(dir, join(dir, 'no-user-layer')).baseBranch, 'layer-base');
+  assert.equal(config.loadLayers(directory, join(directory, 'no-user-layer')).baseBranch, 'layer-base');
 });
 
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
@@ -86,7 +86,8 @@ test('configHash changes with persona, vertex, command and testPaths changes and
 
 // gg's lib, defaults and runtime dependencies copied under `root`, laid out as an install lays them out.
 function copyInstall(root: string) {
-  for (const dir of ['lib', 'defaults']) cpSync(join(repoRoot, dir), join(root, dir), { recursive: true });
+  for (const directory of ['lib', 'defaults'])
+    cpSync(join(repoRoot, directory), join(root, directory), { recursive: true });
   const { dependencies = {} } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
   for (const name of Object.keys(dependencies))
     cpSync(join(repoRoot, 'node_modules', name), join(root, 'node_modules', name), { recursive: true });
@@ -121,9 +122,9 @@ test('asset bytes change the Config Hash but installation paths do not', async (
 
 // A repository root and a home directory, each with the Layer text given (or none).
 function layers(t: TestContext, { repo, home }: { repo?: string; home?: string } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'gg-config-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const roots = { repo: join(dir, 'repo'), home: join(dir, 'home') };
+  const directory = mkdtempSync(join(tmpdir(), 'gg-config-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const roots = { repo: join(directory, 'repo'), home: join(directory, 'home') };
   for (const [name, text] of Object.entries({ repo, home }) as ['repo' | 'home', string | undefined][]) {
     mkdirSync(join(roots[name], '.agents', 'gg'), { recursive: true });
     if (text !== undefined) writeFileSync(config.layerPath(roots[name]), text);

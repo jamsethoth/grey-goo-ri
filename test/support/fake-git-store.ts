@@ -136,10 +136,10 @@ export function workingFiles() {
   // shortcut: symlinks are skipped, not stored as links; a test whose subject is a link stays on real git.
   const disk = (worktree: Worktree) => {
     const files: Files = new Map();
-    const walk = (dir: string, prefix: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const walk = (directory: string, prefix: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
         if (!prefix && entry.name === '.git') continue;
-        const full = join(dir, entry.name);
+        const full = join(directory, entry.name);
         const path = prefix + entry.name;
         if (lstatSync(full).isSymbolicLink()) continue;
         if (entry.isDirectory()) walk(full, `${path}/`);
@@ -164,13 +164,13 @@ export function workingFiles() {
       writeFileSync(join(root, path), content);
     }
   };
-  const pruneEmpty = (dir: string, top = true) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  const pruneEmpty = (directory: string, top = true) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (top && entry.name === '.git') continue;
-      if (entry.isDirectory() && !lstatSync(join(dir, entry.name)).isSymbolicLink())
-        pruneEmpty(join(dir, entry.name), false);
+      if (entry.isDirectory() && !lstatSync(join(directory, entry.name)).isSymbolicLink())
+        pruneEmpty(join(directory, entry.name), false);
     }
-    if (!top && readdirSync(dir).length === 0) rmSync(dir, { recursive: true });
+    if (!top && readdirSync(directory).length === 0) rmSync(directory, { recursive: true });
   };
   return { disk, rulesOf, addAll, writeFiles, pruneEmpty };
 }

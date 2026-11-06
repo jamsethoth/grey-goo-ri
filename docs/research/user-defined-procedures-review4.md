@@ -1,5 +1,8 @@
 # User-defined Procedures: design review round 4, merged
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 The last review before slicing, of a120ca6 (2026-10-22), by Astra (B1–B3) and Fable (G1–G9); the
 [raw reviews](user-defined-procedures-review4-raw.md). Each finding was checked against main at bd60df9. Neither found
 the design wrong; every item is a clarification a slice would otherwise have to invent.

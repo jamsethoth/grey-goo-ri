@@ -16,8 +16,8 @@ const assertNoObject = (repos: string[], sha: string) => {
 // A copy borrowing the template's objects through alternates passes the check above, but breaks once the template is
 // repacked or removed.
 const assertOwnObjects = (...dirs: string[]) => {
-  for (const dir of dirs) {
-    for (const store of [join(dir, 'main', '.git', 'objects'), join(dir, 'origin.git', 'objects')]) {
+  for (const directory of dirs) {
+    for (const store of [join(directory, 'main', '.git', 'objects'), join(directory, 'origin.git', 'objects')]) {
       assert.equal(existsSync(join(store, 'info', 'alternates')), false, `${store} borrows objects`);
     }
   }

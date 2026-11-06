@@ -1,5 +1,8 @@
 # User-defined Procedures: design review round 3, merged
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Two independent read-only reviews of the example Flow and the decisions since round 2 (T1–T14, P1–P5), 2026-10-22:
 Codex `gpt-6-astra` at high effort ([raw](user-defined-procedures-review3-astra.md), findings A1–A5) and Fable at high
 effort ([raw](user-defined-procedures-review3-fable.md), F1–F8, Q1–Q4). Each finding below was checked against main

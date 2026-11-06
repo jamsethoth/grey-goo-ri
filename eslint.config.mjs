@@ -1,6 +1,6 @@
-// The readability rules of grey-goo-ri epic #193 (ADR 0018). They apply to .ts files only: an .mjs file is legacy until
-// its ticket converts it, and no new .mjs file may be added (test/unit/layout.test.ts). Agents read these messages, so
-// each custom one says how to fix.
+// The readability rules of grey-goo-ri epic #193 (ADR 0018), for every file. This is the one JavaScript file: ESLint
+// 10.14 loads a .ts config only through the optional jiti package or an unstable flag (test/unit/layout.test.ts).
+// Agents read these messages, so each custom one says how to fix.
 import { defineConfig } from 'eslint/config';
 import stylistic from '@stylistic/eslint-plugin';
 import tseslint from 'typescript-eslint';
@@ -25,6 +25,7 @@ const DENIED_NAMES = [
   'str',
   'cb',
   'fn',
+  'dir',
 ];
 const SHORT_NAMES = ['i', 'j', '_'];
 // Identifier casing, as in the Google TypeScript Style Guide's rules by identifier type. A leading underscore marks a
@@ -46,7 +47,7 @@ const namespaceImport = (source) => ({
     "Import a lib/ module as a namespace, `import * as paths from './paths.ts'`, and call `paths.canonical()`: " +
     'a missing export then fails where it is used, and each call names its module.',
 });
-const NO_MODULE_STATE = [
+const EVERY_FILE_SYNTAX = [
   {
     selector:
       "Program > VariableDeclaration[kind='let'], Program > ExportNamedDeclaration > VariableDeclaration[kind='let']",
@@ -63,16 +64,21 @@ const NO_MODULE_STATE = [
       'No exported set* function: a setter swaps module state for every caller. Take the dependency as a ' +
       'parameter from the caller instead.',
   },
+  {
+    // The superClass's property form is `extends exec.CommandError`. The `name` half is in test/unit/layout.test.ts.
+    selector:
+      ':matches(ClassDeclaration, ClassExpression)[superClass.name=/Error$/]:not([id.name=/Error$/]), ' +
+      ':matches(ClassDeclaration, ClassExpression)[superClass.property.name=/Error$/]:not([id.name=/Error$/])',
+    message:
+      'A thrown class ends its name in Error and sets `name` to it: ' +
+      "`class CrashError extends Error { name = 'CrashError'; }`.",
+  },
 ];
 
+// eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {
-    // The ban on module state applies to every file, legacy .mjs included (#199).
-    files: ['**/*.mjs'],
-    rules: { 'no-restricted-syntax': ['error', ...NO_MODULE_STATE] },
-  },
-  {
-    files: ['**/*.ts'],
+    files: ['**/*.{ts,js,cjs,mjs}'],
     languageOptions: { parser: tseslint.parser },
     plugins: { '@stylistic': stylistic, '@typescript-eslint': tseslint.plugin },
     rules: {
@@ -91,13 +97,13 @@ export default defineConfig([
       'max-lines': ['error', 400],
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       // Outside lib/, a lib/ module is any path through a lib directory.
-      'no-restricted-syntax': ['error', namespaceImport('/(^|[/])lib[/]/'), ...NO_MODULE_STATE],
+      'no-restricted-syntax': ['error', namespaceImport('/(^|[/])lib[/]/'), ...EVERY_FILE_SYNTAX],
     },
   },
   {
     // Inside lib/, every relative import is a lib/ module.
     files: ['lib/**/*.ts'],
-    rules: { 'no-restricted-syntax': ['error', namespaceImport('/^[.]/'), ...NO_MODULE_STATE] },
+    rules: { 'no-restricted-syntax': ['error', namespaceImport('/^[.]/'), ...EVERY_FILE_SYNTAX] },
   },
   {
     // `t` is node:test's test context, and only there.

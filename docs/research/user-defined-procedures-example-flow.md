@@ -1,5 +1,8 @@
 # User-defined Procedures: the example Flow, in full
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Step 2 of the handoff: the Agents, Procedures and Flow that `gg init` writes into a repository Layer (P1, P3), with every
 accepted decision (R1–R14, S1–S7, T1–T14, P1–P5, U1–U15). gg ships no default Flow; this is an example the repository
 then owns. Spelling is illustrative (S3 fixes it), YAML stands for the JSON of `.agents/gg/gg.json`, and Brief, schema,

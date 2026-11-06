@@ -140,7 +140,7 @@ the fake harness's contract (see Test doubles): the cases every Harness must pas
 Claude Code and Codex Harnesses run once they are built. Kept with the other boundaries, the fake and the modules it
 stands in for are checked in one place, and `fast harness` selects it after a change to either.
 
-A file is named `<module>.test.mjs` in the directory its size puts it in, with area files `<module>.<area>.test.mjs`
+A file is named `<module>.test.ts` in the directory its size puts it in, with area files `<module>.<area>.test.ts`
 as before. A module whose cases have different sizes has a file in each directory under the same name: the small cases
 of `run.branches` are in `test/unit/run.branches.test.ts` and its real-git cases in `test/e2e/run.branches.test.ts`.
 `test/unit/layout.test.ts` checks that no file under `test/unit/` imports `node:child_process`, `lib/exec.ts` or
@@ -186,7 +186,7 @@ runner image), run the full stage.
   `node:child_process` function throw when the test file is under `test/unit/` (prototyped for PR #154). It would close
   the text check's gap above, but it adds launcher surface, an ADR 0016 amendment and a rules change for a gap that
   costs only fast-stage speed. Revisit if the fast stage slows down because a medium case got into `test/unit/`.
-- **A naming rule alone** (`*.int.test.mjs` beside unit files) for an early fast stage. Folded into #145, so files
+- **A naming rule alone** (`*.int.test.ts` beside unit files) for an early fast stage. Folded into #145, so files
   move once into the target layout instead of being renamed and then moved.
 - **An npm git library** instead of the git CLI. Rejected (#144): no speed gain, or a second implementation of git
   that behaves differently from the git agents and humans use.

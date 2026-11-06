@@ -24,7 +24,7 @@ const MEDIUM: [RegExp, string][] = [
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
   .map((file) => file.split('\\').join('/'))
-  .filter((file) => /\.test\.(?:mjs|ts)$/.test(file) && file !== 'layout.test.ts');
+  .filter((file) => file.endsWith('.test.ts') && file !== 'layout.test.ts');
 
 const marked = [
   ["import { spawn } from 'node:child_process';", 'imports node:child_process'],
@@ -58,15 +58,18 @@ for (const file of unitFiles) {
   });
 }
 const SKIPPED = new Set(['.git', 'node_modules']);
-function repoFiles(dir = ''): string[] {
-  return readdirSync(root + dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = dir + entry.name;
+function repoFiles(directory = ''): string[] {
+  return readdirSync(root + directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = directory + entry.name;
     if (SKIPPED.has(entry.name)) return [];
     return entry.isDirectory() ? repoFiles(`${path}/`) : [path];
   });
 }
 // Every module under lib, so a new one is scanned without joining a list (grey-goo-ri issue #219).
-const modules = repoFiles('lib/').filter((path) => /\.(?:mjs|ts)$/.test(path));
+const modules = repoFiles('lib/').filter((path) => path.endsWith('.ts'));
+const codeFiles = ['lib/', 'bin/', 'scripts/', 'test/']
+  .flatMap((directory) => repoFiles(directory))
+  .filter((path) => path.endsWith('.ts'));
 
 // The paths the AGENTS.md layout table names; a row ending in / covers the files under it.
 const layoutRows = (agents: string) => {
@@ -100,8 +103,8 @@ test('every file under lib is scanned', () => {
 });
 
 // A code file is named in lowercase words joined by hyphens, with a dot only before an area or test suffix
-// (`run.branches.test.mjs`), and never a grab-bag name that says nothing of its job (Angular's style guide).
-const FILE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.(?:mjs|ts)$/;
+// (`run.branches.test.ts`), and never a grab-bag name that says nothing of its job (Angular's style guide).
+const FILE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.ts$/;
 const GRAB_BAG = /^(?:utils?|helpers?|common|misc|shared)\./;
 const misnamed = (files: string[]) =>
   files.filter((path) => {
@@ -110,27 +113,23 @@ const misnamed = (files: string[]) =>
   });
 
 test('every code file is named in lowercase hyphenated words for its job', () => {
-  const samples = [
-    'lib/process-tree.ts',
-    'test/unit/run.branches.test.mjs',
-    'lib/processTree.ts',
-    'lib/write_ahead.ts',
-  ];
+  const samples = ['lib/process-tree.ts', 'test/unit/run.branches.test.ts', 'lib/processTree.ts', 'lib/write_ahead.ts'];
   assert.deepEqual(misnamed([...samples, 'lib/utils.ts']), [
     'lib/processTree.ts',
     'lib/write_ahead.ts',
     'lib/utils.ts',
   ]);
-  const code = ['lib/', 'bin/', 'scripts/', 'test/']
-    .flatMap((dir) => repoFiles(dir))
-    .filter((path) => /\.(?:mjs|ts)$/.test(path));
-  assert.ok(code.includes('lib/process-tree.ts') && code.includes('bin/gg.ts'), 'the code files are read');
-  assert.deepEqual(misnamed(code), [], 'rename the file: lowercase words joined by hyphens, named for what it does');
+  assert.ok(codeFiles.includes('lib/process-tree.ts') && codeFiles.includes('bin/gg.ts'), 'the code files are read');
+  assert.deepEqual(
+    misnamed(codeFiles),
+    [],
+    'rename the file: lowercase words joined by hyphens, named for what it does',
+  );
 });
 
 test('every file under lib has a row in AGENTS.md', async () => {
-  const sampleRows = ['lib/a.mjs', 'lib/templates/'];
-  assert.deepEqual(unlistedFiles(['lib/a.mjs', 'lib/templates/t.md', 'lib/b.mjs'], sampleRows), ['lib/b.mjs']);
+  const sampleRows = ['lib/a.ts', 'lib/templates/'];
+  assert.deepEqual(unlistedFiles(['lib/a.ts', 'lib/templates/t.md', 'lib/b.ts'], sampleRows), ['lib/b.ts']);
   const rows = layoutRows(await readFile(`${root}AGENTS.md`, 'utf8'));
   assert.ok(rows.includes('lib/validate/') && rows.includes('bin/gg.ts'), 'the layout table is read');
   assert.deepEqual(unlistedFiles(repoFiles('lib/'), rows), [], 'add a row to the AGENTS.md layout table');
@@ -143,37 +142,19 @@ test('every file under lib has a row in AGENTS.md', async () => {
 
 // A helper is found by what it does, so no test/support file is named for the lib module it serves (#256's N45).
 const sharingLibNames = (supportFiles: string[], libModules: string[]) => {
-  const stem = (path: string) => path.replace(/^.*\//, '').replace(/\.(?:mjs|ts)$/, '');
+  const stem = (path: string) => path.replace(/^.*\//, '').replace(/\.ts$/, '');
   const libNames = new Set(libModules.map(stem));
   return supportFiles.filter((path) => libNames.has(stem(path)));
 };
 
 test('no test/support file shares a lib module name', () => {
   assert.deepEqual(
-    sharingLibNames(['test/support/run.mjs', 'test/support/run-fixture.ts'], ['lib/run.ts', 'lib/flow.ts']),
-    ['test/support/run.mjs'],
+    sharingLibNames(['test/support/run.ts', 'test/support/run-fixture.ts'], ['lib/run.ts', 'lib/flow.ts']),
+    ['test/support/run.ts'],
   );
   const supportFiles = repoFiles('test/support/');
   assert.ok(supportFiles.includes('test/support/execution-context.ts'), 'the support files are read');
   assert.deepEqual(sharingLibNames(supportFiles, modules), [], 'name the helper for its job, not its lib module');
-});
-
-// A named import from lib at the start of a line; a string that spells one inside a case does not start a line.
-const NAMED_LIB_IMPORT = /^import\s+(?!(?:type\s+)?\*\s*as\s)[^;]*?\sfrom\s+['"](?:\.\.\/)+lib\//m;
-
-test('tests import lib modules as namespaces', () => {
-  assert.equal(NAMED_LIB_IMPORT.test("import { pathKey } from '../../lib/paths.ts';"), true);
-  assert.equal(NAMED_LIB_IMPORT.test("import {\n  a,\n  b,\n} from '../../../lib/git.ts';"), true);
-  assert.equal(NAMED_LIB_IMPORT.test("import * as paths from '../../lib/paths.ts';"), false);
-  assert.equal(NAMED_LIB_IMPORT.test("import type * as paths from '../../lib/paths.ts';"), false);
-  assert.equal(NAMED_LIB_IMPORT.test('  "import { add } from \'../lib/add.mjs\';\\n",'), false);
-  assert.equal(NAMED_LIB_IMPORT.test("import { join } from 'node:path';\nimport * as x from '../lib/x.mjs';"), false);
-  const testFiles = repoFiles('test/').filter((path) => /\.(?:mjs|ts)$/.test(path));
-  assert.deepEqual(
-    testFiles.filter((path) => NAMED_LIB_IMPORT.test(readFileSync(root + path, 'utf8'))),
-    [],
-    'import a lib module as `import * as name`',
-  );
 });
 
 // lib/git.ts is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
@@ -213,9 +194,10 @@ test('no module outside lib/harnesses names a Harness', () => {
   assert.deepEqual(named, []);
 });
 
-// ADR 0018: modules convert to TypeScript one at a time. This list only grows, and each entry exists as .ts.
+// Every code file, each of it TypeScript (ADR 0018). A new file joins this list.
 const CONVERTED = [
   'bin/gg.ts',
+  'lib/admission.ts',
   'lib/agent-action.ts',
   'lib/agent-call.ts',
   'lib/approval.ts',
@@ -225,6 +207,7 @@ const CONVERTED = [
   'lib/checks.ts',
   'lib/command-cleanup.ts',
   'lib/config.ts',
+  'lib/containment.ts',
   'lib/doctor.ts',
   'lib/effect-actions.ts',
   'lib/effect-errors.ts',
@@ -250,18 +233,22 @@ const CONVERTED = [
   'lib/plan.ts',
   'lib/procedures.ts',
   'lib/process-tree.ts',
+  'lib/public-text.ts',
   'lib/publish.ts',
   'lib/reconcile.ts',
   'lib/record.ts',
   'lib/refs.ts',
   'lib/remote-effects.ts',
   'lib/render.ts',
+  'lib/rule-domain.ts',
   'lib/rules.ts',
   'lib/run-context.ts',
   'lib/run.ts',
+  'lib/sqlite.ts',
   'lib/stats.ts',
   'lib/terminal-report.ts',
   'lib/terminal.ts',
+  'lib/ticket-worktree.ts',
   'lib/trace.ts',
   'lib/validate/actions.ts',
   'lib/validate/conditions.ts',
@@ -275,14 +262,18 @@ const CONVERTED = [
   'lib/validate/templates.ts',
   'lib/visit-runner.ts',
   'lib/visit-scope.ts',
+  'lib/visit.ts',
   'lib/work.ts',
+  'lib/write-ahead.ts',
   'scripts/run-suite.ts',
+  'test/contract/exec/containment.test.ts',
   'test/contract/exec/exec.job.test.ts',
   'test/contract/exec/exec.test.ts',
   'test/contract/exec/exec.timeout.test.ts',
   'test/contract/git/git.test.ts',
   'test/contract/git/template-repos.test.ts',
   'test/contract/harness/harnesses.test.ts',
+  'test/contract/integrity/integrity.test.ts',
   'test/contract/sqlite/events.test.ts',
   'test/contract/sqlite/integrity.test.ts',
   'test/contract/sqlite/locks.test.ts',
@@ -340,15 +331,15 @@ const CONVERTED = [
   'test/support/execution-reads.ts',
   'test/support/failing-git.ts',
   'test/support/fake-gh.ts',
-  'test/support/fake-git.ts',
   'test/support/fake-git-paths.ts',
   'test/support/fake-git-store.ts',
+  'test/support/fake-git.ts',
   'test/support/fake-harness.ts',
   'test/support/fake-integrity.ts',
   'test/support/first-visit.ts',
   'test/support/git-shell.ts',
-  'test/support/golden.ts',
   'test/support/golden-run.ts',
+  'test/support/golden.ts',
   'test/support/harness-runs.ts',
   'test/support/integrity-worktrees.ts',
   'test/support/kernel32-doubles.ts',
@@ -380,9 +371,13 @@ const CONVERTED = [
   'test/unit/approval.test.ts',
   'test/unit/briefs.test.ts',
   'test/unit/checks.test.ts',
+  'test/unit/child-exit.test.ts',
+  'test/unit/command-cleanup.test.ts',
   'test/unit/config.test.ts',
   'test/unit/defaults.test.ts',
   'test/unit/doctor.test.ts',
+  'test/unit/effect-errors.test.ts',
+  'test/unit/effects.test.ts',
   'test/unit/events.test.ts',
   'test/unit/fake-harness.test.ts',
   'test/unit/flow.test.ts',
@@ -403,8 +398,11 @@ const CONVERTED = [
   'test/unit/labels.test.ts',
   'test/unit/layout.test.ts',
   'test/unit/marker.test.ts',
+  'test/unit/options.test.ts',
   'test/unit/outcome.test.ts',
+  'test/unit/paths.test.ts',
   'test/unit/personas.test.ts',
+  'test/unit/procedure-actions.test.ts',
   'test/unit/procedures.test.ts',
   'test/unit/public-text.test.ts',
   'test/unit/reconcile.crash.test.ts',
@@ -413,6 +411,7 @@ const CONVERTED = [
   'test/unit/reconcile.test.ts',
   'test/unit/record.test.ts',
   'test/unit/refs.test.ts',
+  'test/unit/remote-effects.test.ts',
   'test/unit/render.test.ts',
   'test/unit/rules.test.ts',
   'test/unit/run-suite.test.ts',
@@ -424,15 +423,19 @@ const CONVERTED = [
   'test/unit/run.redaction.test.ts',
   'test/unit/run.resume.test.ts',
   'test/unit/run.test.ts',
+  'test/unit/terminal-report.test.ts',
+  'test/unit/terminal.test.ts',
   'test/unit/validate.inputs.test.ts',
   'test/unit/validate.routes.test.ts',
   'test/unit/validate.schemas.test.ts',
   'test/unit/validate.templates.test.ts',
   'test/unit/validate.test.ts',
 ];
-// Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
+// The one JavaScript file: ESLint 10.14 loads a .ts config only through the optional jiti package or an unstable flag.
+// Revisit when ESLint loads TypeScript configs natively.
 const LEGACY_MJS = ['eslint.config.mjs'];
-const unlistedMjs = (files: string[]) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
+const unlistedJavaScript = (files: string[]) =>
+  files.filter((path) => /\.[cm]?js$/.test(path) && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
   const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
@@ -468,32 +471,18 @@ test('the major check reads ^, ~ and >= ranges and fails on any other', () => {
 test('every module in the converted list is TypeScript', () => {
   for (const path of CONVERTED) {
     assert.ok(existsSync(root + path), `${path} exists`);
-    assert.ok(!existsSync(root + path.replace(/\.ts$/, '.mjs')), `${path} has no .mjs twin`);
   }
 });
 
-test('a new .mjs file fails the layout test', () => {
-  assert.deepEqual(unlistedMjs([...LEGACY_MJS, 'lib/new.mjs']), ['lib/new.mjs']);
-  assert.deepEqual(unlistedMjs(repoFiles()), [], 'write a new module as .ts (ADR 0018)');
-  assert.deepEqual(
-    LEGACY_MJS.filter((path) => !existsSync(root + path)),
-    [],
-    'a converted file leaves LEGACY_MJS',
-  );
-});
-
 test('no JavaScript file is left in the code tree', () => {
-  assert.deepEqual(unlistedMjs([...LEGACY_MJS, 'lib/new.mjs', 'bin/new.js', 'test/new.cjs', 'lib/new.ts']), [
+  assert.deepEqual(unlistedJavaScript([...LEGACY_MJS, 'lib/new.mjs', 'bin/new.js', 'test/new.cjs', 'lib/new.ts']), [
     'lib/new.mjs',
     'bin/new.js',
     'test/new.cjs',
   ]);
-  assert.deepEqual(unlistedMjs(repoFiles()), [], 'write the file as .ts (ADR 0018)');
+  assert.deepEqual(unlistedJavaScript(repoFiles()), [], 'write the file as .ts (ADR 0018)');
+  assert.ok(existsSync(root + LEGACY_MJS[0]), 'a converted file leaves LEGACY_MJS');
 });
-
-const codeFiles = ['lib/', 'bin/', 'scripts/', 'test/']
-  .flatMap((directory) => repoFiles(directory))
-  .filter((path) => path.endsWith('.ts'));
 
 test('the converted list names every code file', () => {
   assert.ok(codeFiles.includes('lib/paths.ts') && codeFiles.includes('bin/gg.ts'), 'the code files are read');

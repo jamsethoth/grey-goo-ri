@@ -6,7 +6,7 @@ date: 2026-10-22
 # Procedures are data over gg's own Actions, and the repository owns its Flow
 
 gg's Procedures (`tdd`, `fix`, `review`) were code: their Actions, recovery Phases, Briefs, Claim tokens and failure
-Outcomes lived in `lib/procedures.mjs`, and the interpreter special-cased Phase names (`red`, `green`, still-green,
+Outcomes lived in `lib/procedures.ts`, and the interpreter special-cased Phase names (`red`, `green`, still-green,
 test-fix), Check names and Outcomes such as `red-failed` and `gate-failed(test)`. A repository owner could not add a
 QA stage, a lint or scope gate, a custom review shape or a stronger escalation without changing gg. Procedures now are
 data, declared in the repository Layer and built only from gg's own Actions (agent, check, commit, push, pr-upsert,

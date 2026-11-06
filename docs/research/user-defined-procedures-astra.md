@@ -2,6 +2,9 @@
 
 # User-defined workflow outcomes and deterministic use of LLM output
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Web access was available. This report uses primary documentation, specifications, papers, and the permitted local source files. **Observed** means documented or directly inspected, not independently runtime-tested. **Inference** identifies interpretation, proposed design, or estimates.
 
 **Recommendation — inference:** start with user-defined declarative Procedures and Actions composed from a small, trusted execution kernel. Keep domain Outcomes configurable while preserving engine-owned integrity enforcement, failure classification, retry accounting, and recovery. This offers substantial flexibility without requiring a general-purpose durable programming runtime.

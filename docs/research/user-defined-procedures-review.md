@@ -1,5 +1,8 @@
 # User-defined Procedures: design review, merged
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Two independent read-only reviews of `user-defined-procedures-decisions.md` (at 9f28d27) and the proposed slicing
 S1–S6, 2026-10-21:
 
