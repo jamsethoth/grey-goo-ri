@@ -290,7 +290,7 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
   assert.equal(fixture.worktrees(), 1, 'no worktree');
 });
 
-test('an error whose text quotes the unset-harness sentence is no configuration gap: exit 1 and no merge advice', async (t) => {
+test('an error quoting the unset-harness sentence is no configuration gap: exit 1, no merge advice', async (t) => {
   const fixture = runFixture.fixture(t);
   (fixture.options.config.agents.implementer as Record<string, unknown>)['x names no harness; y'] = true;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {

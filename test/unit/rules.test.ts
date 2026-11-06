@@ -113,6 +113,14 @@ test('a row covered by earlier rows is an error', () => {
   assert.equal(result.defaultExample, null);
 });
 
+test('a row on a field the table does not declare is one error for the table', () => {
+  const result = rules.analyse({ name: 'fix.failed', fields: {}, rows: [{ when: { pass: 1 }, outcome: 'one' }] });
+  assert.deepEqual(
+    result.errors.map(({ row, code }) => ({ row, code })),
+    [{ row: null, code: 'undeclared-rule-field' }],
+  );
+});
+
 test("a partial overlap is a warning naming both rows' conditions and an example input", () => {
   const table: rules.RuleTable = {
     name: 'review.passed',

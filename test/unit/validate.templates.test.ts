@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as exampleLayer from '../support/example-layer.ts';
 
-// Every expected error and warning is a Problem, whose persisted key is `at` (lib/validate/report.ts).
+// A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
 
 const VERTICES = 'flows.default.ticket.vertices';
@@ -87,6 +87,15 @@ test('a comment of a Procedure with no agent Action may not name the Agent', () 
       at: `${VERTICES}.baseline (procedure base-check).actions[1]`,
       code: 'undefined-reference',
     },
+  ]);
+});
+
+test('a template that cannot be read is an error at each Vertex rendering it', () => {
+  const templates = exampleLayer.templates();
+  delete templates['review.md'];
+  const { errors } = exampleLayer.check(exampleLayer.config(), exampleLayer.schemas(), templates);
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: `${VERTICES}.reviewer (procedure review).actions[0]`, code: 'template-unreadable' },
   ]);
 });
 

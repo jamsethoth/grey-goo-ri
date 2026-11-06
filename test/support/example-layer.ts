@@ -51,7 +51,7 @@ export interface Checked {
 }
 
 // Which rule fired where: what a case about a rule asserts, leaving the sentence to the cases about its wording.
-export type FiredRule = Pick<report.Problem, 'code'> & { at: string };
+export type FiredRule = Pick<report.Problem, 'at' | 'code'>;
 export const firedRules = (problems: report.Problem[]): FiredRule[] =>
   // eslint-disable-next-line id-denylist -- a Problem's key is at
   problems.map(({ at, code }) => ({ at, code }));

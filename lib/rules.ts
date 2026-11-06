@@ -27,6 +27,7 @@ export interface RuleTable {
 type Example = Record<string, unknown>;
 export interface RuleError {
   row: number | null;
+  code: 'never-firing-row' | 'rule-table-too-large' | 'undeclared-rule-field' | 'unreachable-row';
   message: string;
 }
 // Rows `rows` (first and last, by index) are each partly taken by the `earlier` row ranges it names, `more` beyond
@@ -38,6 +39,7 @@ export interface OverlapWarning {
   from: number | null;
   fields: string[];
   example: Example;
+  code: 'overlapping-rows';
   message: string;
 }
 export interface Analysis {
@@ -72,8 +74,8 @@ export const conditions = (when: Record<string, Condition>) =>
     )
     .join(' and ') || 'no conditions';
 
-const refuse = (message: string): Analysis => ({
-  errors: [{ row: null, message }],
+const refuse = (code: RuleError['code'], message: string): Analysis => ({
+  errors: [{ row: null, code, message }],
   warnings: [],
   defaultExample: null,
   falls: [],
@@ -91,12 +93,13 @@ function overLimit(name: string, paths: string[], values: ruleDomain.Value[][][]
 }
 
 const neverFiring = (domain: ruleDomain.Domain, reached: Uint32Array, fires: Uint32Array): RuleError[] =>
-  domain.rows.flatMap((row, i) =>
+  domain.rows.flatMap((row, i): RuleError[] =>
     ruleDomain.bitAt(fires, i)
       ? []
       : [
           {
             row: i,
+            code: ruleDomain.bitAt(reached, i) ? 'never-firing-row' : 'unreachable-row',
             message:
               `rule table ${domain.name}: row ${i + 1} (${row.outcome}) ` +
               (ruleDomain.bitAt(reached, i)
@@ -270,6 +273,7 @@ function overlapWarning({ name, rows }: ruleDomain.Domain, run: Run): OverlapWar
     from: mode === 'from' ? from : null,
     fields,
     example: run.example,
+    code: 'overlapping-rows',
     message: `rule table ${name}: ${message}, for example ${JSON.stringify(run.example)}`,
   };
 }
@@ -281,7 +285,8 @@ export function analyse(table: RuleTable): Analysis {
   const boxes = table.boxes ?? [table.fields as FieldMap];
   const paths = [...new Set(rows.flatMap((row) => Object.keys(row.when)))];
   const undeclared = paths.filter((path) => !boxes.every((fields) => Object.hasOwn(fields, path)));
-  if (undeclared.length) return refuse(`rule table ${name} names undeclared fields: ${undeclared.join(', ')}`);
+  if (undeclared.length)
+    return refuse('undeclared-rule-field', `rule table ${name} names undeclared fields: ${undeclared.join(', ')}`);
   const values = boxes.map((fields) =>
     paths.map((path) =>
       ruleDomain.partition(
@@ -292,7 +297,7 @@ export function analyse(table: RuleTable): Analysis {
   );
   const points = values.map((box) => box.reduce((count, fieldValues) => count * fieldValues.length, 1));
   const work = points.reduce((sum, count) => sum + count, 0) * rows.length;
-  if (work > WORK_LIMIT) return refuse(overLimit(name, paths, values, work));
+  if (work > WORK_LIMIT) return refuse('rule-table-too-large', overLimit(name, paths, values, work));
 
   const domain = ruleDomain.domainOf({ name, rows, paths, values, points });
   const { reached, fires, fallen } = ruleDomain.reachedRows(domain);

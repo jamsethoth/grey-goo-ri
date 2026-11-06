@@ -61,20 +61,25 @@ export const requiredCheckIds = (proc: CheckedProcedure, token: string) =>
 // A stop token, or one requiring Checks of this Procedure; either way the form the Resolved Flow carries.
 function checkClaimToken(problems: report.Report, token: unknown, checkIds: unknown[], location: string) {
   if (!referencePaths.isRecord(token)) {
-    report.error(problems, location, CLAIM_TOKEN_SHAPE);
+    report.error(problems, location, 'malformed-claim-token', CLAIM_TOKEN_SHAPE);
     return { requires: [] };
   }
   const keysOf = (forms: string[]) => Object.keys(token).every((key) => forms.includes(key));
   if (token.stop === true && keysOf(CLAIM_TOKEN_FORMS.stop)) {
     if (token.comment !== undefined && !report.isName(token.comment))
-      report.error(problems, location, 'comment must name a file');
+      report.error(problems, location, 'file-not-named', 'comment must name a file');
   } else if (Array.isArray(token.requires) && keysOf(CLAIM_TOKEN_FORMS.requires)) {
     for (const id of token.requires) {
       if (!checkIds.includes(id))
-        report.error(problems, location, `requires ${JSON.stringify(id)}, which is not a Check of this Procedure`);
+        report.error(
+          problems,
+          location,
+          'undeclared-check',
+          `requires ${JSON.stringify(id)}, which is not a Check of this Procedure`,
+        );
     }
   } else {
-    report.error(problems, location, CLAIM_TOKEN_SHAPE);
+    report.error(problems, location, 'malformed-claim-token', CLAIM_TOKEN_SHAPE);
   }
   if (token.stop === true)
     return { stop: true as const, ...(token.comment !== undefined && { comment: token.comment as string }) };
@@ -94,6 +99,7 @@ function checkClaimTokens(
       report.error(
         problems,
         `${location}.claimTokens`,
+        'claim-tokens-without-agent-action',
         'a Procedure with no agent Action declares no claimTokens: ' +
           'its implicit Claim ok requires every Check it declares',
       );
@@ -102,7 +108,12 @@ function checkClaimTokens(
   }
   const declaredTokens = declaration.claimTokens;
   if (!referencePaths.isRecord(declaredTokens) || !Object.keys(declaredTokens).length) {
-    report.error(problems, `${location}.claimTokens`, 'a Procedure with an agent Action declares its claimTokens');
+    report.error(
+      problems,
+      `${location}.claimTokens`,
+      'claim-tokens-missing',
+      'a Procedure with an agent Action declares its claimTokens',
+    );
     return {};
   }
   const claimTokens: Record<string, procedures.ClaimToken> = {};
@@ -110,14 +121,15 @@ function checkClaimTokens(
     const atToken = `${location}.claimTokens.${token}`;
     report.checkName(problems, atToken, token, { what: 'Claim token', carried: false });
     if (report.isReserved(token))
-      report.error(problems, atToken, `Claim token ${JSON.stringify(token)} ${report.RESERVED}`);
+      report.error(problems, atToken, 'reserved-name', `Claim token ${JSON.stringify(token)} ${report.RESERVED}`);
     claimTokens[token] = checkClaimToken(problems, form, checkIds, atToken);
   }
   if (declared.schema !== referencePaths.ANY) {
     try {
       briefs.assertClaimEnum(declared.schema, Object.keys(declaredTokens));
     } catch (err) {
-      report.error(problems, `${location}.claimTokens`, `${declared.schemaName}: ${(err as Error).message}`);
+      const message = `${declared.schemaName}: ${(err as Error).message}`;
+      report.error(problems, `${location}.claimTokens`, 'claim-enum-mismatch', message);
     }
   }
   return claimTokens;
@@ -132,9 +144,14 @@ function checkSettings(
   const tests = declaration.tests ?? 'frozen';
   const named = referencePaths.isRecord(tests) && Object.keys(tests).length === 1 && Object.hasOwn(tests, 'named');
   if (!(tests === 'frozen' || tests === 'write' || named))
-    report.error(problems, `${location}.tests`, 'tests must be frozen, write or { named: <reference path> }');
+    report.error(
+      problems,
+      `${location}.tests`,
+      'invalid-tests-setting',
+      'tests must be frozen, write or { named: <reference path> }',
+    );
   if (declaration.access !== undefined && declaration.access !== 'read-only')
-    report.error(problems, `${location}.access`, 'access may only be read-only');
+    report.error(problems, `${location}.access`, 'invalid-procedure-access', 'access may only be read-only');
   const { recover } = declaration;
   if (recover === undefined) return tests;
   const wellFormed =
@@ -143,9 +160,19 @@ function checkSettings(
     report.isName(recover.brief) &&
     Object.keys(recover).length === 2;
   if (!wellFormed)
-    report.error(problems, `${location}.recover`, 'recover is { max: <positive integer>, brief: <file> }');
+    report.error(
+      problems,
+      `${location}.recover`,
+      'malformed-recover',
+      'recover is { max: <positive integer>, brief: <file> }',
+    );
   else if (!declared.agent)
-    report.error(problems, `${location}.recover`, 'recover resumes the agent Action, which this Procedure lacks');
+    report.error(
+      problems,
+      `${location}.recover`,
+      'needs-agent-action',
+      'recover resumes the agent Action, which this Procedure lacks',
+    );
   return tests;
 }
 
@@ -161,11 +188,16 @@ function checkTables(
     const rows = declaration[table] ?? [];
     tables[table] = Array.isArray(rows) ? rows : [];
     if (!Array.isArray(rows)) {
-      report.error(problems, `${location}.${table}`, `${table} must be a list of rows`);
+      report.error(problems, `${location}.${table}`, 'not-a-list', `${table} must be a list of rows`);
       continue;
     }
     if (rows.length && !tokens[table].length)
-      report.error(problems, `${location}.${table}`, `${NO_TOKEN[table]}, so the ${table} table never applies`);
+      report.error(
+        problems,
+        `${location}.${table}`,
+        'table-never-applies',
+        `${NO_TOKEN[table]}, so the ${table} table never applies`,
+      );
     rows.forEach((row: unknown, index) => {
       const atRow = `${location}.${table}[${index}]`;
       const wellFormed =
@@ -175,10 +207,15 @@ function checkTables(
         Object.keys(row).length === 2;
       if (!wellFormed) {
         malformed.add(table);
-        return report.error(problems, atRow, 'a row is { when: { <field>: <condition> }, outcome: <name> }');
+        return report.error(
+          problems,
+          atRow,
+          'malformed-row',
+          'a row is { when: { <field>: <condition> }, outcome: <name> }',
+        );
       }
       if (report.isReserved(row.outcome as string))
-        report.error(problems, atRow, `outcome ${JSON.stringify(row.outcome)} ${report.RESERVED}`);
+        report.error(problems, atRow, 'reserved-name', `outcome ${JSON.stringify(row.outcome)} ${report.RESERVED}`);
     });
   }
   return { tables, malformed };
@@ -186,9 +223,15 @@ function checkTables(
 
 function checkOtherwise(problems: report.Report, location: string, otherwise: unknown) {
   if (otherwise === undefined) return;
-  if (!report.isName(otherwise)) report.error(problems, `${location}.otherwise`, 'otherwise must name an Outcome');
+  if (!report.isName(otherwise))
+    report.error(problems, `${location}.otherwise`, 'invalid-otherwise', 'otherwise must name an Outcome');
   else if (report.isReserved(otherwise))
-    report.error(problems, `${location}.otherwise`, `otherwise ${JSON.stringify(otherwise)} ${report.RESERVED}`);
+    report.error(
+      problems,
+      `${location}.otherwise`,
+      'reserved-name',
+      `otherwise ${JSON.stringify(otherwise)} ${report.RESERVED}`,
+    );
 }
 
 function checkResponseConditions(problems: report.Report, declared: actionChecks.DeclaredSoFar) {
@@ -197,24 +240,25 @@ function checkResponseConditions(problems: report.Report, declared: actionChecks
       report.error(
         problems,
         location,
+        'needs-agent-action',
         "a response Check reads the agent Action's response, which this Procedure lacks",
       );
       continue;
     }
     const list = check.allOf;
     if (list === undefined) {
-      for (const message of conditions.conditionProblems(check, declared.schema))
-        report.error(problems, location, message);
+      for (const { code, message } of conditions.conditionProblems(check, declared.schema))
+        report.error(problems, location, code, message);
     } else if (
       !Array.isArray(list) ||
       !list.length ||
       procedures.CONDITION_KEYS.some((key) => Object.hasOwn(check, key))
     )
-      report.error(problems, location, 'allOf is a non-empty list of conditions, alone');
+      report.error(problems, location, 'malformed-all-of', 'allOf is a non-empty list of conditions, alone');
     else {
       list.forEach((condition, index) => {
-        for (const message of conditions.conditionProblems(condition, declared.schema))
-          report.error(problems, location, `allOf[${index}]: ${message}`);
+        for (const { code, message } of conditions.conditionProblems(condition, declared.schema))
+          report.error(problems, location, code, `allOf[${index}]: ${message}`);
       });
     }
   }
@@ -228,6 +272,7 @@ function checkPrReady(problems: report.Report, proc: CheckedProcedure) {
       report.error(
         problems,
         `${proc.location}.actions[${ready}]`,
+        'pr-ready-without-checks',
         `pr-ready publishes only after passing Checks, but Claim token ${token} requires none`,
       );
     }
@@ -253,12 +298,12 @@ export function checkProcedure(
   const problems = declaring.report;
   report.checkName(problems, location, name, { what: 'Procedure', carried: true });
   if (!referencePaths.isRecord(declaration)) {
-    report.error(problems, location, 'a Procedure must be an object');
+    report.error(problems, location, 'not-an-object', 'a Procedure must be an object');
     return undefined;
   }
   report.unknownKeys(problems, declaration, PROCEDURE_KEYS, location);
   const actions: unknown[] = Array.isArray(declaration.actions) ? declaration.actions : [];
-  if (!actions.length) report.error(problems, location, 'actions must be a non-empty list');
+  if (!actions.length) report.error(problems, location, 'empty-collection', 'actions must be a non-empty list');
   const declared = actionChecks.checkActions(declaring, actions, location);
   if (!declared.agent) {
     actions.forEach((action, index) => {
@@ -266,6 +311,7 @@ export function checkProcedure(
         report.error(
           problems,
           `${location}.actions[${index}]`,
+          'needs-agent-action',
           "a commit carries the agent Action's summary, which this Procedure lacks",
         );
     });

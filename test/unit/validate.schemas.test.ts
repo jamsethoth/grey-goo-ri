@@ -359,6 +359,132 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     },
     [{ at: 'agents.reviewer', code: 'harness-unregistered' }],
   ],
+  [
+    'recoverable that is a string',
+    (config) => {
+      procedureActions.actionById(config.procedures['base-check'], 'test').recoverable = 'yes';
+    },
+    [{ at: 'procedures.base-check.actions[0]', code: 'not-a-boolean' }],
+  ],
+  [
+    'optional that is a string',
+    (config) => {
+      config.flows.default.ticket.vertices.green.inputs.testFiles.optional = 'yes';
+    },
+    [{ at: `${VERTICES}.green.inputs.testFiles`, code: 'not-a-boolean' }],
+  ],
+  [
+    'a table that is a number',
+    (config) => {
+      config.procedures.review.stopped = 3;
+    },
+    [{ at: 'procedures.review.stopped', code: 'not-a-list' }],
+  ],
+  [
+    'an agent Action with no claimTokens',
+    (config) => {
+      config.procedures.review.claimTokens = {};
+    },
+    [
+      { at: 'procedures.review.claimTokens', code: 'claim-tokens-missing' },
+      { at: 'procedures.review.passed', code: 'table-never-applies' },
+      { at: 'procedures.review.stopped', code: 'table-never-applies' },
+    ],
+  ],
+  [
+    'a commit with no type',
+    (config) => {
+      procedureActions.actionById(config.procedures.implement, 'commit').type = '';
+    },
+    [{ at: 'procedures.implement.actions[2]', code: 'commit-type-unnamed' }],
+  ],
+  [
+    'a brief that names no file',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review').brief = ' ';
+    },
+    [{ at: 'procedures.review.actions[0]', code: 'file-not-named' }],
+  ],
+  [
+    'a stop comment that names no file',
+    (config) => {
+      config.procedures.review.claimTokens.blocked.comment = ' ';
+    },
+    [{ at: 'procedures.review.claimTokens.blocked', code: 'file-not-named' }],
+  ],
+  [
+    'a comment on neither the PR nor the ticket',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'comment').target = 'issue';
+    },
+    [{ at: 'procedures.review.actions[3]', code: 'invalid-comment-target' }],
+  ],
+  [
+    'otherwise that names nothing',
+    (config) => {
+      config.procedures.review.otherwise = ' ';
+    },
+    [{ at: 'procedures.review.otherwise', code: 'invalid-otherwise' }],
+  ],
+  [
+    'a Procedure access other than read-only',
+    (config) => {
+      config.procedures.review.access = 'workspace-write';
+    },
+    [{ at: 'procedures.review.access', code: 'invalid-procedure-access' }],
+  ],
+  [
+    'a reuse other than tree',
+    (config) => {
+      procedureActions.actionById(config.procedures['base-check'], 'test').reuse = 'sha';
+    },
+    [{ at: 'procedures.base-check.actions[0]', code: 'invalid-reuse' }],
+  ],
+  [
+    'tests that are neither frozen, write nor named',
+    (config) => {
+      config.procedures.implement.tests = 'open';
+    },
+    [{ at: 'procedures.implement.tests', code: 'invalid-tests-setting' }],
+  ],
+  [
+    'a recover with no positive max',
+    (config) => {
+      config.procedures.implement.recover.max = 0;
+    },
+    [{ at: 'procedures.implement.recover', code: 'malformed-recover' }],
+  ],
+  [
+    'a response condition on a free-text field',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'summary', is: 'x' };
+    },
+    [{ at: 'procedures.review.actions[1]', code: 'invalid-condition-field' }],
+  ],
+  [
+    'an empty allOf',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review-pass').allOf = [];
+    },
+    [{ at: 'procedures.review.actions[1]', code: 'malformed-all-of' }],
+  ],
+  [
+    'a response condition of no known form',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { is: true };
+    },
+    [{ at: 'procedures.review.actions[1]', code: 'malformed-condition' }],
+  ],
+  [
+    'a count condition with no operator',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = {
+        count: 'findings',
+        where: {},
+      };
+    },
+    [{ at: 'procedures.review.actions[1]', code: 'malformed-count' }],
+  ],
 ];
 for (const [what, mutate, errors] of MALFORMED) {
   test(`malformed configuration is an error, never a throw: ${what}`, () => {
