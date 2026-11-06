@@ -246,51 +246,6 @@ test('the scans skip tool output at the root only, and .git and node_modules any
   assert.deepEqual(paths.filter(isSkipped), ['.claude', 'coverage', '.git', 'node_modules', 'test/node_modules']);
 });
 
-// A thrown class's name shows in String(err) and the first line of its stack. Lint checks the class name's suffix
-// (below); this checks the name it sets, as a class field or in its constructor. This file is left out: its samples
-// spell both.
-// shortcut: the name alone on a line passes wherever that line is, in an uncalled method, a block comment or a template
-// literal; parse the class if one ever hides a missing name.
-const errorClassesWithoutName = (text: string) =>
-  [...text.matchAll(/\bclass (\w+)(?:<.*?>)?\s+extends\s+(?:\w+\.)*\w*Error\b/g)]
-    .map((match) => match[1])
-    .filter((className) => !new RegExp(`^\\s*(?:this\\.)?name = '${className}';$`, 'm').test(text));
-
-test('every thrown class sets name to its class name', () => {
-  assert.deepEqual(errorClassesWithoutName('class CommandError extends Error {}'), ['CommandError']);
-  assert.deepEqual(errorClassesWithoutName('class GhError extends exec.CommandError {}'), ['GhError']);
-  assert.deepEqual(errorClassesWithoutName("class OtherError extends Error {\n  name = 'CrashError';\n}\n"), [
-    'OtherError',
-  ]);
-  assert.deepEqual(errorClassesWithoutName("class CrashError extends Error {}\n// name = 'CrashError';\n"), [
-    'CrashError',
-  ]);
-  assert.deepEqual(errorClassesWithoutName('class GhError extends Error {}\nconst note = "name = \'GhError\'";\n'), [
-    'GhError',
-  ]);
-  assert.deepEqual(errorClassesWithoutName('class GenericError<T> extends Error {}'), ['GenericError']);
-  assert.deepEqual(errorClassesWithoutName('class WrappedError\n  extends Error {}'), ['WrappedError']);
-  assert.deepEqual(errorClassesWithoutName('class NestedError<T extends Array<number>> extends Error {}'), [
-    'NestedError',
-  ]);
-  assert.deepEqual(errorClassesWithoutName('class Thing<T> extends Base<T> {}'), []);
-  assert.deepEqual(errorClassesWithoutName("class CrashError extends Error {\n  name = 'CrashError';\n}\n"), []);
-  assert.deepEqual(
-    errorClassesWithoutName(
-      "class UsageError extends Error {\n  constructor() {\n    this.name = 'UsageError';\n  }\n}\n",
-    ),
-    [],
-  );
-  assert.deepEqual(errorClassesWithoutName('class Thing extends Base {}'), []);
-  assert.deepEqual(
-    codeFiles
-      .filter((path) => path !== 'test/unit/layout.test.ts')
-      .flatMap((path) => errorClassesWithoutName(readFileSync(root + path, 'utf8'))),
-    [],
-    "set the class's name: name = 'ClassName';",
-  );
-});
-
 const eslint = new ESLint({ cwd: root });
 const lintFindings = async (filePath: string, text: string) => {
   const [result] = await eslint.lintText(text, { filePath });
@@ -305,19 +260,8 @@ test('lint denies the name dir', async () => {
   assert.deepEqual(await lintFindings('lib/sample.ts', 'export const dir = 1;\n'), ['id-denylist']);
 });
 
-test('lint fails a class extending an error class when its name does not end in Error', async () => {
-  const restricted = ['no-restricted-syntax'];
-  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class Thing extends Error {}\n'), restricted);
-  assert.deepEqual(
-    await lintFindings('lib/sample.ts', 'export class Thing extends exec.CommandError {}\n'),
-    restricted,
-  );
-  assert.deepEqual(await lintFindings('test/support/sample.ts', 'export class Thing extends Error {}\n'), restricted);
-  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class ThingError extends Error {}\n'), []);
-  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class ThingError extends exec.CommandError {}\n'), []);
-  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class Thing extends Base {}\n'), []);
-});
-
+// A thrown class's name shows in String(err) and the first line of its stack. The rule reads parsed code, so a comment
+// or a string that spells the name is not one, and any header is read.
 const FIELD = "  name = 'AError';\n";
 const IN_CONSTRUCTOR = "  constructor() {\n    super('x');\n    this.name = 'AError';\n  }\n";
 const THROWN_CLASSES_FLAGGED = [

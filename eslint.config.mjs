@@ -53,7 +53,7 @@ const namespaceImportWithTypes = (source) => ({
   selector: `ImportDeclaration[source.value=${source}] > :matches(ImportSpecifier, ImportDefaultSpecifier)`,
   message: NAMESPACE_MESSAGE,
 });
-const EVERY_FILE_SYNTAX = [
+const NO_MODULE_STATE = [
   {
     selector:
       "Program > VariableDeclaration[kind='let'], Program > ExportNamedDeclaration > VariableDeclaration[kind='let']",
@@ -70,27 +70,60 @@ const EVERY_FILE_SYNTAX = [
       'No exported set* function: a setter swaps module state for every caller. Take the dependency as a ' +
       'parameter from the caller instead.',
   },
-  {
-    // The superClass's property form is `extends exec.CommandError`. The `name` half is in test/unit/layout.test.ts.
-    selector:
-      ':matches(ClassDeclaration, ClassExpression)[superClass.name=/Error$/]:not([id.name=/Error$/]), ' +
-      ':matches(ClassDeclaration, ClassExpression)[superClass.property.name=/Error$/]:not([id.name=/Error$/])',
-    message:
-      'A thrown class ends its name in Error and sets `name` to it: ' +
-      "`class CrashError extends Error { name = 'CrashError'; }`.",
-  },
 ];
+
+// A rule, not a selector: a selector cannot compare the class's name with the one it sets.
+// shortcut: a superclass behind a call, `extends Mixin(Error)`, is not read; widen superclassName if one appears.
+const superclassName = ({ superClass }) => superClass?.name ?? superClass?.property?.name ?? '';
+const fieldSetsName = ({ type, key, value, computed, static: isStatic }, className) =>
+  type === 'PropertyDefinition' && !isStatic && !computed && key.name === 'name' && value?.value === className;
+const assignsName = ({ type, left, right }, className) =>
+  type === 'AssignmentExpression' &&
+  left.object?.type === 'ThisExpression' &&
+  left.property.name === 'name' &&
+  right.value === className;
+const constructorSetsName = ({ type, kind, value }, className) =>
+  type === 'MethodDefinition' &&
+  kind === 'constructor' &&
+  (value.body?.body ?? []).some(({ expression }) => expression != null && assignsName(expression, className));
+const THROWN_CLASS = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      suffix: 'A thrown class ends its name in Error. Rename it, and set `name` to the new name.',
+      name: "A thrown class sets `name` to its class name, in a field or its constructor: `name = '{{className}}';`.",
+    },
+  },
+  create(context) {
+    const check = (node) => {
+      if (!superclassName(node).endsWith('Error')) return;
+      const className = node.id?.name ?? '';
+      if (!className.endsWith('Error')) context.report({ node, messageId: 'suffix' });
+      else if (
+        !node.body.body.some((member) => fieldSetsName(member, className) || constructorSetsName(member, className))
+      )
+        context.report({ node, messageId: 'name', data: { className } });
+    };
+    return { ClassDeclaration: check, ClassExpression: check };
+  },
+};
 
 // eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {
     files: ['**/*.{ts,js,cjs,mjs}'],
     languageOptions: { parser: tseslint.parser },
-    plugins: { '@stylistic': stylistic, '@typescript-eslint': tseslint.plugin },
+    plugins: {
+      '@stylistic': stylistic,
+      '@typescript-eslint': tseslint.plugin,
+      gg: { rules: { 'thrown-class': THROWN_CLASS } },
+    },
     rules: {
       '@typescript-eslint/naming-convention': ['error', ...NAMING],
       // Named exports only: a default export takes whatever name each importer gives it.
       'no-restricted-exports': ['error', { restrictDefaultExports: { direct: true, named: true, defaultFrom: true } }],
+      'gg/thrown-class': 'error',
       'id-length': ['error', { min: 2, exceptions: SHORT_NAMES }],
       'id-denylist': ['error', ...DENIED_NAMES],
       '@stylistic/max-len': ['error', { code: 120 }],
@@ -103,20 +136,20 @@ export default defineConfig([
       'max-lines': ['error', 400],
       eqeqeq: ['error', 'always', { null: 'ignore' }],
       // Outside lib/, a lib/ module is any path through a lib directory.
-      'no-restricted-syntax': ['error', namespaceImport('/(^|[/])lib[/]/'), ...EVERY_FILE_SYNTAX],
+      'no-restricted-syntax': ['error', namespaceImport('/(^|[/])lib[/]/'), ...NO_MODULE_STATE],
     },
   },
   {
     // Inside lib/, every relative import is a lib/ module.
     files: ['lib/**/*.ts'],
-    rules: { 'no-restricted-syntax': ['error', namespaceImport('/^[.]/'), ...EVERY_FILE_SYNTAX] },
+    rules: { 'no-restricted-syntax': ['error', namespaceImport('/^[.]/'), ...NO_MODULE_STATE] },
   },
   {
     // `t` is node:test's test context, and only there.
     files: ['test/**/*.ts'],
     rules: {
       'id-length': ['error', { min: 2, exceptions: [...SHORT_NAMES, 't'] }],
-      'no-restricted-syntax': ['error', namespaceImportWithTypes('/(^|[/])lib[/]/'), ...EVERY_FILE_SYNTAX],
+      'no-restricted-syntax': ['error', namespaceImportWithTypes('/(^|[/])lib[/]/'), ...NO_MODULE_STATE],
     },
   },
   {

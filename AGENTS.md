@@ -38,8 +38,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out`, `dir` and the like. Types are PascalCase, other
   identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
   lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.ts`).
-- A thrown class ends its name in `Error` and sets `name` to it (`name = 'CrashError';`). ESLint checks the suffix and
-  `test/unit/layout.test.ts` the `name`.
+- A thrown class ends its name in `Error` and sets `name` to it (`name = 'CrashError';`). ESLint's `gg/thrown-class`
+  checks both.
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
