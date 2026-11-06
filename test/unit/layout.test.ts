@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ESLint } from 'eslint';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -478,5 +479,117 @@ test('a new .mjs file fails the layout test', () => {
     LEGACY_MJS.filter((path) => !existsSync(root + path)),
     [],
     'a converted file leaves LEGACY_MJS',
+  );
+});
+
+test('no JavaScript file is left in the code tree', () => {
+  assert.deepEqual(unlistedMjs([...LEGACY_MJS, 'lib/new.mjs', 'bin/new.js', 'test/new.cjs', 'lib/new.ts']), [
+    'lib/new.mjs',
+    'bin/new.js',
+    'test/new.cjs',
+  ]);
+  assert.deepEqual(unlistedMjs(repoFiles()), [], 'write the file as .ts (ADR 0018)');
+});
+
+const codeFiles = ['lib/', 'bin/', 'scripts/', 'test/']
+  .flatMap((directory) => repoFiles(directory))
+  .filter((path) => path.endsWith('.ts'));
+
+test('the converted list names every code file', () => {
+  assert.ok(codeFiles.includes('lib/paths.ts') && codeFiles.includes('bin/gg.ts'), 'the code files are read');
+  assert.deepEqual(
+    codeFiles.filter((path) => !CONVERTED.includes(path)),
+    [],
+    'add the file to CONVERTED',
+  );
+});
+
+// A thrown class's name shows in the text printed for an uncaught crash. Lint checks the class name's suffix (below);
+// this checks the name it sets, as a class field or in its constructor. This file is left out: its samples spell both.
+const errorClassesWithoutName = (text: string) =>
+  [...text.matchAll(/\bclass (\w+) extends (?:\w+\.)*\w*Error\b/g)]
+    .map((match) => match[1])
+    .filter((className) => !text.includes(`name = '${className}'`));
+
+test('every thrown class sets name to its class name', () => {
+  assert.deepEqual(errorClassesWithoutName('class CommandError extends Error {}'), ['CommandError']);
+  assert.deepEqual(errorClassesWithoutName('class GhError extends exec.CommandError {}'), ['GhError']);
+  assert.deepEqual(errorClassesWithoutName("class OtherError extends Error { name = 'CrashError'; }"), ['OtherError']);
+  assert.deepEqual(errorClassesWithoutName("class CrashError extends Error { name = 'CrashError'; }"), []);
+  assert.deepEqual(errorClassesWithoutName("class UsageError extends Error { c() { this.name = 'UsageError'; } }"), []);
+  assert.deepEqual(errorClassesWithoutName('class Thing extends Base {}'), []);
+  assert.deepEqual(
+    codeFiles
+      .filter((path) => path !== 'test/unit/layout.test.ts')
+      .flatMap((path) => errorClassesWithoutName(readFileSync(root + path, 'utf8'))),
+    [],
+    "set the class's name: name = 'ClassName';",
+  );
+});
+
+const eslint = new ESLint({ cwd: root });
+const lintFindings = async (filePath: string, text: string) => {
+  const [result] = await eslint.lintText(text, { filePath });
+  return result.messages.map((message) => message.ruleId);
+};
+
+test('the strict rules apply to a JavaScript file too', async () => {
+  assert.deepEqual(await lintFindings('scripts/sample.mjs', 'export const cfg = 1;\n'), ['id-denylist']);
+});
+
+test('lint denies the name dir', async () => {
+  assert.deepEqual(await lintFindings('lib/sample.ts', 'export const dir = 1;\n'), ['id-denylist']);
+});
+
+test('lint fails a class extending an error class when its name does not end in Error', async () => {
+  const restricted = ['no-restricted-syntax'];
+  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class Thing extends Error {}\n'), restricted);
+  assert.deepEqual(
+    await lintFindings('lib/sample.ts', 'export class Thing extends exec.CommandError {}\n'),
+    restricted,
+  );
+  assert.deepEqual(await lintFindings('test/support/sample.ts', 'export class Thing extends Error {}\n'), restricted);
+  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class ThingError extends Error {}\n'), []);
+  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class ThingError extends exec.CommandError {}\n'), []);
+  assert.deepEqual(await lintFindings('lib/sample.ts', 'export class Thing extends Base {}\n'), []);
+});
+
+// The rule keeps each call naming its module (#237). It reads parsed code, so an import a case spells in a string is
+// not one.
+test('lint fails a named import from lib in a test file, and not one spelled in a string', async () => {
+  const sample = 'test/unit/sample.test.ts';
+  assert.deepEqual(await lintFindings(sample, "import { pathKey } from '../../lib/paths.ts';\n"), [
+    'no-restricted-syntax',
+  ]);
+  assert.deepEqual(await lintFindings(sample, "import * as paths from '../../lib/paths.ts';\n"), []);
+  assert.deepEqual(await lintFindings(sample, "export const text = `\nimport { add } from '../lib/add.ts';\n`;\n"), []);
+});
+
+// Documents agents read for today's paths. An ADR or a docs/research record is dated: it names paths as they were.
+const LIVING_DOCUMENTS = [
+  'AGENTS.md',
+  'GLOSSARY.md',
+  'README.md',
+  'docs/adr/0014-procedures-are-data.md',
+  'docs/interfaces/harness.md',
+  'docs/library-survey.md',
+  'docs/requests/node-harness-dag.md',
+  'docs/testing.md',
+];
+// A path from the repository root, so not node_modules/eslint/bin/eslint.js or another project's src/lib/x.ts.
+const CODE_PATH = /(?<![\w/.-])(?:lib|bin|scripts)\/[\w/.-]*\.(?:[cm]?js|ts)\b/g;
+const codePathsIn = (text: string) => [...text.matchAll(CODE_PATH)].map((match) => match[0]);
+
+test('a living document names only code files that exist', () => {
+  assert.deepEqual(
+    codePathsIn('See `lib/gone.mjs:12`, bin/gg.ts. Then node_modules/eslint/bin/eslint.js, src/lib/a.ts'),
+    ['lib/gone.mjs', 'bin/gg.ts'],
+  );
+  const named = LIVING_DOCUMENTS.flatMap((document) => codePathsIn(readFileSync(root + document, 'utf8')));
+  assert.ok(named.includes('lib/paths.ts'), 'the documents are read');
+  assert.deepEqual(
+    named.filter((path) => !existsSync(root + path)),
+    [],
+    'name the file as it is today',
   );
 });
