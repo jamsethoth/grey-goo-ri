@@ -23,6 +23,7 @@ export interface RateLimit {
 // A gh process that exited nonzero, with what its response showed, so a catch site can test the type and
 // outcome.classifyRemoteFailure can read `http` and `rateLimit` from it. Each is set only when gh showed it.
 export class GhError extends exec.CommandError {
+  name = 'GhError';
   declare http?: HttpResponse;
   declare rateLimit?: RateLimit;
 }

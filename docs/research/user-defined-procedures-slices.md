@@ -1,5 +1,8 @@
 # User-defined Procedures: slicing (step 7)
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Draft, 2026-10-22; the owner accepted its approach and the audit folds the same day. It slices option 1 as decided in
 [user-defined-procedures-decisions.md](user-defined-procedures-decisions.md) and shown in
 [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md). It replaces the round-1 S1–S6

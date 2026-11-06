@@ -83,3 +83,8 @@ no pattern already finds `.ts` tests.
 - Amended 2026-11-04 (grey-goo-ri issue #207): no `.mjs` file is left under `lib/`, `bin/` or `scripts/`. The entry
   point is `bin/gg.ts`, which `package.json`'s `bin` names and `node bin/gg.ts` runs, and the suite launcher is
   `scripts/run-suite.ts`.
+- Amended 2026-11-05 (grey-goo-ri issue #215): the conversion is finished. No JavaScript file is left in the code tree
+  but `eslint.config.mjs`, since ESLint 10.14 loads a `.ts` config only through the optional `jiti` package or an
+  unstable flag; `allowJs` and `checkJs` are gone from `tsconfig.json`, and the strict ESLint rules apply to every file.
+  The list of converted files is gone with the conversion: the layout test fails any code file that is not `.ts`, and
+  its list of legacy files holds only `eslint.config.mjs`. Earlier paths in this ADR name the `.mjs` files as they were.

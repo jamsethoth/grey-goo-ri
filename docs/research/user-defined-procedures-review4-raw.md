@@ -1,5 +1,8 @@
 # User-defined Procedures: design review round 4, raw
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Two read-only reviews of a120ca6 (2026-10-22): Codex `gpt-6-astra` at high effort (B1–B3) and Fable at high effort
 (G1–G9), both checked against main at bd60df9.
 

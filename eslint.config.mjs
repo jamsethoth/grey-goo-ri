@@ -1,6 +1,6 @@
-// The readability rules of grey-goo-ri epic #193 (ADR 0018). They apply to .ts files only: an .mjs file is legacy until
-// its ticket converts it, and no new .mjs file may be added (test/unit/layout.test.ts). Agents read these messages, so
-// each custom one says how to fix.
+// The readability rules of grey-goo-ri epic #193 (ADR 0018), for every file. This is the one JavaScript file: ESLint
+// 10.14 loads a .ts config only through the optional jiti package or an unstable flag (test/unit/layout.test.ts).
+// Agents read these messages, so each custom one says how to fix.
 import { defineConfig } from 'eslint/config';
 import stylistic from '@stylistic/eslint-plugin';
 import tseslint from 'typescript-eslint';
@@ -25,6 +25,7 @@ const DENIED_NAMES = [
   'str',
   'cb',
   'fn',
+  'dir',
 ];
 const SHORT_NAMES = ['i', 'j', '_'];
 // Identifier casing, as in the Google TypeScript Style Guide's rules by identifier type. A leading underscore marks a
@@ -38,13 +39,19 @@ const NAMING = [
   { selector: ['objectLiteralProperty', 'objectLiteralMethod', 'typeProperty'], format: null },
 ];
 
+const NAMESPACE_MESSAGE =
+  "Import a lib/ module as a namespace, `import * as paths from './paths.ts'`, and call `paths.canonical()`: " +
+  'a missing export then fails where it is used, and each call names its module.';
 const namespaceImport = (source) => ({
   selector:
     `ImportDeclaration[importKind='value'][source.value=${source}] > ` +
     ":matches(ImportSpecifier[importKind='value'], ImportDefaultSpecifier)",
-  message:
-    "Import a lib/ module as a namespace, `import * as paths from './paths.ts'`, and call `paths.canonical()`: " +
-    'a missing export then fails where it is used, and each call names its module.',
+  message: NAMESPACE_MESSAGE,
+});
+// A test names the module for its types too, where lib/ may import a type by name.
+const namespaceImportWithTypes = (source) => ({
+  selector: `ImportDeclaration[source.value=${source}] > :matches(ImportSpecifier, ImportDefaultSpecifier)`,
+  message: NAMESPACE_MESSAGE,
 });
 const NO_MODULE_STATE = [
   {
@@ -65,20 +72,62 @@ const NO_MODULE_STATE = [
   },
 ];
 
+// A rule, not a selector: a selector cannot compare the class's name with the one it sets.
+// shortcut: a superclass behind a call or a computed key, `extends Mixin(Error)` or `extends exec['CommandError']`, is
+// not read; widen superclassName if one appears.
+const superclassName = ({ superClass }) => superClass?.name ?? superClass?.property?.name ?? '';
+// Not `[name]` or `#name`: neither sets the name an error reports.
+const isPublicName = (key, computed) => !computed && key.type === 'Identifier' && key.name === 'name';
+const fieldSetsName = ({ type, key, value, computed, static: isStatic }, className) =>
+  type === 'PropertyDefinition' && !isStatic && isPublicName(key, computed) && value?.value === className;
+const assignsName = ({ type, operator, left, right }, className) =>
+  type === 'AssignmentExpression' &&
+  operator === '=' &&
+  left.object?.type === 'ThisExpression' &&
+  isPublicName(left.property, left.computed) &&
+  right.value === className;
+const constructorSetsName = ({ type, kind, value }, className) =>
+  type === 'MethodDefinition' &&
+  kind === 'constructor' &&
+  (value.body?.body ?? []).some(({ expression }) => expression != null && assignsName(expression, className));
+const THROWN_CLASS = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      suffix: 'A thrown class ends its name in Error. Rename it, and set `name` to the new name.',
+      name: "A thrown class sets `name` to its class name, in a field or its constructor: `name = '{{className}}';`.",
+    },
+  },
+  create(context) {
+    const check = (node) => {
+      if (!superclassName(node).endsWith('Error')) return;
+      const className = node.id?.name ?? '';
+      if (!className.endsWith('Error')) context.report({ node, messageId: 'suffix' });
+      else if (
+        !node.body.body.some((member) => fieldSetsName(member, className) || constructorSetsName(member, className))
+      )
+        context.report({ node, messageId: 'name', data: { className } });
+    };
+    return { ClassDeclaration: check, ClassExpression: check };
+  },
+};
+
+// eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {
-    // The ban on module state applies to every file, legacy .mjs included (#199).
-    files: ['**/*.mjs'],
-    rules: { 'no-restricted-syntax': ['error', ...NO_MODULE_STATE] },
-  },
-  {
-    files: ['**/*.ts'],
+    files: ['**/*.{ts,js,cjs,mjs}'],
     languageOptions: { parser: tseslint.parser },
-    plugins: { '@stylistic': stylistic, '@typescript-eslint': tseslint.plugin },
+    plugins: {
+      '@stylistic': stylistic,
+      '@typescript-eslint': tseslint.plugin,
+      gg: { rules: { 'thrown-class': THROWN_CLASS } },
+    },
     rules: {
       '@typescript-eslint/naming-convention': ['error', ...NAMING],
       // Named exports only: a default export takes whatever name each importer gives it.
       'no-restricted-exports': ['error', { restrictDefaultExports: { direct: true, named: true, defaultFrom: true } }],
+      'gg/thrown-class': 'error',
       'id-length': ['error', { min: 2, exceptions: SHORT_NAMES }],
       'id-denylist': ['error', ...DENIED_NAMES],
       '@stylistic/max-len': ['error', { code: 120 }],
@@ -102,7 +151,10 @@ export default defineConfig([
   {
     // `t` is node:test's test context, and only there.
     files: ['test/**/*.ts'],
-    rules: { 'id-length': ['error', { min: 2, exceptions: [...SHORT_NAMES, 't'] }] },
+    rules: {
+      'id-length': ['error', { min: 2, exceptions: [...SHORT_NAMES, 't'] }],
+      'no-restricted-syntax': ['error', namespaceImportWithTypes('/(^|[/])lib[/]/'), ...NO_MODULE_STATE],
+    },
   },
   {
     files: ['test/**/*.test.ts'],

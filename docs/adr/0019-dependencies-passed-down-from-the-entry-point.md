@@ -5,6 +5,9 @@ date: 2026-11-01
 
 # Dependencies are passed down from the entry point, not swapped in module state
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 grey-goo-ri issue #153 gave tests seams in `lib/` as module-level setters: `github.setGh`, `git.setSleep`,
 `locks.setClock`, `locks.setAttemptWrapper`, `record.setSaveHook` and `events.setAppendHook`. Each swapped a module-level
 `let` for every caller in the process and returned the previous value for the test to put back. A case that failed

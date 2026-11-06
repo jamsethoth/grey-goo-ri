@@ -16,12 +16,13 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 ## Conventions
 
-- Plain Node ESM (`.mjs`), Node 26 LTS (26.13 or later, where `node:sqlite` loads without a warning; ADR 0020), must
-  run on stock Node on native Windows. npm dependencies are allowed when they earn their place; prefer node
+- TypeScript ESM on Node 26 LTS (26.13 or later, where `node:sqlite` loads without a warning; ADR 0020), must run on
+  stock Node on native Windows. npm dependencies are allowed when they earn their place; prefer node
   built-ins. Never adopt an agentic workflow framework (ADR 0001).
-- TypeScript on Node's type stripping, no build step (ADR 0018): new and converted modules and tests are `.ts`, and no
-  new `.mjs` file may be added. Erasable syntax only (no enums, namespaces or parameter properties). The strict ESLint
-  rules apply to `.ts` files; `test/unit/layout.test.ts` lists the converted and legacy files.
+- Node's type stripping runs the sources, with no build step (ADR 0018): every code file is `.ts`, and
+  `test/unit/layout.test.ts` fails on any other. The one JavaScript file is `eslint.config.mjs`, since ESLint 10.14
+  loads a `.ts` config only through the optional `jiti` package or an unstable flag. Erasable syntax only (no enums,
+  namespaces or parameter properties). The strict ESLint rules apply to every file.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
 - Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
   git (`test/support/fake-git.ts`); real git in temp repositories only for the `lib/git.ts` contract suite, tests whose
@@ -34,9 +35,11 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   and in `docs/research/user-defined-procedures-decisions.md` and its siblings.
 - Names: a domain concept takes its full GLOSSARY.md term in camelCase (`executionRecord`, not `rec`; `actionRef`, not
   `at`). Single letters only within about 10 lines of scope. Abbreviations only from `id`, `url`, `sha`, `err`, `gh`,
-  `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out` and the like. Types are PascalCase, other
+  `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out`, `dir` and the like. Types are PascalCase, other
   identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
   lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.ts`).
+- A thrown class ends its name in `Error` and sets `name` to it (`name = 'CrashError';`). ESLint's `gg/thrown-class`
+  checks both.
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
@@ -143,11 +146,13 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 - Every test lives in the layout of `docs/testing.md` for its size: `test/unit/` (small: one process, no child
   process, no real git, no timers), `test/contract/<boundary>/` (one suite per external boundary) or `test/e2e/` (the
   full runs and the real-git wiring). `test/unit/layout.test.ts` checks `test/unit/`.
-- A module's tests of one size go in `<dir>/<module>.test.mjs`. A large module may also have area files
-  `<dir>/<module>.<area>.test.mjs`; new tests for it still go in `<dir>/<module>.test.mjs`. node runs files in parallel
-  but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an area file.
-- Tests import modules as namespaces (`import * as record from '../../lib/record.ts'`) and call `record.fn()`, so a
-  missing export fails inside the case.
+- A module's tests of one size go in `<directory>/<module>.test.ts`. A large module may also have area files
+  `<directory>/<module>.<area>.test.ts`; new tests for it still go in `<directory>/<module>.test.ts`. node runs files in
+  parallel but a file's tests serially, so once a file's serial time passes about 3 minutes, move tests out of it to an
+  area file.
+- Tests import modules as namespaces (`import * as record from '../../lib/record.ts'`) and call `record.fn()`, so each
+  call names its module, and in a focused `node --test` run, which strips types unchecked, a missing export fails inside
+  the case. ESLint enforces it, for a test file's type imports too.
 - A test for a module that does not exist yet imports a stub module: its exports with their final signatures, each
   returning a wrong value.
 - Ported test files follow the port rule above and rewrite static named imports to namespace imports.

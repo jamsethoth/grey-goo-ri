@@ -5,6 +5,9 @@ date: 2026-10-25
 
 # The suite launcher takes a stage and boundary names from a closed set
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Supersedes the part of ADR 0010 that says the launcher never forwards its arguments; the rest of ADR 0010 stands.
 
 `docs/testing.md` splits the suite into a fast stage (the small tests under `test/unit/`, plus the contract suite of each

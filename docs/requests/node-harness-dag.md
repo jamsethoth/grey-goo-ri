@@ -314,7 +314,7 @@ Claim. `cleanup` (decision L11) and `<vertex>.rescue` (W3, #118) are declared, s
 but gg does not write them yet.
 
 Every Action declares `id` (its Action id) and `do` (its kind), and only its kind's keys; any other key fails
-admission (`lib/procedures.mjs` holds the lists):
+admission (`lib/procedures.ts` holds the lists):
 
 | `do` | Keys | What each key takes | Outputs |
 |---|---|---|---|

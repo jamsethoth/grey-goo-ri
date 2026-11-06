@@ -1,5 +1,8 @@
 # User-defined Procedures: Epic and ticket drafts
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Draft text for filing, 2026-10-22, from [user-defined-procedures-slices.md](user-defined-procedures-slices.md).
 **Filed 2026-10-22** as the Epic grey-goo-ri issue #101 and its sub-issues: A1–A7 are grey-goo-ri issues #102–#108, E0 is #109, E1–E10 are #110–#119, C1 is #120, C2 is #121, C4 is #122 and C3 is #123. The issues are now the
 authority for ticket text; this file keeps the drafts as filed. On filing:

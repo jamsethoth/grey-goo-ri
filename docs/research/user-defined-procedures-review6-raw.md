@@ -1,5 +1,8 @@
 # User-defined Procedures: review round 6, raw reviews
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 The two independent reviews of all 25 issues (the Epic issue #101, issues #102–#123, #23 and #68), 2026-10-22,
 condensed from their reports; the reviewers did not read earlier reviews. [Merged](user-defined-procedures-review6.md).
 

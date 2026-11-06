@@ -17,12 +17,12 @@ interface Repo {
   git: gitModule.Git | fakeGitModule.FakeGit['git'];
   root: string;
   mainRoot: string;
-  commit: (dir: string, message: string) => string;
-  amend: (dir: string, message: string) => string;
-  branch: (dir: string, name: string) => unknown;
-  detach: (dir: string) => unknown;
-  unstage: (dir: string) => unknown;
-  breakOrigin: (dir: string) => string;
+  commit: (directory: string, message: string) => string;
+  amend: (directory: string, message: string) => string;
+  branch: (directory: string, name: string) => unknown;
+  detach: (directory: string) => unknown;
+  unstage: (directory: string) => unknown;
+  breakOrigin: (directory: string) => string;
 }
 
 // A copy of the template's bare origin and its clone, with one commit on main, and the steps a case takes outside gg,
@@ -35,20 +35,20 @@ function realRepo(t: TestContext): Repo {
     git: gitModule,
     root,
     mainRoot,
-    commit: (dir: string, message: string) => {
-      gitShell.sh(dir, 'add', '-A');
-      gitShell.sh(dir, 'commit', '-q', '--allow-empty', '-m', message);
-      return gitShell.sh(dir, 'rev-parse', 'HEAD');
+    commit: (directory: string, message: string) => {
+      gitShell.sh(directory, 'add', '-A');
+      gitShell.sh(directory, 'commit', '-q', '--allow-empty', '-m', message);
+      return gitShell.sh(directory, 'rev-parse', 'HEAD');
     },
-    amend: (dir: string, message: string) => {
-      gitShell.sh(dir, 'commit', '-q', '--amend', '--allow-empty', '-m', message);
-      return gitShell.sh(dir, 'rev-parse', 'HEAD');
+    amend: (directory: string, message: string) => {
+      gitShell.sh(directory, 'commit', '-q', '--amend', '--allow-empty', '-m', message);
+      return gitShell.sh(directory, 'rev-parse', 'HEAD');
     },
-    branch: (dir: string, name: string) => gitShell.sh(dir, 'checkout', '-q', '-b', name),
-    detach: (dir: string) => gitShell.sh(dir, 'checkout', '-q', '--detach'),
-    unstage: (dir: string) => gitShell.sh(dir, 'reset', '-q'),
-    breakOrigin: (dir: string) => {
-      gitShell.sh(dir, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
+    branch: (directory: string, name: string) => gitShell.sh(directory, 'checkout', '-q', '-b', name),
+    detach: (directory: string) => gitShell.sh(directory, 'checkout', '-q', '--detach'),
+    unstage: (directory: string) => gitShell.sh(directory, 'reset', '-q'),
+    breakOrigin: (directory: string) => {
+      gitShell.sh(directory, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
       return 'gone.git';
     },
   };
@@ -82,41 +82,41 @@ for (const [name, repo] of sides) {
     test(`${title} (${name} git)`, options, async (t) => run(await repo(t)));
 
   // Records the tree of a worktree that adds a.txt, as an intent would, and leaves the index at the parent's tree.
-  const recordTree = async ({ git, mainRoot: dir, unstage }: Repo) => {
-    const parent = await git.headSha(dir);
-    const parentTree = await git.treeOf(dir, parent);
-    writeFileSync(join(dir, 'a.txt'), 'a');
-    await git.stageAll(dir);
-    const tree = await git.writeTree(dir);
-    unstage(dir);
+  const recordTree = async ({ git, mainRoot: directory, unstage }: Repo) => {
+    const parent = await git.headSha(directory);
+    const parentTree = await git.treeOf(directory, parent);
+    writeFileSync(join(directory, 'a.txt'), 'a');
+    await git.stageAll(directory);
+    const tree = await git.writeTree(directory);
+    unstage(directory);
     return { parent, parentTree, tree };
   };
 
   contract("commitTree commits a recorded tree on its parent, and nothing for the parent's own tree", async (repo) => {
-    const { git, mainRoot: dir } = repo;
+    const { git, mainRoot: directory } = repo;
     const { parent, parentTree, tree } = await recordTree(repo);
-    assert.equal(await git.commitTree(dir, { message: 'nothing', tree: parentTree, parent }), null);
-    const sha = await git.commitTree(dir, { message: 'feat: a', tree, parent });
-    assert.equal(await git.headSha(dir), sha);
-    assert.equal(await git.treeOf(dir, sha as string), tree);
-    assert.deepEqual((await git.commitLog(dir, 'main'))[0].parents, [parent]);
+    assert.equal(await git.commitTree(directory, { message: 'nothing', tree: parentTree, parent }), null);
+    const sha = await git.commitTree(directory, { message: 'feat: a', tree, parent });
+    assert.equal(await git.headSha(directory), sha);
+    assert.equal(await git.treeOf(directory, sha as string), tree);
+    assert.deepEqual((await git.commitLog(directory, 'main'))[0].parents, [parent]);
   });
 
   contract('commitTree leaves the index alone', async (repo) => {
-    const { git, mainRoot: dir } = repo;
+    const { git, mainRoot: directory } = repo;
     const { parent, parentTree, tree } = await recordTree(repo);
-    await git.commitTree(dir, { message: 'feat: a', tree, parent });
+    await git.commitTree(directory, { message: 'feat: a', tree, parent });
     // The index still has the parent's tree, so against the new HEAD a.txt is untracked.
-    assert.equal(await git.writeTree(dir), parentTree);
-    assert.deepEqual(await git.untrackedPaths(dir), ['a.txt']);
+    assert.equal(await git.writeTree(directory), parentTree);
+    assert.deepEqual(await git.untrackedPaths(directory), ['a.txt']);
   });
 
   contract('commitTree refuses a branch that moved since the intent was recorded', async (repo) => {
-    const { git, mainRoot: dir } = repo;
+    const { git, mainRoot: directory } = repo;
     const { parent, tree } = await recordTree(repo);
-    const sha = await git.commitTree(dir, { message: 'feat: a', tree, parent });
-    await assert.rejects(git.commitTree(dir, { message: 'feat: again', tree, parent }), /cannot lock ref 'HEAD'/);
-    assert.equal(await git.headSha(dir), sha, 'nothing is overwritten');
+    const sha = await git.commitTree(directory, { message: 'feat: a', tree, parent });
+    await assert.rejects(git.commitTree(directory, { message: 'feat: again', tree, parent }), /cannot lock ref 'HEAD'/);
+    assert.equal(await git.headSha(directory), sha, 'nothing is overwritten');
   });
 
   contract('ensureWorktree starts a new ticket branch from the base on origin', async ({ git, root, mainRoot }) => {
@@ -166,7 +166,8 @@ for (const [name, repo] of sides) {
     },
   );
 
-  // From a worktree git answers with the canonical common dir; from the main checkout, relative to the spelling given.
+  // From a worktree git answers with the canonical common directory; from the main checkout, relative to the spelling
+  // given.
   contract('repoInfo keeps the spelling it is given from the main checkout', async ({ git, root }) => {
     const link = `${root}-link`;
     symlinkSync(root, link, 'junction');
@@ -212,191 +213,196 @@ for (const [name, repo] of sides) {
     },
   );
 
-  contract('stageAll, writeTree and commitStaged commit the recorded tree', async ({ git, mainRoot: dir }) => {
-    assert.equal(await git.stageAll(dir), false);
-    assert.equal(await git.commitStaged(dir, 'test: nothing'), null);
-    writeFileSync(join(dir, 'a.txt'), 'a');
-    assert.equal(await git.stageAll(dir), true);
-    const tree = await git.writeTree(dir);
+  contract('stageAll, writeTree and commitStaged commit the recorded tree', async ({ git, mainRoot: directory }) => {
+    assert.equal(await git.stageAll(directory), false);
+    assert.equal(await git.commitStaged(directory, 'test: nothing'), null);
+    writeFileSync(join(directory, 'a.txt'), 'a');
+    assert.equal(await git.stageAll(directory), true);
+    const tree = await git.writeTree(directory);
     assert.match(tree, /^[0-9a-f]{40}$/);
-    const sha = (await git.commitStaged(dir, 'test: add a')) as string;
+    const sha = (await git.commitStaged(directory, 'test: add a')) as string;
     assert.match(sha, /^[0-9a-f]{40}$/);
-    assert.equal(await git.headSha(dir), sha);
-    assert.equal(await git.treeOf(dir, sha), tree);
-    assert.equal(await git.treeOf(dir), tree);
+    assert.equal(await git.headSha(directory), sha);
+    assert.equal(await git.treeOf(directory, sha), tree);
+    assert.equal(await git.treeOf(directory), tree);
   });
 
-  contract('resetTo restores a recorded revision and cleans the worktree', async ({ git, mainRoot: dir, commit }) => {
-    const recorded = await git.headSha(dir);
-    const tree = await git.treeOf(dir, recorded);
-    writeFileSync(join(dir, 'a.txt'), 'a');
-    commit(dir, 'extra');
-    writeFileSync(join(dir, 'untracked.txt'), 'u');
-    mkdirSync(join(dir, 'newdir'));
-    writeFileSync(join(dir, 'newdir', 'x.txt'), 'x');
-    await git.resetTo(dir, recorded);
-    assert.equal(await git.headSha(dir), recorded);
-    assert.deepEqual(await git.fingerprint(dir), { head: recorded, index: tree, tree });
-    assert.deepEqual(await git.untrackedPaths(dir, { include: 'all' }), []);
-    assert.ok(!existsSync(join(dir, 'a.txt')));
-    assert.ok(!existsSync(join(dir, 'newdir')));
+  contract(
+    'resetTo restores a recorded revision and cleans the worktree',
+    async ({ git, mainRoot: directory, commit }) => {
+      const recorded = await git.headSha(directory);
+      const tree = await git.treeOf(directory, recorded);
+      writeFileSync(join(directory, 'a.txt'), 'a');
+      commit(directory, 'extra');
+      writeFileSync(join(directory, 'untracked.txt'), 'u');
+      mkdirSync(join(directory, 'newdir'));
+      writeFileSync(join(directory, 'newdir', 'x.txt'), 'x');
+      await git.resetTo(directory, recorded);
+      assert.equal(await git.headSha(directory), recorded);
+      assert.deepEqual(await git.fingerprint(directory), { head: recorded, index: tree, tree });
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'all' }), []);
+      assert.ok(!existsSync(join(directory, 'a.txt')));
+      assert.ok(!existsSync(join(directory, 'newdir')));
+    },
+  );
+
+  contract('resetTo leaves ignored untracked files in place', async ({ git, mainRoot: directory, commit }) => {
+    writeFileSync(join(directory, '.gitignore'), 'secret.txt\n');
+    const recorded = commit(directory, 'ignore');
+    writeFileSync(join(directory, 'secret.txt'), 'work');
+    await git.resetTo(directory, recorded);
+    assert.ok(existsSync(join(directory, 'secret.txt')));
   });
 
-  contract('resetTo leaves ignored untracked files in place', async ({ git, mainRoot: dir, commit }) => {
-    writeFileSync(join(dir, '.gitignore'), 'secret.txt\n');
-    const recorded = commit(dir, 'ignore');
-    writeFileSync(join(dir, 'secret.txt'), 'work');
-    await git.resetTo(dir, recorded);
-    assert.ok(existsSync(join(dir, 'secret.txt')));
-  });
-
-  contract('remoteSha reports the pushed sha or null', async ({ git, mainRoot: dir, branch, commit }) => {
-    branch(dir, 'ticket/9-thing');
-    const sha = commit(dir, 'work');
-    await git.push(dir, 'ticket/9-thing');
-    assert.equal(await git.remoteSha(dir, 'ticket/9-thing'), sha);
-    assert.equal(await git.remoteSha(dir, 'ticket/9-unknown'), null);
+  contract('remoteSha reports the pushed sha or null', async ({ git, mainRoot: directory, branch, commit }) => {
+    branch(directory, 'ticket/9-thing');
+    const sha = commit(directory, 'work');
+    await git.push(directory, 'ticket/9-thing');
+    assert.equal(await git.remoteSha(directory, 'ticket/9-thing'), sha);
+    assert.equal(await git.remoteSha(directory, 'ticket/9-unknown'), null);
   });
 
   contract(
     'push publishes the given sha, not the branch tip',
-    async ({ git, mainRoot: dir, branch, commit, amend }) => {
-      branch(dir, 'ticket/9-thing');
-      const checked = commit(dir, 'checked');
-      amend(dir, 'amended');
-      await git.push(dir, 'ticket/9-thing', checked);
-      assert.equal(await git.remoteSha(dir, 'ticket/9-thing'), checked);
+    async ({ git, mainRoot: directory, branch, commit, amend }) => {
+      branch(directory, 'ticket/9-thing');
+      const checked = commit(directory, 'checked');
+      amend(directory, 'amended');
+      await git.push(directory, 'ticket/9-thing', checked);
+      assert.equal(await git.remoteSha(directory, 'ticket/9-thing'), checked);
     },
   );
 
   contract(
     "push refuses to move origin's branch to a commit that does not descend from it",
-    async ({ git, mainRoot: dir, branch, commit, amend }) => {
-      branch(dir, 'ticket/9-thing');
-      const pushed = commit(dir, 'first');
-      await git.push(dir, 'ticket/9-thing');
-      const rewritten = amend(dir, 'rewritten');
-      await assert.rejects(git.push(dir, 'ticket/9-thing', rewritten), /non-fast-forward/);
-      assert.equal(await git.remoteSha(dir, 'ticket/9-thing'), pushed);
+    async ({ git, mainRoot: directory, branch, commit, amend }) => {
+      branch(directory, 'ticket/9-thing');
+      const pushed = commit(directory, 'first');
+      await git.push(directory, 'ticket/9-thing');
+      const rewritten = amend(directory, 'rewritten');
+      await assert.rejects(git.push(directory, 'ticket/9-thing', rewritten), /non-fast-forward/);
+      assert.equal(await git.remoteSha(directory, 'ticket/9-thing'), pushed);
     },
   );
 
   contract(
     'remoteSha surfaces a fetch failure that is not a missing branch',
-    async ({ git, mainRoot: dir, breakOrigin }) => {
-      const named = breakOrigin(dir);
-      await assert.rejects(git.remoteSha(dir, 'main'), (err: Error) => err.message.includes(named));
+    async ({ git, mainRoot: directory, breakOrigin }) => {
+      const named = breakOrigin(directory);
+      await assert.rejects(git.remoteSha(directory, 'main'), (err: Error) => err.message.includes(named));
     },
   );
 
   contract(
     'currentBranch names the checked-out branch, or null on a detached HEAD',
-    async ({ git, mainRoot: dir, detach }) => {
-      assert.equal(await git.currentBranch(dir), 'main');
-      detach(dir);
-      assert.equal(await git.currentBranch(dir), null);
+    async ({ git, mainRoot: directory, detach }) => {
+      assert.equal(await git.currentBranch(directory), 'main');
+      detach(directory);
+      assert.equal(await git.currentBranch(directory), null);
     },
   );
 
-  contract('branchHead reads a local branch and rejects an unknown one', async ({ git, mainRoot: dir }) => {
-    assert.equal(await git.branchHead(dir, 'main'), await git.headSha(dir));
-    await assert.rejects(git.branchHead(dir, 'ticket/9-unknown'), /unknown revision/);
+  contract('branchHead reads a local branch and rejects an unknown one', async ({ git, mainRoot: directory }) => {
+    assert.equal(await git.branchHead(directory, 'main'), await git.headSha(directory));
+    await assert.rejects(git.branchHead(directory, 'ticket/9-unknown'), /unknown revision/);
   });
 
-  contract('hasTree tells a stored tree from an unknown one', async ({ git, mainRoot: dir }) => {
-    assert.equal(await git.hasTree(dir, await git.treeOf(dir)), true);
-    assert.equal(await git.hasTree(dir, 'e'.repeat(40)), false);
+  contract('hasTree tells a stored tree from an unknown one', async ({ git, mainRoot: directory }) => {
+    assert.equal(await git.hasTree(directory, await git.treeOf(directory)), true);
+    assert.equal(await git.hasTree(directory, 'e'.repeat(40)), false);
   });
 
   contract(
     'commitLog lists the commits reachable from a branch, newest first, with parents, tree and message',
-    async ({ git, mainRoot: dir, commit }) => {
-      const init = await git.headSha(dir);
-      writeFileSync(join(dir, 'a.txt'), 'a');
-      const sha = commit(dir, 'one\n\nbody');
-      assert.deepEqual(await git.commitLog(dir, 'main'), [
-        { sha, parents: [init], tree: await git.treeOf(dir, sha), message: 'one\n\nbody' },
-        { sha: init, parents: [], tree: await git.treeOf(dir, init), message: 'init' },
+    async ({ git, mainRoot: directory, commit }) => {
+      const init = await git.headSha(directory);
+      writeFileSync(join(directory, 'a.txt'), 'a');
+      const sha = commit(directory, 'one\n\nbody');
+      assert.deepEqual(await git.commitLog(directory, 'main'), [
+        { sha, parents: [init], tree: await git.treeOf(directory, sha), message: 'one\n\nbody' },
+        { sha: init, parents: [], tree: await git.treeOf(directory, init), message: 'init' },
       ]);
     },
   );
 
   contract(
     'treeDiff names each path added, modified or deleted between two trees',
-    async ({ git, mainRoot: dir, commit }) => {
-      writeFileSync(join(dir, 'kept.txt'), 'k');
-      writeFileSync(join(dir, 'gone.txt'), 'g');
-      const from = await git.treeOf(dir, commit(dir, 'from'));
-      writeFileSync(join(dir, 'kept.txt'), 'changed');
-      rmSync(join(dir, 'gone.txt'));
-      writeFileSync(join(dir, 'new.txt'), 'n');
-      const to = await git.treeOf(dir, commit(dir, 'to'));
-      assert.deepEqual(await git.treeDiff(dir, from, to), [
+    async ({ git, mainRoot: directory, commit }) => {
+      writeFileSync(join(directory, 'kept.txt'), 'k');
+      writeFileSync(join(directory, 'gone.txt'), 'g');
+      const from = await git.treeOf(directory, commit(directory, 'from'));
+      writeFileSync(join(directory, 'kept.txt'), 'changed');
+      rmSync(join(directory, 'gone.txt'));
+      writeFileSync(join(directory, 'new.txt'), 'n');
+      const to = await git.treeOf(directory, commit(directory, 'to'));
+      assert.deepEqual(await git.treeDiff(directory, from, to), [
         { path: 'gone.txt', change: 'deleted' },
         { path: 'kept.txt', change: 'modified' },
         { path: 'new.txt', change: 'added' },
       ]);
-      assert.deepEqual(await git.treeDiff(dir, to, to), []);
+      assert.deepEqual(await git.treeDiff(directory, to, to), []);
     },
   );
 
   contract(
     'changedPaths lists the paths that differ between two revisions, within given paths when asked',
-    async ({ git, mainRoot: dir, commit }) => {
-      const from = await git.headSha(dir);
-      mkdirSync(join(dir, 'docs'));
-      writeFileSync(join(dir, 'docs', 'a.md'), 'a');
-      writeFileSync(join(dir, 'b.txt'), 'b');
-      const to = commit(dir, 'two files');
-      assert.deepEqual(await git.changedPaths(dir, from, to), ['b.txt', 'docs/a.md']);
-      assert.deepEqual(await git.changedPaths(dir, from, to, { paths: ['docs'] }), ['docs/a.md']);
-      writeFileSync(join(dir, 'c.txt'), 'c');
-      await git.stageAll(dir);
-      assert.deepEqual(await git.changedPaths(dir, to, await git.writeTree(dir)), ['c.txt']);
+    async ({ git, mainRoot: directory, commit }) => {
+      const from = await git.headSha(directory);
+      mkdirSync(join(directory, 'docs'));
+      writeFileSync(join(directory, 'docs', 'a.md'), 'a');
+      writeFileSync(join(directory, 'b.txt'), 'b');
+      const to = commit(directory, 'two files');
+      assert.deepEqual(await git.changedPaths(directory, from, to), ['b.txt', 'docs/a.md']);
+      assert.deepEqual(await git.changedPaths(directory, from, to, { paths: ['docs'] }), ['docs/a.md']);
+      writeFileSync(join(directory, 'c.txt'), 'c');
+      await git.stageAll(directory);
+      assert.deepEqual(await git.changedPaths(directory, to, await git.writeTree(directory)), ['c.txt']);
     },
   );
 
   contract(
     'changedSince lists the tracked paths the worktree changed since a revision, not untracked ones',
-    async ({ git, mainRoot: dir, commit }) => {
-      writeFileSync(join(dir, 'a.txt'), 'a');
-      writeFileSync(join(dir, 'b.txt'), 'b');
-      const rev = commit(dir, 'two files');
-      writeFileSync(join(dir, 'a.txt'), 'changed');
-      rmSync(join(dir, 'b.txt'));
-      writeFileSync(join(dir, 'c.txt'), 'c');
-      assert.deepEqual(await git.changedSince(dir, rev), ['a.txt', 'b.txt']);
+    async ({ git, mainRoot: directory, commit }) => {
+      writeFileSync(join(directory, 'a.txt'), 'a');
+      writeFileSync(join(directory, 'b.txt'), 'b');
+      const rev = commit(directory, 'two files');
+      writeFileSync(join(directory, 'a.txt'), 'changed');
+      rmSync(join(directory, 'b.txt'));
+      writeFileSync(join(directory, 'c.txt'), 'c');
+      assert.deepEqual(await git.changedSince(directory, rev), ['a.txt', 'b.txt']);
     },
   );
 
   contract(
     'untrackedPaths lists untracked files, the ignored ones only when asked, within given paths when asked',
-    async ({ git, mainRoot: dir, commit }) => {
-      writeFileSync(join(dir, '.gitignore'), 'secret.txt\nbuild/\n');
-      commit(dir, 'ignore');
-      mkdirSync(join(dir, 'build'));
-      mkdirSync(join(dir, 'docs'));
-      writeFileSync(join(dir, 'new.txt'), 'n');
-      writeFileSync(join(dir, 'secret.txt'), 's');
-      writeFileSync(join(dir, 'build', 'out.js'), 'o');
-      writeFileSync(join(dir, 'docs', 'n.md'), 'd');
-      assert.deepEqual(await git.untrackedPaths(dir), ['docs/n.md', 'new.txt']);
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'ignored' }), ['build/out.js', 'secret.txt']);
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'all' }), [
+    async ({ git, mainRoot: directory, commit }) => {
+      writeFileSync(join(directory, '.gitignore'), 'secret.txt\nbuild/\n');
+      commit(directory, 'ignore');
+      mkdirSync(join(directory, 'build'));
+      mkdirSync(join(directory, 'docs'));
+      writeFileSync(join(directory, 'new.txt'), 'n');
+      writeFileSync(join(directory, 'secret.txt'), 's');
+      writeFileSync(join(directory, 'build', 'out.js'), 'o');
+      writeFileSync(join(directory, 'docs', 'n.md'), 'd');
+      assert.deepEqual(await git.untrackedPaths(directory), ['docs/n.md', 'new.txt']);
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'ignored' }), ['build/out.js', 'secret.txt']);
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'all' }), [
         'build/out.js',
         'docs/n.md',
         'new.txt',
         'secret.txt',
       ]);
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['docs'] } }), ['docs/n.md']);
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { globs: ['**/*.js'] } }), [
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'all', within: { paths: ['docs'] } }), [
+        'docs/n.md',
+      ]);
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'all', within: { globs: ['**/*.js'] } }), [
         'build/out.js',
       ]);
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'ignored', within: { exclude: ['build/**'] } }), [
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'ignored', within: { exclude: ['build/**'] } }), [
         'secret.txt',
       ]);
       assert.deepEqual(
-        await git.untrackedPaths(dir, {
+        await git.untrackedPaths(directory, {
           include: 'all',
           within: { paths: ['docs'], globs: ['**/*.js'], exclude: ['build/**'] },
         }),
@@ -409,15 +415,15 @@ for (const [name, repo] of sides) {
   // everywhere.
   contract(
     'untrackedPaths within globs ignores case and reports each path as it is on disk',
-    async ({ git, mainRoot: dir }) => {
-      mkdirSync(join(dir, 'Spec'));
-      mkdirSync(join(dir, 'deep'));
-      mkdirSync(join(dir, 'node_modules'));
-      writeFileSync(join(dir, 'Spec', 'a.mjs'), 'a');
-      writeFileSync(join(dir, 'deep', 'B.TEST.mjs'), 'b');
-      writeFileSync(join(dir, 'node_modules', 'c.test.mjs'), 'c');
+    async ({ git, mainRoot: directory }) => {
+      mkdirSync(join(directory, 'Spec'));
+      mkdirSync(join(directory, 'deep'));
+      mkdirSync(join(directory, 'node_modules'));
+      writeFileSync(join(directory, 'Spec', 'a.mjs'), 'a');
+      writeFileSync(join(directory, 'deep', 'B.TEST.mjs'), 'b');
+      writeFileSync(join(directory, 'node_modules', 'c.test.mjs'), 'c');
       assert.deepEqual(
-        await git.untrackedPaths(dir, {
+        await git.untrackedPaths(directory, {
           include: 'all',
           within: { globs: ['spec/**', '**/*.test.*'], exclude: ['**/NODE_MODULES/**'] },
         }),
@@ -428,36 +434,38 @@ for (const [name, repo] of sides) {
 
   contract(
     'untrackedPaths within a glob without a wildcard lists that path and what is under it',
-    async ({ git, mainRoot: dir }) => {
-      mkdirSync(join(dir, 'spec', 'unit'), { recursive: true });
-      mkdirSync(join(dir, 'specs'));
-      writeFileSync(join(dir, 'spec', 'unit', 'a.mjs'), 'a');
-      writeFileSync(join(dir, 'specs', 'b.mjs'), 'b');
-      writeFileSync(join(dir, 'run.mjs'), 'r');
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { globs: ['spec', 'run.mjs'] } }), [
-        'run.mjs',
-        'spec/unit/a.mjs',
-      ]);
+    async ({ git, mainRoot: directory }) => {
+      mkdirSync(join(directory, 'spec', 'unit'), { recursive: true });
+      mkdirSync(join(directory, 'specs'));
+      writeFileSync(join(directory, 'spec', 'unit', 'a.mjs'), 'a');
+      writeFileSync(join(directory, 'specs', 'b.mjs'), 'b');
+      writeFileSync(join(directory, 'run.mjs'), 'r');
+      assert.deepEqual(
+        await git.untrackedPaths(directory, { include: 'all', within: { globs: ['spec', 'run.mjs'] } }),
+        ['run.mjs', 'spec/unit/a.mjs'],
+      );
     },
   );
 
   // Windows reads DOCS/ as docs/, so a protected path matches there whatever its case.
   contract(
     'given paths match case-insensitively on Windows',
-    async ({ git, mainRoot: dir }) => {
-      mkdirSync(join(dir, 'docs'));
-      writeFileSync(join(dir, 'docs', 'n.md'), 'd');
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['DOCS'] } }), ['docs/n.md']);
+    async ({ git, mainRoot: directory }) => {
+      mkdirSync(join(directory, 'docs'));
+      writeFileSync(join(directory, 'docs', 'n.md'), 'd');
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'all', within: { paths: ['DOCS'] } }), [
+        'docs/n.md',
+      ]);
     },
     { skip: process.platform !== 'win32' && 'Windows only' },
   );
 
   contract(
     'given paths match case-sensitively off Windows',
-    async ({ git, mainRoot: dir }) => {
-      mkdirSync(join(dir, 'docs'));
-      writeFileSync(join(dir, 'docs', 'n.md'), 'd');
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: { paths: ['DOCS'] } }), []);
+    async ({ git, mainRoot: directory }) => {
+      mkdirSync(join(directory, 'docs'));
+      writeFileSync(join(directory, 'docs', 'n.md'), 'd');
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'all', within: { paths: ['DOCS'] } }), []);
     },
     { skip: process.platform === 'win32' && 'not on Windows' },
   );
@@ -465,42 +473,44 @@ for (const [name, repo] of sides) {
   // A reset intent saved before #144 holds git pathspecs, and Reconciliation can still finish it after the upgrade.
   contract(
     'untrackedPaths and changedPaths still take the pathspecs a reset intent saved before #144',
-    async ({ git, mainRoot: dir, commit }) => {
-      const from = await git.headSha(dir);
-      mkdirSync(join(dir, 'build'));
-      mkdirSync(join(dir, 'docs'));
-      writeFileSync(join(dir, 'build', 'out.js'), 'o');
-      writeFileSync(join(dir, 'docs', 'n.md'), 'd');
-      assert.deepEqual(await git.untrackedPaths(dir, { include: 'all', within: [':(glob)**/*.js'] }), ['build/out.js']);
-      const to = commit(dir, 'two files');
-      assert.deepEqual(await git.changedPaths(dir, from, to, ['docs']), ['docs/n.md']);
+    async ({ git, mainRoot: directory, commit }) => {
+      const from = await git.headSha(directory);
+      mkdirSync(join(directory, 'build'));
+      mkdirSync(join(directory, 'docs'));
+      writeFileSync(join(directory, 'build', 'out.js'), 'o');
+      writeFileSync(join(directory, 'docs', 'n.md'), 'd');
+      assert.deepEqual(await git.untrackedPaths(directory, { include: 'all', within: [':(glob)**/*.js'] }), [
+        'build/out.js',
+      ]);
+      const to = commit(directory, 'two files');
+      assert.deepEqual(await git.changedPaths(directory, from, to, ['docs']), ['docs/n.md']);
     },
   );
 
-  contract('conflictedPaths is empty with no merge in progress', async ({ git, mainRoot: dir }) => {
-    writeFileSync(join(dir, 'a.txt'), 'a');
-    assert.deepEqual(await git.conflictedPaths(dir), []);
+  contract('conflictedPaths is empty with no merge in progress', async ({ git, mainRoot: directory }) => {
+    writeFileSync(join(directory, 'a.txt'), 'a');
+    assert.deepEqual(await git.conflictedPaths(directory), []);
   });
 
   contract(
     'diffSummary is empty for a clean worktree and names each changed tracked file',
-    async ({ git, mainRoot: dir, commit }) => {
-      writeFileSync(join(dir, 'a.txt'), 'a');
-      commit(dir, 'a');
-      assert.equal(await git.diffSummary(dir), '');
-      writeFileSync(join(dir, 'a.txt'), 'changed');
-      assert.match(await git.diffSummary(dir), /a\.txt/);
+    async ({ git, mainRoot: directory, commit }) => {
+      writeFileSync(join(directory, 'a.txt'), 'a');
+      commit(directory, 'a');
+      assert.equal(await git.diffSummary(directory), '');
+      writeFileSync(join(directory, 'a.txt'), 'changed');
+      assert.match(await git.diffSummary(directory), /a\.txt/);
     },
   );
 
   contract(
     'branchDiff shows what HEAD changed since it left the base',
-    async ({ git, mainRoot: dir, branch, commit }) => {
-      branch(dir, 'ticket/9-thing');
-      assert.equal(await git.branchDiff(dir, 'main'), '');
-      writeFileSync(join(dir, 'a.txt'), 'hello\n');
-      commit(dir, 'a');
-      const diff = await git.branchDiff(dir, 'main');
+    async ({ git, mainRoot: directory, branch, commit }) => {
+      branch(directory, 'ticket/9-thing');
+      assert.equal(await git.branchDiff(directory, 'main'), '');
+      writeFileSync(join(directory, 'a.txt'), 'hello\n');
+      commit(directory, 'a');
+      const diff = await git.branchDiff(directory, 'main');
       assert.match(diff, /a\.txt/);
       assert.match(diff, /^\+hello$/m);
     },
@@ -508,14 +518,14 @@ for (const [name, repo] of sides) {
 
   contract(
     'diffStats counts insertions and deletions per file since the base, a binary file as null',
-    async ({ git, mainRoot: dir, branch, commit }) => {
-      writeFileSync(join(dir, 'a.txt'), 'one\ntwo\n');
-      commit(dir, 'a');
-      branch(dir, 'ticket/9-thing');
-      writeFileSync(join(dir, 'a.txt'), 'one\nthree\nfour\n');
-      writeFileSync(join(dir, 'b.bin'), Buffer.from([0, 1, 2, 0]));
-      commit(dir, 'change');
-      assert.deepEqual(await git.diffStats(dir, 'main'), [
+    async ({ git, mainRoot: directory, branch, commit }) => {
+      writeFileSync(join(directory, 'a.txt'), 'one\ntwo\n');
+      commit(directory, 'a');
+      branch(directory, 'ticket/9-thing');
+      writeFileSync(join(directory, 'a.txt'), 'one\nthree\nfour\n');
+      writeFileSync(join(directory, 'b.bin'), Buffer.from([0, 1, 2, 0]));
+      commit(directory, 'change');
+      assert.deepEqual(await git.diffStats(directory, 'main'), [
         { path: 'a.txt', insertions: 2, deletions: 1 },
         { path: 'b.bin', insertions: null, deletions: null },
       ]);
@@ -524,17 +534,17 @@ for (const [name, repo] of sides) {
 
   contract(
     'diffStats gives a non-ASCII path unquoted and a rename as its removed and added paths',
-    async ({ git, mainRoot: dir, branch, commit }) => {
-      mkdirSync(join(dir, 'test'));
-      writeFileSync(join(dir, 'test', 'café.mjs'), 'a\n');
-      writeFileSync(join(dir, 'test', 'old.mjs'), 'one\ntwo\nthree\n');
-      commit(dir, 'tests');
-      branch(dir, 'ticket/9-thing');
-      writeFileSync(join(dir, 'test', 'café.mjs'), 'a\nb\n');
-      rmSync(join(dir, 'test', 'old.mjs'));
-      writeFileSync(join(dir, 'test', 'new.mjs'), 'one\ntwo\nthree\n');
-      commit(dir, 'rename');
-      assert.deepEqual(await git.diffStats(dir, 'main'), [
+    async ({ git, mainRoot: directory, branch, commit }) => {
+      mkdirSync(join(directory, 'test'));
+      writeFileSync(join(directory, 'test', 'café.mjs'), 'a\n');
+      writeFileSync(join(directory, 'test', 'old.mjs'), 'one\ntwo\nthree\n');
+      commit(directory, 'tests');
+      branch(directory, 'ticket/9-thing');
+      writeFileSync(join(directory, 'test', 'café.mjs'), 'a\nb\n');
+      rmSync(join(directory, 'test', 'old.mjs'));
+      writeFileSync(join(directory, 'test', 'new.mjs'), 'one\ntwo\nthree\n');
+      commit(directory, 'rename');
+      assert.deepEqual(await git.diffStats(directory, 'main'), [
         { path: 'test/café.mjs', insertions: 1, deletions: 0 },
         { path: 'test/new.mjs', insertions: 3, deletions: 0 },
         { path: 'test/old.mjs', insertions: 0, deletions: 3 },
@@ -544,19 +554,19 @@ for (const [name, repo] of sides) {
 
   contract(
     'fingerprint reads the head, the index and a tree of every file that is not ignored',
-    async ({ git, mainRoot: dir, commit }) => {
-      writeFileSync(join(dir, '.gitignore'), 'secret.txt\n');
-      const head = commit(dir, 'ignore');
-      const tree = await git.treeOf(dir, head);
-      assert.deepEqual(await git.fingerprint(dir), { head, index: tree, tree });
-      writeFileSync(join(dir, 'secret.txt'), 's');
-      assert.deepEqual(await git.fingerprint(dir), { head, index: tree, tree });
-      writeFileSync(join(dir, 'new.txt'), 'n');
-      const withNew = await git.fingerprint(dir);
+    async ({ git, mainRoot: directory, commit }) => {
+      writeFileSync(join(directory, '.gitignore'), 'secret.txt\n');
+      const head = commit(directory, 'ignore');
+      const tree = await git.treeOf(directory, head);
+      assert.deepEqual(await git.fingerprint(directory), { head, index: tree, tree });
+      writeFileSync(join(directory, 'secret.txt'), 's');
+      assert.deepEqual(await git.fingerprint(directory), { head, index: tree, tree });
+      writeFileSync(join(directory, 'new.txt'), 'n');
+      const withNew = await git.fingerprint(directory);
       assert.equal(withNew.index, tree);
       assert.notEqual(withNew.tree, tree);
-      await git.stageAll(dir);
-      assert.deepEqual(await git.fingerprint(dir), { head, index: withNew.tree, tree: withNew.tree });
+      await git.stageAll(directory);
+      assert.deepEqual(await git.fingerprint(directory), { head, index: withNew.tree, tree: withNew.tree });
     },
   );
 }
@@ -564,15 +574,15 @@ for (const [name, repo] of sides) {
 // What the fake does not model: git's own files, locks and merges.
 
 test('a push writes no upstream into .git/config', async (t) => {
-  const { mainRoot: dir, branch, commit } = realRepo(t);
-  branch(dir, 'ticket/9-thing');
-  commit(dir, 'work');
-  await gitModule.push(dir, 'ticket/9-thing');
+  const { mainRoot: directory, branch, commit } = realRepo(t);
+  branch(directory, 'ticket/9-thing');
+  commit(directory, 'work');
+  await gitModule.push(directory, 'ticket/9-thing');
   assert.equal(
-    gitShell.sh(dir, 'ls-remote', '--heads', 'origin', 'ticket/9-thing').split('\t')[0],
-    gitShell.sh(dir, 'rev-parse', 'HEAD'),
+    gitShell.sh(directory, 'ls-remote', '--heads', 'origin', 'ticket/9-thing').split('\t')[0],
+    gitShell.sh(directory, 'rev-parse', 'HEAD'),
   );
-  assert.equal(spawnSync('git', ['config', '--get', 'branch.ticket/9-thing.remote'], { cwd: dir }).status, 1);
+  assert.equal(spawnSync('git', ['config', '--get', 'branch.ticket/9-thing.remote'], { cwd: directory }).status, 1);
 });
 
 // A git whose index.lock waits are recorded and run `during` in place of the wait.
@@ -588,40 +598,40 @@ function recordWaits(during = () => {}) {
 }
 
 test('a git write retries while index.lock is held and succeeds when it clears', async (t) => {
-  const { mainRoot: dir } = realRepo(t);
-  const lock = join(dir, '.git', 'index.lock');
+  const { mainRoot: directory } = realRepo(t);
+  const lock = join(directory, '.git', 'index.lock');
   writeFileSync(lock, '');
-  writeFileSync(join(dir, 'a.txt'), 'a');
+  writeFileSync(join(directory, 'a.txt'), 'a');
   const { waits, git } = recordWaits(() => rmSync(lock, { force: true }));
-  assert.equal(await git.stageAll(dir), true);
+  assert.equal(await git.stageAll(directory), true);
   assert.deepEqual(waits, [100], 'one wait, after which the lock had cleared');
-  const sha = await git.commitStaged(dir, 'test: add a');
+  const sha = await git.commitStaged(directory, 'test: add a');
   assert.ok(!existsSync(lock));
-  assert.equal(gitShell.sh(dir, 'rev-parse', 'HEAD'), sha);
-  assert.equal(gitShell.sh(dir, 'log', '-1', '--format=%s'), 'test: add a');
+  assert.equal(gitShell.sh(directory, 'rev-parse', 'HEAD'), sha);
+  assert.equal(gitShell.sh(directory, 'log', '-1', '--format=%s'), 'test: add a');
 });
 
 test('a git write surfaces the error when index.lock never clears', async (t) => {
-  const { mainRoot: dir } = realRepo(t);
-  const before = gitShell.sh(dir, 'rev-parse', 'HEAD');
-  writeFileSync(join(dir, '.git', 'index.lock'), '');
-  writeFileSync(join(dir, 'a.txt'), 'a');
+  const { mainRoot: directory } = realRepo(t);
+  const before = gitShell.sh(directory, 'rev-parse', 'HEAD');
+  writeFileSync(join(directory, '.git', 'index.lock'), '');
+  writeFileSync(join(directory, 'a.txt'), 'a');
   const { waits, git } = recordWaits();
-  await assert.rejects(git.stageAll(dir), (err: Error) => err.message.includes('index.lock'));
+  await assert.rejects(git.stageAll(directory), (err: Error) => err.message.includes('index.lock'));
   assert.deepEqual(waits, [100, 200, 400, 800], 'retried with backoff before giving up');
-  assert.equal(gitShell.sh(dir, 'rev-parse', 'HEAD'), before);
+  assert.equal(gitShell.sh(directory, 'rev-parse', 'HEAD'), before);
 });
 
 test('conflictedPaths names each path of a merge conflict once', async (t) => {
-  const { mainRoot: dir, branch, commit } = realRepo(t);
-  writeFileSync(join(dir, 'a.txt'), 'base\n');
-  commit(dir, 'base');
-  branch(dir, 'other');
-  writeFileSync(join(dir, 'a.txt'), 'other\n');
-  commit(dir, 'other');
-  gitShell.sh(dir, 'checkout', '-q', 'main');
-  writeFileSync(join(dir, 'a.txt'), 'main\n');
-  commit(dir, 'main');
-  assert.equal(spawnSync('git', ['merge', '-q', 'other'], { cwd: dir }).status, 1);
-  assert.deepEqual(await gitModule.conflictedPaths(dir), ['a.txt']);
+  const { mainRoot: directory, branch, commit } = realRepo(t);
+  writeFileSync(join(directory, 'a.txt'), 'base\n');
+  commit(directory, 'base');
+  branch(directory, 'other');
+  writeFileSync(join(directory, 'a.txt'), 'other\n');
+  commit(directory, 'other');
+  gitShell.sh(directory, 'checkout', '-q', 'main');
+  writeFileSync(join(directory, 'a.txt'), 'main\n');
+  commit(directory, 'main');
+  assert.equal(spawnSync('git', ['merge', '-q', 'other'], { cwd: directory }).status, 1);
+  assert.deepEqual(await gitModule.conflictedPaths(directory), ['a.txt']);
 });

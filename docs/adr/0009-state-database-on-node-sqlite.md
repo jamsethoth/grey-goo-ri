@@ -5,6 +5,9 @@ date: 2026-10-15
 
 # Execution Records, Events and Pinned Configurations live in one node:sqlite state database
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Records were one JSON file each under `<git common dir>/gg/records/`, written through a temp file and rename, and
 events were lines appended to `events.jsonl`. Both worked, but they repeat the Windows file trouble the locks had
 (ADR 0008): a rename over a record another gg process has open, two processes appending to one file, a directory scan

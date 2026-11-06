@@ -39,15 +39,15 @@ function buildTemplate(): Template {
 const templates: Template[] = [];
 const template = () => templates[0] ?? (templates[0] = buildTemplate());
 
-// Copies the template's origin.git and main into `dir`, a fresh mkdtemp directory, and returns main's SHA. git records
-// a clone's origin by its real path with forward slashes, so `dir` is the real directory, never a link to it.
-export function seedRepos(dir: string): string {
+// Copies the template's origin.git and main into `directory`, a fresh mkdtemp directory, and returns main's SHA. git
+// records a clone's origin by its real path with forward slashes, so `directory` is the real one, never a link to it.
+export function seedRepos(directory: string): string {
   const { root, url: templateUrl, base } = template();
-  cpSync(root, dir, { recursive: true });
-  const config = join(dir, 'main', '.git', 'config');
+  cpSync(root, directory, { recursive: true });
+  const config = join(directory, 'main', '.git', 'config');
   const text = readFileSync(config, 'utf8');
-  const url = `${templateUrl.slice(0, -`${basename(root)}/origin.git`.length)}${basename(dir)}/origin.git`;
-  if (dirname(dir) !== dirname(root) || text.split(templateUrl).length !== 2)
+  const url = `${templateUrl.slice(0, -`${basename(root)}/origin.git`.length)}${basename(directory)}/origin.git`;
+  if (dirname(directory) !== dirname(root) || text.split(templateUrl).length !== 2)
     throw new Error(`cannot point ${config} at ${url}`);
   writeFileSync(config, text.replace(templateUrl, url));
   return base;

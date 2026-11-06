@@ -5,6 +5,9 @@ date: 2026-10-15
 
 # Locks are node:sqlite exclusive transactions
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 The ticket, epic and repo locks were lock files: a JSON file with the holder's pid, published by hard link, with a
 claim-file protocol to take over a dead holder's lock and retries around Windows "delete pending" errors. The
 takeover path kept growing races, and `test/locks.test.mjs` flaked under parallel load. We now hold each lock as an

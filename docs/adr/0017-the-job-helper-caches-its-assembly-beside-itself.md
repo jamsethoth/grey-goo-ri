@@ -5,6 +5,9 @@ date: 2026-10-28
 
 # The Windows job helper caches its compiled assembly beside itself
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 `lib/winjob.ps1` runs every `runShell` call that has a timeout on Windows, so every Check, and it compiled its C# job
 code with `Add-Type -TypeDefinition` on each call: about 0.2 s of a warm call and about 1 s of a cold one on
 `windows-2025` (grey-goo-ri issue #79). The helper now loads a compiled copy from `lib/winjob-cache/`, beside the

@@ -47,7 +47,7 @@ jobs:
 
   # test/unit/'s line and function coverage of lib/, held to each platform's figures in coverage-baseline.json (ADR
   # 0016, amended): a fall, or a rise not yet recorded, fails the job. Its own job, beside the suite's, so it adds no
-  # wall time; no tripwire, since test/unit/ spawns nothing (test/unit/layout.test.mjs).
+  # wall time; no tripwire, since test/unit/ spawns nothing (test/unit/layout.test.ts).
   coverage:
     # Stable names: the Main ruleset requires these checks by name.
     name: coverage (${{ matrix.os }})

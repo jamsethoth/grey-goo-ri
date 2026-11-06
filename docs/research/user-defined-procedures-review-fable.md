@@ -1,5 +1,8 @@
 # Design review: user-defined Procedures (decisions of 2026-10-21)
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Reviewer: Fable 5.1, read-only. Code references are to `C:/dev/projects/grey-goo-ri` main. Items marked *(inference)* were not checked against code.
 
 ## Blocking

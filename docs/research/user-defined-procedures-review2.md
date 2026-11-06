@@ -1,5 +1,8 @@
 # User-defined Procedures: design review round 2, merged
 
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 Round-2 reviews of the decisions at 486babf, by the same reviewers, 2026-10-21:
 [Astra](user-defined-procedures-review2-astra.md) and [Fable](user-defined-procedures-review2-fable.md). Both: **not
 ready to slice**. Both confirm every round-1 finding and owner question is resolved or narrowed to the items below.

@@ -1,3 +1,6 @@
+Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
+`.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
+
 <!-- Codex gpt-6-astra (effort high) design review, 2026-10-21, unedited. Merged in user-defined-procedures-review.md. -->
 
 **REQUEST CHANGES** The design is implementable in principle, but several semantics must be s...
