@@ -75,13 +75,15 @@ const NO_MODULE_STATE = [
 // A rule, not a selector: a selector cannot compare the class's name with the one it sets.
 // shortcut: a superclass behind a call, `extends Mixin(Error)`, is not read; widen superclassName if one appears.
 const superclassName = ({ superClass }) => superClass?.name ?? superClass?.property?.name ?? '';
+// Not `[name]` or `#name`: neither sets the name an error reports.
+const isPublicName = (key, computed) => !computed && key.type === 'Identifier' && key.name === 'name';
 const fieldSetsName = ({ type, key, value, computed, static: isStatic }, className) =>
-  type === 'PropertyDefinition' && !isStatic && !computed && key.name === 'name' && value?.value === className;
-const assignsName = ({ type, left, right }, className) =>
+  type === 'PropertyDefinition' && !isStatic && isPublicName(key, computed) && value?.value === className;
+const assignsName = ({ type, operator, left, right }, className) =>
   type === 'AssignmentExpression' &&
+  operator === '=' &&
   left.object?.type === 'ThisExpression' &&
-  !left.computed &&
-  left.property.name === 'name' &&
+  isPublicName(left.property, left.computed) &&
   right.value === className;
 const constructorSetsName = ({ type, kind, value }, className) =>
   type === 'MethodDefinition' &&
