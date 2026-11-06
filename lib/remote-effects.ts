@@ -24,7 +24,7 @@ const remoteRetry = (executionRecord: record.ExecutionRecord, actionMarker: stri
   executionRecord.retries[actionKey(actionMarker)]?.remote;
 
 // A run stop latched while a remote Action backs off, in a Visit, Reconciliation's lookup or ready-for-qa's Terminal:
-// decide() ends the Execution at needs-human as one found before an Action does (#85).
+// terminal.endEarly() ends the Execution at needs-human as one found before an Action does (#85).
 class RunStoppedError extends effectErrors.EarlyTerminalError {
   name = 'RunStoppedError';
   constructor(ending: effectErrors.RunStoppedEnding) {
