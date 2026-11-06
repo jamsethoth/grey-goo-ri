@@ -34,7 +34,7 @@ export interface VisitEnd {
 }
 // The last Action the Visit ran and its result.
 interface Ran {
-  actionIdentity: marker.ActionRef;
+  actionIdentity: marker.ActionIdentity;
   resolution: ActionResolution;
 }
 
@@ -332,7 +332,7 @@ function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity,
 // git clean leaves, so a crash after the reset can still finish the restore.
 async function discard(
   runContext: RunContext,
-  { actionIdentity, ...reset }: { actionIdentity: marker.ActionRef } & Omit<visit.ResetPayload, 'left'>,
+  { actionIdentity, ...reset }: { actionIdentity: marker.ActionIdentity } & Omit<visit.ResetPayload, 'left'>,
 ) {
   const { record: executionRecord, git } = runContext;
   // The worktree as the agent left it: at admission, only dirty state that still matches this is proven the agent's.

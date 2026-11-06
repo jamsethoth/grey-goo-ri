@@ -5,7 +5,7 @@ import * as marker from '../../lib/marker.ts';
 import * as remoteEffects from '../../lib/remote-effects.ts';
 import * as support from '../support/execution-context.ts';
 
-const pushKey = marker.actionKeyOf(support.PUSH_REF);
+const pushKey = marker.actionKeyOf(support.PUSH_ACTION_IDENTITY);
 
 test('the remote Actions are the comment, PR upsert, push and PR ready', () => {
   assert.deepEqual(remoteEffects.REMOTE, ['comment', 'pr-upsert', 'push', 'pr-ready']);

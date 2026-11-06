@@ -33,10 +33,10 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - Comments only for the non-obvious why. A comment that carries a spec code starts with a plain-language clause and
   puts the code after it: `// A Hold needs an Await Label (R11f)`. Codes resolve in `docs/requests/node-harness-dag.md`
   and in `docs/research/user-defined-procedures-decisions.md` and its siblings.
-- Names: a domain concept takes its full GLOSSARY.md term in camelCase (`executionRecord`, not `rec`; `actionRef`, not
-  `at`). Single letters only within about 10 lines of scope. Abbreviations only from `id`, `url`, `sha`, `err`, `gh`,
-  `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out`, `dir` and the like. Types are PascalCase, other
-  identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
+- Names: a domain concept takes its full GLOSSARY.md term in camelCase (`executionRecord`, not `rec`; `actionIdentity`,
+  not `at`). Single letters only within about 10 lines of scope. Abbreviations only from `id`, `url`, `sha`, `err`,
+  `gh`, `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out`, `dir` and the like. Types are PascalCase,
+  other identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
   lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.ts`).
 - A thrown class ends its name in `Error` and sets `name` to it (`name = 'CrashError';`). ESLint's `gg/thrown-class`
   checks both.

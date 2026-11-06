@@ -250,7 +250,7 @@ function settleAttempt(
     attempt: actionIdentity.attempt,
   };
   return effects.finish(runContext, {
-    actionRef: actionIdentity,
+    actionIdentity,
     startedAt,
     resolution: done,
     fields: {

@@ -42,7 +42,7 @@ export interface EffectContext {
   clock: { now(): number; sleep(ms: number): Promise<void> };
   log: (line: string) => void;
   // Records one Action Event: the Action's identity, when it began, and its outcome and payload.
-  emit: (actionRef: marker.ActionRef, startedAt: number, fields: Record<string, unknown>) => void;
+  emit: (actionIdentity: marker.ActionIdentity, startedAt: number, fields: Record<string, unknown>) => void;
   gh: reconcile.ReconcileGh;
   git?: effectEvidence.EvidenceGit;
   cwd?: string;
@@ -118,7 +118,7 @@ export async function sideEffect<Payload>(
 }
 
 export interface Finished<Settled extends visit.Resolution> {
-  actionRef: marker.ActionRef;
+  actionIdentity: marker.ActionIdentity;
   startedAt: number;
   resolution: Settled;
   // The Action Event's fields beyond the resolution's.
@@ -133,14 +133,18 @@ export interface Finished<Settled extends visit.Resolution> {
 // evidence for the next Attempt to read.
 export async function finish<Settled extends visit.Resolution>(
   context: EffectContext,
-  { actionRef, startedAt, resolution, fields = {}, actionMarker = null, evidence = undefined }: Finished<Settled>,
+  { actionIdentity, startedAt, resolution, fields = {}, actionMarker = null, evidence = undefined }: Finished<Settled>,
 ): Promise<Settled> {
   const { record: executionRecord } = context;
   if (actionMarker && logged(executionRecord, actionMarker, 'complete')) return resolution;
-  if (actionRef.procedure && resolution.direction !== 'retry')
-    executionRecord.visitState!.settled = { action: actionRef.action, recovery: actionRef.recovery, resolution };
+  if (actionIdentity.procedure && resolution.direction !== 'retry')
+    executionRecord.visitState!.settled = {
+      action: actionIdentity.action,
+      recovery: actionIdentity.recovery,
+      resolution,
+    };
   const event = () =>
-    context.emit(actionRef, startedAt, {
+    context.emit(actionIdentity, startedAt, {
       outcome: resolution.outcome,
       direction: resolution.direction,
       rule: resolution.rule,
@@ -156,12 +160,12 @@ export async function finish<Settled extends visit.Resolution>(
 
 export const effectDone = (
   context: EffectContext,
-  actionRef: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   startedAt: number,
   actionMarker: string,
 ): Promise<visit.EffectResolution> =>
   finish(context, {
-    actionRef,
+    actionIdentity,
     startedAt,
     resolution: {
       outcome: 'ok',

@@ -79,7 +79,7 @@ function refuseStale(
     }),
   });
   return effects.finish(runContext, {
-    actionRef: actionIdentity,
+    actionIdentity,
     startedAt,
     resolution: {
       ...resolution,

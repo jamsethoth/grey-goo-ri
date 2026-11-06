@@ -44,7 +44,7 @@ export interface TerminalStop {
   outcome: string;
   response: unknown;
   // The stopped Action's identity, or null for a stop decided before any Action.
-  actionRef: marker.ActionRef | null;
+  actionRef: marker.ActionIdentity | null;
   held: boolean;
   abandoned: boolean;
   inProgress: boolean;

@@ -117,12 +117,12 @@ export const runStopped = (context: {
 };
 
 // The Action a Terminal Reason names: a Visit's Action, or the cursor where a stop or fault found the Execution.
-type ReasonActionRef = { vertex: string; visit: number | null; action: string | null; recovery: number };
+type ReasonActionIdentity = { vertex: string; visit: number | null; action: string | null; recovery: number };
 
 // Only the Visit that routes to a Terminal keeps its reason; the Signals stay on the deciding Action's Event. `rule` is
 // the rule identity { table, row } (request 3.3).
 export const terminalReason = (
-  { vertex, visit: visitNumber, action, recovery }: ReasonActionRef,
+  { vertex, visit: visitNumber, action, recovery }: ReasonActionIdentity,
   outcomeName: string,
   resolution: { rule: visit.RuleIdentity },
   text: string,
@@ -191,12 +191,12 @@ function rowText(where: string | null, vertex: string, resolution: StopResolutio
 
 // The Terminal Reason's sentence for an Action that stopped with `outcomeName`.
 export function stopText(
-  actionRef: { vertex: string; action: string | null; recovery: number },
+  actionIdentity: { vertex: string; action: string | null; recovery: number },
   outcomeName: string,
   resolution: StopResolution,
 ): string {
-  const where = whereOf(actionRef);
-  const fixed = rowText(where, actionRef.vertex, resolution);
+  const where = whereOf(actionIdentity);
+  const fixed = rowText(where, actionIdentity.vertex, resolution);
   if (fixed !== undefined) return fixed;
   // A final failure names its Check from the Check signal (U14); the Check's reason is posted fenced, as it may quote
   // the agent.
@@ -204,9 +204,9 @@ export function stopText(
     return `The ${resolution.signal.kind} Check ${resolution.signal.id} failed with no recovery left.`;
   // The agent's diagnosis stays out: the blocked comment posts it fenced, and it need not be one sentence.
   if (outcomeName === 'blocked')
-    return `The agent made a blocked Claim at ${actionRef.vertex}; its diagnosis in the blocked comment says why.`;
+    return `The agent made a blocked Claim at ${actionIdentity.vertex}; its diagnosis in the blocked comment says why.`;
   if (outcomeName === 'misscoped')
-    return `The agent made a misscoped Claim at ${actionRef.vertex}; its diagnosis is posted with this reason.`;
+    return `The agent made a misscoped Claim at ${actionIdentity.vertex}; its diagnosis is posted with this reason.`;
   return `${where} ended with ${outcomeName} (${resolution.rule.table} rule ${resolution.rule.row ?? 'default'}).`;
 }
 

@@ -207,7 +207,7 @@ export async function check(runContext: RunContext, running: visitScope.Running)
     retries: {},
   });
   return effects.finish(runContext, {
-    actionRef: actionIdentity,
+    actionIdentity,
     startedAt,
     resolution: { reason: checked.reason ?? null, signal, output: output ?? null, ...resolution },
     fields: {

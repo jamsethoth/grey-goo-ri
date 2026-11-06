@@ -27,7 +27,7 @@ export type ActionResolution = visit.Resolution &
 
 // One Action as the Visit runs it: its identity, its declaration, and the Visit's progress.
 export interface Running {
-  actionIdentity: marker.ActionRef;
+  actionIdentity: marker.ActionIdentity;
   action: procedures.Action;
   state: RunningVisit;
 }
@@ -58,7 +58,7 @@ export const tokenOf = (state: RunningVisit): procedures.ClaimToken => state.cla
 // (`checkSignals`, when given, are the states to read).
 export function scopeOf(
   executionRecord: record.ExecutionRecord,
-  actionIdentity: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   state: RunningVisit,
   checkSignals: Record<string, visit.CheckSignal> | visit.CheckSignal[] = state.checks,
 ): Record<string, unknown> {
@@ -81,7 +81,7 @@ export const bind = (executionRecord: record.ExecutionRecord, { actionIdentity, 
   );
 
 // The entry an Action's outputs are kept in, if it has one yet.
-export const outputOf = (executionRecord: record.ExecutionRecord, actionIdentity: marker.ActionRef) =>
+export const outputOf = (executionRecord: record.ExecutionRecord, actionIdentity: marker.ActionIdentity) =>
   executionRecord.outputs.find(
     (output) =>
       output.vertex === actionIdentity.vertex &&
@@ -93,7 +93,7 @@ export const outputOf = (executionRecord: record.ExecutionRecord, actionIdentity
 // resumed one, replaces its fields, so a reference reads the Action's last pass.
 export function recordOutput(
   executionRecord: record.ExecutionRecord,
-  actionIdentity: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   value: Record<string, unknown>,
 ) {
   const entry = outputOf(executionRecord, actionIdentity);
@@ -125,7 +125,7 @@ export async function fresh(runContext: RunContext, signals: visit.CheckSignal[]
 // Reason.
 export function settle(
   executionRecord: record.ExecutionRecord,
-  actionIdentity: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   state: RunningVisit,
   input: outcome.Signals,
 ): visit.TableResolution {

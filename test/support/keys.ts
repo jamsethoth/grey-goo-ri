@@ -12,7 +12,8 @@ export const responseKey = (vertex: string, visit: number, phase: string, attemp
   `${vertex}/${visit}/${phase}/${attempt}`;
 
 // An Action's retries in the Execution Record: `vertex/visit/action/recovery`, lib's own key.
-export const retryKey = (actionRef: ActionPlace & { recovery: number }): string => marker.actionKeyOf(actionRef);
+export const retryKey = (actionIdentity: ActionPlace & { recovery: number }): string =>
+  marker.actionKeyOf(actionIdentity);
 
 // An agent Action's Session in the Execution Record: `vertex/visit/action`.
 export const sessionKey = ({ vertex, visit, action }: ActionPlace): string => `${vertex}/${visit}/${action}`;
