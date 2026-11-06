@@ -14,7 +14,7 @@ import * as locksModule from './locks.ts';
 import * as record from './record.ts';
 import type * as runContext from './run-context.ts';
 import type * as report from './validate/report.ts';
-import * as sqlite from './sqlite.ts';
+import * as stateDatabase from './state-database.ts';
 import * as validator from './validate/index.ts';
 
 type TicketResult = admission.TicketResult;
@@ -238,7 +238,7 @@ function startRun(
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
   const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
   flowModule.writeResolved(runDir, flow, hash);
-  sqlite.saveConfig(repo.gitCommonDir, hash, JSON.stringify(pinned));
+  stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, JSON.stringify(pinned));
   const runLog = (message: string) => {
     const line = named(message);
     appendFileSync(join(runDir, 'run.log'), `${new Date().toISOString()} ${line}\n`);

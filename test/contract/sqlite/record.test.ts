@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as locks from '../../../lib/locks.ts';
 import * as record from '../../../lib/record.ts';
-import * as sqlite from '../../../lib/sqlite.ts';
+import * as stateDatabase from '../../../lib/state-database.ts';
 import * as lockHolder from '../../support/lock-holder.ts';
 import * as childExit from '../../support/child-exit.ts';
 import * as tempDirectory from '../../support/temp-directory.ts';
@@ -76,7 +76,7 @@ test('an open that finds no tables waits for the first opener, not for its saves
       CREATE TABLE configs (hash TEXT PRIMARY KEY, json TEXT NOT NULL, firstSeen TEXT NOT NULL);
       CREATE TABLE events (id INTEGER PRIMARY KEY, ts TEXT NOT NULL, type TEXT NOT NULL, run TEXT, execution TEXT,
         ticket INTEGER, json TEXT NOT NULL);
-      PRAGMA user_version = ${sqlite.DB_SCHEMA_VERSION};`);
+      PRAGMA user_version = ${stateDatabase.SCHEMA_VERSION};`);
     db.exec('COMMIT');
     lock.exec('COMMIT');
     db.exec('BEGIN IMMEDIATE');
@@ -132,7 +132,7 @@ test('two processes save different records concurrently without loss', async (t)
 // runs in this process, so the time it blocks is the time it waited for the other process's lock.
 test('a save waits out another process that holds the write lock for longer than 5 s', CASE, async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  sqlite.openDb(commonDir);
+  stateDatabase.open(commonDir);
   const holder = spawn(process.execPath, [holderScript, commonDir, '8000'], { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => {
     if (holder.exitCode === null) holder.kill();
@@ -262,8 +262,8 @@ test(
 
 test('an opener of an existing WAL database does not wait for the open lock', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  sqlite.openDb(commonDir);
-  await sqlite.close(commonDir);
+  stateDatabase.open(commonDir);
+  await stateDatabase.close(commonDir);
   const openLock = await locks.tryAcquire(commonDir, 'open');
   // The open lock is held until the opener exits, so exit 0 proves it was skipped; waiting for it fails with errcode 5.
   const { code, err } = await saveOnce(commonDir, 1).finally(() => locks.release(openLock as locks.LockHandle));

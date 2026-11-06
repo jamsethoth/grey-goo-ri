@@ -5,7 +5,7 @@
 // The test runner also loads this file with no arguments, where it does nothing.
 import * as events from '../../lib/events.ts';
 import * as locks from '../../lib/locks.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as gitShell from './git-shell.ts';
 
 const [commonDir, worktree, run] = process.argv.slice(2);
@@ -21,6 +21,6 @@ if (commonDir && worktree) {
   await released;
   log('run_end');
   await locks.release(handle);
-  sqlite.close(commonDir);
+  stateDatabase.close(commonDir);
   process.disconnect?.();
 }

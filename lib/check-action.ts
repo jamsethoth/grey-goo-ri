@@ -6,7 +6,7 @@ import * as integrity from './integrity.ts';
 import type * as procedures from './procedures.ts';
 import * as refs from './refs.ts';
 import type { RunContext } from './run-context.ts';
-import * as sqlite from './sqlite.ts';
+import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
 
@@ -41,7 +41,7 @@ const commandLine = (runContext: RunContext, action: procedures.Action) =>
 // stands in for the run, and its output says which run (L8, L13); a failure is never reused.
 async function commandCheck(runContext: RunContext, { action, tree }: Checking): Promise<Checked> {
   const line = commandLine(runContext, action);
-  const reused = action.reuse === 'tree' ? sqlite.reusablePass(runContext.record.commonDir, tree!, line) : null;
+  const reused = action.reuse === 'tree' ? stateDatabase.reusablePass(runContext.record.commonDir, tree!, line) : null;
   if (reused) {
     const output = `Reused the passing run of ${reused.marker} on this tree.\n${reused.output}`;
     return { passed: true, ran: false, output, evidence: { command: line, output } };
@@ -165,7 +165,7 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
     tree: checked.tree ?? null,
   };
   if (action.reuse === 'tree' && checked.ran) {
-    sqlite.saveCheckResult(executionRecord.commonDir, {
+    stateDatabase.saveCheckResult(executionRecord.commonDir, {
       tree: signal.tree!,
       command: checked.evidence!.command,
       state: signal.state,

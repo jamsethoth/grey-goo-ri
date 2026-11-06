@@ -1,7 +1,7 @@
 // Spawned by the record and integrity tests: another gg process saving one ticket record `count` times.
 // The test runner also loads this file with no arguments, where it does nothing.
 import * as record from '../../lib/record.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 
 const [commonDir, ticket, count, worktree] = process.argv.slice(2);
 if (commonDir) {
@@ -20,5 +20,5 @@ if (commonDir) {
     executionRecord.activity = { busy: i % 2 === 1, generation: i };
     await record.save(executionRecord);
   }
-  sqlite.close(commonDir);
+  stateDatabase.close(commonDir);
 }
