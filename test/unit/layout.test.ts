@@ -318,6 +318,74 @@ test('lint fails a class extending an error class when its name does not end in 
   assert.deepEqual(await lintFindings('lib/sample.ts', 'export class Thing extends Base {}\n'), []);
 });
 
+const FIELD = "  name = 'AError';\n";
+const IN_CONSTRUCTOR = "  constructor() {\n    super('x');\n    this.name = 'AError';\n  }\n";
+const THROWN_CLASSES_FLAGGED = [
+  ['with no name', 'export class AError extends Error {}\n'],
+  ['with another name in a field', "export class AError extends Error {\n  name = 'BError';\n}\n"],
+  [
+    'with another name in its constructor',
+    `export class AError extends Error {\n${IN_CONSTRUCTOR.replace('AError', 'BError')}}\n`,
+  ],
+  ['with its name in a line comment', "export class AError extends Error {}\n// name = 'AError';\n"],
+  ['with its name in a block comment', "export class AError extends Error {}\n/*\nname = 'AError';\n*/\n"],
+  ['with its name in a string', 'export class AError extends Error {}\nexport const note = "name = \'AError\'";\n'],
+  [
+    'with its name in a template literal',
+    "export class AError extends Error {}\nexport const note = `\nname = 'AError';\n`;\n",
+  ],
+  [
+    'with its name in a method',
+    "export class AError extends Error {\n  later() {\n    this.name = 'AError';\n  }\n}\n",
+  ],
+  ['with its name on a static field', "export class AError extends Error {\n  static name = 'AError';\n}\n"],
+  ['with its name in another class', `export class AError extends Error {}\nexport class Other {\n${FIELD}}\n`],
+  ['with a generic', 'export class AError<Value> extends Error {\n  value?: Value;\n}\n'],
+  ['with a nested generic', 'export class AError<Value extends Array<number>> extends Error {\n  value?: Value;\n}\n'],
+  ['with a generic over lines', 'export class AError<\n  Value,\n> extends Error {\n  value?: Value;\n}\n'],
+  ['with its header over lines', 'export class AError\n  extends Error {}\n'],
+  ['through a namespace', 'export class AError extends exec.CommandError {}\n'],
+  ['through a deeper namespace', 'export class AError extends outer.exec.CommandError {}\n'],
+  ['as a class expression', 'export const made = class AError extends Error {};\n'],
+  ['with no Error suffix', "export class Thing extends Error {\n  name = 'Thing';\n}\n"],
+  [
+    'with no Error suffix, through a namespace',
+    "export class Thing extends exec.CommandError {\n  name = 'Thing';\n}\n",
+  ],
+];
+const THROWN_CLASSES_PASSED = [
+  ['its name in a field', `export class AError extends Error {\n${FIELD}}\n`],
+  ['its name in its constructor', `export class AError extends Error {\n${IN_CONSTRUCTOR}}\n`],
+  [
+    'a generic and a namespace',
+    `export class AError<Value> extends exec.CommandError {\n${FIELD}  value?: Value;\n}\n`,
+  ],
+];
+const OTHER_CLASSES_PASSED = [
+  ['a plain superclass', 'export class Thing extends Base {}\n'],
+  ['a generic superclass', 'export class Thing<Value> extends Base<Value> {}\n'],
+  ['a comment that looks like an error class', 'export class Thing<Value> extends Base<Value> {} // > extends Error\n'],
+];
+for (const [what, text] of THROWN_CLASSES_FLAGGED) {
+  test(`lint fails a thrown class ${what}`, async () => {
+    assert.deepEqual(await lintFindings('lib/sample.ts', text), ['gg/thrown-class']);
+  });
+}
+for (const [what, text] of [...THROWN_CLASSES_PASSED, ...OTHER_CLASSES_PASSED]) {
+  test(`lint passes a class with ${what}`, async () => {
+    assert.deepEqual(await lintFindings('lib/sample.ts', text), []);
+  });
+}
+
+test('lint reads a thrown class in every kind of code file', async () => {
+  const thrown = ['gg/thrown-class'];
+  const text = 'export class AError extends Error {}\n';
+  assert.deepEqual(await lintFindings('test/support/sample.ts', text), thrown);
+  assert.deepEqual(await lintFindings('test/unit/sample.test.ts', text), thrown);
+  assert.deepEqual(await lintFindings('bin/sample.ts', text), thrown);
+  assert.deepEqual(await lintFindings('scripts/sample.mjs', text), thrown);
+});
+
 // The rule keeps each call naming its module (#237). It reads parsed code, so an import a case spells in a string is
 // not one.
 test('lint fails a named import from lib in a test file, and not one spelled in a string', async () => {
