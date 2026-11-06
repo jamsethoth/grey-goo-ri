@@ -39,13 +39,19 @@ const NAMING = [
   { selector: ['objectLiteralProperty', 'objectLiteralMethod', 'typeProperty'], format: null },
 ];
 
+const NAMESPACE_MESSAGE =
+  "Import a lib/ module as a namespace, `import * as paths from './paths.ts'`, and call `paths.canonical()`: " +
+  'a missing export then fails where it is used, and each call names its module.';
 const namespaceImport = (source) => ({
   selector:
     `ImportDeclaration[importKind='value'][source.value=${source}] > ` +
     ":matches(ImportSpecifier[importKind='value'], ImportDefaultSpecifier)",
-  message:
-    "Import a lib/ module as a namespace, `import * as paths from './paths.ts'`, and call `paths.canonical()`: " +
-    'a missing export then fails where it is used, and each call names its module.',
+  message: NAMESPACE_MESSAGE,
+});
+// A test names the module for its types too, where lib/ may import a type by name.
+const namespaceImportWithTypes = (source) => ({
+  selector: `ImportDeclaration[source.value=${source}] > :matches(ImportSpecifier, ImportDefaultSpecifier)`,
+  message: NAMESPACE_MESSAGE,
 });
 const EVERY_FILE_SYNTAX = [
   {
@@ -108,7 +114,10 @@ export default defineConfig([
   {
     // `t` is node:test's test context, and only there.
     files: ['test/**/*.ts'],
-    rules: { 'id-length': ['error', { min: 2, exceptions: [...SHORT_NAMES, 't'] }] },
+    rules: {
+      'id-length': ['error', { min: 2, exceptions: [...SHORT_NAMES, 't'] }],
+      'no-restricted-syntax': ['error', namespaceImportWithTypes('/(^|[/])lib[/]/'), ...EVERY_FILE_SYNTAX],
+    },
   },
   {
     files: ['test/**/*.test.ts'],

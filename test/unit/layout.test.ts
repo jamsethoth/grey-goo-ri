@@ -57,7 +57,8 @@ for (const file of unitFiles) {
     );
   });
 }
-const SKIPPED = new Set(['.git', 'node_modules']);
+// Tools write under these, in a checkout's ignored or untracked files: none of it is gg's code.
+const SKIPPED = new Set(['.git', 'node_modules', '.claude', 'coverage']);
 function repoFiles(directory = ''): string[] {
   return readdirSync(root + directory, { withFileTypes: true }).flatMap((entry) => {
     const path = directory + entry.name;
@@ -435,7 +436,7 @@ const CONVERTED = [
 // Revisit when ESLint loads TypeScript configs natively.
 const LEGACY_MJS = ['eslint.config.mjs'];
 const unlistedJavaScript = (files: string[]) =>
-  files.filter((path) => /\.[cm]?js$/.test(path) && !LEGACY_MJS.includes(path));
+  files.filter((path) => /\.(?:[cm]?js|[cm]ts)$/.test(path) && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
   const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
@@ -490,12 +491,14 @@ test('the converted list names every code file', () => {
   );
 });
 
-// A thrown class's name shows in the text printed for an uncaught crash. Lint checks the class name's suffix (below);
-// this checks the name it sets, as a class field or in its constructor. This file is left out: its samples spell both.
+// A thrown class's name shows in String(err) and the first line of its stack. Lint checks the class name's suffix
+// (below); this checks the name it sets, as a class field or in its constructor. This file is left out: its samples
+// spell both.
+// shortcut: an uncalled method that sets the name on its own line still passes; parse the class if one ever does.
 const errorClassesWithoutName = (text: string) =>
-  [...text.matchAll(/\bclass (\w+) extends (?:\w+\.)*\w*Error\b/g)]
+  [...text.matchAll(/\bclass (\w+)(?:<[^>]*>)?\s+extends\s+(?:\w+\.)*\w*Error\b/g)]
     .map((match) => match[1])
-    .filter((className) => !text.includes(`name = '${className}'`));
+    .filter((className) => !new RegExp(`^\\s*(?:this\\.)?name = '${className}';$`, 'm').test(text));
 
 test('every thrown class sets name to its class name', () => {
   assert.deepEqual(errorClassesWithoutName('class CommandError extends Error {}'), ['CommandError']);
