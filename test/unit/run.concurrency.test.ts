@@ -406,6 +406,9 @@ const LOCKED_VERBS = [
   'push',
   'remoteSha',
   'resetTo',
+  'rescueTree',
+  'rescueCommit',
+  'createRef',
 ] as const;
 
 // A slow fetch in another process may hold the repo lock past acquire's default 60 s; snapshots and orchestrator writes

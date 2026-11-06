@@ -111,20 +111,65 @@ test("a case's environment variables are restored after the case even when it fa
   assert.equal(after, 'before', 'the variable holds its value from before the case');
 });
 
+const POSIX_ONLY = { ...CASE, skip: process.platform === 'win32' && 'Windows ends them through its job: see exec.job' };
+
 test(
-  'runShell with a timeout leaves background processes of a command that finished on its own running',
-  { ...CASE, skip: process.platform === 'win32' && 'Windows also reports them: see exec.job.test.ts' },
+  'runShell with a timeout kills and names the background processes of a command that finished on its own',
+  POSIX_ONLY,
   async (t) => {
     const pidFile = join(scratch, 'leftover.pid');
+    t.after(() => processProbe.endProcessIn(pidFile));
+    const result = await exec.runShell(
+      nodeCommand(t, childScripts.BACKGROUND_STARTER, 'ignore', '0', pidFile, childScripts.LONG_LIVED),
+      shellOptions({ timeoutMs: 20000, signal: noClock() }),
+    );
+    assert.equal(result.code, 0);
+    const pid = processProbe.pidIn(pidFile);
+    assert.ok(result.leftovers?.includes(pid), JSON.stringify(result.leftovers));
+    assert.match(result.output, new RegExp(`left running: pid ${pid}`));
+    assert.match(result.output, /long-lived/);
+    assert.equal(processProbe.alive(pid), false, 'the background process is gone');
+    assert.equal(result.cleanup.confirmed, true, JSON.stringify(result.cleanup));
+    assert.equal(result.cleanup.containment.kind, 'group');
+  },
+);
+
+// A child that starts its own session leaves the process group, and the watcher may never see it: the accepted residual
+// risk (L6). Whether it is still running depends on what the watcher saw, so this case says only that the call answers.
+test(
+  'runShell: a detached child is the accepted residual risk: the call answers and reports a confirmed cleanup',
+  POSIX_ONLY,
+  async (t) => {
+    const pidFile = join(scratch, 'detached.pid');
     t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec.runShell(
       nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile),
       shellOptions({ timeoutMs: 20000, signal: noClock() }),
     );
     assert.equal(result.code, 0);
-    assert.ok(processProbe.alive(processProbe.pidIn(pidFile)), 'background process was killed');
+    assert.equal(result.cleanup.confirmed, true);
   },
 );
+
+// With no leftover alive every writer is gone, so the pipes close once read to their end (#245's shortcut, gone here).
+test('runShell answers with the line a background process printed before it was killed', CASE, async (t) => {
+  const pidFile = join(scratch, 'late-line.pid');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const result = await exec.runShell(
+    nodeCommand(t, childScripts.BACKGROUND_STARTER, 'inherit', '0', pidFile, childScripts.LONG_LIVED, 'A-LATE-LINE'),
+    shellOptions({ timeoutMs: 20000, signal: noClock() }),
+  );
+  assert.equal(result.code, 0);
+  assert.match(result.output, /A-LATE-LINE/);
+});
+
+test('a command that leaves nothing behind reports a confirmed cleanup', CASE, async (t) => {
+  const result = await exec.runShell(nodeCommand(t, childScripts.PRINTS_LINE, 'ran'), { timeoutMs: 60_000 });
+  assert.equal(result.cleanup.confirmed, true, JSON.stringify(result.cleanup));
+  assert.deepEqual(result.cleanup.survivors, []);
+  assert.equal(result.cleanup.reason, null);
+  assert.equal(result.leftovers, undefined);
+});
 
 test('the result names the containment it used', CASE, async (t) => {
   // built before each run, so a run after the case's timeout stops at nodeCommand's abort check

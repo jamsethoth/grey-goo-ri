@@ -1,6 +1,7 @@
 // The Run context an Execution's Visits, Actions, effects and Terminals read: the deps a test replaces, the
 // Execution's configuration, and how each Action is entered, marked and recorded. runExecution builds it here, once.
 import * as checks from './checks.ts';
+import type * as commandCleanup from './command-cleanup.ts';
 import type * as effects from './effects.ts';
 import * as events from './events.ts';
 import type * as exec from './exec.ts';
@@ -81,6 +82,7 @@ export interface HarnessResult {
   sessionId: string | null;
   transcriptPath: string | null;
   usage: { cumulative: unknown; delta: unknown };
+  cleanup?: Pick<commandCleanup.CleanupReport, 'confirmed' | 'survivors'> & Partial<commandCleanup.CleanupReport>;
   [field: string]: unknown;
 }
 export interface Harness {

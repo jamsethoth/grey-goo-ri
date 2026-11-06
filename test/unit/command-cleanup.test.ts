@@ -189,3 +189,99 @@ test('lib/command-cleanup.ts imports nothing, so its decisions do no I/O', () =>
   const source = readFileSync(new URL('../../lib/command-cleanup.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, anyImport);
 });
+
+test("parseListing reads a row's process group and command line after its start time", () => {
+  const stdout = '  101     1 Fri Nov  6 10:00:00 2026   100 node writer.js --fast\n';
+  const listing = commandCleanup.parseListing({ code: 0, stdout, stderr: '' });
+  assert.deepEqual(listing.processes, [[101, 1, 'Fri Nov 6 10:00:00 2026', 100, 'node writer.js --fast']]);
+});
+
+test('a command that has exited is not in its kill plan, and what its pid now names is left alone', () => {
+  const plan = commandCleanup.killPlan(
+    ROOT,
+    seenOf([101, ROOT, 't1']),
+    {
+      processes: [
+        [ROOT, 1, 'another'],
+        [7, ROOT, 't7'],
+        [101, 1, 't1'],
+      ],
+      error: undefined,
+    },
+    SELF,
+    { exited: true },
+  );
+  assert.deepEqual(plan.kill, [101]);
+});
+
+test('with an unusable listing, a command that has exited has nothing to attempt', () => {
+  const plan = commandCleanup.killPlan(ROOT, seenOf([101, ROOT, 't1']), { processes: [], error: 'no ps' }, SELF, {
+    exited: true,
+  });
+  assert.deepEqual(plan.kill, []);
+  assert.deepEqual(
+    plan.survivors.map((survivor) => survivor.pid),
+    [101],
+  );
+});
+
+test('leftovers are what the plan kills and what its group still holds, less the command', () => {
+  const left = commandCleanup.leftoverRows(
+    ROOT,
+    { kill: [101], survivors: [] },
+    {
+      processes: [
+        [101, 1, 't1', 7, 'node a.js'],
+        [102, 1, 't2', ROOT, 'node b.js'],
+        [ROOT, 1, 't0', ROOT, 'sh'],
+        [103, 1, 't3', 7, 'node other.js'],
+      ],
+      error: undefined,
+    },
+  );
+  assert.deepEqual(left, [
+    { pid: 101, created: 't1', commandLine: 'node a.js' },
+    { pid: 102, created: 't2', commandLine: 'node b.js' },
+  ]);
+});
+
+const JOB = { kind: 'job' } as const;
+const SURVIVOR = { pid: 9, created: null, commandLine: null, error: 'still here' };
+
+test('cleanupReport: nothing left under a containment gg can check is confirmed', () => {
+  assert.deepEqual(commandCleanup.cleanupReport(JOB, { survivors: [], cleanupErrors: [] }), {
+    confirmed: true,
+    survivors: [],
+    reason: null,
+    containment: JOB,
+  });
+  assert.equal(
+    commandCleanup.cleanupReport({ kind: 'group', pgid: 7 }, { survivors: [], cleanupErrors: [] }).confirmed,
+    true,
+  );
+});
+
+test('cleanupReport: a survivor leaves it unconfirmed, and says why', () => {
+  assert.deepEqual(commandCleanup.cleanupReport(JOB, { survivors: [SURVIVOR], cleanupErrors: [] }), {
+    confirmed: false,
+    survivors: [SURVIVOR],
+    reason: '1 process could not be confirmed gone',
+    containment: JOB,
+  });
+});
+
+test('cleanupReport: a cleanup error is the reason, with no survivor named', () => {
+  const report = commandCleanup.cleanupReport(JOB, { survivors: [], cleanupErrors: ['first', 'second'] });
+  assert.equal(report.confirmed, false);
+  assert.equal(report.reason, 'first; second');
+});
+
+test('cleanupReport: an uncontained command is always unconfirmed', () => {
+  const report = commandCleanup.cleanupReport({ kind: 'none' }, { survivors: [], cleanupErrors: [] });
+  assert.equal(report.confirmed, false);
+  assert.match(report.reason as string, /uncontained/);
+});
+
+test('a Check that ran no command names no process and no containment', () => {
+  assert.deepEqual(commandCleanup.NO_COMMAND, { confirmed: true, survivors: [] });
+});

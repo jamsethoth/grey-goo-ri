@@ -43,6 +43,7 @@ export interface Signals {
   checks: TableCheck[];
   retries: Partial<Record<RetryKind, number>>;
   policy?: ResolutionPolicy;
+  cleanup?: { confirmed: boolean } | null;
 }
 type Resolving = Signals & { policy: ResolutionPolicy };
 

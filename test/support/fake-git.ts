@@ -128,6 +128,12 @@ function commitVerbs({ store, placeAt, headOf, move, resolve, treeFiles, ancesto
       place.worktree.index = new Map(target);
       move(place, resolve(place, sha));
     },
+    // stubs for the rescue verbs (#118)
+    rescueTree: async (_cwd: string, _options: { within?: integrity.Within }): Promise<string> => '',
+    rescueCommit: async (_cwd: string, _commit: { tree: string; parent: string; message: string }): Promise<string> =>
+      '',
+    createRef: async (_cwd: string, _ref: string, _sha: string): Promise<boolean> => false,
+    refTarget: async (_cwd: string, _ref: string): Promise<string | null> => null,
     async push(cwd: string, branch: string, sha = branch) {
       const place = placeAt(cwd);
       const commit = resolve(place, sha);

@@ -10,17 +10,51 @@ export type Listing = { processes: ProcessRow[]; error: string | undefined };
 // A process as a Windows snapshot names it.
 export type ProcessEntry = { pid: number; parentPid: number; exe: string };
 
+// A process as gg can name it to a human: null where the system would not say.
+export interface NamedProcess {
+  pid: number;
+  created: string | null;
+  commandLine: string | null;
+}
+
 // A process that could not be killed or confirmed gone, and why.
 export interface Survivor {
   pid: number;
+  created?: string | null;
+  commandLine?: string | null;
   error: string;
 }
+
+// How gg can check later that a command's processes are gone (L14).
+export type CleanupContainment = { kind: 'job' } | { kind: 'group'; pgid: number } | { kind: 'none' };
+
+// What a returned call's Command Cleanup found (L11).
+export interface CleanupReport {
+  confirmed: boolean;
+  survivors: Survivor[];
+  reason: string | null;
+  containment: CleanupContainment;
+}
+
+// A Check that ran no command started no process (owner, 2026-11-06).
+export const NO_COMMAND: Pick<CleanupReport, 'confirmed' | 'survivors'> = { confirmed: false, survivors: [] };
 
 // What a timed-out command's cleanup left: survivors, and cleanupErrors for anything that could not be confirmed gone.
 export interface Cleanup {
   survivors: Survivor[];
   cleanupErrors: string[];
 }
+
+// stub (#118)
+export const leftoverRows = (_rootPid: number, _plan: KillPlan, _listing: Listing): NamedProcess[] => [];
+
+// stub (#118)
+export const cleanupReport = (containment: CleanupContainment, _cleanup: Cleanup): CleanupReport => ({
+  confirmed: true,
+  survivors: [],
+  reason: null,
+  containment,
+});
 
 // The pids to kill, in order, and the survivors named whatever the kills do.
 export type KillPlan = { kill: number[]; survivors: Survivor[] };
@@ -78,7 +112,13 @@ const sameProcess = (left: ProcessRow, right: ProcessRow) => left[0] === right[0
 
 // What a POSIX timeout kills, from a listing taken with the group stopped: rootPid, each seen descendant still listed
 // with its start time, and whatever those have started. Never another process.
-export function killPlan(rootPid: number, seen: Seen, { processes, error }: Listing, selfPid: number): KillPlan {
+export function killPlan(
+  rootPid: number,
+  seen: Seen,
+  { processes, error }: Listing,
+  selfPid: number,
+  _options: { exited?: boolean } = {},
+): KillPlan {
   if (error) {
     // cannot tell what is alive: attempt the root, and name every other known descendant rather than claim success
     const survivors = [...seen.keys()]

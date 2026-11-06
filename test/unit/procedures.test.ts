@@ -91,3 +91,18 @@ test("the request's tables list exactly each Action kind's and Check kind's keys
   assert.deepEqual(requestTables.keyTable('`do`'), requestTables.sortedKeys(procedures.ACTION_KEYS));
   assert.deepEqual(requestTables.keyTable('Check kind'), requestTables.sortedKeys(procedures.CHECK_KEYS));
 });
+
+test('the cleanup output declares its survivors, reason and containment (L11, L14)', () => {
+  const { cleanup } = actionOutputs({ do: 'check', kind: 'command' }, {}).properties as Record<
+    string,
+    { properties: Record<string, { items?: { properties: object }; properties?: object }> }
+  >;
+  assert.deepEqual(Object.keys(cleanup!.properties), ['confirmed', 'survivors', 'reason', 'containment']);
+  assert.deepEqual(Object.keys(cleanup!.properties.survivors!.items!.properties), [
+    'pid',
+    'created',
+    'commandLine',
+    'error',
+  ]);
+  assert.deepEqual(Object.keys(cleanup!.properties.containment!.properties!), ['kind', 'pgid']);
+});

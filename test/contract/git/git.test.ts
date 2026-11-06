@@ -119,6 +119,80 @@ for (const [name, repo] of sides) {
     assert.equal(await git.headSha(directory), sha, 'nothing is overwritten');
   });
 
+  // A tracked file changed, a new file, an ignored file within and one without.
+  const leftWork = (repo: Repo) => {
+    const { mainRoot: directory } = repo;
+    writeFileSync(join(directory, '.gitignore'), 'kept/\nother.log\n');
+    writeFileSync(join(directory, 'tracked.txt'), 'before');
+    repo.commit(directory, 'tracked');
+    writeFileSync(join(directory, 'tracked.txt'), 'after');
+    writeFileSync(join(directory, 'new.txt'), 'new');
+    mkdirSync(join(directory, 'kept'));
+    writeFileSync(join(directory, 'kept', 'test.txt'), 'ignored within');
+    writeFileSync(join(directory, 'other.log'), 'ignored without');
+  };
+
+  contract(
+    'rescueTree holds tracked, untracked and the ignored files within, and rescueCommit commits it on HEAD',
+    async (repo) => {
+      const { git, mainRoot: directory } = repo;
+      leftWork(repo);
+      const parent = await git.headSha(directory);
+      const tree = await git.rescueTree(directory, { within: { paths: ['kept/'] } });
+      const commit = await git.rescueCommit(directory, { tree, parent, message: 'rescue' });
+      assert.equal(await git.treeOf(directory, commit), tree);
+      assert.deepEqual((await git.changedPaths(directory, parent, commit)).sort(), [
+        'kept/test.txt',
+        'new.txt',
+        'tracked.txt',
+      ]);
+      assert.equal((await git.commitLog(directory, commit))[0]!.parents[0], parent);
+    },
+  );
+
+  contract('rescueTree and rescueCommit leave HEAD, the index and the worktree alone', async (repo) => {
+    const { git, mainRoot: directory } = repo;
+    leftWork(repo);
+    const parent = await git.headSha(directory);
+    const index = await git.writeTree(directory);
+    const tree = await git.rescueTree(directory, { within: { paths: ['kept/'] } });
+    await git.rescueCommit(directory, { tree, parent, message: 'rescue' });
+    assert.equal(await git.headSha(directory), parent);
+    assert.equal(await git.writeTree(directory), index);
+    assert.deepEqual(await git.untrackedPaths(directory), ['new.txt']);
+  });
+
+  contract('rescueTree of the same worktree is the same tree', async (repo) => {
+    const { git, mainRoot: directory } = repo;
+    leftWork(repo);
+    const within = { paths: ['kept/'] };
+    assert.equal(await git.rescueTree(directory, { within }), await git.rescueTree(directory, { within }));
+  });
+
+  contract('createRef makes a ref only when absent, and refTarget reads it', async (repo) => {
+    const { git, mainRoot: directory } = repo;
+    const first = await git.headSha(directory);
+    const second = repo.commit(directory, 'second');
+    const ref = 'refs/gg/rescue/abc';
+    assert.equal(await git.refTarget(directory, ref), null);
+    assert.equal(await git.createRef(directory, ref, first), true);
+    assert.equal(await git.createRef(directory, ref, second), false);
+    assert.equal(await git.refTarget(directory, ref), first, 'nothing is overwritten');
+    assert.equal(await git.treeOf(directory, ref), await git.treeOf(directory, first));
+  });
+
+  contract('diffStats reads as far as a commit given in place of HEAD', async (repo) => {
+    const { git, mainRoot: directory } = repo;
+    leftWork(repo);
+    const parent = await git.headSha(directory);
+    const tree = await git.rescueTree(directory, {});
+    const commit = await git.rescueCommit(directory, { tree, parent, message: 'rescue' });
+    assert.deepEqual((await git.diffStats(directory, parent, commit)).map((file) => file.path).sort(), [
+      'new.txt',
+      'tracked.txt',
+    ]);
+  });
+
   contract('ensureWorktree starts a new ticket branch from the base on origin', async ({ git, root, mainRoot }) => {
     const path = join(root, 'wt', 'ticket-4');
     assert.deepEqual(await git.ensureWorktree({ mainRoot, path, branch: 'ticket/4-title', base: 'main' }), {

@@ -469,3 +469,30 @@ test('a deleted test file counts as a change', async (t) => {
     { files: ['package.json'] },
   );
 });
+
+// A Check that ran no command started no process (owner, 2026-11-06).
+test('the unchanged skip writes a confirmed cleanup', async (t) => {
+  const quiet = { files: {}, response: golden.redResponse };
+  const fixture = await golden.fixture(t, { responses: firstVisitWith({ [RED_CALL]: quiet, [RED_RECOVERY]: quiet }) });
+  await interpreter.runExecution(fixture.options);
+  assert.deepEqual(
+    fixture.executionRecord.outputs.find((output) => output.vertex === 'red' && output.action === 'red-check')?.value
+      .cleanup,
+    { confirmed: true, survivors: [] },
+  );
+});
+
+test('a reused pass writes a confirmed cleanup', async (t) => {
+  const fixture = await runReviewFlow(
+    t,
+    {
+      [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('ok')),
+    },
+    { configure: reuseTree('implement', 'publish') },
+  );
+  assert.deepEqual(
+    fixture.executionRecord.outputs.find((output) => output.vertex === 'publish' && output.action === 'test')?.value
+      .cleanup,
+    { confirmed: true, survivors: [] },
+  );
+});

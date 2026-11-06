@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import * as effectEvidence from '../../lib/effect-evidence.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
@@ -117,4 +118,42 @@ test('a push that landed before a crash is found by its remote sha', async (t) =
   assert.deepEqual(loaded.writeAheadLog.findLast((entry) => entry.actionMarker === actionMarker)?.evidence, {
     remoteSha: pushed,
   });
+});
+
+test('an unknown intent effect holds', async (t) => {
+  const fixture = await golden.fixture(t);
+  await fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:someone-elses', 'teleport', {});
+  const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, fixture.executionRecord));
+  assert.equal(decided.next, 'hold');
+  assert.match(decided.reason as string, /teleport/);
+});
+
+test('a finder-less replay-safe action replays', async (t) => {
+  const fixture = await golden.fixture(t);
+  await fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:pr-ready', 'pr-ready', {});
+  const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, fixture.executionRecord));
+  assert.equal(decided.next, 'continue');
+  assert.deepEqual(executionReads.writeAheadSteps(fixture.executionRecord, 'gg:pr-ready'), ['intent']);
+});
+
+test("a rescue intent is found by its ref's commit, redone when the ref is absent, and a conflict on another commit", async (t) => {
+  const fixture = await golden.fixture(t);
+  const { git } = fixture.options.deps;
+  const context = { executionRecord: fixture.executionRecord, git, issueLabels: [] };
+  const entry = {
+    step: 'intent',
+    actionMarker: 'gg:rescue',
+    effect: 'rescue',
+    payload: { ref: 'refs/gg/rescue/abc', commit: fixture.base },
+    evidence: null,
+    time: '',
+  } as const;
+  assert.equal((await effectEvidence.findEffect(entry, context)).status, 'absent');
+  await git.createRef!(fixture.worktree, 'refs/gg/rescue/abc', fixture.base);
+  assert.deepEqual(await effectEvidence.findEffect(entry, context), {
+    status: 'found',
+    evidence: { ref: 'refs/gg/rescue/abc', commit: fixture.base },
+  });
+  const other = { ...entry, payload: { ref: 'refs/gg/rescue/abc', commit: 'f'.repeat(40) } };
+  assert.equal((await effectEvidence.findEffect(other, context)).status, 'conflicting');
 });

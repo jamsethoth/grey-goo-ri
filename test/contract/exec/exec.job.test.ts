@@ -24,7 +24,7 @@ const { alive, pidIn, waitFor } = processProbe;
 const refusedTaskkill: [string, string[]] = [process.execPath, ['-e', 'process.exit(1)']];
 
 test(
-  'runShell with a timeout reports, and leaves running, the background processes of a command that finished on its own',
+  'runShell with a timeout reports, and kills, the background processes of a command that finished on its own',
   WIN_CASE,
   async (t) => {
     const pidFile = join(scratch, 'leftover-reported.pid');
@@ -36,33 +36,94 @@ test(
     assert.equal(result.code, 0);
     const pid = pidIn(pidFile);
     assert.ok(result.leftovers?.includes(pid), JSON.stringify(result.leftovers));
-    assert.match(result.output, /left running: pid/);
-    assert.ok(alive(pid), 'background process was killed');
+    assert.match(result.output, new RegExp(`left running: pid ${pid}`));
+    assert.match(result.output, /long-lived/);
+    assert.equal(alive(pid), false, 'the background process is gone');
+    assert.deepEqual(result.cleanup, { confirmed: true, survivors: [], reason: null, containment: { kind: 'job' } });
   },
 );
 
-// The job's second limit change, the one that drops kill-on-close, fails: closing the job's handle would then kill the
-// background process runShell reports as left running.
+// Termination is refused, so the leftover runs on and only gg's exit ends it: the Ticket holds on this (L11).
 test(
-  "runShell: when the job cannot let a finished command's leftovers run on, " +
-    'it keeps them running and says they end with gg',
+  "runShell: when a finished command's job cannot be terminated, cleanup is unconfirmed and names what is left",
   WIN_CASE,
   async (t) => {
-    const pidFile = join(scratch, 'kept.pid');
-    t.after(() => processProbe.endProcessIn(pidFile));
-    let limitChanges = 0;
-    const kernel32 = withKernel32({
-      SetInformationJobObject: (...limits) =>
-        ++limitChanges === 1 ? (realKernel32?.SetInformationJobObject(...limits) ?? 0) : 0,
-    });
+    const { kernel32, members } = kernel32Doubles.refusedTermination();
+    t.after(() => members.forEach(processProbe.endProcess));
+    const pidFile = join(scratch, 'refused-finished.pid');
     const result = await exec
       .createExec({ kernel32 })
       .runShell(nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile), { timeoutMs: 60_000 });
     assert.equal(result.code, 0, result.output);
-    assert.equal(limitChanges, 2, 'kill-on-close was never dropped');
-    assert.ok(result.leftovers?.includes(pidIn(pidFile)), JSON.stringify(result.leftovers));
-    assert.match(result.output, /they end when gg exits/);
-    assert.ok(alive(pidIn(pidFile)), 'the leftover was killed with the job');
+    const pid = pidIn(pidFile);
+    assert.equal(result.cleanup.confirmed, false);
+    assert.deepEqual(result.cleanup.containment, { kind: 'job' });
+    assert.match(result.cleanup.reason ?? '', /win32 error/);
+    const survivor = result.cleanup.survivors.find((listed) => listed.pid === pid);
+    assert.ok(survivor, JSON.stringify(result.cleanup.survivors));
+    assert.match(survivor.commandLine ?? '', /long-lived/);
+    assert.match(survivor.created ?? '', /^\d{4}-\d{2}-\d{2}T/);
+    assert.ok(alive(pid), 'it was named as running');
+  },
+);
+
+// The refused leftover holds the output pipes, so they never close: the call answers when its clock runs out, with the
+// code the command exited with. The clock starts once the command has exited.
+test(
+  'runShell: pipes a surviving leftover holds open end the wait at the timeout, with the exit code kept',
+  WIN_CASE,
+  async (t) => {
+    const { kernel32, members } = kernel32Doubles.refusedTermination();
+    t.after(() => members.forEach(processProbe.endProcess));
+    const pidFile = join(scratch, 'held-pipes.pid');
+    const clock = new AbortController();
+    const running = exec
+      .createExec({ kernel32 })
+      .runShell(
+        nodeCommand(t, childScripts.DETACHED_CHILD, 'inherit', pidFile),
+        timedOutShell.shellOptions({ timeoutMs: 5000, signal: clock.signal }),
+      );
+    await waitFor(() => pidIn(pidFile) > 0, t.signal);
+    clock.abort();
+    const result = await running;
+    assert.equal(result.code, 0, result.output);
+    assert.equal(result.timedOut, undefined);
+    assert.equal(result.cleanup.confirmed, false);
+    assert.match(result.cleanup.reason ?? '', /output pipes/);
+  },
+);
+
+// Uncontained, gg cannot find an orphan, so nothing can confirm the command's processes are gone (owner, 2026-11-06).
+test(
+  'an uncontained command is always unconfirmed, though it left nothing',
+  options.UNSANDBOXED_WIN_CASE,
+  async (t) => {
+    const result = await exec
+      .createExec({ kernel32: noJob() })
+      .runShell(nodeCommand(t, childScripts.PRINTS_LINE, 'ran'), { timeoutMs: 60_000 });
+    assert.equal(result.code, 0, result.output);
+    assert.equal(result.containment, 'none');
+    assert.equal(result.cleanup.confirmed, false);
+    assert.deepEqual(result.cleanup.containment, { kind: 'none' });
+    assert.match(result.cleanup.reason ?? '', /not contained/);
+  },
+);
+
+test(
+  "an uncontained command's leftover still linked to it is killed and named",
+  options.UNSANDBOXED_WIN_CASE,
+  async (t) => {
+    const pidFile = join(scratch, 'uncontained-linked.pid');
+    t.after(() => processProbe.endProcessIn(pidFile));
+    const result = await exec
+      .createExec({ kernel32: noJob() })
+      .runShell(nodeCommand(t, childScripts.BACKGROUND_STARTER, 'ignore', '0', pidFile, childScripts.LONG_LIVED), {
+        timeoutMs: 60_000,
+      });
+    const pid = pidIn(pidFile);
+    assert.ok(result.leftovers?.includes(pid), JSON.stringify(result.leftovers));
+    assert.equal(result.cleanup.confirmed, false);
+    await waitFor(() => !alive(pid), t.signal); // one left running fails at the case timeout
   },
 );
 
@@ -282,12 +343,12 @@ test(
   },
 );
 
-// The leftover holds the output pipes, so they never close: runShell answers once the command exits. Its clock moves
+// The leftover holds the output pipes until it is killed, and then they close: runShell answers then. Its clock moves
 // only when the case moves it, so the call cannot end by timing out; the case moves it past the timeout only once
 // the call has answered, when a timer the finish left armed would fire.
 test(
-  'runShell: a command that finishes is not reported as timed out ' +
-    'while its leftover process still holds the output pipes',
+  'runShell: a command that finishes is not reported as timed out, ' +
+    'with its leftover process killed that held the output pipes',
   WIN_CASE,
   async (t) => {
     const pidFile = join(scratch, 'drain.pid');

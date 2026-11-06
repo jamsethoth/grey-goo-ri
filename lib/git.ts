@@ -256,7 +256,16 @@ function commitVerbs(gitRunner: Runner, { headSha, treeOf }: ReturnType<typeof r
     await git(['clean', '-fdq'], cwd);
   }
 
-  return { stageAll, writeTree, commitStaged, commitTree, resetTo };
+  // stubs for the rescue verbs (#118)
+  const rescueTree = async (_cwd: string, _options: { within?: integrity.Within }): Promise<string> => '';
+  const rescueCommit = async (
+    _cwd: string,
+    _commit: { tree: string; parent: string; message: string },
+  ): Promise<string> => '';
+  const createRef = async (_cwd: string, _ref: string, _sha: string): Promise<boolean> => false;
+  const refTarget = async (_cwd: string, _ref: string): Promise<string | null> => null;
+
+  return { stageAll, writeTree, commitStaged, commitTree, resetTo, rescueTree, rescueCommit, createRef, refTarget };
 }
 
 // Lines added and removed per file since HEAD left base; a binary file counts as null.
@@ -381,6 +390,10 @@ export const {
   commitStaged,
   commitTree,
   resetTo,
+  rescueTree,
+  rescueCommit,
+  createRef,
+  refTarget,
   push,
   headSha,
   remoteSha,

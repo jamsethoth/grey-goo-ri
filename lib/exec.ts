@@ -156,6 +156,7 @@ export type ShellResult = {
   survivors?: commandCleanup.Survivor[];
   cleanupErrors?: string[];
   leftovers?: number[];
+  cleanup: commandCleanup.CleanupReport;
 } & Containment;
 
 export interface Timers {
@@ -262,6 +263,9 @@ async function settleJob(job: containment.Job, child: ChildProcess, closed: Prom
 const containmentOf = ({ job, containmentError }: containment.Started): Containment =>
   job ? { containment: 'job' } : { containment: 'none', ...(containmentError && { containmentError }) };
 
+// stub (#118)
+const STUB_REPORT = commandCleanup.cleanupReport({ kind: 'none' }, { survivors: [], cleanupErrors: [] });
+
 function shell(
   kernel32: containment.Kernel32 | null,
   commandLine: string,
@@ -287,7 +291,7 @@ function shell(
       const cleanup = await takeDown(started, kernel32, watcher, testHooks);
       for (const pipe of pipesOf(child)) pipe.destroy(); // orphans may still hold the pipes
       const note = timeoutNote(timeoutMs as number, cleanup);
-      resolve({ code: null, output: output + note, timedOut: true, ...cleanup, ...kind });
+      resolve({ code: null, output: output + note, timedOut: true, ...cleanup, cleanup: STUB_REPORT, ...kind });
     };
     const arm = () => {
       if (!finished) timer = startTimer(onTimeout, timeoutMs);
@@ -309,7 +313,7 @@ function shell(
       child.on('close', (code: number | null) => {
         if (timedOut) return;
         end();
-        resolve({ code, output, ...kind });
+        resolve({ code, output, cleanup: STUB_REPORT, ...kind });
       });
       return;
     }
@@ -318,7 +322,13 @@ function shell(
       if (timedOut) return;
       end();
       const { leftovers, note } = await settleJob(job, child, closed);
-      resolve({ code, output: output + note, ...(leftovers.length ? { leftovers } : {}), ...kind });
+      resolve({
+        code,
+        output: output + note,
+        ...(leftovers.length ? { leftovers } : {}),
+        cleanup: STUB_REPORT,
+        ...kind,
+      });
     });
   });
 }

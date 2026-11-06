@@ -79,6 +79,13 @@ export function linkedDescendants(kernel32: Kernel32, rootPid: number): number[]
   return linked;
 }
 
+// stub (#118)
+export const describe = (_kernel32: Kernel32 | null, pid: number): commandCleanup.NamedProcess => ({
+  pid,
+  created: null,
+  commandLine: null,
+});
+
 export type Job = {
   // the pids in the job; throws when the job cannot be read, which must never pass for an empty job
   members(): number[];

@@ -636,3 +636,20 @@ test('every class in the table has a reach, and the Harness rows follow it', () 
     assert.equal(resolution.failureClass, failureClass);
   }
 });
+
+test('row cleanup-unconfirmed comes before every other row', () => {
+  const resolution = outcome.resolve({
+    result: completed,
+    claim: { valid: true, token: 'ok', reason: null },
+    checks: [{ name: 'integrity', passed: false, integrity: true }],
+    retries: none,
+    cleanup: { confirmed: false },
+  });
+  assertRow(resolution, { row: 'cleanup-unconfirmed', outcome: 'cleanup-unconfirmed', direction: 'stop' });
+});
+
+test('a confirmed cleanup, or none reported, leaves the row to the rest of the table', () => {
+  const signals = { result: completed, claim: { valid: true, token: 'ok', reason: null }, checks: [], retries: none };
+  assert.equal(outcome.resolve({ ...signals, cleanup: { confirmed: true } }).row, 'claimed');
+  assert.equal(outcome.resolve(signals).row, 'claimed');
+});
