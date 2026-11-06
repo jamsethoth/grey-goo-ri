@@ -198,7 +198,7 @@ export function fakeGh({
   ticket,
   observe = () => {},
   headOf = async () => null,
-  repoLabels = labelModule.STATE_LABELS.map(labelModule.labels().state),
+  repoLabels = labelModule.STATE_NAMES.map(labelModule.labelsFor().state),
 }: FakeGhOptions) {
   const state = ghState(branch, repoLabels);
   const gh: github.Transport = async (args, cwd, input) => {

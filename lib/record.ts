@@ -156,7 +156,7 @@ export interface ExecutionStart {
 }
 
 // Every field the Execution Record will ever hold is declared here, null until set; save refuses any other key.
-export function createExecution(start: ExecutionStart): ExecutionRecord {
+export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
   const { commonDir, ticket, epic = null, flow, configHash, run, worktree, branch, base } = start;
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -210,7 +210,7 @@ export function createEpicRecord({ commonDir, epic }: { commonDir: string; epic:
 const declaredFields = (kind: RecordKind): string[] =>
   Object.keys(
     kind === 'ticket'
-      ? createExecution({ flow: {}, ticket: 0 } as ExecutionStart)
+      ? createExecutionRecord({ flow: {}, ticket: 0 } as ExecutionStart)
       : createEpicRecord({ commonDir: null, epic: 0 } as unknown as { commonDir: string; epic: number }),
   );
 const DECLARED = { ticket: declaredFields('ticket'), epic: declaredFields('epic') };

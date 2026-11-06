@@ -128,7 +128,7 @@ export async function greenCheck(
 // Evidence stays raw for agent Briefs and is redacted where it is published. Its storage cut keeps whole lines only: a
 // partial first line could start inside a local path, where redaction no longer recognises it.
 const EVIDENCE_LIMIT = 65_536;
-export function evidence(command: string, result: { output?: unknown }) {
+export function checkEvidence(command: string, result: { output?: unknown }) {
   const output = String(result.output ?? '');
   const cut = output.length - EVIDENCE_LIMIT;
   if (cut <= 0) return { command, output };
@@ -235,7 +235,7 @@ function quantifierFailures(response: unknown, condition: ResponseCondition) {
   const items = (referencePaths.read(response, condition[form]) ?? []) as Record<string, unknown>[];
   const where = Object.entries(condition.where ?? {});
   const matching = items.filter((item) => where.every(([field, value]) => [value].flat().includes(item[field]))).length;
-  const operator = procedures.OPS.find((key) => Object.hasOwn(condition, key));
+  const operator = procedures.OPERATORS.find((key) => Object.hasOwn(condition, key));
   // The validator rejects a count with no comparison; one that slips through fails rather than throws.
   if (form === 'count' && !operator) return [`the count of ${condition.count} names no comparison`];
   let held;

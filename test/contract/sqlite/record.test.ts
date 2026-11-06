@@ -138,7 +138,7 @@ test('a save waits out another process that holds the write lock for longer than
     if (holder.exitCode === null) holder.kill();
   });
   await new Promise((resolve) => holder.stdout.once('data', resolve));
-  const executionRecord = record.createExecution({
+  const executionRecord = record.createExecutionRecord({
     commonDir,
     ticket: 1,
     epic: 1,

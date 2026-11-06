@@ -1,4 +1,4 @@
-// What every Action of a Visit reads and writes: its scope, its outputs, the claimed token, the transition table's
+// What every Action of a Visit reads and writes: its scope, its outputs, the claimed token, the Transition Table's
 // view of its Signals, and settle, which decides whether a pass's result ends the Visit.
 import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
@@ -40,7 +40,7 @@ export const IMPLICIT_OK: Omit<visit.AgentCall, 'baseline'> = {
   signal: { status: 'completed', response: { claim: 'ok' }, failure: null },
 };
 
-// The transition table's view of an Action's Signals: the Integrity Assertions, then the Check signals.
+// The Transition Table's view of an Action's Signals: the Integrity Assertions, then the Check signals.
 export const resolverChecks = (
   integrityRows: { name: string; passed: boolean }[],
   signals: visit.CheckSignal[],
@@ -108,8 +108,8 @@ export function recordOutput(
 }
 
 // A Check counts only on the tree it checked, so a pass on an older tree reads as failed (R1b). A response or repeat
-// Check reads no tree and never goes stale, so the worktree is read only when a signal has one (a git process: bracket
-// it).
+// Check reads no tree and never goes stale, so the worktree is read only when a signal has one (a git process: run it
+// under whileBusy).
 export async function fresh(runContext: RunContext, signals: visit.CheckSignal[]): Promise<visit.CheckSignal[]> {
   if (!signals.some((signal) => signal.tree)) return signals;
   const { tree } = await integrity.snapshot(runContext.record.worktree, runContext.git, runContext.locks);

@@ -15,7 +15,7 @@ export interface LoadedSchema {
   error?: string;
 }
 // What checking a Procedure reads beyond the Procedure itself.
-export interface Declaring {
+export interface ProcedureContext {
   report: report.Report;
   readSchema: (name: string) => unknown;
   schemas: Map<string, LoadedSchema>;
@@ -23,7 +23,7 @@ export interface Declaring {
 }
 
 // What the Actions so far have declared, as each Action is checked in order.
-export interface Declared {
+export interface DeclaredSoFar {
   ids: unknown[];
   agent: Value | null;
   schema: referencePaths.SchemaNode;
@@ -32,14 +32,14 @@ export interface Declared {
   responseConditions: [Value, string][];
 }
 
-function loadSchema(declaring: Declaring, name: string, location: string) {
+function loadSchema(declaring: ProcedureContext, name: string, location: string) {
   const { schemas } = declaring;
   if (!schemas.has(name)) schemas.set(name, readSchema(declaring.readSchema, name));
   const loaded = schemas.get(name) as LoadedSchema;
   if (loaded.error) report.error(declaring.report, location, loaded.error);
   return loaded.node;
 }
-function readSchema(read: Declaring['readSchema'], name: string): LoadedSchema {
+function readSchema(read: ProcedureContext['readSchema'], name: string): LoadedSchema {
   let schema;
   try {
     schema = read(name);
@@ -69,16 +69,16 @@ function checkActionId(problems: report.Report, ids: unknown[], id: unknown, loc
     );
 }
 
-function checkAction(declaring: Declaring, declared: Declared, action: unknown, location: string) {
+function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, action: unknown, location: string) {
   const problems = declaring.report;
   if (!referencePaths.isRecord(action)) return report.error(problems, location, 'an Action must be an object');
   checkActionId(problems, declared.ids, action.id, location);
   declared.ids.push(action.id);
   const kinds = Object.keys(procedures.ACTION_KEYS).join(', ');
-  if (!report.has(procedures.ACTION_KEYS, action.do))
+  if (!report.hasOwnKey(procedures.ACTION_KEYS, action.do))
     return report.error(problems, location, `do ${JSON.stringify(action.do)} is not one of ${kinds}`);
   const isCheck = action.do === 'check';
-  if (isCheck && !report.has(procedures.CHECK_KEYS, action.kind)) {
+  if (isCheck && !report.hasOwnKey(procedures.CHECK_KEYS, action.kind)) {
     declared.checks.push(action);
     const checkKinds = Object.keys(procedures.CHECK_KEYS).join(', ');
     return report.error(problems, location, `Check kind ${JSON.stringify(action.kind)} is not one of ${checkKinds}`);
@@ -90,7 +90,7 @@ function checkAction(declaring: Declaring, declared: Declared, action: unknown, 
   else checkEffectAction(problems, action, location);
 }
 
-function checkAgentAction(declaring: Declaring, declared: Declared, action: Value, location: string) {
+function checkAgentAction(declaring: ProcedureContext, declared: DeclaredSoFar, action: Value, location: string) {
   const problems = declaring.report;
   if (declared.agent) return report.error(problems, location, 'a Procedure has at most one agent Action');
   declared.agent = action;
@@ -101,14 +101,17 @@ function checkAgentAction(declaring: Declaring, declared: Declared, action: Valu
   } else requireFile(problems, action, 'schema', location);
 }
 
-function checkCheckAction(declaring: Declaring, declared: Declared, check: Value, location: string) {
+function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, check: Value, location: string) {
   const problems = declaring.report;
   declared.checks.push(check);
   if (check.recoverBrief !== undefined) requireFile(problems, check, 'recoverBrief', location);
   if (check.recoverable !== undefined && typeof check.recoverable !== 'boolean')
     report.error(problems, location, 'recoverable must be true or false');
   // A Check names a Declared Command, never a command line (U13).
-  if ((check.kind === 'command' || check.kind === 'tests-fail') && !report.has(declaring.commands, check.command)) {
+  if (
+    (check.kind === 'command' || check.kind === 'tests-fail') &&
+    !report.hasOwnKey(declaring.commands, check.command)
+  ) {
     const command = JSON.stringify(check.command);
     report.error(
       problems,
@@ -144,8 +147,8 @@ function checkEffectAction(problems: report.Report, action: Value, location: str
 }
 
 // The Actions in order, and what they declared between them.
-export function checkActions(declaring: Declaring, actions: unknown[], location: string) {
-  const declared: Declared = {
+export function checkActions(declaring: ProcedureContext, actions: unknown[], location: string) {
+  const declared: DeclaredSoFar = {
     ids: [],
     agent: null,
     schema: referencePaths.ANY,
@@ -172,7 +175,7 @@ export function checkOrder(problems: report.Report, location: string, actions: u
   const effect = actions.find(
     (action) =>
       referencePaths.isRecord(action) &&
-      report.has(procedures.ACTION_KEYS, action.do) &&
+      report.hasOwnKey(procedures.ACTION_KEYS, action.do) &&
       action.do !== 'agent' &&
       action.do !== 'check',
   ) as Value | undefined;

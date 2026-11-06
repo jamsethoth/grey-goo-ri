@@ -11,7 +11,7 @@ export interface RuleIdentity {
 
 export type Direction = 'advance' | 'retry' | 'stop';
 
-// gg's fixed rows of the transition table (outcome.ROWS), and `recover`, which starts the next recovery pass.
+// gg's fixed rows of the Transition Table (outcome.FIXED_ROWS), and `recover`, which starts the next recovery pass.
 export type FixedRow =
   | 'integrity-violation'
   | 'transient-retry'
@@ -39,7 +39,7 @@ interface ResolutionBase {
   rule: RuleIdentity;
 }
 
-// An agent or Check Action's resolution through the transition table: its fixed row, or null once a Procedure table
+// An agent or Check Action's resolution through the Transition Table: its fixed row, or null once a Procedure table
 // decided. An agent Action's adds its Session and Attempt; a failure carries the failing Check's signal and output.
 export interface TableResolution extends ResolutionBase {
   row: FixedRow | null;
@@ -100,14 +100,14 @@ export interface HarnessFailure {
   message?: string;
 }
 
-// A call's Harness Result and response, as the transition table reads them (outcome.resolve).
+// A call's Harness Result and response, as the Transition Table reads them (outcome.resolve).
 export interface CallSignal {
   status: 'completed' | 'failed' | 'timed-out' | 'killed';
   response: unknown;
   failure: HarnessFailure | null;
 }
 
-// The agent Action's latest Attempt, as the transition table reads it: the three Signals of a call.
+// The agent Action's latest Attempt, as the Transition Table reads it: the three Signals of a call.
 export interface AgentCall {
   harnessResult: Record<string, unknown>;
   claim: ClaimSignal;

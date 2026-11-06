@@ -321,11 +321,11 @@ async function runTicket(issue: github.Issue, context: admission.AdmissionContex
     lock = await locks.tryAcquire(context.repo.gitCommonDir, `ticket-${ticket}`);
     if (!lock) {
       context.log(`#${ticket} skipped: another process holds the ticket-${ticket} lock`);
-      const needsHuman = labels.labels(context.config.labelPrefix).state(labels.NEEDS_HUMAN);
+      const needsHuman = labels.labelsFor(context.config.labelPrefix).state(labels.NEEDS_HUMAN);
       return {
         ticket,
         outcome: 'skipped',
-        ...(labels.has(gh.labelNames(issue), needsHuman) && { state: labels.NEEDS_HUMAN }),
+        ...(labels.hasLabel(gh.labelNames(issue), needsHuman) && { state: labels.NEEDS_HUMAN }),
       };
     }
     result = await admission.admit(issue, context);

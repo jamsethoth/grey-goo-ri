@@ -52,7 +52,7 @@ export type Ending = HoldEnding | reconcile.HumanOverride | RunStoppedEnding | R
 // safely, abandoned for a human's needs-human label, or stopped for a run stop, its own or another Ticket's. Thrown
 // rather than returned because it is found deep inside an Action, in a repo-lock guard, an effect's retry, a finder's
 // lookup or a perform callback, about five calls below the runExecution and terminal.terminal that catch it and end
-// the Execution as `ending` says (terminal.decide). Every layer between passes it on untouched.
+// the Execution as `ending` says (terminal.endEarly). Every layer between passes it on untouched.
 export class EarlyTerminalError extends Error {
   name = 'EarlyTerminalError';
   readonly ending: Ending;

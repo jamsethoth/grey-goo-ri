@@ -38,7 +38,10 @@ export function effectOf(executionRecord: record.ExecutionRecord, actionMarker: 
 
 // The evidence that proves a marker's effect landed. A failed effect saves evidence too (a label write that did not
 // land saves { ok: false }), which proves nothing: that Action is reconciled and redone as if it had none.
-export const proof = (executionRecord: record.ExecutionRecord, actionMarker: string): WriteAheadEntry | undefined =>
+export const evidenceOf = (
+  executionRecord: record.ExecutionRecord,
+  actionMarker: string,
+): WriteAheadEntry | undefined =>
   executionRecord.writeAheadLog.findLast(
     (entry) => entry.actionMarker === actionMarker && entry.step === 'evidence' && entry.evidence?.ok !== false,
   );

@@ -179,7 +179,7 @@ export function templateReferences(
 ) {
   if (!reader) return [];
   const reading: Reading = { reader, found: [] };
-  const visitScope: Scope = references.visitScope(proc, 'passed', inputs);
+  const visitScope: Scope = references.visitScopeSchema(proc, 'passed', inputs);
   actionTemplates(reading, proc, visitScope);
   if (referencePaths.isRecord(proc.recover)) {
     const scope = { ...visitScope, ...BRIEF, sections: procedures.STRING_LIST };

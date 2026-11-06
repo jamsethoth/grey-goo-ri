@@ -4,15 +4,15 @@ import { readdirSync, readFileSync } from 'node:fs';
 import * as labels from '../../lib/labels.ts';
 
 test('label names carry the configured prefix and family', () => {
-  const gg = labels.labels('gg');
+  const gg = labels.labelsFor('gg');
   assert.equal(gg.state('in-progress'), 'gg:state:in-progress');
   assert.equal(gg.await('qa-approval'), 'gg:await:qa-approval');
   assert.equal(gg.decide('qa-approval', 'approved'), 'gg:decide:qa-approval:approved');
-  assert.equal(labels.labels('x').decide('qa-approval', 'needs-changes'), 'x:decide:qa-approval:needs-changes');
-  assert.equal(labels.labels().state('needs-human'), 'gg:state:needs-human');
-  assert.deepEqual(labels.STATE_LABELS, ['in-progress', 'ready-for-qa', 'needs-human', 'needs-replan']);
-  assert.deepEqual(labels.ENDS, ['ready-for-qa', 'needs-human', 'needs-replan']);
-  assert.deepEqual([...labels.BUSY_STATES].sort(), [...labels.STATE_LABELS].sort());
+  assert.equal(labels.labelsFor('x').decide('qa-approval', 'needs-changes'), 'x:decide:qa-approval:needs-changes');
+  assert.equal(labels.labelsFor().state('needs-human'), 'gg:state:needs-human');
+  assert.deepEqual(labels.STATE_NAMES, ['in-progress', 'ready-for-qa', 'needs-human', 'needs-replan']);
+  assert.deepEqual(labels.END_STATES, ['ready-for-qa', 'needs-human', 'needs-replan']);
+  assert.deepEqual([...labels.BUSY_STATES].sort(), [...labels.STATE_NAMES].sort());
 });
 
 for (const [prefix, state, awaiting, decide] of [
@@ -20,7 +20,7 @@ for (const [prefix, state, awaiting, decide] of [
   ['x', 'x:state:needs-replan', 'x:await:plan-approval', 'x:decide:qa-approval:needs-changes'],
 ]) {
   test(`parse with prefix ${prefix} recognises state, await and decide labels`, () => {
-    const names = labels.labels(prefix);
+    const names = labels.labelsFor(prefix);
     assert.deepEqual(names.parse(state), { family: 'state', name: 'needs-replan' });
     assert.deepEqual(names.parse(awaiting), { family: 'await', vertex: 'plan-approval' });
     assert.deepEqual(names.parse(decide), { family: 'decide', vertex: 'qa-approval', outcome: 'needs-changes' });
@@ -28,7 +28,7 @@ for (const [prefix, state, awaiting, decide] of [
 }
 
 test('parse rejects labels outside the state, await and decide families of its prefix', () => {
-  const gg = labels.labels('gg');
+  const gg = labels.labelsFor('gg');
   assert.equal(gg.parse('in-progress'), null);
   assert.equal(gg.parse('plan-approved'), null);
   assert.equal(gg.parse('ff:ticket'), null);
@@ -61,8 +61,8 @@ for (const name of [
   test(`label membership of ${name} ignores case and keeps the names' spelling`, () => {
     const shown = [name.toUpperCase(), 'unrelated'];
     const set = new Set([name.toLowerCase()]);
-    assert.equal(labels.has(shown, name), true);
-    assert.equal(labels.has(set, name.toUpperCase()), true);
+    assert.equal(labels.hasLabel(shown, name), true);
+    assert.equal(labels.hasLabel(set, name.toUpperCase()), true);
     assert.deepEqual(shown, [name.toUpperCase(), 'unrelated'], 'the names keep their spelling');
     assert.deepEqual([...set], [name.toLowerCase()]);
   });
@@ -74,11 +74,11 @@ for (const [prefix, inProgress, approved, needsChanges] of [
   ['X', 'X:state:in-progress', 'X:decide:qa-approval:approved', 'X:decide:qa-approval:needs-changes'],
 ]) {
   test(`label membership with prefix ${prefix} tells another prefix, outcome or an unprefixed label apart`, () => {
-    assert.equal(labels.has([inProgress], 'Y:state:in-progress'), false, 'another prefix');
-    assert.equal(labels.has([approved], needsChanges), false, 'another outcome');
-    assert.equal(labels.has(['in-progress'], inProgress), false, 'an unprefixed label');
-    assert.equal(labels.has([], inProgress), false);
-    assert.equal(labels.has(new Set(), inProgress), false);
+    assert.equal(labels.hasLabel([inProgress], 'Y:state:in-progress'), false, 'another prefix');
+    assert.equal(labels.hasLabel([approved], needsChanges), false, 'another outcome');
+    assert.equal(labels.hasLabel(['in-progress'], inProgress), false, 'an unprefixed label');
+    assert.equal(labels.hasLabel([], inProgress), false);
+    assert.equal(labels.hasLabel(new Set(), inProgress), false);
   });
 }
 
@@ -93,13 +93,13 @@ for (const [prefix, label, name] of [
   ['Gg', 'GG:STATE:NEEDS-REPLAN', 'needs-replan'],
 ]) {
   test(`parse with prefix ${prefix} reads ${label} as the State Label ${name}`, () => {
-    assert.deepEqual(labels.labels(prefix).parse(label), { family: 'state', name });
+    assert.deepEqual(labels.labelsFor(prefix).parse(label), { family: 'state', name });
   });
 }
 
 for (const prefix of ['gg', 'Gg']) {
   test(`parse with prefix ${prefix} recognises mixed-case prefixes and families without rewriting identifiers`, () => {
-    const names = labels.labels(prefix);
+    const names = labels.labelsFor(prefix);
     assert.deepEqual(names.parse('gG:Await:Plan-Approval'), { family: 'await', vertex: 'Plan-Approval' });
     assert.deepEqual(names.parse('GG:DECIDE:QA-Approval:Needs-Changes'), {
       family: 'decide',

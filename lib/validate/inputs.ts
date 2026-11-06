@@ -43,7 +43,9 @@ export function sourceScope(procs: Record<string, checked.CheckedProcedure | und
     Object.fromEntries(
       Object.entries(vertices).map(([id, vertex]) => {
         const proc =
-          referencePaths.isRecord(vertex) && report.has(procs, vertex.procedure) ? procs[vertex.procedure] : undefined;
+          referencePaths.isRecord(vertex) && report.hasOwnKey(procs, vertex.procedure)
+            ? procs[vertex.procedure]
+            : undefined;
         if (!proc) return [id, referencePaths.ANY];
         const actions = proc.actions.filter(
           (action) => referencePaths.isRecord(action) && typeof action.id === 'string',

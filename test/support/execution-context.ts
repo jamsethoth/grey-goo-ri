@@ -26,7 +26,7 @@ interface EmittedEvent extends Record<string, unknown> {
 
 export async function executionContext(t: TestContext) {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-effects-');
-  const executionRecord = record.createExecution({
+  const executionRecord = record.createExecutionRecord({
     commonDir,
     ticket: TICKET,
     flow: { name: 'default', entry: 'green' },

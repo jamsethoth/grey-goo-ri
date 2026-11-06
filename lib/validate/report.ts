@@ -34,9 +34,9 @@ export const dedupe = (list: Problem[]) => [
 ];
 
 // A string key only: Object.hasOwn would coerce a list such as ["push"] to the key it spells.
-export function has<T extends object>(value: T, key: unknown): key is Extract<keyof T, string>;
-export function has(value: unknown, key: unknown): key is string;
-export function has(value: unknown, key: unknown) {
+export function hasOwnKey<T extends object>(value: T, key: unknown): key is Extract<keyof T, string>;
+export function hasOwnKey(value: unknown, key: unknown): key is string;
+export function hasOwnKey(value: unknown, key: unknown) {
   return typeof key === 'string' && referencePaths.isRecord(value) && Object.hasOwn(value, key);
 }
 export const isName = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
@@ -62,5 +62,5 @@ export const entries = (value: unknown) => (referencePaths.isRecord(value) ? Obj
 export const unique = <T>(list: T[]) => [...new Set(list)];
 // What a Procedure's Outcomes and Claim tokens may not be named.
 export const isReserved = (name: string) =>
-  name === 'failed' || (labels.ENDS as string[]).includes(name) || name.startsWith('harness-');
+  name === 'failed' || (labels.END_STATES as string[]).includes(name) || name.startsWith('harness-');
 export const RESERVED = 'is reserved for the engine: failed, an end name or harness-*';

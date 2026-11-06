@@ -14,7 +14,7 @@ export interface EndTarget {
 }
 export const NEEDS_HUMAN_ROUTE: EndTarget = { end: labels.NEEDS_HUMAN };
 
-export const isEnd = (value: unknown): value is labels.EndState => (labels.ENDS as unknown[]).includes(value);
+export const isEnd = (value: unknown): value is labels.EndState => (labels.END_STATES as unknown[]).includes(value);
 
 // Which declaration an Outcome's route came from, as gg doctor prints it.
 export type RouteSource = 'Vertex route' | 'Flow routes' | 'Vertex "*"' | 'Flow "*"' | 'engine default';

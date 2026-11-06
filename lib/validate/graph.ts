@@ -13,8 +13,8 @@ import * as report from './report.ts';
 
 const PR_READY = 'pr-ready';
 
-type Falls = checked.Falls;
-type Case = checked.Case;
+type FallThroughs = checked.FallThroughs;
+type OutcomeCase = checked.OutcomeCase;
 // Which route an Outcome takes, and where a failure's work goes (R12d, U5).
 export interface Routing {
   target: unknown;
@@ -41,7 +41,7 @@ export interface Graph {
   ticket: Record<string, unknown>;
   resolved: Record<string, ResolvedVertex>;
   procs: Record<string, checked.CheckedProcedure | undefined>;
-  fallsOf: Record<string, Falls>;
+  fallsOf: Record<string, FallThroughs>;
   clean: boolean;
 }
 // Where a route lands: a Vertex or an end, and whether only an exhausted Bound leads there.
@@ -55,20 +55,24 @@ interface Edge {
   outcome: string;
   landings: Landing[];
   bounded: unknown;
-  cases: Case[];
+  cases: OutcomeCase[];
   write: boolean;
 }
 
 // The outputs a Visit of Vertex `id` is sure to leave when it ends in `ending` (H3): the agent's response on any Claim
 // (N10); effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); the rescue
 // when failing work moves on to a Vertex (R5a, W3).
-function leaves(id: string, proc: checked.CheckedProcedure, ending: Case, rescued: boolean) {
+function leaves(id: string, proc: checked.CheckedProcedure, ending: OutcomeCase, rescued: boolean) {
   const passed = ending.table === 'passed';
   const keys = [];
   for (const action of ending.table === null ? [] : proc.actions) {
     if (!referencePaths.isRecord(action) || typeof action.id !== 'string') continue;
     if (action.do === 'agent') keys.push(`${id}.${action.id}.response`);
-    else if (passed && action.do === 'check' && checked.required(proc, ending.token as string).includes(action.id))
+    else if (
+      passed &&
+      action.do === 'check' &&
+      checked.requiredCheckIds(proc, ending.token as string).includes(action.id)
+    )
       keys.push(`${id}.${action.id}.evidence`);
     else if (passed && action.do === 'commit') keys.push(`${id}.${action.id}.files`);
     else if (passed && action.do === 'pr-ready') keys.push(PR_READY);
@@ -129,7 +133,7 @@ function landingsOf(
 }
 
 // Where a failure's work goes when a writing Vertex's Outcome routes on.
-function workOf(write: boolean, cases: Case[], landings: Landing[]) {
+function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[]) {
   if (!write || cases.every((ending) => ending.table === 'passed')) return null;
   const rescued = landings.some((landing) => landing.vertex);
   const left = landings.some((landing) => landing.end);

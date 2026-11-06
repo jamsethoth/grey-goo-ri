@@ -87,7 +87,7 @@ function reportOf(stop: Partial<StopFlags> | null | undefined): 'fault' | 'hold'
 
 // A Terminal's Action identity: `<report>-<effect>`, Recovery Number 0. An abandonment is reported under its State
 // Label.
-export const terminalAt =
+export const terminalActionIdentity =
   (name: string, stop: Partial<StopFlags> | null | undefined) =>
   (effect: string): marker.ActionIdentity & { procedure: null } => ({
     vertex: stop?.abandoned ? labels.NEEDS_HUMAN : name,
@@ -106,10 +106,10 @@ async function terminalAction<Payload>(
   const startedAt = context.clock.now();
   await context.enter(actionIdentity);
   const actionMarker = context.markerOf(actionIdentity);
-  const evidence = await effects.bracket(context, () =>
+  const evidence = await effects.whileBusy(context, () =>
     effects.sideEffect(context, { actionMarker, effect, payload, perform, deferred: true }),
   );
-  await effects.effectDone(context, actionIdentity, startedAt, actionMarker);
+  await effects.completeEffect(context, actionIdentity, startedAt, actionMarker);
   return evidence;
 }
 
@@ -184,7 +184,7 @@ async function postComment(
   reporting: Reporting,
   { number, effect }: { number: number; effect: string },
 ) {
-  const actionIdentity = terminalAt(reporting.name, reporting.stop)(effect);
+  const actionIdentity = terminalActionIdentity(reporting.name, reporting.stop)(effect);
   const body = await commentBody(context, reporting, context.markerOf(actionIdentity));
   return tolerated(
     context,
@@ -202,12 +202,12 @@ async function postComment(
 // The end's State Label replaces in-progress; an abandonment, under the human's label, only removes in-progress.
 function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
   const { record: executionRecord, labelPrefix = labels.DEFAULT_PREFIX } = context;
-  const state = labels.labels(labelPrefix).state;
+  const state = labels.labelsFor(labelPrefix).state;
   const change = { add: stop?.abandoned ? [] : [state(name)], remove: [state('in-progress')] };
   return tolerated(
     context,
     stop,
-    terminalAction(context, terminalAt(name, stop)('label'), {
+    terminalAction(context, terminalActionIdentity(name, stop)('label'), {
       effect: 'label',
       payload: { ticket: executionRecord.ticket, ...change },
       perform: async (payload) => {
@@ -256,7 +256,7 @@ export async function report(
   const diffStats =
     name === 'ready-for-qa'
       ? events.diffStats(
-          await effects.bracket(context, () => context.git.diffStats(executionRecord.worktree, executionRecord.base)),
+          await effects.whileBusy(context, () => context.git.diffStats(executionRecord.worktree, executionRecord.base)),
           executionRecord.configurationSnapshot!.testPaths,
         )
       : null;

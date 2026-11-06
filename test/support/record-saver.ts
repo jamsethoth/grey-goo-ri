@@ -5,7 +5,7 @@ import * as stateDatabase from '../../lib/state-database.ts';
 
 const [commonDir, ticket, count, worktree] = process.argv.slice(2);
 if (commonDir) {
-  const executionRecord = record.createExecution({
+  const executionRecord = record.createExecutionRecord({
     commonDir,
     ticket: Number(ticket),
     epic: 1,

@@ -59,7 +59,7 @@ test('a corrupt row loads as corrupt, not as an error', async (t) => {
 // An Integrity Violation at red's Attempt, which a reset rolls back.
 const violating = (fixture: golden.GoldenFixture): integrity.Integrity => ({
   ...(fixture.options.deps.integrity as integrity.Integrity),
-  end: async () => ({
+  findViolations: async () => ({
     violations: [
       { worktree: fixture.worktree, surface: 'head', before: fixture.base, after: 'a'.repeat(40) },
     ] as integrity.IntegrityViolation[],

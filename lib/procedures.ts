@@ -54,8 +54,8 @@ export const COMPARISONS = {
   '=': (left: number, right: number) => left === right,
 };
 export type Operator = keyof typeof COMPARISONS;
-export const OPS = Object.keys(COMPARISONS) as Operator[];
-export const CONDITION_KEYS = ['field', 'is', 'none', 'any', 'all', 'count', 'where', ...OPS];
+export const OPERATORS = Object.keys(COMPARISONS) as Operator[];
+export const CONDITION_KEYS = ['field', 'is', 'none', 'any', 'all', 'count', 'where', ...OPERATORS];
 export const CHECK_KEYS = {
   command: ['command', 'reuse'],
   'tests-fail': ['command', 'testNames'],
@@ -74,8 +74,8 @@ export const object = (properties: Record<string, referencePaths.SchemaNode>) =>
 export const STRING = { type: 'string' };
 export const INTEGER = { type: 'integer' };
 export const STRING_LIST = { type: 'array', items: STRING };
-// gg's own outputs: a Check's evidence (checks.evidence), an Action's cleanup (L11, exec's survivors) and a Vertex's
-// rescue (W3), whose diffStat is events.diffStats' totals.
+// gg's own outputs: a Check's evidence (checks.checkEvidence), an Action's cleanup (L11, exec's survivors) and a
+// Vertex's rescue (W3), whose diffStat is events.diffStats' totals.
 const EVIDENCE = object({ command: STRING, output: STRING });
 // A tests-fail pass found by the test's name alone says so (J8).
 const RED_EVIDENCE = object({ command: STRING, output: STRING, foundByNameOnly: { type: 'boolean' } });

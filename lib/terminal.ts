@@ -45,7 +45,7 @@ export async function abandon(
   { terminalReasonText, inProgress }: { terminalReasonText: string; inProgress: boolean },
 ): Promise<TerminalResult> {
   context.record.terminalReason = {
-    decidedBy: { human: labels.labels(context.labelPrefix ?? labels.DEFAULT_PREFIX).state(labels.NEEDS_HUMAN) },
+    decidedBy: { human: labels.labelsFor(context.labelPrefix ?? labels.DEFAULT_PREFIX).state(labels.NEEDS_HUMAN) },
     outcome: null,
     rule: null,
     text: terminalReasonText,
@@ -88,7 +88,7 @@ export async function fault(context: TerminalContext, err: unknown): Promise<Ter
       ? { terminal: vertex, terminalReason: executionRecord.terminalReason }
       : null;
   executionRecord.cursor = record.terminalCursor(labels.NEEDS_HUMAN);
-  const where = action ? whereOf({ action, recovery }) : vertex;
+  const where = action ? actionText({ action, recovery }) : vertex;
   executionRecord.terminalReason = {
     decidedBy: { vertex, visit: visitNumber, action, recovery },
     outcome: null,
@@ -134,7 +134,7 @@ export const terminalReason = (
 });
 
 // An Action as a Terminal Reason names it: its id, and the recovery pass it ran in.
-export const whereOf = ({ action, recovery }: { action: string | null; recovery: number }): string | null =>
+export const actionText = ({ action, recovery }: { action: string | null; recovery: number }): string | null =>
   recovery ? `${action} (recovery ${recovery})` : action;
 
 // What stopText reads of the resolution that stopped an Action.
@@ -152,7 +152,7 @@ export interface StopResolution {
   signal?: visit.CheckSignal;
 }
 
-// The sentence for a fixed row of the transition table, or undefined for a row of a Procedure's table.
+// The sentence for a fixed row of the Transition Table, or undefined for a row of a Procedure's table.
 function rowText(where: string | null, vertex: string, resolution: StopResolution): string | undefined {
   const failureClass = resolution.failureClass ?? 'unknown';
   // A run stop names what failed: a remote Action's effect, else the harness call.
@@ -195,7 +195,7 @@ export function stopText(
   outcomeName: string,
   resolution: StopResolution,
 ): string {
-  const where = whereOf(actionIdentity);
+  const where = actionText(actionIdentity);
   const fixed = rowText(where, actionIdentity.vertex, resolution);
   if (fixed !== undefined) return fixed;
   // A final failure names its Check from the Check signal (U14); the Check's reason is posted fenced, as it may quote
@@ -211,7 +211,7 @@ export function stopText(
 }
 
 // An Execution ended early, as an Action found it must (effectErrors.EarlyTerminalError): held, abandoned, or stopped.
-export function decide(context: TerminalContext, ending: effectErrors.Ending): Promise<TerminalResult> {
+export function endEarly(context: TerminalContext, ending: effectErrors.Ending): Promise<TerminalResult> {
   context.log(`#${context.record.ticket} ${ending.next}: ${ending.reason}`);
   if (ending.next === 'run-stopped') return runStoppedAt(context, ending.retrying);
   if (ending.next === 'run-stop') return runStopAt(context, ending);
@@ -262,7 +262,7 @@ export async function terminal(
   try {
     return await terminalReport.report(context, name, stop);
   } catch (err) {
-    if (err instanceof effectErrors.EarlyTerminalError) return decide(context, err.ending);
+    if (err instanceof effectErrors.EarlyTerminalError) return endEarly(context, err.ending);
     throw err;
   }
 }

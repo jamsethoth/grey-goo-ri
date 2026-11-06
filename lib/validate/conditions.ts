@@ -55,9 +55,9 @@ function listProblems(condition: Value, form: string, schema: referencePaths.Sch
     return [`${form} must read a list of objects; ${JSON.stringify(list)} is ${JSON.stringify(type)}`];
   const problems = [];
   if (form === 'count') {
-    const ops = procedures.OPS.filter((op) => Object.hasOwn(condition, op));
+    const ops = procedures.OPERATORS.filter((op) => Object.hasOwn(condition, op));
     if (ops.length !== 1 || !Number.isInteger(condition[ops[0]]))
-      problems.push(`count takes one of ${procedures.OPS.join(', ')} with an integer`);
+      problems.push(`count takes one of ${procedures.OPERATORS.join(', ')} with an integer`);
   }
   if (!referencePaths.isRecord(condition.where)) return [...problems, 'where must be an object of item fields'];
   return [...problems, ...whereProblems(condition.where, node)];

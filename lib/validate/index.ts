@@ -99,7 +99,7 @@ function checkProcedures(problems: report.Report, config: Value, readSchema: Sou
   for (const [name, declaration] of report.entries(config.procedures))
     checkedProcedures[name] = procedures.checkProcedure(declaring, name, declaration);
   // Each Procedure's references typed alone; each Vertex using it types those that read `inputs`.
-  const procedureFalls: Record<string, Partial<Record<procedures.Table, string[]>>> = {};
+  const procedureFalls: Record<string, Partial<Record<procedures.TableName, string[]>>> = {};
   for (const proc of Object.values(checkedProcedures)) {
     if (!proc) continue;
     procedureFalls[proc.name] = references.checkReferences(problems, proc, {

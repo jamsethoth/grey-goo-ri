@@ -127,7 +127,9 @@ for (const name of ['test-fix.md', 'still-green.md']) {
 }
 
 const evidencePath = `${homedir().replaceAll('\\', '/')}/repo/test/widgets.test.mjs`;
-const storedRed = checks.evidence('npm test', { output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n` });
+const storedRed = checks.checkEvidence('npm test', {
+  output: `not ok 1 - widgets render\n    at (${evidencePath}:3:4)\n`,
+});
 
 test('stored Check evidence reaches the green Brief unredacted', async () => {
   const green = await shipped('green.md', { ...base, inputs: { testFiles: testFiles, red: storedRed } });

@@ -121,7 +121,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
 // explains, as at admission (R2d); anything else is Held before any agent runs.
 async function heldDirty(runContext: RunContext, vertexId: string): Promise<VisitEnd | null> {
   const executionRecord = runContext.record;
-  const dirty = await effects.bracket(runContext, () =>
+  const dirty = await effects.whileBusy(runContext, () =>
     reconcile.dirtyState(executionRecord, {
       git: runContext.git,
       worktree: executionRecord.worktree,
@@ -284,7 +284,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
   const signals = Object.values(state.checks);
   const checked =
     state.proc.passed.length && signals.some((signal) => signal.tree)
-      ? await effects.bracket(runContext, () => visitScope.fresh(runContext, signals))
+      ? await effects.whileBusy(runContext, () => visitScope.fresh(runContext, signals))
       : signals;
   const { claim, signal } = state.call ?? visitScope.IMPLICIT_OK;
   const { outcome: outcomeName, rule } = outcome.decide({
@@ -321,7 +321,7 @@ function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity,
     history: {
       kind: 'integrity violation',
       text:
-        `Attempt ${resolution.attempt} of ${terminal.whereOf(actionIdentity)} changed ` +
+        `Attempt ${resolution.attempt} of ${terminal.actionText(actionIdentity)} changed ` +
         `${resolution.surfaces!.join(' and ')}; the worktree was restored to its baseline head.`,
     },
     untracked: integrity.rollbackSet(baseline, runContext.protectedPaths, checks.testPathSet(testPaths)),
@@ -337,7 +337,7 @@ async function discard(
   const { record: executionRecord, git } = runContext;
   // The worktree as the agent left it: at admission, only dirty state that still matches this is proven the agent's.
   // The ignored Protected Files and tests are in it too: the tree cannot see them, but the restore rewrites them.
-  const left = await effects.bracket(runContext, async () => ({
+  const left = await effects.whileBusy(runContext, async () => ({
     ...(await runContext.integrity.snapshot(executionRecord.worktree)),
     files: reset.untracked
       ? await runContext.integrity.ignoredFiles(executionRecord.worktree, reset.untracked.within)
@@ -347,7 +347,7 @@ async function discard(
     ...reset,
     left: { head: left.head, index: left.index, tree: left.tree, files: left.files },
   };
-  await effects.bracket(runContext, () =>
+  await effects.whileBusy(runContext, () =>
     effects.sideEffect(runContext, {
       actionMarker: runContext.markerOf(actionIdentity),
       effect: 'reset',

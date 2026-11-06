@@ -1,5 +1,5 @@
 // The agent Action: its Attempts, each with its Brief and Session, a call to the pinned Agent's Harness (agent-call),
-// and the result the transition table makes of its Signals.
+// and the result the Transition Table makes of its Signals.
 import { existsSync } from 'node:fs';
 import * as agentCall from './agent-call.ts';
 import * as bounds from './bounds.ts';
@@ -125,10 +125,10 @@ async function briefOf(runContext: RunContext, attempt: Attempt, commands: Recor
       reason: nudge,
       // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
       // ones, read git only for a Brief that names them.
-      diff: () => effects.bracket(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
+      diff: () => effects.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
       changedTestFiles: async () =>
         (
-          await effects.bracket(runContext, () =>
+          await effects.whileBusy(runContext, () =>
             runContext.testImmutability(
               executionRecord.worktree,
               executionRecord.testCommits.first!,
@@ -153,7 +153,7 @@ async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<Ac
   const brief = await briefOf(runContext, attempt, pinned.commands);
   const call = callOf(runContext, attempt, { pinned, brief, actionMarker, harness });
   const startedAt = runContext.clock.now();
-  const called = await effects.bracket(runContext, () => agentCall.guardedCall(runContext, attempt, call, harness));
+  const called = await effects.whileBusy(runContext, () => agentCall.guardedCall(runContext, attempt, call, harness));
   // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is saved.
   const own = { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona };
   saveSession(executionRecord, actionIdentity, called.result, own);
@@ -211,7 +211,7 @@ function saveSession(
   };
 }
 
-// The transition table reads a call's three Signals as one flat result. A retry spends its budget in the Attempt's
+// The Transition Table reads a call's three Signals as one flat result. A retry spends its budget in the Attempt's
 // completion, so a resume never spends it twice. A violation always stops (its row is first); runVisit rolls it back.
 function settleAttempt(
   runContext: RunContext,
@@ -249,7 +249,7 @@ function settleAttempt(
     surfaces,
     attempt: actionIdentity.attempt,
   };
-  return effects.finish(runContext, {
+  return effects.saveResolution(runContext, {
     actionIdentity,
     startedAt,
     resolution: done,
@@ -289,7 +289,7 @@ const harnessFields = (result: HarnessResult, sessionLineage: string | null) => 
   commandsRun: result.commandsRun,
 });
 
-// How the transition table decided, and the Signals it read: the Harness Result, the Claim and the Integrity Assertion.
+// How the Transition Table decided, and the Signals it read: the Harness Result, the Claim and the Integrity Assertion.
 const decisionFields = (
   resolution: visit.TableResolution,
   { result, claim, integrityRows }: { result: HarnessResult; claim: visit.ClaimSignal; integrityRows: IntegrityRow[] },

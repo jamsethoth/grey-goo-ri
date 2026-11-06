@@ -548,9 +548,9 @@ test("a worktree backing off is idle to other Tickets' integrity checks", async 
   const stray = join(fixture.worktree, 'stray.txt');
   let violations = undefined as integrity.IntegrityViolation[] | undefined;
   fixture.clock.onSleep = async () => {
-    const baseline = await integrity.begin({ record: other, ...check });
+    const baseline = await integrity.takeBaseline({ record: other, ...check });
     writeFileSync(stray, 'stray\n');
-    ({ violations } = await integrity.end({ baseline, record: other, access: 'workspace-write', ...check }));
+    ({ violations } = await integrity.findViolations({ baseline, record: other, access: 'workspace-write', ...check }));
     rmSync(stray);
   };
   const result = await interpreter.runExecution(fixture.options);

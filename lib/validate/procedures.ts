@@ -10,17 +10,17 @@ import * as actionChecks from './actions.ts';
 import * as conditions from './conditions.ts';
 import * as report from './report.ts';
 
-export type Table = 'passed' | 'failed' | 'stopped';
-export const TABLES: Table[] = ['passed', 'failed', 'stopped'];
+export type TableName = 'passed' | 'failed' | 'stopped';
+export const TABLES: TableName[] = ['passed', 'failed', 'stopped'];
 // The tokens some input falls through each table for.
-export type Falls = Partial<Record<Table, string[]>>;
+export type FallThroughs = Partial<Record<TableName, string[]>>;
 // A way a Procedure produces an Outcome: a Claim token through one table, or a harness failure (table null).
-export interface Case {
+export interface OutcomeCase {
   outcome: string;
-  table: Table | null;
+  table: TableName | null;
   token: string | null;
 }
-const NO_TOKEN: Record<Table, string> = {
+const NO_TOKEN: Record<TableName, string> = {
   passed: 'no Claim token passes',
   failed: 'no Claim token requires a Check',
   stopped: 'no Claim token stops',
@@ -43,19 +43,20 @@ export interface CheckedProcedure {
   checks: Value[];
   checkIds: unknown[];
   claimTokens: Record<string, procedures.ClaimToken>;
-  tokens: Record<Table, string[]>;
+  tokens: Record<TableName, string[]>;
   tests: unknown;
   access: unknown;
   recover: unknown;
-  tables: Record<Table, unknown[]>;
-  malformed: Set<Table>;
+  tables: Record<TableName, unknown[]>;
+  malformed: Set<TableName>;
   otherwise: unknown;
 }
 
 // The Check ids a Claim token requires that are Checks of the Procedure, each once.
 const requiredOf = (claimTokens: Record<string, procedures.ClaimToken>, checkIds: unknown[], token: string) =>
   report.unique(claimTokens[token].requires ?? []).filter((id) => checkIds.includes(id));
-export const required = (proc: CheckedProcedure, token: string) => requiredOf(proc.claimTokens, proc.checkIds, token);
+export const requiredCheckIds = (proc: CheckedProcedure, token: string) =>
+  requiredOf(proc.claimTokens, proc.checkIds, token);
 
 // A stop token, or one requiring Checks of this Procedure; either way the form the Resolved Flow carries.
 function checkClaimToken(problems: report.Report, token: unknown, checkIds: unknown[], location: string) {
@@ -84,7 +85,7 @@ function checkClaimTokens(
   problems: report.Report,
   location: string,
   declaration: Value,
-  declared: actionChecks.Declared,
+  declared: actionChecks.DeclaredSoFar,
 ) {
   const checkIds = declared.checks.map((check) => check.id);
   // No agent Action, so the implicit Claim ok requires every Check (R11f).
@@ -122,7 +123,12 @@ function checkClaimTokens(
   return claimTokens;
 }
 
-function checkSettings(problems: report.Report, location: string, declaration: Value, declared: actionChecks.Declared) {
+function checkSettings(
+  problems: report.Report,
+  location: string,
+  declaration: Value,
+  declared: actionChecks.DeclaredSoFar,
+) {
   const tests = declaration.tests ?? 'frozen';
   const named = referencePaths.isRecord(tests) && Object.keys(tests).length === 1 && Object.hasOwn(tests, 'named');
   if (!(tests === 'frozen' || tests === 'write' || named))
@@ -143,9 +149,14 @@ function checkSettings(problems: report.Report, location: string, declaration: V
   return tests;
 }
 
-function checkTables(problems: report.Report, location: string, declaration: Value, tokens: Record<Table, string[]>) {
-  const tables = {} as Record<Table, unknown[]>;
-  const malformed = new Set<Table>();
+function checkTables(
+  problems: report.Report,
+  location: string,
+  declaration: Value,
+  tokens: Record<TableName, string[]>,
+) {
+  const tables = {} as Record<TableName, unknown[]>;
+  const malformed = new Set<TableName>();
   for (const table of TABLES) {
     const rows = declaration[table] ?? [];
     tables[table] = Array.isArray(rows) ? rows : [];
@@ -180,7 +191,7 @@ function checkOtherwise(problems: report.Report, location: string, otherwise: un
     report.error(problems, `${location}.otherwise`, `otherwise ${JSON.stringify(otherwise)} ${report.RESERVED}`);
 }
 
-function checkResponseConditions(problems: report.Report, declared: actionChecks.Declared) {
+function checkResponseConditions(problems: report.Report, declared: actionChecks.DeclaredSoFar) {
   for (const [check, location] of declared.responseConditions) {
     if (!declared.agent) {
       report.error(
@@ -234,7 +245,7 @@ function tokensOf(claimTokens: Record<string, procedures.ClaimToken>, requiring:
 
 // Checks one declared Procedure, or reports that it is not an object.
 export function checkProcedure(
-  declaring: actionChecks.Declaring,
+  declaring: actionChecks.ProcedureContext,
   name: string,
   declaration: unknown,
 ): CheckedProcedure | undefined {
@@ -291,10 +302,10 @@ export function checkProcedure(
 // The Outcomes a Procedure can produce (R12b, T7): each table's rows, and its default when some input falls through.
 // `falls` holds the tokens some input falls through a table for; every token reaching a table that was not analysed
 // falls through.
-export function outcomesOf(proc: CheckedProcedure, falls: Falls) {
+export function outcomesOf(proc: CheckedProcedure, falls: FallThroughs) {
   const { tokens, tables, otherwise } = proc;
   const found: string[] = [];
-  const add = (table: Table, fallback: (fell: string[]) => unknown[]) => {
+  const add = (table: TableName, fallback: (fell: string[]) => unknown[]) => {
     if (!tokens[table].length) return;
     const rows = tables[table].map((row) => (referencePaths.isRecord(row) ? row.outcome : undefined));
     found.push(...(rows.filter((name) => typeof name === 'string') as string[]));
@@ -310,8 +321,8 @@ export function outcomesOf(proc: CheckedProcedure, falls: Falls) {
 
 // The ways a Procedure produces each Outcome (H3): each row of a table counting for every token of it (H2), and the
 // default for each token that falls through (outcomesOf, a token at a time); or a harness failure.
-export function casesOf(proc: CheckedProcedure, falls: Falls) {
-  const cases: Case[] = [];
+export function casesOf(proc: CheckedProcedure, falls: FallThroughs) {
+  const cases: OutcomeCase[] = [];
   for (const table of TABLES) {
     for (const token of proc.tokens[table]) {
       const tokens = Object.fromEntries(TABLES.map((each) => [each, each === table ? [token] : []]));

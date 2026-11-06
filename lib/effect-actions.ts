@@ -78,7 +78,7 @@ function refuseStale(
       ...Object.fromEntries(stale.map((check) => [check.id, check])),
     }),
   });
-  return effects.finish(runContext, {
+  return effects.saveResolution(runContext, {
     actionIdentity,
     startedAt,
     resolution: {
@@ -95,7 +95,7 @@ function refuseStale(
   });
 }
 
-// The outputs are recorded with the commit's completion and Event, outside the bracket so its idle save cannot publish
+// The outputs are recorded with the commit's completion and Event, outside whileBusy so its idle save cannot publish
 // them first. R3c: every gg commit is the new Test Immutability baseline, since each passed it or wrote tests. R3d: the
 // first test commit is the first that changed a path under testPaths. A commit with nothing to commit moves neither.
 async function commit(runContext: RunContext, running: Running) {
@@ -119,7 +119,7 @@ async function commit(runContext: RunContext, running: Running) {
     },
     runContext.publicText,
   );
-  const committed: Committed = await effects.bracket(runContext, () =>
+  const committed: Committed = await effects.whileBusy(runContext, () =>
     makeCommit(runContext, state, actionMarker, message),
   );
   if (committed.stale)
@@ -129,7 +129,7 @@ async function commit(runContext: RunContext, running: Running) {
   if (sha) executionRecord.testCommits.baseline = sha;
   if (sha && files.some(checks.testPathMatcher(executionRecord.configurationSnapshot!.testPaths)))
     executionRecord.testCommits.first ??= sha;
-  return effects.effectDone(runContext, actionIdentity, startedAt, actionMarker);
+  return effects.completeEffect(runContext, actionIdentity, startedAt, actionMarker);
 }
 
 // The commit the record proves was checked, not HEAD: a branch changed by hand is never published.
@@ -137,7 +137,7 @@ async function push(runContext: RunContext, { actionIdentity }: Running) {
   const { record: executionRecord, git } = runContext;
   const startedAt = runContext.clock.now();
   const actionMarker = runContext.markerOf(actionIdentity);
-  await effects.bracket(runContext, async () => {
+  await effects.whileBusy(runContext, async () => {
     const sha =
       (writeAhead.lastCommit(executionRecord)?.evidence as { sha: string } | undefined)?.sha ??
       (await git.headSha(executionRecord.worktree));
@@ -155,7 +155,7 @@ async function push(runContext: RunContext, { actionIdentity }: Running) {
       deferred: true,
     });
   });
-  return effects.effectDone(runContext, actionIdentity, startedAt, actionMarker);
+  return effects.completeEffect(runContext, actionIdentity, startedAt, actionMarker);
 }
 
 // `target: ticket` comments on the Ticket; the review's comment goes to the PR (W5). A Procedure with no agent Action
@@ -186,7 +186,7 @@ async function comment(runContext: RunContext, { actionIdentity, action, state }
     action.target === 'ticket'
       ? { kind: 'issue', number: executionRecord.ticket }
       : { kind: 'pr', number: executionRecord.pr! };
-  await effects.bracket(runContext, () =>
+  await effects.whileBusy(runContext, () =>
     effects.sideEffect<CommentPayload>(runContext, {
       actionMarker,
       effect: 'comment',
@@ -197,7 +197,7 @@ async function comment(runContext: RunContext, { actionIdentity, action, state }
       deferred: true,
     }),
   );
-  return effects.effectDone(runContext, actionIdentity, startedAt, actionMarker);
+  return effects.completeEffect(runContext, actionIdentity, startedAt, actionMarker);
 }
 
 // Creates the PR after implement, and re-renders its body after a fix or review with a provenance row per Vertex. A
@@ -225,7 +225,7 @@ async function prUpsert(runContext: RunContext, running: Running) {
     body,
     bodyHash: config.sha256(body),
   };
-  await effects.bracket(runContext, () =>
+  await effects.whileBusy(runContext, () =>
     effects.sideEffect<PrUpsertPayload>(runContext, {
       actionMarker,
       effect: 'pr-upsert',
@@ -238,7 +238,7 @@ async function prUpsert(runContext: RunContext, running: Running) {
       deferred: true,
     }),
   );
-  return effects.effectDone(runContext, actionIdentity, startedAt, actionMarker);
+  return effects.completeEffect(runContext, actionIdentity, startedAt, actionMarker);
 }
 
 // A publishing Action (R11d, T1a): it marks ready only the last commit the record proves pushed, and only if every
@@ -257,7 +257,7 @@ async function prReady(runContext: RunContext, { actionIdentity, state }: Runnin
     first && checked.every((check) => check.state === 'passed' && check.tree === first.tree) ? first.tree : null;
   const lastSha = (writeAhead.lastCommit(executionRecord)?.evidence as { sha: string } | undefined)?.sha ?? null;
   const target = { number: executionRecord.pr!, sha: lastSha, tree };
-  await effects.bracket(runContext, () =>
+  await effects.whileBusy(runContext, () =>
     effects.sideEffect(runContext, {
       actionMarker,
       effect: 'pr-ready',
@@ -276,7 +276,7 @@ async function prReady(runContext: RunContext, { actionIdentity, state }: Runnin
       deferred: true,
     }),
   );
-  return effects.effectDone(runContext, actionIdentity, startedAt, actionMarker);
+  return effects.completeEffect(runContext, actionIdentity, startedAt, actionMarker);
 }
 
 // Why the target cannot be marked ready, or null: the worktree must be clean at the commit, and the PR's head that

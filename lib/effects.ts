@@ -1,4 +1,4 @@
-// The write-ahead side effects of an Execution's Actions: the context they read, the activity bracket, and each
+// The write-ahead side effects of an Execution's Actions: the context they read, whileBusy, and each
 // effect's intent, evidence and completion with its Action Event. A remote Action's retries are remote-effects'.
 import * as effectErrors from './effect-errors.ts';
 import type * as effectEvidence from './effect-evidence.ts';
@@ -54,8 +54,8 @@ export interface EffectContext {
   laterRunReport?: boolean;
 }
 
-// The activity bracket: the worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone.
-export async function bracket<Result>(
+// The worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone.
+export async function whileBusy<Result>(
   context: Pick<EffectContext, 'record' | 'database'>,
   work: () => Promise<Result>,
 ): Promise<Result> {
@@ -85,7 +85,7 @@ export interface SideEffect<Payload> {
   effect: string;
   payload: Payload;
   perform: (payload: Payload) => Promise<Evidence>;
-  // Completed by `finish`, with its Action Event.
+  // Completed by `saveResolution`, with its Action Event.
   deferred?: boolean;
 }
 
@@ -96,7 +96,7 @@ export async function sideEffect<Payload>(
   { actionMarker, effect, payload, perform, deferred = false }: SideEffect<Payload>,
 ): Promise<Evidence> {
   const { record: executionRecord } = context;
-  const found = writeAhead.proof(executionRecord, actionMarker);
+  const found = writeAhead.evidenceOf(executionRecord, actionMarker);
   if (found) {
     if (!deferred && !logged(executionRecord, actionMarker, 'complete'))
       await context.database.complete(executionRecord, actionMarker);
@@ -106,7 +106,7 @@ export async function sideEffect<Payload>(
   if (!intended) await context.database.intent(executionRecord, actionMarker, effect, payload);
   effectErrors.crashPoint(context, actionMarker, 'before-effect');
   const launched = intended ?? payload;
-  const evidence = remoteEffects.REMOTE.includes(effect)
+  const evidence = remoteEffects.REMOTE_ACTIONS.includes(effect)
     ? await remoteEffects.remoteEffect(context, { actionMarker, effect, payload: launched }, perform)
     : await perform(launched);
   effectErrors.crashPoint(context, actionMarker, 'after-effect');
@@ -117,7 +117,7 @@ export async function sideEffect<Payload>(
   return evidence;
 }
 
-export interface Finished<Settled extends visit.Resolution> {
+export interface SavedResolution<Settled extends visit.Resolution> {
   actionIdentity: marker.ActionIdentity;
   startedAt: number;
   resolution: Settled;
@@ -131,9 +131,16 @@ export interface Finished<Settled extends visit.Resolution> {
 // Saves an Action's result, its marker's completion when it has one, and its Action Event in one transaction. A resumed
 // Visit routes the saved (settled) result instead of running the Action again; a retried Attempt's result stays in its
 // evidence for the next Attempt to read.
-export async function finish<Settled extends visit.Resolution>(
+export async function saveResolution<Settled extends visit.Resolution>(
   context: EffectContext,
-  { actionIdentity, startedAt, resolution, fields = {}, actionMarker = null, evidence = undefined }: Finished<Settled>,
+  {
+    actionIdentity,
+    startedAt,
+    resolution,
+    fields = {},
+    actionMarker = null,
+    evidence = undefined,
+  }: SavedResolution<Settled>,
 ): Promise<Settled> {
   const { record: executionRecord } = context;
   if (actionMarker && logged(executionRecord, actionMarker, 'complete')) return resolution;
@@ -158,13 +165,13 @@ export async function finish<Settled extends visit.Resolution>(
   return resolution;
 }
 
-export const effectDone = (
+export const completeEffect = (
   context: EffectContext,
   actionIdentity: marker.ActionIdentity,
   startedAt: number,
   actionMarker: string,
 ): Promise<visit.EffectResolution> =>
-  finish(context, {
+  saveResolution(context, {
     actionIdentity,
     startedAt,
     resolution: {

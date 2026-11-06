@@ -239,7 +239,7 @@ export async function seedExecution(
     readTemplate: (name: string) => config.layerFile(configured.files, name),
   }).flows as Record<string, unknown>;
   const flow = flows.default as runContext.RunFlow;
-  const executionRecord = record.createExecution({
+  const executionRecord = record.createExecutionRecord({
     commonDir,
     ticket: TICKET,
     epic: null,

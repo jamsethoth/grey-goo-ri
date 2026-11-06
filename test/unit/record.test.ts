@@ -24,7 +24,7 @@ function withDb<Result>(commonDir: string, query: (db: DatabaseSync) => Result) 
 }
 
 function newExecution(commonDir: string, ticket = 8) {
-  return record.createExecution({
+  return record.createExecutionRecord({
     commonDir,
     ticket,
     epic: 1,
@@ -85,7 +85,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
   assert.deepEqual(Object.keys(withoutCommonDir(executionRecord)), Object.keys(expected));
 
   const { epic, ...withoutEpic } = expected;
-  const noEpic = record.createExecution({
+  const noEpic = record.createExecutionRecord({
     commonDir,
     ticket: 8,
     flow: { name: 'default', entry: 'implement' },

@@ -17,7 +17,7 @@ type Evidence = Record<string, unknown>;
 
 // The Actions whose effect is on GitHub or origin. A recognised transient failure is retried inside the Action, on a
 // budget saved in the record before each wait, so a crash cannot refill it (#66).
-export const REMOTE = ['comment', 'pr-upsert', 'push', 'pr-ready'];
+export const REMOTE_ACTIONS = ['comment', 'pr-upsert', 'push', 'pr-ready'];
 const REMOTE_RETRIES = 2;
 const actionKey = (actionMarker: string) => marker.actionKeyOf(marker.partsOf(actionMarker));
 const remoteRetry = (executionRecord: record.ExecutionRecord, actionMarker: string) =>
@@ -248,7 +248,7 @@ async function relaunch(context: effects.EffectContext, actionMarker: string, re
 
 // Looks for a remote Action's effect by its marker. A failed lookup proves nothing, so it is retried on the Action's
 // budget; only a lookup that worked can find the effect absent.
-export async function lookup(
+export async function findEffectRetrying(
   context: effects.EffectContext,
   entry: writeAhead.WriteAheadEntry,
   finderContext: effectEvidence.EvidenceContext,

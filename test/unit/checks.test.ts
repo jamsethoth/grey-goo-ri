@@ -259,9 +259,9 @@ test('green check reports a timeout as failed', async () => {
 
 test('Check evidence keeps output under the bound whole, raw paths included', () => {
   const raw = `at run (${homedir()}\\test.mjs:3:4)\n`;
-  assert.equal(checks.evidence('npm test', { output: raw }).output, raw);
+  assert.equal(checks.checkEvidence('npm test', { output: raw }).output, raw);
   const output = 'x'.repeat(5000) + '\nend';
-  assert.deepEqual(checks.evidence('npm test', { output }), { command: 'npm test', output });
+  assert.deepEqual(checks.checkEvidence('npm test', { output }), { command: 'npm test', output });
 });
 
 // The bound is 65,536 characters: a 100-character first line fits beside the last one, a 101-character one does not.
@@ -272,7 +272,7 @@ const BOUNDED = [
 ];
 for (const [name, output, expected] of BOUNDED) {
   test(`Check evidence is bounded on a line boundary: it ${name}`, () => {
-    assert.equal(checks.evidence('npm test', { output }).output, expected);
+    assert.equal(checks.checkEvidence('npm test', { output }).output, expected);
   });
 }
 
@@ -284,7 +284,7 @@ const OVERLONG = [
 ];
 for (const [name, output, expected] of OVERLONG) {
   test(`Check evidence never keeps part of an overlong line: ${name}`, () => {
-    assert.equal(checks.evidence('npm test', { output }).output, expected);
+    assert.equal(checks.checkEvidence('npm test', { output }).output, expected);
   });
 }
 

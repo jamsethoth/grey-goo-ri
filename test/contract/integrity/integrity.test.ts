@@ -20,8 +20,8 @@ type Violation = { worktree: string; surface: string; before: unknown; after: un
 type Files = Record<string, unknown>;
 // Method signatures, so the untyped lib and fake functions both fit.
 type Integrity = {
-  begin(call: object): Promise<object>;
-  end(call: object): Promise<{ violations: Violation[] }>;
+  takeBaseline(call: object): Promise<object>;
+  findViolations(call: object): Promise<{ violations: Violation[] }>;
   untrackedFiles(worktree: string, within: object): Promise<Files>;
   ignoredFiles(worktree: string, within: object): Promise<Files>;
   restoreUntracked(worktree: string, set: object): Promise<void>;
@@ -109,12 +109,12 @@ for (const scenario of SCENARIOS) {
         access: scenario.access,
         protectedPaths: worktrees.PROTECTED,
       };
-      const baseline = await implementation.begin(call);
+      const baseline = await implementation.takeBaseline(call);
       act();
       // The baseline is saved in the call intent, so its fields are part of the shape.
       return {
         fields: Object.keys(baseline).sort(),
-        violations: shapeOf((await implementation.end({ ...call, baseline })).violations, names),
+        violations: shapeOf((await implementation.findViolations({ ...call, baseline })).violations, names),
       };
     };
     const real = await attempt(integrity.createIntegrity(gitModule), () => scenario.real(pair));
@@ -143,8 +143,8 @@ test('the fake integrity records the untracked tests the real one records', asyn
     protectedPaths: worktrees.PROTECTED,
     testPaths: checks.testPathSet(checks.DEFAULT_TEST_GLOBS),
   };
-  const real = await integrity.createIntegrity(gitModule).begin(beginArguments);
-  const fake = await fakeIntegrityModule.fakeIntegrity({ git: gitModule }).integrity.begin(beginArguments);
+  const real = await integrity.createIntegrity(gitModule).takeBaseline(beginArguments);
+  const fake = await fakeIntegrityModule.fakeIntegrity({ git: gitModule }).integrity.takeBaseline(beginArguments);
 
   assert.deepEqual(Object.keys(real.tests).sort(), ['test/cache/out.json', 'test/new.test.mjs']);
   assert.deepEqual(fake.tests, real.tests);

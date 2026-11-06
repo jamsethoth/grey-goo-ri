@@ -71,8 +71,8 @@ function bitsOf(rows: rules.RuleRow[], words: number, keep: (row: rules.RuleRow)
   });
   return bits;
 }
-export const has = (bits: Uint32Array, i: number) => (bits[i >> 5] >>> (i & 31)) & 1;
-export const lowest = (bits: number) => 31 - Math.clz32(bits & -bits);
+export const bitAt = (bits: Uint32Array, i: number) => (bits[i >> 5] >>> (i & 31)) & 1;
+export const lowestBit = (bits: number) => 31 - Math.clz32(bits & -bits);
 
 // The domain of `values` (per box, per field), with each value's mask of the rows that match it.
 export function domainOf(table: Omit<Domain, 'words' | 'masks'>): Domain {
@@ -138,7 +138,7 @@ export function takenRows(domain: Domain, fires: Uint32Array) {
     let j = -1;
     for (let word = 0; word < domain.words; word++) {
       for (let bits = matching[word]; bits; bits &= bits - 1) {
-        const i = word * 32 + lowest(bits);
+        const i = word * 32 + lowestBit(bits);
         if (j < 0) {
           j = i;
           continue;

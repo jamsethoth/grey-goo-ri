@@ -65,25 +65,25 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
 | `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap |
-| `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the transition table makes of its Signals |
+| `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the Transition Table makes of its Signals |
 | `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
 | `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |
 | `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready) and the intents they write ahead |
-| `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, the activity bracket, each effect's intent, evidence and completion with its Action Event |
+| `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, `whileBusy`, each effect's intent, evidence and completion with its Action Event |
 | `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
 | `lib/remote-effects.ts` | the remote Actions' retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
 | `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
 | `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop |
 | `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs (Procedures themselves are configuration) |
 | `lib/briefs.ts` | Brief context and rendering, Structured Response schema and response validation |
-| `lib/outcome.ts` | the transition table and Resolution Policy |
+| `lib/outcome.ts` | the Transition Table and Resolution Policy |
 | `lib/rules.ts` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |
 | `lib/rule-domain.ts` | a Rule Table's finite domain for that analysis: each field's partition, the row masks per value, and the passes over every point |
 | `lib/checks.ts` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
 | `lib/integrity.ts` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) and their types: the snapshot, the Attempt baseline, Integrity Violations |
 | `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
 | `lib/state-database.ts` | the State Database file: one connection per repository, WAL and schema, Pinned Configurations and reusable Check results |
-| `lib/write-ahead.ts` | the write-ahead log's entries and what reads them: open intents, proof, the last commit |
+| `lib/write-ahead.ts` | the write-ahead log's entries and what reads them: open intents, evidence, the last commit |
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union) |
 | `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.ts` | Reconciliation of a record against git and GitHub at resume, and admission's load of a record or its corrupt row |
@@ -130,7 +130,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   inputs, a usage error that prints the usage).
 - A module split by job with no import cycle, its context typed and its errors subclasses a catch site tests:
   `lib/effects.ts` with `lib/effect-errors.ts` and `lib/remote-effects.ts`, and `lib/terminal.ts` with
-  `lib/terminal-report.ts`; options objects in place of positional flags (`effects.sideEffect`, `effects.finish`).
+  `lib/terminal-report.ts`; options objects in place of positional flags (`effects.sideEffect`, `effects.saveResolution`).
 - A long function cut into named steps, its context declared as one type and built in one place: `lib/interpreter.ts`,
   with `lib/run-context.ts` and `lib/visit-runner.ts`.
 - A new unit test: `test/unit/record.test.ts` and `test/unit/interpreter.retry.test.ts` (one behaviour per case,

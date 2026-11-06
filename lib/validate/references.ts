@@ -49,7 +49,11 @@ export const ownScope = (proc: checked.CheckedProcedure, inputs: referencePaths.
   ),
 });
 // ...and the Claim token, the pass and each Check's state, as a reference reads them in `table`.
-export function visitScope(proc: checked.CheckedProcedure, table: checked.Table, inputs: referencePaths.SchemaNode) {
+export function visitScopeSchema(
+  proc: checked.CheckedProcedure,
+  table: checked.TableName,
+  inputs: referencePaths.SchemaNode,
+) {
   const recoverMax = referencePaths.isRecord(proc.recover) ? proc.recover.max : undefined;
   return {
     claim: { type: 'string', enum: proc.tokens[table] },
@@ -110,7 +114,7 @@ function validCondition(condition: unknown) {
     referencePaths.isRecord(condition) &&
     Object.keys(condition).length > 0 &&
     Object.entries(condition).every(
-      ([op, value]) => (procedures.OPS as string[]).includes(op) && Number.isInteger(value),
+      ([op, value]) => (procedures.OPERATORS as string[]).includes(op) && Number.isInteger(value),
     )
   );
 }
@@ -121,7 +125,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
   if (!validCondition(condition)) {
     const message =
       `condition on ${JSON.stringify(path)} must be a string, boolean or integer, ` +
-      `or an object of ${procedures.OPS.join(', ')} with integers`;
+      `or an object of ${procedures.OPERATORS.join(', ')} with integers`;
     found.push({ where, path, message });
     return null;
   }
@@ -150,10 +154,10 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
 }
 
 // A table's fields, and whether every row's every field typed.
-function tableFields(found: Found[], proc: checked.CheckedProcedure, table: checked.Table, typing: Typing) {
+function tableFields(found: Found[], proc: checked.CheckedProcedure, table: checked.TableName, typing: Typing) {
   const fields: rules.FieldMap = {};
   let typed = !proc.malformed.has(table);
-  const scope = procedures.object(visitScope(proc, table, typing.inputs));
+  const scope = procedures.object(visitScopeSchema(proc, table, typing.inputs));
   proc.tables[table].forEach((row, index) => {
     if (!referencePaths.isRecord(row) || !referencePaths.isRecord(row.when)) return;
     for (const [path, condition] of Object.entries(row.when)) {
@@ -168,8 +172,8 @@ function tableFields(found: Found[], proc: checked.CheckedProcedure, table: chec
 // Every typed reference of a Procedure, given a scope for `inputs`, and each table whose fields all type.
 export function typeReferences(proc: checked.CheckedProcedure, typing: Typing) {
   const found: Found[] = [];
-  actionReferences(found, proc, procedures.object(visitScope(proc, 'passed', typing.inputs)));
-  const falls: Partial<Record<checked.Table, Typed>> = {};
+  actionReferences(found, proc, procedures.object(visitScopeSchema(proc, 'passed', typing.inputs)));
+  const falls: Partial<Record<checked.TableName, Typed>> = {};
   for (const table of checked.TABLES) {
     const { fields, typed } = tableFields(found, proc, table, typing);
     if (typed && proc.tokens[table].length) falls[table] = { fields, rows: proc.tables[table] as rules.RuleRow[] };
@@ -180,9 +184,9 @@ export function typeReferences(proc: checked.CheckedProcedure, typing: Typing) {
 // A table's domain is the union of one box per Claim token reaching it, with that token's required Checks fixed:
 // passed in the passed table; in the failed table, one box per required Check, where it is the first not to pass
 // (R8b, J16).
-function boxesOf(proc: checked.CheckedProcedure, table: checked.Table) {
+function boxesOf(proc: checked.CheckedProcedure, table: checked.TableName) {
   return proc.tokens[table].flatMap((token) => {
-    const requiredIds = checked.required(proc, token);
+    const requiredIds = checked.requiredCheckIds(proc, token);
     if (table === 'passed') return [{ token, checks: Object.fromEntries(requiredIds.map((id) => [id, ['passed']])) }];
     if (table === 'stopped') return [{ token, checks: {} as Record<string, string[]> }];
     return requiredIds.map((id, j) => ({
@@ -195,7 +199,7 @@ function boxesOf(proc: checked.CheckedProcedure, table: checked.Table) {
   });
 }
 
-function analyseTable(proc: checked.CheckedProcedure, table: checked.Table, { fields, rows }: Typed) {
+function analyseTable(proc: checked.CheckedProcedure, table: checked.TableName, { fields, rows }: Typed) {
   const boxes = boxesOf(proc, table);
   const analysis = rules.analyse({
     name: `${proc.name}.${table}`,
@@ -231,8 +235,8 @@ export function checkReferences(problems: report.Report, proc: checked.CheckedPr
   const { found, falls } = typeReferences(proc, run);
   for (const finding of found)
     if (run.atVertex === isInputPath(finding.path)) report.error(problems, run.locate(finding.where), finding.message);
-  const result: Partial<Record<checked.Table, string[]>> = {};
-  for (const [table, typed] of Object.entries(falls) as [checked.Table, Typed][]) {
+  const result: Partial<Record<checked.TableName, string[]>> = {};
+  for (const [table, typed] of Object.entries(falls) as [checked.TableName, Typed][]) {
     if (run.atVertex !== Object.keys(typed.fields).some(isInputPath)) continue;
     const analysis = analyseTable(proc, table, typed);
     for (const message of analysis.errors) report.error(problems, run.locate(table), message);
