@@ -475,11 +475,8 @@ test('every module in the converted list is TypeScript', () => {
 });
 
 test('no JavaScript file is left in the code tree', () => {
-  assert.deepEqual(unlistedJavaScript([...LEGACY_MJS, 'lib/new.mjs', 'bin/new.js', 'test/new.cjs', 'lib/new.ts']), [
-    'lib/new.mjs',
-    'bin/new.js',
-    'test/new.cjs',
-  ]);
+  const samples = ['lib/new.mjs', 'bin/new.js', 'test/new.cjs', 'test/new.mts', 'test/new.cts'];
+  assert.deepEqual(unlistedJavaScript([...LEGACY_MJS, ...samples, 'lib/new.ts']), samples);
   assert.deepEqual(unlistedJavaScript(repoFiles()), [], 'write the file as .ts (ADR 0018)');
   assert.ok(existsSync(root + LEGACY_MJS[0]), 'a converted file leaves LEGACY_MJS');
 });
@@ -503,9 +500,24 @@ const errorClassesWithoutName = (text: string) =>
 test('every thrown class sets name to its class name', () => {
   assert.deepEqual(errorClassesWithoutName('class CommandError extends Error {}'), ['CommandError']);
   assert.deepEqual(errorClassesWithoutName('class GhError extends exec.CommandError {}'), ['GhError']);
-  assert.deepEqual(errorClassesWithoutName("class OtherError extends Error { name = 'CrashError'; }"), ['OtherError']);
-  assert.deepEqual(errorClassesWithoutName("class CrashError extends Error { name = 'CrashError'; }"), []);
-  assert.deepEqual(errorClassesWithoutName("class UsageError extends Error { c() { this.name = 'UsageError'; } }"), []);
+  assert.deepEqual(errorClassesWithoutName("class OtherError extends Error {\n  name = 'CrashError';\n}\n"), [
+    'OtherError',
+  ]);
+  assert.deepEqual(errorClassesWithoutName("class CrashError extends Error {}\n// name = 'CrashError';\n"), [
+    'CrashError',
+  ]);
+  assert.deepEqual(errorClassesWithoutName('class GhError extends Error {}\nconst note = "name = \'GhError\'";\n'), [
+    'GhError',
+  ]);
+  assert.deepEqual(errorClassesWithoutName('class GenericError<T> extends Error {}'), ['GenericError']);
+  assert.deepEqual(errorClassesWithoutName('class WrappedError\n  extends Error {}'), ['WrappedError']);
+  assert.deepEqual(errorClassesWithoutName("class CrashError extends Error {\n  name = 'CrashError';\n}\n"), []);
+  assert.deepEqual(
+    errorClassesWithoutName(
+      "class UsageError extends Error {\n  constructor() {\n    this.name = 'UsageError';\n  }\n}\n",
+    ),
+    [],
+  );
   assert.deepEqual(errorClassesWithoutName('class Thing extends Base {}'), []);
   assert.deepEqual(
     codeFiles
@@ -552,6 +564,15 @@ test('lint fails a named import from lib in a test file, and not one spelled in 
   ]);
   assert.deepEqual(await lintFindings(sample, "import * as paths from '../../lib/paths.ts';\n"), []);
   assert.deepEqual(await lintFindings(sample, "export const text = `\nimport { add } from '../lib/add.ts';\n`;\n"), []);
+});
+
+test('lint fails a type imported by name from lib in a test file, and allows it inside lib', async () => {
+  const sample = 'test/support/sample.ts';
+  const restricted = ['no-restricted-syntax'];
+  assert.deepEqual(await lintFindings(sample, "import type { Deps } from '../../lib/run-context.ts';\n"), restricted);
+  assert.deepEqual(await lintFindings(sample, "import { type Deps } from '../../lib/run-context.ts';\n"), restricted);
+  assert.deepEqual(await lintFindings(sample, "import type * as runContext from '../../lib/run-context.ts';\n"), []);
+  assert.deepEqual(await lintFindings('lib/sample.ts', "import type { Deps } from './run-context.ts';\n"), []);
 });
 
 // Documents agents read for today's paths. An ADR or a docs/research record is dated: it names paths as they were.
