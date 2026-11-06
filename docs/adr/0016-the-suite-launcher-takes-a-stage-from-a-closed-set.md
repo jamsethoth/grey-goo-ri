@@ -46,14 +46,19 @@ other argument after `coverage` is a usage error with exit code 2. The rule's ex
 
 Amended 2026-11-06 (grey-goo-ri issue #285): the coverage stage runs `test/unit/` with `--test-isolation=none`, in one
 process. With a process per file, node merges each process's coverage in directory order, and a line's count can depend
-on that order (nodejs/node#66860), so the same tree could pass or fail: 6 of 22 first attempts fell on the trees that
+on that order (the merge nodejs/node#66860 reports), so the same tree could pass or fail: 6 of 22 first attempts fell on the trees that
 could, each by the same two lines. With one process there is no merge. On real runners the figures were identical in 12
 of 12 jobs across both platforms, in about the same time as before, though a local run takes about four times as long.
 The recorded figures fell from 98.75% to 98.58% of lines, by hand as above, because 19 lines no test ran are no longer
 counted. 36 more lines no test ran still count, because node marks a line uncovered only when a zero range spans all of
 it. The other stages keep a process per file, so tests are still isolated there, and a test that leaks state into a later
 file shows only here. Counting lines from each process's own ranges would also stop counting the 36, for about 60 lines of
-launcher code, and was not taken. Branch coverage stays printed and not held.
+launcher code, and was not taken. Branch coverage stays printed and not held, as a decision of its own now that the merge
+that moved it is gone.
+
+One process has its own cost. A test that calls `process.exit` ends the whole stage, and the log stops with no summary and
+no name for the case; a hang names nothing, and only the CI job's timeout bounds it. Such a run writes no report, so the
+launcher removes any earlier report first and fails when the report measures no lines, also for `coverage update`.
 
 ## Considered options
 

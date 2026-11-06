@@ -164,7 +164,8 @@ Four stages, ordered by speed:
 | **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.ts coverage` (ADR 0016, amended) | in CI as its own `coverage (<os>)` job on each platform, beside the suite jobs; locally with `coverage update` when a change raises coverage |
 
 The coverage stage runs in one process (`--test-isolation=none`), so its figures do not depend on the order node reads
-coverage files in; the other stages keep a process per file (ADR 0016, amended). Coverage only climbs. The
+coverage files in, and a test that ends the process fails the stage; the other stages keep a process per file (ADR 0016,
+amended). Coverage only climbs. The
 coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
 recorded, so the next change cannot spend the gain. `node scripts/run-suite.ts coverage update` records a rise; CI's
