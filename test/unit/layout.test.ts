@@ -59,10 +59,11 @@ for (const file of unitFiles) {
 }
 // Tools write under these, in a checkout's ignored or untracked files: none of it is gg's code.
 const SKIPPED = new Set(['.git', 'node_modules', '.claude', 'coverage']);
+const isSkipped = (path: string) => SKIPPED.has(path.split('/').at(-1) ?? '');
 function repoFiles(directory = ''): string[] {
   return readdirSync(root + directory, { withFileTypes: true }).flatMap((entry) => {
     const path = directory + entry.name;
-    if (SKIPPED.has(entry.name)) return [];
+    if (isSkipped(path)) return [];
     return entry.isDirectory() ? repoFiles(`${path}/`) : [path];
   });
 }
@@ -239,6 +240,11 @@ test('no JavaScript file is left in the code tree', () => {
   assert.ok(existsSync(root + LEGACY_MJS[0]), 'a converted file leaves LEGACY_MJS');
 });
 
+test('the scans skip tool output at the root only, and .git and node_modules anywhere', () => {
+  const paths = ['.claude', 'coverage', '.git', 'node_modules', 'test/node_modules', 'test/coverage', 'lib/.claude'];
+  assert.deepEqual(paths.filter(isSkipped), ['.claude', 'coverage', '.git', 'node_modules', 'test/node_modules']);
+});
+
 // A thrown class's name shows in String(err) and the first line of its stack. Lint checks the class name's suffix
 // (below); this checks the name it sets, as a class field or in its constructor. This file is left out: its samples
 // spell both.
@@ -262,6 +268,10 @@ test('every thrown class sets name to its class name', () => {
   ]);
   assert.deepEqual(errorClassesWithoutName('class GenericError<T> extends Error {}'), ['GenericError']);
   assert.deepEqual(errorClassesWithoutName('class WrappedError\n  extends Error {}'), ['WrappedError']);
+  assert.deepEqual(errorClassesWithoutName('class NestedError<T extends Array<number>> extends Error {}'), [
+    'NestedError',
+  ]);
+  assert.deepEqual(errorClassesWithoutName('class Thing<T> extends Base<T> {}'), []);
   assert.deepEqual(errorClassesWithoutName("class CrashError extends Error {\n  name = 'CrashError';\n}\n"), []);
   assert.deepEqual(
     errorClassesWithoutName(
