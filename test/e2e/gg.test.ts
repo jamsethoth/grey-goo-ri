@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
@@ -15,32 +15,34 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as exampleLayer from '../support/example-layer.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const bin = fileURLToPath(new URL('../../bin/gg.ts', import.meta.url));
 const commands = ['init', 'doctor', 'plan', 'publish', 'run', 'work', 'trace', 'stats'];
 
-function gg(...args) {
+function gg(...args: string[]) {
   return spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8' });
 }
 
-function assertUsage(text) {
+function assertUsage(text: string) {
   for (const name of commands) assert.match(text, new RegExp(`\\b${name}\\b`), `usage lists ${name}`);
   for (const verb of ['list', 'resume', 'abandon', 'reset', 'approve'])
     assert.match(text, new RegExp(`\\b${verb}\\b`), `usage lists work ${verb}`);
 }
 
 test('gg with no arguments prints usage and exits 0', () => {
-  const r = gg();
-  assert.equal(r.status, 0, r.stderr);
-  assertUsage(r.stdout);
+  const result = gg();
+  assert.equal(result.status, 0, result.stderr);
+  assertUsage(result.stdout);
 });
 
 test('gg --help prints usage and exits 0', () => {
-  const r = gg('--help');
-  assert.equal(r.status, 0, r.stderr);
-  assertUsage(r.stdout);
-  assert.equal(r.stdout, gg().stdout);
+  const result = gg('--help');
+  assert.equal(result.status, 0, result.stderr);
+  assertUsage(result.stdout);
+  assert.equal(result.stdout, gg().stdout);
 });
 
 test('usage marks each unimplemented command', () => {
@@ -55,10 +57,10 @@ test('usage marks each unimplemented command', () => {
 });
 
 test('gg with an unknown command prints usage to stderr and exits 1', () => {
-  const r = gg('bogus');
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /gg: unknown command bogus/);
-  assertUsage(r.stderr);
+  const result = gg('bogus');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /gg: unknown command bogus/);
+  assertUsage(result.stderr);
 });
 
 for (const [name, message] of [
@@ -70,52 +72,51 @@ for (const [name, message] of [
   ['stats', 'gg stats: not implemented'],
 ]) {
   test(`gg ${name} exits 1 with a not-implemented message`, () => {
-    const r = gg(name, '1');
-    assert.equal(r.status, 1, r.stderr);
-    assert.equal(r.stderr.trim(), message);
+    const result = gg(name, '1');
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stderr.trim(), message);
   });
 }
 
 test('gg work list exits 1 with a not-implemented message', () => {
-  const r = gg('work', 'list');
-  assert.equal(r.status, 1);
-  assert.equal(r.stderr.trim(), 'gg work: not implemented');
+  const result = gg('work', 'list');
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.trim(), 'gg work: not implemented');
 });
 
 test('gg run rejects an unknown option with a usage error', () => {
-  const r = gg('run', '--bogus', '1');
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /unknown option --bogus/);
-  assertUsage(r.stderr);
-  assert.doesNotMatch(r.stderr, /gg run: not implemented/);
+  const result = gg('run', '--bogus', '1');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unknown option --bogus/);
+  assertUsage(result.stderr);
+  assert.doesNotMatch(result.stderr, /gg run: not implemented/);
 });
 
 for (const [name, flag, error] of [
   ['run', '--bg', /unknown option --bg/],
   ['run', '--trust', /unknown option --trust/],
   ['init', '--json', /unknown option --json/],
-]) {
+] as [string, string, RegExp][]) {
   test(`gg ${name} rejects the legacy boolean flag ${flag}`, () => {
-    const r = gg(name, flag, '1');
-    assert.equal(r.status, 1, r.stderr);
-    assert.match(r.stderr, error);
-    assertUsage(r.stderr);
+    const result = gg(name, flag, '1');
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, error);
+    assertUsage(result.stderr);
   });
 }
 
 // A temp repo and a temp home, so gg reads no real user Layer; `layer` becomes the user Layer when given.
-function tempRepo(t, layer) {
-  const root = mkdtempSync(join(tmpdir(), 'gg-cli-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const repo = join(root, 'repo');
-  const home = join(root, 'home');
+function tempRepo(t: TestContext, layer?: string) {
+  const directory = tempDirectory.tempDirectory(t, 'gg-cli-');
+  const repo = join(directory, 'repo');
+  const home = join(directory, 'home');
   mkdirSync(home);
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
   if (layer) {
     mkdirSync(join(home, '.agents', 'gg'), { recursive: true });
     writeFileSync(join(home, '.agents', 'gg', 'gg.json'), layer);
   }
-  const ggIn = (...args) =>
+  const ggIn = (...args: string[]) =>
     spawnSync(process.execPath, [bin, ...args], {
       cwd: repo,
       encoding: 'utf8',
@@ -126,72 +127,62 @@ function tempRepo(t, layer) {
 
 test('gg run fails preflight naming the unimplemented harness', (t) => {
   const { repo, ggIn } = tempRepo(t, readFileSync(new URL('../../examples/claude.json', import.meta.url), 'utf8'));
-  const r = ggIn('run', '1');
-  assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /harness claude: not implemented/);
+  const result = ggIn('run', '1');
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /harness claude: not implemented/);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
 test('gg run without a harness fails admission naming the vertex and agent', (t) => {
   const { repo, ggIn } = tempRepo(t);
-  const r = ggIn('run', '1');
-  assert.equal(r.status, 2, r.stderr);
+  const result = ggIn('run', '1');
+  assert.equal(result.status, 2, result.stderr);
   assert.ok(
-    r.stderr.includes(
+    result.stderr.includes(
       'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer\n',
     ),
-    r.stderr,
+    result.stderr,
   );
   assert.ok(
-    r.stderr.includes(
+    result.stderr.includes(
       'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer\n',
     ),
-    r.stderr,
+    result.stderr,
   );
-  assert.ok(r.stderr.includes(fileURLToPath(new URL('../../examples/claude.json', import.meta.url))), r.stderr);
-  assert.ok(r.stderr.includes('into the user Layer at '), r.stderr);
-  assert.equal((r.stderr.match(/Merge /g) ?? []).length, 1);
+  assert.ok(
+    result.stderr.includes(fileURLToPath(new URL('../../examples/claude.json', import.meta.url))),
+    result.stderr,
+  );
+  assert.ok(result.stderr.includes('into the user Layer at '), result.stderr);
+  assert.equal((result.stderr.match(/Merge /g) ?? []).length, 1);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
 // The example fixture as a repository Layer at `layer`: its gg.json and schemas, and every other file it names, each a
 // template naming nothing (the example's own Personas and templates arrive with #120).
-function exampleLayer(layer) {
+function writeExampleLayer(layer: string) {
   mkdirSync(layer, { recursive: true });
-  for (const name of ['gg.json', 'red.schema.json', 'implement.schema.json', 'review.schema.json']) {
-    writeFileSync(join(layer, name), readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url)));
+  for (const name of ['gg.json', ...exampleLayer.SCHEMA_NAMES]) {
+    writeFileSync(join(layer, name), exampleLayer.fixtureText(name));
   }
-  for (const name of [
-    'implementer.md',
-    'reviewer.md',
-    'red.md',
-    'green.md',
-    'fix.md',
-    'review.md',
-    'recover.md',
-    'still-green.md',
-    'test-fix.md',
-    'blocked.md',
-    'pr-body.md',
-    'review-comment.md',
-  ])
+  for (const name of ['implementer.md', 'reviewer.md', ...exampleLayer.TEMPLATE_NAMES])
     writeFileSync(join(layer, name), `${name}\n`);
 }
 
 test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {
   const agents = { implementer: { harness: 'claude' }, reviewer: { harness: 'claude' }, senior: { harness: 'claude' } };
   const { repo, ggIn } = tempRepo(t, JSON.stringify({ agents }));
-  exampleLayer(join(repo, '.agents', 'gg'));
-  const r = ggIn('doctor');
+  writeExampleLayer(join(repo, '.agents', 'gg'));
+  const result = ggIn('doctor');
   assert.ok(
-    r.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'),
-    r.stdout + r.stderr,
+    result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'),
+    result.stdout + result.stderr,
   );
   // The defaults Layer still ships its Flow and Procedures until #121; the example's own of the same names replace them
   // whole (P2).
-  assert.ok(r.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), r.stdout);
-  assert.ok(!r.stdout.includes('\nerror: '), r.stdout);
-  assert.equal(r.status, 0, r.stdout);
+  assert.ok(result.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), result.stdout);
+  assert.ok(!result.stdout.includes('\nerror: '), result.stdout);
+  assert.equal(result.status, 0, result.stdout);
 });
 
 for (const args of [['doctor'], ['run', '1']]) {
@@ -200,55 +191,55 @@ for (const args of [['doctor'], ['run', '1']]) {
     const file = join(repo, '.agents', 'gg', 'gg.json');
     mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
     writeFileSync(file, '{\n  "testPaths": [\n    "test/**",\n  ]\n}\n');
-    const r = ggIn(...args);
-    assert.equal(r.status, 1, r.stderr);
-    assert.equal(r.stdout, '');
-    assert.equal(r.stderr, `gg ${args[0]}: ${file}:4:3: invalid JSON, value expected\n`);
+    const result = ggIn(...args);
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, `gg ${args[0]}: ${file}:4:3: invalid JSON, value expected\n`);
   });
 }
 
 test('gg run rejects a ticket that is not a positive integer', (t) => {
   const { ggIn } = tempRepo(t);
-  const r = ggIn('run', 'abc');
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /must be a positive integer, got "abc"/);
+  const result = ggIn('run', 'abc');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /must be a positive integer, got "abc"/);
 });
 
 test('gg stats requires a value for --label', () => {
-  const r = gg('stats', '--label');
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /--label needs a value/);
-  assertUsage(r.stderr);
+  const result = gg('stats', '--label');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--label needs a value/);
+  assertUsage(result.stderr);
 });
 
 test('gg stats with valid options reaches the not-implemented stub', () => {
-  const r = gg('stats', '--json', '--label', 'x');
-  assert.equal(r.status, 1);
-  assert.equal(r.stderr.trim(), 'gg stats: not implemented');
+  const result = gg('stats', '--json', '--label', 'x');
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.trim(), 'gg stats: not implemented');
 });
 
 test('gg plan --finish without an id prints usage', () => {
-  const r = gg('plan', '--finish');
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /^gg plan: --finish needs a value\n/);
-  assertUsage(r.stderr);
-  assert.match(r.stderr, /plan --finish <planId>/);
+  const result = gg('plan', '--finish');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^gg plan: --finish needs a value\n/);
+  assertUsage(result.stderr);
+  assert.match(result.stderr, /plan --finish <planId>/);
 });
 
 test('gg plan rejects a value on a boolean flag', () => {
-  const r = gg('plan', '--bg=yes');
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /--bg does not take a value/);
-  assertUsage(r.stderr);
+  const result = gg('plan', '--bg=yes');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--bg does not take a value/);
+  assertUsage(result.stderr);
 });
 
 // Removes the link itself: a recursive remove on its path could walk into the repository it points at.
-function removeLink(link) {
+function removeLink(link: string) {
   if (lstatSync(link, { throwIfNoEntry: false })) unlinkSync(link);
 }
 
 // The layout npm link and npm install -g <checkout> make: node_modules/grey-goo-ri links to the checkout.
-function linkedInstall(t) {
+function linkedInstall(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'gg-linked-'));
   const link = join(dir, 'node_modules', 'grey-goo-ri');
   t.after(() => {
@@ -262,9 +253,9 @@ function linkedInstall(t) {
 
 test('gg runs through a linked install, as npm link and npm install -g <checkout> lay it out', (t) => {
   const link = linkedInstall(t);
-  const r = spawnSync(process.execPath, [join(link, 'bin', 'gg.ts'), '--help'], { encoding: 'utf8' });
-  assert.equal(r.status, 0, r.stderr);
-  assertUsage(r.stdout);
+  const result = spawnSync(process.execPath, [join(link, 'bin', 'gg.ts'), '--help'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assertUsage(result.stdout);
   removeLink(link);
   assert.equal(existsSync(link), false);
   for (const file of ['package.json', 'bin/gg.ts', 'lib/paths.ts']) assert.ok(existsSync(join(root, file)), file);
@@ -273,11 +264,11 @@ test('gg runs through a linked install, as npm link and npm install -g <checkout
 test('a copy of gg under node_modules cannot start, which is why the install is linked', (t) => {
   const link = linkedInstall(t);
   // Keeping the link path makes Node see every file under node_modules, as it would in a copy.
-  const r = spawnSync(
+  const result = spawnSync(
     process.execPath,
     ['--preserve-symlinks', '--preserve-symlinks-main', join(link, 'bin', 'gg.ts'), '--help'],
     { encoding: 'utf8' },
   );
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
 });

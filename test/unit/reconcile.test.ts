@@ -6,6 +6,7 @@ import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
+import * as sqlite from '../../lib/sqlite.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as executionReads from '../support/execution-reads.ts';
@@ -34,7 +35,9 @@ test('branchMessages throws when the base is not in the log', async () => {
   await assert.rejects(executionReads.branchMessages(onBranch('d'.repeat(40))), /base d{40} is not in the log/);
 });
 
-// Only a corrupt row is held for a human; any other failure to read the record reaches the caller.
+// Only a corrupt row is held for a human; any other failure to read the record reaches the caller. This case also keeps
+// the coverage gate steady: without a process that runs the rethrow, some orders of node's merge of the test processes'
+// ranges leave it uncovered (#281).
 test('a record the State Database cannot open fails with its error, not as a corrupt record', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
   mkdirSync(join(commonDir, 'gg', 'gg.db'), { recursive: true });
@@ -42,6 +45,15 @@ test('a record the State Database cannot open fails with its error, not as a cor
     reconcile.loadExecutionRecord(commonDir, 1),
     (err: Error) => !(err instanceof record.RecordCorruptError) && /unable to open database file/.test(err.message),
   );
+});
+
+test('a corrupt row loads as corrupt, not as an error', async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
+  sqlite.openDb(commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', 1, '{')").run();
+  const loaded = await reconcile.loadExecutionRecord(commonDir, 1);
+  assert.equal(loaded.executionRecord, null);
+  assert.ok(loaded.corrupt instanceof record.RecordCorruptError);
+  assert.equal(loaded.corrupt.raw, '{', 'the error keeps the row');
 });
 
 // An Integrity Violation at red's Attempt, which a reset rolls back.

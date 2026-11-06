@@ -18,6 +18,7 @@ const MEDIUM: [RegExp, string][] = [
     /\b(?:golden|run|support|gitShell)\.sh\(|\b(?:holdLock|conflict|seedRepos|timeOutWhen|timedOutOrphan)\(/,
     'calls a support helper that spawns',
   ],
+  [/\b(?:committingRepo|emptyWorktree|twoWorktrees)\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
@@ -33,6 +34,9 @@ const marked = [
   ["import { setTimeout as sleep } from 'node:timers/promises';", 'uses a timer'],
   ['golden.sh(g.worktree, "log")', 'calls a support helper that spawns'],
   ['run.holdLock(t, f.commonDir, "repo")', 'calls a support helper that spawns'],
+  ['committingRepo.committingRepo(t)', 'calls a support helper that spawns'],
+  ['worktrees.emptyWorktree(t)', 'calls a support helper that spawns'],
+  ['worktrees.twoWorktrees(t)', 'calls a support helper that spawns'],
 ];
 for (const [text, what] of marked) {
   test(`the size check flags a unit file that ${what}: ${text}`, () => {
@@ -282,6 +286,9 @@ const CONVERTED = [
   'test/contract/sqlite/integrity.test.ts',
   'test/contract/sqlite/locks.test.ts',
   'test/contract/sqlite/record.test.ts',
+  'test/e2e/checks.test.ts',
+  'test/e2e/gg.test.ts',
+  'test/e2e/integrity.test.ts',
   'test/e2e/interpreter.faults.test.ts',
   'test/e2e/interpreter.fix.test.ts',
   'test/e2e/interpreter.retry.test.ts',
@@ -292,6 +299,7 @@ const CONVERTED = [
   'test/e2e/reconcile.holds.test.ts',
   'test/e2e/reconcile.replay.test.ts',
   'test/e2e/reconcile.test.ts',
+  'test/e2e/run-suite.test.ts',
   'test/e2e/run.admission.test.ts',
   'test/e2e/run.branch-names.test.ts',
   'test/e2e/run.branches.test.ts',
@@ -321,6 +329,7 @@ const CONVERTED = [
   'test/support/child-scripts/split-character.ts',
   'test/support/child-scripts/stdin-eof.ts',
   'test/support/child-scripts/waits-for-file.ts',
+  'test/support/committing-repo.ts',
   'test/support/crash-fs.ts',
   'test/support/crash-resume.ts',
   'test/support/epic-run.ts',
@@ -421,13 +430,7 @@ const CONVERTED = [
   'test/unit/validate.test.ts',
 ];
 // Every .mjs file when ADR 0018 was accepted. It only shrinks: a converted file leaves it, and no new .mjs file joins.
-const LEGACY_MJS = [
-  'eslint.config.mjs',
-  'test/e2e/checks.test.mjs',
-  'test/e2e/gg.test.mjs',
-  'test/e2e/integrity.test.mjs',
-  'test/e2e/run-suite.test.mjs',
-];
+const LEGACY_MJS = ['eslint.config.mjs'];
 const unlistedMjs = (files: string[]) => files.filter((path) => path.endsWith('.mjs') && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
