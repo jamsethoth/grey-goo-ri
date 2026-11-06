@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as marker from './marker.ts';
 import * as publicText from './public-text.ts';
 import type * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 
 // gg's own templates, which no Layer declares: the Terminal Reason comment (R11a), the parse-retry nudge and a recovery
 // section for a Check with no recoverBrief (T4b). Every other template is a Layer file.
@@ -153,10 +153,10 @@ export async function renderTemplate(
   // A name reads the innermost section value that holds its first segment, then the context.
   const lookup = async (name: string, scopes: unknown[]) => {
     if (name === '.') return { value: scopes[0], item: true };
-    const { steps, error } = refs.parse(name);
+    const { steps, error } = referencePaths.parse(name);
     if (error) throw new Error(`{{${name}}}: ${error}`);
-    const scope = scopes.find((candidate) => refs.isRecord(candidate) && Object.hasOwn(candidate, steps![0]));
-    return { value: refs.read(scope ?? { [steps![0]]: await top(steps![0]) }, name), item: !!scope };
+    const scope = scopes.find((candidate) => referencePaths.isRecord(candidate) && Object.hasOwn(candidate, steps![0]));
+    return { value: referencePaths.read(scope ?? { [steps![0]]: await top(steps![0]) }, name), item: !!scope };
   };
   const walk = async (list: TemplateNode[], scopes: unknown[], fenced = false): Promise<string> => {
     let rendered = '';

@@ -33,8 +33,8 @@ function pinnedInputs(t: TestContext) {
 }
 const briefOf = (fixture: GoldenFixture, vertex: string, visitNumber: number) =>
   fixture.harness.calls.find((call) => {
-    const actionRef = marker.partsOf(call.marker!)!;
-    return actionRef.vertex === vertex && actionRef.visit === String(visitNumber);
+    const actionIdentity = marker.partsOf(call.marker!)!;
+    return actionIdentity.vertex === vertex && actionIdentity.visit === String(visitNumber);
   })!.brief!;
 
 test('a Brief names the base branch the Ticket branch was created from', async (t) => {

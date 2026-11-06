@@ -35,8 +35,8 @@ export interface IdleSnapshot {
   snapshot: WorktreeSnapshot;
 }
 
-// What an agent Attempt starts from (begin), saved in its call intent: its own worktree's snapshot, the idle others',
-// and the untracked Protected Files and tests a rollback restores.
+// What an agent Attempt starts from (takeBaseline), saved in its call intent: its own worktree's snapshot, the idle
+// others', and the untracked Protected Files and tests a rollback restores.
 export interface IntegrityBaseline {
   head: string;
   own: WorktreeSnapshot;
@@ -178,7 +178,7 @@ export const sameFiles = (first: UntrackedFiles, second: UntrackedFiles): boolea
   Object.keys(first).every((path) => sameFile(first[path], second[path]));
 
 // `testPaths` is { globs, exclude } for the test files.
-export async function begin({
+export async function takeBaseline({
   record: executionRecord,
   others,
   protectedPaths = [],
@@ -268,8 +268,8 @@ export async function restoreUntracked(
   }
 }
 
-type BeginOptions = Omit<Parameters<typeof begin>[0], 'git' | 'locks'>;
-type EndOptions = Omit<Parameters<typeof end>[0], 'git' | 'locks'>;
+type TakeBaselineOptions = Omit<Parameters<typeof takeBaseline>[0], 'git' | 'locks'>;
+type FindViolationsOptions = Omit<Parameters<typeof findViolations>[0], 'git' | 'locks'>;
 
 // The Integrity Assertions over an injected git, in the shape the interpreter and Reconciliation call. `fs` reaches
 // restoreUntracked, and `locks` (locks.createLocks) times and sees each snapshot's wait for the repo lock.
@@ -279,8 +279,8 @@ export const createIntegrity = (git: IntegrityGit, fs?: RestoreFs, locks?: RepoL
   untrackedFiles: (worktree: string, within: Within | undefined) => untrackedFiles(worktree, within, git),
   ignoredFiles: (worktree: string, within: Within | undefined) => ignoredFiles(worktree, within, git),
   restoreUntracked: (worktree: string, set: RollbackSet) => restoreUntracked(worktree, set, git, fs),
-  begin: (options: BeginOptions) => begin({ ...options, git, locks }),
-  end: (options: EndOptions) => end({ ...options, git, locks }),
+  takeBaseline: (options: TakeBaselineOptions) => takeBaseline({ ...options, git, locks }),
+  findViolations: (options: FindViolationsOptions) => findViolations({ ...options, git, locks }),
 });
 // The Integrity Assertions a Run is given: createIntegrity's, or the fake integrity's in the unit tier.
 export type Integrity = ReturnType<typeof createIntegrity>;
@@ -295,7 +295,7 @@ const diffSurfaces = (
     .filter((surface) => before[surface] !== after[surface])
     .map((surface) => ({ worktree, surface, before: before[surface], after: after[surface] }));
 
-export async function end({
+export async function findViolations({
   baseline,
   record: executionRecord,
   others,

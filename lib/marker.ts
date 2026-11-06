@@ -5,7 +5,7 @@ export type MarkerPart = (typeof PARTS)[number];
 
 // The Action identity the interpreter passes each Action. `procedure` is null for a Terminal's reporting Actions, which
 // run outside any Procedure; `attempt` is given only where an Attempt after the first is entered.
-export interface ActionRef {
+export interface ActionIdentity {
   vertex: string;
   visit: number;
   procedure?: string | null;
@@ -26,12 +26,12 @@ export const partsOf = (actionMarker: string): Record<MarkerPart, string> =>
   Object.fromEntries(PARTS.map((part, i) => [part, actionMarker.split(':')[i + 1]])) as Record<MarkerPart, string>;
 
 // The key of an Action across its Attempts: its retries are saved under it. A marker's parts name it too, as strings.
-export const actionKeyOf = (actionRef: {
+export const actionKeyOf = (actionIdentity: {
   vertex: string;
   visit: number | string;
   action: string;
   recovery: number | string;
-}): string => `${actionRef.vertex}/${actionRef.visit}/${actionRef.action}/${actionRef.recovery}`;
+}): string => `${actionIdentity.vertex}/${actionIdentity.visit}/${actionIdentity.action}/${actionIdentity.recovery}`;
 
 export const markerTrailer = (actionMarker: string): string => `Gg-Action: ${actionMarker}`;
 export const markerComment = (actionMarker: string): string => `<!-- gg-action ${actionMarker} -->`;

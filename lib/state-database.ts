@@ -5,9 +5,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
 import * as paths from './paths.ts';
 
-export const DB_SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 1;
 
-export const dbPath = (commonDir: string): string => join(commonDir, 'gg', 'gg.db');
+export const filePath = (commonDir: string): string => join(commonDir, 'gg', 'gg.db');
 // One connection per directory however it is spelled, so close() finds it and Windows can remove the directory.
 const connections = new Map<string, DatabaseSync>();
 
@@ -39,7 +39,7 @@ function switchToWal(connection: DatabaseSync, path: string, lockPath: string): 
 
 // The first opener creates the tables under the open lock; the others then see its version.
 function createSchema(connection: DatabaseSync, path: string): void {
-  if (pragma(connection, 'user_version', 'user_version') === DB_SCHEMA_VERSION) return;
+  if (pragma(connection, 'user_version', 'user_version') === SCHEMA_VERSION) return;
   connection.exec('BEGIN IMMEDIATE');
   try {
     const version = pragma(connection, 'user_version', 'user_version');
@@ -56,10 +56,10 @@ function createSchema(connection: DatabaseSync, path: string): void {
       CREATE TABLE check_results (id INTEGER PRIMARY KEY, ts TEXT NOT NULL, tree TEXT NOT NULL, command TEXT NOT NULL,
         state TEXT NOT NULL, marker TEXT NOT NULL, output TEXT NOT NULL);
       CREATE INDEX check_results_key ON check_results (tree, command);
-      PRAGMA user_version = ${DB_SCHEMA_VERSION};
+      PRAGMA user_version = ${SCHEMA_VERSION};
     `);
-    } else if (version !== DB_SCHEMA_VERSION) {
-      throw new Error(`${path} has database version ${version}; this gg reads version ${DB_SCHEMA_VERSION}`);
+    } else if (version !== SCHEMA_VERSION) {
+      throw new Error(`${path} has database version ${version}; this gg reads version ${SCHEMA_VERSION}`);
     }
     connection.exec('COMMIT');
   } catch (err) {
@@ -68,13 +68,13 @@ function createSchema(connection: DatabaseSync, path: string): void {
   }
 }
 
-export function openDb(directory: string): DatabaseSync {
+export function open(directory: string): DatabaseSync {
   const commonDir = resolve(directory);
   const key = paths.pathKey(commonDir);
-  const open = connections.get(key);
-  if (open) return open;
+  const known = connections.get(key);
+  if (known) return known;
   mkdirSync(join(commonDir, 'gg', 'locks'), { recursive: true });
-  const path = dbPath(commonDir);
+  const path = filePath(commonDir);
   const connection = new DatabaseSync(path);
   try {
     // SQLite's busy handler is not fair, so another process's burst of writes can hold a write off for seconds; gg's
@@ -85,7 +85,7 @@ export function openDb(directory: string): DatabaseSync {
     // An existing schema is read without the write lock, so another process's writes cannot hold this open past
     // busy_timeout. A database without it is created under the open lock: the first opener creates the tables and the
     // others then see its version, so none takes IMMEDIATE while the first is already saving records.
-    if (pragma(connection, 'user_version', 'user_version') !== DB_SCHEMA_VERSION)
+    if (pragma(connection, 'user_version', 'user_version') !== SCHEMA_VERSION)
       underOpenLock(lockPath, () => createSchema(connection, path));
   } catch (err) {
     connection.close();
@@ -103,14 +103,14 @@ export function close(commonDir: string): void {
   connection?.close();
 }
 
-export function saveConfig(commonDir: string, hash: string, json: string): void {
-  openDb(commonDir)
+export function savePinnedConfiguration(commonDir: string, hash: string, json: string): void {
+  open(commonDir)
     .prepare('INSERT OR IGNORE INTO configs (hash, json, firstSeen) VALUES (?, ?, ?)')
     .run(hash, json, new Date().toISOString());
 }
 
-export function loadConfig(commonDir: string, hash: string): unknown {
-  const row = openDb(commonDir).prepare('SELECT json FROM configs WHERE hash = ?').get(hash);
+export function loadPinnedConfiguration(commonDir: string, hash: string): unknown {
+  const row = open(commonDir).prepare('SELECT json FROM configs WHERE hash = ?').get(hash);
   return row ? JSON.parse(row.json as string) : null;
 }
 
@@ -127,7 +127,7 @@ export interface CheckResult {
 // A `reuse: tree` command Check's result in this repository, keyed on the tree it checked and its resolved command line
 // (L8, L13). Failing results are recorded too, but only a pass is ever reused.
 export function saveCheckResult(commonDir: string, { tree, command, state, marker, output }: CheckResult): void {
-  openDb(commonDir)
+  open(commonDir)
     .prepare('INSERT INTO check_results (ts, tree, command, state, marker, output) VALUES (?, ?, ?, ?, ?, ?)')
     .run(new Date().toISOString(), tree, command, state, marker, output);
 }
@@ -137,7 +137,7 @@ export const reusablePass = (
   tree: string,
   command: string,
 ): Pick<CheckResult, 'marker' | 'output'> | null =>
-  (openDb(commonDir)
+  (open(commonDir)
     .prepare(
       'SELECT marker, output FROM check_results WHERE tree = ? AND command = ? ' +
         "AND state = 'passed' ORDER BY id DESC LIMIT 1",

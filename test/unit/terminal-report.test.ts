@@ -79,16 +79,19 @@ test("an Execution's run stop is read from its Action Events in the State Databa
 });
 
 test("a Terminal's Actions are named for its report: end, fault, hold or abandon", () => {
-  assert.deepEqual(terminalReport.terminalAt('ready-for-qa', null)('comment'), {
+  assert.deepEqual(terminalReport.terminalActionIdentity('ready-for-qa', null)('comment'), {
     vertex: 'ready-for-qa',
     visit: 1,
     procedure: null,
     action: 'end-comment',
     recovery: 0,
   });
-  assert.equal(terminalReport.terminalAt('needs-human', { error: 'boom', held: true })('label').action, 'fault-label');
-  assert.equal(terminalReport.terminalAt('needs-human', { held: true })('label').action, 'hold-label');
-  assert.deepEqual(terminalReport.terminalAt('abandoned', { abandoned: true })('label'), {
+  assert.equal(
+    terminalReport.terminalActionIdentity('needs-human', { error: 'boom', held: true })('label').action,
+    'fault-label',
+  );
+  assert.equal(terminalReport.terminalActionIdentity('needs-human', { held: true })('label').action, 'hold-label');
+  assert.deepEqual(terminalReport.terminalActionIdentity('abandoned', { abandoned: true })('label'), {
     vertex: 'needs-human',
     visit: 1,
     procedure: null,

@@ -80,7 +80,7 @@ export function stopReason(
 export const tddTrace = (fixture: Pick<GoldenFixture, 'readEvents'>) =>
   golden.trace(fixture.readEvents()).filter((event) => TDD_VERTICES.includes(event.vertex));
 
-// T17's error paths: every non-advance row of the transition table, reached through the interpreter.
+// T17's error paths: every non-advance row of the Transition Table, reached through the interpreter.
 export const WRONG_ADD = 'export const add = () => 0;\n';
 export const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
 

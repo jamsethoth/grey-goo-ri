@@ -8,7 +8,7 @@ import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
-import * as sqlite from '../../lib/sqlite.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.ts';
 import * as goldenRun from '../support/golden-run.ts';
@@ -245,7 +245,7 @@ test('bounds survive a restart', async (t) => {
 test('a corrupt record holds the ticket', async (t) => {
   const fixture = await golden.fixture(t);
   const corrupt = '{ "schemaVersion": 1, "log": [';
-  const database = sqlite.openDb(fixture.commonDir);
+  const database = stateDatabase.open(fixture.commonDir);
   database.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = ?").run(corrupt, golden.TICKET);
   const err = await executionReads.loadTicket(fixture).catch((thrown: unknown) => thrown);
   assert.ok(err instanceof record.RecordCorruptError, String(err));

@@ -320,6 +320,10 @@ A Procedure's ordered rows, each a condition on enum, boolean and integer fields
 row decides. Admission rejects a row that can never fire and warns where an earlier row overlaps a later one.
 _Avoid_: decision table, rule set, hit policy (for the table itself)
 
+**Transition Table**:
+gg's fixed rows, run before a Procedure's Rule Tables, that every harness obeys (request 3.4). It decides a resolution;
+it routes nothing, which Edges do. "Transition" is on Edge's avoid list, but this term names a different concept.
+
 **Resolution Policy**:
 An Agent's rules for deriving one Outcome when its Signals disagree: ordering among non-advance Outcomes, the weight
 of the Claim without deterministic evidence, and retry budgets by Failure Class.
@@ -378,6 +382,16 @@ _Avoid_: journal, checkpoint, state file
 **Epic Record**:
 The persisted state of an Epic: its plan Decision and Epic-level pending state.
 _Avoid_: plan record
+
+**Write-ahead Log**:
+The Execution Record's list of side-effect steps, `intent`, `evidence` and `complete`, keyed by Action Marker, from
+which Reconciliation tells which effects landed. It covers agent calls too, whose intent carries the Attempt's baseline.
+An open **intent** is one with no `complete`; not a Permission Intent.
+_Avoid_: journal
+
+**Activity**:
+A worktree's busy flag and generation. gg marks the worktree busy around every process it launches there (an agent, a
+Check, git), so other worktrees' Integrity Assertions snapshot it only while idle.
 
 **State Database**:
 The per-repository `node:sqlite` file `<git common dir>/gg/gg.db` that holds every Execution Record, Epic Record,
@@ -465,6 +479,11 @@ _Avoid_: pinned config, frozen config
 The fingerprint of the pinned configuration an Execution runs under. It excludes live repository content, which has
 its own Repository Content Digest.
 _Avoid_: config id, variant id
+
+**Reference Path**:
+A dotted path, such as a rule field, Check parameter, `with`, or input `from` or `pick`, that the validator types
+against a schema-shaped scope and gg reads at run time. Each kind starts from its own scope.
+_Avoid_: ref (a git ref)
 
 **Pinned Configuration**:
 The resolved configuration a Config Hash fingerprints: Resolved Flow, the bytes and hash of every Layer file it names

@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as procedures from '../../lib/procedures.ts';
-import type * as refs from '../../lib/refs.ts';
+import type * as referencePaths from '../../lib/reference-paths.ts';
 import * as requestTables from '../support/request-tables.ts';
 
 // The outputs of an Action declared with only the keys a case shows: no output reads its id, and only an agent's
 // reads the schema.
-const actionOutputs = (action: { do: string; kind?: string }, schema?: refs.SchemaNode) =>
-  procedures.outputs(action as procedures.Action, schema as refs.SchemaNode);
+const actionOutputs = (action: { do: string; kind?: string }, schema?: referencePaths.SchemaNode) =>
+  procedures.outputs(action as procedures.Action, schema as referencePaths.SchemaNode);
 
 test('the Action kinds and the keys each may declare', () => {
   assert.deepEqual(procedures.ACTION_KEYS, {

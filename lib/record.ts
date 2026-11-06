@@ -3,7 +3,7 @@ import type * as approval from './approval.ts';
 import type * as effects from './effects.ts';
 import type * as events from './events.ts';
 import type * as marker from './marker.ts';
-import * as sqlite from './sqlite.ts';
+import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 import * as writeAhead from './write-ahead.ts';
 
@@ -44,7 +44,7 @@ export interface TerminalStop {
   outcome: string;
   response: unknown;
   // The stopped Action's identity, or null for a stop decided before any Action.
-  actionRef: marker.ActionRef | null;
+  actionRef: marker.ActionIdentity | null;
   held: boolean;
   abandoned: boolean;
   inProgress: boolean;
@@ -156,7 +156,7 @@ export interface ExecutionStart {
 }
 
 // Every field the Execution Record will ever hold is declared here, null until set; save refuses any other key.
-export function createExecution(start: ExecutionStart): ExecutionRecord {
+export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
   const { commonDir, ticket, epic = null, flow, configHash, run, worktree, branch, base } = start;
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -210,7 +210,7 @@ export function createEpicRecord({ commonDir, epic }: { commonDir: string; epic:
 const declaredFields = (kind: RecordKind): string[] =>
   Object.keys(
     kind === 'ticket'
-      ? createExecution({ flow: {}, ticket: 0 } as ExecutionStart)
+      ? createExecutionRecord({ flow: {}, ticket: 0 } as ExecutionStart)
       : createEpicRecord({ commonDir: null, epic: 0 } as unknown as { commonDir: string; epic: number }),
   );
 const DECLARED = { ticket: declaredFields('ticket'), epic: declaredFields('epic') };
@@ -238,7 +238,7 @@ async function saveRecord(
 ): Promise<void> {
   const { commonDir, ...data } = record;
   const kind: RecordKind = 'execution' in record ? 'ticket' : 'epic';
-  const connection = sqlite.openDb(commonDir);
+  const connection = stateDatabase.open(commonDir);
   const upsert = () => {
     assertDeclared(kind, record);
     beforeSave(record);
@@ -277,7 +277,7 @@ interface RecordRow {
 }
 
 function parseRow<Saved extends AnyRecord>(commonDir: string, { kind, n: recordNumber, json }: RecordRow): Saved {
-  const file = `${sqlite.dbPath(commonDir)}#${kind}-${recordNumber}`;
+  const file = `${stateDatabase.filePath(commonDir)}#${kind}-${recordNumber}`;
   let data;
   try {
     data = JSON.parse(json);
@@ -305,8 +305,8 @@ export async function load<Kind extends RecordKind>(
   kind: Kind,
   recordNumber: number,
 ): Promise<Saved<Kind> | null> {
-  const row = sqlite
-    .openDb(commonDir)
+  const row = stateDatabase
+    .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? AND n = ?')
     .get(kind, recordNumber) as RecordRow | undefined;
   return row ? parseRow<Saved<Kind>>(commonDir, row) : null;
@@ -318,8 +318,8 @@ export async function loadAll<Kind extends RecordKind>(
   kind: Kind,
   { onCorrupt = () => {} }: { onCorrupt?: (err: RecordCorruptError) => void } = {},
 ): Promise<Saved<Kind>[]> {
-  const rows = sqlite
-    .openDb(commonDir)
+  const rows = stateDatabase
+    .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? ORDER BY n')
     .all(kind) as unknown as RecordRow[];
   return rows.flatMap((row) => {

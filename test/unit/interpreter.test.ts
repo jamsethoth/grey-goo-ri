@@ -196,7 +196,7 @@ for (const [kind, [directory, output]] of Object.entries(longLines) as [string, 
   });
 }
 
-// The first flip each way: red's clean check is the first bracket, busy at generation 1 and idle at 2. A save that
+// The first flip each way: red's clean check is the first whileBusy, busy at generation 1 and idle at 2. A save that
 // carries a Terminal passes, so a fault reported after the failure would land.
 for (const [name, from, to, generation, activity] of [
   ['busy', false, true, 1, { busy: false, generation: 0 }],
@@ -230,7 +230,7 @@ for (const [name, from, to, generation, activity] of [
 test('runExecution asks the injected integrity whether an Attempt kept to its access', async (t) => {
   const fixture = await golden.fixture(t);
   const violation = { worktree: fixture.worktree, surface: 'head', before: fixture.base, after: 'a'.repeat(40) };
-  const injected = { ...fixture.options.deps.integrity, end: async () => ({ violations: [violation] }) };
+  const injected = { ...fixture.options.deps.integrity, findViolations: async () => ({ violations: [violation] }) };
   const result = await interpreter.runExecution({
     ...fixture.options,
     deps: { ...fixture.options.deps, integrity: injected } as runContext.Deps,
@@ -311,13 +311,13 @@ test('runExecution asserts the Protected Files it is given', async (t) => {
   const integrityOf = fixture.options.deps.integrity as integrity.Integrity;
   const injected = {
     ...integrityOf,
-    begin: (args: Parameters<integrity.Integrity['begin']>[0]) => {
+    takeBaseline: (args: Parameters<integrity.Integrity['takeBaseline']>[0]) => {
       seen.push(['begin', args.protectedPaths]);
-      return integrityOf.begin(args);
+      return integrityOf.takeBaseline(args);
     },
-    end: (args: Parameters<integrity.Integrity['end']>[0]) => {
+    findViolations: (args: Parameters<integrity.Integrity['findViolations']>[0]) => {
       seen.push(['end', args.protectedPaths]);
-      return integrityOf.end(args);
+      return integrityOf.findViolations(args);
     },
   };
   await interpreter.runExecution({
@@ -617,7 +617,7 @@ test('no "*" catches an unroutable Outcome', async (t) => {
     ...fixture.options,
     deps: {
       ...fixture.options.deps,
-      integrity: { ...fixture.options.deps.integrity, end: async () => ({ violations: [violation] }) },
+      integrity: { ...fixture.options.deps.integrity, findViolations: async () => ({ violations: [violation] }) },
     } as runContext.Deps,
   });
   assert.equal(result.outcome, 'needs-human', 'an Integrity Violation is never routed');

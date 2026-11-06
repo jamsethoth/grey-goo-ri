@@ -4,7 +4,7 @@ import * as checks from './checks.ts';
 import * as effectErrors from './effect-errors.ts';
 import type * as integrity from './integrity.ts';
 import * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 import type * as visitScope from './visit-scope.ts';
@@ -62,7 +62,7 @@ async function changedTests(
   const { tests } = state.proc;
   if (typeof tests === 'object' && tests?.named) {
     const named = new Set(
-      (refs.read(
+      (referencePaths.read(
         { ...record.visitScope(executionRecord, actionIdentity), response: called.response },
         tests.named,
       ) as string[]) ?? [],
@@ -74,9 +74,9 @@ async function changedTests(
 }
 
 // The call under the Integrity Assertions. The snapshots are git processes in this worktree, so they run inside the
-// busy interval too (request 3.6). The other worktrees are read once per Attempt, so begin and end guard the same
-// worktrees, including any created since admission. The intent is written ahead with its baseline: an Attempt whose
-// intent is open at resume is an Interrupted Attempt, held rather than run again on a new baseline.
+// busy interval too (request 3.6). The other worktrees are read once per Attempt, so takeBaseline and findViolations
+// guard the same worktrees, including any created since admission. The intent is written ahead with its baseline: an
+// Attempt whose intent is open at resume is an Interrupted Attempt, held rather than run again on a new baseline.
 export async function guardedCall(
   runContext: RunContext,
   attempt: Attempt,
@@ -86,7 +86,7 @@ export async function guardedCall(
   const { record: executionRecord, protectedPaths, others: listed } = runContext;
   const access = call.access as string;
   const others = typeof listed === 'function' ? await listed() : (listed ?? []);
-  const baseline = await runContext.integrity.begin({
+  const baseline = await runContext.integrity.takeBaseline({
     record: executionRecord,
     others,
     protectedPaths,
@@ -97,7 +97,7 @@ export async function guardedCall(
   executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
   await runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
   const called = await withHeartbeat(runContext, () => harness.run(call));
-  const { violations } = await runContext.integrity.end({
+  const { violations } = await runContext.integrity.findViolations({
     baseline,
     record: executionRecord,
     others,

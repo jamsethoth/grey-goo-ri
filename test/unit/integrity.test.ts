@@ -9,7 +9,7 @@ import { fakeGit } from '../support/fake-git.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 function newExecution(commonDir: string, ticket: number, worktree: string) {
-  return record.createExecution({
+  return record.createExecutionRecord({
     commonDir,
     ticket,
     epic: 1,
@@ -72,7 +72,7 @@ test('a workflow file change is an integrity violation', async (t) => {
   const { mainRoot, commonDir } = fake.init(root, { files: { '.github/workflows/ci.yml': 'on: push\n' } });
   const real = integrity.createIntegrity(fake.git);
   const executionRecord = newExecution(commonDir, 1, mainRoot);
-  const baseline = await real.begin({
+  const baseline = await real.takeBaseline({
     record: executionRecord,
     others: [],
     protectedPaths: interpreter.protectedFiles({}),
@@ -81,7 +81,7 @@ test('a workflow file change is an integrity violation', async (t) => {
   mkdirSync(join(mainRoot, '.github', 'actions', 'setup'), { recursive: true });
   writeFileSync(join(mainRoot, '.github', 'actions', 'setup', 'action.yml'), 'runs: {}\n');
 
-  const { violations } = await real.end({
+  const { violations } = await real.findViolations({
     baseline,
     record: executionRecord,
     others: [],

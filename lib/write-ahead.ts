@@ -28,6 +28,14 @@ export const entryOf = (
   time: new Date().toISOString(),
 });
 
+// A marker's first entry at a step.
+export const findEntry = (
+  executionRecord: record.ExecutionRecord,
+  actionMarker: string,
+  step: WriteAheadEntry['step'],
+): WriteAheadEntry | undefined =>
+  executionRecord.writeAheadLog.find((entry) => entry.actionMarker === actionMarker && entry.step === step);
+
 // The effect a marker's intent named, or null before its intent.
 export function effectOf(executionRecord: record.ExecutionRecord, actionMarker: string): string | null {
   return (
@@ -38,8 +46,11 @@ export function effectOf(executionRecord: record.ExecutionRecord, actionMarker: 
 
 // The evidence that proves a marker's effect landed. A failed effect saves evidence too (a label write that did not
 // land saves { ok: false }), which proves nothing: that Action is reconciled and redone as if it had none.
-export const proof = (executionRecord: record.ExecutionRecord, actionMarker: string): WriteAheadEntry | undefined =>
-  executionRecord.writeAheadLog.findLast(
+export const evidenceOf = (
+  executionRecord: record.ExecutionRecord,
+  actionMarker: string,
+): WriteAheadEntry | undefined =>
+  executionRecord.writeAheadLog.find(
     (entry) => entry.actionMarker === actionMarker && entry.step === 'evidence' && entry.evidence?.ok !== false,
   );
 

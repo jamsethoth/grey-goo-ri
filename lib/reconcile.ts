@@ -37,7 +37,7 @@ export type HumanOverride = {
   inProgress: boolean;
 };
 type Hold = { next: 'hold'; cursor: record.Cursor | null; reason: string; name?: string; advice?: string };
-export type ReconcileDecision = { next: 'continue'; cursor: record.Cursor; reason: null } | Hold | HumanOverride;
+export type ReconcileResult = { next: 'continue'; cursor: record.Cursor; reason: null } | Hold | HumanOverride;
 
 type Database = Pick<record.StateDatabase, 'evidence' | 'complete'>;
 
@@ -128,7 +128,7 @@ export async function resets(
   }: { git: ReconcileGit; integrity?: integrityModule.Integrity; database?: Database },
 ): Promise<'held' | 'continue'> {
   for (const entry of writeAhead.openIntents(executionRecord).filter((intent) => intent.effect === 'reset')) {
-    if (!writeAhead.proof(executionRecord, entry.actionMarker)) {
+    if (!writeAhead.evidenceOf(executionRecord, entry.actionMarker)) {
       const payload = entry.payload as ResetPayload;
       let state = await resetState(executionRecord.worktree, payload, git, integrity);
       if (state === 'left') {
@@ -183,21 +183,21 @@ export async function humanOverride(
   issueLabels: string[],
   labelPrefix: string = labels.DEFAULT_PREFIX,
 ): Promise<HumanOverride | null> {
-  const state = labels.labels(labelPrefix).state;
+  const state = labels.labelsFor(labelPrefix).state;
   const needsHuman = state(labels.NEEDS_HUMAN);
   // A needs-human Terminal that crashed after its label Action shows gg's own label, not a human's.
   const own = executionRecord.writeAheadLog.some(
     (entry) =>
       entry.step === 'intent' &&
       entry.effect === 'label' &&
-      labels.has((entry.payload as effectEvidence.LabelPayload).add, needsHuman),
+      labels.hasLabel((entry.payload as effectEvidence.LabelPayload).add, needsHuman),
   );
-  if (own || !labels.has(issueLabels, needsHuman)) return null;
+  if (own || !labels.hasLabel(issueLabels, needsHuman)) return null;
   return {
     next: 'abandon',
     cursor: executionRecord.cursor,
     reason: `#${executionRecord.ticket} carries ${needsHuman} on GitHub, which overrides the record.`,
-    inProgress: labels.has(issueLabels, state('in-progress')),
+    inProgress: labels.hasLabel(issueLabels, state('in-progress')),
   };
 }
 
@@ -210,7 +210,7 @@ async function findEffects(
   find: effectEvidence.FindEffect = effectEvidence.findEffect,
 ): Promise<string | null> {
   for (const entry of entries) {
-    if (writeAhead.proof(context.executionRecord, entry.actionMarker)) continue;
+    if (writeAhead.evidenceOf(context.executionRecord, entry.actionMarker)) continue;
     const result = await find(entry, context);
     if (result.status === 'unknown') throw result.error;
     if (result.status === 'conflicting') return result.reason;
@@ -239,7 +239,7 @@ export async function terminalEffects(
     find?: effectEvidence.FindEffect;
     database?: Database;
   },
-): Promise<ReconcileDecision> {
+): Promise<ReconcileResult> {
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   const overridden = await humanOverride(executionRecord, issueLabels, labelPrefix);
   if (overridden) return overridden;
@@ -286,7 +286,7 @@ export type ReconcileOptions = ({ record: record.ExecutionRecord } | { corrupt: 
 };
 
 // Labels decide whether an Execution continues, the record where (request 3.5). The record is never discarded.
-export async function reconcile(options: ReconcileOptions): Promise<ReconcileDecision> {
+export async function reconcile(options: ReconcileOptions): Promise<ReconcileResult> {
   if ('corrupt' in options)
     return { next: 'hold', cursor: null, reason: `${options.corrupt.message}; it is kept for a human.` };
   const {
@@ -345,7 +345,7 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
       advice: INTERRUPTED_ADVICE,
     };
   }
-  if (!(labels.ENDS as string[]).includes(vertex) && !flow.ticket.vertices[vertex])
+  if (!(labels.END_STATES as string[]).includes(vertex) && !flow.ticket.vertices[vertex])
     return hold(`The record continues at Vertex ${vertex}, which the Flow no longer has.`);
   // A Visit in progress runs on the Procedure it entered with, so one whose Procedure has changed is held, not resumed
   // (S6).

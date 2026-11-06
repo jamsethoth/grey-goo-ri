@@ -1,7 +1,7 @@
 // Rule Tables: first-match evaluation and exact analysis over the table's finite domain partition (R8, V5, N2).
 
 import type * as procedures from './procedures.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as ruleDomain from './rule-domain.ts';
 
 export type RuleValue = string | number | boolean;
@@ -56,7 +56,9 @@ const NAMED = 10;
 
 export function evaluate(table: { rows: RuleRow[] }, input: unknown) {
   const i = table.rows.findIndex((row) =>
-    Object.entries(row.when).every(([path, condition]) => ruleDomain.matches(condition, refs.read(input, path))),
+    Object.entries(row.when).every(([path, condition]) =>
+      ruleDomain.matches(condition, referencePaths.read(input, path)),
+    ),
   );
   return i < 0 ? null : i;
 }
@@ -90,14 +92,14 @@ function overLimit(name: string, paths: string[], values: ruleDomain.Value[][][]
 
 const neverFiring = (domain: ruleDomain.Domain, reached: Uint32Array, fires: Uint32Array): RuleError[] =>
   domain.rows.flatMap((row, i) =>
-    ruleDomain.has(fires, i)
+    ruleDomain.bitAt(fires, i)
       ? []
       : [
           {
             row: i,
             message:
               `rule table ${domain.name}: row ${i + 1} (${row.outcome}) ` +
-              (ruleDomain.has(reached, i)
+              (ruleDomain.bitAt(reached, i)
                 ? 'never fires: earlier rows match every input it matches'
                 : 'is unreachable: it matches no input'),
           },
@@ -145,7 +147,7 @@ function rangesOf(takerBits: Uint32Array) {
   let count = 0;
   takerBits.forEach((wordBits, word) => {
     for (let bits = wordBits; bits; bits &= bits - 1, count++) {
-      const j = word * 32 + ruleDomain.lowest(bits);
+      const j = word * 32 + ruleDomain.lowestBit(bits);
       const last = ranges.at(-1);
       if (last?.[1] === j - 1) last[1] = j;
       else ranges.push([j, j]);
@@ -187,12 +189,12 @@ function overlapRuns(domain: ruleDomain.Domain, fires: Uint32Array, takers: Uint
   const { rows, paths } = domain;
   const firingBefore = new Int32Array(rows.length + 1);
   rows.forEach((_, i) => {
-    firingBefore[i + 1] = firingBefore[i] + ruleDomain.has(fires, i);
+    firingBefore[i + 1] = firingBefore[i] + ruleDomain.bitAt(fires, i);
   });
   // The firing rows with a condition on each field, ascending.
   const firingOn = new Map<string, number[]>(paths.map((path) => [path, []]));
   rows.forEach((row, i) => {
-    if (ruleDomain.has(fires, i)) for (const path of Object.keys(row.when)) firingOn.get(path)?.push(i);
+    if (ruleDomain.bitAt(fires, i)) for (const path of Object.keys(row.when)) firingOn.get(path)?.push(i);
   });
   const runs: Run[] = [];
   // The open run's full taker ranges, as a key; closed runs keep only their named rows.

@@ -416,7 +416,7 @@ test('ensureLabels accepts differently cased existing State Labels', async (t) =
 
 test('ensureLabels accepts a concurrent create after confirming presence', async (t) => {
   let reads = 0;
-  const all = labels.STATE_LABELS.map((name) => ({ name: `GG:state:${name}` }));
+  const all = labels.STATE_NAMES.map((name) => ({ name: `GG:state:${name}` }));
   const { gh, calls } = scriptedGh((args) => {
     if (labelsApi(args)) return ++reads === 1 ? [[]] : [all];
     if (args[0] === 'label') throw COLLISION(args[2]);

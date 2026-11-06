@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as labels from './labels.ts';
 import * as outcome from './outcome.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 
 // A route to an end. needs-human is where an exhausted Bound goes, and the engine's own Outcomes unless routed (R12c,
 // T7).
@@ -14,7 +14,7 @@ export interface EndTarget {
 }
 export const NEEDS_HUMAN_ROUTE: EndTarget = { end: labels.NEEDS_HUMAN };
 
-export const isEnd = (value: unknown): value is labels.EndState => (labels.ENDS as unknown[]).includes(value);
+export const isEnd = (value: unknown): value is labels.EndState => (labels.END_STATES as unknown[]).includes(value);
 
 // Which declaration an Outcome's route came from, as gg doctor prints it.
 export type RouteSource = 'Vertex route' | 'Flow routes' | 'Vertex "*"' | 'Flow "*"' | 'engine default';
@@ -35,7 +35,7 @@ export function route(vertexRoutes: unknown, flowRoutes: unknown, outcomeName: s
     ['Flow "*"', flowRoutes, '*'],
   ];
   for (const [by, routes, key] of order) {
-    if (refs.isRecord(routes) && Object.hasOwn(routes, key)) return { target: routes[key], by };
+    if (referencePaths.isRecord(routes) && Object.hasOwn(routes, key)) return { target: routes[key], by };
   }
   return outcome.ENGINE_OUTCOMES.includes(outcomeName) ? { target: NEEDS_HUMAN_ROUTE, by: 'engine default' } : null;
 }

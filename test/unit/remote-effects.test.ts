@@ -5,10 +5,10 @@ import * as marker from '../../lib/marker.ts';
 import * as remoteEffects from '../../lib/remote-effects.ts';
 import * as support from '../support/execution-context.ts';
 
-const pushKey = marker.actionKeyOf(support.PUSH_REF);
+const pushKey = marker.actionKeyOf(support.PUSH_ACTION_IDENTITY);
 
 test('the remote Actions are the comment, PR upsert, push and PR ready', () => {
-  assert.deepEqual(remoteEffects.REMOTE, ['comment', 'pr-upsert', 'push', 'pr-ready']);
+  assert.deepEqual(remoteEffects.REMOTE_ACTIONS, ['comment', 'pr-upsert', 'push', 'pr-ready']);
 });
 
 test('a remote effect that fails transiently is retried after its backoff, once its effect is not found', async (t) => {
@@ -93,7 +93,7 @@ test("a failed lookup of a remote effect is retried on the Action's budget until
   await support.remoteComment(context);
   fakeGh.fail({ matches: (args: string[]) => args[0] === 'api' && !args.includes('POST'), status: 502 });
   const [intent] = executionRecord.writeAheadLog;
-  const found = await remoteEffects.lookup(context, intent, {
+  const found = await remoteEffects.findEffectRetrying(context, intent, {
     executionRecord,
     gh: context.gh,
     cwd: context.cwd,

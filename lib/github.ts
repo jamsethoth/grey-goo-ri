@@ -81,14 +81,15 @@ export function readinessReason(
   issue: Pick<Issue, 'state' | 'labels' | 'blockedBy'>,
   { prefix = labels.DEFAULT_PREFIX }: PrefixOption = {},
 ) {
-  const busy = labels.BUSY_STATES.map(labels.labels(prefix).state);
+  // Admission treats in-progress specially (stuck detection); every State Label still means the ticket is not idle.
+  const busy = labels.STATE_NAMES.map(labels.labelsFor(prefix).state);
   const blockers = ((issue.blockedBy as { nodes?: IssueRef[] } | undefined)?.nodes ??
     issue.blockedBy ??
     []) as IssueRef[];
   if (issue.state !== 'OPEN') return 'closed';
   const open = blockers.filter((blocker) => blocker.state !== 'CLOSED');
   if (open.length) return `blocked by ${open.map((blocker) => `#${blocker.number}`).join(', ')}`;
-  const label = labelNames(issue).find((name) => labels.has(busy, name));
+  const label = labelNames(issue).find((name) => labels.hasLabel(busy, name));
   return label ? `carries State Label ${label}` : null;
 }
 
@@ -175,9 +176,9 @@ function labelVerbs({ gh, ghJson }: Client) {
           .map((label) => label.name),
       );
     let existing = await read();
-    for (const name of labels.STATE_LABELS) {
-      const label = labels.labels(prefix).state(name);
-      if (labels.has(existing, label)) continue;
+    for (const name of labels.STATE_NAMES) {
+      const label = labels.labelsFor(prefix).state(name);
+      if (labels.hasLabel(existing, label)) continue;
       const [color, description] = STATE_STYLE[name];
       try {
         await gh(['label', 'create', label, '--color', color, '--description', description], cwd);
@@ -185,7 +186,7 @@ function labelVerbs({ gh, ghJson }: Client) {
         existing = await read().catch(() => {
           throw err;
         });
-        if (!labels.has(existing, label)) throw err;
+        if (!labels.hasLabel(existing, label)) throw err;
       }
     }
   }
@@ -297,7 +298,7 @@ async function inProgressSince(
   [issue, cwd]: [issue: number, cwd: string | undefined],
   { prefix = labels.DEFAULT_PREFIX }: PrefixOption = {},
 ): Promise<string | null> {
-  const name = labels.labels(prefix).state('in-progress');
+  const name = labels.labelsFor(prefix).state('in-progress');
   const pages = await ghJson<{ event: string; label?: IssueLabel; created_at: string }[][]>(
     ['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/events`],
     cwd,
@@ -305,7 +306,7 @@ async function inProgressSince(
   return (
     pages
       .flat()
-      .filter((event) => event.event === 'labeled' && labels.has([event.label?.name ?? ''], name))
+      .filter((event) => event.event === 'labeled' && labels.hasLabel([event.label?.name ?? ''], name))
       .at(-1)?.created_at ?? null
   );
 }

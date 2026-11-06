@@ -7,7 +7,7 @@ import type * as visit from './visit.ts';
 // The Resolution Policy's retry budgets, by the kind of retry each spends.
 export type RetryKind = 'transient' | 'rateLimited' | 'timeout' | 'parse';
 export type ResolutionPolicy = Record<RetryKind, number>;
-export const DEFAULT_POLICY: ResolutionPolicy = { transient: 2, rateLimited: 2, timeout: 1, parse: 1 };
+export const DEFAULT_RESOLUTION_POLICY: ResolutionPolicy = { transient: 2, rateLimited: 2, timeout: 1, parse: 1 };
 
 export type FailureClass =
   'transient' | 'rate-limited' | 'auth' | 'quota' | 'budget' | 'permission' | 'rejected' | 'invalid' | 'unknown';
@@ -29,13 +29,13 @@ export const FAILURE_CLASSES: Record<FailureClass, FailureReach> = {
   unknown: { reach: 'ticket', budget: null },
 };
 
-// A Check as the transition table reads it: an Integrity Assertion or a Check signal, by name, and whether it passed.
+// A Check as the Transition Table reads it: an Integrity Assertion or a Check signal, by name, and whether it passed.
 export interface TableCheck {
   name: string;
   passed: boolean;
   integrity: boolean;
 }
-// An Action's Signals as the transition table reads them, the retries its Attempts already spent by kind, and the
+// An Action's Signals as the Transition Table reads them, the retries its Attempts already spent by kind, and the
 // Resolution Policy's budgets.
 export interface Signals {
   result: visit.CallSignal;
@@ -76,7 +76,7 @@ interface TableRow {
 }
 // gg's fixed rows, ordered; the first whose matches() holds fires. The last hands a valid Claim over to the
 // Procedure's tables (decide).
-export const ROWS: TableRow[] = [
+export const FIXED_ROWS: TableRow[] = [
   {
     name: 'integrity-violation',
     matches: (signals) => !!violated(signals),
@@ -119,10 +119,16 @@ export const ROWS: TableRow[] = [
   { name: 'claimed', matches: () => true, outcome: null, direction: 'advance' },
 ];
 
-export function resolve({ result, claim, checks, retries, policy = DEFAULT_POLICY }: Signals): visit.TableResolution {
+export function resolve({
+  result,
+  claim,
+  checks,
+  retries,
+  policy = DEFAULT_RESOLUTION_POLICY,
+}: Signals): visit.TableResolution {
   const input = { result, claim, checks, retries, policy };
   // The last row matches every input.
-  const row = ROWS.find((candidate) => candidate.matches(input)) as TableRow;
+  const row = FIXED_ROWS.find((candidate) => candidate.matches(input)) as TableRow;
   const check = row.name === 'integrity-violation' ? (violated(input) as TableCheck).name : null;
   const retryKinds: Partial<Record<visit.FixedRow, RetryKind | null | undefined>> = {
     'parse-retry': 'parse',
@@ -146,7 +152,7 @@ export function resolve({ result, claim, checks, retries, policy = DEFAULT_POLIC
 
 // What decide reads beside the Signals: the claimed token, the Procedure whose tables decide, the scope its rows read,
 // and whether a recovery pass is left.
-export interface Deciding extends Signals {
+export interface DecideInput extends Signals {
   token: procedures.ClaimToken;
   procedure: procedures.Procedure;
   scope: unknown;
@@ -167,7 +173,7 @@ function tableOf(token: procedures.ClaimToken, checks: TableCheck[]) {
 // `passed` table when every Check the token requires passed, else recovery while it is left (`recoverable`) and then
 // the `failed` table; then `otherwise`; then the token, or the engine Outcome `failed` (T7). `rule` is the rule
 // identity { table, row }: a row's index, `otherwise`, or null when neither matched.
-export function decide(input: Deciding): visit.TableResolution {
+export function decide(input: DecideInput): visit.TableResolution {
   const resolution = resolve(input);
   if (resolution.row !== 'claimed') return resolution;
   const { token, procedure, scope } = input;

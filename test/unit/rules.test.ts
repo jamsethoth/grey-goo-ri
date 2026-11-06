@@ -601,8 +601,8 @@ test('only the boxes with an input no row matches fall', () => {
 
 // The validator accepts an operator by its name in the one table, so each one it accepts must also run (#198).
 test('every operator the validator accepts evaluates in a rule and in a count Check', () => {
-  assert.deepEqual(procedures.OPS, Object.keys(procedures.COMPARISONS));
-  for (const operator of procedures.OPS) {
+  assert.deepEqual(procedures.OPERATORS, Object.keys(procedures.COMPARISONS));
+  for (const operator of procedures.OPERATORS) {
     const table = { name: 'count', rows: [{ when: { 'response.n': { [operator]: 1 } }, outcome: 'hit' }] };
     for (const count of [0, 1, 2]) {
       const expected = procedures.COMPARISONS[operator](count, 1);

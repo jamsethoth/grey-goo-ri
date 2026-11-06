@@ -26,7 +26,7 @@ interface EmittedEvent extends Record<string, unknown> {
 
 export async function executionContext(t: TestContext) {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-effects-');
-  const executionRecord = record.createExecution({
+  const executionRecord = record.createExecutionRecord({
     commonDir,
     ticket: TICKET,
     flow: { name: 'default', entry: 'green' },
@@ -63,13 +63,18 @@ export async function executionContext(t: TestContext) {
     labelPrefix: 'gg',
     log: (line: string) => logs.push(line),
     publicText: (text: string) => publicText.publicText(text),
-    emit: (actionRef: object, startedAt: number, fields: object) =>
-      emitted.push({ ...actionRef, startedAt, ...fields }),
-    markerOf: (actionRef: marker.ActionRef) =>
-      marker.formatMarker({ execution: executionRecord.execution, run: executionRecord.run, attempt: 1, ...actionRef }),
+    emit: (actionIdentity: object, startedAt: number, fields: object) =>
+      emitted.push({ ...actionIdentity, startedAt, ...fields }),
+    markerOf: (actionIdentity: marker.ActionIdentity) =>
+      marker.formatMarker({
+        execution: executionRecord.execution,
+        run: executionRecord.run,
+        attempt: 1,
+        ...actionIdentity,
+      }),
     // As runExecution's: the cursor moves to the Action, saved before it runs.
-    enter: async (actionRef: marker.ActionRef) => {
-      const { vertex, visit, action, recovery } = actionRef;
+    enter: async (actionIdentity: marker.ActionIdentity) => {
+      const { vertex, visit, action, recovery } = actionIdentity;
       executionRecord.cursor = { vertex, visit, action, recovery, attempt: 1 };
       await record.save(executionRecord);
     },
@@ -80,14 +85,15 @@ export async function executionContext(t: TestContext) {
 export type ExecutionContext = Awaited<ReturnType<typeof executionContext>>['context'];
 
 // A remote Action's identity at the green Vertex, where a run stop ends the Execution.
-export const PUSH_REF = { vertex: 'green', visit: 1, procedure: 'implement', action: 'push', recovery: 0 };
+export const PUSH_ACTION_IDENTITY = { vertex: 'green', visit: 1, procedure: 'implement', action: 'push', recovery: 0 };
 
 // The fake gh's comment post, which a case fails with an HTTP status.
 export const commentPost = (args: string[]) => fakeGhModule.isCommentPost(args);
 
-// A remote comment Action on the Ticket at PUSH_REF, as the comment Action posts it: its body carries its marker.
+// A remote comment Action on the Ticket at PUSH_ACTION_IDENTITY, as the comment Action posts it: its body carries its
+// marker.
 function commentEffect(context: ExecutionContext) {
-  const actionMarker = context.markerOf(PUSH_REF);
+  const actionMarker = context.markerOf(PUSH_ACTION_IDENTITY);
   return {
     actionMarker,
     effect: 'comment',

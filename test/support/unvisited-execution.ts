@@ -15,7 +15,7 @@ export function unvisitedExecution(
     worktree = fixture.worktree,
   }: { ticket?: number; run?: string; branch?: string; worktree?: string } = {},
 ): record.ExecutionRecord {
-  return record.createExecution({
+  return record.createExecutionRecord({
     commonDir: fixture.commonDir,
     ticket,
     epic: null,

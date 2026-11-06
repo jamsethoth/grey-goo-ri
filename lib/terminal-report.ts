@@ -24,8 +24,8 @@ export interface TerminalContext extends effects.EffectContext {
   run: string;
   files: unknown;
   publicText: (text: string) => string;
-  enter: (actionRef: marker.ActionRef) => Promise<void>;
-  markerOf: (actionRef: marker.ActionRef) => string;
+  enter: (actionIdentity: marker.ActionIdentity) => Promise<void>;
+  markerOf: (actionIdentity: marker.ActionIdentity) => string;
 }
 
 // What a Terminal returns to the Run: its end state, and whether it was held, a fault, or carried a run stop.
@@ -87,9 +87,9 @@ function reportOf(stop: Partial<StopFlags> | null | undefined): 'fault' | 'hold'
 
 // A Terminal's Action identity: `<report>-<effect>`, Recovery Number 0. An abandonment is reported under its State
 // Label.
-export const terminalAt =
+export const terminalActionIdentity =
   (name: string, stop: Partial<StopFlags> | null | undefined) =>
-  (effect: string): marker.ActionRef & { procedure: null } => ({
+  (effect: string): marker.ActionIdentity & { procedure: null } => ({
     vertex: stop?.abandoned ? labels.NEEDS_HUMAN : name,
     visit: 1,
     procedure: null,
@@ -100,16 +100,16 @@ export const terminalAt =
 // One deterministic Action of a Terminal: bracketed, write-ahead, with its own Action Event.
 async function terminalAction<Payload>(
   context: TerminalContext,
-  actionRef: marker.ActionRef,
+  actionIdentity: marker.ActionIdentity,
   { effect, payload, perform }: Omit<effects.SideEffect<Payload>, 'actionMarker' | 'deferred'>,
 ) {
   const startedAt = context.clock.now();
-  await context.enter(actionRef);
-  const actionMarker = context.markerOf(actionRef);
-  const evidence = await effects.bracket(context, () =>
+  await context.enter(actionIdentity);
+  const actionMarker = context.markerOf(actionIdentity);
+  const evidence = await effects.whileBusy(context, () =>
     effects.sideEffect(context, { actionMarker, effect, payload, perform, deferred: true }),
   );
-  await effects.effectDone(context, actionRef, startedAt, actionMarker);
+  await effects.completeEffect(context, actionIdentity, startedAt, actionMarker);
   return evidence;
 }
 
@@ -184,12 +184,12 @@ async function postComment(
   reporting: Reporting,
   { number, effect }: { number: number; effect: string },
 ) {
-  const actionRef = terminalAt(reporting.name, reporting.stop)(effect);
-  const body = await commentBody(context, reporting, context.markerOf(actionRef));
+  const actionIdentity = terminalActionIdentity(reporting.name, reporting.stop)(effect);
+  const body = await commentBody(context, reporting, context.markerOf(actionIdentity));
   return tolerated(
     context,
     reporting.stop,
-    terminalAction(context, actionRef, {
+    terminalAction(context, actionIdentity, {
       effect: 'comment',
       payload: { target: { kind: 'issue', number }, body, bodyHash: config.sha256(body) },
       perform: async (payload) => ({
@@ -202,12 +202,12 @@ async function postComment(
 // The end's State Label replaces in-progress; an abandonment, under the human's label, only removes in-progress.
 function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
   const { record: executionRecord, labelPrefix = labels.DEFAULT_PREFIX } = context;
-  const state = labels.labels(labelPrefix).state;
+  const state = labels.labelsFor(labelPrefix).state;
   const change = { add: stop?.abandoned ? [] : [state(name)], remove: [state('in-progress')] };
   return tolerated(
     context,
     stop,
-    terminalAction(context, terminalAt(name, stop)('label'), {
+    terminalAction(context, terminalActionIdentity(name, stop)('label'), {
       effect: 'label',
       payload: { ticket: executionRecord.ticket, ...change },
       perform: async (payload) => {
@@ -256,7 +256,7 @@ export async function report(
   const diffStats =
     name === 'ready-for-qa'
       ? events.diffStats(
-          await effects.bracket(context, () => context.git.diffStats(executionRecord.worktree, executionRecord.base)),
+          await effects.whileBusy(context, () => context.git.diffStats(executionRecord.worktree, executionRecord.base)),
           executionRecord.configurationSnapshot!.testPaths,
         )
       : null;

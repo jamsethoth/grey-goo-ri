@@ -48,8 +48,8 @@ export const pendingReport = (executionRecord: record.ExecutionRecord): boolean 
 const findEffect =
   (runContext: RunContext): effectEvidence.FindEffect =>
   (entry: writeAhead.WriteAheadEntry, evidenceContext: effectEvidence.EvidenceContext) =>
-    remoteEffects.REMOTE.includes(entry.effect as string)
-      ? remoteEffects.lookup(runContext, entry, evidenceContext)
+    remoteEffects.REMOTE_ACTIONS.includes(entry.effect as string)
+      ? remoteEffects.findEffectRetrying(runContext, entry, evidenceContext)
       : effectEvidence.findEffect(entry, evidenceContext);
 
 export async function runExecution(options: context.ExecutionOptions): Promise<TerminalResult> {
@@ -84,7 +84,7 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
   const terminalStop = executionRecord.terminalStop!;
   const name = terminalStop.abandoned ? 'abandoned' : labels.NEEDS_HUMAN;
   const markers = ['comment', 'label'].map((effect) =>
-    runContext.markerOf(terminalReport.terminalAt(name, terminalStop)(effect)),
+    runContext.markerOf(terminalReport.terminalActionIdentity(name, terminalStop)(effect)),
   );
   const decided = await reconcile.terminalEffects(executionRecord, {
     gh: runContext.gh,
@@ -102,7 +102,7 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
 // Reconciliation of a resumed record: a hold or abandonment it decides ends the Execution here, else it continues.
 async function resume(runContext: RunContext): Promise<TerminalResult | null> {
   const { record: executionRecord } = runContext;
-  const decided = await effects.bracket(runContext, () =>
+  const decided = await effects.whileBusy(runContext, () =>
     reconcile.reconcile({
       record: executionRecord,
       flow: runContext.flow,
@@ -166,7 +166,7 @@ async function endCaught(runContext: RunContext, caught: unknown): Promise<Termi
   let err = caught;
   if (err instanceof effectErrors.EarlyTerminalError) {
     try {
-      return await terminal.decide(runContext, err.ending);
+      return await terminal.endEarly(runContext, err.ending);
     } catch (reportErr) {
       err = reportErr;
     }

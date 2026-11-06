@@ -1,5 +1,5 @@
 // The agent Action: its Attempts, each with its Brief and Session, a call to the pinned Agent's Harness (agent-call),
-// and the result the transition table makes of its Signals.
+// and the result the Transition Table makes of its Signals.
 import { existsSync } from 'node:fs';
 import * as agentCall from './agent-call.ts';
 import * as bounds from './bounds.ts';
@@ -9,12 +9,13 @@ import * as effects from './effects.ts';
 import type * as integrity from './integrity.ts';
 import * as marker from './marker.ts';
 import * as record from './record.ts';
-import * as refs from './refs.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as render from './render.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
+import * as writeAhead from './write-ahead.ts';
 
 type ActionResolution = visitScope.ActionResolution;
 type Agent = NonNullable<visit.ConfigurationSnapshot['agent']>;
@@ -82,7 +83,7 @@ function previousAttempt(
   const executionRecord = runContext.record;
   const saved = executionRecord.sessions[sessionKey(actionIdentity)];
   const previousMarker = runContext.markerOf({ ...actionIdentity, attempt: attempt - 1 });
-  const evidence = effects.logged(executionRecord, previousMarker, 'evidence')?.evidence;
+  const evidence = writeAhead.findEntry(executionRecord, previousMarker, 'evidence')?.evidence;
   if (evidence) return evidence as Record<string, unknown>;
   if (!saved) return { sessionId: resume };
   return { sessionId: resumable(saved) ? saved.sessionId : null };
@@ -125,10 +126,10 @@ async function briefOf(runContext: RunContext, attempt: Attempt, commands: Recor
       reason: nudge,
       // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
       // ones, read git only for a Brief that names them.
-      diff: () => effects.bracket(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
+      diff: () => effects.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
       changedTestFiles: async () =>
         (
-          await effects.bracket(runContext, () =>
+          await effects.whileBusy(runContext, () =>
             runContext.testImmutability(
               executionRecord.worktree,
               executionRecord.testCommits.first!,
@@ -145,15 +146,15 @@ async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<Ac
   const executionRecord = runContext.record;
   const { actionIdentity } = attempt;
   const actionMarker = runContext.markerOf(actionIdentity);
-  if (effects.logged(executionRecord, actionMarker, 'complete'))
-    return effects.logged(executionRecord, actionMarker, 'evidence')!.evidence as unknown as ActionResolution;
+  if (writeAhead.findEntry(executionRecord, actionMarker, 'complete'))
+    return writeAhead.findEntry(executionRecord, actionMarker, 'evidence')!.evidence as unknown as ActionResolution;
   const harness = runContext.harnessOf()!;
   // Each call gets its own copy: a Harness that edits its call must not change the next one.
   const pinned = structuredClone(executionRecord.configurationSnapshot!);
   const brief = await briefOf(runContext, attempt, pinned.commands);
   const call = callOf(runContext, attempt, { pinned, brief, actionMarker, harness });
   const startedAt = runContext.clock.now();
-  const called = await effects.bracket(runContext, () => agentCall.guardedCall(runContext, attempt, call, harness));
+  const called = await effects.whileBusy(runContext, () => agentCall.guardedCall(runContext, attempt, call, harness));
   // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is saved.
   const own = { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona };
   saveSession(executionRecord, actionIdentity, called.result, own);
@@ -168,7 +169,7 @@ function callOf(
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
-  const schema = JSON.parse(config.layerFile(runContext.files, action.schema)) as refs.SchemaNode;
+  const schema = JSON.parse(config.layerFile(runContext.files, action.schema)) as referencePaths.SchemaNode;
   return {
     marker: actionMarker,
     vertex: actionIdentity.vertex,
@@ -211,7 +212,7 @@ function saveSession(
   };
 }
 
-// The transition table reads a call's three Signals as one flat result. A retry spends its budget in the Attempt's
+// The Transition Table reads a call's three Signals as one flat result. A retry spends its budget in the Attempt's
 // completion, so a resume never spends it twice. A violation always stops (its row is first); runVisit rolls it back.
 function settleAttempt(
   runContext: RunContext,
@@ -249,8 +250,8 @@ function settleAttempt(
     surfaces,
     attempt: actionIdentity.attempt,
   };
-  return effects.finish(runContext, {
-    actionRef: actionIdentity,
+  return effects.saveResolution(runContext, {
+    actionIdentity,
     startedAt,
     resolution: done,
     fields: {
@@ -289,7 +290,7 @@ const harnessFields = (result: HarnessResult, sessionLineage: string | null) => 
   commandsRun: result.commandsRun,
 });
 
-// How the transition table decided, and the Signals it read: the Harness Result, the Claim and the Integrity Assertion.
+// How the Transition Table decided, and the Signals it read: the Harness Result, the Claim and the Integrity Assertion.
 const decisionFields = (
   resolution: visit.TableResolution,
   { result, claim, integrityRows }: { result: HarnessResult; claim: visit.ClaimSignal; integrityRows: IntegrityRow[] },
