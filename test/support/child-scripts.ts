@@ -20,6 +20,7 @@ export const STDIN_EOF = childScript('stdin-eof');
 export const SPLIT_CHARACTER = childScript('split-character');
 export const SHELL_CALLER = childScript('shell-caller');
 export const SLOW_TASKKILL = childScript('slow-taskkill');
+export const FAILING_TASKKILL = childScript('failing-taskkill');
 export const FORGED_JOB_NOTES = childScript('forged-job-notes');
 export const BREAKAWAY_CHILD = childScript('breakaway-child');
 

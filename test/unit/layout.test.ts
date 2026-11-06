@@ -320,6 +320,7 @@ const CONVERTED = [
   'test/support/child-scripts/breakaway-child.ts',
   'test/support/child-scripts/child-starter.ts',
   'test/support/child-scripts/detached-child.ts',
+  'test/support/child-scripts/failing-taskkill.ts',
   'test/support/child-scripts/forged-job-notes.ts',
   'test/support/child-scripts/long-lived.ts',
   'test/support/child-scripts/orphan-middle.ts',
