@@ -99,7 +99,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
   assert.deepEqual(withoutCommonDir(noEpic), { ...withoutEpic, epic: null, execution: noEpic.execution });
 });
 
-test('saving a record never adds a field createExecution did not declare', async (t) => {
+test('saving a record never adds a field createExecutionRecord did not declare', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
   Object.assign(executionRecord, { admission: { kind: 'hold' } });
@@ -116,7 +116,7 @@ test('saving a record never adds a field createExecution did not declare', async
   assert.equal(await record.load(commonDir, 'epic', 1), null, 'nothing is saved');
 });
 
-test('saving a record never drops a field createExecution declared', async (t) => {
+test('saving a record never drops a field createExecutionRecord declared', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = newExecution(commonDir);
   delete (executionRecord as Partial<record.ExecutionRecord>).admissionStop;
@@ -369,7 +369,8 @@ test('the State Database waits up to 60 s for another writer', async (t) => {
   assert.deepEqual({ ...stateDatabase.open(commonDir).prepare('PRAGMA busy_timeout').get() }, { timeout: 60_000 });
 });
 
-test('saveConfig stores a pinned configuration once per hash and loadConfig reads it back', async (t) => {
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('savePinnedConfiguration stores a pinned configuration once per hash and loadPinnedConfiguration reads it back', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
   await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', JSON.stringify(pinned));
@@ -430,7 +431,7 @@ test('opening an existing State Database does not wait for a writer', async (t) 
   }
 });
 
-test('openDb shares one connection between spellings of the same directory', async (t) => {
+test('stateDatabase.open shares one connection between spellings of the same directory', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const db = stateDatabase.open(commonDir);
   // String concatenation, not join: join would normalise the segments before open sees them.

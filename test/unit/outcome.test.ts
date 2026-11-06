@@ -67,7 +67,7 @@ const decisionOf = (resolution: visit.TableResolution) => ({
   rule: resolution.rule,
 });
 
-test('DEFAULT_POLICY holds the retry budgets by kind', () => {
+test('DEFAULT_RESOLUTION_POLICY holds the retry budgets by kind', () => {
   assert.deepEqual(outcome.DEFAULT_RESOLUTION_POLICY, { transient: 2, rateLimited: 2, timeout: 1, parse: 1 });
 });
 
