@@ -527,7 +527,7 @@ test('an interrupted reset under a human needs-human label is abandoned before a
   // red's Attempt breaks an Integrity Assertion, and gg dies before its reset.
   const violating = {
     ...(fixture.options.deps.integrity as integrity.Integrity),
-    end: async () => ({
+    findViolations: async () => ({
       violations: [
         { worktree: fixture.worktree, surface: 'head', before: null, after: 'a'.repeat(40) },
       ] as unknown as integrity.IntegrityViolation[],
