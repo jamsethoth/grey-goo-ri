@@ -83,7 +83,9 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
   // The check job and the suite stages already run CHECKS, so the coverage stage runs only the measured tests.
   if (argv[0] === 'coverage') {
     if (argv.length > 2 || (argv.length === 2 && argv[1] !== 'update')) throw new SuiteUsageError();
-    const test = ['--test', `--test-concurrency=${concurrency}`, '--experimental-test-coverage'];
+    // One process, so no merge: node merges each process's coverage in directory order, and a line's count can depend
+    // on that order, so the same tree could pass or fail (grey-goo-ri issue #285; nodejs/node#66860).
+    const test = ['--test', '--test-isolation=none', '--experimental-test-coverage'];
     // include-all counts a module no test loads, so a new untested file lowers the figures instead of hiding.
     const scope = ['--test-coverage-include-all', '--test-coverage-include=lib/**'];
     const reporters = ['--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=lcov'];
@@ -104,9 +106,8 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
   return { ...base, steps };
 }
 
-// The summed line and function totals of an lcov report as percentages, floored to two places. Branches are left out:
-// node merges each test process's V8 branch ranges, so the branches found in one file move by one or two between runs
-// of the same tree.
+// The summed line and function totals of an lcov report as percentages, floored to two places. Branches are printed but
+// not held (ADR 0016).
 export function coverageTotals(lcov: string): Record<'lines' | 'functions', number> {
   const sum = { LF: 0, LH: 0, FNF: 0, FNH: 0 };
   for (const [, key, count] of lcov.matchAll(/^(LF|LH|FNF|FNH):(\d+)\r?$/gm))
