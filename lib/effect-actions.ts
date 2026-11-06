@@ -36,7 +36,7 @@ async function makeCommit(
 ) {
   const { record: executionRecord, git } = runContext;
   const worktree = executionRecord.worktree;
-  const intended = effects.logged(executionRecord, actionMarker, 'intent')?.payload as CommitPayload | undefined;
+  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as CommitPayload | undefined;
   const requires = visitScope.tokenOf(state).requires!.map((id) => state.checks[id]);
   const stale = intended
     ? []

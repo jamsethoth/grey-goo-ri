@@ -12,7 +12,6 @@ test('label names carry the configured prefix and family', () => {
   assert.equal(labels.labelsFor().state('needs-human'), 'gg:state:needs-human');
   assert.deepEqual(labels.STATE_NAMES, ['in-progress', 'ready-for-qa', 'needs-human', 'needs-replan']);
   assert.deepEqual(labels.END_STATES, ['ready-for-qa', 'needs-human', 'needs-replan']);
-  assert.deepEqual([...labels.BUSY_STATES].sort(), [...labels.STATE_NAMES].sort());
 });
 
 for (const [prefix, state, awaiting, decide] of [

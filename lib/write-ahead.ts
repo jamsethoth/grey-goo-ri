@@ -28,6 +28,14 @@ export const entryOf = (
   time: new Date().toISOString(),
 });
 
+// A marker's first entry at a step.
+export const findEntry = (
+  executionRecord: record.ExecutionRecord,
+  actionMarker: string,
+  step: WriteAheadEntry['step'],
+): WriteAheadEntry | undefined =>
+  executionRecord.writeAheadLog.find((entry) => entry.actionMarker === actionMarker && entry.step === step);
+
 // The effect a marker's intent named, or null before its intent.
 export function effectOf(executionRecord: record.ExecutionRecord, actionMarker: string): string | null {
   return (

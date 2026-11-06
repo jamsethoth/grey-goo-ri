@@ -32,14 +32,6 @@ test('the activity bracket marks the worktree idle after a failure, but leaves i
   assert.deepEqual(executionRecord.activity, { busy: true, generation: 3 });
 });
 
-test("logged finds a marker's write-ahead entry by its step", async (t) => {
-  const { executionRecord } = await support.executionContext(t);
-  await record.intent(executionRecord, 'gg:m', 'push', { branch: 'b', sha: 'abc' });
-  assert.deepEqual(effects.logged(executionRecord, 'gg:m', 'intent')?.payload, { branch: 'b', sha: 'abc' });
-  assert.equal(effects.logged(executionRecord, 'gg:m', 'complete'), undefined);
-  assert.equal(effects.logged(executionRecord, 'gg:other', 'intent'), undefined);
-});
-
 test('a side effect is logged as intent, evidence and completion, and returns its evidence', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const evidence = await effects.sideEffect(context, {

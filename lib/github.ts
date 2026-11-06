@@ -81,7 +81,8 @@ export function readinessReason(
   issue: Pick<Issue, 'state' | 'labels' | 'blockedBy'>,
   { prefix = labels.DEFAULT_PREFIX }: PrefixOption = {},
 ) {
-  const busy = labels.BUSY_STATES.map(labels.labelsFor(prefix).state);
+  // Admission treats in-progress specially (stuck detection); every State Label still means the ticket is not idle.
+  const busy = labels.STATE_NAMES.map(labels.labelsFor(prefix).state);
   const blockers = ((issue.blockedBy as { nodes?: IssueRef[] } | undefined)?.nodes ??
     issue.blockedBy ??
     []) as IssueRef[];

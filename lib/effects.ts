@@ -73,13 +73,6 @@ export async function whileBusy<Result>(
   return result;
 }
 
-export const logged = (
-  executionRecord: record.ExecutionRecord,
-  actionMarker: string,
-  step: writeAhead.WriteAheadEntry['step'],
-): writeAhead.WriteAheadEntry | undefined =>
-  executionRecord.writeAheadLog.find((entry) => entry.actionMarker === actionMarker && entry.step === step);
-
 export interface SideEffect<Payload> {
   actionMarker: string;
   effect: string;
@@ -98,11 +91,11 @@ export async function sideEffect<Payload>(
   const { record: executionRecord } = context;
   const found = writeAhead.evidenceOf(executionRecord, actionMarker);
   if (found) {
-    if (!deferred && !logged(executionRecord, actionMarker, 'complete'))
+    if (!deferred && !writeAhead.findEntry(executionRecord, actionMarker, 'complete'))
       await context.database.complete(executionRecord, actionMarker);
     return found.evidence as Evidence;
   }
-  const intended = logged(executionRecord, actionMarker, 'intent')?.payload as Payload | undefined;
+  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Payload | undefined;
   if (!intended) await context.database.intent(executionRecord, actionMarker, effect, payload);
   effectErrors.crashPoint(context, actionMarker, 'before-effect');
   const launched = intended ?? payload;
@@ -143,7 +136,7 @@ export async function saveResolution<Settled extends visit.Resolution>(
   }: SavedResolution<Settled>,
 ): Promise<Settled> {
   const { record: executionRecord } = context;
-  if (actionMarker && logged(executionRecord, actionMarker, 'complete')) return resolution;
+  if (actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'complete')) return resolution;
   if (actionIdentity.procedure && resolution.direction !== 'retry')
     executionRecord.visitState!.settled = {
       action: actionIdentity.action,

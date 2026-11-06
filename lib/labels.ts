@@ -6,8 +6,6 @@ export type EndState = 'ready-for-qa' | typeof NEEDS_HUMAN | 'needs-replan';
 export type StateName = 'in-progress' | EndState;
 export const END_STATES: EndState[] = ['ready-for-qa', NEEDS_HUMAN, 'needs-replan'];
 export const STATE_NAMES: StateName[] = ['in-progress', ...END_STATES];
-// Admission treats in-progress specially (stuck detection); every State Label still means the ticket is not idle.
-export const BUSY_STATES: StateName[] = [...STATE_NAMES];
 
 // GitHub matches label names case-insensitively, so every comparison of label names does too.
 const key = (name: string): string => name.toLowerCase();

@@ -15,6 +15,7 @@ import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
+import * as writeAhead from './write-ahead.ts';
 
 type ActionResolution = visitScope.ActionResolution;
 type Agent = NonNullable<visit.ConfigurationSnapshot['agent']>;
@@ -82,7 +83,7 @@ function previousAttempt(
   const executionRecord = runContext.record;
   const saved = executionRecord.sessions[sessionKey(actionIdentity)];
   const previousMarker = runContext.markerOf({ ...actionIdentity, attempt: attempt - 1 });
-  const evidence = effects.logged(executionRecord, previousMarker, 'evidence')?.evidence;
+  const evidence = writeAhead.findEntry(executionRecord, previousMarker, 'evidence')?.evidence;
   if (evidence) return evidence as Record<string, unknown>;
   if (!saved) return { sessionId: resume };
   return { sessionId: resumable(saved) ? saved.sessionId : null };
@@ -145,8 +146,8 @@ async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<Ac
   const executionRecord = runContext.record;
   const { actionIdentity } = attempt;
   const actionMarker = runContext.markerOf(actionIdentity);
-  if (effects.logged(executionRecord, actionMarker, 'complete'))
-    return effects.logged(executionRecord, actionMarker, 'evidence')!.evidence as unknown as ActionResolution;
+  if (writeAhead.findEntry(executionRecord, actionMarker, 'complete'))
+    return writeAhead.findEntry(executionRecord, actionMarker, 'evidence')!.evidence as unknown as ActionResolution;
   const harness = runContext.harnessOf()!;
   // Each call gets its own copy: a Harness that edits its call must not change the next one.
   const pinned = structuredClone(executionRecord.configurationSnapshot!);
