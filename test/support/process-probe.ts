@@ -2,8 +2,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-// Whether a process runs. No pid is an error, not an answer: process.kill(0, 0) signals the caller's own group, so a pid
-// never written would read as running, and a wait for it to end would never end.
+// Whether a process runs. No pid is an error, not an answer: process.kill(0, 0) signals the caller's own group, so a
+// pid never written would read as running, and a wait for it to end would never end.
 export const alive = (pid: number) => {
   if (!(pid > 0)) throw new Error(`no process to check: the pid is ${pid}`);
   try {
