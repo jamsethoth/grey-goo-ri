@@ -77,16 +77,16 @@ export function templateReader(readTemplate: ((name: string) => string) | undefi
   };
 }
 
-function lookup(node: referencePaths.SchemaNode, name: string) {
+function lookup(node: referencePaths.SchemaNode, name: string): referencePaths.Resolved {
   const resolved = referencePaths.resolve(node, name, 'defined', { read: true });
   if (resolved.error === undefined || resolved.list === undefined) return resolved;
-  return { error: `${resolved.error}; read its items in a section, {{#${resolved.list}}}`, node: undefined };
+  return { ...resolved, error: `${resolved.error}; read its items in a section, {{#${resolved.list}}}` };
 }
 
 // A name reads the innermost section item that holds its first segment, then the scope (render.renderTemplate); an item
 // of unknown shape may hold any name. A path is typed as rendering reads it.
 function nodeOf(
-  problems: string[],
+  problems: report.Finding[],
   tag: TemplateTag,
   items: referencePaths.SchemaNode[],
   scope: referencePaths.SchemaNode,
@@ -98,14 +98,14 @@ function nodeOf(
       shape === referencePaths.ANY ||
       (shape.type === 'object' && referencePaths.isRecord(shape.properties) && Object.hasOwn(shape.properties, head)),
   );
-  const resolved: { node?: referencePaths.SchemaNode; error?: string } =
-    item === referencePaths.ANY ? { node: referencePaths.ANY } : lookup(item ?? scope, tag.name);
-  if (resolved.error) problems.push(`{{${tag.name}}}: ${resolved.error}`);
+  if (item === referencePaths.ANY) return referencePaths.ANY;
+  const resolved = lookup(item ?? scope, tag.name);
+  if (resolved.error) problems.push({ code: resolved.code, message: `{{${tag.name}}}: ${resolved.error}` });
   return resolved.node ?? referencePaths.ANY;
 }
 
 function walk(
-  problems: string[],
+  problems: report.Finding[],
   nodes: TemplateNode[],
   items: referencePaths.SchemaNode[],
   scope: referencePaths.SchemaNode,
@@ -125,22 +125,24 @@ function walk(
 
 // The problems of a template's names in `scope`.
 function templateProblems(nodes: TemplateNode[], scope: referencePaths.SchemaNode) {
-  const problems: string[] = [];
+  const problems: report.Finding[] = [];
   walk(problems, nodes, [], scope);
-  return report.unique(problems);
+  return [...new Map(problems.map((problem) => [problem.message, problem])).values()];
 }
 
 interface Reading {
   reader: TemplateReader;
-  found: { where: string; message: string }[];
+  found: (report.Finding & { where: string })[];
 }
 // One template a Procedure names, at `where` under its `key`, checked in `scope`.
 function readTemplate(reading: Reading, place: { where: string; key: string }, name: unknown, scope: Scope) {
   if (!report.isName(name)) return;
   const template = reading.reader(name);
-  const problems = template.nodes ? templateProblems(template.nodes, procedures.object(scope)) : [template.error];
-  for (const message of problems)
-    reading.found.push({ where: place.where, message: `${place.key} ${name}: ${message}` });
+  const problems: report.Finding[] = template.nodes
+    ? templateProblems(template.nodes, procedures.object(scope))
+    : [{ code: 'template-unreadable', message: template.error }];
+  for (const { code, message } of problems)
+    reading.found.push({ where: place.where, code, message: `${place.key} ${name}: ${message}` });
 }
 
 // A PR body reads the Visit, each `with` name bound to the node its path reads, the Ticket and the provenance.

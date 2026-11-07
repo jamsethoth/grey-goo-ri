@@ -290,6 +290,19 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
   assert.equal(fixture.worktrees(), 1, 'no worktree');
 });
 
+test('an error quoting the unset-harness sentence is no configuration gap: exit 1, no merge advice', async (t) => {
+  const fixture = runFixture.fixture(t);
+  (fixture.options.config.agents.implementer as Record<string, unknown>)['x names no harness; y'] = true;
+  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
+    assert.deepEqual(err?.message.split('\n'), [
+      '[main] preflight failed:',
+      'error: agents.implementer: unknown key "x names no harness; y"',
+    ]);
+    assert.equal(err.exitCode, 1);
+    return true;
+  });
+});
+
 test('preflight names an unset harness and an unknown harness in one error', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
   fixture.options.config.agents.implementer.harness = null;
