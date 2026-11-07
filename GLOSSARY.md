@@ -168,7 +168,8 @@ _Avoid_: backup, stash
 
 **Rescue Ref output**:
 What a Vertex whose failure was rescued leaves for later Vertices: `<vertex>.rescue`, `{ ref, diffStat, output }`, with
-the ref, the rescued work's line counts and the failing Check's output (W3). A rescue with nothing to rescue leaves none.
+the ref, the rescued work's line counts and the failing Check's output (W3). A rescue with nothing to rescue leaves none,
+so an input that reads it must be optional.
 _Avoid_: rescue result
 
 **Brief**:

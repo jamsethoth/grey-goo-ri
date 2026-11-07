@@ -311,7 +311,8 @@ Check's paths start inside the response (`findings`, not `response.findings`).
 
 An output is written when its Action completes: `evidence` only when its Check passed, `response` only for a valid
 Claim. `cleanup` (decision L11) is written when its Action's call returns, and `<vertex>.rescue` (W3) when a failure
-routed to another Vertex is rescued, which a worktree with nothing to rescue is not.
+routed to another Vertex is rescued, which a worktree with nothing to rescue is not, so an input from it must be
+`optional`.
 
 Every Action declares `id` (its Action id) and `do` (its kind), and only its kind's keys; any other key fails
 admission (`lib/procedures.ts` holds the lists):
