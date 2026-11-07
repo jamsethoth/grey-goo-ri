@@ -115,6 +115,7 @@ export interface Timers {
 
 export interface TestHooks extends processTree.CleanupHooks {
   signal?: AbortSignal;
+  onExit?: () => void;
   timers?: Timers;
   onWatch?: (seen: commandCleanup.Seen) => void;
 }
@@ -149,7 +150,8 @@ export type Exec = ReturnType<typeof createExec>;
 // tree kill, which gets the pid appended, and killPid the POSIX kill. With a signal, timeoutMs counts from when it
 // aborts (from the call if it already has), so a case times the command out only once the processes it checks exist,
 // however slowly they start. timers ({ setTimeout, clearTimeout }) run the timeout clock. onWatch gets the POSIX
-// watcher's map of the descendants it has listed, keyed by pid, which it fills as it goes.
+// watcher's map of the descendants it has listed, keyed by pid, which it fills as it goes. onExit is called when the
+// command has exited, before its cleanup, so a case can start the clock that bounds the wait for its pipes.
 export function runShell(commandLine: string, options?: ShellOptions) {
   return shell(realKernel32(), commandLine, options);
 }
@@ -241,6 +243,7 @@ function shell(
     child.on('exit', async (code: number | null) => {
       if (timedOut) return;
       exited = true;
+      testHooks.onExit?.();
       watcher?.stop();
       const settled = await processTree.settle(started, kernel32, watcher, testHooks);
       // With no leftover alive every writer is gone, so the pipes close once read to the end, and a line that arrived
