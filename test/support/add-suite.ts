@@ -42,5 +42,5 @@ export function addSuite({
   };
   // Every process is gone by a later Run under a containment gg can check; a case says otherwise for a survivor.
   const cleanupConfirmed = (containment: commandCleanup.CleanupContainment) => containment.kind !== 'none';
-  return { runShell, cleanupConfirmed } as runContext.Deps['exec'];
+  return { runShell, cleanupConfirmed } as unknown as runContext.Deps['exec'];
 }

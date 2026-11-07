@@ -55,6 +55,7 @@ interface ActionFields {
   error: string;
   // What the call's or the command's Command Cleanup found (L11).
   cleanup: unknown;
+  decision: unknown;
 }
 const ACTION = {
   flow: 'required',
@@ -81,6 +82,7 @@ const ACTION = {
   failureClass: 'optional',
   error: 'optional',
   cleanup: 'optional',
+  decision: 'optional',
 } as const satisfies Declaration<ActionFields>;
 
 interface AgentFields {

@@ -6,6 +6,12 @@ import * as github from '../../lib/github.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 
+// A case that asks nobody reads no labels.
+const DEPS = {
+  harnesses: { fake: {} },
+  gh: github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1 }).gh),
+  cwd: '/repo',
+};
 const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 
 // The example Layer as loadLayers gives it: its schemas loaded beside it, and a template naming nothing for each
@@ -19,16 +25,16 @@ function example() {
   return layer;
 }
 
-test("gg doctor prints each Vertex's Procedure, Checks, tables and Outcomes", () => {
-  const { text, exitCode } = doctor.doctor({ config: example(), harnesses: { fake: {} } });
+test("gg doctor prints each Vertex's Procedure, Checks, tables and Outcomes", async () => {
+  const { text, exitCode } = await doctor.doctor({ config: example(), ...DEPS });
   assert.equal(text, exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n'));
   assert.equal(exitCode, 0);
 });
 
-test('gg doctor reports a malformed table row rather than throwing', () => {
+test('gg doctor reports a malformed table row rather than throwing', async () => {
   const config = example();
   config.procedures.review.passed[0] = null;
-  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(text.includes('\n  passed:\n    1. no conditions -> undefined\n'), text);
   assert.ok(
@@ -39,10 +45,10 @@ test('gg doctor reports a malformed table row rather than throwing', () => {
   );
 });
 
-test('gg doctor exits non-zero on an error', () => {
+test('gg doctor exits non-zero on an error', async () => {
   const config = example();
   config.flows.default.ticket.vertices.red.procedure = 'red';
-  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.endsWith('\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared\n1 error, 2 warnings\n'),
@@ -50,12 +56,12 @@ test('gg doctor exits non-zero on an error', () => {
   );
 });
 
-test('gg doctor reports a Procedure name with a colon at its location', () => {
+test('gg doctor reports a Procedure name with a colon at its location', async () => {
   const config = example();
   config.procedures['base:check'] = config.procedures['base-check'];
   delete config.procedures['base-check'];
   config.flows.default.ticket.vertices.baseline.procedure = 'base:check';
-  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
@@ -66,10 +72,10 @@ test('gg doctor reports a Procedure name with a colon at its location', () => {
   );
 });
 
-test("gg doctor reports an Agent's access outside the Permission Intents at agents.<name>.access", () => {
+test("gg doctor reports an Agent's access outside the Permission Intents at agents.<name>.access", async () => {
   const config = example();
   config.agents.implementer.access = 'read-write';
-  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.endsWith(
@@ -80,10 +86,10 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
   );
 });
 
-test('gg doctor reports an Outcome named after an Object.prototype property as reserved', () => {
+test('gg doctor reports an Outcome named after an Object.prototype property as reserved', async () => {
   const config = example();
   config.procedures['tests-fail'].stopped[0].outcome = 'toString';
-  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.equal(
     text,
@@ -92,12 +98,12 @@ test('gg doctor reports an Outcome named after an Object.prototype property as r
   );
 });
 
-test('gg doctor reads schemas from the loaded Layer files', () => {
+test('gg doctor reads schemas from the loaded Layer files', async () => {
   const config = example();
   const schema = JSON.parse(config.files['review.schema.json'].bytes);
   schema.properties.claim.enum = ['ok', 'changes'];
   config.files['review.schema.json'] = file(JSON.stringify(schema));
-  const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
+  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
@@ -108,12 +114,12 @@ test('gg doctor reads schemas from the loaded Layer files', () => {
   );
 });
 
-test('gg doctor accepts the shipped defaults once a harness is set', () => {
+test('gg doctor accepts the shipped defaults once a harness is set', async () => {
   const shipped: exampleLayer.Layer = config.loadDefaults();
   shipped.agents.implementer.harness = 'fake';
   shipped.agents.reviewer.harness = 'fake';
   shipped.commands = { test: 'npm test' };
-  const { text, exitCode } = doctor.doctor({ config: shipped, harnesses: { fake: {} } });
+  const { text, exitCode } = await doctor.doctor({ config: shipped, ...DEPS });
   assert.ok(text.startsWith('flow default\n  plan: null\n  actionCap: 180\n  entry: red\n'), text);
   // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.
   assert.ok(
@@ -143,7 +149,8 @@ function asking() {
   };
   return config;
 }
-const repository = (...labels: string[]) => github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1, repoLabels: labels }).gh);
+const repository = (...labels: string[]) =>
+  github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1, repoLabels: labels }).gh);
 
 test('gg doctor prints the Await and Decide Labels of a Vertex that asks, and each Decision routes', async () => {
   const gh = repository(AWAIT_LABEL, APPROVED_LABEL, REJECTED_LABEL);

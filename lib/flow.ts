@@ -40,6 +40,14 @@ export function route(vertexRoutes: unknown, flowRoutes: unknown, outcomeName: s
   return outcome.ENGINE_OUTCOMES.includes(outcomeName) ? { target: NEEDS_HUMAN_ROUTE, by: 'engine default' } : null;
 }
 
+// The Await and Decide Labels a Resolved Flow can request, each Vertex's, in Flow order (X1d).
+export const approvalLabels = (resolved: {
+  ticket: { vertices: Record<string, { approvalLabels?: { await: string; decide: string[] } | null }> };
+}): string[] =>
+  Object.values(resolved.ticket.vertices).flatMap((vertex) =>
+    vertex.approvalLabels ? [vertex.approvalLabels.await, ...vertex.approvalLabels.decide] : [],
+  );
+
 // The Resolved Flow the validator gave admission, and its Config Hash, in the Run's directory.
 export function writeResolved(runDir: string, resolved: unknown, hash: string) {
   mkdirSync(runDir, { recursive: true });

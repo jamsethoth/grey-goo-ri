@@ -280,10 +280,10 @@ test("a survivor's child that outlives it keeps the hold", options.POSIX_CASE, a
     } catch {}
   });
   const exited = new Promise((settled) => group.on('exit', settled));
-  await processProbe.waitFor(() => exec.cleanupConfirmed({ kind: 'group', pgid }) === false, 'the group to start');
+  await processProbe.waitFor(() => exec.cleanupConfirmed({ kind: 'group', pgid }) === false, t.signal);
   process.kill(pgid, 'SIGKILL');
   await exited;
   assert.equal(exec.cleanupConfirmed({ kind: 'group', pgid }), false, 'its children are still in the group');
   process.kill(-pgid, 'SIGKILL');
-  await processProbe.waitFor(() => exec.cleanupConfirmed({ kind: 'group', pgid }), 'the group to empty');
+  await processProbe.waitFor(() => exec.cleanupConfirmed({ kind: 'group', pgid }), t.signal);
 });

@@ -32,6 +32,8 @@ export interface CleanupReport {
   survivors: Survivor[];
   reason: string | null;
   containment: CleanupContainment;
+  // An unconfirmed job's handle, for the Run to close as it ends the Ticket. Not enumerable, so never saved.
+  closeJob?: () => void;
 }
 
 // A Check that ran no command started no process (owner, 2026-11-06).
@@ -59,10 +61,16 @@ export function cleanupReport(containment: CleanupContainment, cleanup: Cleanup)
 }
 
 // Whether a later Run finds a held call's processes gone under its containment (L14).
-export const confirmedUnder = (
-  _containment: CleanupContainment | undefined,
-  _groupHasMembers: (pgid: number) => boolean,
-): boolean => false;
+// A job: the Run that held it closed its only handle before it released the ticket lock, so kill-on-close has fired
+// (#245). A process group: empty means every inheriting child is gone, not only the survivors listed. None, or a report
+// that names none: nothing can say, so the Ticket stays held for a human.
+export function confirmedUnder(
+  containment: CleanupContainment | undefined,
+  groupHasMembers: (pgid: number) => boolean,
+): boolean {
+  if (containment?.kind === 'job') return true;
+  return containment?.kind === 'group' && !groupHasMembers(containment.pgid);
+}
 
 const namedProcess = ([pid, , started, , commandLine]: ProcessRow): NamedProcess => ({
   pid,

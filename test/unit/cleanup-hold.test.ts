@@ -1,5 +1,6 @@
-// A Pending cleanup hold through the interpreter: a call or Check whose cleanup could not be confirmed ends the Run for
-// its Ticket, and a later Run that confirms it afresh finishes the Action as if it had just returned (L11, L14, L15, J4).
+// A Pending cleanup hold through the interpreter: a call or Check whose cleanup could not be confirmed ends the Run
+// for its Ticket, and a later Run that confirms it afresh finishes the Action as if it had just returned (L11, L14,
+// L15, J4).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -107,7 +108,7 @@ test("a cleanup hold whose tree changed re-runs the Visit's Checks", async (t) =
   const fixture = await heldCheck(t);
   await interpreter.runExecution(fixture.options);
   const checks = fixture.shells.length;
-  fixture.fakeIntegrity!.write(fixture.worktree, 'lib/add.mjs');
+  writeFileSync(join(fixture.worktree, 'notes.txt'), 'what a survivor wrote\n');
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'ready-for-qa');
@@ -126,7 +127,7 @@ test('a re-run Check that holds again posts its own hold', async (t) => {
     return { ...run, cleanup: UNCONFIRMED };
   });
   await interpreter.runExecution(fixture.options);
-  fixture.fakeIntegrity!.write(fixture.worktree, 'lib/add.mjs');
+  writeFileSync(join(fixture.worktree, 'notes.txt'), 'what a survivor wrote\n');
   // Its re-run, in the later Run, holds too.
   const relabel = fixture.options.deps.exec.runShell;
   fixture.options.deps.exec.runShell = (async (command: string, options?: { cwd?: string }) => ({
@@ -287,4 +288,36 @@ test('a crash between the hold and its comment finishes the hold on the next Run
 
   assert.equal((await laterRun(fixture)).outcome, 'pending');
   assert.equal(holdComments(fixture).length, 1);
+});
+
+// A gate: a Visit with no agent Action, whose Check holds. The fixture's publish has one.
+async function heldGate(t: Parameters<typeof golden.fixture>[0]) {
+  const fixture = await golden.fixture(t);
+  let held = false;
+  editRuns(fixture, (run) => {
+    if (held || run.code !== 0 || fixture.executionRecord.cursor.vertex !== 'publish') return run;
+    held = true;
+    return { ...run, cleanup: UNCONFIRMED };
+  });
+  return fixture;
+}
+
+test('a Check with no agent Action, held for cleanup, stands on its unchanged tree', async (t) => {
+  const fixture = await heldGate(t);
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  const checks = fixture.shells.length;
+
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+  assert.equal(fixture.shells.length, checks, 'its result stood');
+});
+
+test('a Check with no agent Action, held for cleanup, may not leave its tree changed', async (t) => {
+  const fixture = await heldGate(t);
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  const saved = await loadTicket(fixture);
+  assert.ok(saved.visitState!.firstAttemptBaseline, 'it kept what the Assertions compare with');
+  fixture.fakeIntegrity!.write(fixture.worktree, 'notes.txt');
+
+  assert.equal((await laterRun(fixture)).outcome, 'needs-human');
+  assert.match((await loadTicket(fixture)).terminalReason!.text, /Integrity Assertion on tree/);
 });

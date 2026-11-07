@@ -11,8 +11,16 @@ import * as golden from '../support/golden.ts';
 import * as keys from '../support/keys.ts';
 import { editRuns } from '../support/suite-runs.ts';
 
-const { APPROVED_LABEL, AWAIT_LABEL, OWNER, REJECTED_LABEL, approvalFixture, laterRun, requestComments, timelineReads } =
-  approvalFlow;
+const {
+  APPROVED_LABEL,
+  AWAIT_LABEL,
+  OWNER,
+  REJECTED_LABEL,
+  approvalFixture,
+  laterRun,
+  requestComments,
+  timelineReads,
+} = approvalFlow;
 
 const SECOND_GREEN = {
   [keys.responseKey('green', 2, 'green', 1)]: {

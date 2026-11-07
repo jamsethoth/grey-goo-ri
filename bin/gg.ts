@@ -49,7 +49,12 @@ async function runCommand(parsed: options.ParsedOptions) {
 async function doctorCommand() {
   const { mainRoot } = await git.repoInfo(process.cwd());
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
-  const { text, exitCode } = doctor.doctor({ config: config.loadLayers(mainRoot), harnesses });
+  const { text, exitCode } = await doctor.doctor({
+    config: config.loadLayers(mainRoot),
+    harnesses,
+    gh: github.createGh(),
+    cwd: mainRoot,
+  });
   process.stdout.write(text);
   process.exitCode = exitCode;
 }

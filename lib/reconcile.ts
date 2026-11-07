@@ -42,6 +42,11 @@ export type ReconcileResult = { next: 'continue'; cursor: record.Cursor; reason:
 
 type Database = Pick<record.StateDatabase, 'evidence' | 'complete'>;
 
+// The Visit's result is a call held for cleanup (L11): what its worktree holds is for the suspended call's validation
+// to judge (L15), once a later Run has confirmed its processes gone.
+const heldForCleanup = (executionRecord: record.ExecutionRecord): boolean =>
+  executionRecord.visitState?.settled?.resolution.row === 'cleanup-unconfirmed';
+
 const ignoredOf = async (
   worktree: string,
   untracked: integrityModule.RollbackSet | undefined,
@@ -175,6 +180,7 @@ export async function dirtyState(
   // git write-tree refuses unmerged entries, so a merge conflict cannot be fingerprinted: it is never the agent's.
   const conflicts = await git.conflictedPaths(worktree);
   const unmerged = conflicts.length > 0;
+  if (!unmerged && executionRecord && heldForCleanup(executionRecord)) return null;
   if (!unmerged && (await integrity.isCleanAt(worktree))) return null;
   for (const entry of !unmerged && executionRecord ? writeAhead.openIntents(executionRecord) : [])
     if (await asRecorded(worktree, entry, git, integrity)) return null;
@@ -338,7 +344,8 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (conflict) return hold(conflict);
   // A completed commit has no open intent to check, and an amend keeps its marker: only the branch tip shows the
   // change.
-  const last = writeAhead.lastCommit(executionRecord);
+  // A held call's validation judges HEAD itself, against the call's own baseline (L15).
+  const last = heldForCleanup(executionRecord) ? undefined : writeAhead.lastCommit(executionRecord);
   const head = last && (await git.headSha(executionRecord.worktree));
   if (last && head !== last.evidence!.sha) {
     return hold(

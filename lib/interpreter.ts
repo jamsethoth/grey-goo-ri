@@ -2,6 +2,7 @@
 // reconciles a resumed record first, finishes a report a Run before decided, and ends whatever is thrown as a Terminal.
 // Its modules: run-context (the deps and the context every step reads), visit-runner (one Visit), the Action kinds
 // (agent-action, check-action, effect-actions), visit-scope (what every Action reads) and bounds (Edge traversal).
+import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effectEvidence from './effect-evidence.ts';
 import * as effects from './effects.ts';
@@ -73,8 +74,14 @@ export async function runExecution(options: context.ExecutionOptions): Promise<T
     return await runVertices(runContext);
   } catch (caught) {
     return await endCaught(runContext, caught);
+  } finally {
+    closeHeldJob(executionRecord);
   }
 }
+
+// Before the ticket lock is released, so kill-on-close has fired by the time a later Run holds it (#245).
+const closeHeldJob = (executionRecord: record.ExecutionRecord) =>
+  executionRecord.visitState?.unconfirmedCleanup?.closeJob?.();
 type HoldDecision = Parameters<typeof terminal.hold>[1];
 type AbandonDecision = Parameters<typeof terminal.abandon>[1];
 
@@ -102,6 +109,7 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
 // Reconciliation of a resumed record: a hold or abandonment it decides ends the Execution here, else it continues.
 async function resume(runContext: RunContext): Promise<TerminalResult | null> {
   const { record: executionRecord } = runContext;
+  await cleanupHold.awaitConfirmation(runContext, findEffect(runContext));
   const decided = await effects.whileBusy(runContext, () =>
     reconcile.reconcile({
       record: executionRecord,

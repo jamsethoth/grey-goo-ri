@@ -104,6 +104,7 @@ export interface RunVertex {
   access: string;
   procedure: string;
   outcomes: string[];
+  approvalLabels?: { await: string; decide: string[] } | null;
   route?: unknown;
   inputs?: Record<string, inputs.ResolvedInput>;
   max?: number;
@@ -159,6 +160,9 @@ export interface ExecutionOptions {
   runState?: effects.RunState;
   testImmutability?: TestImmutability;
   publicText?: (text: string) => string;
+  // The Approvers the repository Layer lists, and the Config Hash this Run admitted under, perhaps not the record's.
+  approvers?: string[];
+  configHash?: string;
   crashAt?: effects.EffectContext['crashAt'];
   fault?: unknown;
   admission?: Admission | null;

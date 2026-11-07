@@ -278,7 +278,7 @@ export function fakeGh({
     repoLabels: state.available,
     pr: () => state.prs.get(branch) ?? null,
     fail: (failure: GhFailure) => state.failures.push({ ...failure }),
-    // Each actor's collaborator permission; an actor it does not hold reads as a 404, as GitHub answers a non-collaborator.
+    // Each actor's collaborator permission; one it does not hold reads as a 404, as GitHub answers a non-collaborator.
     permissions: state.permissions,
     // What a human does on GitHub, which leaves an event gg reads back: the fixture Ticket by default.
     humanAddsLabel: (label: string, login: string, issue = ticket) => {

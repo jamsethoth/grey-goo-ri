@@ -4,10 +4,13 @@ import { existsSync } from 'node:fs';
 import * as agentCall from './agent-call.ts';
 import * as bounds from './bounds.ts';
 import * as briefs from './briefs.ts';
+import * as cleanupHold from './cleanup-hold.ts';
+import type * as commandCleanup from './command-cleanup.ts';
 import * as config from './config.ts';
 import * as effects from './effects.ts';
 import type * as integrity from './integrity.ts';
 import * as marker from './marker.ts';
+import type * as outcome from './outcome.ts';
 import * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as render from './render.ts';
@@ -232,26 +235,7 @@ function settleAttempt(
     signal: { status: result.status, response, failure },
   };
   state.response = response;
-  const integrityRows = [{ name: 'integrity', passed: violations.length === 0, violations }];
-  const key = marker.actionKeyOf(actionIdentity);
-  const resolution = visitScope.settle(executionRecord, actionIdentity, state, {
-    result: state.call.signal,
-    claim,
-    checks: visitScope.resolverChecks(integrityRows, []),
-    retries: executionRecord.retries[key] ?? {},
-    cleanup: result.cleanup,
-  });
-  if (resolution.retryKind)
-    (executionRecord.retries[key] ??= {})[resolution.retryKind] =
-      (executionRecord.retries[key][resolution.retryKind] ?? 0) + 1;
-  const surfaces = violations.length ? [...new Set(violations.map((violation) => violation.surface))] : null;
-  const done = {
-    ...resolution,
-    sessionId: result.sessionId,
-    reason: claim.reason ?? null,
-    surfaces,
-    attempt: actionIdentity.attempt,
-  };
+  const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity, state }, violations);
   return effects.saveResolution(runContext, {
     actionIdentity,
     startedAt,
@@ -265,6 +249,72 @@ function settleAttempt(
     actionMarker: own.actionMarker,
     evidence: { ...done, usageDelta: result.usage.delta },
   });
+}
+
+// The Transition Table's result for the Visit's saved call and these violations, with the retry it spends.
+function decideCall(
+  runContext: RunContext,
+  { actionIdentity, state }: Pick<Attempt, 'actionIdentity' | 'state'>,
+  violations: integrity.IntegrityViolation[],
+) {
+  const executionRecord = runContext.record;
+  const { claim, signal, harnessResult } = state.call!;
+  const integrityRows = [{ name: 'integrity', passed: violations.length === 0, violations }];
+  const key = marker.actionKeyOf(actionIdentity);
+  const resolution = visitScope.settle(executionRecord, actionIdentity, state, {
+    result: signal,
+    claim,
+    checks: visitScope.resolverChecks(integrityRows, []),
+    retries: executionRecord.retries[key] ?? {},
+    cleanup: harnessResult.cleanup as outcome.Signals['cleanup'],
+  });
+  if (resolution.retryKind)
+    (executionRecord.retries[key] ??= {})[resolution.retryKind] =
+      (executionRecord.retries[key][resolution.retryKind] ?? 0) + 1;
+  const surfaces = violations.length ? [...new Set(violations.map((violation) => violation.surface))] : null;
+  const done = {
+    ...resolution,
+    sessionId: harnessResult.sessionId as string | null,
+    reason: claim.reason ?? null,
+    surfaces,
+    attempt: actionIdentity.attempt,
+  };
+  return { done, resolution, integrityRows };
+}
+
+// A call held for cleanup, its processes now confirmed gone (J4): its validation, then its response's and the
+// resolver's rows, a retry spent once, in one write. The usage it spent stays on its first Event. A retry leaves the
+// next Attempt to agent(): null sends it there, past this completed Attempt, whose evidence now says to retry.
+export async function completeHeld(
+  runContext: RunContext,
+  { actionIdentity, action, state }: visitScope.Running,
+): Promise<ActionResolution | null> {
+  const executionRecord = runContext.record;
+  const identity = { ...actionIdentity, attempt: executionRecord.cursor.attempt };
+  const startedAt = runContext.clock.now();
+  const held = state.call!;
+  const violations = await effects.whileBusy(runContext, () =>
+    agentCall.heldViolations(runContext, { actionIdentity: identity, action, state }, held),
+  );
+  const cleanup = cleanupHold.confirmedReport(held.harnessResult.cleanup as commandCleanup.CleanupReport);
+  held.harnessResult.cleanup = cleanup;
+  visitScope.recordOutput(executionRecord, actionIdentity, { cleanup });
+  const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity: identity, state }, violations);
+  await effects.replaceResolution(runContext, {
+    actionIdentity: identity,
+    startedAt,
+    resolution: done,
+    fields: {
+      cleanup,
+      ...decisionFields(resolution, {
+        result: held.harnessResult as unknown as HarnessResult,
+        claim: held.claim,
+        integrityRows,
+      }),
+    },
+    actionMarker: runContext.markerOf(identity),
+  });
+  return done.retryKind ? null : done;
 }
 
 // The Action Event's agent fields: the Agent the call ran as and the tools its Harness resolved.

@@ -62,6 +62,11 @@ export interface EffectResolution extends ResolutionBase {
   row: 'effect-completed';
 }
 
+// A human's Decision, which is the Visit's Outcome (X1c).
+export interface DecisionResolution extends ResolutionBase {
+  row: 'decision';
+}
+
 // A Flow Attempt past the Action Cap, which never runs (request 3.3, V1).
 export interface ActionCapResolution extends ResolutionBase {
   row: 'action-cap';
@@ -76,7 +81,8 @@ export interface RunStoppedResolution extends ResolutionBase {
 }
 
 // An Action's result, by the row that decided it.
-export type Resolution = TableResolution | EffectResolution | ActionCapResolution | RunStoppedResolution;
+export type Resolution =
+  TableResolution | EffectResolution | ActionCapResolution | RunStoppedResolution | DecisionResolution;
 
 // The Claim the agent's Structured Response made, once validated against its schema (briefs.validateResponse).
 export interface ClaimSignal {

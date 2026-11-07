@@ -10,6 +10,9 @@ const STATE_STYLE: Record<labels.StateName, [color: string, description: string]
   'needs-replan': ['5319e7', 'The ticket needs a new plan'],
 };
 
+// The Await and Decide Labels' style: they ask for a Decision and give one.
+const ASK_STYLE: [color: string, description: string] = ['c5def5', 'gg asks a human, or a human answers'];
+
 // What `gh api --include` showed of a failed response.
 export interface HttpResponse {
   status: number;
@@ -162,29 +165,29 @@ export interface LabelChange {
 }
 
 function labelVerbs({ gh, ghJson }: Client) {
+  const repositoryLabels = async (cwd?: string): Promise<string[]> =>
+    (await ghJson<IssueLabel[][]>(['api', '--paginate', '--slurp', 'repos/{owner}/{repo}/labels?per_page=100'], cwd))
+      .flat()
+      .map((label) => label.name);
+
   // GitHub matches label names case-insensitively, and another Run may create a label between the read and the
-  // create: a failed create counts as done only once a fresh read shows the label.
-  async function ensureLabels(cwd?: string, { prefix = labels.DEFAULT_PREFIX }: PrefixOption = {}) {
-    const read = async () =>
-      new Set(
-        (
-          await ghJson<IssueLabel[][]>(
-            ['api', '--paginate', '--slurp', 'repos/{owner}/{repo}/labels?per_page=100'],
-            cwd,
-          )
-        )
-          .flat()
-          .map((label) => label.name),
-      );
-    let existing = await read();
-    for (const name of labels.STATE_NAMES) {
-      const label = labels.labelsFor(prefix).state(name);
+  // create: a failed create counts as done only once a fresh read shows the label. `flowLabels` are the Await and
+  // Decide Labels a Run can write, beside the State Labels.
+  async function ensureLabels(
+    cwd?: string,
+    { prefix = labels.DEFAULT_PREFIX, flowLabels = [] }: PrefixOption & { flowLabels?: string[] } = {},
+  ) {
+    let existing = await repositoryLabels(cwd);
+    const wanted = [
+      ...labels.STATE_NAMES.map((name) => [labels.labelsFor(prefix).state(name), STATE_STYLE[name]] as const),
+      ...flowLabels.map((label) => [label, ASK_STYLE] as const),
+    ];
+    for (const [label, [color, description]] of wanted) {
       if (labels.hasLabel(existing, label)) continue;
-      const [color, description] = STATE_STYLE[name];
       try {
         await gh(['label', 'create', label, '--color', color, '--description', description], cwd);
       } catch (err) {
-        existing = await read().catch(() => {
+        existing = await repositoryLabels(cwd).catch(() => {
           throw err;
         });
         if (!labels.hasLabel(existing, label)) throw err;
@@ -203,8 +206,6 @@ function labelVerbs({ gh, ghJson }: Client) {
       ],
       cwd,
     );
-
-  const repositoryLabels = async (_cwd?: string): Promise<string[]> => [];
 
   return { ensureLabels, editLabels, repositoryLabels };
 }
@@ -292,27 +293,38 @@ function issueVerbs({ gh, ghJson }: Client) {
     return JSON.parse(included(await gh(args, cwd, JSON.stringify({ body }))).body).html_url;
   }
 
-  const issueEvents = async (_issue: number, _cwd?: string): Promise<approval.IssueEvent[]> => [];
+  return { viewIssue, createIssue, comments, comment };
+}
 
-  const collaboratorPermission = async (_login: string, _cwd?: string): Promise<string> => 'write';
+// An issue's events, which GitHub gives no way to edit or delete, so a Decision is read from them (ADR 0003).
+const issueEvents = async ({ ghJson }: Client, issue: number, cwd?: string): Promise<approval.IssueEvent[]> =>
+  (
+    await ghJson<approval.IssueEvent[][]>(
+      ['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/events`],
+      cwd,
+    )
+  ).flat();
 
-  return { viewIssue, createIssue, comments, comment, issueEvents, collaboratorPermission };
+// GitHub answers 404 for a login it does not know as a collaborator, which has no permission (L5).
+async function collaboratorPermission({ ghJson }: Client, login: string, cwd?: string): Promise<string> {
+  try {
+    const path = `repos/{owner}/{repo}/collaborators/${encodeURIComponent(login)}/permission`;
+    return (await ghJson<{ permission: string }>(['api', path], cwd)).permission;
+  } catch (err) {
+    if (outcome.classifyRemoteFailure(err as outcome.RemoteError).status === 404) return 'none';
+    throw err;
+  }
 }
 
 // When the in-progress State Label was last added; null if the issue's events have no such entry.
 async function inProgressSince(
-  { ghJson }: Client,
+  ghClient: Client,
   [issue, cwd]: [issue: number, cwd: string | undefined],
   { prefix = labels.DEFAULT_PREFIX }: PrefixOption = {},
 ): Promise<string | null> {
   const name = labels.labelsFor(prefix).state('in-progress');
-  const pages = await ghJson<{ event: string; label?: IssueLabel; created_at: string }[][]>(
-    ['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/events`],
-    cwd,
-  );
   return (
-    pages
-      .flat()
+    (await issueEvents(ghClient, issue, cwd))
       .filter((event) => event.event === 'labeled' && labels.hasLabel([event.label?.name ?? ''], name))
       .at(-1)?.created_at ?? null
   );
@@ -368,6 +380,8 @@ export function createGh(transport: Transport = defaultTransport) {
     ...issueVerbs(ghClient),
     editLabels,
     ...prVerbs(ghClient),
+    issueEvents: (issue: number, cwd?: string) => issueEvents(ghClient, issue, cwd),
+    collaboratorPermission: (login: string, cwd?: string) => collaboratorPermission(ghClient, login, cwd),
     inProgressSince: (issue: number, cwd?: string, options?: PrefixOption) =>
       inProgressSince(ghClient, [issue, cwd], options),
     setLabels: (issue: number, change: LabelChange, cwd: string | undefined, report: LabelReport) =>

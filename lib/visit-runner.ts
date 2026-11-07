@@ -6,9 +6,9 @@ import * as approvalAction from './approval-action.ts';
 import * as bounds from './bounds.ts';
 import * as checkAction from './check-action.ts';
 import * as checks from './checks.ts';
+import * as cleanupHold from './cleanup-hold.ts';
 import * as config from './config.ts';
 import * as effectActions from './effect-actions.ts';
-import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects.ts';
 import * as events from './events.ts';
 import * as integrity from './integrity.ts';
@@ -43,7 +43,10 @@ interface Ran {
 }
 
 // Each Action kind (procedures.ACTION_KEYS) by its `do`.
-const KINDS: Record<procedures.ActionKind, (runContext: RunContext, running: visitScope.Running) => Promise<ActionResolution>> = {
+const KINDS: Record<
+  procedures.ActionKind,
+  (runContext: RunContext, running: visitScope.Running) => Promise<ActionResolution>
+> = {
   agent: agentAction.agent,
   check: checkAction.check,
   ...effectActions.EFFECT_KINDS,
@@ -212,10 +215,11 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
     };
     await runContext.enter(actionIdentity);
     state.checkFollows = actions.slice(actionIndex + 1).some((later) => later.do === 'check');
-    const settled =
-      state.settled?.action === actionIdentity.action && state.settled.recovery === actionIdentity.recovery
-        ? state.settled.resolution
-        : null;
+    const settled = await savedResult(runContext, { actionIdentity, action, state });
+    if (settled === 'rerun-checks') {
+      actionIndex = actions.findIndex((candidate) => candidate.do === 'check') - 1;
+      continue;
+    }
     const resolution: ActionResolution =
       settled ??
       terminal.runStopped(runContext) ??
@@ -236,6 +240,21 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
   return last!;
 }
 
+// The Action's saved result, if any. One held for cleanup is completed first (J4): a retry leaves it none, so the agent
+// Action goes on to its next Attempt, and a changed tree re-runs the Visit's Checks.
+async function savedResult(
+  runContext: RunContext,
+  running: visitScope.Running,
+): Promise<ActionResolution | 'rerun-checks' | null> {
+  const { actionIdentity, action, state } = running;
+  if (state.settled?.action !== actionIdentity.action || state.settled.recovery !== actionIdentity.recovery)
+    return null;
+  if (state.settled.resolution.row !== 'cleanup-unconfirmed') return state.settled.resolution;
+  return action.do === 'agent'
+    ? agentAction.completeHeld(runContext, running)
+    : checkAction.completeHeld(runContext, running);
+}
+
 // An Action that stopped the Visit: its result is saved, so a restart routes it again, and the stop takes its Edge.
 async function stopVisit(runContext: RunContext, state: RunningVisit, ran: Ran, unsaved: boolean): Promise<VisitEnd> {
   const { actionIdentity, resolution } = ran;
@@ -248,7 +267,7 @@ async function stopVisit(runContext: RunContext, state: RunningVisit, ran: Ran, 
     };
     await runContext.database.save(runContext.record);
   }
-  if (resolution.row === 'cleanup-unconfirmed') throw cleanupHold(state, ran);
+  if (resolution.row === 'cleanup-unconfirmed') return cleanupHold.holdTicket(runContext, actionIdentity);
   // A prohibited change never survives into a retry or the next Action, whatever the Harness Result (request 3.4): an
   // agent Attempt's violation, Test Immutability included, rolls back to that Attempt's baseline. The call's own marker
   // is complete, so its rollback is an Action of its own. A failure routed to a Vertex is rescued, and one routed to an
@@ -284,25 +303,6 @@ function stopOf(state: RunningVisit, { actionIdentity, resolution }: Ran): termi
   }
   if (resolution.outcome === 'run-stop') stop.failureClass = resolution.failureClass;
   return stop;
-}
-
-// A call whose processes may still be running: no further Action touches the worktree, no route or recovery applies,
-// and the Ticket holds with the survivors in its comment, fenced, since a command line is the command's own text (L11).
-// shortcut: a plain hold a human resolves; #119 makes it a Pending cleanup hold that resumes by itself.
-function cleanupHold(state: RunningVisit, { actionIdentity }: Ran) {
-  const { reason, survivors } = state.unconfirmedCleanup!;
-  const listed = survivors.map(
-    ({ pid, created, commandLine, error }) => `pid ${pid}, started ${created}: ${commandLine} (${error})`,
-  );
-  return new effectErrors.EarlyTerminalError({
-    next: 'hold',
-    name: 'cleanup-unconfirmed',
-    reason:
-      `gg could not confirm that what ${terminal.actionText(actionIdentity)} at ${actionIdentity.vertex} started has ` +
-      `ended (${reason}), so no further Action ran and nothing was reset.`,
-    advice: 'A process still running may go on writing to the worktree: end it before relying on the worktree.',
-    detail: listed.join('\n'),
-  });
 }
 
 // A failed or stopped write Vertex whose effective target is a Vertex (R5a, U5): its work moves to a Rescue Ref and the
@@ -370,7 +370,8 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
 // An Integrity Violation leaves nothing behind and tells the next Brief why. Rollback is limited to what this Visit's
 // agent made (request 3.5), and passes what git clean leaves (integrity.rollbackSet).
 function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity, resolution }: Ran) {
-  const { baseline } = state.call!;
+  // A Check with no agent Action before it kept the baseline its Visit began with.
+  const baseline = state.call?.baseline ?? state.firstAttemptBaseline!;
   const testPaths = runContext.record.configurationSnapshot!.testPaths;
   return rescue.reset(runContext, {
     actionIdentity: { ...actionIdentity, action: 'reset', attempt: resolution.attempt },

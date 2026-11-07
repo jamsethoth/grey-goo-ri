@@ -71,6 +71,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
 | `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |
 | `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready) and the intents they write ahead |
+| `lib/approval-action.ts` | the await-approval Action: an Approval Request's write-ahead Actions and a Decision's consumption |
+| `lib/cleanup-hold.ts` | a Pending cleanup hold: its label and comment, and a later Run's confirmation under the recorded containment |
+| `lib/pending-report.ts` | what a Run does for a Ticket it leaves Pending: its label and comment Actions and the ending that stops the Run |
 | `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, `whileBusy`, each effect's intent, evidence and completion with its Action Event |
 | `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
 | `lib/remote-effects.ts` | the remote Actions' retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
@@ -108,12 +111,12 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
-| `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the parse-retry nudge and the default recovery section |
+| `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
 | `defaults/` | the defaults Layer: `gg.json` (today it ships Agents `implementer` and `reviewer`, five Procedures and the `default` Flow; ADR 0014's "no shipped Flow" lands with #121) and the files it names, under `personas/`, `templates/` and `schemas/` |
 | `lib/work.ts` | **stub** (`export {}`): `gg work` and the Registry |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
-| `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex. `gg init` is not built (#120) |
+| `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex, and the labels they can request that the repository lacks. `gg init` is not built (#120) |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |

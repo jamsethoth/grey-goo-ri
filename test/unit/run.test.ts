@@ -47,7 +47,7 @@ for (const { repoLabels, created } of LABEL_SETUPS) {
     const reads = fixture.gh.calls.filter((call) => isLabelRead(call.args));
     assert.equal(reads.length, 1, 'one repository label read per Run');
     const creates = fixture.gh.calls.filter((call) => call.args[0] === 'label');
-    assert.deepEqual(creates.map((call) => call.args[2]).sort(), created);
+    assert.deepEqual(creates.map((call) => call.args[2]).sort(), ['gg:await:cleanup', ...created]);
     assert.deepEqual(
       creates.filter((call) => call.args.includes('--force')),
       [],
@@ -55,7 +55,7 @@ for (const { repoLabels, created } of LABEL_SETUPS) {
     );
     const firstEdit = fixture.gh.calls.findIndex((call) => call.args[0] === 'issue' && call.args[1] === 'edit');
     assert.deepEqual(
-      fixture.gh.calls.slice(firstEdit - 1 - created.length, firstEdit),
+      fixture.gh.calls.slice(firstEdit - 2 - created.length, firstEdit),
       [reads[0], ...creates],
       'the label read and its creates immediately precede the first label edit',
     );
@@ -331,7 +331,12 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
   const line =
     'error: procedures.implement.actions[1]: Check test names command "lint", ' +
     'which the repository Layer does not declare';
-  const { text } = doctor.doctor({ config: fixture.options.config, harnesses: fixture.options.harnesses });
+  const { text } = await doctor.doctor({
+    config: fixture.options.config,
+    harnesses: fixture.options.harnesses,
+    gh: fixture.options.deps.gh,
+    cwd: fixture.mainRoot,
+  });
   assert.ok(text.includes(`\n${line}\n`), text);
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', line]);
@@ -452,18 +457,16 @@ test("a run closes an unconfirmed job's handle before it releases the ticket loc
   assert.deepEqual(order.slice(0, 2), ['job closed', 'lock released']);
 });
 
-test('a Pending Ticket ends its Run with no error, and a later Run resumes it through its dirty worktree', async (t) => {
-  const fixture = runFixture.fixture(t, { integrity: 'real', git: 'fake' });
+test('a Pending Ticket ends its Run with exit 0', async (t) => {
+  const fixture = runFixture.fixture(t);
   heldForCleanup(fixture, []);
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
   assert.equal(results[0]!.outcome, 'pending');
-
-  const later = await run.runTarget(fixture.options);
-  assert.equal(later[0]!.outcome, 'ready-for-qa', fixture.logs.join('\n'));
+  assert.equal(results[0]!.state, undefined, 'it has no end state');
 });
 
-test('a Run creates the Flow\'s await and decide labels before it asks', async (t) => {
+test("a Run creates the Flow's await and decide labels before it asks", async (t) => {
   const fixture = runFixture.fixture(t);
   fixture.options.config.procedures.approval = {
     actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],

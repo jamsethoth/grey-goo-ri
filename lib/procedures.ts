@@ -17,6 +17,16 @@ export const ACTION_KEYS = {
 };
 export type ActionKind = keyof typeof ACTION_KEYS;
 
+// What an await-approval that declares no `decisions` accepts (request 3.3).
+export const DEFAULT_DECISIONS = ['approved', 'rejected'];
+export function decisionsOf(action: object): string[] {
+  const { decisions } = action as { decisions?: unknown };
+  return Array.isArray(decisions) ? decisions.filter((decision) => typeof decision === 'string') : DEFAULT_DECISIONS;
+}
+// The await-approval Action of a list of Actions as declared, if it has one.
+export const approvalActionOf = (actions: unknown[]) =>
+  actions.find((action) => (action as { do?: unknown } | null)?.do === 'await-approval') as object | undefined;
+
 // One Action of a Procedure as the validator resolved it: its id, its kind, and that kind's keys.
 export interface Action {
   id: string;

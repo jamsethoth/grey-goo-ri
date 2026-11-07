@@ -625,7 +625,7 @@ test("closing an unconfirmed job's handle ends what it holds, and a second close
   assert.equal(result.cleanup.confirmed, false);
   assert.equal(alive(pid), true, 'refused, it runs on');
   result.cleanup.closeJob!();
-  await waitFor(() => !alive(pid), 'the job to end');
+  await waitFor(() => !alive(pid), t.signal);
   result.cleanup.closeJob!();
   assert.deepEqual(Object.keys(result.cleanup), ['confirmed', 'survivors', 'reason', 'containment'], 'nothing to save');
 });

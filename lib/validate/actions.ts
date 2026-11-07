@@ -1,6 +1,7 @@
 // Each Action of a Procedure checked in order: its id, its kind and that kind's keys, and the order the Actions run in.
 
 import * as briefs from '../briefs.ts';
+import * as labels from '../labels.ts';
 import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as report from './report.ts';
@@ -183,10 +184,24 @@ function checkEffectAction(problems: report.Report, action: Value, location: str
         'target must be pr or ticket',
       );
     requireFile(problems, action, 'body', location);
-  } else if (action.do === 'await-approval') {
-    // The decisions' own rules are #119's.
-    requireNames(problems, action.decisions, location, 'decisions must be a non-empty list of names');
+  } else if (action.do === 'await-approval' && action.decisions !== undefined) {
+    checkDecisions(problems, action.decisions, location);
   }
+}
+
+// A Decide Label carries a Decision, and a Decision is an Outcome the engine may reserve (X1a, V4).
+function checkDecisions(problems: report.Report, decisions: unknown, location: string) {
+  const message = 'decisions must be a non-empty list of names';
+  if (!Array.isArray(decisions)) report.error(problems, location, 'not-a-list', message);
+  else if (!decisions.length) report.error(problems, location, 'empty-list', message);
+  else
+    for (const decision of decisions) {
+      const shown = JSON.stringify(decision);
+      if (typeof decision !== 'string' || !/^[a-z][a-z0-9-]*$/.test(decision))
+        report.error(problems, location, 'invalid-name', `Decision ${shown} must match [a-z][a-z0-9-]*`);
+      else if (report.isReserved(decision))
+        report.error(problems, location, 'reserved-name', `Decision ${shown} ${report.RESERVED}`);
+    }
 }
 
 // The Actions in order, and what they declared between them.
@@ -216,6 +231,19 @@ export function checkOrder(problems: report.Report, location: string, actions: u
       'the agent Action comes first, so a recovery pass runs every Check again after it',
     );
   }
+  actions.forEach((action, index) => {
+    if (!referencePaths.isRecord(action) || action.do !== 'await-approval') return;
+    const place = `${location}.actions[${index}]`;
+    if (index !== actions.length - 1)
+      report.error(problems, place, 'await-approval-not-last', 'await-approval is the last Action of its Procedure');
+    if (agentAt >= 0)
+      report.error(
+        problems,
+        place,
+        'await-approval-with-agent',
+        'await-approval sits in a Procedure with no agent Action',
+      );
+  });
   const effect = actions.find(
     (action) =>
       referencePaths.isRecord(action) &&
@@ -236,4 +264,15 @@ export function checkOrder(problems: report.Report, location: string, actions: u
       );
     }
   });
+}
+
+// The Await and Decide Labels a Vertex whose Procedure ends in await-approval can request, else null (X1d).
+export function approvalLabelsOf(declared: unknown[] | undefined, vertex: string, prefix: string | undefined) {
+  const asking = declared && procedures.approvalActionOf(declared);
+  if (!asking) return null;
+  const names = labels.labelsFor(prefix);
+  return {
+    await: names.await(vertex),
+    decide: procedures.decisionsOf(asking).map((decision) => names.decide(vertex, decision)),
+  };
 }

@@ -105,14 +105,8 @@ async function terminalAction<Payload>(
   actionIdentity: marker.ActionIdentity,
   { effect, payload, perform }: Omit<effects.SideEffect<Payload>, 'actionMarker' | 'deferred'>,
 ) {
-  const startedAt = context.clock.now();
   await context.enter(actionIdentity);
-  const actionMarker = context.markerOf(actionIdentity);
-  const evidence = await effects.whileBusy(context, () =>
-    effects.sideEffect(context, { actionMarker, effect, payload, perform, deferred: true }),
-  );
-  await effects.completeEffect(context, actionIdentity, startedAt, actionMarker);
-  return evidence;
+  return effects.effectAction(context, actionIdentity, { effect, payload, perform });
 }
 
 // Saved before the first Terminal Action, so a restart inside the Terminal runs the same Actions under the same ids and

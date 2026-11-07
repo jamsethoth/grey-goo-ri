@@ -358,6 +358,8 @@ async function runAdmitted(admitting: Admitting, decided: Decided): Promise<Tick
     ticket: { number: ticket, title: issue.title, body: issue.body, branch: executionRecord.branch },
     base: context.config.baseBranch,
     labelPrefix: context.config.labelPrefix,
+    approvers: context.config.approvers as string[] | undefined,
+    configHash: context.hash,
     others: decided.others,
     fault: decided.fault,
     admission: decided.admission,

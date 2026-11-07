@@ -109,7 +109,7 @@ options it builds, so none outlives the case:
 | the `locks` option, `locks.createLocks({ clock, wrapAttempt })` | times every lock wait, the 60 s default and the 600 s repo-lock waits included; sees a lock attempt, or contends it (`contendRepoLock`) |
 | the `database` option, `record.createStateDatabase({ beforeSave, beforeAppend })` (`caseDatabase(t)`, with `onSave`, `failSaves` and `failAppends`, in `test/support/case-database.ts`) | sees or fails a chosen save or Event insert |
 | the `integrity` option; `integrity.createIntegrity(git, fs, locks)` (`crashFs`, `test/support/crash-fs.ts`) | runs the fake integrity; crashes a restore's write |
-| the `exec` option | answers the suite's command with red or green output |
+| the `exec` option | answers the suite's command with red or green output; says whether a held call's processes are gone (`cleanupConfirmed`) |
 | `exec.runShell`'s `testHooks` option: `timers`, `onWatch`, `signal` and the rest | moves the timeout clock; sees which descendants the POSIX watcher has listed |
 | `exec.createExec({ kernel32 })` | runs Windows commands with no `node:ffi` (`null`) or with kernel32 calls that fail |
 

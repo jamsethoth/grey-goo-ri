@@ -95,6 +95,7 @@ test('HEAD moved since the Visit began holds, with no ref made', async (t) => {
   // The last Check's run moves it, after the Attempts' Integrity Assertions.
   const { runShell } = fixture.options.deps.exec;
   fixture.options.deps.exec = {
+    ...fixture.options.deps.exec,
     runShell: (...args) => {
       if (fixture.executionRecord.cursor.recovery === 1) fixture.fakeIntegrity!.commit(fixture.worktree);
       return runShell(...args);

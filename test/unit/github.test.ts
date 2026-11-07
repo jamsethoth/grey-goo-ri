@@ -595,7 +595,7 @@ test("collaboratorPermission reads an actor's permission", async (t) => {
   assert.deepEqual(calls[0]!.args, ['api', 'repos/{owner}/{repo}/collaborators/some-actor/permission']);
 });
 
-test('an actor GitHub does not know as a collaborator has no permission, and any other failure is thrown', async (t) => {
+test('an actor GitHub does not know as a collaborator has no permission, and any other failure throws', async (t) => {
   const notFound = fakeGhModule.fakeGh({ branch: 'b', ticket: 1 });
   assert.equal(await github.createGh(notFound.gh).collaboratorPermission('a-stranger', '/repo'), 'none');
   const denied = fakeGhModule.fakeGh({ branch: 'b', ticket: 1 });

@@ -325,7 +325,7 @@ admission (`lib/procedures.ts` holds the lists):
 | `push`, `pr-ready` | none | | none |
 | `pr-upsert` | `body`, `with` | the PR body template; optional, a name for each reference path the body reads | none |
 | `comment` | `target`, `body` | `pr` or `ticket`; the comment template | none |
-| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3); #119 builds the Action and its default, and until then admission requires the list | none |
+| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3) | none |
 
 | Check kind | Keys | What each key takes | Outputs |
 |---|---|---|---|
@@ -642,7 +642,8 @@ naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry over by
 `contextBudget.byModel`. Eval variants are config layers and may change flow structure. Declared Commands are a
 `commands` object in the repo Layer only: a `commands` key in the defaults or user Layer is a load error, as is a
 Layer file with a duplicate key, and preflight checks each name and command line (ADR 0013). `flows`, `procedures` and `testPaths` are
-repo-Layer-only too, and `testPaths` is required (ADR 0014). Each file a Layer names (a Persona, Brief, template or
+repo-Layer-only too, and `testPaths` is required (ADR 0014). So is `approvers`, an optional list of GitHub logins whose
+Decision counts below write permission (3.5), pinned in the Config Hash; preflight checks it (#119). Each file a Layer names (a Persona, Brief, template or
 schema) resolves beside that Layer's `gg.json`, and one name names one file across the Layers: a Layer that reuses a
 name another Layer declares for a different file fails to load. Until #121 the defaults Layer declares its own
 (`personas/implementer.md`, `schemas/implement.schema.json` and the rest), so a user or repository Layer gives its

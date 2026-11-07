@@ -21,7 +21,7 @@ export interface OutcomeCase {
   token: string | null;
 }
 const NO_TOKEN: Record<TableName, string> = {
-  passed: 'no Claim token passes',
+  passed: 'no Claim token passes, or a Decision is the Outcome of a Visit whose Checks passed',
   failed: 'no Claim token requires a Check',
   stopped: 'no Claim token stops',
 };
@@ -330,7 +330,9 @@ export function checkProcedure(
   const checkIds = declared.checks.map((check) => check.id);
   const tokens = tokensOf(claimTokens, (token) => requiredOf(claimTokens, checkIds, token));
   const tests = checkSettings(problems, location, declaration, declared);
-  const { tables, malformed } = checkTables(problems, location, declaration, tokens);
+  // A Decision takes the `passed` table's place (X1c): a Visit whose Checks passed asks a human.
+  const applying = procedures.approvalActionOf(actions) ? { ...tokens, passed: [] } : tokens;
+  const { tables, malformed } = checkTables(problems, location, declaration, applying);
   checkOtherwise(problems, location, declaration.otherwise);
   checkResponseConditions(problems, declared);
   actionChecks.checkOrder(problems, location, actions);
@@ -368,7 +370,9 @@ export function outcomesOf(proc: CheckedProcedure, falls: FallThroughs) {
     const fell = falls[table] ?? tokens[table];
     if (fell.length) found.push(...(fallback(fell) as string[]));
   };
-  add('passed', (fell) => (otherwise ? [otherwise] : fell));
+  const asking = procedures.approvalActionOf(proc.actions);
+  const decided = otherwise ? [otherwise] : null;
+  add('passed', (fell) => (asking ? procedures.decisionsOf(asking) : (decided ?? fell)));
   add('failed', () => [otherwise ?? 'failed']);
   add('stopped', (fell) => fell);
   if (proc.agent) found.push(...outcome.HARNESS_OUTCOMES);

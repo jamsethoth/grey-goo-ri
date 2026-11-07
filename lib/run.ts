@@ -3,6 +3,7 @@ import { appendFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as admission from './admission.ts';
+import * as cleanupHold from './cleanup-hold.ts';
 import * as config from './config.ts';
 import * as events from './events.ts';
 import * as flowModule from './flow.ts';
@@ -134,6 +135,7 @@ async function preflight(
   const failed = [
     ...config.commandProblems(layers.commands, config.layerPath(repoRoot)),
     ...config.testPathsProblems(layers.testPaths, config.layerPath(repoRoot)),
+    ...config.approversProblems(layers.approvers, config.layerPath(repoRoot)),
     ...errors.map((error) => `error: ${error.at}: ${error.message}`),
   ];
   const unset = errors.some((error) => error.code === 'harness-unset');
@@ -193,6 +195,7 @@ async function admitConfiguration(layers: config.Config, harnesses: Record<strin
     launchProfile: null,
     commands,
     testPaths: layers.testPaths,
+    approvers: layers.approvers,
   };
   return { flow, warnings, commands, pinned, hash: config.configHash(pinned) };
 }
@@ -206,15 +209,28 @@ async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, 
   const subIssues = declared?.nodes ?? declared ?? [];
   if (!subIssues.length) return { issue, subIssues, tickets: [issue] };
   const children = await Promise.all(subIssues.map((sub) => gh.viewIssue(sub.number, repo.mainRoot)));
-  const tickets = children.filter((child) => gh.isReady(child, { prefix: layers.labelPrefix }));
+  // A Pending Ticket reads as in progress, and its Await Label says it is waiting for this Run.
+  const names = labels.labelsFor(layers.labelPrefix);
+  const pending = (child: github.Issue) =>
+    child.state === 'OPEN' && gh.labelNames(child).some((name) => names.parse(name)?.family === 'await');
+  const tickets = children.filter((child) => gh.isReady(child, { prefix: layers.labelPrefix }) || pending(child));
   const problem = epicProblem(children, tickets);
   if (problem) throw new Error(`#${target}: ${problem}`);
   return { issue, subIssues, tickets };
 }
 
-// The gh a Run's Tickets share: a label update that adds a label first creates gg's State Labels, once per Run, and
-// again after a failed attempt.
-function labelEnsuringGh(gh: github.Gh, repo: admission.Repo, layers: config.Config): github.Gh {
+// The gh a Run's Tickets share: a label update that adds a label first creates gg's State Labels, and the Await and
+// Decide Labels the Flow and a cleanup hold can write, once per Run, and again after a failed attempt.
+function labelEnsuringGh(
+  gh: github.Gh,
+  repo: admission.Repo,
+  layers: config.Config,
+  flow: runContext.RunFlow,
+): github.Gh {
+  const flowLabels = [
+    labels.labelsFor(layers.labelPrefix).await(cleanupHold.AWAIT_VERTEX),
+    ...flowModule.approvalLabels(flow),
+  ];
   let ensuredLabels: Promise<void> | undefined;
   return {
     ...gh,
@@ -223,10 +239,12 @@ function labelEnsuringGh(gh: github.Gh, repo: admission.Repo, layers: config.Con
         ...report,
         ...(change.add?.length && {
           ensureLabels: () =>
-            (ensuredLabels ??= gh.ensureLabels(repo.mainRoot, { prefix: layers.labelPrefix }).catch((err) => {
-              ensuredLabels = undefined;
-              throw err;
-            })),
+            (ensuredLabels ??= gh
+              .ensureLabels(repo.mainRoot, { prefix: layers.labelPrefix, flowLabels })
+              .catch((err) => {
+                ensuredLabels = undefined;
+                throw err;
+              })),
         }),
       }),
   };
@@ -275,7 +293,7 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
     harnesses,
     protectedPaths,
     deps: {
-      gh: labelEnsuringGh(gh, repo, layers),
+      gh: labelEnsuringGh(gh, repo, layers, flow),
       git: lockedGit(git, repo.gitCommonDir, { locks }),
       exec,
       locks,

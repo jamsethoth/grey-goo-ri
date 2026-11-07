@@ -43,7 +43,12 @@ function inheritedNames(config: Value) {
     name(location, 'Procedure', procedureName);
     const actions = field(proc, 'actions');
     if (Array.isArray(actions))
-      actions.forEach((action, index) => name(`${location}.actions[${index}]`, 'Action id', field(action, 'id')));
+      actions.forEach((action, index) => {
+        name(`${location}.actions[${index}]`, 'Action id', field(action, 'id'));
+        const decisions = field(action, 'decisions');
+        for (const decision of Array.isArray(decisions) ? decisions : [])
+          name(`${location}.actions[${index}]`, 'Decision', decision);
+      });
     keys(field(proc, 'claimTokens'), `${location}.claimTokens`, 'Claim token');
     for (const table of procedures.TABLES) {
       const rows = field(proc, table);

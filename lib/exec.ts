@@ -214,10 +214,12 @@ function shell(
   const { child } = started;
   const kind = containmentOf(started);
   const cleanupContainment = cleanupContainmentOf(started);
-  const resultOf = (cleanup: commandCleanup.Cleanup) => ({
-    cleanup: commandCleanup.cleanupReport(cleanupContainment, cleanup),
-    ...kind,
-  });
+  const resultOf = (cleanup: commandCleanup.Cleanup) => {
+    const report = commandCleanup.cleanupReport(cleanupContainment, cleanup);
+    if (started.job && !report.confirmed)
+      Object.defineProperty(report, 'closeJob', { value: () => (started.job as containment.Job).close() });
+    return { cleanup: report, ...kind };
+  };
   return new Promise((resolve, reject) => {
     let output = '';
     for (const pipe of pipesOf(child)) pipe.setEncoding('utf8').on('data', (data: string) => (output += data));

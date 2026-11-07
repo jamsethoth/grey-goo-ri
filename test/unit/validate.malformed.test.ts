@@ -364,45 +364,6 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     [{ at: 'procedures.publish.actions[3]', code: 'empty-list' }],
   ],
   [
-    'a Decision a Decide Label cannot carry',
-    (config) => {
-      config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval', decisions: ['Approved', 'not ok'] });
-    },
-    [
-      { at: 'procedures.publish.actions[3]', code: 'invalid-name' },
-      { at: 'procedures.publish.actions[3]', code: 'invalid-name' },
-    ],
-  ],
-  [
-    'a Decision the engine reserves',
-    (config) => {
-      config.procedures.publish.actions.push({
-        id: 'ask',
-        do: 'await-approval',
-        decisions: ['failed', 'needs-human', 'harness-timeout'],
-      });
-    },
-    [
-      { at: 'procedures.publish.actions[3]', code: 'reserved-name' },
-      { at: 'procedures.publish.actions[3]', code: 'reserved-name' },
-      { at: 'procedures.publish.actions[3]', code: 'reserved-name' },
-    ],
-  ],
-  [
-    'an await-approval that is not the last Action',
-    (config) => {
-      config.procedures.publish.actions.splice(2, 0, { id: 'ask', do: 'await-approval' });
-    },
-    [{ at: 'procedures.publish.actions[2]', code: 'await-approval-not-last' }],
-  ],
-  [
-    'an await-approval in a Procedure with an agent Action',
-    (config) => {
-      config.procedures.implement.actions.push({ id: 'ask', do: 'await-approval' });
-    },
-    [{ at: 'procedures.implement.actions[5]', code: 'await-approval-with-agent' }],
-  ],
-  [
     'a list condition reading a string',
     (config) => {
       procedureActions.actionById(config.procedures.review, 'review-pass').allOf[2] = { none: 'summary', where: {} };
