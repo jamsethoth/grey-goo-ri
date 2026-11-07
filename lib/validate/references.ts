@@ -12,10 +12,9 @@ const STATES = ['passed', 'failed', 'not-run'];
 const RULE_KINDS = ['enum', 'boolean', 'integer'];
 
 // A reference that does not type, at `where` in the Procedure.
-export interface Found {
+export interface Found extends report.Finding {
   where: string;
   path: unknown;
-  message: string;
 }
 // A table whose every field typed: its fields and rows, for the analysis.
 interface Typed {
@@ -33,7 +32,7 @@ interface Reference {
   scope: referencePaths.SchemaNode;
 }
 // Why a typed reference cannot be read as its parameter needs, or null.
-type Want = (type: referencePaths.FieldType, node: referencePaths.SchemaNode, path: unknown) => string | null;
+type Want = (type: referencePaths.FieldType, node: referencePaths.SchemaNode, path: unknown) => report.Finding | null;
 
 // What a Visit reads of itself: its own outputs by Action id and its `inputs` (record.visitScope), and the response.
 export const ownScope = (proc: checked.CheckedProcedure, inputs: referencePaths.SchemaNode) => ({
@@ -67,8 +66,11 @@ export function visitScopeSchema(
 
 function typeReference(found: Found[], reference: Reference, want: Want) {
   const resolved = referencePaths.resolve(reference.scope, reference.path, 'defined', { read: true });
-  const message = resolved.error ?? (resolved.type && want(resolved.type, resolved.node, reference.path));
-  if (message) found.push({ where: reference.where, path: reference.path, message });
+  const problem =
+    resolved.error === undefined
+      ? resolved.type && want(resolved.type, resolved.node, reference.path)
+      : { code: resolved.code, message: resolved.error };
+  if (problem) found.push({ where: reference.where, path: reference.path, ...problem });
   return resolved;
 }
 
@@ -77,30 +79,45 @@ const stringList =
   (type, _, path) =>
     type.kind === 'list' && (type as { of: referencePaths.FieldType | null }).of?.kind === 'string'
       ? null
-      : `${label} must read a list of strings; ${JSON.stringify(path)} is ${JSON.stringify(type)}`;
+      : {
+          code: 'not-a-list-of-strings',
+          message: `${label} must read a list of strings; ${JSON.stringify(path)} is ${JSON.stringify(type)}`,
+        };
 const anyType: Want = () => null;
 const repeatList =
   (check: Record<string, unknown>): Want =>
   (type, node) => {
     if (!conditions.isObjectList(type))
-      return `list must read a list of objects; ${JSON.stringify(check.list)} is ${JSON.stringify(type)}`;
+      return {
+        code: 'not-a-list-of-objects',
+        message: `list must read a list of objects; ${JSON.stringify(check.list)} is ${JSON.stringify(type)}`,
+      };
     const field = (Array.isArray(check.fields) ? check.fields : []).find(
       (name) => report.isName(name) && conditions.itemField(node.items, name).error,
     );
-    return field === undefined ? null : `fields: ${JSON.stringify(field)} is not a field of the list's items`;
+    return field === undefined
+      ? null
+      : { code: 'unknown-item-field', message: `fields: ${JSON.stringify(field)} is not a field of the list's items` };
   };
+
+const leftOut = (found: Found[], where: string, message: string) =>
+  found.push({ where, path: undefined, code: 'required-key-missing', message });
 
 // `tests: named` and each Action's reference parameters, all read when the Visit passes.
 function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope: referencePaths.SchemaNode) {
-  if (referencePaths.isRecord(proc.tests))
+  if (referencePaths.isRecord(proc.tests) && proc.tests.named !== undefined)
     typeReference(found, { where: 'tests', path: proc.tests.named, scope }, stringList('tests: named'));
   proc.actions.forEach((action, index) => {
     if (!referencePaths.isRecord(action)) return;
     const where = `actions[${index}]`;
-    if (action.do === 'check' && action.kind === 'tests-fail')
-      typeReference(found, { where, path: action.testNames, scope }, stringList('testNames'));
-    if (action.do === 'check' && action.kind === 'repeat')
-      typeReference(found, { where, path: action.list, scope }, repeatList(action));
+    if (action.do === 'check' && action.kind === 'tests-fail') {
+      if (action.testNames === undefined) leftOut(found, where, 'a tests-fail Check must name testNames');
+      else typeReference(found, { where, path: action.testNames, scope }, stringList('testNames'));
+    }
+    if (action.do === 'check' && action.kind === 'repeat') {
+      if (action.list === undefined) leftOut(found, where, 'a repeat Check must name its list');
+      else typeReference(found, { where, path: action.list, scope }, repeatList(action));
+    }
     if (action.do === 'pr-upsert') {
       for (const path of Object.values(referencePaths.isRecord(action.with) ? action.with : {}))
         typeReference(found, { where, path, scope }, anyType);
@@ -126,14 +143,18 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
     const message =
       `condition on ${JSON.stringify(path)} must be a string, boolean or integer, ` +
       `or an object of ${procedures.OPERATORS.join(', ')} with integers`;
-    found.push({ where, path, message });
+    found.push({ where, path, code: 'invalid-rule-condition', message });
     return null;
   }
   const { type, error } = typeReference(found, reference, (fieldType) =>
     RULE_KINDS.includes(fieldType.kind as string)
       ? null
-      : `rule field ${JSON.stringify(path)} is ${JSON.stringify(fieldType)}; ` +
-        'rules match only enum, boolean and integer fields',
+      : {
+          code: 'invalid-rule-field',
+          message:
+            `rule field ${JSON.stringify(path)} is ${JSON.stringify(fieldType)}; ` +
+            'rules match only enum, boolean and integer fields',
+        },
   );
   if (error || !type || !RULE_KINDS.includes(type.kind as string)) return null;
   const scalar = type.kind === 'boolean' ? 'boolean' : 'string';
@@ -145,7 +166,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
     const message =
       `condition ${JSON.stringify(condition)} on ${JSON.stringify(path)} ` +
       `does not fit its field, which is ${JSON.stringify(type)}`;
-    found.push({ where, path, message });
+    found.push({ where, path, code: 'rule-condition-mismatch', message });
     return null;
   }
   // An absent optional input is a value of the domain (T10).
@@ -215,7 +236,7 @@ function analyseTable(proc: checked.CheckedProcedure, table: checked.TableName, 
     ),
   });
   return {
-    errors: analysis.errors.map((problem) => problem.message),
+    errors: analysis.errors,
     warnings: analysis.warnings,
     falls: report.unique(analysis.falls.map((box) => boxes[box].token)),
   };
@@ -234,13 +255,14 @@ export interface ReferenceContext extends Typing {
 export function checkReferences(problems: report.Report, proc: checked.CheckedProcedure, run: ReferenceContext) {
   const { found, falls } = typeReferences(proc, run);
   for (const finding of found)
-    if (run.atVertex === isInputPath(finding.path)) report.error(problems, run.locate(finding.where), finding.message);
+    if (run.atVertex === isInputPath(finding.path))
+      report.error(problems, run.locate(finding.where), finding.code, finding.message);
   const result: Partial<Record<checked.TableName, string[]>> = {};
   for (const [table, typed] of Object.entries(falls) as [checked.TableName, Typed][]) {
     if (run.atVertex !== Object.keys(typed.fields).some(isInputPath)) continue;
     const analysis = analyseTable(proc, table, typed);
-    for (const message of analysis.errors) report.error(problems, run.locate(table), message);
-    for (const warning of analysis.warnings) report.warn(problems, run.locate(table), warning.message);
+    for (const { code, message } of analysis.errors) report.error(problems, run.locate(table), code, message);
+    for (const { code, message } of analysis.warnings) report.warn(problems, run.locate(table), code, message);
     result[table] = analysis.falls;
   }
   return result;

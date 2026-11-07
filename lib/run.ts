@@ -136,7 +136,7 @@ async function preflight(
     ...config.testPathsProblems(layers.testPaths, config.layerPath(repoRoot)),
     ...errors.map((error) => `error: ${error.at}: ${error.message}`),
   ];
-  const unset = errors.some((error) => / names no harness; /.test(error.message));
+  const unset = errors.some((error) => error.code === 'harness-unset');
   failed.push(...(await harnessProblems(flow, harnesses)));
   if (unset) {
     const examples = readdirSync(config.EXAMPLES_DIRECTORY)

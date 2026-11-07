@@ -75,7 +75,12 @@ interface FlowState {
 export function checkAccess(problems: report.Report, location: string, access: unknown) {
   if (access !== undefined && !PERMISSION_INTENTS.includes(access as string)) {
     const intents = PERMISSION_INTENTS.join(' or ');
-    report.error(problems, location, `access ${JSON.stringify(access)} is not a Permission Intent: ${intents}`);
+    report.error(
+      problems,
+      location,
+      'unknown-permission-intent',
+      `access ${JSON.stringify(access)} is not a Permission Intent: ${intents}`,
+    );
   }
 }
 
@@ -87,25 +92,42 @@ export function checkHarness(
 ) {
   const problems = checking.report;
   if (harness == null)
-    report.error(problems, location, `${label} names no harness; set one in a user or repository Layer`);
+    report.error(
+      problems,
+      location,
+      'harness-unset',
+      `${label} names no harness; set one in a user or repository Layer`,
+    );
   else if (!report.hasOwnKey(checking.harnesses, harness))
-    report.error(problems, location, `${label} names harness ${JSON.stringify(harness)}, which is not registered`);
+    report.error(
+      problems,
+      location,
+      'harness-unregistered',
+      `${label} names harness ${JSON.stringify(harness)}, which is not registered`,
+    );
 }
 
 function checkTarget(problems: report.Report, location: string, target: unknown, vertices: Value) {
   if (typeof target === 'string') {
-    if (!Object.hasOwn(vertices, target)) report.error(problems, location, `${JSON.stringify(target)} is not a Vertex`);
+    if (!Object.hasOwn(vertices, target))
+      report.error(problems, location, 'unknown-vertex', `${JSON.stringify(target)} is not a Vertex`);
   } else if (referencePaths.isRecord(target) && Object.hasOwn(target, 'end') && Object.keys(target).length === 1) {
     if (target.end === 'done')
-      report.error(problems, location, 'end "done" is the human-only end, which no route may name');
+      report.error(problems, location, 'human-only-end', 'end "done" is the human-only end, which no route may name');
     else if (!flow.isEnd(target.end))
       report.error(
         problems,
         location,
+        'unknown-end',
         `end ${JSON.stringify(target.end)} is not one of ${labels.END_STATES.join(', ')}`,
       );
   } else {
-    report.error(problems, location, 'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }');
+    report.error(
+      problems,
+      location,
+      'malformed-route-target',
+      'a route target is a Vertex id, { end: <end> } or { to, max?, exhausted? }',
+    );
   }
 }
 
@@ -116,11 +138,11 @@ function checkRouteTarget(problems: report.Report, location: string, target: unk
   report.unknownKeys(problems, target, EDGE_KEYS, location);
   checkTarget(problems, location, target.to, vertices);
   if (target.max !== undefined && !report.isCount(target.max))
-    report.error(problems, location, 'max must be a positive integer');
+    report.error(problems, location, 'not-a-positive-integer', 'max must be a positive integer');
   if (target.max !== undefined && target.exhausted === undefined)
-    report.error(problems, location, 'an edge with max names its exhausted target');
+    report.error(problems, location, 'max-without-exhausted', 'an edge with max names its exhausted target');
   if (target.max === undefined && target.exhausted !== undefined)
-    report.error(problems, location, 'an edge names exhausted only with max');
+    report.error(problems, location, 'exhausted-without-max', 'an edge names exhausted only with max');
   if (target.exhausted !== undefined) checkTarget(problems, location, target.exhausted, vertices);
 }
 
@@ -129,24 +151,40 @@ function checkFlowKeys(problems: report.Report, location: string, declaration: V
   report.unknownKeys(problems, declaration, FLOW_KEYS, location);
   // plan is never defaulted, and must be null until Epic planning is built (X2b, X2d).
   if (!Object.hasOwn(declaration, 'plan'))
-    report.error(problems, location, 'plan is required: null when the Flow has no Epic-level planning');
+    report.error(problems, location, 'plan-missing', 'plan is required: null when the Flow has no Epic-level planning');
   else if (declaration.plan !== null)
-    report.error(problems, `${location}.plan`, 'plan must be null until Epic planning is built');
+    report.error(problems, `${location}.plan`, 'plan-not-null', 'plan must be null until Epic planning is built');
   if (!report.isCount(declaration.actionCap))
-    report.error(problems, `${location}.actionCap`, 'actionCap must be a positive integer');
+    report.error(
+      problems,
+      `${location}.actionCap`,
+      report.absentOr(declaration.actionCap, 'not-a-positive-integer'),
+      'actionCap must be a positive integer',
+    );
+  const atTicket = `${location}.ticket`;
   const ticket = referencePaths.isRecord(declaration.ticket) ? declaration.ticket : {};
   if (!referencePaths.isRecord(declaration.ticket))
-    report.error(problems, `${location}.ticket`, 'ticket must be an object');
-  report.unknownKeys(problems, ticket, TICKET_KEYS, `${location}.ticket`);
+    report.error(problems, atTicket, report.absentOr(declaration.ticket, 'not-an-object'), 'ticket must be an object');
+  report.unknownKeys(problems, ticket, TICKET_KEYS, atTicket);
   const vertices = referencePaths.isRecord(ticket.vertices) ? ticket.vertices : {};
   if (!Object.keys(vertices).length)
-    report.error(problems, `${location}.ticket.vertices`, 'vertices must be a non-empty object');
-  if (typeof ticket.entry !== 'string' || !Object.hasOwn(vertices, ticket.entry))
-    report.error(problems, `${location}.ticket.entry`, `${JSON.stringify(ticket.entry)} is not a Vertex`);
+    report.error(
+      problems,
+      `${atTicket}.vertices`,
+      report.absentOr(
+        ticket.vertices,
+        referencePaths.isRecord(ticket.vertices) ? 'no-vertex-declared' : 'not-an-object',
+      ),
+      'vertices must be a non-empty object',
+    );
+  if (ticket.entry === undefined)
+    report.error(problems, `${atTicket}.entry`, 'required-key-missing', 'a ticket must name its entry Vertex');
+  else if (typeof ticket.entry !== 'string' || !Object.hasOwn(vertices, ticket.entry))
+    report.error(problems, `${atTicket}.entry`, 'unknown-vertex', `${JSON.stringify(ticket.entry)} is not a Vertex`);
   if (ticket.routes !== undefined && !referencePaths.isRecord(ticket.routes))
-    report.error(problems, `${location}.ticket.routes`, 'routes must be an object from Outcome to target');
+    report.error(problems, `${atTicket}.routes`, 'not-an-object', 'routes must be an object from Outcome to target');
   for (const [outcome, target] of report.entries(ticket.routes))
-    checkRouteTarget(problems, `${location}.ticket.routes.${outcome}`, target, vertices);
+    checkRouteTarget(problems, `${atTicket}.routes.${outcome}`, target, vertices);
   return { ticket, vertices };
 }
 
@@ -158,12 +196,17 @@ function refusesAgent(
 ) {
   const { vertex, overrides, location } = given;
   if (vertex.use !== undefined && !report.hasOwnKey(checking.config.agents, vertex.use)) {
-    report.error(checking.report, location, `uses agent ${JSON.stringify(vertex.use)}, which is not declared`);
+    report.error(
+      checking.report,
+      location,
+      'undeclared-agent',
+      `uses agent ${JSON.stringify(vertex.use)}, which is not declared`,
+    );
     return true;
   }
   if (proc && !proc.agent && (vertex.use !== undefined || Object.keys(overrides).length)) {
     const message = `procedure ${proc.name} has no agent Action, so the Vertex takes no Agent`;
-    report.error(checking.report, location, message);
+    report.error(checking.report, location, 'vertex-takes-no-agent', message);
     return true;
   }
   return false;
@@ -186,7 +229,12 @@ function vertexAgent(
   if (!proc?.agent || !referencePaths.isRecord(declared)) return null;
   const merged: Value = { ...declared, ...overrides };
   if (vertex.use === undefined && !Object.keys(merged).length) {
-    report.error(problems, location, `procedure ${proc.name} has an agent Action, so the Vertex needs an Agent`);
+    report.error(
+      problems,
+      location,
+      'vertex-needs-agent',
+      `procedure ${proc.name} has an agent Action, so the Vertex needs an Agent`,
+    );
     return null;
   }
   // A harness the Vertex does not set itself is the Agent's, checked at agents.<name>.
@@ -201,13 +249,13 @@ function checkVertexRoutes(problems: report.Report, location: string, vertex: Va
   for (const [outcome, target] of report.entries(vertex.route))
     checkRouteTarget(problems, `${location}.route.${outcome}`, target, vertices);
   if (vertex.route !== undefined && !referencePaths.isRecord(vertex.route))
-    report.error(problems, `${location}.route`, 'route must be an object from Outcome to target');
+    report.error(problems, `${location}.route`, 'not-an-object', 'route must be an object from Outcome to target');
   if (vertex.max !== undefined && !report.isCount(vertex.max))
-    report.error(problems, `${location}.max`, 'max must be a positive integer');
+    report.error(problems, `${location}.max`, 'not-a-positive-integer', 'max must be a positive integer');
   if (vertex.max !== undefined && vertex.exhausted === undefined)
-    report.error(problems, location, 'a Vertex with max names its exhausted target');
+    report.error(problems, location, 'max-without-exhausted', 'a Vertex with max names its exhausted target');
   if (vertex.max === undefined && vertex.exhausted !== undefined)
-    report.error(problems, location, 'a Vertex names exhausted only with max');
+    report.error(problems, location, 'exhausted-without-max', 'a Vertex names exhausted only with max');
   if (vertex.exhausted !== undefined) checkTarget(problems, `${location}.exhausted`, vertex.exhausted, vertices);
 }
 
@@ -230,7 +278,7 @@ function vertexFalls(
     }),
   };
   for (const found of templates.templateReferences(proc, procedures.object(typed.nodes), checking.reader))
-    report.error(checking.report, locate(found.where), found.message);
+    report.error(checking.report, locate(found.where), found.code, found.message);
   return falls;
 }
 
@@ -261,15 +309,28 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   const location = `${state.location}.ticket.vertices.${id}`;
   report.checkName(problems, location, id, { what: 'Vertex id', carried: true });
   if (RESERVED_VERTICES.includes(id))
-    report.error(problems, location, `Vertex id ${JSON.stringify(id)} is reserved: an end name, cleanup or done`);
-  if (!referencePaths.isRecord(vertex)) return report.error(problems, location, 'a Vertex must be an object');
+    report.error(
+      problems,
+      location,
+      'reserved-name',
+      `Vertex id ${JSON.stringify(id)} is reserved: an end name, cleanup or done`,
+    );
+  if (!referencePaths.isRecord(vertex))
+    return report.error(problems, location, 'not-an-object', 'a Vertex must be an object');
   report.unknownKeys(problems, vertex, [...VERTEX_KEYS, ...AGENT_KEYS], location);
   checkAccess(problems, `${location}.access`, vertex.access);
   const proc = report.hasOwnKey(checking.procedures, vertex.procedure)
     ? checking.procedures[vertex.procedure]
     : undefined;
-  if (!report.hasOwnKey(checking.config.procedures, vertex.procedure))
-    report.error(problems, location, `procedure ${JSON.stringify(vertex.procedure)} is not declared`);
+  if (vertex.procedure === undefined)
+    report.error(problems, location, 'required-key-missing', 'a Vertex must name a procedure');
+  else if (!report.hasOwnKey(checking.config.procedures, vertex.procedure))
+    report.error(
+      problems,
+      location,
+      'undeclared-procedure',
+      `procedure ${JSON.stringify(vertex.procedure)} is not declared`,
+    );
   if (proc) state.used.add(proc.name);
   if (checking.failedAgents.has(vertex.use)) state.held = true;
   const agent = vertexAgent(checking, { id, location }, vertex, proc);
@@ -301,7 +362,7 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
   const start = problems.errors.length;
   report.checkName(problems, location, name, { what: 'Flow', carried: false });
   if (!referencePaths.isRecord(declaration)) {
-    report.error(problems, location, 'a Flow must be an object');
+    report.error(problems, location, 'not-an-object', 'a Flow must be an object');
     return undefined;
   }
   const { ticket, vertices } = checkFlowKeys(problems, location, declaration);

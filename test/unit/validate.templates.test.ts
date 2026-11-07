@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as exampleLayer from '../support/example-layer.ts';
 
-// Every expected error and warning is a Problem, whose persisted key is `at` (lib/validate/report.ts).
+// A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
 
 const VERTICES = 'flows.default.ticket.vertices';
@@ -14,14 +14,14 @@ test('a template that names an undeclared input is an error at its Action', () =
     exampleLayer.schemas(),
     exampleLayer.templates({ 'green.md': 'tests: {{#inputs.testFiles}}{{.}}{{/inputs.testFiles}}\n{{inputs.nope}}\n' }),
   );
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: `${VERTICES}.green (procedure implement).actions[0]`,
-      message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined',
+      code: 'undefined-reference',
     },
     {
       at: `${VERTICES}.senior-green (procedure implement).actions[0]`,
-      message: 'brief green.md: {{inputs.nope}}: "inputs.nope" is not defined',
+      code: 'undefined-reference',
     },
   ]);
 });
@@ -62,18 +62,14 @@ test('a template path that steps into a list of objects is an error, as renderin
         '{{#inputs.findings}}{{file}}{{/inputs.findings}} {{inputs.findings.length}} {{inputs.findings.file}}\n',
     }),
   );
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: `${VERTICES}.implementer-fix (procedure fix).actions[0]`,
-      message:
-        'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path ' +
-        'reads only its length or an item by index; read its items in a section, {{#inputs.findings}}',
+      code: 'reference-into-list',
     },
     {
       at: `${VERTICES}.senior-dev (procedure fix).actions[0]`,
-      message:
-        'brief fix.md: {{inputs.findings.file}}: "inputs.findings.file": "inputs.findings" is a list, so a path ' +
-        'reads only its length or an item by index; read its items in a section, {{#inputs.findings}}',
+      code: 'reference-into-list',
     },
   ]);
 });
@@ -86,12 +82,22 @@ test('a comment of a Procedure with no agent Action may not name the Agent', () 
     exampleLayer.schemas(),
     exampleLayer.templates({ 'note.md': '{{agent.model}} {{marker}}\n' }),
   );
-  assert.deepEqual(errors, [
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: `${VERTICES}.baseline (procedure base-check).actions[1]`,
-      message: 'body note.md: {{agent.model}}: "agent.model": "agent" is not defined',
+      code: 'undefined-reference',
     },
   ]);
+});
+
+test('a template that cannot be read is an error at each Vertex rendering it', () => {
+  const templates = exampleLayer.templates();
+  delete templates['review.md'];
+  const { errors } = exampleLayer.check(exampleLayer.config(), exampleLayer.schemas(), templates);
+  assert.deepEqual(exampleLayer.firedRules(errors), [
+    { at: `${VERTICES}.reviewer (procedure review).actions[0]`, code: 'template-unreadable' },
+  ]);
+  assert.match(errors[0].message, /^brief review\.md: review\.md cannot be read/);
 });
 
 test('a Brief reads the base branch as baseBranch', () => {

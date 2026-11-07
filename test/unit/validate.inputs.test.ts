@@ -2,19 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as exampleLayer from '../support/example-layer.ts';
 
-// Every expected error and warning is a Problem, whose persisted key is `at` (lib/validate/report.ts).
+// A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
 
 const VERTICES = 'flows.default.ticket.vertices';
-
-// The error for a required input that some route to its Vertex may not produce, and the warning for an optional one
-// that no route is sure to produce.
-const requiredInputUnmet = (input: string, vertex: string) =>
-  `input ${input} is required, but some route to ${vertex} may not produce any of its sources; admission checks ` +
-  'routes, not runs, so if every run does produce one, mark the input optional';
-const optionalInputUnsure = (input: string, vertex: string) =>
-  `input ${input} is optional, but no route to ${vertex} is sure to produce any of its sources; admission checks ` +
-  'routes, not runs, so it may still arrive on some runs';
 
 // A ticket's routes that end every Outcome no Vertex routes at needs-human.
 const UNROUTED_NEEDS_HUMAN = { '*': { end: 'needs-human' } };
@@ -36,10 +27,10 @@ function judge(requires: { ok: string[]; changes: string[] }, checks: string[], 
 test('a required input missing on one path is an error', () => {
   const config = exampleLayer.config();
   delete config.flows.default.ticket.vertices.green.inputs.testFiles.optional;
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.green.inputs.testFiles`,
-      message: requiredInputUnmet('testFiles', 'green'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -49,9 +40,9 @@ test('an optional input no route produces is a warning', () => {
   config.flows.default.ticket.vertices['implementer-fix'].inputs.previous = { from: 'publish.rescue', optional: true };
   const { errors, warnings } = exampleLayer.check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), {
+  assert.deepEqual(exampleLayer.firedRules(warnings).at(-1), {
     at: `${VERTICES}.implementer-fix.inputs.previous`,
-    message: optionalInputUnsure('previous', 'implementer-fix'),
+    code: 'optional-input-unsure',
   });
 });
 
@@ -87,10 +78,10 @@ test("a row's Outcome counts for every Claim token of its table, so an input one
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.a.evidence' } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: requiredInputUnmet('evidence', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -106,10 +97,10 @@ test("a Vertex's exhausted target counts from its first entry, so an input the V
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence' } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: requiredInputUnmet('evidence', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -125,10 +116,10 @@ test("an edge's exhausted target counts from its first traversal, so an input it
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'producer.test.evidence' } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: requiredInputUnmet('evidence', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -145,9 +136,9 @@ test('a failed Claim guarantees no evidence, so an optional input reading only i
   };
   const { errors, warnings } = exampleLayer.check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), {
+  assert.deepEqual(exampleLayer.firedRules(warnings).at(-1), {
     at: `${VERTICES}.consumer.inputs.evidence`,
-    message: optionalInputUnsure('evidence', 'consumer'),
+    code: 'optional-input-unsure',
   });
 });
 
@@ -165,10 +156,10 @@ test('a Vertex max above 1 counts as spent from the first entry, so an input a l
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'c.test.evidence' } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: requiredInputUnmet('evidence', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -189,10 +180,10 @@ test('a row taken by an earlier row counts its Outcome for every token, so an in
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.b.evidence' } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: requiredInputUnmet('evidence', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -217,9 +208,9 @@ test(
     };
     const { errors, warnings } = exampleLayer.check(config);
     assert.deepEqual(errors, []);
-    assert.deepEqual(warnings.at(-1), {
+    assert.deepEqual(exampleLayer.firedRules(warnings).at(-1), {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: optionalInputUnsure('evidence', 'consumer'),
+      code: 'optional-input-unsure',
     });
   },
 );
@@ -237,10 +228,10 @@ test('an Outcome of the stopped table carries no evidence, whatever a row names'
       consumer: { procedure: 'base-check', inputs: { evidence: { from: 'judge.test.evidence' } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: requiredInputUnmet('evidence', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -260,9 +251,9 @@ test('a stopped Claim guarantees no evidence, so an optional input reading it is
   };
   const { errors, warnings } = exampleLayer.check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), {
+  assert.deepEqual(exampleLayer.firedRules(warnings).at(-1), {
     at: `${VERTICES}.consumer.inputs.evidence`,
-    message: optionalInputUnsure('evidence', 'consumer'),
+    code: 'optional-input-unsure',
   });
 });
 
@@ -282,10 +273,10 @@ test('an Outcome of stopped rows carries no evidence, even when each needs a dif
       consumer: { procedure: 'base-check', inputs: { evidence: { from: ['judge.a.evidence', 'judge.b.evidence'] } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.evidence`,
-      message: requiredInputUnmet('evidence', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -308,9 +299,9 @@ test('an optional input that only some ways of an Outcome produce is warned', ()
   };
   const { errors, warnings } = exampleLayer.check(config);
   assert.deepEqual(errors, []);
-  assert.deepEqual(warnings.at(-1), {
+  assert.deepEqual(exampleLayer.firedRules(warnings).at(-1), {
     at: `${VERTICES}.consumer.inputs.evidence`,
-    message: optionalInputUnsure('evidence', 'consumer'),
+    code: 'optional-input-unsure',
   });
 });
 
@@ -325,10 +316,10 @@ test('a harness failure leaves no response', () => {
       consumer: { procedure: 'base-check', inputs: { report: { from: 'judge.judge.response' } } },
     },
   };
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.consumer.inputs.report`,
-      message: requiredInputUnmet('report', 'consumer'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -337,10 +328,10 @@ test('a harness failure leaves no response', () => {
 test('a required input from a rescue is an error, on a route that rescues', () => {
   const config = exampleLayer.config();
   delete config.flows.default.ticket.vertices['senior-green'].inputs.previous.optional;
-  assert.deepEqual(exampleLayer.check(config).errors, [
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
       at: `${VERTICES}.senior-green.inputs.previous`,
-      message: requiredInputUnmet('previous', 'senior-green'),
+      code: 'required-input-unsure',
     },
   ]);
 });
@@ -358,8 +349,10 @@ test('a passing Outcome leaves no rescue', () => {
   config.flows.default.ticket.vertices['implementer-fix'].route = { ok: 'reviewer' };
   config.flows.default.ticket.vertices.reviewer.inputs.previous = { from: 'implementer-fix.rescue', optional: true };
   assert.deepEqual(
-    exampleLayer.check(config).warnings.filter((warning) => warning.at === `${VERTICES}.reviewer.inputs.previous`),
-    [{ at: `${VERTICES}.reviewer.inputs.previous`, message: optionalInputUnsure('previous', 'reviewer') }],
+    exampleLayer.firedRules(
+      exampleLayer.check(config).warnings.filter((warning) => warning.at === `${VERTICES}.reviewer.inputs.previous`),
+    ),
+    [{ at: `${VERTICES}.reviewer.inputs.previous`, code: 'optional-input-unsure' }],
   );
 });
 
@@ -367,7 +360,11 @@ test('a read-only Vertex leaves no rescue', () => {
   const config = exampleLayer.config();
   config.flows.default.ticket.vertices.green.access = 'read-only';
   assert.deepEqual(
-    exampleLayer.check(config).warnings.filter((warning) => warning.at === `${VERTICES}.senior-green.inputs.previous`),
-    [{ at: `${VERTICES}.senior-green.inputs.previous`, message: optionalInputUnsure('previous', 'senior-green') }],
+    exampleLayer.firedRules(
+      exampleLayer
+        .check(config)
+        .warnings.filter((warning) => warning.at === `${VERTICES}.senior-green.inputs.previous`),
+    ),
+    [{ at: `${VERTICES}.senior-green.inputs.previous`, code: 'optional-input-unsure' }],
   );
 });
