@@ -382,7 +382,7 @@ test('after a crash between the hard reset and the clean, a file the agent did n
   assert.ok(loaded.terminalReason!.text.includes(greenRescueRef(fixture)), 'the hold names the Rescue Ref');
 });
 
-test('admission names the Rescue Ref a crash left, when a human has since changed the worktree', async (t) => {
+test("dirtyState finds the Rescue Ref a crash left before saving the ref's evidence", async (t) => {
   const fixture = await rescueFlow.rescueFixture(t, failedThenRight());
   await assert.rejects(
     interpreter.runExecution({ ...fixture.options, crashAt: { marker: rescueMarker(fixture), point: 'after-effect' } }),

@@ -179,10 +179,10 @@ export async function dirtyState(
   for (const entry of !unmerged && executionRecord ? writeAhead.openIntents(executionRecord) : [])
     if (await asRecorded(worktree, entry, git, integrity)) return null;
   const untracked = await git.untrackedPaths(worktree);
-  const intended = executionRecord && writeAhead.openRescueRef(executionRecord);
+  const intended = executionRecord && writeAhead.openRescue(executionRecord);
   return {
     conflicts,
-    rescueRef: intended && (await git.refTarget(worktree, intended)) ? intended : null,
+    rescueRef: intended && (await git.refTarget(worktree, intended.ref)) === intended.commit ? intended.ref : null,
     stat: (await git.diffSummary(worktree)) + untracked.map((path) => ` ${path} (untracked)\n`).join(''),
   };
 }
@@ -323,10 +323,11 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (held) return held;
   const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
   if ((await resets(executionRecord, { git, integrity, database })) === 'held') {
-    const ref = writeAhead.openRescueRef(executionRecord);
+    // A rescue's reset is intended only once its ref holds the work.
+    const rescue = writeAhead.openRescue(executionRecord);
     return hold(
       'An interrupted reset did not leave the worktree clean at its baseline; nothing was discarded.' +
-        (ref ? ` Rescue Ref ${ref} keeps the work rescued before it.` : ''),
+        (rescue ? ` Rescue Ref ${rescue.ref} keeps the work rescued before it.` : ''),
     );
   }
   const conflict = await findEffects(

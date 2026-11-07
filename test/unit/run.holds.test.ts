@@ -563,3 +563,38 @@ for (const issue of NOT_READY) {
     );
   });
 }
+
+// What admission's hold says of a rescue's ref. The intent names a commit, and the hold names the ref only when git
+// shows the ref holds it.
+async function heldWithRescue(t: TestContext, makeRef: (head: string) => string | null) {
+  const { runFixture: fixture, seededRecord } = await runFixture.dirtyTicket(t, true);
+  const { git, database } = fixture.options.deps;
+  const head = await git.headSha(fixture.worktree);
+  const ref = 'refs/gg/rescue/abc';
+  const held = makeRef(head);
+  if (held) await git.createRef(fixture.worktree, ref, held);
+  const left = { head: 'a'.repeat(40), index: 'b'.repeat(40), tree: 'c'.repeat(40) };
+  await database!.intent(seededRecord!, 'gg:rescue', 'rescue', {
+    ref,
+    commit: head,
+    tree: left.tree,
+    parent: head,
+    left,
+  });
+  await run.runTarget(fixture.options);
+  const { terminalReason } = (await record.load(fixture.commonDir, 'ticket', runFixture.TICKET))!;
+  assert.deepEqual(terminalReason!.decidedBy, { hold: 'dirty-worktree' });
+  return terminalReason!.text;
+}
+
+test('a dirty worktree hold names the Rescue Ref holding the commit its rescue intended', async (t) => {
+  assert.match(await heldWithRescue(t, (head) => head), /Rescue Ref refs\/gg\/rescue\/abc keeps the work/);
+});
+
+test('a dirty worktree hold names no Rescue Ref that holds another commit', async (t) => {
+  assert.doesNotMatch(await heldWithRescue(t, () => 'e'.repeat(40)), /Rescue Ref/);
+});
+
+test('a dirty worktree hold names no Rescue Ref when its rescue never made the ref', async (t) => {
+  assert.doesNotMatch(await heldWithRescue(t, () => null), /Rescue Ref/);
+});
