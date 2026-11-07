@@ -53,15 +53,15 @@ test('preflight lists every malformed Declared Command and a missing test, namin
   assert.equal(fixture.worktrees(), 1, 'no worktree');
 });
 
-// Epic planning is not built (X2d): a Flow's plan is left out or null, so admission rejects any other, as gg doctor
-// does.
-test('a Flow with a plan section fails admission before any effect', async (t) => {
+// A Flow has no plan key (#298): a planning Flow is a Flow run at Epic level, request slice 7's design, so admission
+// rejects the key as gg doctor does.
+test('a Flow with a plan key fails admission before any effect', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.flows.default.plan = { entry: 'planner', vertices: {} };
+  (fixture.options.config.flows.default as { plan?: unknown }).plan = { entry: 'planner', vertices: {} };
   await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: flows.default.plan: plan must be null until Epic planning is built',
+      'error: flows.default: unknown key "plan"',
     ]);
     return true;
   });

@@ -1,5 +1,4 @@
 flow default
-  plan: null
   actionCap: 180
   entry: baseline
   routes: misscoped -> end needs-replan, * -> end needs-human

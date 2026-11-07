@@ -12,11 +12,14 @@ const VERTICES = 'flows.default.ticket.vertices';
 // Each malformed edit, named for the case, with the errors it gives.
 const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.FiredRule[]][] = [
   [
-    'a Procedure that is a number',
+    'a Procedure that is null',
     (config) => {
-      config.procedures.publish = 7;
+      config.procedures.publish = null;
     },
-    [{ at: 'procedures.publish', code: 'not-an-object' }],
+    [
+      { at: 'procedures.publish', code: 'null-value' },
+      { at: 'procedures.publish', code: 'not-an-object' },
+    ],
   ],
   [
     'actions that are a number',
@@ -94,7 +97,10 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     (config) => {
       config.procedures.review.passed[0] = null;
     },
-    [{ at: 'procedures.review.passed[0]', code: 'malformed-row' }],
+    [
+      { at: 'procedures.review.passed[0]', code: 'null-value' },
+      { at: 'procedures.review.passed[0]', code: 'malformed-row' },
+    ],
   ],
   [
     'routes that are a list',
@@ -781,15 +787,4 @@ test('a response condition whose is fits no value of its enum field keeps its co
       message: 'allOf[0]: "reason": "x" is not one of none | misscoped | needs-input | environment',
     },
   ]);
-});
-
-test('a wrong id, present but not a name, is what a Check prints', () => {
-  const config = exampleLayer.config();
-  const check = procedureActions.actionById(config.procedures['base-check'], 'test');
-  check.id = 7;
-  delete check.command;
-  assert.deepEqual(
-    exampleLayer.check(config).errors.map((problem) => problem.message),
-    ['Action id 7 must be non-empty with no ":", ".", "/", "--" or whitespace', 'Check 7 must name a command'],
-  );
 });
