@@ -272,7 +272,9 @@ test('run never spawns through a shell', async () => {
 
 // L14: a process group is the containment a later Run checks, however its leader ended.
 test("a survivor's child that outlives it keeps the hold", options.POSIX_CASE, async (t) => {
-  const group = spawn('sh', ['-c', 'sleep 300 & sleep 300 & wait'], { detached: true, stdio: 'ignore' });
+  const pidFile = join(scratch, 'survivor-child.pid');
+  const script = 'sleep 300 & echo $! > "$1"; wait';
+  const group = spawn('sh', ['-c', script, 'sh', pidFile], { detached: true, stdio: 'ignore' });
   const pgid = group.pid as number;
   t.after(() => {
     try {
@@ -280,7 +282,8 @@ test("a survivor's child that outlives it keeps the hold", options.POSIX_CASE, a
     } catch {}
   });
   const exited = new Promise((settled) => group.on('exit', settled));
-  await processProbe.waitFor(() => exec.cleanupConfirmed({ kind: 'group', pgid }) === false, t.signal);
+  // The leader is killed only once its child exists: killed sooner, it leaves an empty group.
+  await processProbe.waitFor(() => existsSync(pidFile), t.signal);
   process.kill(pgid, 'SIGKILL');
   await exited;
   assert.equal(exec.cleanupConfirmed({ kind: 'group', pgid }), false, 'its children are still in the group');
