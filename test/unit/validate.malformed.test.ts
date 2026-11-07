@@ -288,6 +288,13 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     [{ at: 'procedures.implement.tests', code: 'invalid-tests-setting' }],
   ],
   [
+    'tests that are an object with no named',
+    (config) => {
+      config.procedures.implement.tests = {};
+    },
+    [{ at: 'procedures.implement.tests', code: 'invalid-tests-setting' }],
+  ],
+  [
     'a recover with no positive max',
     (config) => {
       config.procedures.implement.recover.max = 0;
@@ -721,6 +728,23 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
         message:
           'Check with no id comes after pr-upsert Action pr; every Check comes before any effect, so no effect runs ' +
           'before its pass is decided',
+      },
+    ],
+  ],
+  [
+    "an effect's id, when a Check comes after it",
+    (config) => {
+      delete procedureActions.actionById(config.procedures.publish, 'pr').id;
+      config.procedures.publish.actions.push({ id: 'late', do: 'check', kind: 'command', command: 'test' });
+    },
+    [
+      { at: 'procedures.publish.actions[1]', code: LEFT_OUT, message: 'an Action must have an id' },
+      {
+        at: 'procedures.publish.actions[3]',
+        code: 'check-after-effect',
+        message:
+          'Check late comes after pr-upsert Action with no id; every Check comes before any effect, so no effect ' +
+          'runs before its pass is decided',
       },
     ],
   ],
