@@ -134,6 +134,14 @@ for (const [what, named, code] of NAMED_VALUES) {
   });
 }
 
+test('tests with a key beside named is an error', () => {
+  const config = exampleLayer.config();
+  config.procedures.fix.tests.other = 1;
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.fix.tests', code: 'invalid-tests-setting' },
+  ]);
+});
+
 test('is left out on a field that is neither an enum nor a boolean reports the field', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'summary' };
