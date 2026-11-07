@@ -112,23 +112,29 @@ test(
 // A Windows parent pid is not cleared when the parent ends, and a new process can reuse it, so an older unrelated
 // process can read as a command's child: 5 did on windows-2025 in PR #294, and taskkill would have ended them. So with
 // no job gg kills nothing once the command has exited. The leftover holds the pipes, so the call answers at its
-// timeout.
+// timeout, whose clock starts once the leftover is running: `start /b` has returned by then, however slow the machine.
 test(
   "an uncontained command's leftover is not killed, and the call stays unconfirmed",
   options.UNSANDBOXED_WIN_CASE,
   async (t) => {
     const pidFile = join(scratch, 'uncontained-left.pid');
     t.after(() => processProbe.endProcessIn(pidFile));
-    const result = await exec
+    const clock = new AbortController();
+    const running = exec
       .createExec({ kernel32: noJob() })
-      .runShell(`start "" /b ${nodeCommand(t, childScripts.LONG_LIVED, pidFile)}`, { timeoutMs: 4000 });
+      .runShell(
+        `start "" /b ${nodeCommand(t, childScripts.LONG_LIVED, pidFile)}`,
+        timedOutShell.shellOptions({ timeoutMs: 4000, signal: clock.signal }),
+      );
+    await waitFor(() => pidIn(pidFile) > 0, t.signal);
+    clock.abort();
+    const result = await running;
     assert.equal(result.code, 0, result.output);
     assert.equal(result.timedOut, undefined);
     assert.equal(result.leftovers, undefined, JSON.stringify(result.leftovers));
     assert.equal(result.cleanup.confirmed, false);
     assert.deepEqual(result.cleanup.containment, { kind: 'none' });
     assert.deepEqual(result.cleanup.survivors, []);
-    await waitFor(() => pidIn(pidFile) > 0, t.signal);
     assert.ok(alive(pidIn(pidFile)), 'gg left it for a human');
   },
 );
