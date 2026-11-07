@@ -3,7 +3,7 @@
 // L15, J4).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as interpreter from '../../lib/interpreter.ts';
@@ -260,11 +260,11 @@ test('a commit made while a cleanup hold waits holds the Ticket and nothing is r
   assert.equal(result.outcome, 'needs-human');
   assert.equal(result.held, true);
   const saved = await loadTicket(fixture);
-  assert.match(saved.terminalReason!.text, /nothing was reset/);
+  assert.match(saved.terminalReason!.text, /head and index changed while the Ticket waited/);
   assert.deepEqual(intents(saved, 'reset'), []);
 });
 
-test('a committed test a survivor changed fails Test Immutability on resume', async (t) => {
+test('a committed test changed while the Ticket waited fails Test Immutability on resume, and is kept', async (t) => {
   const fixture = await golden.fixture(t, {
     responses: firstVisitWith({
       [GREEN_CALL]: { ...golden.firstVisitResponses[GREEN_CALL], cleanup: UNCONFIRMED },
@@ -275,13 +275,11 @@ test('a committed test a survivor changed fails Test Immutability on resume', as
   writeFileSync(join(fixture.worktree, 'test', 'add.test.mjs'), 'export {};\n');
 
   const result = await laterRun(fixture);
-  assert.equal(result.outcome, 'needs-human');
-  assert.deepEqual((await loadTicket(fixture)).terminalReason!.decidedBy, {
-    vertex: 'green',
-    visit: 1,
-    action: 'green',
-    recovery: 0,
-  });
+  assert.equal(result.held, true);
+  const saved = await loadTicket(fixture);
+  assert.match(saved.terminalReason!.text, /committed tests changed while the Ticket waited/);
+  assert.deepEqual(intents(saved, 'reset'), []);
+  assert.equal(readFileSync(join(fixture.worktree, 'test', 'add.test.mjs'), 'utf8'), 'export {};\n');
   assert.equal(attemptsOf(fixture, 'green', 'test').length, 0, 'before any Check');
 });
 
@@ -319,15 +317,17 @@ test('a Check with no agent Action, held for cleanup, stands on its unchanged tr
   assert.equal(fixture.shells.length, checks, 'its result stood');
 });
 
-test('a Check with no agent Action, held for cleanup, may not leave its tree changed', async (t) => {
+test('a Check with no agent Action, held for cleanup, holds the Ticket if its tree changed', async (t) => {
   const fixture = await heldGate(t);
   assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
   const saved = await loadTicket(fixture);
   assert.ok(saved.visitState!.firstAttemptBaseline, 'it kept what the Assertions compare with');
   fixture.fakeIntegrity!.write(fixture.worktree, 'notes.txt');
 
-  assert.equal((await laterRun(fixture)).outcome, 'needs-human');
-  assert.match((await loadTicket(fixture)).terminalReason!.text, /Integrity Assertion on tree/);
+  assert.equal((await laterRun(fixture)).held, true);
+  const ended = await loadTicket(fixture);
+  assert.match(ended.terminalReason!.text, /tree changed while the Ticket waited/);
+  assert.deepEqual(intents(ended, 'reset'), []);
 });
 
 test('re-running the Checks of a held Visit counts toward the Action Cap', async (t) => {

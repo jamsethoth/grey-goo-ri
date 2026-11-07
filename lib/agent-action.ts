@@ -293,13 +293,13 @@ export async function completeHeld(
   const identity = { ...actionIdentity, attempt: executionRecord.cursor.attempt };
   const startedAt = runContext.clock.now();
   const held = state.call!;
-  const violations = await effects.whileBusy(runContext, () =>
-    agentCall.heldViolations(runContext, { actionIdentity: identity, action, state }, held),
+  await effects.whileBusy(runContext, () =>
+    agentCall.validateHeld(runContext, { actionIdentity: identity, action, state }, held),
   );
   const cleanup = cleanupHold.confirmedReport(held.harnessResult.cleanup as commandCleanup.CleanupReport);
   held.harnessResult.cleanup = cleanup;
   visitScope.recordOutput(executionRecord, actionIdentity, { cleanup });
-  const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity: identity, state }, violations);
+  const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity: identity, state }, []);
   await effects.replaceResolution(runContext, {
     actionIdentity: identity,
     startedAt,

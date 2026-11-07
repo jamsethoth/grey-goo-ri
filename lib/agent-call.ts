@@ -157,29 +157,29 @@ async function callViolations(
 }
 
 // A held call's validation at a later Run, once its containment confirms its writers gone: every fixed Assertion
-// against its original baseline, before any Check, commit or routing (L15). While the Ticket waited, a human could
-// commit as well as a survivor, and nothing tells them apart: a rollback is safe only for what the agent made (request
-// 3.5), so a moved HEAD holds the Ticket and is kept.
-export async function heldViolations(
+// against its original baseline, before any Check, commit or routing (L15). While the Ticket waited a human could
+// change the worktree as well as a survivor, and nothing tells them apart. A rollback is safe only for what the agent
+// made (request 3.5), so whatever broke an Assertion holds the Ticket and is kept.
+export async function validateHeld(
   runContext: RunContext,
   running: visitScope.Running,
   { baseline, response }: { baseline: integrity.IntegrityBaseline; response: unknown },
-) {
-  const { record: executionRecord } = runContext;
+): Promise<void> {
   const violations = await callViolations(runContext, running, {
     baseline,
     others: await othersOf(runContext),
-    access: executionRecord.configurationSnapshot!.access,
+    access: runContext.record.configurationSnapshot!.access,
     response,
   });
-  const moved = violations.find(({ surface, worktree }) => surface === 'head' && worktree === executionRecord.worktree);
-  if (moved)
-    throw new effectErrors.EarlyTerminalError({
-      next: 'hold',
-      name: 'moved-while-held',
-      reason:
-        `HEAD moved from ${moved.before} to ${moved.after} while the Ticket waited for its cleanup, so the Ticket is ` +
-        'held and nothing was reset.',
-    });
-  return violations;
+  if (!violations.length) return;
+  const surfaces = [...new Set(violations.map(({ surface }) => surface))];
+  const changed = violations.flatMap(({ after }) => (Array.isArray(after) ? after : []));
+  throw new effectErrors.EarlyTerminalError({
+    next: 'hold',
+    name: 'changed-while-held',
+    reason:
+      `${surfaces.join(' and ')} changed while the Ticket waited for its cleanup, by a survivor or a human, so the ` +
+      'Ticket is held and nothing was reset.',
+    ...(changed.length && { detail: changed.join('\n') }),
+  });
 }

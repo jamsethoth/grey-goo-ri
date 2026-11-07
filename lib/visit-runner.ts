@@ -370,8 +370,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
 // An Integrity Violation leaves nothing behind and tells the next Brief why. Rollback is limited to what this Visit's
 // agent made (request 3.5), and passes what git clean leaves (integrity.rollbackSet).
 function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity, resolution }: Ran) {
-  // A Check with no agent Action before it kept the baseline its Visit began with.
-  const baseline = state.call?.baseline ?? state.firstAttemptBaseline!;
+  const { baseline } = state.call!;
   const testPaths = runContext.record.configurationSnapshot!.testPaths;
   return rescue.reset(runContext, {
     actionIdentity: { ...actionIdentity, action: 'reset', attempt: resolution.attempt },

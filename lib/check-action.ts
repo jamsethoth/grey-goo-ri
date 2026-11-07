@@ -252,10 +252,9 @@ export async function check(runContext: RunContext, running: visitScope.Running)
   });
 }
 
-// A Check held for cleanup, its processes now confirmed gone (J4, L15). A violation stops as an agent's does. Its
-// result stands on the tree it read; a changed one, which the Assertions allowed, re-runs the Visit's Checks from the
-// first (T1), so nothing reads a pass of an older tree: the cursor moves there in the same write, so a crash re-runs
-// them all.
+// A Check held for cleanup, its processes now confirmed gone (J4, L15). Its result stands on the tree it read; a
+// changed one, which the Assertions allowed, re-runs the Visit's Checks from the first (T1), so nothing reads a pass of
+// an older tree: the cursor moves there in the same write, so a crash re-runs them all.
 export async function completeHeld(
   runContext: RunContext,
   running: visitScope.Running,
@@ -264,15 +263,15 @@ export async function completeHeld(
   const { actionIdentity, action, state } = running;
   const startedAt = runContext.clock.now();
   const baseline = state.call?.baseline ?? state.firstAttemptBaseline!;
-  const { violations, tree } = await effects.whileBusy(runContext, async () => ({
-    violations: await agentCall.heldViolations(runContext, running, { baseline, response: state.response }),
-    tree: (await integrity.snapshot(executionRecord.worktree, git, locks)).tree,
-  }));
+  const tree = await effects.whileBusy(runContext, async () => {
+    await agentCall.validateHeld(runContext, running, { baseline, response: state.response });
+    return (await integrity.snapshot(executionRecord.worktree, git, locks)).tree;
+  });
   const signal = state.checks[action.id];
   const held = visitScope.outputOf(executionRecord, actionIdentity)?.value.cleanup as commandCleanup.CleanupReport;
   const confirmed = cleanupHold.confirmedReport(held);
   visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: confirmed });
-  if (!violations.length && tree !== signal.tree) {
+  if (tree !== signal.tree) {
     const firstCheck = state.proc.actions.find((candidate) => candidate.do === 'check')!;
     state.settled = null;
     executionRecord.cursor = { ...executionRecord.cursor, action: firstCheck.id, attempt: 1 };
@@ -282,15 +281,13 @@ export async function completeHeld(
     return 'rerun-checks';
   }
   const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;
-  const integrityRows = [{ name: 'integrity', passed: !violations.length, violations }];
   const resolution = visitScope.settle(executionRecord, actionIdentity, state, {
     result: callSignal,
     claim,
-    checks: visitScope.resolverChecks(integrityRows, [signal]),
+    checks: visitScope.resolverChecks([], [signal]),
     retries: {},
   });
   const { output, reason } = state.runs[action.id];
-  const surfaces = violations.length ? [...new Set(violations.map((violation) => violation.surface))] : null;
   return effects.replaceResolution(runContext, {
     actionIdentity,
     startedAt,
@@ -298,14 +295,12 @@ export async function completeHeld(
       reason,
       signal,
       output: signal.state === 'failed' ? output : null,
-      surfaces,
-      attempt: executionRecord.cursor.attempt,
       ...resolution,
     },
     fields: {
       check: action.id,
       cleanup: confirmed,
-      signals: { harnessResult: { status: result.status }, claim, checks: [signal], integrity: integrityRows },
+      signals: { harnessResult: { status: result.status }, claim, checks: [signal], integrity: [] },
     },
   });
 }

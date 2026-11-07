@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import type * as events from '../../lib/events.ts';
@@ -11,6 +11,7 @@ import { laterRun } from '../support/approval-flow.ts';
 import { actionEvent, actionMarker, intents, loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
 import * as keys from '../support/keys.ts';
+import * as suiteRuns from '../support/suite-runs.ts';
 import { FIRST_VISIT, TDD_VERTICES, terminalReasonOf } from '../support/golden-run.ts';
 import { contendRepoLock, onLockedGit } from '../support/repo-lock-contention.ts';
 import { ticketComments } from '../support/review-flow.ts';
@@ -320,9 +321,11 @@ test('a workflow file a survivor changed is an integrity violation on resume', a
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
+  assert.equal(result.held, true);
   const saved = await loadTicket(fixture);
-  assert.match(saved.terminalReason!.text, /broke an Integrity Assertion on protected/);
-  assert.equal(existsSync(join(fixture.worktree, '.github', 'workflows', 'ci.yml')), false, 'rolled back');
+  assert.match(saved.terminalReason!.text, /protected changed while the Ticket waited/);
+  assert.deepEqual(intents(saved, 'reset'), [], 'nothing tells a survivor from a human, so nothing is reset');
+  assert.equal(readFileSync(join(fixture.worktree, '.github', 'workflows', 'ci.yml'), 'utf8'), 'name: changed\n');
 });
 
 test('an ignored Protected File a survivor changed is an integrity violation on resume', async (t) => {
@@ -336,9 +339,11 @@ test('an ignored Protected File a survivor changed is an integrity violation on 
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
+  assert.equal(result.held, true);
   const saved = await loadTicket(fixture);
-  assert.match(saved.terminalReason!.text, /broke an Integrity Assertion on protected/);
-  assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', 'restored from the baseline');
+  assert.match(saved.terminalReason!.text, /protected changed while the Ticket waited/);
+  assert.deepEqual(intents(saved, 'reset'), []);
+  assert.equal(readFileSync(local, 'utf8'), '{"survivor":true}\n', 'it is kept for a human to judge');
 });
 
 test('a held call whose worktree is unchanged goes on over real git', async (t) => {
@@ -359,4 +364,23 @@ test('a commit made while a cleanup hold waits is kept, and holds the Ticket', a
   assert.equal(result.outcome, 'needs-human');
   assert.equal(result.held, true);
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), committed, 'nothing was reset');
+});
+
+// A gate is read-only, so any change to its tree breaks an Assertion, and it may be a human's edit.
+test('an edit made while a gate waits for its cleanup holds the Ticket and survives', async (t) => {
+  const fixture = await golden.fixture(t, { integrity: 'real', git: 'real' });
+  let held = false;
+  suiteRuns.editRuns(fixture, (run) => {
+    if (held || run.code !== 0 || fixture.executionRecord.cursor.vertex !== 'publish') return run;
+    held = true;
+    const cleanup = { confirmed: false, survivors: [], reason: 'refused', containment: { kind: 'group', pgid: 4242 } };
+    return { ...run, cleanup };
+  });
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  writeFileSync(join(fixture.worktree, 'package.json'), '{"edited":"by a human"}\n');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.held, true);
+  assert.deepEqual(intents(await loadTicket(fixture), 'reset'), []);
+  assert.equal(readFileSync(join(fixture.worktree, 'package.json'), 'utf8'), '{"edited":"by a human"}\n');
 });
