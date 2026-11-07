@@ -129,8 +129,10 @@ export function checkInputs(
     report.unknownKeys(problems, declaration, INPUT_KEYS, inputLocation);
     if (declaration.optional !== undefined && typeof declaration.optional !== 'boolean')
       report.error(problems, inputLocation, 'not-a-boolean', 'optional must be true or false');
-    const from = Array.isArray(declaration.from) ? declaration.from : [declaration.from];
-    if (!from.length) report.error(problems, inputLocation, 'empty-list', 'from must name at least one source');
+    const given = declaration.from;
+    const from = given === undefined ? [] : [given].flat();
+    if (!from.length)
+      report.error(problems, inputLocation, report.absentOr(given, 'empty-list'), 'from must name at least one source');
     const { pick } = declaration;
     typed.inputs[input] = { from, optional: declaration.optional === true, ...(pick !== undefined && { pick }) };
     const first = firstSource(problems, inputLocation, from, scope);

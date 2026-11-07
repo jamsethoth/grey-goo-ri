@@ -7,12 +7,13 @@ import * as referencePaths from '../reference-paths.ts';
 // reads this, never the message, whose wording may change. The decisions doc's ids (H7, R12c) stay out of it, so each
 // code reads on its own; a comment may cite the id.
 export const PROBLEM_CODES = [
-  // A value of the wrong shape, wherever the configuration holds it.
+  // A required key left out, or a value of the wrong shape, wherever the configuration holds it.
   'empty-list',
   'not-a-boolean',
   'not-a-list',
   'not-a-positive-integer',
   'not-an-object',
+  'required-key-missing',
   'unknown-key',
   // Names.
   'inherited-name',
@@ -108,6 +109,10 @@ export interface Finding {
   code: ProblemCode;
   message: string;
 }
+// A required key left out breaks that rule, whichever rule a value there would break.
+export const absentOr = (value: unknown, code: ProblemCode): ProblemCode =>
+  value === undefined ? 'required-key-missing' : code;
+
 // `at` is the key gg doctor and admission print and tests read, so it keeps the short name the rules otherwise deny.
 export interface Problem extends Finding {
   // eslint-disable-next-line id-denylist -- the location each printed error and warning starts with

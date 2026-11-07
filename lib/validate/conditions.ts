@@ -3,7 +3,7 @@
 
 import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
-import type * as report from './report.ts';
+import * as report from './report.ts';
 
 type Value = Record<string, unknown>;
 
@@ -26,7 +26,10 @@ export function itemField(items: referencePaths.SchemaNode | undefined, field: s
 // Why a response condition's value cannot match its field, or null.
 function valueProblem(type: referencePaths.FieldType | null, value: unknown): report.Finding | null {
   if (type === null) return null;
-  const mismatch = (message: string): report.Finding => ({ code: 'condition-value-mismatch', message });
+  const mismatch = (message: string): report.Finding => ({
+    code: report.absentOr(value, 'condition-value-mismatch'),
+    message,
+  });
   if (type.kind === 'boolean')
     return typeof value === 'boolean' ? null : mismatch(`${JSON.stringify(value)} is not true or false`);
   if (type.kind === 'enum') {
@@ -48,7 +51,12 @@ function fieldProblems(condition: Value, schema: referencePaths.SchemaNode): rep
   const { type } = resolved;
   const field = JSON.stringify(condition.field);
   if (type?.kind === 'boolean' && typeof condition.is !== 'boolean')
-    return [{ code: 'condition-value-mismatch', message: `${field} is a boolean, so is must be true or false` }];
+    return [
+      {
+        code: report.absentOr(condition.is, 'condition-value-mismatch'),
+        message: `${field} is a boolean, so is must be true or false`,
+      },
+    ];
   const problem = valueProblem(type ?? null, condition.is);
   return problem ? [{ code: problem.code, message: `${field}: ${problem.message}` }] : [];
 }
@@ -72,7 +80,10 @@ function listProblems(condition: Value, form: string, schema: referencePaths.Sch
       });
   }
   if (!referencePaths.isRecord(condition.where))
-    return [...problems, { code: 'not-an-object', message: 'where must be an object of item fields' }];
+    return [
+      ...problems,
+      { code: report.absentOr(condition.where, 'not-an-object'), message: 'where must be an object of item fields' },
+    ];
   return [...problems, ...whereProblems(condition.where, node)];
 }
 

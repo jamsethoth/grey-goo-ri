@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
+import type * as report from '../../lib/validate/report.ts';
 
 // A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
@@ -390,8 +391,8 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     },
     [
       { at: 'flows.default.ticket', code: 'not-an-object' },
-      { at: VERTICES, code: 'not-an-object' },
-      { at: 'flows.default.ticket.entry', code: 'unknown-vertex' },
+      { at: VERTICES, code: 'required-key-missing' },
+      { at: 'flows.default.ticket.entry', code: 'required-key-missing' },
     ],
   ],
   [
@@ -527,5 +528,163 @@ for (const [what, mutate, errors] of MALFORMED) {
     const config = exampleLayer.config();
     mutate(config);
     assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), errors);
+  });
+}
+
+const LEFT_OUT = 'required-key-missing' as const;
+// Each required key left out, with what it reports. The sentence is the behaviour here: it says what to add, and never
+// prints "undefined" as though that were a value.
+const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Problem[]][] = [
+  [
+    "a Vertex's procedure",
+    (config) => {
+      delete config.flows.default.ticket.vertices.publish.procedure;
+    },
+    [{ at: `${VERTICES}.publish`, code: LEFT_OUT, message: 'a Vertex must name a procedure' }],
+  ],
+  [
+    "a ticket's entry",
+    (config) => {
+      delete config.flows.default.ticket.entry;
+    },
+    [{ at: 'flows.default.ticket.entry', code: LEFT_OUT, message: 'a ticket must name its entry Vertex' }],
+  ],
+  [
+    "a ticket's vertices",
+    (config) => {
+      delete config.flows.default.ticket.vertices;
+    },
+    [
+      { at: VERTICES, code: LEFT_OUT, message: 'vertices must be a non-empty object' },
+      { at: 'flows.default.ticket.entry', code: 'unknown-vertex', message: '"baseline" is not a Vertex' },
+    ],
+  ],
+  [
+    "a Flow's ticket",
+    (config) => {
+      delete config.flows.default.ticket;
+    },
+    [
+      { at: 'flows.default.ticket', code: LEFT_OUT, message: 'ticket must be an object' },
+      { at: VERTICES, code: LEFT_OUT, message: 'vertices must be a non-empty object' },
+      { at: 'flows.default.ticket.entry', code: LEFT_OUT, message: 'a ticket must name its entry Vertex' },
+    ],
+  ],
+  [
+    "a Flow's actionCap",
+    (config) => {
+      delete config.flows.default.actionCap;
+    },
+    [{ at: 'flows.default.actionCap', code: LEFT_OUT, message: 'actionCap must be a positive integer' }],
+  ],
+  [
+    "a Procedure's actions",
+    (config) => {
+      delete config.procedures.publish.actions;
+    },
+    [{ at: 'procedures.publish', code: LEFT_OUT, message: 'actions must be a non-empty list' }],
+  ],
+  [
+    "an Action's id",
+    (config) => {
+      delete procedureActions.actionById(config.procedures.publish, 'pr-ready').id;
+    },
+    [{ at: 'procedures.publish.actions[2]', code: LEFT_OUT, message: 'an Action must have an id' }],
+  ],
+  [
+    "an Action's do",
+    (config) => {
+      delete procedureActions.actionById(config.procedures.publish, 'pr-ready').do;
+    },
+    [{ at: 'procedures.publish.actions[2]', code: LEFT_OUT, message: 'an Action must name its kind in do' }],
+  ],
+  [
+    "a Check's kind",
+    (config) => {
+      delete procedureActions.actionById(config.procedures['base-check'], 'test').kind;
+    },
+    [{ at: 'procedures.base-check.actions[0]', code: LEFT_OUT, message: 'a Check must name its kind' }],
+  ],
+  [
+    "a Check's command",
+    (config) => {
+      delete procedureActions.actionById(config.procedures['base-check'], 'test').command;
+    },
+    [{ at: 'procedures.base-check.actions[0]', code: LEFT_OUT, message: 'Check test must name a command' }],
+  ],
+  [
+    "a tests-fail Check's testNames",
+    (config) => {
+      delete procedureActions.actionById(config.procedures['tests-fail'], 'red-check').testNames;
+    },
+    [{ at: 'procedures.tests-fail.actions[1]', code: LEFT_OUT, message: 'a tests-fail Check must name testNames' }],
+  ],
+  [
+    "a repeat Check's list",
+    (config) => {
+      delete procedureActions.actionById(config.procedures.review, 'repeat').list;
+    },
+    [{ at: 'procedures.review.actions[2]', code: LEFT_OUT, message: 'a repeat Check must name its list' }],
+  ],
+  [
+    "a repeat Check's fields",
+    (config) => {
+      delete procedureActions.actionById(config.procedures.review, 'repeat').fields;
+    },
+    [{ at: 'procedures.review.actions[2]', code: LEFT_OUT, message: 'fields must be a non-empty list of field names' }],
+  ],
+  [
+    "an await-approval's decisions",
+    (config) => {
+      config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval' });
+    },
+    [{ at: 'procedures.publish.actions[3]', code: LEFT_OUT, message: 'decisions must be a non-empty list of names' }],
+  ],
+  [
+    "a comment's target",
+    (config) => {
+      delete procedureActions.actionById(config.procedures.review, 'comment').target;
+    },
+    [{ at: 'procedures.review.actions[3]', code: LEFT_OUT, message: 'target must be pr or ticket' }],
+  ],
+  [
+    "an input's from",
+    (config) => {
+      config.flows.default.ticket.vertices.red.inputs.oddly = { optional: true };
+    },
+    [{ at: `${VERTICES}.red.inputs.oddly`, code: LEFT_OUT, message: 'from must name at least one source' }],
+  ],
+  [
+    "a response condition's is",
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'definitionOfDoneMet' };
+    },
+    [
+      {
+        at: 'procedures.review.actions[1]',
+        code: LEFT_OUT,
+        message: 'allOf[0]: "definitionOfDoneMet" is a boolean, so is must be true or false',
+      },
+    ],
+  ],
+  [
+    "a response condition's where",
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[2] = { none: 'findings' };
+    },
+    [
+      {
+        at: 'procedures.review.actions[1]',
+        code: LEFT_OUT,
+        message: 'allOf[2]: where must be an object of item fields',
+      },
+    ],
+  ],
+];
+for (const [what, mutate, errors] of LEFT_OUT_KEYS) {
+  test(`a required key left out says so: ${what}`, () => {
+    const config = exampleLayer.config();
+    mutate(config);
+    assert.deepEqual(exampleLayer.check(config).errors, errors);
   });
 }

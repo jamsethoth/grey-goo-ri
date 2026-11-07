@@ -155,35 +155,36 @@ function checkFlowKeys(problems: report.Report, location: string, declaration: V
   else if (declaration.plan !== null)
     report.error(problems, `${location}.plan`, 'plan-not-null', 'plan must be null until Epic planning is built');
   if (!report.isCount(declaration.actionCap))
-    report.error(problems, `${location}.actionCap`, 'not-a-positive-integer', 'actionCap must be a positive integer');
+    report.error(
+      problems,
+      `${location}.actionCap`,
+      report.absentOr(declaration.actionCap, 'not-a-positive-integer'),
+      'actionCap must be a positive integer',
+    );
+  const atTicket = `${location}.ticket`;
   const ticket = referencePaths.isRecord(declaration.ticket) ? declaration.ticket : {};
   if (!referencePaths.isRecord(declaration.ticket))
-    report.error(problems, `${location}.ticket`, 'not-an-object', 'ticket must be an object');
-  report.unknownKeys(problems, ticket, TICKET_KEYS, `${location}.ticket`);
+    report.error(problems, atTicket, report.absentOr(declaration.ticket, 'not-an-object'), 'ticket must be an object');
+  report.unknownKeys(problems, ticket, TICKET_KEYS, atTicket);
   const vertices = referencePaths.isRecord(ticket.vertices) ? ticket.vertices : {};
   if (!Object.keys(vertices).length)
     report.error(
       problems,
-      `${location}.ticket.vertices`,
-      referencePaths.isRecord(ticket.vertices) ? 'no-vertex-declared' : 'not-an-object',
+      `${atTicket}.vertices`,
+      report.absentOr(
+        ticket.vertices,
+        referencePaths.isRecord(ticket.vertices) ? 'no-vertex-declared' : 'not-an-object',
+      ),
       'vertices must be a non-empty object',
     );
-  if (typeof ticket.entry !== 'string' || !Object.hasOwn(vertices, ticket.entry))
-    report.error(
-      problems,
-      `${location}.ticket.entry`,
-      'unknown-vertex',
-      `${JSON.stringify(ticket.entry)} is not a Vertex`,
-    );
+  if (ticket.entry === undefined)
+    report.error(problems, `${atTicket}.entry`, 'required-key-missing', 'a ticket must name its entry Vertex');
+  else if (typeof ticket.entry !== 'string' || !Object.hasOwn(vertices, ticket.entry))
+    report.error(problems, `${atTicket}.entry`, 'unknown-vertex', `${JSON.stringify(ticket.entry)} is not a Vertex`);
   if (ticket.routes !== undefined && !referencePaths.isRecord(ticket.routes))
-    report.error(
-      problems,
-      `${location}.ticket.routes`,
-      'not-an-object',
-      'routes must be an object from Outcome to target',
-    );
+    report.error(problems, `${atTicket}.routes`, 'not-an-object', 'routes must be an object from Outcome to target');
   for (const [outcome, target] of report.entries(ticket.routes))
-    checkRouteTarget(problems, `${location}.ticket.routes.${outcome}`, target, vertices);
+    checkRouteTarget(problems, `${atTicket}.routes.${outcome}`, target, vertices);
   return { ticket, vertices };
 }
 
@@ -321,7 +322,9 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   const proc = report.hasOwnKey(checking.procedures, vertex.procedure)
     ? checking.procedures[vertex.procedure]
     : undefined;
-  if (!report.hasOwnKey(checking.config.procedures, vertex.procedure))
+  if (vertex.procedure === undefined)
+    report.error(problems, location, 'required-key-missing', 'a Vertex must name a procedure');
+  else if (!report.hasOwnKey(checking.config.procedures, vertex.procedure))
     report.error(
       problems,
       location,

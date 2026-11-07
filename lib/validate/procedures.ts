@@ -306,7 +306,7 @@ export function checkProcedure(
   report.unknownKeys(problems, declaration, PROCEDURE_KEYS, location);
   const actions: unknown[] = Array.isArray(declaration.actions) ? declaration.actions : [];
   if (!actions.length) {
-    const code = Array.isArray(declaration.actions) ? 'empty-list' : 'not-a-list';
+    const code = report.absentOr(declaration.actions, Array.isArray(declaration.actions) ? 'empty-list' : 'not-a-list');
     report.error(problems, location, code, 'actions must be a non-empty list');
   }
   const declared = actionChecks.checkActions(declaring, actions, location);

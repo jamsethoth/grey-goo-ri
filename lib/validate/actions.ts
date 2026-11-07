@@ -62,12 +62,16 @@ const requireFile = (problems: report.Report, action: Value, key: string, locati
 
 // One sentence states three rules, and the code says which one the value breaks.
 function requireNames(problems: report.Report, names: unknown, location: string, message: string) {
-  if (!Array.isArray(names)) report.error(problems, location, 'not-a-list', message);
+  if (!Array.isArray(names)) report.error(problems, location, report.absentOr(names, 'not-a-list'), message);
   else if (!names.length) report.error(problems, location, 'empty-list', message);
   else if (!names.every(report.isName)) report.error(problems, location, 'invalid-name', message);
 }
 
 function checkActionId(problems: report.Report, ids: unknown[], id: unknown, location: string) {
+  if (id === undefined) {
+    report.error(problems, location, 'required-key-missing', 'an Action must have an id');
+    return;
+  }
   if (!report.checkName(problems, location, id, { what: 'Action id', carried: true })) return;
   if (ids.includes(id))
     report.error(problems, location, 'repeated-action-id', `Action id ${JSON.stringify(id)} is repeated`);
@@ -86,6 +90,8 @@ function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, actio
     return report.error(problems, location, 'not-an-object', 'an Action must be an object');
   checkActionId(problems, declared.ids, action.id, location);
   declared.ids.push(action.id);
+  if (action.do === undefined)
+    return report.error(problems, location, 'required-key-missing', 'an Action must name its kind in do');
   const kinds = Object.keys(procedures.ACTION_KEYS).join(', ');
   if (!report.hasOwnKey(procedures.ACTION_KEYS, action.do))
     return report.error(
@@ -97,6 +103,8 @@ function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, actio
   const isCheck = action.do === 'check';
   if (isCheck && !report.hasOwnKey(procedures.CHECK_KEYS, action.kind)) {
     declared.checks.push(action);
+    if (action.kind === undefined)
+      return report.error(problems, location, 'required-key-missing', 'a Check must name its kind');
     const checkKinds = Object.keys(procedures.CHECK_KEYS).join(', ');
     return report.error(
       problems,
@@ -136,12 +144,15 @@ function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
     !report.hasOwnKey(declaring.commands, check.command)
   ) {
     const command = JSON.stringify(check.command);
-    report.error(
-      problems,
-      location,
-      'undeclared-command',
-      `Check ${check.id} names command ${command}, which the repository Layer does not declare`,
-    );
+    if (check.command === undefined)
+      report.error(problems, location, 'required-key-missing', `Check ${check.id} must name a command`);
+    else
+      report.error(
+        problems,
+        location,
+        'undeclared-command',
+        `Check ${check.id} names command ${command}, which the repository Layer does not declare`,
+      );
   }
   if (check.kind === 'command' && check.reuse !== undefined && check.reuse !== 'tree')
     report.error(problems, location, 'invalid-reuse', 'reuse may only be tree');
@@ -160,7 +171,12 @@ function checkEffectAction(problems: report.Report, action: Value, location: str
       report.error(problems, location, 'not-an-object', 'with must be an object of reference paths');
   } else if (action.do === 'comment') {
     if (action.target !== 'pr' && action.target !== 'ticket')
-      report.error(problems, location, 'invalid-comment-target', 'target must be pr or ticket');
+      report.error(
+        problems,
+        location,
+        report.absentOr(action.target, 'invalid-comment-target'),
+        'target must be pr or ticket',
+      );
     requireFile(problems, action, 'body', location);
   } else if (action.do === 'await-approval') {
     // The decisions' own rules are #119's.

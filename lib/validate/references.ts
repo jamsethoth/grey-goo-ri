@@ -100,6 +100,9 @@ const repeatList =
       : { code: 'unknown-item-field', message: `fields: ${JSON.stringify(field)} is not a field of the list's items` };
   };
 
+const leftOut = (found: Found[], where: string, message: string) =>
+  found.push({ where, path: undefined, code: 'required-key-missing', message });
+
 // `tests: named` and each Action's reference parameters, all read when the Visit passes.
 function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope: referencePaths.SchemaNode) {
   if (referencePaths.isRecord(proc.tests))
@@ -107,10 +110,14 @@ function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope:
   proc.actions.forEach((action, index) => {
     if (!referencePaths.isRecord(action)) return;
     const where = `actions[${index}]`;
-    if (action.do === 'check' && action.kind === 'tests-fail')
-      typeReference(found, { where, path: action.testNames, scope }, stringList('testNames'));
-    if (action.do === 'check' && action.kind === 'repeat')
-      typeReference(found, { where, path: action.list, scope }, repeatList(action));
+    if (action.do === 'check' && action.kind === 'tests-fail') {
+      if (action.testNames === undefined) leftOut(found, where, 'a tests-fail Check must name testNames');
+      else typeReference(found, { where, path: action.testNames, scope }, stringList('testNames'));
+    }
+    if (action.do === 'check' && action.kind === 'repeat') {
+      if (action.list === undefined) leftOut(found, where, 'a repeat Check must name its list');
+      else typeReference(found, { where, path: action.list, scope }, repeatList(action));
+    }
     if (action.do === 'pr-upsert') {
       for (const path of Object.values(referencePaths.isRecord(action.with) ? action.with : {}))
         typeReference(found, { where, path, scope }, anyType);
