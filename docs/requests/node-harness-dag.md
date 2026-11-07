@@ -642,7 +642,7 @@ naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry over by
 `contextBudget.byModel`. Eval variants are config layers and may change flow structure. Declared Commands are a
 `commands` object in the repo Layer only: a `commands` key in the defaults or user Layer is a load error, as is a
 Layer file with a duplicate key, and preflight checks each name and command line (ADR 0013). `flows`, `procedures` and `testPaths` are
-repo-Layer-only too, and `testPaths` is required (ADR 0014). So is `approvers`, an optional list of GitHub logins whose
+repo-Layer-only too, and `testPaths` is required (ADR 0014). `approvers` is repo-Layer-only as well: an optional list of GitHub logins whose
 Decision counts below write permission (3.5), pinned in the Config Hash; preflight checks it (#119). Each file a Layer names (a Persona, Brief, template or
 schema) resolves beside that Layer's `gg.json`, and one name names one file across the Layers: a Layer that reuses a
 name another Layer declares for a different file fails to load. Until #121 the defaults Layer declares its own
