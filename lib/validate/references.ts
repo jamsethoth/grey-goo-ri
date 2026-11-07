@@ -105,7 +105,7 @@ const leftOut = (found: Found[], where: string, message: string) =>
 
 // `tests: named` and each Action's reference parameters, all read when the Visit passes.
 function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope: referencePaths.SchemaNode) {
-  if (referencePaths.isRecord(proc.tests))
+  if (referencePaths.isRecord(proc.tests) && proc.tests.named !== undefined)
     typeReference(found, { where: 'tests', path: proc.tests.named, scope }, stringList('tests: named'));
   proc.actions.forEach((action, index) => {
     if (!referencePaths.isRecord(action)) return;
