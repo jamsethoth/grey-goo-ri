@@ -668,6 +668,63 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
     ],
   ],
   [
+    "a response condition's is, on an enum field",
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'reason' };
+    },
+    [
+      {
+        at: 'procedures.review.actions[1]',
+        code: LEFT_OUT,
+        message: 'allOf[0]: "reason" is an enum, so is must be one of none | misscoped | needs-input | environment',
+      },
+    ],
+  ],
+  [
+    "a Check's id and command",
+    (config) => {
+      const check = procedureActions.actionById(config.procedures['base-check'], 'test');
+      delete check.id;
+      delete check.command;
+    },
+    [
+      { at: 'procedures.base-check.actions[0]', code: LEFT_OUT, message: 'an Action must have an id' },
+      { at: 'procedures.base-check.actions[0]', code: LEFT_OUT, message: 'Check with no id must name a command' },
+    ],
+  ],
+  [
+    "a Check's id, when its command is not declared",
+    (config) => {
+      const check = procedureActions.actionById(config.procedures['base-check'], 'test');
+      delete check.id;
+      check.command = 'lint';
+    },
+    [
+      { at: 'procedures.base-check.actions[0]', code: LEFT_OUT, message: 'an Action must have an id' },
+      {
+        at: 'procedures.base-check.actions[0]',
+        code: 'undeclared-command',
+        message: 'Check with no id names command "lint", which the repository Layer does not declare',
+      },
+    ],
+  ],
+  [
+    "a Check's id, when it comes after an effect",
+    (config) => {
+      config.procedures.publish.actions.push({ do: 'check', kind: 'command', command: 'test' });
+    },
+    [
+      { at: 'procedures.publish.actions[3]', code: LEFT_OUT, message: 'an Action must have an id' },
+      {
+        at: 'procedures.publish.actions[3]',
+        code: 'check-after-effect',
+        message:
+          'Check with no id comes after pr-upsert Action pr; every Check comes before any effect, so no effect runs ' +
+          'before its pass is decided',
+      },
+    ],
+  ],
+  [
     "a response condition's where",
     (config) => {
       procedureActions.actionById(config.procedures.review, 'review-pass').allOf[2] = { none: 'findings' };
@@ -681,6 +738,29 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
     ],
   ],
 ];
+test('a response condition whose is fits no value of its enum field keeps its code and message', () => {
+  const config = exampleLayer.config();
+  procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'reason', is: 'x' };
+  assert.deepEqual(exampleLayer.check(config).errors, [
+    {
+      at: 'procedures.review.actions[1]',
+      code: 'condition-value-mismatch',
+      message: 'allOf[0]: "reason": "x" is not one of none | misscoped | needs-input | environment',
+    },
+  ]);
+});
+
+test('a present null id is a wrong value, so a Check still quotes it', () => {
+  const config = exampleLayer.config();
+  const check = procedureActions.actionById(config.procedures['base-check'], 'test');
+  check.id = null;
+  delete check.command;
+  assert.deepEqual(
+    exampleLayer.check(config).errors.map((problem) => problem.message),
+    ['Action id null must be non-empty with no ":", ".", "/", "--" or whitespace', 'Check null must name a command'],
+  );
+});
+
 for (const [what, mutate, errors] of LEFT_OUT_KEYS) {
   test(`a required key left out says so: ${what}`, () => {
     const config = exampleLayer.config();

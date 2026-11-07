@@ -67,6 +67,9 @@ function requireNames(problems: report.Report, names: unknown, location: string,
   else if (!names.every(report.isName)) report.error(problems, location, 'invalid-name', message);
 }
 
+// How a sentence names a Check with its id left out. A present null is a wrong value, which it quotes.
+const checkLabel = (id: unknown) => (id === undefined ? 'with no id' : id);
+
 function checkActionId(problems: report.Report, ids: unknown[], id: unknown, location: string) {
   if (id === undefined) {
     report.error(problems, location, 'required-key-missing', 'an Action must have an id');
@@ -145,13 +148,13 @@ function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
   ) {
     const command = JSON.stringify(check.command);
     if (check.command === undefined)
-      report.error(problems, location, 'required-key-missing', `Check ${check.id} must name a command`);
+      report.error(problems, location, 'required-key-missing', `Check ${checkLabel(check.id)} must name a command`);
     else
       report.error(
         problems,
         location,
         'undeclared-command',
-        `Check ${check.id} names command ${command}, which the repository Layer does not declare`,
+        `Check ${checkLabel(check.id)} names command ${command}, which the repository Layer does not declare`,
       );
   }
   if (check.kind === 'command' && check.reuse !== undefined && check.reuse !== 'tree')
@@ -226,7 +229,7 @@ export function checkOrder(problems: report.Report, location: string, actions: u
         problems,
         `${location}.actions[${index}]`,
         'check-after-effect',
-        `Check ${action.id} comes after ${effect.do} Action ${effect.id}; ` +
+        `Check ${checkLabel(action.id)} comes after ${effect.do} Action ${effect.id}; ` +
           'every Check comes before any effect, so no effect runs before its pass is decided',
       );
     }

@@ -26,10 +26,7 @@ export function itemField(items: referencePaths.SchemaNode | undefined, field: s
 // Why a response condition's value cannot match its field, or null.
 function valueProblem(type: referencePaths.FieldType | null, value: unknown): report.Finding | null {
   if (type === null) return null;
-  const mismatch = (message: string): report.Finding => ({
-    code: report.absentOr(value, 'condition-value-mismatch'),
-    message,
-  });
+  const mismatch = (message: string): report.Finding => ({ code: 'condition-value-mismatch', message });
   if (type.kind === 'boolean')
     return typeof value === 'boolean' ? null : mismatch(`${JSON.stringify(value)} is not true or false`);
   if (type.kind === 'enum') {
@@ -57,6 +54,11 @@ function fieldProblems(condition: Value, schema: referencePaths.SchemaNode): rep
         message: `${field} is a boolean, so is must be true or false`,
       },
     ];
+  if (type?.kind === 'enum' && condition.is === undefined) {
+    const { values } = type as { values: string[] };
+    const message = `${field} is an enum, so is must be one of ${values.join(' | ')}`;
+    return [{ code: 'required-key-missing', message }];
+  }
   const problem = valueProblem(type ?? null, condition.is);
   return problem ? [{ code: problem.code, message: `${field}: ${problem.message}` }] : [];
 }
