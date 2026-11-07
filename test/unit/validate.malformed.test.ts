@@ -181,7 +181,7 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     (config) => {
       config.agents.reviewer.harness = ['fake'];
     },
-    [{ at: 'agents.reviewer', code: 'harness-unregistered' }],
+    [{ at: 'agents.reviewer', code: 'invalid-name' }],
   ],
   [
     'recoverable that is a string',

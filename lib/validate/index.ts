@@ -140,7 +140,9 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
   // Every later check keys plain objects by the configuration's names, so none runs while one is inherited (H10).
   const inherited = inheritedNames(config);
   if (inherited.length) return { flows: {}, errors: inherited, warnings: [] };
-  reportNulls(problems, config, '');
+  // Null errors come first in the report but are not shared errors: the key's own check holds the Flow a null breaks.
+  const nulls = report.newReport();
+  reportNulls(nulls, config, '');
   if (config.procedures !== undefined && !referencePaths.isRecord(config.procedures))
     report.error(problems, 'procedures', 'not-an-object', 'procedures must be an object from name to Procedure');
   if (config.agents !== undefined && !referencePaths.isRecord(config.agents))
@@ -172,5 +174,9 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
   const resolved: Record<string, ReturnType<typeof flows.checkFlow>> = {};
   for (const [name, declaration] of report.entries(config.flows))
     resolved[name] = flows.checkFlow(checking, name, declaration);
-  return { flows: resolved, errors: report.dedupe(problems.errors), warnings: report.dedupe(problems.warnings) };
+  return {
+    flows: resolved,
+    errors: report.dedupe([...nulls.errors, ...problems.errors]),
+    warnings: report.dedupe(problems.warnings),
+  };
 }

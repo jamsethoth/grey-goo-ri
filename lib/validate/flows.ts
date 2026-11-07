@@ -91,7 +91,7 @@ export function checkHarness(
   location: string,
 ) {
   const problems = checking.report;
-  // A null harness is a null-value, reported where it sits; only a missing one is unset.
+  // Only a missing harness is unset; a null one is a null-value where it sits, and no name to look up.
   if (harness === undefined)
     report.error(
       problems,
@@ -99,6 +99,7 @@ export function checkHarness(
       'harness-unset',
       `${label} names no harness; set one in a user or repository Layer`,
     );
+  else if (!report.checkName(problems, location, harness, { what: `${label}'s harness`, carried: false })) return;
   else if (!report.hasOwnKey(checking.harnesses, harness))
     report.error(
       problems,
