@@ -144,7 +144,11 @@ function checkSettings(
   declared: actionChecks.DeclaredSoFar,
 ) {
   const tests = declaration.tests ?? 'frozen';
-  const named = referencePaths.isRecord(tests) && Object.keys(tests).length === 1 && Object.hasOwn(tests, 'named');
+  const named =
+    referencePaths.isRecord(tests) &&
+    Object.keys(tests).length === 1 &&
+    Object.hasOwn(tests, 'named') &&
+    tests.named !== undefined;
   if (!(tests === 'frozen' || tests === 'write' || named))
     report.error(
       problems,
