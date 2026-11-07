@@ -157,15 +157,29 @@ async function callViolations(
 }
 
 // A held call's validation at a later Run, once its containment confirms its writers gone: every fixed Assertion
-// against its original baseline, before any Check, commit or routing (L15).
-export const heldViolations = async (
+// against its original baseline, before any Check, commit or routing (L15). While the Ticket waited, a human could
+// commit as well as a survivor, and nothing tells them apart: a rollback is safe only for what the agent made (request
+// 3.5), so a moved HEAD holds the Ticket and is kept.
+export async function heldViolations(
   runContext: RunContext,
   running: visitScope.Running,
   { baseline, response }: { baseline: integrity.IntegrityBaseline; response: unknown },
-) =>
-  callViolations(runContext, running, {
+) {
+  const { record: executionRecord } = runContext;
+  const violations = await callViolations(runContext, running, {
     baseline,
     others: await othersOf(runContext),
-    access: runContext.record.configurationSnapshot!.access,
+    access: executionRecord.configurationSnapshot!.access,
     response,
   });
+  const moved = violations.find(({ surface, worktree }) => surface === 'head' && worktree === executionRecord.worktree);
+  if (moved)
+    throw new effectErrors.EarlyTerminalError({
+      next: 'hold',
+      name: 'moved-while-held',
+      reason:
+        `HEAD moved from ${moved.before} to ${moved.after} while the Ticket waited for its cleanup, so the Ticket is ` +
+        'held and nothing was reset.',
+    });
+  return violations;
+}

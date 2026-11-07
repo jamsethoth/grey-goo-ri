@@ -20,15 +20,14 @@ export const AWAIT_VERTEX = 'cleanup';
 type HeldAction = Pick<marker.ActionIdentity, 'vertex' | 'visit' | 'action' | 'recovery'>;
 type Step = 'label' | 'comment' | 'release';
 
-// One step of a hold, an Action of its own outside the Procedure, at the hold's number among those of this Action: its
-// retry or its Check's re-run can hold again.
+// One step of a hold, an Action of its own outside the Procedure, named with the hold's number among those of this
+// Action: its retry or its Check's re-run can hold again, and an Action's remote retry budget is kept by its name.
 const stepOf = (held: HeldAction, step: Step, number: number): marker.ActionIdentity & { procedure: null } => ({
   vertex: held.vertex,
   visit: held.visit,
   procedure: null,
-  action: `${held.action}.cleanup-${step}`,
+  action: `${held.action}.cleanup-${step}.${number}`,
   recovery: held.recovery,
-  attempt: number,
 });
 
 // The holds of this Action already released, plus one.
@@ -106,25 +105,17 @@ export async function holdTicket(runContext: RunContext, held: HeldAction): Prom
   throw pendingEnding(held);
 }
 
-// A resumed record held for cleanup: a human's needs-human label wins; a report a crash cut short is finished; and the
-// Run ends here unless its containment confirms the call's processes gone. Once it does, the hold's label comes down
-// and the report clears, so the worktree can go idle again; the suspended Action completes at its Visit (visit-runner).
-export async function awaitConfirmation(runContext: RunContext, find: effectEvidence.FindEffect): Promise<void> {
+// A human's needs-human label wins, a report a crash cut short is finished, and the Run ends here unless the
+// containment confirms the call's processes gone. Once it does the report clears, so the worktree can go idle again.
+async function confirm(
+  runContext: RunContext,
+  held: HeldAction,
+  cleanup: commandCleanup.CleanupReport,
+  find: effectEvidence.FindEffect,
+) {
   const { record: executionRecord, database } = runContext;
-  const state = executionRecord.visitState;
-  const cleanup = state?.unconfirmedCleanup;
-  if (!state?.settled || !cleanup) return;
-  const { cursor } = executionRecord;
-  const held = {
-    vertex: cursor.vertex,
-    visit: cursor.visit as number,
-    action: state.settled.action,
-    recovery: state.settled.recovery,
-  };
   const number = holdNumber(runContext, held);
-  const markers = (['label', 'comment', 'release'] as const).map((step) =>
-    runContext.markerOf(stepOf(held, step, number)),
-  );
+  const markers = (['label', 'comment'] as const).map((step) => runContext.markerOf(stepOf(held, step, number)));
   const decided = await reconcile.terminalEffects(executionRecord, {
     gh: runContext.gh,
     database,
@@ -136,9 +127,27 @@ export async function awaitConfirmation(runContext: RunContext, find: effectEvid
   if (decided.next === 'abandon') throw new effectErrors.EarlyTerminalError(decided);
   await report(runContext, held, cleanup);
   if (!runContext.exec.cleanupConfirmed(cleanup.containment)) throw pendingEnding(held);
-  await pendingReport.labelAction(runContext, stepOf(held, 'release', number), { remove: [awaitLabel(runContext)] });
-  state.unconfirmedCleanup = null;
+  executionRecord.visitState!.unconfirmedCleanup = null;
   await database.save(executionRecord);
+}
+
+// A resumed record held for cleanup, confirmed once. The label comes down after that save, so a crash cannot make this
+// hold read as a new one: while it stands its number is fixed, and once released no label of the next number exists.
+// The suspended Action completes at its Visit (visit-runner).
+export async function awaitConfirmation(runContext: RunContext, find: effectEvidence.FindEffect): Promise<void> {
+  const { record: executionRecord } = runContext;
+  const state = executionRecord.visitState;
+  if (state?.settled?.resolution.row !== 'cleanup-unconfirmed') return;
+  const held = {
+    vertex: executionRecord.cursor.vertex,
+    visit: executionRecord.cursor.visit as number,
+    action: state.settled.action,
+    recovery: state.settled.recovery,
+  };
+  if (state.unconfirmedCleanup) await confirm(runContext, held, state.unconfirmedCleanup, find);
+  const number = holdNumber(runContext, held);
+  if (writeAhead.findEntry(executionRecord, runContext.markerOf(stepOf(held, 'label', number)), 'intent'))
+    await pendingReport.labelAction(runContext, stepOf(held, 'release', number), { remove: [awaitLabel(runContext)] });
 }
 
 // The report as a later Run read it: its containment confirmed its processes gone.

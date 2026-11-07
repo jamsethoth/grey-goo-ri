@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import { laterRun } from '../support/approval-flow.ts';
-import { actionEvent, attemptsOf, loadTicket } from '../support/execution-reads.ts';
+import { actionEvent, attemptsOf, intents, loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
 import * as golden from '../support/golden.ts';
 import * as keys from '../support/keys.ts';
@@ -17,6 +17,7 @@ import { editRuns } from '../support/suite-runs.ts';
 const CLEANUP_LABEL = 'gg:await:cleanup';
 const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);
 const GREEN_RETRY = keys.responseKey('green', 1, 'green', 2);
+const RED_CALL = keys.responseKey('red', 1, 'red', 1);
 const UNCONFIRMED: commandCleanup.CleanupReport = {
   confirmed: false,
   survivors: [
@@ -243,17 +244,24 @@ test('a crash during a resumed completion spends its retry once', async (t) => {
   assert.equal(fixture.harness.calls.length, 3, 'red, the held green and its one retry');
 });
 
-test('a survivor that committed is an integrity violation on resume', async (t) => {
-  const fixture = await heldCheck(t);
+// While the Ticket waited, either a survivor or a human can have committed, and nothing tells them apart: red has no gg
+// commit behind it for Reconciliation to compare with, so the call's own baseline finds it.
+test('a commit made while a cleanup hold waits holds the Ticket and nothing is reset', async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({
+      [RED_CALL]: { ...golden.firstVisitResponses[RED_CALL], cleanup: UNCONFIRMED },
+    }),
+  });
   await interpreter.runExecution(fixture.options);
   fixture.fakeIntegrity!.write(fixture.worktree, 'lib/add.mjs');
   fixture.fakeIntegrity!.commit(fixture.worktree);
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
+  assert.equal(result.held, true);
   const saved = await loadTicket(fixture);
-  assert.match(saved.terminalReason!.text, /Integrity Assertion on head and index/);
-  assert.equal(attemptsOf(fixture, 'green', 'commit').length, 0);
+  assert.match(saved.terminalReason!.text, /nothing was reset/);
+  assert.deepEqual(intents(saved, 'reset'), []);
 });
 
 test('a committed test a survivor changed fails Test Immutability on resume', async (t) => {
@@ -279,7 +287,7 @@ test('a committed test a survivor changed fails Test Immutability on resume', as
 
 test('a crash between the hold and its comment finishes the hold on the next Run', async (t) => {
   const fixture = await heldCheck(t);
-  const actionMarker = golden.markerOf(fixture.executionRecord, 'green', 1, 'test.cleanup-comment');
+  const actionMarker = golden.markerOf(fixture.executionRecord, 'green', 1, 'test.cleanup-comment.1');
   await assert.rejects(
     interpreter.runExecution({ ...fixture.options, crashAt: { marker: actionMarker, point: 'before-effect' } }),
     (err) => err instanceof interpreter.CrashError,
@@ -321,3 +329,35 @@ test('a Check with no agent Action, held for cleanup, may not leave its tree cha
   assert.equal((await laterRun(fixture)).outcome, 'needs-human');
   assert.match((await loadTicket(fixture)).terminalReason!.text, /Integrity Assertion on tree/);
 });
+
+test('re-running the Checks of a held Visit counts toward the Action Cap', async (t) => {
+  const fixture = await heldCheck(t);
+  // red's three Actions and green's agent call and Check.
+  golden.configure(fixture, (configured) => {
+    configured.flows.golden!.actionCap = 5;
+  });
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  const checks = fixture.shells.length;
+  writeFileSync(join(fixture.worktree, 'notes.txt'), 'what a survivor wrote\n');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.outcome, 'needs-human');
+  assert.equal(fixture.shells.length, checks, 'no Check ran past the cap');
+  assert.match((await loadTicket(fixture)).terminalReason!.text, /Action Cap of 5/);
+});
+
+for (const point of ['before-effect', 'after-effect', 'after-completion'] as const) {
+  test(`a crash ${point} of a hold's release posts no second hold`, async (t) => {
+    const fixture = await heldCheck(t);
+    await interpreter.runExecution(fixture.options);
+    const actionMarker = golden.markerOf(fixture.executionRecord, 'green', 1, 'test.cleanup-release.1');
+    await assert.rejects(
+      laterRun(fixture, { crashAt: { marker: actionMarker, point } }),
+      (err) => err instanceof interpreter.CrashError,
+    );
+
+    assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+    assert.equal(holdComments(fixture).length, 1);
+    assert.equal(fixture.gh.labels.has(CLEANUP_LABEL), false);
+  });
+}

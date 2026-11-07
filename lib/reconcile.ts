@@ -344,8 +344,7 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (conflict) return hold(conflict);
   // A completed commit has no open intent to check, and an amend keeps its marker: only the branch tip shows the
   // change.
-  // A held call's validation judges HEAD itself, against the call's own baseline (L15).
-  const last = heldForCleanup(executionRecord) ? undefined : writeAhead.lastCommit(executionRecord);
+  const last = writeAhead.lastCommit(executionRecord);
   const head = last && (await git.headSha(executionRecord.worktree));
   if (last && head !== last.evidence!.sha) {
     return hold(

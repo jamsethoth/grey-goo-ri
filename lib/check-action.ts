@@ -276,6 +276,8 @@ export async function completeHeld(
     const firstCheck = state.proc.actions.find((candidate) => candidate.do === 'check')!;
     state.settled = null;
     executionRecord.cursor = { ...executionRecord.cursor, action: firstCheck.id, attempt: 1 };
+    // Saved with the cursor, which then reads as this Attempt already entered, so the Action Cap counts it once.
+    executionRecord.attempts += 1;
     await runContext.database.save(executionRecord);
     return 'rerun-checks';
   }

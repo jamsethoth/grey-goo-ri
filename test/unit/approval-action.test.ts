@@ -29,13 +29,13 @@ const SECOND_GREEN = {
   },
 };
 
-// An Approval Request's Actions, each at its request's number.
-const requestTrace = (attempt: number) =>
-  ['ask.retire', 'ask.await', 'ask.comment'].map((action) => ({
+// An Approval Request's Actions, each named with its request's number.
+const requestTrace = (request: number) =>
+  [`ask.retire.${request}`, `ask.await.${request}`, `ask.comment.${request}`].map((action) => ({
     vertex: 'approve',
     action,
     recovery: 0,
-    attempt,
+    attempt: 1,
     outcome: 'ok',
   }));
 
@@ -76,7 +76,7 @@ test('golden: an approval request ends the run and a later approval routes on', 
   ]);
   assert.equal(fixture.gh.pr()?.isDraft, false, 'publish ran after the Decision');
   const consumption = ended.writeAheadLog.find(
-    (entry) => entry.step === 'intent' && entry.actionMarker === golden.markerOf(ended, 'approve', 1, 'ask.consume'),
+    (entry) => entry.step === 'intent' && entry.actionMarker === golden.markerOf(ended, 'approve', 1, 'ask.consume.1'),
   );
   const { decision } = consumption!.payload as { decision: Record<string, unknown> };
   assert.equal(decision.instance, instance.id);
@@ -195,7 +195,7 @@ test('a crash after consumption is not read twice', async (t) => {
   const fixture = await approvalFixture(t);
   await interpreter.runExecution(fixture.options);
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
-  const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.consume');
+  const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.consume.1');
   await assert.rejects(
     laterRun(fixture, { crashAt: { marker: actionMarker, point: 'after-effect' } }),
     (err) => err instanceof interpreter.CrashError,
@@ -212,7 +212,7 @@ test('golden: a crash before the decide label is removed completes the recorded 
   const fixture = await approvalFixture(t);
   await interpreter.runExecution(fixture.options);
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
-  const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.consume');
+  const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.consume.1');
   await assert.rejects(
     laterRun(fixture, { crashAt: { marker: actionMarker, point: 'before-effect' } }),
     (err) => err instanceof interpreter.CrashError,
@@ -233,7 +233,7 @@ test('a crash after the consumption completed routes the saved Decision', async 
   const fixture = await approvalFixture(t);
   await interpreter.runExecution(fixture.options);
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
-  const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.consume');
+  const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.consume.1');
   await assert.rejects(
     laterRun(fixture, { crashAt: { marker: actionMarker, point: 'after-completion' } }),
     (err) => err instanceof interpreter.CrashError,
@@ -249,7 +249,7 @@ for (const step of ['retire', 'await', 'comment']) {
   for (const point of ['before-effect', 'after-effect', 'after-completion'] as const) {
     test(`a crash ${point} of the request's ${step} finishes one request`, async (t) => {
       const fixture = await approvalFixture(t);
-      const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, `ask.${step}`);
+      const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, `ask.${step}.1`);
       await assert.rejects(
         interpreter.runExecution({ ...fixture.options, crashAt: { marker: actionMarker, point } }),
         (err) => err instanceof interpreter.CrashError,
@@ -336,4 +336,20 @@ test('a passed Check before the request runs once however many Runs the Ticket w
   assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
   assert.equal((await laterRun(fixture)).outcome, 'pending');
   assert.equal(fixture.shells.filter(({ command }) => command === 'npm run gate').length, 1);
+});
+
+// A request's comment leaves its retry budget started; a later request must not read that as its own launch.
+test('each re-request has its own retry budget', async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  const edited = (body: string) => ({ ticket: { ...fixture.options.ticket, body } });
+
+  assert.equal((await laterRun(fixture, edited('second'))).outcome, 'pending');
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+  assert.equal((await laterRun(fixture, edited('third'))).outcome, 'pending');
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+  assert.equal((await laterRun(fixture, edited('fourth'))).outcome, 'pending');
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+  assert.equal((await laterRun(fixture, edited('fifth'))).outcome, 'pending');
+  assert.equal(requestComments(fixture).length, 5);
 });

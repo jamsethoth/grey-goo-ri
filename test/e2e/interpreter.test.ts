@@ -348,16 +348,15 @@ test('a held call whose worktree is unchanged goes on over real git', async (t) 
   assert.deepEqual([...fixture.gh.labels], ['gg:state:ready-for-qa']);
 });
 
-test('a commit a survivor made is an integrity violation on resume, not a branch changed by hand', async (t) => {
+test('a commit made while a cleanup hold waits is kept, and holds the Ticket', async (t) => {
   const fixture = await heldGreen(t);
   assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
-  const baseline = gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD');
   gitShell.sh(fixture.worktree, 'add', '-A');
-  gitShell.sh(fixture.worktree, 'commit', '-q', '-m', 'a survivor commits');
+  gitShell.sh(fixture.worktree, 'commit', '-q', '-m', 'a human or a survivor commits');
+  const committed = gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD');
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
-  const saved = await loadTicket(fixture);
-  assert.match(saved.terminalReason!.text, /broke an Integrity Assertion on head/);
-  assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), baseline, 'rolled back to the baseline');
+  assert.equal(result.held, true);
+  assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), committed, 'nothing was reset');
 });

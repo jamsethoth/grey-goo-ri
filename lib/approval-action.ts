@@ -26,15 +26,15 @@ export interface Consumption extends pendingReport.LabelPayload {
 
 const namesOf = (runContext: RunContext) => labels.labelsFor(runContext.labelPrefix ?? labels.DEFAULT_PREFIX);
 
-// One step of a request, an Action of its own outside the Procedure: `<action>.<step>` at the request's number, which
-// no declared Action id can name, since an id holds no "." (3.3).
+// One step of a request, an Action of its own outside the Procedure: `<action>.<step>.<request number>`, which no
+// declared Action id can name, since an id holds no "." (3.3). The number is in the name, not the Attempt: an Action's
+// remote retry budget is kept by its name, and each request has its own.
 const stepOf = ({ actionIdentity }: Running, instance: PendingInstance, step: Step) => ({
   vertex: actionIdentity.vertex,
   visit: actionIdentity.visit,
   procedure: null,
-  action: `${actionIdentity.action}.${step}`,
+  action: `${actionIdentity.action}.${step}.${instance.nonce}`,
   recovery: actionIdentity.recovery,
-  attempt: Number(instance.nonce),
 });
 
 // The Approval Digest's inputs as they are now: what a Decision covers (request 3.5).
@@ -95,7 +95,7 @@ async function finishRequest(runContext: RunContext, running: Running, instance:
 }
 
 // A new request on the digest as it is now, its Pending Instance saved before any label moves. The nonce is the
-// request's number in this Visit, which also numbers its steps' Attempts.
+// request's number in this Visit, which also names its steps.
 async function request(runContext: RunContext, running: Running, previous: PendingInstance | null): Promise<never> {
   const { record: executionRecord } = runContext;
   const { vertex, visit: visitNumber } = running.actionIdentity;
