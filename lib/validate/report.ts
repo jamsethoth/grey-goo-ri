@@ -27,8 +27,6 @@ export const PROBLEM_CODES = [
   'max-without-exhausted',
   'no-flow-declared',
   'no-vertex-declared',
-  'plan-missing',
-  'plan-not-null',
   'undeclared-procedure',
   'unknown-end',
   'unknown-vertex',

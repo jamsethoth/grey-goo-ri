@@ -118,7 +118,6 @@ function vertexLines(id: string, vertex: graph.ResolvedVertex, procedure: ShownP
 // A Resolved Flow as doctor prints it.
 interface ShownFlow {
   name: string;
-  plan: unknown;
   actionCap: unknown;
   procedures: Record<string, ShownProcedure>;
   ticket: { entry: unknown; routes: Record<string, unknown>; vertices: Record<string, graph.ResolvedVertex> };
@@ -128,7 +127,6 @@ function flowLines(flow: ShownFlow): string[] {
   const routes = Object.entries(flow.ticket.routes).map(([outcome, route]) => `${outcome} -> ${target(route)}`);
   const lines = [
     `flow ${flow.name}`,
-    `  plan: ${flow.plan}`,
     `  actionCap: ${flow.actionCap ?? 'none'}`,
     `  entry: ${flow.ticket.entry ?? 'none'}`,
     `  routes: ${list(routes)}`,

@@ -42,7 +42,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - A thrown class ends its name in `Error` and sets `name` to it (`name = 'CrashError';`). ESLint's `gg/thrown-class`
   checks both.
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
-  test for either.
+  test for either. In a configuration file, `null` is never a value: the validator reports it (`null-value`). A missing
+  key is inherited from an earlier Layer, optional, or `required-key-missing`.
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
   built once in `bin/gg.ts` and passed down as one `deps` key typed `Deps` (ADR 0019): `run.runTarget` takes it and
   passes it on to `interpreter.runExecution`. New code takes what it needs from its caller as a parameter; ESLint fails
