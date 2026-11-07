@@ -112,3 +112,11 @@ export function leftoverPids(members: number[], entries: ProcessEntry[], command
   );
   return members.filter((pid) => running.has(pid));
 }
+
+// What a stage left running in the job its launcher holds: the job's members in the snapshot, less the launcher. A
+// member not in the snapshot is still exiting. A console host ends with the last process attached to it, so it is never
+// the leak: whatever keeps it alive is named, and a test's commands start hosts with any parent.
+export function strayProcesses(members: number[], entries: ProcessEntry[], selfPid: number): ProcessEntry[] {
+  const held = new Set(members);
+  return entries.filter(({ pid, exe }) => held.has(pid) && pid !== selfPid && exe.toLowerCase() !== 'conhost.exe');
+}
