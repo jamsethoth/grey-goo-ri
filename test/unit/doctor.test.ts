@@ -79,6 +79,20 @@ test("gg doctor says an Edge's target is missing when the Edge leaves out to", (
   assert.ok(text.includes('\n    retest -> no target (max 2, exhausted senior-red)\n'), text);
 });
 
+test('gg doctor says a Claim token requires a Check with no id when the Check leaves it out', () => {
+  const config = example();
+  delete config.procedures['base-check'].actions[0].id;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n  claimTokens: ok requires no id\n'), text);
+});
+
+test('gg doctor says an input has no source when it leaves out from', () => {
+  const config = example();
+  delete config.flows.default.ticket.vertices.red.inputs.findings.from;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n    findings <- no source (optional)\n'), text);
+});
+
 test('gg doctor exits non-zero on an error', () => {
   const config = example();
   config.flows.default.ticket.vertices.red.procedure = 'red';
