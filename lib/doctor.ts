@@ -29,7 +29,7 @@ function target(given: unknown): string {
   const edge = given as Target | null | undefined;
   if (edge?.end !== undefined) return `end ${edge.end}`;
   const exhausted = edge?.exhausted === undefined ? '' : `, exhausted ${target(edge.exhausted)}`;
-  return `${edge?.to} (max ${edge?.max ?? 'none'}${exhausted})`;
+  return `${edge?.to ?? 'no target'} (max ${edge?.max ?? 'none'}${exhausted})`;
 }
 const list = (items: unknown[]) => (items.length ? items.join(', ') : 'none');
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -40,7 +40,7 @@ function table(name: string, rows: unknown[]): string[] {
     `  ${name}:`,
     ...rows.map((row, index) => {
       const { when, outcome } = (row ?? {}) as { when?: Record<string, rules.Condition>; outcome?: unknown };
-      return `    ${index + 1}. ${rules.conditions(when ?? {})} -> ${outcome}`;
+      return `    ${index + 1}. ${rules.conditions(when ?? {})} -> ${outcome ?? 'no outcome'}`;
     }),
   ];
 }
@@ -52,16 +52,18 @@ function accessNote(vertex: graph.ResolvedVertex, procedure: ShownProcedure | un
 }
 
 function testsLine(tests: unknown): string {
-  if (typeof tests === 'object' && tests !== null) return `named ${(tests as { named: unknown }).named}`;
+  if (typeof tests === 'object' && tests !== null) return `named ${(tests as { named: unknown }).named ?? 'nothing'}`;
   return String(tests ?? 'none');
 }
 
 function procedureLines(procedure: ShownProcedure): string[] {
   const checks = (procedure.actions ?? []).filter((action) => action?.do === 'check') as Value[];
   const claimTokens = Object.entries(procedure.claimTokens).map(([token, claim]) =>
-    claim?.stop ? `${token} stops` : `${token} requires ${list(claim?.requires ?? [])}`,
+    claim?.stop ? `${token} stops` : `${token} requires ${list((claim?.requires ?? []).map((id) => id ?? 'no id'))}`,
   );
-  const shown = checks.map((check) => `${check.id} (${check.kind}${check.command ? ` ${check.command}` : ''})`);
+  const shown = checks.map(
+    (check) => `${check.id ?? 'no id'} (${check.kind ?? 'no kind'}${check.command ? ` ${check.command}` : ''})`,
+  );
   const lines = [
     `  checks: ${list(shown)}`,
     `  claimTokens: ${list(claimTokens)}`,
@@ -93,7 +95,7 @@ function inputLines(vertex: graph.ResolvedVertex): string[] {
     '  inputs:',
     ...inputs.map(([name, input]) => {
       const pick = input.pick === undefined ? '' : `, pick ${input.pick}`;
-      return `    ${name} <- ${input.from.join(' | ')}${pick}${input.optional ? ' (optional)' : ''}`;
+      return `    ${name} <- ${input.from.join(' | ') || 'no source'}${pick}${input.optional ? ' (optional)' : ''}`;
     }),
   ];
 }
@@ -102,7 +104,7 @@ function vertexLines(id: string, vertex: graph.ResolvedVertex, procedure: ShownP
   const agent = vertex.agent ? `${vertex.use ?? 'inline'} (harness ${vertex.agent.harness ?? 'none'})` : 'none';
   const lines = [
     `vertex ${id}`,
-    `  procedure: ${vertex.procedure}`,
+    `  procedure: ${vertex.procedure ?? 'none'}`,
     `  agent: ${agent}`,
     `  access: ${vertex.access}${accessNote(vertex, procedure)}`,
     `  tests: ${testsLine(vertex.tests)}`,

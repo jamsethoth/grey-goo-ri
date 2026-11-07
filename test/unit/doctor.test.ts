@@ -28,13 +28,69 @@ test('gg doctor reports a malformed table row rather than throwing', () => {
   config.procedures.review.passed[0] = null;
   const { text, exitCode } = doctor.doctor({ config, harnesses: { fake: {} } });
   assert.equal(exitCode, 1);
-  assert.ok(text.includes('\n  passed:\n    1. no conditions -> undefined\n'), text);
+  assert.ok(text.includes('\n  passed:\n    1. no conditions -> no outcome\n'), text);
   assert.ok(
     text.includes(
       '\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> }\n',
     ),
     text,
   );
+});
+
+test("gg doctor says a row's outcome is missing when the row leaves it out", () => {
+  const config = example();
+  delete config.procedures['tests-fail'].stopped[0].outcome;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n  stopped:\n    1. response.reason = misscoped -> no outcome\n'), text);
+});
+
+test('gg doctor says tests name nothing when tests leaves out named', () => {
+  const config = example();
+  config.procedures.fix.tests = {};
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n  tests: named nothing\n'), text);
+});
+
+test("gg doctor says a Vertex's procedure is none when the Vertex leaves it out", () => {
+  const config = example();
+  delete config.flows.default.ticket.vertices.baseline.procedure;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\nvertex baseline\n  procedure: none\n'), text);
+});
+
+test("gg doctor says a Check's kind is missing when the Check leaves it out", () => {
+  const config = example();
+  delete config.procedures['base-check'].actions[0].kind;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n  checks: test (no kind test)\n'), text);
+});
+
+test("gg doctor says a Check's id is missing when the Check leaves it out", () => {
+  const config = example();
+  delete config.procedures['base-check'].actions[0].id;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n  checks: no id (command test)\n'), text);
+});
+
+test("gg doctor says an Edge's target is missing when the Edge leaves out to", () => {
+  const config = example();
+  delete config.flows.default.ticket.vertices.reviewer.route.retest.to;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n    retest -> no target (max 2, exhausted senior-red)\n'), text);
+});
+
+test('gg doctor says a Claim token requires a Check with no id when the Check leaves it out', () => {
+  const config = example();
+  delete config.procedures['base-check'].actions[0].id;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n  claimTokens: ok requires no id\n'), text);
+});
+
+test('gg doctor says an input has no source when it leaves out from', () => {
+  const config = example();
+  delete config.flows.default.ticket.vertices.red.inputs.findings.from;
+  const { text } = doctor.doctor({ config, harnesses: { fake: {} } });
+  assert.ok(text.includes('\n    findings <- no source (optional)\n'), text);
 });
 
 test('gg doctor exits non-zero on an error', () => {
