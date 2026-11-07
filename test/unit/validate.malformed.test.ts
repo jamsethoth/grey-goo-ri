@@ -209,6 +209,28 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     ],
   ],
   [
+    'an agent Action with claimTokens left out',
+    (config) => {
+      delete config.procedures.review.claimTokens;
+    },
+    [
+      { at: 'procedures.review.claimTokens', code: 'claim-tokens-missing' },
+      { at: 'procedures.review.passed', code: 'table-never-applies' },
+      { at: 'procedures.review.stopped', code: 'table-never-applies' },
+    ],
+  ],
+  [
+    'claimTokens that are a number',
+    (config) => {
+      config.procedures.review.claimTokens = 3;
+    },
+    [
+      { at: 'procedures.review.claimTokens', code: 'not-an-object' },
+      { at: 'procedures.review.passed', code: 'table-never-applies' },
+      { at: 'procedures.review.stopped', code: 'table-never-applies' },
+    ],
+  ],
+  [
     'a commit with no type',
     (config) => {
       procedureActions.actionById(config.procedures.implement, 'commit').type = '';

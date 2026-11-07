@@ -111,7 +111,9 @@ function checkClaimTokens(
     report.error(
       problems,
       `${location}.claimTokens`,
-      'claim-tokens-missing',
+      declaredTokens === undefined || referencePaths.isRecord(declaredTokens)
+        ? 'claim-tokens-missing'
+        : 'not-an-object',
       'a Procedure with an agent Action declares its claimTokens',
     );
     return {};
