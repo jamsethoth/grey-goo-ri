@@ -545,10 +545,34 @@ test('a null anywhere in the configuration is reported at its path, beside the r
     'the key its own check reports too',
   );
   assert.equal(
-    errors.some((problem) => problem.code === 'harness-unset'),
+    errors.some((problem) => problem.code === 'harness-unset' || problem.code === 'harness-unregistered'),
     false,
-    'a null harness is not an unset one',
+    'a null harness is neither unset nor a harness to look up',
   );
+});
+
+// Null errors are not shared errors: they hold no Flow's graph checks, since the key's own check already holds the
+// Flow a null breaks.
+test("a null does not hold another Flow's graph checks", () => {
+  const config = exampleLayer.config();
+  config.agents.spare = { persona: 'implementer.md', harness: null };
+  config.flows.default.ticket.vertices.green.model = null;
+  config.flows.light = { actionCap: 1, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.spare.harness', code: 'null-value' },
+    { at: 'flows.default.ticket.vertices.green.model', code: 'null-value' },
+    { at: 'agents.spare', code: 'invalid-name' },
+    { at: 'flows.light.ticket.vertices.gate', code: 'unrouted-outcome' },
+  ]);
+});
+
+// A harness is a name the registry is asked for; a value of another shape is never looked up.
+test('a harness that is not a name is an invalid name, not an unregistered harness', () => {
+  const config = exampleLayer.config();
+  config.agents.implementer.harness = 7;
+  const { errors } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'agents.implementer', code: 'invalid-name' }]);
+  assert.equal(errors[0].message, "agent implementer's harness 7 must not be empty or only whitespace");
 });
 
 test('a present null id is a wrong value, so a Check still prints it', () => {
