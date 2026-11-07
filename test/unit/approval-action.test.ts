@@ -432,3 +432,24 @@ test('an abandoned Pending request takes its Await Label down', async (t) => {
   assert.equal(fixture.gh.labels.has(AWAIT_LABEL), false, 'nothing waits for a Decision any more');
   assert.equal(fixture.gh.labels.has('gg:state:needs-human'), true, "the human's label stays");
 });
+
+// A run stop met in Reconciliation's wait for a saved retry deadline ends no Pending request either.
+test("a run stop met in Reconciliation's cooldown leaves a Pending request as it was", async (t) => {
+  const fixture = await approvalFixture(t);
+  const comment = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.comment.1');
+  fixture.gh.fail({ matches: (args) => fakeGh.isCommentPost(args), status: 502 });
+  await assert.rejects(
+    interpreter.runExecution({ ...fixture.options, crashAt: { marker: comment, point: 'after-retry-saved' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
+  const crashed = await loadTicket(fixture);
+  const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
+
+  const result = await laterRun(fixture, { runState });
+  assert.equal(result.outcome, 'pending');
+  const saved = await loadTicket(fixture);
+  assert.equal(saved.state, 'active');
+  assert.deepEqual(saved.approvalRequest, crashed.approvalRequest);
+  assert.deepEqual(saved.retries, crashed.retries, 'its retry budget and deadline stand');
+  assert.equal(fixture.gh.labels.has(AWAIT_LABEL), true);
+});

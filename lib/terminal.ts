@@ -216,6 +216,12 @@ export function endEarly(context: TerminalContext, ending: effectErrors.Ending):
   context.log(`#${context.record.ticket} ${ending.next}: ${ending.reason}`);
   if (ending.next === 'pending')
     return Promise.resolve({ outcome: 'pending', ...(ending.unread && { unread: ending.unread }) });
+  // A run stop ends what would start new work (request 3.4). An Execution Pending on its request or on a cleanup hold
+  // starts none, and ending it would lose the request or end a hold whose writers may still run, so it waits on as it
+  // was, its intents and retry budgets with it.
+  const { approvalRequest, visitState } = context.record;
+  if (ending.next === 'run-stopped' && (approvalRequest || visitState?.unconfirmedCleanup))
+    return Promise.resolve({ outcome: 'pending' });
   if (ending.next === 'run-stopped') return runStoppedAt(context, ending.retrying);
   if (ending.next === 'run-stop') return runStopAt(context, ending);
   return ending.next === 'abandon'

@@ -400,3 +400,20 @@ test('a Pending cleanup hold that is abandoned or held takes its Await Label dow
   assert.equal((await laterRun(held)).held, true);
   assert.equal(held.gh.labels.has(CLEANUP_LABEL), false);
 });
+
+test('a run stop met while a hold finishes its report leaves the hold Pending', async (t) => {
+  const fixture = await heldCheck(t);
+  const comment = golden.markerOf(fixture.executionRecord, 'green', 1, 'test.cleanup-comment.1');
+  fixture.gh.fail({ matches: (args) => args[0] === 'api' && args.includes('POST'), status: 502 });
+  await assert.rejects(
+    interpreter.runExecution({ ...fixture.options, crashAt: { marker: comment, point: 'after-retry-saved' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
+  fixture.options.deps.exec.cleanupConfirmed = () => false;
+  const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
+
+  assert.equal((await laterRun(fixture, { runState })).outcome, 'pending');
+  const saved = await loadTicket(fixture);
+  assert.equal(saved.state, 'active');
+  assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED);
+});

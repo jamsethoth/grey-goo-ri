@@ -358,7 +358,7 @@ row by row, and `gg doctor` prints a vertex's effective table next to its effect
 |---|---|---|---|
 | any | any | integrity violation | stop: discard the agent's changes, needs-human |
 | failed, class transient or rate-limited | none | integrity only | retry the attempt within the class budget, honouring `retryAfterMs`; exhausted: `harness-transient` |
-| failed, class auth, quota or budget | none | integrity only | stop the whole run: every active ticket to needs-human, class on the run end event |
+| failed, class auth, quota or budget | none | integrity only | stop the whole run: every active ticket to needs-human, class on the run end event; a Pending one (an Approval Request made, or a cleanup hold) is left Pending as it was |
 | timed-out or killed | ignored, even if partial | integrity only | one retry as a fresh attempt, resuming the session where the harness allows; then `harness-timeout` |
 | failed, class unknown | none | integrity only | needs-human, no retry |
 | completed | invalid: field missing, malformed, or more than one token | integrity only | parse-failure retry resuming the session with a return-the-result nudge, default 1; exhausted: `harness-unparsed` |
