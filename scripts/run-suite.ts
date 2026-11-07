@@ -1,10 +1,14 @@
 // The one command Codex may run outside its sandbox (ADR 0010). It takes a stage from a closed set (ADR 0016) and drops
-// every environment variable that could make node load other code.
-import { spawn } from 'node:child_process';
+// every environment variable that could make node load other code. The full and fast stages run in a job it holds, and
+// fail when a test leaves a process in it (docs/testing.md).
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import type * as commandCleanup from '../lib/command-cleanup.ts';
+import type * as containment from '../lib/containment.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const USAGE = `usage: node scripts/run-suite.ts [fast [boundary ...]]
@@ -25,13 +29,13 @@ const UNIT = 'test/unit/**/*.test.{mjs,ts}';
 export const LCOV = 'coverage/lcov.info';
 export const BASELINE = 'coverage-baseline.json';
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.ts), so their lines are not unit-testable;
-// lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts, and lib/git-temp-index.ts only
-// through lib/git.ts. Their contract suites cover them; the cleanup decisions are in lib/command-cleanup.ts, which is
-// measured.
+// lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts and this launcher's census, and
+// lib/git-temp-index.ts only through lib/git.ts. Their contract suites cover them; the decisions are in
+// lib/command-cleanup.ts, which is measured.
 const NOT_UNIT = ['lib/exec.ts', 'lib/git.ts', 'lib/git-temp-index.ts', 'lib/process-tree.ts', 'lib/containment.ts'];
 
-// Its message is the whole usage text. lib/options.ts has its own UsageError, which this launcher does not load: it
-// loads only node: built-ins (ADR 0010, ADR 0016).
+// Its message is the whole usage text. lib/options.ts has its own UsageError, which this launcher does not load: of
+// lib/ it loads only the job calls and their one import (ADR 0010, ADR 0016).
 export class SuiteUsageError extends Error {
   constructor() {
     super(USAGE);
@@ -40,13 +44,15 @@ export class SuiteUsageError extends Error {
 }
 
 // What the launcher runs: node, in the repository root, with this environment, once per step in order. `coverage` is
-// set for the coverage stage, and says whether a rise is recorded or refused.
+// set for the coverage stage, and says whether a rise is recorded or refused. `census` is set for a stage whose tests
+// run in a job: the coverage stage's one process has no boundaries to leave anything behind, and check runs no tests.
 export interface SuiteCommand {
   command: string;
   cwd: string;
   env: Record<string, string | undefined>;
   steps: string[][];
   coverage?: 'check' | 'update';
+  census?: true;
 }
 
 // No arguments is the full stage. `fast` is test/unit/ plus the named contract suites, whose paths are built from the
@@ -103,8 +109,8 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
     return { ...base, steps, coverage: argv[1] === 'update' ? 'update' : 'check' };
   }
   const files = stage(argv);
-  const steps = files ? [...CHECKS, ['--test', `--test-concurrency=${concurrency}`, ...files]] : CHECKS;
-  return { ...base, steps };
+  if (!files) return { ...base, steps: CHECKS };
+  return { ...base, steps: [...CHECKS, ['--test', `--test-concurrency=${concurrency}`, ...files]], census: true };
 }
 
 // The summed line and function totals of an lcov report as percentages, floored to two places. Branches are printed but
@@ -166,6 +172,90 @@ function ratchet(mode: 'check' | 'update'): number {
   return 1;
 }
 
+// On demand: test/unit/ imports this file and may not load a process boundary (ADR 0016).
+const boundary = () => import('../lib/containment.ts');
+
+// How long a process has to go from the listing once its file has exited, and to end once it is killed.
+const SETTLING_MS = 5000;
+const ENDING_MS = 10_000;
+
+// What a stage's job holds that is still running; throws when the job cannot be read.
+export type Strays = () => commandCleanup.ProcessEntry[];
+
+// Puts this process in a new job before it starts anything, so all a stage starts is in the job, with no gate to open,
+// and gives what the job holds, or the reason there is no job. Whatever is in the job ends with this process, by
+// kill-on-close. A child that asks to break away still can, unseen (ADR 0021).
+export async function holdStage(given?: containment.Kernel32 | null): Promise<Strays | string> {
+  const { createJob, openKernel32, processes } = await boundary();
+  const { strayProcesses } = await import('../lib/command-cleanup.ts');
+  const kernel32 = given === undefined ? openKernel32() : given;
+  if (!kernel32) return 'no process boundary here: it takes Windows and node:ffi (Linux: grey-goo-ri issue #289)';
+  try {
+    const job = createJob(kernel32, process.pid);
+    return () => strayProcesses(job.members(), processes(kernel32), process.pid);
+  } catch (err) {
+    return (err as Error).message;
+  }
+}
+
+// The listing, once it is empty or `ms` have passed; each listing with something in it goes to `each`.
+async function untilGone(strays: Strays, ms: number, each: (left: commandCleanup.ProcessEntry[]) => void = () => {}) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const left = strays();
+    if (!left.length || Date.now() > deadline) return left;
+    each(left);
+    await sleep(50);
+  }
+}
+
+// Each process's command line by pid, which a snapshot does not give. Only a stage with something to name pays for
+// PowerShell, and a read that fails leaves the snapshot's exe name to name it by.
+function commandLines(system32: string, pids: number[]) {
+  const filter = pids.map((pid) => `ProcessId=${pid}`).join(' OR ');
+  const each = '"$($_.ProcessId) $($_.CommandLine)"';
+  const utf8 = '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)';
+  const { stdout } = spawnSync(
+    `${system32}\\WindowsPowerShell\\v1.0\\powershell.exe`,
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `${utf8}; Get-CimInstance Win32_Process -Filter '${filter}' | % { ${each} }`,
+    ],
+    { encoding: 'utf8', windowsHide: true, timeout: 60_000 },
+  );
+  const rows = (stdout ?? '').split(/\r?\n/).map((line) => /^(\d+) (.+)$/.exec(line));
+  return new Map(rows.filter((row) => row !== null).map((row) => [Number(row[1]), row[2]]));
+}
+
+function endProcess({ pid }: commandCleanup.ProcessEntry) {
+  try {
+    process.kill(pid);
+  } catch {} // already gone, or refused: the next listing says which
+}
+
+// What a stage left running, named, then ended. A job that cannot be read says so and never reads as clean.
+export async function census(strays: Strays): Promise<{ failed: boolean; report: string }> {
+  try {
+    const left = await untilGone(strays, SETTLING_MS);
+    if (!left.length) return { failed: false, report: 'census: no process left' };
+    const lines = commandLines(
+      (await boundary()).SYSTEM32,
+      left.map(({ pid }) => pid),
+    );
+    const named = left.map(({ pid, exe }) => `  pid ${pid}: ${lines.get(pid) ?? exe}`);
+    const kept = await untilGone(strays, ENDING_MS, (running) => running.forEach(endProcess)).catch(() => left);
+    const unconfirmed = kept.length
+      ? `\n  not confirmed ended, so they end as this launcher exits: ${kept.map(({ pid }) => pid).join(', ')}`
+      : '';
+    const report = `census: this stage left ${left.length} running, now ended; a case ends what it starts:`;
+    return { failed: true, report: `${report}\n${named.join('\n')}${unconfirmed}` };
+  } catch (err) {
+    return { failed: false, report: `census did not run: ${(err as Error).message}` };
+  }
+}
+
 const self = fileURLToPath(import.meta.url);
 const entry = process.argv[1] && resolve(process.argv[1]);
 if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowerCase() : entry === self)) {
@@ -188,8 +278,10 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     mkdirSync(join(root, dirname(LCOV)), { recursive: true });
     rmSync(join(root, LCOV), { force: true });
   }
+  const hold = suite.census ? await holdStage() : null;
   // Steps run in order and the first failure stops the stage, so a format, lint or type error is the last thing
-  // printed.
+  // printed before the census.
+  let stageCode = 0;
   for (const args of suite.steps) {
     const code = await new Promise<number | null>((done) => {
       const child = spawn(suite.command, args, { cwd: suite.cwd, env: suite.env, stdio: 'inherit', shell: false });
@@ -199,7 +291,17 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
       });
       child.on('exit', (exitCode, signal) => done(signal ? 1 : exitCode));
     });
-    if (code !== 0) process.exit(code);
+    if (code !== 0) {
+      stageCode = code ?? 1;
+      break;
+    }
   }
+  if (hold !== null) {
+    const { failed, report } =
+      typeof hold === 'string' ? { failed: false, report: `census did not run: ${hold}` } : await census(hold);
+    console.error(report);
+    if (failed && !stageCode) stageCode = 1;
+  }
+  if (stageCode) process.exit(stageCode);
   if (suite.coverage) process.exit(ratchet(suite.coverage));
 }

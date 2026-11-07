@@ -59,6 +59,31 @@ test('the check stage runs the format check, lint and the type check and no test
   assert.deepEqual(runSuite.suiteCommand({}, ['check']).steps, checks);
 });
 
+test('the full stage takes a census', () => {
+  assert.equal(runSuite.suiteCommand({}, []).census, true);
+});
+
+test('the fast stage takes a census', () => {
+  assert.equal(runSuite.suiteCommand({}, ['fast']).census, true);
+});
+
+test('the check stage takes no census: it runs no tests', () => {
+  assert.equal(runSuite.suiteCommand({}, ['check']).census, undefined);
+});
+
+// test/unit/ may not reach process boundaries, and a forced exit could lose the one process's report (#290).
+test('the coverage stage takes no census', () => {
+  assert.equal(runSuite.suiteCommand({}, ['coverage']).census, undefined);
+});
+
+// ADR 0016, amended: a unit test imports the launcher, so what it loads of lib/ is loaded on demand.
+test('the launcher loads from lib/ only the job calls and their one import, and only on demand', async () => {
+  const source = await readFile(launcherUrl, 'utf8');
+  const loaded = [...source.matchAll(/import\('\.\.\/lib\/([^']+)'\)/g)].map((match) => match[1]);
+  assert.deepEqual(loaded.sort(), ['command-cleanup.ts', 'containment.ts']);
+  assert.doesNotMatch(source, /^import (?!type )[^;]*\.\.\/lib\//m);
+});
+
 test('the check stage takes no boundary names', () => {
   assert.throws(() => runSuite.suiteCommand({}, ['check', 'git']), {
     name: 'SuiteUsageError',

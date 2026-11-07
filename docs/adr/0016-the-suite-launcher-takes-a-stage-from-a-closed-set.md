@@ -61,6 +61,16 @@ no name for the case; a hang names nothing, and only the CI job's timeout bounds
 empty one, so the launcher removes any earlier report first and fails when the report measures no lines, also for
 `coverage update`.
 
+Amended 2026-11-06 (grey-goo-ri issue #290): the launcher may load `lib/containment.ts` and its one import,
+`lib/command-cleanup.ts`, and nothing else from `lib/`, and loads them on demand, since `test/unit/run-suite.test.ts`
+imports the launcher and `test/unit/` may not reach a process boundary. The full and fast stages run inside a job object
+it holds around itself, and fail when a test leaves a process in it (`docs/testing.md`, The census). The arguments stay
+the closed set they were. The launcher joins the job before it starts anything, so nothing a stage starts is outside it,
+and needs none of `containment.start`'s gate, shell or pipes. So `TerminateJobObject` would end the launcher too: it
+ends what it finds one process at a time, and kill-on-close takes anything left when it exits. A process it finds is named
+through PowerShell's `Get-CimInstance`, from `SYSTEM32` as ADR 0021 runs `taskkill.exe`, and only then, so a clean stage
+starts nothing more.
+
 ## Considered options
 
 - A second launcher, `scripts/run-fast.mjs`, that also ignores its arguments and runs `test/unit/` with every contract
@@ -79,4 +89,5 @@ empty one, so the launcher removes any earlier report first and fails when the r
   reviews it (ADR 0010).
 - Amended 2026-11-04 (grey-goo-ri issue #207): the launcher is `scripts/run-suite.ts` (ADR 0018), so each stage above
   runs as `node scripts/run-suite.ts [stage]`. The closed set is unchanged. Its usage error is `SuiteUsageError`, named
-  apart from `lib/options.ts`'s `UsageError`, which the launcher does not load: it loads only `node:` built-ins.
+  apart from `lib/options.ts`'s `UsageError`, which the launcher does not load: it loads only `node:` built-ins, and
+  since #290 the job calls above.
