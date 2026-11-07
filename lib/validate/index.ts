@@ -32,7 +32,7 @@ function inheritedNames(config: Value) {
   const problems = report.newReport();
   const name = (location: string, what: string, given: unknown) => {
     if (INHERITED.includes(given as string))
-      report.error(problems, location, `${what} ${JSON.stringify(given)} ${PROTOTYPE}`);
+      report.error(problems, location, 'inherited-name', `${what} ${JSON.stringify(given)} ${PROTOTYPE}`);
   };
   const keys = (value: unknown, location: string, what: string) => {
     for (const [key] of report.entries(value)) name(`${location}.${key}`, what, key);
@@ -81,14 +81,15 @@ function checkAgents(problems: report.Report, config: Value, harnesses: unknown)
     const location = `agents.${name}`;
     const before = problems.errors.length;
     report.checkName(problems, location, name, { what: 'Agent', carried: false });
-    if (!referencePaths.isRecord(agent)) report.error(problems, location, 'an Agent must be an object');
+    if (!referencePaths.isRecord(agent))
+      report.error(problems, location, 'not-an-object', 'an Agent must be an object');
     else {
       report.unknownKeys(problems, agent, flows.AGENT_KEYS, location);
       flows.checkHarness({ report: problems, harnesses }, `agent ${name}`, agent.harness, location);
       flows.checkAccess(problems, `${location}.access`, agent.access);
     }
     if (problems.errors.length > before) failedAgents.add(name);
-    if (!usedAgents.has(name)) report.warn(problems, location, `agent ${name} is used by no Vertex`);
+    if (!usedAgents.has(name)) report.warn(problems, location, 'unused-agent', `agent ${name} is used by no Vertex`);
   }
   return failedAgents;
 }
@@ -115,25 +116,26 @@ function checkProcedures(problems: report.Report, config: Value, readSchema: Sou
 export function validate(config: unknown, { harnesses, readSchema, readTemplate }: Sources) {
   const problems = report.newReport();
   if (!referencePaths.isRecord(config)) {
-    report.error(problems, '(root)', 'the configuration must be an object');
+    report.error(problems, '(root)', 'not-an-object', 'the configuration must be an object');
     return { flows: {}, ...problems };
   }
   // Every later check keys plain objects by the configuration's names, so none runs while one is inherited (H10).
   const inherited = inheritedNames(config);
   if (inherited.length) return { flows: {}, errors: inherited, warnings: [] };
   if (config.procedures !== undefined && !referencePaths.isRecord(config.procedures))
-    report.error(problems, 'procedures', 'procedures must be an object from name to Procedure');
+    report.error(problems, 'procedures', 'not-an-object', 'procedures must be an object from name to Procedure');
   if (config.agents !== undefined && !referencePaths.isRecord(config.agents))
-    report.error(problems, 'agents', 'agents must be an object from name to Agent');
+    report.error(problems, 'agents', 'not-an-object', 'agents must be an object from name to Agent');
   const { checkedProcedures, procedureFalls } = checkProcedures(problems, config, readSchema);
   const sharedErrors = problems.errors.length;
   const failedAgents = checkAgents(problems, config, harnesses);
   if (config.flows !== undefined && !referencePaths.isRecord(config.flows))
-    report.error(problems, 'flows', 'flows must be an object from name to Flow');
+    report.error(problems, 'flows', 'not-an-object', 'flows must be an object from name to Flow');
   else if (!Object.keys(config.flows ?? {}).length) {
     report.error(
       problems,
       'flows',
+      'no-flow-declared',
       'no Flow is declared; docs/requests/node-harness-dag.md tables the keys of a Flow (3.3) and of a Procedure (3.4)',
     );
   }

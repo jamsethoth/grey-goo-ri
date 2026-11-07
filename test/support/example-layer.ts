@@ -50,6 +50,12 @@ export interface Checked {
   warnings: report.Problem[];
 }
 
+// Which rule fired where: what a case about a rule asserts, leaving the sentence to the cases about its wording.
+export type FiredRule = Pick<report.Problem, 'at' | 'code'>;
+export const firedRules = (problems: report.Problem[]): FiredRule[] =>
+  // eslint-disable-next-line id-denylist -- a Problem's key is at
+  problems.map(({ at, code }) => ({ at, code }));
+
 // Validates `layer` with the fake harness registered, reading schemas and templates from the files given.
 export function check(layer: Layer, files = schemas(), templateFiles?: Record<string, string>) {
   return validate.validate(layer, {

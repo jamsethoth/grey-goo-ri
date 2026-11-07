@@ -105,17 +105,24 @@ function walk(scope: SchemaNode, steps: string[], readsAtRunTime: boolean): Walk
 
 export type Resolved =
   | { type: FieldType | null; node: SchemaNode; error?: undefined }
-  | { error: string; list?: string; type?: undefined; node?: undefined };
+  | {
+      error: string;
+      code: 'malformed-reference' | 'reference-into-list' | 'undefined-reference';
+      list?: string;
+      type?: undefined;
+      node?: undefined;
+    };
 
 // The type and node at `path` in `scope`, or an error naming the first segment `scope` lacks. `read` types a path gg
 // reads at run time (`with`, an input's `from`, a Check parameter, a template name): `list` names the list it
 // stepped into.
 export function resolve(scope: SchemaNode, path: unknown, what = 'defined', { read = false } = {}): Resolved {
   const parsed = parse(path);
-  if (!parsed.steps) return { error: parsed.error };
+  if (!parsed.steps) return { code: 'malformed-reference', error: parsed.error };
   const walked = walk(scope, parsed.steps, read);
   if (walked.list !== undefined)
     return {
+      code: 'reference-into-list',
       error:
         `${JSON.stringify(path)}: ${JSON.stringify(walked.list)} is a list, ` +
         'so a path reads only its length or an item by index',
@@ -123,7 +130,10 @@ export function resolve(scope: SchemaNode, path: unknown, what = 'defined', { re
     };
   if (walked.missing !== undefined) {
     const { missing } = walked;
-    return { error: `${missing === path ? '' : `${JSON.stringify(path)}: `}${JSON.stringify(missing)} is not ${what}` };
+    return {
+      code: 'undefined-reference',
+      error: `${missing === path ? '' : `${JSON.stringify(path)}: `}${JSON.stringify(missing)} is not ${what}`,
+    };
   }
   return { type: kindOf(walked.node), node: walked.node };
 }

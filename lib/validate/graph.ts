@@ -142,25 +142,34 @@ function workOf(write: boolean, cases: OutcomeCase[], landings: Landing[]) {
 }
 
 // A writing Vertex commits on every passing path, under a Claim token that requires a Check.
-function checkWrites(fail: (where: string, message: string) => void, id: string, proc: checked.CheckedProcedure) {
+function checkWrites(
+  fail: (where: string, code: report.ProblemCode, message: string) => void,
+  id: string,
+  proc: checked.CheckedProcedure,
+) {
   if (!proc.tokens.passed.length) return;
   if (!proc.actions.some((action) => referencePaths.isRecord(action) && action.do === 'commit')) {
     fail(
       id,
+      'write-without-commit',
       `Vertex ${id} writes, so it must commit on every passing path, but procedure ${proc.name} has no commit Action`,
     );
   }
   for (const token of proc.tokens.passed) {
     if (!proc.claimTokens[token].requires?.length)
-      fail(id, `Vertex ${id} writes, so its committing Claim token ${token} must require a Check`);
+      fail(
+        id,
+        'commit-without-check',
+        `Vertex ${id} writes, so its committing Claim token ${token} must require a Check`,
+      );
   }
 }
 
 // Each Vertex's Outcomes routed, the routing filled in for doctor, and the edges they take.
 function routeEdges(problems: report.Report, graph: Graph) {
   const { resolved, ticket } = graph;
-  const fail = (id: string, message: string) => {
-    if (graph.clean) report.error(problems, `${graph.location}.ticket.vertices.${id}`, message);
+  const fail = (id: string, code: report.ProblemCode, message: string) => {
+    if (graph.clean) report.error(problems, `${graph.location}.ticket.vertices.${id}`, code, message);
   };
   const edges: Edge[] = [];
   for (const [id, vertex] of Object.entries(resolved)) {
@@ -172,7 +181,7 @@ function routeEdges(problems: report.Report, graph: Graph) {
     for (const name of vertex.outcomes) {
       const route = flow.route(vertex.route, ticket.routes, name);
       if (!route) {
-        fail(id, `Outcome ${name} is not routed by the Vertex or the Flow's routes`);
+        fail(id, 'unrouted-outcome', `Outcome ${name} is not routed by the Vertex or the Flow's routes`);
         continue;
       }
       const landings = landingsOf(resolved, route.target);
@@ -208,6 +217,7 @@ function checkCycles(problems: report.Report, graph: Graph, edges: Edge[]) {
     report.error(
       problems,
       `${graph.location}.ticket`,
+      'unbounded-cycle',
       `the cycle through ${cycle.join(', ')} has no edge or Vertex with max; the Action Cap does not bound a cycle`,
     );
   }
@@ -239,6 +249,7 @@ function checkExhaustedLoops(problems: report.Report, graph: Graph) {
     report.error(
       problems,
       `${graph.location}.ticket`,
+      'exhausted-loop',
       `the exhausted targets of ${members.join(', ')} form a loop: ` +
         'once their Visits reach max, no Vertex is ever entered',
     );
@@ -304,13 +315,15 @@ function checkFacts(problems: report.Report, graph: Graph, edges: Edge[]) {
   const every = factsAt(graph, edges, groups, true);
   const some = factsAt(graph, edges, groups, false);
   for (const id of Object.keys(graph.resolved))
-    if (!every.has(id)) report.warn(problems, vertexAt(id), `Vertex ${id} is not reachable from the entry`);
+    if (!every.has(id))
+      report.warn(problems, vertexAt(id), 'unreachable-vertex', `Vertex ${id} is not reachable from the entry`);
   for (const edge of edges) {
     if (!every.has(edge.from) || !edge.landings.some((landing) => landing.end === 'ready-for-qa')) continue;
     if (![...(every.get(edge.from) as string[]), ...gained(graph, groups, edge, false)].includes(PR_READY)) {
       report.error(
         problems,
         vertexAt(edge.from),
+        'pr-ready-skippable',
         `Outcome ${edge.outcome} reaches end ready-for-qa on a route that may skip pr-ready; ` +
           'admission checks routes, not runs, so route it through the Vertex that runs pr-ready',
       );
@@ -335,6 +348,7 @@ function checkInputFacts(
       report.error(
         problems,
         where,
+        'required-input-unsure',
         `input ${name} is required, but some route to ${id} may not produce any of its sources; ` +
           'admission checks routes, not runs, so if every run does produce one, mark the input optional',
       );
@@ -343,6 +357,7 @@ function checkInputFacts(
       report.warn(
         problems,
         where,
+        'optional-input-unsure',
         `input ${name} is optional, but no route to ${id} is sure to produce any of its sources; ` +
           'admission checks routes, not runs, so it may still arrive on some runs',
       );
