@@ -310,8 +310,9 @@ Reference paths read the Visit, wherever a Procedure or its templates name one (
 Check's paths start inside the response (`findings`, not `response.findings`).
 
 An output is written when its Action completes: `evidence` only when its Check passed, `response` only for a valid
-Claim. `cleanup` (decision L11) and `<vertex>.rescue` (W3, #118) are declared, so a reference to them is admitted,
-but gg does not write them yet.
+Claim. `cleanup` (decision L11) is written when its Action's call returns, and `<vertex>.rescue` (W3) when a failure
+routed to another Vertex is rescued, which a worktree with nothing to rescue is not, so it cannot alone meet a required
+input.
 
 Every Action declares `id` (its Action id) and `do` (its kind), and only its kind's keys; any other key fails
 admission (`lib/procedures.ts` holds the lists):
@@ -334,8 +335,10 @@ admission (`lib/procedures.ts` holds the lists):
 | `repeat` | `list`, `fields` | the reference path to a list of objects; the item fields its Findings Hash covers | `findingsHash` |
 
 A Check's `evidence` is `{ command, output }`, and a `tests-fail` Check's adds `foundByNameOnly`, true when the runner
-printed no per-test statuses and the test was found by its name alone. A `cleanup` is `{ confirmed, survivors }`, and a
-`<vertex>.rescue` is `{ ref, output, diffStat }`.
+printed no per-test statuses and the test was found by its name alone. A `cleanup` is `{ confirmed, survivors, reason,
+containment }`, each survivor `{ pid, created, commandLine, error }`, or `{ confirmed: true, survivors: [] }` for a Check
+that ran no command (a reused pass, or `tests-fail` with no test changed). A `<vertex>.rescue` is
+`{ ref, output, diffStat }`.
 
 Validation prints each Vertex's effective Procedure, Checks, rule tables and Outcomes, so nothing a Procedure
 verifies is hidden in code.

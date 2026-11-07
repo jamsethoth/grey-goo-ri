@@ -1,5 +1,6 @@
 // A Windows command and every process it starts, orphans included, held in a job object gg creates through node:ffi
-// (ADR 0021): started inside it, listed, terminated and confirmed empty. A Linux cgroup backend (#128) belongs here.
+// (ADR 0021): started inside it, listed, named, terminated and confirmed empty. A Linux cgroup backend (#128) belongs
+// here.
 import { spawn, type ChildProcess } from 'node:child_process';
 import type * as ffi from 'node:ffi';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -18,11 +19,16 @@ const SIGNATURES = {
   CreateToolhelp32Snapshot: { arguments: ['uint32', 'uint32'], return: 'pointer' },
   Process32FirstW: { arguments: ['pointer', 'buffer'], return: 'int32' },
   Process32NextW: { arguments: ['pointer', 'buffer'], return: 'int32' },
+  GetProcessTimes: { arguments: ['pointer', 'buffer', 'buffer', 'buffer', 'buffer'], return: 'int32' },
+} as const;
+// kernel32 gives no other process's command line.
+const NTDLL = {
+  NtQueryInformationProcess: { arguments: ['pointer', 'int32', 'buffer', 'uint32', 'pointer'], return: 'int32' },
 } as const;
 
 // The kernel32 functions gg calls. bin/gg.ts opens them once and passes them down; a test passes null or a copy with
 // some replaced.
-export type Kernel32 = ffi.DynamicLibraryResult<typeof SIGNATURES>['functions'];
+export type Kernel32 = ffi.DynamicLibraryResult<typeof SIGNATURES & typeof NTDLL>['functions'];
 
 // A bare cmd.exe or taskkill.exe is looked up in the child's working directory before PATH (libuv's search_path), and
 // an agent can write there.
@@ -34,6 +40,10 @@ const BREAKAWAY_OK = 0x800;
 const EXTENDED_LIMIT_INFORMATION = 9; // 144 bytes, LimitFlags at byte 16
 const BASIC_PROCESS_ID_LIST = 3; // two counts, then one 8-byte pid per process
 const PROCESS_SET_QUOTA_AND_TERMINATE = 0x0100 | 0x0001; // what AssignProcessToJobObject needs
+const PROCESS_QUERY_LIMITED = 0x1000; // what GetProcessTimes and the command line query need
+const COMMAND_LINE_INFORMATION = 60; // a UNICODE_STRING of 16 bytes, its characters following it
+const COMMAND_LINE_ROOM = 16 + 65_536;
+const FILETIME_TO_UNIX_MS = 11_644_473_600_000n; // a FILETIME counts 100 ns from 1601
 const ERROR_MORE_DATA = 234;
 const SNAPSHOT_PROCESSES = 0x2;
 const PROCESS_ENTRY_SIZE = 568; // PROCESSENTRY32W: pid at byte 8, parent pid at 32, exe name (260 UTF-16 units) at 44
@@ -49,7 +59,9 @@ export function openKernel32(): Kernel32 | null {
   const emitWarning = process.emitWarning;
   process.emitWarning = () => {};
   try {
-    return process.getBuiltinModule('node:ffi')?.dlopen('kernel32.dll', SIGNATURES).functions ?? null;
+    const opened = process.getBuiltinModule('node:ffi');
+    if (!opened) return null;
+    return { ...opened.dlopen('kernel32.dll', SIGNATURES).functions, ...opened.dlopen('ntdll.dll', NTDLL).functions };
   } catch {
     return null;
   } finally {
@@ -79,6 +91,34 @@ export function linkedDescendants(kernel32: Kernel32, rootPid: number): number[]
   return linked;
 }
 
+function createdAt(kernel32: Kernel32, handle: bigint): string | null {
+  const [creation, exit, inKernel, inUser] = [0, 1, 2, 3].map(() => Buffer.alloc(8)) as [
+    Buffer,
+    Buffer,
+    Buffer,
+    Buffer,
+  ];
+  if (!kernel32.GetProcessTimes(handle, creation, exit, inKernel, inUser)) return null;
+  return new Date(Number(creation.readBigUInt64LE() / 10_000n - FILETIME_TO_UNIX_MS)).toISOString();
+}
+
+function commandLineOf(kernel32: Kernel32, handle: bigint): string | null {
+  const info = Buffer.alloc(COMMAND_LINE_ROOM);
+  if (kernel32.NtQueryInformationProcess(handle, COMMAND_LINE_INFORMATION, info, info.length, 0n) !== 0) return null;
+  return info.toString('utf16le', 16, 16 + info.readUInt16LE(0)) || null;
+}
+
+// A process as a human can recognise it; what the system will not say is null, with no kernel32 or for a pid gone.
+export function describe(kernel32: Kernel32 | null, pid: number): commandCleanup.NamedProcess {
+  const handle = kernel32?.OpenProcess(PROCESS_QUERY_LIMITED, 0, pid);
+  if (!kernel32 || !handle) return { pid, created: null, commandLine: null };
+  try {
+    return { pid, created: createdAt(kernel32, handle), commandLine: commandLineOf(kernel32, handle) };
+  } finally {
+    kernel32.CloseHandle(handle);
+  }
+}
+
 export type Job = {
   // the pids in the job; throws when the job cannot be read, which must never pass for an empty job
   members(): number[];
@@ -87,9 +127,6 @@ export type Job = {
   terminate(): void;
   // resolves once a terminated job is empty, however long a loaded machine takes to finish the exits
   emptied(): Promise<void>;
-  // lets the members run on and closes gg's handle; throws, keeping the handle, when kill-on-close cannot be dropped,
-  // since closing it then would kill them
-  release(): void;
   close(): void;
 };
 
@@ -142,10 +179,6 @@ export function createJob(kernel32: Kernel32, pid: number): Job {
     },
     async emptied() {
       while (members().length) await sleep(20);
-    },
-    release() {
-      if (!setLimits(kernel32, handle, BREAKAWAY_OK)) throw failure(kernel32, 'SetInformationJobObject');
-      kernel32.CloseHandle(handle);
     },
     close() {
       kernel32.CloseHandle(handle);

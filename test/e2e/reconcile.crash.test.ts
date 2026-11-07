@@ -26,13 +26,13 @@ const RESTORED = {
   '.claude/settings.local.json': '{"owner":true}\n',
   'test/owner.test.mjs': 'owner\n',
 };
-// Where restoreUntracked is crashed: it removes the extra .claude/agent.json (rm 1), then rewrites settings.local.json
-// (rm 2, writeFile 1) and recreates test/owner.test.mjs (rm 3, writeFile 2).
+// Where restoreUntracked is crashed: it removes the extra .claude/agent.json, then rewrites settings.local.json and
+// recreates test/owner.test.mjs.
 const RESTORE_CRASHES: Record<string, Crash> = {
-  'after deleting an extra': { op: 'rm', nth: 1, after: true },
-  'after removing a destination before its rewrite': { op: 'rm', nth: 2, after: true },
-  'after the first restored file': { op: 'writeFile', nth: 1, after: true },
-  'after the final write before evidence': { op: 'writeFile', nth: 2, after: true },
+  'after deleting an extra': { op: 'rm', path: '.claude/agent.json', after: true },
+  'after removing a destination before its rewrite': { op: 'rm', path: '.claude/settings.local.json', after: true },
+  'after the first restored file': { op: 'writeFile', path: '.claude/settings.local.json', after: true },
+  'after the final write before evidence': { op: 'writeFile', path: 'test/owner.test.mjs', after: true },
 };
 
 async function crashedRestore(t: TestContext, crash: Crash) {
@@ -102,7 +102,11 @@ test('a second crash during restore replay remains resumable', async (t) => {
   const crashed = await crashedRestore(t, RESTORE_CRASHES['after deleting an extra'] as Crash);
   const crashing = integrity.createIntegrity(
     crashed.uncrashedGit,
-    crashFs.crashFs(crashed.worktree, () => true, { op: 'writeFile', nth: 1, after: true }),
+    crashFs.crashFs(crashed.worktree, () => true, {
+      op: 'writeFile',
+      path: '.claude/settings.local.json',
+      after: true,
+    }),
   );
   await assert.rejects(
     reconcile.resets(crashed.loaded, { git: crashed.uncrashedGit, integrity: crashing }),

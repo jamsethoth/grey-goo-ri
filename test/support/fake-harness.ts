@@ -2,6 +2,7 @@
 // keys.responseKey. test/contract/harness/ runs the Harness contract against it.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as keys from './keys.ts';
@@ -30,8 +31,10 @@ const DEFAULT_CAPABILITIES = {
 };
 
 // One Attempt's script: the files it writes, its Structured Response, and its result fields (`usage.delta` among them),
-// a failure it reports, an error it throws, or `hang` until cancel().
+// a failure it reports, an error it throws, or `hang` until cancel(); `cleanup` is what its Command Cleanup reports,
+// confirmed unless the script says otherwise.
 export interface ScriptedResponse {
+  cleanup?: commandCleanup.CleanupReport;
   files?: Record<string, string>;
   response?: unknown;
   result?: { usage?: { delta?: Usage }; sessionInit?: object; [field: string]: unknown };
@@ -75,6 +78,13 @@ export interface FakeHarnessOptions {
   resolveTools?: (agent: { tools?: unknown } | undefined) => unknown;
 }
 
+const CONFIRMED: commandCleanup.CleanupReport = {
+  confirmed: true,
+  survivors: [],
+  reason: null,
+  containment: { kind: 'job' },
+};
+
 const emptyInit = () => ({ plugins: [], pluginErrors: [], mcpServers: [], mcpServerErrors: [], capabilities: [] });
 
 const addUsage = (total: Usage, delta: Usage): Usage =>
@@ -117,6 +127,7 @@ function outcomeOf({ script, scripted, session, delta }: Answered, status: strin
       sessionInit: { ...emptyInit(), ...sessionInit },
       permissionDenials: [],
       commandsRun: 0,
+      cleanup: script.cleanup ?? CONFIRMED,
       ...(status === 'killed' ? {} : overrides),
     },
     failure: status === 'killed' ? null : failure,

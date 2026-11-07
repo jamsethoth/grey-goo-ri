@@ -1,6 +1,7 @@
 // The agent call under the Integrity Assertions: an Attempt's baseline and write-ahead intent, the Harness's run with
 // its heartbeat, and the violations found after it, Test Immutability included.
 import * as checks from './checks.ts';
+import type * as commandCleanup from './command-cleanup.ts';
 import * as effectErrors from './effect-errors.ts';
 import type * as integrity from './integrity.ts';
 import * as record from './record.ts';
@@ -22,6 +23,15 @@ export interface Called {
   violations: integrity.IntegrityViolation[];
   baseline: integrity.IntegrityBaseline;
 }
+
+// A Harness returns only once its processes are gone, or says it could not confirm that (L6): one that says nothing has
+// confirmed nothing.
+const UNREPORTED: commandCleanup.CleanupReport = {
+  confirmed: false,
+  survivors: [],
+  reason: 'the Harness reported no cleanup',
+  containment: { kind: 'none' },
+};
 
 // While an agent call runs its heartbeat is saved about every 60 s on the clock: a file modified after the last one is
 // not the agent's (ADR 0011). A heartbeat that cannot be saved stops and fails the call.
@@ -97,6 +107,12 @@ export async function guardedCall(
   executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
   await runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
   const called = await withHeartbeat(runContext, () => harness.run(call));
+  called.result.cleanup ??= UNREPORTED;
+  // Its writers may still run, so what a snapshot read now would prove nothing, and the call's validation waits (L15).
+  if (!called.result.cleanup.confirmed) {
+    attempt.state.unconfirmedCleanup = called.result.cleanup as commandCleanup.CleanupReport;
+    return { ...called, violations: [], baseline };
+  }
   const { violations } = await runContext.integrity.findViolations({
     baseline,
     record: executionRecord,

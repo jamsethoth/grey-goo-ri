@@ -1120,7 +1120,7 @@ exact admission must be, or which way it may be wrong.
   - a Check's `evidence`, only on an Outcome from the `passed` table, and only for a Check the token requires
     (N9; never from the `failed` or `stopped` table, whatever a row names);
   - `<vertex>.rescue`, on an Outcome of a write Vertex not from the `passed` table whose route lands on a Vertex
-    (R5a, U5, W3).
+    (R5a, U5, W3). (Amended 2026-11-07: never guaranteed, only possible, since N4 leaves none for a clean worktree.)
 
   The ways of reaching an Outcome are its Claim tokens, each through one table. A list input (T6) is met on a route
   when each way produces at least one of its sources. Issue #107.
@@ -1227,6 +1227,23 @@ itself through `node:ffi`.
   is the confirmation N1 asks for before an Interrupted Attempt's reset and L14 asks for before a cleanup hold resumes.
   The POSIX process group and `none` keep their rules, and a tool that explicitly breaks away from the job stays an
   accepted residual risk. ADR 0011 is amended; issues #118, #119 and #23 follow.
+
+## Cleanup containment and a Check with no command (2026-11-06)
+
+Taken by the owner with the audit of grey-goo-ri issue #118.
+
+- L14 amended: `cleanup.containment` is its own shape, saying how gg can check later that a call's processes are gone:
+  `{ kind: 'job' }` on Windows (gg holds the job's only handle, so the job dies with gg; no helper process id is
+  recorded), `{ kind: 'group', pgid }` on POSIX (empty means every inheriting child is gone), and `{ kind: 'none' }`, an
+  uncontained Windows command, which is always unconfirmed, because its orphans cannot be found, and stays held for a
+  human. `exec`'s own `containment` stays `job` or `none`: it says whether the command dies with gg, which is how #68 and
+  #289 read it.
+- A `command` or `tests-fail` Check that runs no command (a reused pass, the `unchanged` skip) started no process, so it
+  writes `{ confirmed: true, survivors: [] }`.
+- H3 amended (owner, 2026-11-07): `<vertex>.rescue` is never guaranteed. A worktree with nothing to rescue makes no ref
+  and no output (N4), so a required input met only by it could only fault at run time, where an agent failed without
+  changing anything. Admission refuses that. The rescue counts for an optional input, which it may reach on a route, and
+  a required list input needs another source that is guaranteed. The example Flow marks these inputs optional.
 
 ## Open
 

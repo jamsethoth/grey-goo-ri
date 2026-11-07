@@ -60,9 +60,13 @@ The Harness receives the Persona bytes, never a path.
   (the malformed case). The orchestrator validates it.
 - `result`: the Harness Result `{ status: 'completed' | 'failed' | 'timed-out' | 'killed', sessionId,
   usage: { cumulative, delta }, transcriptPath, exitCode, exitSignal, finalEventSubtype,
-  sessionInit: { plugins, pluginErrors, mcpServers, mcpServerErrors, capabilities }, permissionDenials, commandsRun }`.
+  sessionInit: { plugins, pluginErrors, mcpServers, mcpServerErrors, capabilities }, permissionDenials, commandsRun,
+  cleanup }`.
   `exitSignal` is the OS signal that ended the process, or null.
   `commandsRun` is diagnostic only. Outcomes are classified from the final event, not the exit code.
+  `cleanup` is `{ confirmed, survivors, reason, containment }` (`CleanupReport`, `lib/command-cleanup.ts`; decisions L6,
+  L11, L14): a call returns only once its processes are gone, or says it could not confirm it. A result with no `cleanup`
+  reads as unconfirmed, and unconfirmed holds the Ticket, whatever the `status`.
 - `failure`: for `failed`, `{ failureClass: 'auth' | 'quota' | 'budget' | 'rate-limited' | 'transient' | 'unknown',
   retryAfterMs, message }`; otherwise `null`.
 

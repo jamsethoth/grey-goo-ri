@@ -19,7 +19,9 @@ type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 // and marked.
 export interface TerminalContext extends effects.EffectContext {
   gh: github.Gh;
-  git: effectEvidence.EvidenceGit & { diffStats(worktree: string, base: string): Promise<DiffStatsFile[]> };
+  git: effectEvidence.EvidenceGit & {
+    diffStats(worktree: string, base: string, to?: string): Promise<DiffStatsFile[]>;
+  };
   events: ReturnType<typeof events.eventLog>;
   run: string;
   files: unknown;

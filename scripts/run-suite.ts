@@ -29,9 +29,10 @@ const UNIT = 'test/unit/**/*.test.{mjs,ts}';
 export const LCOV = 'coverage/lcov.info';
 export const BASELINE = 'coverage-baseline.json';
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.ts), so their lines are not unit-testable;
-// lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts and this launcher's census. Their
-// contract suites cover them; their decisions are in lib/command-cleanup.ts, which is measured.
-const NOT_UNIT = ['lib/exec.ts', 'lib/git.ts', 'lib/process-tree.ts', 'lib/containment.ts'];
+// lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts and this launcher's census, and
+// lib/git-temp-index.ts only through lib/git.ts. Their contract suites cover them; the decisions are in
+// lib/command-cleanup.ts, which is measured.
+const NOT_UNIT = ['lib/exec.ts', 'lib/git.ts', 'lib/git-temp-index.ts', 'lib/process-tree.ts', 'lib/containment.ts'];
 
 // Its message is the whole usage text. lib/options.ts has its own UsageError, which this launcher does not load: of
 // lib/ it loads only the job calls and their one import (ADR 0010, ADR 0016).

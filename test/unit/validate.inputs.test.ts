@@ -324,20 +324,9 @@ test('a harness failure leaves no response', () => {
   ]);
 });
 
-test('a passing Outcome leaves no rescue', () => {
+// A worktree with nothing to rescue leaves no rescue (N4), so no route guarantees one.
+test('a required input from a rescue is an error, on a route that rescues', () => {
   const config = exampleLayer.config();
-  config.flows.default.ticket.vertices.reviewer.inputs.previous = { from: 'green.rescue' };
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    {
-      at: `${VERTICES}.reviewer.inputs.previous`,
-      code: 'required-input-unsure',
-    },
-  ]);
-});
-
-test('a read-only Vertex leaves no rescue', () => {
-  const config = exampleLayer.config();
-  config.flows.default.ticket.vertices.green.access = 'read-only';
   delete config.flows.default.ticket.vertices['senior-green'].inputs.previous.optional;
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     {
@@ -345,4 +334,37 @@ test('a read-only Vertex leaves no rescue', () => {
       code: 'required-input-unsure',
     },
   ]);
+});
+
+test('an optional input from a rescue on a route that rescues gets no warning', () => {
+  const { warnings } = exampleLayer.check(exampleLayer.config());
+  assert.deepEqual(
+    warnings.filter((warning) => warning.at === `${VERTICES}.senior-green.inputs.previous`),
+    [],
+  );
+});
+
+test('a passing Outcome leaves no rescue', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices['implementer-fix'].route = { ok: 'reviewer' };
+  config.flows.default.ticket.vertices.reviewer.inputs.previous = { from: 'implementer-fix.rescue', optional: true };
+  assert.deepEqual(
+    exampleLayer.firedRules(
+      exampleLayer.check(config).warnings.filter((warning) => warning.at === `${VERTICES}.reviewer.inputs.previous`),
+    ),
+    [{ at: `${VERTICES}.reviewer.inputs.previous`, code: 'optional-input-unsure' }],
+  );
+});
+
+test('a read-only Vertex leaves no rescue', () => {
+  const config = exampleLayer.config();
+  config.flows.default.ticket.vertices.green.access = 'read-only';
+  assert.deepEqual(
+    exampleLayer.firedRules(
+      exampleLayer
+        .check(config)
+        .warnings.filter((warning) => warning.at === `${VERTICES}.senior-green.inputs.previous`),
+    ),
+    [{ at: `${VERTICES}.senior-green.inputs.previous`, code: 'optional-input-unsure' }],
+  );
 });

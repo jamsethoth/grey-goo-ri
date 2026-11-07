@@ -64,6 +64,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |
 | `lib/run-context.ts` | the Run context every step reads (`RunContext`), the deps a test replaces (`Deps`), the wall clock, and how each Action is entered, marked and recorded |
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
+| `lib/rescue.ts` | the Rescue Ref and the write-ahead reset, one mechanism for a failure routed to another Vertex and for an Interrupted Attempt (#68) |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
 | `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap |
 | `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the Transition Table makes of its Signals |
@@ -98,10 +99,11 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/harnesses/claude.ts` | **stub**: the Claude Code Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/harnesses/codex.ts` | **stub**: the Codex Harness; exports only `protectedPaths`, so `gg run` preflight fails "not implemented" |
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`) and the shell runner, with its timeout and cleanup (ported) |
-| `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plan and its survivors, a job's leftovers |
-| `lib/process-tree.ts` | the POSIX process tree a timed-out shell command leaves: listing it, watching it and killing it as Command Cleanup decides, and the helper processes that do so (ported) |
-| `lib/containment.ts` | the Windows job object a shell command, or the suite launcher's stage, runs in, through `node:ffi`: start, list, terminate, confirm empty (ADR 0021) |
+| `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plans and their survivors, a job's leftovers, the `cleanup` report |
+| `lib/process-tree.ts` | the processes a shell command leaves, on either platform: listing, watching and killing them as Command Cleanup decides, the Windows job's termination, and the helper processes that do so (ported) |
+| `lib/containment.ts` | the Windows job object a shell command, or the suite launcher's stage, runs in, through `node:ffi`: start, list, name, terminate, confirm empty (ADR 0021) |
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
+| `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |

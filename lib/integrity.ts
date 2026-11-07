@@ -63,6 +63,10 @@ export interface IntegrityGit {
   changedPaths(worktree: string, from: string, to: string, within?: Within): Promise<string[]>;
 }
 
+// A virus scanner or an indexer holding a file for a moment raises EBUSY or EPERM on Windows; fs.rm retries those only
+// when asked.
+const RM_OPTIONS = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 };
+
 type RepoLocks = Pick<locksModule.Locks, 'withLock'>;
 // The writes restoreUntracked makes: node:fs/promises', or a test's that crashes one of them.
 export type RestoreFs = Pick<typeof nodeFs, 'lstat' | 'rm' | 'mkdir' | 'symlink' | 'writeFile'>;
@@ -99,8 +103,14 @@ export async function isCleanAt(worktree: string, git: IntegrityGit, locks?: Rep
 
 export const markBusy = (executionRecord: record.ExecutionRecord, database?: Pick<record.StateDatabase, 'save'>) =>
   flip(executionRecord, true, database);
-export const markIdle = (executionRecord: record.ExecutionRecord, database?: Pick<record.StateDatabase, 'save'>) =>
-  flip(executionRecord, false, database);
+// Never once a call's cleanup is unconfirmed: a writer may still be running there, so other Tickets' Integrity
+// Assertions must keep off it (L11), whichever wait or report asks.
+export const markIdle = async (
+  executionRecord: record.ExecutionRecord,
+  database?: Pick<record.StateDatabase, 'save'>,
+) => {
+  if (!executionRecord.visitState?.unconfirmedCleanup) await flip(executionRecord, false, database);
+};
 
 export async function readActivity(
   commonDir: string,
@@ -233,7 +243,7 @@ async function unlinkParents(worktree: string, path: string, fs: RestoreFs): Pro
     });
     if (!stats) return false;
     if (!stats.isDirectory()) {
-      await fs.rm(directory, { recursive: true, force: true });
+      await fs.rm(directory, RM_OPTIONS);
       return true;
     }
   }
@@ -253,14 +263,13 @@ export async function restoreUntracked(
   const within = withinOf(set);
   for (const path of Object.keys(untracked)) await unlinkParents(worktree, path, fs);
   for (const path of Object.keys(await untrackedFiles(worktree, within, git))) {
-    if (!untracked[path] && !(await unlinkParents(worktree, path, fs)))
-      await fs.rm(join(worktree, path), { recursive: true, force: true });
+    if (!untracked[path] && !(await unlinkParents(worktree, path, fs))) await fs.rm(join(worktree, path), RM_OPTIONS);
   }
   const now = await untrackedFiles(worktree, within, git);
   for (const [path, file] of Object.entries(untracked)) {
     if (sameFile(file, now[path])) continue;
     const full = join(worktree, path);
-    await fs.rm(full, { recursive: true, force: true });
+    await fs.rm(full, RM_OPTIONS);
     await fs.mkdir(dirname(full), { recursive: true });
     await (file.link !== undefined
       ? fs.symlink(file.link, full)

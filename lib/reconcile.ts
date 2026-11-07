@@ -1,4 +1,5 @@
 import * as record from './record.ts';
+import type * as rescue from './rescue.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
 import * as effectEvidence from './effect-evidence.ts';
@@ -48,52 +49,55 @@ const ignoredOf = async (
 ) => (untracked ? integrity.ignoredFiles(worktree, integrityModule.withinOf(untracked)) : {});
 
 // Where an open reset can be found: 'left' while the worktree is exactly as the agent left it, ignored Protected Files
-// and tests included; 'restoring' once the git reset landed, however far its restore of untracked files got, each
-// rollback file being absent, as the agent left it or restored; null for anything else, which is a human's (ADR-0005).
+// and tests included; 'cleaning' between git.resetTo's hard reset and its clean, the tracked files back and every
+// untracked one as the agent left it; 'restoring' once the git reset landed, however far its restore of untracked files
+// got, each rollback file being absent, as the agent left it or restored; null for anything else, which is a human's
+// (ADR-0005).
 async function resetState(
   worktree: string,
   { baseline, untracked, left }: ResetPayload,
   git: ReconcileGit,
   integrity: integrityModule.Integrity,
-): Promise<'left' | 'restoring' | null> {
+): Promise<'left' | 'cleaning' | 'restoring' | null> {
   const now = await integrity.snapshot(worktree);
-  const saved = untracked?.files ?? {};
-  const files = untracked ? await integrity.untrackedFiles(worktree, integrityModule.withinOf(untracked)) : {};
   const tree = await git.treeOf(worktree, baseline);
-  if (
-    now.head === baseline &&
-    now.index === tree &&
-    Object.entries(files).every(
-      ([path, file]) =>
-        integrityModule.sameFile(file, left?.files?.[path]) || integrityModule.sameFile(file, saved[path]),
-    ) &&
-    (await onlyRestored(worktree, { from: tree, to: now.tree, files, saved }, git))
-  )
+  const hardReset = now.head === baseline && now.index === tree;
+  if (hardReset && (await onlyRestored(worktree, { from: tree, to: now.tree, untracked, left }, git, integrity)))
     return 'restoring';
   // An intent saved before the index was fingerprinted proves nothing.
-  if (
-    left?.index &&
-    now.head === left.head &&
-    now.index === left.index &&
-    now.tree === left.tree &&
-    integrityModule.sameFiles(left.files ?? {}, await ignoredOf(worktree, untracked, integrity))
-  )
-    return 'left';
-  return null;
+  if (!left?.index) return null;
+  if (!integrityModule.sameFiles(left.files ?? {}, await ignoredOf(worktree, untracked, integrity))) return null;
+  if (now.head === left.head && now.index === left.index && now.tree === left.tree) return 'left';
+  return hardReset && (await onlyLeftBehind(worktree, { from: tree, to: now.tree, left: left.tree }, git))
+    ? 'cleaning'
+    : null;
 }
 
-// The flag-aware tree differs from the baseline only by untracked files the restore has put back with their saved
-// bytes.
-async function onlyRestored(
+// The flag-aware tree differs from the baseline only by added files, each as the tree the agent left has it.
+async function onlyLeftBehind(
   worktree: string,
-  {
-    from,
-    to,
-    files,
-    saved,
-  }: { from: string; to: string; files: integrityModule.UntrackedFiles; saved: integrityModule.UntrackedFiles },
+  { from, to, left }: { from: string; to: string; left: string },
   git: ReconcileGit,
 ): Promise<boolean> {
+  const differs = new Set((await git.treeDiff(worktree, to, left)).map(({ path }) => path));
+  return (await git.treeDiff(worktree, from, to)).every(({ path, change }) => change === 'added' && !differs.has(path));
+}
+
+// Each rollback file is absent, as the agent left it or restored, and the flag-aware tree differs from the baseline
+// only by untracked files the restore has put back with their saved bytes.
+async function onlyRestored(
+  worktree: string,
+  { from, to, untracked, left }: { from: string; to: string } & Pick<ResetPayload, 'untracked' | 'left'>,
+  git: ReconcileGit,
+  integrity: integrityModule.Integrity,
+): Promise<boolean> {
+  const saved = untracked?.files ?? {};
+  const files = untracked ? await integrity.untrackedFiles(worktree, integrityModule.withinOf(untracked)) : {};
+  const eachKnown = Object.entries(files).every(
+    ([path, file]) =>
+      integrityModule.sameFile(file, left?.files?.[path]) || integrityModule.sameFile(file, saved[path]),
+  );
+  if (!eachKnown) return false;
   if (from === to) return true;
   return (await git.treeDiff(worktree, from, to)).every(
     ({ path, change }) => change === 'added' && integrityModule.sameFile(files[path], saved[path]),
@@ -101,8 +105,8 @@ async function onlyRestored(
 }
 
 // True when the worktree is in a state an open intent proves the agent's (ADR-0005), for Reconciliation to finish the
-// intent: a reset's, or a commit's recorded parent and the tree it staged. push, pr-upsert, pr-ready, comment and label
-// leave the worktree alone and record none, so they prove no uncommitted change.
+// intent: a reset's, a rescue's worktree as it found it, or a commit's recorded parent and the tree it staged. push,
+// pr-upsert, pr-ready, comment and label leave the worktree alone and record none, so they prove no uncommitted change.
 async function asRecorded(
   worktree: string,
   { effect, payload }: writeAhead.WriteAheadEntry,
@@ -110,15 +114,20 @@ async function asRecorded(
   integrity: integrityModule.Integrity,
 ): Promise<boolean> {
   if (effect === 'reset') return (await resetState(worktree, payload as ResetPayload, git, integrity)) !== null;
+  if (effect === 'rescue') {
+    const { left } = payload as rescue.RescuePayload;
+    const now = await integrity.snapshot(worktree);
+    return now.head === left.head && now.index === left.index && now.tree === left.tree;
+  }
   if (effect !== 'commit') return false;
   const { parent, tree } = payload as effectEvidence.CommitPayload;
   const now = await integrity.snapshot(worktree);
   return now.head === parent && now.index === tree && now.tree === tree;
 }
 
-// An open reset is made now while the worktree is as the agent left it, and its restore is replayed once the reset
-// landed; restoreUntracked skips files already back. Anything else is a human's and Held, nothing discarded, and the
-// History item waits in the intent.
+// An open reset is made now while the worktree is as the agent left it or partway through it, where the reset changes
+// no tracked file again, and its restore is replayed once the reset landed; restoreUntracked skips files already back.
+// Anything else is a human's and Held, nothing discarded, and the History item waits in the intent.
 export async function resets(
   executionRecord: record.ExecutionRecord,
   {
@@ -131,7 +140,7 @@ export async function resets(
     if (!writeAhead.evidenceOf(executionRecord, entry.actionMarker)) {
       const payload = entry.payload as ResetPayload;
       let state = await resetState(executionRecord.worktree, payload, git, integrity);
-      if (state === 'left') {
+      if (state === 'left' || state === 'cleaning') {
         await git.resetTo(executionRecord.worktree, payload.baseline);
         state = await resetState(executionRecord.worktree, payload, git, integrity);
       }
@@ -162,7 +171,7 @@ export async function dirtyState(
     locks?: Parameters<typeof integrityModule.createIntegrity>[2];
     integrity?: integrityModule.Integrity;
   },
-): Promise<{ conflicts: string[]; stat: string } | null> {
+): Promise<{ conflicts: string[]; stat: string; rescueRef: string | null } | null> {
   // git write-tree refuses unmerged entries, so a merge conflict cannot be fingerprinted: it is never the agent's.
   const conflicts = await git.conflictedPaths(worktree);
   const unmerged = conflicts.length > 0;
@@ -170,8 +179,10 @@ export async function dirtyState(
   for (const entry of !unmerged && executionRecord ? writeAhead.openIntents(executionRecord) : [])
     if (await asRecorded(worktree, entry, git, integrity)) return null;
   const untracked = await git.untrackedPaths(worktree);
+  const intended = executionRecord && writeAhead.openRescue(executionRecord);
   return {
     conflicts,
+    rescueRef: intended && (await git.refTarget(worktree, intended.ref)) === intended.commit ? intended.ref : null,
     stat: (await git.diffSummary(worktree)) + untracked.map((path) => ` ${path} (untracked)\n`).join(''),
   };
 }
@@ -211,6 +222,11 @@ async function findEffects(
 ): Promise<string | null> {
   for (const entry of entries) {
     if (writeAhead.evidenceOf(context.executionRecord, entry.actionMarker)) continue;
+    if (!effectEvidence.recognised(entry.effect))
+      return (
+        `The intent of Action Marker ${entry.actionMarker} names the effect ${entry.effect}, which this gg does not ` +
+        'recognise, so whether it happened cannot be told; nothing was run or discarded.'
+      );
     const result = await find(entry, context);
     if (result.status === 'unknown') throw result.error;
     if (result.status === 'conflicting') return result.reason;
@@ -306,8 +322,14 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   const held = configurationHold(executionRecord, flow);
   if (held) return held;
   const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
-  if ((await resets(executionRecord, { git, integrity, database })) === 'held')
-    return hold('An interrupted reset did not leave the worktree clean at its baseline; nothing was discarded.');
+  if ((await resets(executionRecord, { git, integrity, database })) === 'held') {
+    // A rescue's reset is intended only once its ref holds the work.
+    const rescue = writeAhead.openRescue(executionRecord);
+    return hold(
+      'An interrupted reset did not leave the worktree clean at its baseline; nothing was discarded.' +
+        (rescue ? ` Rescue Ref ${rescue.ref} keeps the work rescued before it.` : ''),
+    );
+  }
   const conflict = await findEffects(
     writeAhead.openIntents(executionRecord),
     { executionRecord, git, gh, cwd, issueLabels, database },

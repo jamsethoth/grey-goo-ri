@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import { signalsOf } from '../support/action-signals.ts';
+import * as addSuite from '../support/add-suite.ts';
 import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';
 import { actionEvent, headSha, intents, subjects } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
@@ -88,8 +90,9 @@ test('a final test failure is the Outcome failed naming the Check', async (t) =>
   });
   assert.match(signal!.tree!, /^[0-9a-f]{40}$/);
   assert.deepEqual(
-    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test'),
-    [],
+    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test')[0]!.value,
+    { cleanup: addSuite.CONFIRMED },
+    'no evidence, only what its command left',
   );
   const reason = fixture.executionRecord.terminalReason!;
   assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
@@ -360,8 +363,8 @@ test('a failed Check produces no evidence output', async (t) => {
   await interpreter.runExecution(fixture.options);
 
   assert.deepEqual(
-    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test'),
-    [],
+    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test')[0]!.value,
+    { cleanup: addSuite.CONFIRMED },
     'a failing test no token requires has no evidence',
   );
   assert.ok(
@@ -468,4 +471,42 @@ test('a deleted test file counts as a change', async (t) => {
     fixture.executionRecord.outputs.find((output) => output.vertex === 'red' && output.action === 'commit')!.value,
     { files: ['package.json'] },
   );
+});
+
+// A Check that ran no command started no process (owner, 2026-11-06).
+test('the unchanged skip writes a confirmed cleanup', async (t) => {
+  const quiet = { files: {}, response: golden.redResponse };
+  const fixture = await golden.fixture(t, { responses: firstVisitWith({ [RED_CALL]: quiet, [RED_RECOVERY]: quiet }) });
+  await interpreter.runExecution(fixture.options);
+  assert.deepEqual(
+    fixture.executionRecord.outputs.find((output) => output.vertex === 'red' && output.action === 'red-check')?.value
+      .cleanup,
+    { confirmed: true, survivors: [] },
+  );
+});
+
+test('a reused pass writes a confirmed cleanup', async (t) => {
+  const fixture = await runReviewFlow(
+    t,
+    {
+      [keys.responseKey('reviewer', 1, 'review', 1)]: reviewed(review('ok')),
+    },
+    { configure: reuseTree('implement', 'publish') },
+  );
+  assert.deepEqual(
+    fixture.executionRecord.outputs.find((output) => output.vertex === 'publish' && output.action === 'test')?.value
+      .cleanup,
+    { confirmed: true, survivors: [] },
+  );
+});
+
+test('a pass with unconfirmed cleanup is not saved for reuse', async (t) => {
+  const fixture = await golden.fixture(t);
+  golden.configure(fixture, reuseTree('implement'));
+  const unconfirmed = { ...addSuite.CONFIRMED, confirmed: false, reason: 'termination refused' };
+  editRuns(fixture, (run) => (run.code === 0 ? { ...run, cleanup: unconfirmed } : run));
+  const { held } = await interpreter.runExecution(fixture.options);
+  assert.equal(held, true);
+  const { tree } = fixture.executionRecord.visitState!.checks.test!;
+  assert.equal(stateDatabase.reusablePass(fixture.commonDir, tree!, 'npm test'), null);
 });

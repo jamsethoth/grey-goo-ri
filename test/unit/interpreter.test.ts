@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as config from '../../lib/config.ts';
 import type * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
@@ -11,6 +12,7 @@ import * as publicText from '../../lib/public-text.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
+import * as addSuite from '../support/add-suite.ts';
 import * as caseDatabase from '../support/case-database.ts';
 import { actionEvent, attemptsOf, branchMessages, intents, loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
@@ -621,4 +623,104 @@ test('no "*" catches an unroutable Outcome', async (t) => {
     } as runContext.Deps,
   });
   assert.equal(result.outcome, 'needs-human', 'an Integrity Violation is never routed');
+});
+
+// Unconfirmed Command Cleanup stops the Ticket, whatever the call said (#118, L11): engine-owned, like an Integrity
+// Assertion, and neither recoverable nor routable.
+const UNCONFIRMED: commandCleanup.CleanupReport = {
+  confirmed: false,
+  survivors: [
+    { pid: 4242, created: '2026-11-06T00:00:00.000Z', commandLine: 'node writer.js', error: 'still running' },
+  ],
+  reason: 'termination refused',
+  containment: { kind: 'job' },
+};
+
+test('an exit-0 Check with unconfirmed cleanup holds before the commit', async (t) => {
+  const fixture = await golden.fixture(t);
+  editRuns(fixture, (run) => (run.code === 0 ? { ...run, cleanup: UNCONFIRMED } : run));
+  const result = await interpreter.runExecution(fixture.options);
+  assert.equal(result.held, true);
+  assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
+  assert.equal(intents(fixture.executionRecord, 'commit').length, 1, "only red's commit");
+  assert.deepEqual(actionEvent(fixture, 'green', 'test')!.cleanup, UNCONFIRMED);
+  assert.deepEqual(
+    fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'test')!.value
+      .cleanup,
+    UNCONFIRMED,
+  );
+  const comment = fixture.gh.comments.at(-1)!.body;
+  assert.match(comment, /4242/);
+  assert.match(comment, /node writer\.js/);
+  assert.match(comment, /termination refused/);
+  assert.equal(fixture.executionRecord.activity.busy, true, 'the worktree is not marked idle');
+});
+
+test('a successful agent response with unconfirmed cleanup holds before its Checks', async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({
+      [keys.responseKey('green', 1, 'green', 1)]: {
+        ...golden.firstVisitResponses[keys.responseKey('green', 1, 'green', 1)],
+        cleanup: UNCONFIRMED,
+      },
+    }),
+  });
+  const result = await interpreter.runExecution(fixture.options);
+  assert.equal(result.held, true);
+  assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
+  assert.equal(actionEvent(fixture, 'green', 'test'), undefined, 'its Check never ran');
+  assert.deepEqual(actionEvent(fixture, 'green', 'green')!.cleanup, UNCONFIRMED);
+  assert.deepEqual(
+    fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'green')!.value
+      .cleanup,
+    UNCONFIRMED,
+  );
+  assert.equal(fixture.executionRecord.activity.busy, true, 'the worktree is not marked idle');
+});
+
+test("an agent call's confirmed cleanup is recorded in its Event and its output", async (t) => {
+  const fixture = await golden.fixture(t);
+  await interpreter.runExecution(fixture.options);
+  assert.deepEqual(actionEvent(fixture, 'green', 'green')!.cleanup, addSuite.CONFIRMED);
+  assert.equal(
+    (
+      fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'green')!.value
+        .cleanup as commandCleanup.CleanupReport
+    ).confirmed,
+    true,
+  );
+  assert.deepEqual(actionEvent(fixture, 'green', 'test')!.cleanup, addSuite.CONFIRMED);
+});
+
+// A remote Action's backoff marks a busy worktree idle while it waits, but this worktree's writer may still be running.
+test("unconfirmed cleanup keeps the worktree busy through the hold comment's backoff", async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({
+      [keys.responseKey('green', 1, 'green', 1)]: {
+        ...golden.firstVisitResponses[keys.responseKey('green', 1, 'green', 1)],
+        cleanup: UNCONFIRMED,
+      },
+    }),
+  });
+  const during: boolean[] = [];
+  fixture.clock.onSleep = () => {
+    during.push(fixture.executionRecord.activity.busy);
+  };
+  const runState = { stop: null, remoteNotBefore: fixture.clock.now() + 60_000 };
+  const result = await interpreter.runExecution({ ...fixture.options, runState });
+  assert.equal(result.held, true);
+  assert.deepEqual(during, [true], 'still busy while the comment waits');
+});
+
+test('a Harness result that reports no cleanup holds', async (t) => {
+  const greenCall = keys.responseKey('green', 1, 'green', 1);
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({
+      [greenCall]: { ...golden.firstVisitResponses[greenCall], result: { cleanup: undefined } },
+    }),
+  });
+  const result = await interpreter.runExecution(fixture.options);
+  assert.equal(result.held, true);
+  assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
+  assert.match(fixture.executionRecord.terminalReason!.text, /the Harness reported no cleanup/);
 });

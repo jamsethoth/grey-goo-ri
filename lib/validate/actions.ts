@@ -7,6 +7,8 @@ import * as report from './report.ts';
 
 // The heads of gg's own reference paths, so an Action id never shadows one.
 const HEADS = ['claim', 'pass', 'check', 'response', 'inputs', 'rescue'];
+// A rollback's or a rescue's reset is gg's own Action of the Visit, whose marker a declared Action would share.
+const RESERVED_IDS = HEADS.concat('reset');
 
 type Value = Record<string, unknown>;
 // A schema read once, however many Procedures name it; one that cannot be used types as ANY and reports its error.
@@ -78,12 +80,12 @@ function checkActionId(problems: report.Report, ids: unknown[], id: unknown, loc
   if (!report.checkName(problems, location, id, { what: 'Action id', carried: true })) return;
   if (ids.includes(id))
     report.error(problems, location, 'repeated-action-id', `Action id ${JSON.stringify(id)} is repeated`);
-  else if (HEADS.includes(id))
+  else if (RESERVED_IDS.includes(id))
     report.error(
       problems,
       location,
       'reserved-name',
-      `Action id ${JSON.stringify(id)} is reserved for gg's references: ${HEADS.join(', ')}`,
+      `Action id ${JSON.stringify(id)} is reserved for gg: ${RESERVED_IDS.join(', ')}`,
     );
 }
 

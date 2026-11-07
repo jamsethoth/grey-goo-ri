@@ -6,6 +6,7 @@ import type * as effectActions from './effect-actions.ts';
 import * as labels from './labels.ts';
 import * as marker from './marker.ts';
 import type * as record from './record.ts';
+import type * as rescue from './rescue.ts';
 import type * as writeAhead from './write-ahead.ts';
 
 // The git verbs the finders call (lib/git.ts).
@@ -18,6 +19,7 @@ export interface EvidenceGit {
     worktree: string,
     branch: string,
   ): Promise<{ sha: string; parents: string[]; tree: string; message: string }[]>;
+  refTarget(worktree: string, ref: string): Promise<string | null>;
 }
 
 // The gh verbs the finders call (lib/github.ts).
@@ -34,6 +36,7 @@ type PushPayload = effectActions.PushPayload;
 type PrUpsertPayload = Pick<effectActions.PrUpsertPayload, 'branch' | 'bodyHash'>;
 type CommentPayload = Pick<effectActions.CommentPayload, 'target'>;
 export type LabelPayload = { add: string[]; remove: string[] };
+type RescuePayload = Pick<rescue.RescuePayload, 'ref' | 'commit'>;
 
 // What a finder reads. terminalEffects looks only for comment and label intents, so it passes no git.
 export interface EvidenceContext {
@@ -85,6 +88,17 @@ const FINDERS: Record<string, FindEffect | undefined> = {
     }
     return ABSENT;
   },
+  // The ref holds the intended commit, or is absent and so is made, or holds another, which is never overwritten.
+  async rescue({ actionMarker, payload }, { executionRecord, git }) {
+    const { ref, commit } = payload as RescuePayload;
+    const held = await git!.refTarget(executionRecord.worktree, ref);
+    if (held === null) return ABSENT;
+    if (held === commit) return found({ ref, commit });
+    return conflicting(
+      `Rescue Ref ${ref} of Action Marker ${actionMarker} holds ${held}, not the intended ${commit}; nothing was ` +
+        'overwritten or reset.',
+    );
+  },
   async push({ actionMarker, payload }, { executionRecord, git }) {
     const { branch, sha } = payload as PushPayload;
     if ((await git!.remoteSha(executionRecord.worktree, branch)) === sha) return found({ remoteSha: sha });
@@ -118,6 +132,14 @@ const FINDERS: Record<string, FindEffect | undefined> = {
     return shown ? found({ ok: true }) : ABSENT;
   },
 };
+
+// Recognised Actions with no finder that are safe to repeat: run again, each proves nothing has to be undone (N3).
+const REPLAYS = ['pr-ready'];
+
+// Whether Reconciliation can settle an open intent of this effect: found by its finder, or safe to run again. Any other
+// is held, never read as absent (N3, S6). A reset and a call are settled earlier and do not reach this.
+export const recognised = (effect: string | null): boolean =>
+  REPLAYS.includes(String(effect)) || Object.hasOwn(FINDERS, String(effect));
 
 // An effect with no finder (a reset, a call or pr-ready) is absent.
 export async function findEffect(entry: writeAhead.WriteAheadEntry, context: EvidenceContext): Promise<FindResult> {

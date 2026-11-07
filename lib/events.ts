@@ -53,6 +53,8 @@ interface ActionFields {
   // Null unless the Action failed: a Harness's class, or a remote Action's that failed for good (#251).
   failureClass: string;
   error: string;
+  // What the call's or the command's Command Cleanup found (L11).
+  cleanup: unknown;
 }
 const ACTION = {
   flow: 'required',
@@ -78,6 +80,7 @@ const ACTION = {
   retryAfterMs: 'optional',
   failureClass: 'optional',
   error: 'optional',
+  cleanup: 'optional',
 } as const satisfies Declaration<ActionFields>;
 
 interface AgentFields {

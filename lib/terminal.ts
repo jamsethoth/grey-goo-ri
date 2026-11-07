@@ -217,7 +217,12 @@ export function endEarly(context: TerminalContext, ending: effectErrors.Ending):
   if (ending.next === 'run-stop') return runStopAt(context, ending);
   return ending.next === 'abandon'
     ? abandon(context, { terminalReasonText: ending.reason, inProgress: ending.inProgress })
-    : hold(context, { name: ending.name, terminalReasonText: ending.reason });
+    : hold(context, {
+        name: ending.name,
+        terminalReasonText: ending.reason,
+        advice: ending.advice,
+        detail: ending.detail,
+      });
 }
 
 // A run stop found during a backoff or a repo-lock wait ends the Execution at needs-human with the run-stopped reason,

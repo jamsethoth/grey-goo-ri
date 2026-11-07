@@ -243,7 +243,7 @@ function advise(admitting: Admitting, fresh: boolean, next: string | undefined):
 function dirtyHold(
   admitting: Admitting,
   fresh: boolean,
-  held: { conflicts: string[]; stat: string },
+  held: { conflicts: string[]; stat: string; rescueRef: string | null },
 ): runContext.Admission {
   const conflicted = held.conflicts.length > 0;
   const found = conflicted
@@ -257,7 +257,9 @@ function dirtyHold(
     kind: 'hold',
     name: conflicted ? 'merge-conflict' : 'dirty-worktree',
     fresh,
-    terminalReasonText: `${found}, so the Ticket is held, no agent ran and nothing was deleted.`,
+    terminalReasonText:
+      `${found}, so the Ticket is held, no agent ran and nothing was deleted.` +
+      (held.rescueRef ? ` Rescue Ref ${held.rescueRef} keeps the work rescued before it.` : ''),
     advice: advise(admitting, fresh, next),
     detail: (conflicted ? `Conflicted paths:\n${held.conflicts.join('\n')}\n\n` : '') + held.stat,
   };

@@ -25,6 +25,8 @@ export const SLOW_TASKKILL = childScript('slow-taskkill');
 export const FAILING_TASKKILL = childScript('failing-taskkill');
 export const FORGED_JOB_NOTES = childScript('forged-job-notes');
 export const BREAKAWAY_CHILD = childScript('breakaway-child');
+export const BACKGROUND_STARTER = childScript('background-starter');
+export const BACKGROUND_WRITER = childScript('background-writer');
 
 // The command line that runs node with these arguments. No value is written into it: each is set in an environment
 // variable for the case, and the line names the variable in double quotes. sh never parses an expanded "$NAME" again;

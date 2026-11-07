@@ -76,79 +76,28 @@ export function run(
   });
 }
 
-// What a timed-out command's output ends with: the timeout, each process left alive, and any cleanup that failed.
-const timeoutNote = (timeoutMs: number, { survivors, cleanupErrors }: commandCleanup.Cleanup) =>
-  `\n[gg: timed out after ${timeoutMs} ms]` +
+// What cleanup could not do, for a command's output: each process left alive, and any cleanup that failed.
+const cleanupNote = ({ survivors, cleanupErrors }: commandCleanup.Cleanup) =>
   survivors.map((survivor) => `\n[gg: could not kill pid ${survivor.pid}: ${survivor.error}]`).join('') +
   (cleanupErrors.length ? `\n[gg: cleanup incomplete: ${cleanupErrors.join('; ')}]` : '');
 
-// Windows: terminate the job and wait until it is empty. A job not confirmed empty keeps gg's handle, so kill-on-close
-// takes what is left when gg exits.
-async function terminateJob(job: containment.Job, rootPid: number): Promise<commandCleanup.Cleanup> {
-  let refused: string | undefined;
-  try {
-    job.terminate();
-  } catch (err) {
-    refused = (err as Error).message;
-  }
-  const cleanupErrors = refused ? [refused] : [];
-  try {
-    if (refused) {
-      const survivors = job.members().map((pid) => ({ pid, error: `termination refused: ${refused}` }));
-      return { survivors, cleanupErrors };
-    }
-    await job.emptied();
-    job.close();
-    return { survivors: [], cleanupErrors };
-  } catch (err) {
-    cleanupErrors.push(`could not verify the job is empty: ${(err as Error).message}`);
-    return { survivors: [{ pid: rootPid, error: 'not verified gone' }], cleanupErrors };
-  }
-}
+// What a timed-out command's output ends with: the timeout, and what cleanup could not do.
+const timeoutNote = (timeoutMs: number, cleanup: commandCleanup.Cleanup) =>
+  `\n[gg: timed out after ${timeoutMs} ms]` + cleanupNote(cleanup);
 
-// Windows without a job: taskkill /T takes down what is still linked to the shell; orphans cannot be found. The linked
-// descendants are listed first, while the links exist, to be named if taskkill is refused. taskkill is let finish:
-// stopped partway on a loaded machine it can kill the shell but not the children it then no longer finds. The
-// taskkillCommand seam gets the pid as its last argument.
-async function takeDownTree(
-  rootPid: number,
-  kernel32: containment.Kernel32 | null,
-  taskkillCommand: processTree.CommandLine | undefined,
-  containmentError: string | undefined,
-): Promise<commandCleanup.Cleanup> {
-  const cleanupErrors = [containmentError] as string[];
-  let linked: number[] = [];
-  let listed = false;
-  try {
-    if (kernel32) {
-      linked = containment.linkedDescendants(kernel32, rootPid);
-      listed = true;
-    }
-  } catch (err) {
-    cleanupErrors.push(
-      `could not list the command's descendants (${(err as Error).message}); they are not verified gone`,
-    );
-  }
-  const [command, args] = taskkillCommand ?? [`${containment.SYSTEM32}\\taskkill.exe`, ['/T', '/F', '/PID']];
-  const result = await processTree.runHelper([command, [...args, String(rootPid)]]);
-  if (result.code === 0 || result.code === 128) return { survivors: [], cleanupErrors }; // 128: already gone
-  // taskkill /T ends the children first and cmd.exe can exit on its own once they go, so the kill of the shell can fail
-  // with the tree down, for more than one reason in the Windows language (#285). What is left alive decides, when the
-  // tree could be listed.
-  const alive = [rootPid, ...linked].filter(processTree.isAlive);
-  if (listed && !alive.length) return { survivors: [], cleanupErrors };
-  cleanupErrors.push(
-    `taskkill on command pid ${rootPid} failed: exit ${result.code}: ${(result.stderr || result.stdout).trim()}`,
-  );
-  return { survivors: alive.map((pid) => ({ pid, error: 'still running after cleanup' })), cleanupErrors };
+// What a finished command's output ends with: what it left running, by name, and what cleanup could not do.
+function finishedNote(cleanup: processTree.Settled) {
+  const named = cleanup.leftovers.map(({ pid, commandLine }) => `pid ${pid}${commandLine ? ` (${commandLine})` : ''}`);
+  const left = named.length ? `\n[gg: command finished but left running: ${named.join(', ')}]` : '';
+  return left + cleanupNote(cleanup);
 }
 
 // How a shell command was held: in a job (Windows: the command and all it starts), or not, with containmentError saying
 // why when a Windows command runs uncontained.
 export type Containment = { containment: 'job' } | { containment: 'none'; containmentError?: string };
 
-// A shell command's run: its exit code and combined output. A timed-out run has timedOut, survivors and cleanupErrors;
-// a job's run that left processes behind names them in leftovers.
+// A shell command's run: its exit code and combined output, and what its Command Cleanup found. A timed-out run has
+// timedOut, survivors and cleanupErrors; a run that finished and left processes behind names them in leftovers.
 export type ShellResult = {
   code: number | null;
   output: string;
@@ -156,6 +105,7 @@ export type ShellResult = {
   survivors?: commandCleanup.Survivor[];
   cleanupErrors?: string[];
   leftovers?: number[];
+  cleanup: commandCleanup.CleanupReport;
 } & Containment;
 
 export interface Timers {
@@ -163,11 +113,9 @@ export interface Timers {
   clearTimeout: typeof globalThis.clearTimeout;
 }
 
-export interface TestHooks {
+export interface TestHooks extends processTree.CleanupHooks {
   signal?: AbortSignal;
-  killPid?: (pid: number) => void;
-  snapshotCommand?: processTree.CommandLine;
-  taskkillCommand?: processTree.CommandLine;
+  onExit?: () => void;
   timers?: Timers;
   onWatch?: (seen: commandCleanup.Seen) => void;
 }
@@ -193,15 +141,17 @@ export type Exec = ReturnType<typeof createExec>;
 // Run a repo-declared command line (e.g. "npm test") through the platform shell. timeoutMs bounds the command from the
 // call, or from when testHooks.signal aborts.
 // The result names its containment: job (Windows: the command and all it starts held in a job object) or none, with
-// containmentError saying why when a Windows command runs uncontained. On timeout it resolves with timedOut: true,
-// survivors: [{ pid, error }] for processes that could not be killed or confirmed gone, and cleanupErrors. A command
-// that finishes but leaves processes behind is left alone and reported as leftovers: [pid] (job only; shortcut: POSIX
-// does not report them).
+// containmentError saying why when a Windows command runs uncontained. Nothing is left running when it answers, whether
+// the command finished or timed out (L6): it ends its leftovers, waits for its output pipes to close, and says what it
+// found in cleanup. On timeout it also resolves with timedOut: true, survivors: [{ pid, error }] for processes that
+// could not be killed or confirmed gone, and cleanupErrors. A command that finishes names what it left as
+// leftovers: [pid].
 // testHooks are a test's alone: snapshotCommand and taskkillCommand ([cmd, args]) replace the process listing / the
 // tree kill, which gets the pid appended, and killPid the POSIX kill. With a signal, timeoutMs counts from when it
 // aborts (from the call if it already has), so a case times the command out only once the processes it checks exist,
 // however slowly they start. timers ({ setTimeout, clearTimeout }) run the timeout clock. onWatch gets the POSIX
-// watcher's map of the descendants it has listed, keyed by pid, which it fills as it goes.
+// watcher's map of the descendants it has listed, keyed by pid, which it fills as it goes. onExit is called when the
+// command has exited, before its cleanup, so a case can start the clock that bounds the wait for its pipes.
 export function runShell(commandLine: string, options?: ShellOptions) {
   return shell(realKernel32(), commandLine, options);
 }
@@ -220,105 +170,91 @@ function startCommand(kernel32: containment.Kernel32 | null, commandLine: string
   return { child, job: null } as containment.Started;
 }
 
-// A timed-out command taken down: its job terminated, its Windows tree killed by taskkill, or its POSIX tree killed.
-function takeDown(
-  { child, job, containmentError }: containment.Started,
-  kernel32: containment.Kernel32 | null,
-  watcher: processTree.Watcher | null,
-  testHooks: TestHooks,
-) {
-  const { killPid = (pid: number) => process.kill(pid, 'SIGKILL'), snapshotCommand, taskkillCommand } = testHooks;
-  // The pid is unset only when spawn fails, which 'error' reports before a timeout can fire.
-  const pid = child.pid as number;
-  if (job) return terminateJob(job, pid);
-  if (process.platform === 'win32') return takeDownTree(pid, kernel32, taskkillCommand, containmentError);
-  return processTree.killTree(pid, (watcher as processTree.Watcher).seen, killPid, snapshotCommand);
-}
-
-// The job's command exited: what it left running is named and let run on, and the output is read to its end.
-async function settleJob(job: containment.Job, child: ChildProcess, closed: Promise<unknown>) {
-  let leftovers: number[] = [];
-  try {
-    leftovers = job.leftovers(child.pid as number);
-  } catch {} // an unreadable job names no leftovers, as a plain spawn names none
-  let kept: string | undefined;
-  try {
-    job.release();
-  } catch (err) {
-    kept = (err as Error).message; // gg keeps the handle, so kill-on-close takes the leftovers when gg exits
-    if (!leftovers.length) job.close();
-  }
-  // With no leftover every writer is gone, so the pipes close once read to the end.
-  // shortcut: output a leftover holds unread at the exit is cut; #118 kills leftovers, and then the pipes close.
-  await (leftovers.length ? new Promise((wake) => setImmediate(wake)) : closed);
-  for (const pipe of pipesOf(child)) pipe.destroy();
-  const note = leftovers.length
-    ? `\n[gg: command finished but left running: pid ${leftovers.join(', ')}]` +
-      (kept ? `\n[gg: they end when gg exits: the job could not let them run on (${kept})]` : '')
-    : '';
-  return { leftovers, note };
-}
-
 const containmentOf = ({ job, containmentError }: containment.Started): Containment =>
   job ? { containment: 'job' } : { containment: 'none', ...(containmentError && { containmentError }) };
+
+// How gg can check later that the command's processes are gone (L14). exec's own containment says whether the command
+// dies with gg, which a POSIX process group does not; this one says what there is to check, which it does give.
+function cleanupContainmentOf({ child, job }: containment.Started): commandCleanup.CleanupContainment {
+  if (job) return { kind: 'job' };
+  return process.platform === 'win32' ? { kind: 'none' } : { kind: 'group', pgid: child.pid as number };
+}
+
+// The clock of a run: timeoutMs from the call, or from when signal aborts, unless the run stops it first.
+function startClock(
+  { timeoutMs, signal, timers = globalThis }: { timeoutMs?: number; signal?: AbortSignal; timers?: Timers },
+  onTimeout: () => void,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const arm = () => {
+    if (!stopped) timer = timers.setTimeout(onTimeout, timeoutMs);
+  };
+  if (timeoutMs) {
+    if (!signal || signal.aborted) arm();
+    else signal.addEventListener('abort', arm, { once: true });
+  }
+  return () => {
+    stopped = true;
+    timers.clearTimeout(timer);
+  };
+}
 
 function shell(
   kernel32: containment.Kernel32 | null,
   commandLine: string,
   { cwd, timeoutMs, testHooks = {} }: ShellOptions = {},
 ): Promise<ShellResult> {
-  const { signal, timers = globalThis, onWatch } = testHooks;
-  const { setTimeout: startTimer, clearTimeout: stopTimer } = timers;
   const started = startCommand(kernel32, commandLine, cwd);
-  const { child, job } = started;
+  const { child } = started;
   const kind = containmentOf(started);
+  const cleanupContainment = cleanupContainmentOf(started);
+  const resultOf = (cleanup: commandCleanup.Cleanup) => ({
+    cleanup: commandCleanup.cleanupReport(cleanupContainment, cleanup),
+    ...kind,
+  });
   return new Promise((resolve, reject) => {
     let output = '';
     for (const pipe of pipesOf(child)) pipe.setEncoding('utf8').on('data', (data: string) => (output += data));
-    const closed = new Promise((settle) => child.on('close', settle));
+    const closed = new Promise((settled) => child.on('close', settled));
     let timedOut = false;
-    let finished = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const watcher = timeoutMs && process.platform !== 'win32' ? processTree.watchDescendants(child.pid!) : null;
-    if (watcher) onWatch?.(watcher.seen);
-    const onTimeout = async () => {
+    let exited = false;
+    // The clock also bounds the wait for a finished command's pipes, which a process cleanup cannot find may hold.
+    let giveUp = () => {};
+    const gaveUp = new Promise<void>((wake) => (giveUp = wake));
+    const watcher = process.platform === 'win32' ? null : processTree.watchDescendants(child.pid!);
+    if (watcher) testHooks.onWatch?.(watcher.seen);
+    const stopClock = startClock({ timeoutMs, signal: testHooks.signal, timers: testHooks.timers }, async () => {
+      if (exited) return giveUp();
       timedOut = true; // the kill makes 'exit' and 'close' fire first; the timeout result below wins
       watcher?.stop();
-      const cleanup = await takeDown(started, kernel32, watcher, testHooks);
+      const { survivors, cleanupErrors } = await processTree.takeDown(started, kernel32, watcher, testHooks);
       for (const pipe of pipesOf(child)) pipe.destroy(); // orphans may still hold the pipes
-      const note = timeoutNote(timeoutMs as number, cleanup);
-      resolve({ code: null, output: output + note, timedOut: true, ...cleanup, ...kind });
-    };
-    const arm = () => {
-      if (!finished) timer = startTimer(onTimeout, timeoutMs);
-    };
-    if (timeoutMs) {
-      if (!signal || signal.aborted) arm();
-      else signal.addEventListener('abort', arm, { once: true });
-    }
-    const end = () => {
-      finished = true;
-      stopTimer(timer);
-      watcher?.stop();
-    };
+      const taken = { survivors, cleanupErrors };
+      const note = timeoutNote(timeoutMs as number, taken);
+      resolve({ code: null, output: output + note, timedOut: true, ...taken, ...resultOf(taken) });
+    });
     child.on('error', (err) => {
-      end();
+      stopClock();
+      watcher?.stop();
       reject(err);
     });
-    if (!job) {
-      child.on('close', (code: number | null) => {
-        if (timedOut) return;
-        end();
-        resolve({ code, output, ...kind });
-      });
-      return;
-    }
     // 'exit', not 'close': a leftover process can hold the pipes open for as long as it runs
     child.on('exit', async (code: number | null) => {
       if (timedOut) return;
-      end();
-      const { leftovers, note } = await settleJob(job, child, closed);
-      resolve({ code, output: output + note, ...(leftovers.length ? { leftovers } : {}), ...kind });
+      exited = true;
+      testHooks.onExit?.();
+      watcher?.stop();
+      const settled = await processTree.settle(started, kernel32, watcher, testHooks);
+      // With no leftover alive every writer is gone, so the pipes close once read to the end, and a line that arrived
+      // late is still read. A process that left the containment can hold them on; holding them is how it shows.
+      if (!(await Promise.race([closed.then(() => true), gaveUp.then(() => false)])))
+        settled.cleanupErrors.push('its output pipes stayed open until its timeout, held by a process gg cannot find');
+      stopClock();
+      for (const pipe of pipesOf(child)) pipe.destroy();
+      const leftovers = settled.leftovers.map(({ pid }) => pid);
+      const left = leftovers.length ? { leftovers } : {};
+      resolve({ code, output: output + finishedNote(settled), ...left, ...resultOf(settled) });
     });
   });
 }
