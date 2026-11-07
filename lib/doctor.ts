@@ -59,7 +59,7 @@ function testsLine(tests: unknown): string {
 function procedureLines(procedure: ShownProcedure): string[] {
   const checks = (procedure.actions ?? []).filter((action) => action?.do === 'check') as Value[];
   const claimTokens = Object.entries(procedure.claimTokens).map(([token, claim]) =>
-    claim?.stop ? `${token} stops` : `${token} requires ${list(claim?.requires ?? [])}`,
+    claim?.stop ? `${token} stops` : `${token} requires ${list((claim?.requires ?? []).map((id) => id ?? 'no id'))}`,
   );
   const shown = checks.map(
     (check) => `${check.id ?? 'no id'} (${check.kind ?? 'no kind'}${check.command ? ` ${check.command}` : ''})`,
@@ -95,7 +95,7 @@ function inputLines(vertex: graph.ResolvedVertex): string[] {
     '  inputs:',
     ...inputs.map(([name, input]) => {
       const pick = input.pick === undefined ? '' : `, pick ${input.pick}`;
-      return `    ${name} <- ${input.from.join(' | ')}${pick}${input.optional ? ' (optional)' : ''}`;
+      return `    ${name} <- ${input.from.join(' | ') || 'no source'}${pick}${input.optional ? ' (optional)' : ''}`;
     }),
   ];
 }
