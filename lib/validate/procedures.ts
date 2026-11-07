@@ -137,6 +137,12 @@ function checkClaimTokens(
   return claimTokens;
 }
 
+const namesTests = (tests: unknown) =>
+  referencePaths.isRecord(tests) &&
+  Object.keys(tests).length === 1 &&
+  Object.hasOwn(tests, 'named') &&
+  tests.named !== undefined;
+
 function checkSettings(
   problems: report.Report,
   location: string,
@@ -144,12 +150,7 @@ function checkSettings(
   declared: actionChecks.DeclaredSoFar,
 ) {
   const tests = declaration.tests ?? 'frozen';
-  const named =
-    referencePaths.isRecord(tests) &&
-    Object.keys(tests).length === 1 &&
-    Object.hasOwn(tests, 'named') &&
-    tests.named !== undefined;
-  if (!(tests === 'frozen' || tests === 'write' || named))
+  if (!(tests === 'frozen' || tests === 'write' || namesTests(tests)))
     report.error(
       problems,
       `${location}.tests`,
