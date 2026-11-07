@@ -149,7 +149,7 @@ test('Reconciliation uses an injected integrity', async (t) => {
       worktree: crashed.worktree,
       integrity: injected,
     }),
-    { conflicts: [], stat: '' },
+    { conflicts: [], stat: '', rescueRef: null },
   );
   assert.equal(await reconcile.resets(crashed.loaded, { git: crashed.options.deps.git }), 'continue');
 });

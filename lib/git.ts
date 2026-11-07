@@ -1,9 +1,8 @@
-import { copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join, resolve, dirname, basename } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import * as exec from './exec.ts';
+import * as gitTempIndex from './git-temp-index.ts';
 import type * as integrity from './integrity.ts';
 import * as paths from './paths.ts';
 
@@ -78,7 +77,7 @@ function runner(sleep: (ms: number) => Promise<unknown>) {
   return { runGit, git, listPaths };
 }
 
-type Runner = ReturnType<typeof runner>;
+export type Runner = ReturnType<typeof runner>;
 
 export interface WorktreeRequest {
   mainRoot: string;
@@ -259,10 +258,37 @@ function commitVerbs(gitRunner: Runner, { headSha, treeOf }: ReturnType<typeof r
   return { stageAll, writeTree, commitStaged, commitTree, resetTo };
 }
 
-// Lines added and removed per file since HEAD left base; a binary file counts as null.
+// What a rescue makes: its tree, its commit on no branch, and the ref that keeps it (ADR 0011).
+function rescueVerbs(gitRunner: Runner) {
+  const { git, runGit } = gitRunner;
+  const rescueTree = (cwd: string, { within }: { within?: integrity.Within }) =>
+    gitTempIndex.rescueTree(gitRunner, cwd, within ? pathspecs(within) : null);
+
+  // A commit of a rescued tree on its parent, on no branch: nothing keeps it until a ref does.
+  const rescueCommit = (cwd: string, { tree, parent, message }: { tree: string; parent: string; message: string }) =>
+    git(['commit-tree', tree, '-p', parent, '-m', message], cwd);
+
+  // The commit a ref holds, or null when there is no such ref.
+  async function refTarget(cwd: string, ref: string) {
+    const found = await runGit(['rev-parse', '--verify', '--quiet', ref], { cwd, allowFail: true });
+    return found.code === 0 ? found.stdout.trim() : null;
+  }
+
+  // Creates a ref only when absent (update-ref's empty old value), so nothing already there is overwritten; false when
+  // it was there. Any other failure throws.
+  async function createRef(cwd: string, ref: string, sha: string) {
+    const made = await runGit(['update-ref', ref, sha, ''], { cwd, allowFail: true });
+    if (made.code === 0) return true;
+    if ((await refTarget(cwd, ref)) !== null) return false;
+    throw new Error(made.stderr.trim() || `git update-ref ${ref} exited ${made.code}`);
+  }
+  return { rescueTree, rescueCommit, refTarget, createRef };
+}
+
+// Lines added and removed per file since `to` (HEAD by default) left base; a binary file counts as null.
 // -z gives paths raw, not quoted, and a rename counts as its removed and added paths, as Test Immutability lists it.
-async function readDiffStats({ listPaths }: Runner, cwd: string, base: string) {
-  return (await listPaths(['diff', '--numstat', '-z', '--no-renames', `${base}...HEAD`], cwd)).map((entry) => {
+async function readDiffStats({ listPaths }: Runner, cwd: string, base: string, to: string) {
+  return (await listPaths(['diff', '--numstat', '-z', '--no-renames', `${base}...${to}`], cwd)).map((entry) => {
     const [, added, deleted, path] = entry.match(/^([^\t]*)\t([^\t]*)\t(.*)$/s) as unknown as [string, ...string[]];
     return {
       path,
@@ -313,41 +339,8 @@ function diffVerbs(gitRunner: Runner) {
   // The patch of what HEAD changed since it left base.
   const branchDiff = async (cwd: string, base: string) => (await runGit(['diff', `${base}...HEAD`], { cwd })).stdout;
 
-  const diffStats = (cwd: string, base: string) => readDiffStats(gitRunner, cwd, base);
+  const diffStats = (cwd: string, base: string, to = 'HEAD') => readDiffStats(gitRunner, cwd, base, to);
   return { treeDiff, changedPaths, changedSince, untrackedPaths, conflictedPaths, diffSummary, branchDiff, diffStats };
-}
-
-// HEAD, the index's tree, and the tree `add -A` would stage into a copy of the index with index flags cleared, so
-// neither an unstaged edit nor one that assume-unchanged or skip-worktree hides goes unseen. Writes objects, so callers
-// hold the repo lock.
-async function snapshotWorktree({ git, runGit }: Runner, worktree: string): Promise<integrity.WorktreeSnapshot> {
-  const tempDir = await mkdtemp(join(tmpdir(), 'gg-snapshot-'));
-  try {
-    const env = { GIT_INDEX_FILE: join(tempDir, 'index') };
-    // One process for both: a snapshot runs several per Action, each git process about 80 ms on Windows.
-    const revParse = await git(['rev-parse', '--git-path', 'index', 'HEAD'], worktree);
-    const [index, head] = revParse.split(/\r?\n/) as [string, string];
-    // Seeded from the real index so tracked files that now match an ignore rule still count.
-    await copyFile(resolve(worktree, index), env.GIT_INDEX_FILE).catch((err: NodeJS.ErrnoException) => {
-      if (err.code !== 'ENOENT') throw err;
-    });
-    // ls-files -v tags assume-unchanged entries in lowercase and skip-worktree entries 'S'; both would hide edits
-    // from add.
-    const entries = (await runGit(['ls-files', '-v', '-z'], { cwd: worktree, env })).stdout.split('\0');
-    // update-index applies only the first marking option it is given, so each flag is cleared in its own call.
-    for (const [flag, tag] of [
-      ['--no-assume-unchanged', /^[a-z] /],
-      ['--no-skip-worktree', /^[Ss] /],
-    ] as const) {
-      const flagged = entries.filter((entry) => tag.test(entry)).map((entry) => entry.slice(2));
-      if (flagged.length)
-        await runGit(['update-index', flag, '-z', '--stdin'], { cwd: worktree, env, input: flagged.join('\0') });
-    }
-    await git(['add', '-A'], worktree, env);
-    return { head, index: await git(['write-tree'], worktree), tree: await git(['write-tree'], worktree, env) };
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
 }
 
 // The git verbs. `sleep` waits out another process's index.lock; the entry point passes none, so it is the real wait,
@@ -358,9 +351,10 @@ export function createGit({ sleep = wait }: { sleep?: (ms: number) => Promise<un
   return {
     ...worktreeVerbs(gitRunner),
     ...commitVerbs(gitRunner, refs),
+    ...rescueVerbs(gitRunner),
     ...refs,
     ...diffVerbs(gitRunner),
-    fingerprint: (worktree: string) => snapshotWorktree(gitRunner, worktree),
+    fingerprint: (worktree: string) => gitTempIndex.fingerprint(gitRunner, worktree),
     slugify,
     worktreePath,
   };
@@ -381,6 +375,10 @@ export const {
   commitStaged,
   commitTree,
   resetTo,
+  rescueTree,
+  rescueCommit,
+  createRef,
+  refTarget,
   push,
   headSha,
   remoteSha,

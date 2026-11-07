@@ -59,9 +59,9 @@ interface Edge {
   write: boolean;
 }
 
-// The outputs a Visit of Vertex `id` is sure to leave when it ends in `ending` (H3): the agent's response on any Claim
-// (N10); effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); the rescue
-// when failing work moves on to a Vertex (R5a, W3).
+// The outputs a Visit of Vertex `id` leaves when it ends in `ending` (H3): the agent's response on any Claim (N10);
+// effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); and, when `rescued`
+// asks, the rescue when failing work moves on to a Vertex (R5a, W3).
 function leaves(id: string, proc: checked.CheckedProcedure, ending: OutcomeCase, rescued: boolean) {
   const passed = ending.table === 'passed';
   const keys = [];
@@ -258,10 +258,12 @@ function groupsOf(resolved: Record<string, ResolvedVertex>) {
 }
 
 // The facts an Outcome guarantees, the inputs it produces a source of and whether pr-ready ran, are those every way
-// of reaching it does; each way is judged on its own first, so a list input (T6) may be met differently by each (H3).
-function gained(graph: Graph, groups: Map<string, string[]>, edge: Edge, toVertex: boolean) {
+// of reaching it does; each way is judged on its own first, so a list input (T6) may be met differently by each (H3). A
+// rescue may arrive, so it counts for an input on some route (`every` false), but a worktree with nothing to rescue
+// leaves none (N4), so it never guarantees one.
+function gained(graph: Graph, groups: Map<string, string[]>, edge: Edge, every: boolean) {
   const ways = edge.cases.map((ending) => {
-    const keys = leaves(edge.from, graph.procs[edge.from] as checked.CheckedProcedure, ending, edge.write && toVertex);
+    const keys = leaves(edge.from, graph.procs[edge.from] as checked.CheckedProcedure, ending, edge.write && !every);
     const facts = [...groups]
       .filter(([, sources]) => sources.some((key) => keys.includes(key)))
       .map(([group]) => group);
@@ -283,7 +285,7 @@ function factsAt(graph: Graph, edges: Edge[], groups: Map<string, string[]>, eve
     const from = queue.shift();
     for (const edge of edges.filter((each) => each.from === from)) {
       for (const { vertex } of edge.landings.filter((landing) => landing.vertex)) {
-        const reached = report.unique([...(facts.get(from) as string[]), ...gained(graph, groups, edge, true)]);
+        const reached = report.unique([...(facts.get(from) as string[]), ...gained(graph, groups, edge, every)]);
         const old = facts.get(vertex);
         const merged = merge(old, reached, every);
         if (!old || merged.length !== old.length) {

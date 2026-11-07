@@ -1,5 +1,6 @@
 // The Visit's saved shapes, which the Execution Record nests: the Configuration Snapshot a Visit entered with, its
 // Vertex inputs, its progress (VisitState) and each Action's Resolution, by the row that decided it.
+import type * as commandCleanup from './command-cleanup.ts';
 import type * as integrity from './integrity.ts';
 
 // The rule identity { table, row }: a fixed row by name, or a Procedure table's row by index, `otherwise`, or null
@@ -13,6 +14,7 @@ export type Direction = 'advance' | 'retry' | 'stop';
 
 // gg's fixed rows of the Transition Table (outcome.FIXED_ROWS), and `recover`, which starts the next recovery pass.
 export type FixedRow =
+  | 'cleanup-unconfirmed'
   | 'integrity-violation'
   | 'transient-retry'
   | 'transient-exhausted'
@@ -134,6 +136,8 @@ export interface VisitState {
   checks: Record<string, CheckSignal>;
   checkFollows: boolean;
   settled: { action: string; recovery: number; resolution: Resolution } | null;
+  // The report that stopped the Visit: its writers may still run, so nothing marks the worktree idle (L11).
+  unconfirmedCleanup: commandCleanup.CleanupReport | null;
 }
 
 // Everything a Visit reads, copied at its entry so a Flow or command edited mid-Visit cannot reach it. The Agent,
@@ -155,8 +159,8 @@ export interface ConfigurationSnapshot {
   persona: { name: string; bytes: string; hash: string } | null;
 }
 
-// The reset intent's payload (visit-runner's rollback): the baseline head, the History item it adds, what git clean
-// leaves to restore, and the worktree as the agent left it.
+// The reset intent's payload (lib/rescue.ts): the baseline head, the History item it adds, what git clean leaves to
+// restore, and the worktree as the agent left it.
 export interface ResetPayload {
   baseline: string;
   history: Record<string, unknown>;

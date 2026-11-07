@@ -49,7 +49,8 @@ function testStatuses(output: string) {
 }
 
 // A command's run as exec.runShell reports it, as far as a Check reads it.
-export type ShellRun = Pick<exec.ShellResult, 'code' | 'output'> & { timedOut?: boolean };
+export type ShellRun = Pick<exec.ShellResult, 'code' | 'output'> &
+  Partial<Pick<exec.ShellResult, 'cleanup'>> & { timedOut?: boolean };
 
 // A Red Check's result: on a failure an agent can fix, `failure` says which (T4c, N5).
 export interface RedCheck {
@@ -122,6 +123,7 @@ export async function greenCheck(
     output: run.output,
     timedOut: Boolean(run.timedOut),
     durationMs: Date.now() - startedMs,
+    cleanup: run.cleanup,
   };
 }
 

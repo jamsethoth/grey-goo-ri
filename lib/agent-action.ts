@@ -223,6 +223,7 @@ function settleAttempt(
   const { response, result, failure, violations, baseline } = called;
   const claim = briefs.validateResponse(call.schema, response);
   if (claim.valid) visitScope.recordOutput(executionRecord, actionIdentity, { response });
+  visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: result.cleanup });
   state.call = {
     harnessResult: result,
     claim,
@@ -238,6 +239,7 @@ function settleAttempt(
     claim,
     checks: visitScope.resolverChecks(integrityRows, []),
     retries: executionRecord.retries[key] ?? {},
+    cleanup: result.cleanup,
   });
   if (resolution.retryKind)
     (executionRecord.retries[key] ??= {})[resolution.retryKind] =
@@ -288,6 +290,7 @@ const harnessFields = (result: HarnessResult, sessionLineage: string | null) => 
   finalEventSubtype: result.finalEventSubtype,
   permissionDenials: result.permissionDenials,
   commandsRun: result.commandsRun,
+  cleanup: result.cleanup,
 });
 
 // How the Transition Table decided, and the Signals it read: the Harness Result, the Claim and the Integrity Assertion.

@@ -50,6 +50,9 @@ const LOCKED_VERBS = [
   'push',
   'remoteSha',
   'resetTo',
+  'rescueTree',
+  'rescueCommit',
+  'createRef',
 ] as const;
 
 test('every orchestrator git write waits for the repo lock', async (t) => {

@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
@@ -96,4 +97,25 @@ test('a workflow file change is an integrity violation', async (t) => {
       after: ['.github/actions/setup/action.yml', '.github/workflows/ci.yml'],
     },
   ]);
+});
+
+// node:fs retries a removal on EBUSY and EPERM only when asked, and on Windows a scanner or an indexer holding the file
+// for a moment is enough to raise them.
+test('restore retries a busy file removal', async (t) => {
+  const root = tempDirectory.tempDirectory(t, 'gg-restore-');
+  const fake = fakeGit();
+  const { mainRoot } = fake.init(root);
+  mkdirSync(join(mainRoot, 'extra'));
+  writeFileSync(join(mainRoot, 'extra', 'new.txt'), 'an agent wrote this');
+  const removals: { maxRetries?: number }[] = [];
+  const fs: integrity.RestoreFs = {
+    ...fsPromises,
+    rm: async (path, options) => {
+      removals.push(options as { maxRetries?: number });
+      return fsPromises.rm(path, options);
+    },
+  };
+  await integrity.restoreUntracked(mainRoot, { files: {}, within: { paths: ['extra/'] } }, fake.git, fs);
+  assert.equal(removals.length, 1);
+  assert.ok(removals[0]!.maxRetries! > 0, JSON.stringify(removals));
 });

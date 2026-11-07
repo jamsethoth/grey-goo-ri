@@ -1,9 +1,12 @@
 // The check Action (R1, R4): its Check kind checks, on the tree it read when the kind reads one, and its result is the
 // Check signal { id, kind, state, tree }, with the output and reason the recovery Brief and Terminal Reason read.
 import * as checks from './checks.ts';
+import * as commandCleanup from './command-cleanup.ts';
 import * as effects from './effects.ts';
 import * as integrity from './integrity.ts';
+import type * as marker from './marker.ts';
 import type * as procedures from './procedures.ts';
+import type * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
 import type { RunContext } from './run-context.ts';
 import * as stateDatabase from './state-database.ts';
@@ -22,6 +25,8 @@ interface Checked {
   evidence?: { command: string; output: string; [field: string]: unknown };
   outputs?: Record<string, unknown>;
   tree?: string | null;
+  // What its command left, or NO_COMMAND's report for a kind that could run one and did not.
+  cleanup?: Pick<commandCleanup.CleanupReport, 'confirmed' | 'survivors'>;
 }
 // One run of a Check kind: the Action as the Visit runs it, and the tree it checks, if it reads one.
 interface Checking extends visitScope.Running {
@@ -44,7 +49,13 @@ async function commandCheck(runContext: RunContext, { action, tree }: Checking):
   const reused = action.reuse === 'tree' ? stateDatabase.reusablePass(runContext.record.commonDir, tree!, line) : null;
   if (reused) {
     const output = `Reused the passing run of ${reused.marker} on this tree.\n${reused.output}`;
-    return { passed: true, ran: false, output, evidence: { command: line, output } };
+    return {
+      passed: true,
+      ran: false,
+      output,
+      evidence: { command: line, output },
+      cleanup: commandCleanup.NO_COMMAND,
+    };
   }
   const run = await checks.greenCheck(line, runContext.record.worktree, { runShell: runContext.exec.runShell });
   const evidence = checks.checkEvidence(line, run);
@@ -55,6 +66,7 @@ async function commandCheck(runContext: RunContext, { action, tree }: Checking):
     recoverable: !run.timedOut && run.code !== null && run.code !== 127,
     output: evidence.output,
     evidence,
+    cleanup: run.cleanup,
   };
 }
 
@@ -79,6 +91,7 @@ async function testsFailCheck(runContext: RunContext, { actionIdentity, action, 
       recoverable: true,
       failure: 'unchanged',
       reason: "No file under testPaths changed since the Visit's baseline, so no test was written.",
+      cleanup: commandCleanup.NO_COMMAND,
     };
   }
   const line = commandLine(runContext, action);
@@ -100,6 +113,7 @@ async function testsFailCheck(runContext: RunContext, { actionIdentity, action, 
     reason: red.reason,
     output: evidence.output,
     evidence,
+    cleanup: run.cleanup,
   };
 }
 
@@ -143,6 +157,10 @@ async function runCheck(runContext: RunContext, running: visitScope.Running): Pr
   const kind = CHECK_KINDS[action.kind!];
   const tree = kind.tree ? (await integrity.snapshot(executionRecord.worktree, git, locks)).tree : null;
   const checked = { ...(await kind.run(runContext, { ...running, tree })), tree };
+  if (checked.cleanup?.confirmed === false) {
+    running.state.unconfirmedCleanup = checked.cleanup as commandCleanup.CleanupReport;
+    return checked;
+  }
   if (checked.ran && tree && (await integrity.snapshot(executionRecord.worktree, git, locks)).tree !== tree) {
     Object.assign(checked, {
       passed: false,
@@ -152,6 +170,16 @@ async function runCheck(runContext: RunContext, running: visitScope.Running): Pr
     });
   }
   return checked;
+}
+
+// What a Check's run leaves as outputs. Evidence is one only when it passed (N9); a failing pass drops an earlier
+// pass's evidence, so nothing reads a pass the last one contradicts.
+function keepOutputs(executionRecord: record.ExecutionRecord, actionIdentity: marker.ActionIdentity, checked: Checked) {
+  if (checked.passed && checked.evidence)
+    visitScope.recordOutput(executionRecord, actionIdentity, { evidence: checked.evidence });
+  else if (!checked.passed) delete visitScope.outputOf(executionRecord, actionIdentity)?.value.evidence;
+  if (checked.outputs) visitScope.recordOutput(executionRecord, actionIdentity, checked.outputs);
+  if (checked.cleanup) visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: checked.cleanup });
 }
 
 // The Check signal and what the recovery Brief and the Terminal Reason read of its run. `recoverable: false` on the
@@ -164,7 +192,8 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
     state: checked.passed ? 'passed' : 'failed',
     tree: checked.tree ?? null,
   };
-  if (action.reuse === 'tree' && checked.ran) {
+  // A pass whose command may still be writing is not a pass of the tree it read.
+  if (action.reuse === 'tree' && checked.ran && checked.cleanup?.confirmed !== false) {
     stateDatabase.saveCheckResult(executionRecord.commonDir, {
       tree: signal.tree!,
       command: checked.evidence!.command,
@@ -180,12 +209,7 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
     failure: checked.failure ?? null,
     recoverable: !checked.passed && !!checked.recoverable && action.recoverable !== false,
   };
-  // Evidence is an output only when it passed (N9); a failing pass drops an earlier pass's evidence, so nothing reads a
-  // pass the last one contradicts.
-  if (checked.passed && checked.evidence)
-    visitScope.recordOutput(executionRecord, actionIdentity, { evidence: checked.evidence });
-  else if (!checked.passed) delete visitScope.outputOf(executionRecord, actionIdentity)?.value.evidence;
-  if (checked.outputs) visitScope.recordOutput(executionRecord, actionIdentity, checked.outputs);
+  keepOutputs(executionRecord, actionIdentity, checked);
   return signal;
 }
 
@@ -205,6 +229,7 @@ export async function check(runContext: RunContext, running: visitScope.Running)
     claim,
     checks: visitScope.resolverChecks([], [signal]),
     retries: {},
+    cleanup: checked.cleanup,
   });
   return effects.saveResolution(runContext, {
     actionIdentity,
@@ -212,6 +237,7 @@ export async function check(runContext: RunContext, running: visitScope.Running)
     resolution: { reason: checked.reason ?? null, signal, output: output ?? null, ...resolution },
     fields: {
       check: action.id,
+      cleanup: checked.cleanup,
       signals: {
         harnessResult: { status: result.status },
         claim,

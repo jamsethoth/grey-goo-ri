@@ -24,6 +24,7 @@ export interface Repo {
   branches: Map<string, string>;
   origin: Map<string, string>;
   tracking: Map<string, string>;
+  refs: Map<string, string>;
   worktrees: Worktree[];
 }
 export interface Commit {
@@ -96,7 +97,7 @@ export function refs(store: Store) {
   };
   const commitOf = (repo: Repo, rev: string) => {
     const tracked = rev.startsWith('origin/') ? repo.tracking.get(rev.slice(7)) : undefined;
-    const sha = repo.branches.get(rev) ?? tracked ?? rev;
+    const sha = repo.branches.get(rev) ?? repo.refs.get(rev) ?? tracked ?? rev;
     if (!store.commits.has(sha)) throw fail(`fatal: bad revision '${rev}'`);
     return sha;
   };
@@ -120,9 +121,9 @@ export function refs(store: Store) {
       .filter((sha) => of.has(sha))
       .sort((left, right) => store.commit(right).order - store.commit(left).order)[0] as string;
   };
-  // The trees a branch diff compares: where HEAD left base, and HEAD.
-  const sinceBase = (place: Place, base: string) => {
-    const head = headOf(place);
+  // The trees a branch diff compares: where `until` left base, and `until`.
+  const sinceBase = (place: Place, base: string, until = 'HEAD') => {
+    const head = resolve(place, until);
     return {
       from: store.tree(store.commit(mergeBase(commitOf(place.repo, base), head)).tree),
       to: store.tree(store.commit(head).tree),

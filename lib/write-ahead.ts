@@ -61,6 +61,13 @@ export function openIntents(executionRecord: record.ExecutionRecord): WriteAhead
   return executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent' && !done.has(entry.actionMarker));
 }
 
+// The ref and commit an unfinished rescue intends. Its intent comes before its ref, so a caller that could run before
+// the ref was made asks git whether it holds that commit.
+export const openRescue = (executionRecord: record.ExecutionRecord): { ref: string; commit: string } | null => {
+  const open = openIntents(executionRecord).find((entry) => entry.effect === 'rescue');
+  return open ? (open.payload as { ref: string; commit: string }) : null;
+};
+
 // The evidence of the last commit gg made, or undefined before its first: the branch must still be at its sha.
 export const lastCommit = (executionRecord: record.ExecutionRecord): WriteAheadEntry | undefined =>
   executionRecord.writeAheadLog.findLast(

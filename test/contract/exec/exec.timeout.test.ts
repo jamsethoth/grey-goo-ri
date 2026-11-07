@@ -278,6 +278,38 @@ test(
   },
 );
 
+// The command ends with its group empty, leaving a descendant the watcher saw in a session of its own. That descendant
+// sends cleanup through its listing, and by the time that answers the group's number may name another process's group,
+// so a group found gone is never signalled again.
+test('a finished command whose group is already gone gets no group kill', POSIX_CASE, async (t) => {
+  const pidFile = join(scratch, 'gone-group.pid');
+  const midFile = join(scratch, 'gone-group-mid.pid');
+  const goFile = join(scratch, 'gone-group.go');
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const signalled: [number, string | number | undefined][] = [];
+  const realKill = process.kill.bind(process);
+  t.mock.method(process, 'kill', (pid: number, signal?: string | number) => {
+    signalled.push([pid, signal]);
+    return realKill(pid, signal);
+  });
+  let seen: commandCleanup.Seen | undefined;
+  const running = exec.runShell(
+    childScripts.nodeCommand(t, childScripts.ORPHAN_MIDDLE, midFile, goFile, childScripts.LONG_LIVED, pidFile),
+    timedOutShell.shellOptions({
+      timeoutMs: 60_000,
+      signal: timedOutShell.noClock(),
+      onWatch: (watched) => (seen = watched),
+    }),
+  );
+  await waitFor(() => pidIn(pidFile) > 0 && !!seen?.has(pidIn(pidFile)), t.signal);
+  writeFileSync(goFile, '');
+  const result = await running;
+  assert.equal(result.code, 0, result.output);
+  const groupKills = signalled.filter(([pid, signal]) => pid < 0 && signal === 'SIGKILL');
+  assert.deepEqual(groupKills, []);
+  await waitFor(() => !alive(pidIn(pidFile)), t.signal); // the descendant it saw is still killed
+});
+
 // The watcher's ps never answers, and the command ends once that ps has started. runShell must let go of it, so the
 // process that called runShell can exit, and kill it rather than leave it running. Its own child holds its output
 // pipes open after it is killed, as a ps stalled in the kernel would: killing it alone does not let the caller go.

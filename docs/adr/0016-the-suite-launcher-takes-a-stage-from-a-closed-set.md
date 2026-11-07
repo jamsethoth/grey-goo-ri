@@ -34,7 +34,7 @@ them. The rule's prefix is unchanged; its justification and examples name `check
 
 Amended 2026-11-03 (the coverage ratchet): the closed set adds `coverage` and `coverage update`.
 `node scripts/run-suite.mjs coverage` runs `test/unit/` alone, with node's built-in coverage over `lib/` (every module,
-loaded or not, minus `lib/exec.ts`, `lib/git.ts`, `lib/process-tree.ts` and `lib/containment.ts`, which `test/unit/` may not
+loaded or not, minus `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/process-tree.ts` and `lib/containment.ts`, which `test/unit/` may not
 reach), writes
 `coverage/lcov.info`, and compares the line and function percentages with `coverage-baseline.json`'s figures for the
 running platform. A fall fails, and so does a rise not yet recorded, so the figures only climb; `coverage update` records

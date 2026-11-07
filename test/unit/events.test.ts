@@ -158,6 +158,7 @@ const ACTION_EVENT_KEYS = [
   'retryAfterMs',
   'failureClass',
   'error',
+  'cleanup',
 ];
 
 test('an action event carries schema version 2 and every required field', (t) => {
@@ -233,14 +234,14 @@ test('an Event carries schemaVersion and time', (t) => {
   assert.ok(!Number.isNaN(Date.parse(event.time)), event.time);
 });
 
-const OPTIONAL_KEYS = ['check', 'integrityViolations', 'retryAfterMs', 'failureClass', 'error'];
+const OPTIONAL_KEYS = ['check', 'integrityViolations', 'retryAfterMs', 'failureClass', 'error', 'cleanup'];
 
 test('an agent Action Event declares every field, null where it was not given', () => {
   const event: Record<string, unknown> = events.actionEvent(actionFields());
   assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...agentRequired, ...OPTIONAL_KEYS]);
   assert.deepEqual(
     OPTIONAL_KEYS.map((key) => event[key]),
-    [null, null, null, null, null],
+    [null, null, null, null, null, null],
   );
 });
 
@@ -250,7 +251,7 @@ test('a deterministic Action Event declares every field of its shape', () => {
   assert.deepEqual(Object.keys(event), ['type', ...required, 'agent', ...OPTIONAL_KEYS]);
   assert.deepEqual(
     ['agent', ...OPTIONAL_KEYS].map((key) => event[key]),
-    [false, null, null, null, null, null],
+    [false, null, null, null, null, null, null],
   );
 });
 

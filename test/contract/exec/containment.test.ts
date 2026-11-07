@@ -62,3 +62,21 @@ test('a console host that started before the job was set up stays outside it', o
   assert.deepEqual(job.members().sort(ascending), held);
   assert.deepEqual(job.leftovers(shellPid).sort(ascending), held);
 });
+
+test('describe names a running process by its start time and command line', options.WIN_CASE, async (t) => {
+  const kernel32 = containment.openKernel32();
+  const { shellPid } = await shellWithSleeper(t, kernel32);
+  const named = containment.describe(kernel32, shellPid);
+  assert.equal(named.pid, shellPid);
+  assert.match(named.created ?? '', /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(named.commandLine ?? '', /cmd\.exe/);
+});
+
+test('describe of a pid that is gone, or with no kernel32, names only the pid', options.WIN_CASE, () => {
+  assert.deepEqual(containment.describe(containment.openKernel32(), 0xfffffffc), {
+    pid: 0xfffffffc,
+    created: null,
+    commandLine: null,
+  });
+  assert.deepEqual(containment.describe(null, 7), { pid: 7, created: null, commandLine: null });
+});

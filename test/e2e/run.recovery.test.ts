@@ -143,7 +143,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   // Crashed after the extra is removed and the changed file deleted, before its rewrite.
   const crashing = integrity.createIntegrity(
     noted.git,
-    crashFs.crashFs(fixture.worktree, noted.reset, { op: 'rm', nth: 2, after: true }),
+    crashFs.crashFs(fixture.worktree, noted.reset, { op: 'rm', path: '.claude/settings.local.json', after: true }),
   );
   const seeded = await runFixture.seedExecution(fixture, { git: noted.git, integrity: crashing });
   assert.ok(!existsSync(join(fixture.worktree, '.claude', 'settings.local.json')), 'the crash came mid-restore');

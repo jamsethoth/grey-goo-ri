@@ -25,11 +25,14 @@ export function crashPoint(
     throw new CrashError(`crash ${point} ${actionMarker}`);
 }
 
-// A hold found inside an Action: a conflicting effect, a corrupt retry deadline, or a publish refused (`name`).
+// A hold found inside an Action: a conflicting effect, a corrupt retry deadline, a publish refused or a rescue that
+// cannot go on (`name`), with what its comment adds to the reason.
 export interface HoldEnding {
   next: 'hold';
   reason: string;
   name?: string;
+  advice?: string;
+  detail?: string;
 }
 // Another Execution's run stop, found while this one waited: in a backoff (`retrying`) or for the repo lock.
 export interface RunStoppedEnding {

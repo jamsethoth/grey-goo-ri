@@ -170,7 +170,7 @@ coverage stage fails when the line or function coverage of `lib/` under `test/un
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
 recorded, so the next change cannot spend the gain. `node scripts/run-suite.ts coverage update` records a rise; CI's
 failure message prints the other platform's figures to paste. The measured set is what a small test can reach: `lib/`
-without `lib/exec.ts`, `lib/git.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
+without `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
 them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command
 left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
 `lib/containment.ts`. A module no unit test loads still counts, at zero. The spec reporter prints each file's lines,
