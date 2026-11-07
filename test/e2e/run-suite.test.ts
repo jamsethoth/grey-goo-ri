@@ -38,8 +38,9 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
   let copyRoot = '';
   if (leaves)
     t.after(() => {
+      if (!copyRoot) return; // no copy was made, so a leak.pid in the working directory is not this case's
       processProbe.endProcessIn(join(copyRoot, 'leak.pid'));
-      rmSync(copyRoot, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
+      if (!process.env.GG_KEEP_TEMP) rmSync(copyRoot, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
     });
   const root = tempDirectory.tempDirectory(t, 'gg-run-suite-');
   copyRoot = root;
