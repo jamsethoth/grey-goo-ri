@@ -2,6 +2,7 @@
 // passes, and where it leaves: a stop's Terminal, or the Visit's Outcome through the Edge it takes.
 import { basename } from 'node:path';
 import * as agentAction from './agent-action.ts';
+import * as approvalAction from './approval-action.ts';
 import * as bounds from './bounds.ts';
 import * as checkAction from './check-action.ts';
 import * as checks from './checks.ts';
@@ -41,12 +42,12 @@ interface Ran {
   resolution: ActionResolution;
 }
 
-// Each Action kind (procedures.ACTION_KEYS) by its `do`; #119 builds await-approval.
-type BuiltKind = Exclude<procedures.ActionKind, 'await-approval'>;
-const KINDS: Record<BuiltKind, (runContext: RunContext, running: visitScope.Running) => Promise<ActionResolution>> = {
+// Each Action kind (procedures.ACTION_KEYS) by its `do`.
+const KINDS: Record<procedures.ActionKind, (runContext: RunContext, running: visitScope.Running) => Promise<ActionResolution>> = {
   agent: agentAction.agent,
   check: checkAction.check,
   ...effectActions.EFFECT_KINDS,
+  'await-approval': approvalAction.awaitApproval,
 };
 
 // Each input at Visit entry (S4, T6): the value from the latest Visit that produced any of its sources, with that
@@ -219,7 +220,7 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
       settled ??
       terminal.runStopped(runContext) ??
       bounds.capped(runContext) ??
-      (await KINDS[action.do as BuiltKind](runContext, { actionIdentity, action, state }));
+      (await KINDS[action.do](runContext, { actionIdentity, action, state }));
     // A run stop routed again from its saved result still stops the other Executions.
     if (resolution.row === 'run-stop' && runContext.runState)
       runContext.runState.stop ??= { failureClass: resolution.failureClass!, ticket: executionRecord.ticket };

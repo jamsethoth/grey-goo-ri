@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
+import * as github from '../../lib/github.ts';
 import * as exampleLayer from '../support/example-layer.ts';
+import * as fakeGh from '../support/fake-gh.ts';
 
 const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 
@@ -125,4 +127,62 @@ test('gg doctor accepts the shipped defaults once a harness is set', () => {
     text,
   );
   assert.equal(exitCode, 0);
+});
+
+const AWAIT_LABEL = 'gg:await:approve';
+const APPROVED_LABEL = 'gg:decide:approve:approved';
+const REJECTED_LABEL = 'gg:decide:approve:rejected';
+
+// The example with a Vertex that asks a human.
+function asking() {
+  const config = example();
+  config.procedures.approval = { actions: [{ id: 'ask', do: 'await-approval' }] };
+  config.flows.default.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: { end: 'needs-human' }, rejected: { end: 'needs-replan' } },
+  };
+  return config;
+}
+const repository = (...labels: string[]) => github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1, repoLabels: labels }).gh);
+
+test('gg doctor prints the Await and Decide Labels of a Vertex that asks, and each Decision routes', async () => {
+  const gh = repository(AWAIT_LABEL, APPROVED_LABEL, REJECTED_LABEL);
+  const { text, exitCode } = await doctor.doctor({ config: asking(), harnesses: { fake: {} }, gh, cwd: '/repo' });
+  assert.equal(exitCode, 0, text);
+  assert.ok(text.includes(`\n  approval labels: ${AWAIT_LABEL}, ${APPROVED_LABEL}, ${REJECTED_LABEL}\n`), text);
+  assert.ok(text.includes('\n    approved -> end needs-human\n'), text);
+  assert.ok(text.includes('\n    rejected -> end needs-replan\n'), text);
+  assert.ok(!text.includes('missing from the repository'), text);
+});
+
+test('gg doctor reports the labels a Flow can request that the repository lacks', async () => {
+  const gh = repository(AWAIT_LABEL);
+  const { text, exitCode } = await doctor.doctor({ config: asking(), harnesses: { fake: {} }, gh, cwd: '/repo' });
+  assert.equal(exitCode, 0, 'gg run creates them');
+  assert.ok(
+    text.includes(
+      `\nwarning: flows.default.ticket.vertices.approve: labels missing from the repository: ` +
+        `${APPROVED_LABEL}, ${REJECTED_LABEL}\n`,
+    ),
+    text,
+  );
+});
+
+test("gg doctor says when it cannot read the repository's labels", async () => {
+  const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
+  fake.fail({ matches: () => true, status: 502 });
+  const { text, exitCode } = await doctor.doctor({
+    config: asking(),
+    harnesses: { fake: {} },
+    gh: github.createGh(fake.gh),
+    cwd: '/repo',
+  });
+  assert.equal(exitCode, 0);
+  assert.match(text, /warning: could not read the repository's labels: /);
+});
+
+test('gg doctor reads no labels for a Flow that asks nobody', async () => {
+  const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
+  await doctor.doctor({ config: example(), harnesses: { fake: {} }, gh: github.createGh(fake.gh), cwd: '/repo' });
+  assert.deepEqual(fake.calls, []);
 });

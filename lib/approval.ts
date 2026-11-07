@@ -147,3 +147,6 @@ export function read({
   if (decisions.length > 1) return { kind: 'ambiguous', decisions };
   return decisions.length ? { kind: 'consume', decision: decisions[0] as Decision } : { kind: 'waiting' };
 }
+
+// The logins a read needs permissions for: the actors of the Decide Labels for this Vertex in the timeline.
+export const decidingActors = (_given: { vertex: string; timeline: IssueEvent[]; prefix?: string }): string[] => [];

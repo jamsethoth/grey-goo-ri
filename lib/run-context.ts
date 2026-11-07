@@ -72,7 +72,7 @@ export interface AdmissionGit {
 export interface Deps {
   gh: github.Gh;
   git: RunGit;
-  exec: Pick<exec.Exec, 'runShell'>;
+  exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed'>;
   locks?: locks.Locks;
   database?: record.StateDatabase;
   clock?: Clock;
@@ -169,7 +169,7 @@ export interface ExecutionOptions {
 export interface RunContext extends Omit<ExecutionOptions, 'deps'>, terminalReport.TerminalContext {
   gh: github.Gh;
   git: RunGit;
-  exec: Pick<exec.Exec, 'runShell'>;
+  exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed'>;
   locks: locks.Locks | undefined;
   database: record.StateDatabase;
   clock: Clock;

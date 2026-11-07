@@ -132,8 +132,13 @@ export function createExec({ kernel32 = containment.openKernel32() }: { kernel32
   return {
     run,
     runShell: (commandLine: string, options?: ShellOptions) => shell(kernel32, commandLine, options),
+    cleanupConfirmed,
   };
 }
+
+// Whether a later Run finds a held call's processes gone under the containment its cleanup recorded (L14).
+export const cleanupConfirmed = (containment: commandCleanup.CleanupContainment | undefined): boolean =>
+  commandCleanup.confirmedUnder(containment, processTree.groupHasMembers);
 
 // The process runner the entry point builds and passes down as `exec` (ADR 0019).
 export type Exec = ReturnType<typeof createExec>;

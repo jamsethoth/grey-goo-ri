@@ -8,8 +8,12 @@ import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
+import type * as commandCleanup from '../../lib/command-cleanup.ts';
+import * as locks from '../../lib/locks.ts';
 import * as run from '../../lib/run.ts';
 import * as epicRun from '../support/epic-run.ts';
+import type * as golden from '../support/golden.ts';
+import * as suiteRuns from '../support/suite-runs.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as failingGit from '../support/failing-git.ts';
@@ -412,4 +416,101 @@ test('an admission hold saves an admission stop that declares every field', asyn
   assert.equal(typeof admissionStop.terminalReasonText, 'string');
   assert.equal(typeof admissionStop.advice, 'string');
   assert.equal((await executionReads.loadTicket(fixture)).admissionStop, null, 'its Terminal retires it');
+});
+
+// A Run's Ticket whose green Check holds for cleanup, its first run only; its job's handle is this report's to close.
+function heldForCleanup(fixture: runFixture.RunFixture, order: string[]) {
+  const report = {
+    confirmed: false,
+    survivors: [],
+    reason: 'termination refused',
+    containment: { kind: 'job' },
+  } as unknown as commandCleanup.CleanupReport;
+  Object.defineProperty(report, 'closeJob', { value: () => order.push('job closed'), enumerable: false });
+  let held = false;
+  suiteRuns.editRuns(fixture, (ran) => {
+    if (held || ran.code !== 0) return ran;
+    held = true;
+    return { ...ran, cleanup: report };
+  });
+}
+
+test("a run closes an unconfirmed job's handle before it releases the ticket lock", async (t) => {
+  const fixture = runFixture.fixture(t);
+  const order: string[] = [];
+  heldForCleanup(fixture, order);
+  const given = locks.createLocks();
+  fixture.options.deps.locks = {
+    ...given,
+    release: async (lock) => {
+      order.push('lock released');
+      return given.release(lock);
+    },
+  };
+  const [result] = await run.runTarget(fixture.options);
+  assert.equal(result!.outcome, 'pending');
+  assert.deepEqual(order.slice(0, 2), ['job closed', 'lock released']);
+});
+
+test('a Pending Ticket ends its Run with no error, and a later Run resumes it through its dirty worktree', async (t) => {
+  const fixture = runFixture.fixture(t, { integrity: 'real', git: 'fake' });
+  heldForCleanup(fixture, []);
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(results[0]!.outcome, 'pending');
+
+  const later = await run.runTarget(fixture.options);
+  assert.equal(later[0]!.outcome, 'ready-for-qa', fixture.logs.join('\n'));
+});
+
+test('a Run creates the Flow\'s await and decide labels before it asks', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  const [result] = await run.runTarget(fixture.options);
+  assert.equal(result!.outcome, 'pending', fixture.logs.join('\n'));
+  for (const label of ['gg:await:approve', 'gg:decide:approve:approved', 'gg:decide:approve:rejected'])
+    assert.ok(fixture.gh.repoLabels.has(label), label);
+  assert.ok(fixture.gh.repoLabels.has('gg:await:cleanup'), 'and the label a cleanup hold asks with');
+  assert.ok(fixture.gh.labels.has('gg:await:approve'));
+});
+
+test('approvers reach the reader, and a malformed list fails preflight', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.approvers = 'some-login';
+  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
+    assert.match(err.message, /approvers must be a list of non-empty GitHub logins/);
+    return true;
+  });
+});
+
+test('an epic Run resumes a Pending sub-issue', async (t) => {
+  const fixture = runFixture.fixture(t, {
+    issues: epicRun.epicOf([TICKET]),
+    labels: ['gg:state:in-progress', 'gg:await:approve'],
+  });
+  fixture.options.target = epicRun.EPIC;
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  await assert.doesNotReject(run.runTarget(fixture.options));
+  const results = await run.runTarget(fixture.options);
+  assert.deepEqual(
+    results.map((result) => result.ticket),
+    [TICKET],
+    'the Await Label says the Ticket is healthy, though it reads as in progress',
+  );
 });

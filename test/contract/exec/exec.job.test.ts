@@ -611,3 +611,26 @@ test(
     await waitFor(() => !alive(pidIn(pidFile)), t.signal); // a child taskkill never reached fails at the case timeout
   },
 );
+
+// The Run that held an unconfirmed job closes its only handle as it ends the Ticket, so a later Run needs no helper to
+// ask: kill-on-close has ended what the job held (#245, L14).
+test("closing an unconfirmed job's handle ends what it holds, and a second close does nothing", WIN_CASE, async (t) => {
+  const { kernel32, members } = kernel32Doubles.refusedTermination();
+  t.after(() => members.forEach(processProbe.endProcess));
+  const pidFile = join(scratch, 'closed-handle.pid');
+  const result = await exec
+    .createExec({ kernel32 })
+    .runShell(nodeCommand(t, childScripts.DETACHED_CHILD, 'ignore', pidFile), { timeoutMs: 60_000 });
+  const pid = pidIn(pidFile);
+  assert.equal(result.cleanup.confirmed, false);
+  assert.equal(alive(pid), true, 'refused, it runs on');
+  result.cleanup.closeJob!();
+  await waitFor(() => !alive(pid), 'the job to end');
+  result.cleanup.closeJob!();
+  assert.deepEqual(Object.keys(result.cleanup), ['confirmed', 'survivors', 'reason', 'containment'], 'nothing to save');
+});
+
+test('a later Run takes a job as confirmed gone, and no containment never', () => {
+  assert.equal(exec.cleanupConfirmed({ kind: 'job' }), true);
+  assert.equal(exec.cleanupConfirmed({ kind: 'none' }), false);
+});

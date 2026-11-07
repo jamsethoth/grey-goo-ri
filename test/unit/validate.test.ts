@@ -674,3 +674,53 @@ test("the request's Procedure table lists exactly the keys of a Procedure and a 
 test("the request's Agent table lists exactly the keys an Agent accepts", () => {
   assert.deepEqual(requestTables.firstColumn('| Field | Meaning |'), [...validate.AGENT_KEYS].sort());
 });
+
+// The example's review Vertex asks a human instead: its Procedure ends in `extra` beside the Action `ask`.
+function askingConfig(ask: Record<string, unknown> = { id: 'ask', do: 'await-approval' }) {
+  const config = exampleLayer.config();
+  config.procedures.approval = { actions: [ask] };
+  config.flows.default.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: { end: 'needs-human' }, rejected: { end: 'needs-replan' } },
+  };
+  return config;
+}
+
+test("await-approval's decisions default to approved and rejected, and are the Procedure's Outcomes", () => {
+  const { flows, errors } = exampleLayer.check(askingConfig());
+  assert.deepEqual(errors, []);
+  assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['approved', 'rejected']);
+});
+
+test('a declared Decision that no route takes is an unrouted Outcome', () => {
+  const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['approved', 'deferred'] });
+  delete config.flows.default.ticket.routes['*'];
+  const { errors } = exampleLayer.check(config);
+  assert.ok(
+    errors.some(({ at, code }) => at === `${VERTICES}.approve` && code === 'unrouted-outcome'),
+    JSON.stringify(errors),
+  );
+});
+
+test('a failing Check before an await-approval gives failed beside the Decisions', () => {
+  const config = askingConfig();
+  config.procedures.approval!.actions.unshift({ id: 'gate', do: 'check', kind: 'command', command: 'test' });
+  const { flows, errors } = exampleLayer.check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['approved', 'rejected', 'failed']);
+});
+
+test('the Resolved Flow lists the Await and Decide Labels of a Vertex that asks, and none for one that does not', () => {
+  const { flows } = exampleLayer.check(askingConfig());
+  assert.deepEqual(flows.default.ticket.vertices.approve.approvalLabels, {
+    await: 'gg:await:approve',
+    decide: ['gg:decide:approve:approved', 'gg:decide:approve:rejected'],
+  });
+  assert.equal(flows.default.ticket.vertices.red.approvalLabels, null);
+});
+
+test('the Resolved Flow names the Await and Decide Labels under the configured prefix', () => {
+  const config = { ...askingConfig(), labelPrefix: 'x' };
+  const { flows } = exampleLayer.check(config);
+  assert.equal(flows.default.ticket.vertices.approve.approvalLabels?.await, 'x:await:approve');
+});

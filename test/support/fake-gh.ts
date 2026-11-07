@@ -30,6 +30,18 @@ export interface FakeComment {
   number: number;
 }
 
+// A label event on an issue, as `gh api repos/{owner}/{repo}/issues/<n>/events` lists it.
+export interface FakeEvent {
+  id: number;
+  event: 'labeled' | 'unlabeled';
+  created_at: string;
+  label: { name: string };
+  actor: { login: string };
+}
+
+// The login gg's own label edits are made under.
+export const GG_LOGIN = 'gg-bot';
+
 export interface FakePullRequest {
   number: number;
   state: string;
@@ -78,6 +90,24 @@ export function ghError(
 // What the fake holds, which its answers read and change.
 function ghState(branch: string, repoLabels: string[]) {
   const calls: GhCall[] = [];
+  // Each issue's label events, in the order they happened, one second apart, as GitHub's REST API gives them.
+  const events = new Map<number, FakeEvent[]>();
+  const eventsOf = (issue: number) => {
+    if (!events.has(issue)) events.set(issue, []);
+    return events.get(issue) as FakeEvent[];
+  };
+  const clock = { count: 0 };
+  const recordEvent = (issue: number, event: 'labeled' | 'unlabeled', name: string, login: string) => {
+    clock.count += 1;
+    eventsOf(issue).push({
+      id: 900_000 - clock.count,
+      event,
+      created_at: new Date(Date.parse('2026-10-15T00:00:00Z') + clock.count * 1000).toISOString(),
+      label: { name },
+      actor: { login },
+    });
+  };
+  const permissions = new Map<string, string>();
   const comments: FakeComment[] = [];
   const failures: (GhFailure & { spent?: boolean })[] = [];
   // Each issue's labels on GitHub, as issue edits leave them and issue view reports them.
@@ -98,7 +128,20 @@ function ghState(branch: string, repoLabels: string[]) {
     comments.push({ id, body, created_at: '2026-10-15T00:00:00Z', target, number: issue });
     return id;
   };
-  return { branch, calls, comments, failures, labelsOf, available: new Set(repoLabels), prs, prOf, post };
+  return {
+    branch,
+    calls,
+    comments,
+    failures,
+    labelsOf,
+    available: new Set(repoLabels),
+    prs,
+    prOf,
+    post,
+    eventsOf,
+    recordEvent,
+    permissions,
+  };
 }
 type GhState = ReturnType<typeof ghState>;
 type HeadOf = (branch: string) => Promise<string | null>;
@@ -143,6 +186,14 @@ function answerApi(state: GhState, args: string[], input: string | undefined) {
       { id, html_url: `https://github.com/o/r/issues/${issue}#issuecomment-${id}` },
     );
   }
+  const eventsAt = args.join(' ').match(/issues\/(\d+)\/events/);
+  if (eventsAt) return JSON.stringify([state.eventsOf(Number(eventsAt[1]))]);
+  const permissionOf = args.join(' ').match(/collaborators\/([^/\s]+)\/permission/);
+  if (permissionOf) {
+    const permission = state.permissions.get(permissionOf[1] as string);
+    if (!permission) throw ghError(args, { status: 404, body: { message: 'Not Found' } });
+    return JSON.stringify({ permission });
+  }
   if (args.at(-1)?.includes('/labels')) return JSON.stringify([[...state.available].map((name) => ({ name }))]);
   const issue = Number(args.join(' ').match(/issues\/(\d+)\/comments/)?.[1]);
   return JSON.stringify([state.comments.filter((comment) => comment.number === issue)]);
@@ -158,8 +209,15 @@ function answerIssue(state: GhState, args: string[]) {
   const labels = state.labelsOf(issue);
   args.forEach((arg, i) => {
     const label = args[i + 1] as string;
-    if (arg === '--add-label') labels.add(named(state.available, label) ?? label);
-    if (arg === '--remove-label') labels.delete(named(labels, label) as string);
+    if (arg === '--add-label') {
+      const name = named(state.available, label) ?? label;
+      if (!labels.has(name)) state.recordEvent(issue, 'labeled', name, GG_LOGIN);
+      labels.add(name);
+    }
+    if (arg === '--remove-label' && named(labels, label)) {
+      state.recordEvent(issue, 'unlabeled', named(labels, label) as string, GG_LOGIN);
+      labels.delete(named(labels, label) as string);
+    }
   });
   return '';
 }
@@ -220,6 +278,17 @@ export function fakeGh({
     repoLabels: state.available,
     pr: () => state.prs.get(branch) ?? null,
     fail: (failure: GhFailure) => state.failures.push({ ...failure }),
+    // Each actor's collaborator permission; an actor it does not hold reads as a 404, as GitHub answers a non-collaborator.
+    permissions: state.permissions,
+    // What a human does on GitHub, which leaves an event gg reads back: the fixture Ticket by default.
+    humanAddsLabel: (label: string, login: string, issue = ticket) => {
+      state.labelsOf(issue).add(label);
+      state.recordEvent(issue, 'labeled', label, login);
+    },
+    humanRemovesLabel: (label: string, login: string, issue = ticket) => {
+      state.labelsOf(issue).delete(label);
+      state.recordEvent(issue, 'unlabeled', label, login);
+    },
   };
 }
 

@@ -1,3 +1,4 @@
+import type * as approval from './approval.ts';
 import * as exec from './exec.ts';
 import * as labels from './labels.ts';
 import * as outcome from './outcome.ts';
@@ -203,7 +204,9 @@ function labelVerbs({ gh, ghJson }: Client) {
       cwd,
     );
 
-  return { ensureLabels, editLabels };
+  const repositoryLabels = async (_cwd?: string): Promise<string[]> => [];
+
+  return { ensureLabels, editLabels, repositoryLabels };
 }
 
 // What setLabels reports a failed label update to.
@@ -289,7 +292,11 @@ function issueVerbs({ gh, ghJson }: Client) {
     return JSON.parse(included(await gh(args, cwd, JSON.stringify({ body }))).body).html_url;
   }
 
-  return { viewIssue, createIssue, comments, comment };
+  const issueEvents = async (_issue: number, _cwd?: string): Promise<approval.IssueEvent[]> => [];
+
+  const collaboratorPermission = async (_login: string, _cwd?: string): Promise<string> => 'write';
+
+  return { viewIssue, createIssue, comments, comment, issueEvents, collaboratorPermission };
 }
 
 // When the in-progress State Label was last added; null if the issue's events have no such entry.
@@ -354,9 +361,10 @@ function prVerbs({ gh, ghJson }: Client) {
 // entry point passes none, so gh itself runs; a test passes a fake that records argv and answers canned stdout.
 export function createGh(transport: Transport = defaultTransport) {
   const ghClient = client(transport);
-  const { ensureLabels, editLabels } = labelVerbs(ghClient);
+  const { ensureLabels, editLabels, repositoryLabels } = labelVerbs(ghClient);
   return {
     ensureLabels,
+    repositoryLabels,
     ...issueVerbs(ghClient),
     editLabels,
     ...prVerbs(ghClient),

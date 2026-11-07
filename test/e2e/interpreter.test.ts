@@ -1,13 +1,16 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.ts';
+import { laterRun } from '../support/approval-flow.ts';
 import { actionEvent, actionMarker, intents, loadTicket } from '../support/execution-reads.ts';
+import { firstVisitWith } from '../support/first-visit.ts';
+import * as keys from '../support/keys.ts';
 import { FIRST_VISIT, TDD_VERTICES, terminalReasonOf } from '../support/golden-run.ts';
 import { contendRepoLock, onLockedGit } from '../support/repo-lock-contention.ts';
 import { ticketComments } from '../support/review-flow.ts';
@@ -286,4 +289,61 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.ok(fakeGhModule.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');
   assert.ok(ticketComments(fixture).at(-1)!.body.startsWith('### gg: needs-human'));
   assert.ok(writes[1].args.join(' ').includes('--add-label gg:state:needs-human'), 'the needs-human label');
+});
+
+// A green call held for cleanup, on real git with the real integrity, whose survivor writes before the later Run looks.
+async function heldGreen(t: TestContext) {
+  const greenCall = keys.responseKey('green', 1, 'green', 1);
+  const fixture = await golden.fixture(t, {
+    integrity: 'real',
+    git: 'real',
+    responses: firstVisitWith({
+      [greenCall]: {
+        ...golden.firstVisitResponses[greenCall],
+        cleanup: {
+          confirmed: false,
+          survivors: [{ pid: 4242, created: null, commandLine: 'node writer.js', error: 'still running' }],
+          reason: 'termination refused',
+          containment: { kind: 'group', pgid: 4242 },
+        },
+      },
+    }),
+  });
+  return fixture;
+}
+
+test('a workflow file a survivor changed is an integrity violation on resume', async (t) => {
+  const fixture = await heldGreen(t);
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  mkdirSync(join(fixture.worktree, '.github', 'workflows'), { recursive: true });
+  writeFileSync(join(fixture.worktree, '.github', 'workflows', 'ci.yml'), 'name: changed\n');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.outcome, 'needs-human');
+  const saved = await loadTicket(fixture);
+  assert.match(saved.terminalReason!.text, /broke an Integrity Assertion on protected/);
+  assert.equal(existsSync(join(fixture.worktree, '.github', 'workflows', 'ci.yml')), false, 'rolled back');
+});
+
+test('an ignored Protected File a survivor changed is an integrity violation on resume', async (t) => {
+  const fixture = await heldGreen(t);
+  mkdirSync(join(fixture.worktree, '.claude'), { recursive: true });
+  writeFileSync(join(fixture.worktree, '.claude', '.gitignore'), '*\n');
+  const local = join(fixture.worktree, '.claude', 'settings.local.json');
+  writeFileSync(local, '{"owner":true}\n');
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  writeFileSync(local, '{"survivor":true}\n');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.outcome, 'needs-human');
+  const saved = await loadTicket(fixture);
+  assert.match(saved.terminalReason!.text, /broke an Integrity Assertion on protected/);
+  assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', 'restored from the baseline');
+});
+
+test('a held call whose worktree is unchanged goes on over real git', async (t) => {
+  const fixture = await heldGreen(t);
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+  assert.deepEqual([...fixture.gh.labels], ['gg:state:ready-for-qa']);
 });

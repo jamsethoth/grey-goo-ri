@@ -113,7 +113,7 @@ export const isAlive = (pid: number) => {
 };
 
 // Whether a signal to the group finds a member: a group with none is gone, so every inheriting child is too (L14).
-const groupHasMembers = (pgid: number) => {
+export const groupHasMembers = (pgid: number) => {
   try {
     process.kill(-pgid, 0);
     return true;

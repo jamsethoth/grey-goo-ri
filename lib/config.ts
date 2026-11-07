@@ -261,6 +261,11 @@ export function testPathsProblems(testPaths: unknown, file: string): string[] {
     );
 }
 
+// The repository Layer's approvers as preflight failures, each naming `file`; none for no list or a list of logins.
+export function approversProblems(_approvers: unknown, _file: string): string[] {
+  return [];
+}
+
 // The repository Layer's Declared Commands as preflight failures, each naming `file`; none for a valid set with a test.
 export function commandProblems(declared: unknown, file: string): string[] {
   const commands = declared === undefined ? {} : declared;

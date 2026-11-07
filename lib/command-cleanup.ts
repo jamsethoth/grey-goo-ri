@@ -58,6 +58,12 @@ export function cleanupReport(containment: CleanupContainment, cleanup: Cleanup)
   return { confirmed, survivors, reason: confirmed ? null : reasonFor(cleanup), containment };
 }
 
+// Whether a later Run finds a held call's processes gone under its containment (L14).
+export const confirmedUnder = (
+  _containment: CleanupContainment | undefined,
+  _groupHasMembers: (pgid: number) => boolean,
+): boolean => false;
+
 const namedProcess = ([pid, , started, , commandLine]: ProcessRow): NamedProcess => ({
   pid,
   created: started || null,

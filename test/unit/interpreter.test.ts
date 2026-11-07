@@ -636,48 +636,6 @@ const UNCONFIRMED: commandCleanup.CleanupReport = {
   containment: { kind: 'job' },
 };
 
-test('an exit-0 Check with unconfirmed cleanup holds before the commit', async (t) => {
-  const fixture = await golden.fixture(t);
-  editRuns(fixture, (run) => (run.code === 0 ? { ...run, cleanup: UNCONFIRMED } : run));
-  const result = await interpreter.runExecution(fixture.options);
-  assert.equal(result.held, true);
-  assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
-  assert.equal(intents(fixture.executionRecord, 'commit').length, 1, "only red's commit");
-  assert.deepEqual(actionEvent(fixture, 'green', 'test')!.cleanup, UNCONFIRMED);
-  assert.deepEqual(
-    fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'test')!.value
-      .cleanup,
-    UNCONFIRMED,
-  );
-  const comment = fixture.gh.comments.at(-1)!.body;
-  assert.match(comment, /4242/);
-  assert.match(comment, /node writer\.js/);
-  assert.match(comment, /termination refused/);
-  assert.equal(fixture.executionRecord.activity.busy, true, 'the worktree is not marked idle');
-});
-
-test('a successful agent response with unconfirmed cleanup holds before its Checks', async (t) => {
-  const fixture = await golden.fixture(t, {
-    responses: firstVisitWith({
-      [keys.responseKey('green', 1, 'green', 1)]: {
-        ...golden.firstVisitResponses[keys.responseKey('green', 1, 'green', 1)],
-        cleanup: UNCONFIRMED,
-      },
-    }),
-  });
-  const result = await interpreter.runExecution(fixture.options);
-  assert.equal(result.held, true);
-  assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
-  assert.equal(actionEvent(fixture, 'green', 'test'), undefined, 'its Check never ran');
-  assert.deepEqual(actionEvent(fixture, 'green', 'green')!.cleanup, UNCONFIRMED);
-  assert.deepEqual(
-    fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'green')!.value
-      .cleanup,
-    UNCONFIRMED,
-  );
-  assert.equal(fixture.executionRecord.activity.busy, true, 'the worktree is not marked idle');
-});
-
 test("an agent call's confirmed cleanup is recorded in its Event and its output", async (t) => {
   const fixture = await golden.fixture(t);
   await interpreter.runExecution(fixture.options);
@@ -708,19 +666,6 @@ test("unconfirmed cleanup keeps the worktree busy through the hold comment's bac
   };
   const runState = { stop: null, remoteNotBefore: fixture.clock.now() + 60_000 };
   const result = await interpreter.runExecution({ ...fixture.options, runState });
-  assert.equal(result.held, true);
+  assert.equal(result.outcome, 'pending');
   assert.deepEqual(during, [true], 'still busy while the comment waits');
-});
-
-test('a Harness result that reports no cleanup holds', async (t) => {
-  const greenCall = keys.responseKey('green', 1, 'green', 1);
-  const fixture = await golden.fixture(t, {
-    responses: firstVisitWith({
-      [greenCall]: { ...golden.firstVisitResponses[greenCall], result: { cleanup: undefined } },
-    }),
-  });
-  const result = await interpreter.runExecution(fixture.options);
-  assert.equal(result.held, true);
-  assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
-  assert.match(fixture.executionRecord.terminalReason!.text, /the Harness reported no cleanup/);
 });

@@ -40,5 +40,7 @@ export function addSuite({
     if (!checksSum || readFileSync(file, 'utf8').includes('a + b')) return ran(0, GREEN_OUTPUT);
     return ran(1, GREEN_FAIL_OUTPUT);
   };
-  return { runShell } as runContext.Deps['exec'];
+  // Every process is gone by a later Run under a containment gg can check; a case says otherwise for a survivor.
+  const cleanupConfirmed = (containment: commandCleanup.CleanupContainment) => containment.kind !== 'none';
+  return { runShell, cleanupConfirmed } as runContext.Deps['exec'];
 }

@@ -187,3 +187,13 @@ test('an Await Label removal is never the request', () => {
   const read = readTimeline('only-removed-request');
   assert.deepEqual(read, { kind: 'missing' });
 });
+
+test('a Decide Label for an Outcome the request does not declare is not a Decision', () => {
+  const result = readTimeline('one-decision', { decisions: ['rejected'] });
+  assert.deepEqual(result, { kind: 'waiting' });
+});
+
+test('the actors a read needs permissions for are those of Decide Labels for its Vertex', () => {
+  assert.deepEqual(approval.decidingActors({ vertex: 'qa-approval', timeline: timeline('one-decision') }), ['owner']);
+  assert.deepEqual(approval.decidingActors({ vertex: 'another', timeline: timeline('one-decision') }), []);
+});
