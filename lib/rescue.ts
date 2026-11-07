@@ -87,8 +87,8 @@ async function atBaseline(
 
 // What the rescue is to make, read before its intent, or null when the worktree equals the baseline, with nothing to
 // rescue (N4). A reset touches only what gg's records prove the agent's (R5d): the agent cannot have moved HEAD or the
-// index without an Integrity Violation, so that holds. An unmerged index gets no further than a snapshot, the one of
-// the Check or call before this or the first one here, and that fault resets nothing.
+// index without an Integrity Violation, so that holds. An unmerged index never reaches a reset: a snapshot faults on
+// it, or, once a rescue has begun, the ref's verification or the reset's own snapshot holds.
 async function planRescue(
   runContext: RunContext,
   { actionIdentity, baseline, failure }: Rescuing,
