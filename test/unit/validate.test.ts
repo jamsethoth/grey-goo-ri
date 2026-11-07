@@ -326,12 +326,10 @@ for (const [name, form] of BLANK_BREAKS) {
 test("a configuration without a Flow names the request's key tables, not gg init", () => {
   const config = exampleLayer.config();
   delete config.flows;
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    {
-      at: 'flows',
-      code: 'no-flow-declared',
-    },
-  ]);
+  const { errors } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'flows', code: 'no-flow-declared' }]);
+  assert.match(errors[0].message, /docs\/requests\/node-harness-dag\.md tables the keys of a Flow/);
+  assert.doesNotMatch(errors[0].message, /gg init/);
 });
 
 test('a repeated Action id is an error', () => {

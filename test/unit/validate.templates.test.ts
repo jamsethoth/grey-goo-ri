@@ -97,6 +97,7 @@ test('a template that cannot be read is an error at each Vertex rendering it', (
   assert.deepEqual(exampleLayer.firedRules(errors), [
     { at: `${VERTICES}.reviewer (procedure review).actions[0]`, code: 'template-unreadable' },
   ]);
+  assert.match(errors[0].message, /^brief review\.md: review\.md cannot be read/);
 });
 
 test('a Brief reads the base branch as baseBranch', () => {
