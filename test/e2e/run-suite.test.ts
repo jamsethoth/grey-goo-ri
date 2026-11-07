@@ -81,7 +81,7 @@ function leakyCopy(t: TestContext, { fails = false } = {}) {
 import { writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 test('leaves a process running', () => {
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000) // sample-leftover'], {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000) // sample-leftover-café'], {
     detached: true,
     stdio: 'ignore',
   });
@@ -168,6 +168,27 @@ test(
   },
 );
 
+// The stage's first step is a process in the job too, and its exit code, unlike the test runner's, is not the census's.
+test('a first step that fails and leaves a process keeps its code, and the census names it', options.WIN_CASE, (t) => {
+  let pidFile = '';
+  t.after(() => processProbe.endProcessIn(pidFile));
+  const copy = launcherCopy(t);
+  pidFile = join(copy.root, 'leak.pid');
+  writeFileSync(
+    join(copy.root, 'node_modules', 'prettier', 'bin', 'prettier.cjs'),
+    `const child = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], {
+  detached: true,
+  stdio: 'ignore',
+});
+require('node:fs').writeFileSync('leak.pid', String(child.pid));
+process.exit(4);
+`,
+  );
+  const result = copy.run(['fast']);
+  assert.equal(result.status, 4, result.stderr);
+  assert.ok(result.stderr.includes(`pid ${processProbe.pidIn(pidFile)}: `), result.stderr);
+});
+
 // Run with node:ffi off, so it says the same on every platform: off Windows there is no boundary at all.
 test('a stage with no boundary says the census did not run, and passes on its tests alone', (t) => {
   const result = launcherCopy(t).run(['fast'], ['--no-experimental-ffi']);
@@ -188,7 +209,7 @@ for (const [stage, argv] of [
       result.stderr.includes(`pid ${processProbe.pidIn(copy.pidFile)}: `),
       `the leftover's pid is not named: ${result.stderr}`,
     );
-    assert.match(result.stderr, /setTimeout\(\(\) => \{\}, 600000\) \/\/ sample-leftover/);
+    assert.match(result.stderr, /setTimeout\(\(\) => \{\}, 600000\) \/\/ sample-leftover-café/);
   });
 
   test(`the ${stage} stage that leaves nothing says its census found nothing`, options.WIN_CASE, (t) => {

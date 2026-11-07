@@ -81,7 +81,7 @@ test('the launcher loads from lib/ only the job calls and their one import, and 
   const source = await readFile(launcherUrl, 'utf8');
   const loaded = [...source.matchAll(/import\('\.\.\/lib\/([^']+)'\)/g)].map((match) => match[1]);
   assert.deepEqual(loaded.sort(), ['command-cleanup.ts', 'containment.ts']);
-  assert.doesNotMatch(source, /^import (?!type ).*\.\.\/lib\//m);
+  assert.doesNotMatch(source, /^import (?!type )[^;]*\.\.\/lib\//m);
 });
 
 test('the check stage takes no boundary names', () => {

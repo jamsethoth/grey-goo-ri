@@ -193,6 +193,11 @@ and ended, and the stage fails. A clean stage prints `census: no process left`. 
 Linux until #289, or where `node:ffi` or the job is refused, prints `census did not run: <why>` and stands on its tests.
 
 Only what this run started is in the job, so what another suite on the machine leaves behind cannot be reported here.
+A process started while the names are being read is ended but not named; whatever started it is.
+
+#285's two accepted gaps, a late detached process on the no-job path and a child that has not yet published its pid, get
+no exception (owner, 2026-11-06). Forced, each reaches a census, and an exception by command line also hid a real leak. A
+stage they fail is classified under rule 1 like any other.
 
 Coverage has no census. Its one process runs `test/unit/`, which may not reach process boundaries, so it has nothing to
 find. The check stage runs no tests.

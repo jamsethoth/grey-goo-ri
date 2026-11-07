@@ -213,9 +213,15 @@ async function untilGone(strays: Strays, ms: number, each: (left: commandCleanup
 function commandLines(system32: string, pids: number[]) {
   const filter = pids.map((pid) => `ProcessId=${pid}`).join(' OR ');
   const each = '"$($_.ProcessId) $($_.CommandLine)"';
+  const utf8 = '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)';
   const { stdout } = spawnSync(
     `${system32}\\WindowsPowerShell\\v1.0\\powershell.exe`,
-    ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process -Filter '${filter}' | % { ${each} }`],
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `${utf8}; Get-CimInstance Win32_Process -Filter '${filter}' | % { ${each} }`,
+    ],
     { encoding: 'utf8', windowsHide: true, timeout: 60_000 },
   );
   const rows = (stdout ?? '').split(/\r?\n/).map((line) => /^(\d+) (.+)$/.exec(line));
