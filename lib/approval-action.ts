@@ -15,7 +15,7 @@ import * as writeAhead from './write-ahead.ts';
 
 type Running = visitScope.Running;
 type PendingInstance = approval.PendingInstance;
-type Step = 'retire' | 'await' | 'comment' | 'consume';
+type ReportAction = 'retire' | 'await' | 'comment' | 'consume';
 
 // What a consumed Decision's intent saves before its label is removed, so a resume completes it without reading the
 // timeline, whose unlabeled event gg itself made could no longer show it (request 3.5).
@@ -25,14 +25,14 @@ export interface Consumption extends pendingReport.LabelPayload {
 
 const namesOf = (runContext: RunContext) => labels.labelsFor(runContext.labelPrefix ?? labels.DEFAULT_PREFIX);
 
-// One step of a request, an Action of its own outside the Procedure: `<action>.<step>.<request number>`, which no
+// One of a request's own Actions, outside the Procedure: `<action>.<part>.<request number>`, which no
 // declared Action id can name, since an id holds no "." (3.3). The number is in the name, not the Attempt: an Action's
 // remote retry budget is kept by its name, and each request has its own.
-const stepOf = ({ actionIdentity }: Running, instance: PendingInstance, step: Step) => ({
+const reportActionOf = ({ actionIdentity }: Running, instance: PendingInstance, part: ReportAction) => ({
   vertex: actionIdentity.vertex,
   visit: actionIdentity.visit,
   procedure: null,
-  action: `${actionIdentity.action}.${step}.${instance.nonce}`,
+  action: `${actionIdentity.action}.${part}.${instance.nonce}`,
   recovery: actionIdentity.recovery,
 });
 
@@ -66,37 +66,37 @@ function requestBody(runContext: RunContext, running: Running, instance: Pending
       decideLabels: procedures.decisionsOf(running.action).map((decision) => names.decide(vertex, decision)),
       replaces: Number(instance.nonce) > 1,
     },
-    runContext.markerOf(stepOf(running, instance, 'comment')),
+    runContext.markerOf(reportActionOf(running, instance, 'comment')),
     runContext.publicText,
   );
 }
 
-// Each step not yet complete, in order; a resume finds the ones that landed through Reconciliation.
+// Each of the request's Actions not yet complete, in order; a resume finds the ones that landed through Reconciliation.
 async function finishRequest(runContext: RunContext, running: Running, instance: PendingInstance): Promise<never> {
   const { vertex } = running.actionIdentity;
-  const complete = (step: Step) =>
-    writeAhead.findEntry(runContext.record, runContext.markerOf(stepOf(running, instance, step)), 'complete');
+  const complete = (part: ReportAction) =>
+    writeAhead.findEntry(runContext.record, runContext.markerOf(reportActionOf(running, instance, part)), 'complete');
   if (!complete('retire'))
-    await pendingReport.labelAction(runContext, stepOf(running, instance, 'retire'), {
+    await pendingReport.labelAction(runContext, reportActionOf(running, instance, 'retire'), {
       remove: await pendingReport.keepPendingIfUnread(`The labels of request ${instance.id}`, () =>
         earlierLabels(runContext, vertex),
       ),
     });
   if (!complete('await'))
-    await pendingReport.labelAction(runContext, stepOf(running, instance, 'await'), {
+    await pendingReport.labelAction(runContext, reportActionOf(running, instance, 'await'), {
       add: [namesOf(runContext).await(vertex)],
     });
   if (!complete('comment'))
     await pendingReport.commentAction(
       runContext,
-      stepOf(running, instance, 'comment'),
+      reportActionOf(running, instance, 'comment'),
       await requestBody(runContext, running, instance),
     );
   throw pendingReport.pending(`Vertex ${vertex} waits for a Decision on request ${instance.id}.`);
 }
 
 // A new request on the digest as it is now, its Pending Instance saved before any label moves. The nonce is the
-// request's number in this Visit, which also names its steps.
+// request's number in this Visit, which also names its Actions.
 async function request(runContext: RunContext, running: Running, previous: PendingInstance | null): Promise<never> {
   const { record: executionRecord } = runContext;
   const { vertex, visit: visitNumber } = running.actionIdentity;
@@ -123,8 +123,8 @@ async function consume(
   const { record: executionRecord } = runContext;
   const { actionIdentity } = running;
   const startedAt = runContext.clock.now();
-  const step = stepOf(running, instance, 'consume');
-  const actionMarker = runContext.markerOf(step);
+  const consumption = reportActionOf(running, instance, 'consume');
+  const actionMarker = runContext.markerOf(consumption);
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Consumption | undefined;
   const payload: Consumption = intended ?? consumptionOf(runContext, running, instance, found as approval.Decision);
   await effects.whileBusy(runContext, () =>
@@ -205,9 +205,17 @@ export async function awaitApproval(runContext: RunContext, running: Running): P
   const given = executionRecord.approvalRequest;
   const instance = given?.vertex === vertex && given.visit === visitNumber ? given : null;
   if (!instance) return request(runContext, running, null);
-  if (writeAhead.findEntry(executionRecord, runContext.markerOf(stepOf(running, instance, 'consume')), 'intent'))
+  if (
+    writeAhead.findEntry(executionRecord, runContext.markerOf(reportActionOf(running, instance, 'consume')), 'intent')
+  )
     return consume(runContext, running, instance, null);
-  if (!writeAhead.findEntry(executionRecord, runContext.markerOf(stepOf(running, instance, 'comment')), 'complete'))
+  if (
+    !writeAhead.findEntry(
+      executionRecord,
+      runContext.markerOf(reportActionOf(running, instance, 'comment')),
+      'complete',
+    )
+  )
     return finishRequest(runContext, running, instance);
   const read = await pendingReport.keepPendingIfUnread(`The Decision on request ${instance.id}`, () =>
     readDecision(runContext, running, instance),

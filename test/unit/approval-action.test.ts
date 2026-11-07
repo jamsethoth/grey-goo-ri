@@ -2,11 +2,13 @@
 // reads (request 3.5, X1).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
 import { loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
+import * as fakeGh from '../support/fake-gh.ts';
 import * as golden from '../support/golden.ts';
 import * as keys from '../support/keys.ts';
 import { editRuns } from '../support/suite-runs.ts';
@@ -383,4 +385,40 @@ test("an issue that cannot be read for a re-request's labels leaves the Ticket P
   assert.equal((await laterRun(fixture)).outcome, 'pending');
   assert.equal(fixture.gh.labels.has(AWAIT_LABEL), true);
   assert.equal(requestComments(fixture).length, 2);
+});
+
+test("a request leaves another Vertex's labels alone", async (t) => {
+  const fixture = await approvalFixture(t);
+  fixture.gh.humanAddsLabel('gg:await:other', OWNER);
+  fixture.gh.humanAddsLabel('gg:decide:other:approved', OWNER);
+  await interpreter.runExecution(fixture.options);
+  assert.equal(fixture.gh.labels.has('gg:await:other'), true);
+  assert.equal(fixture.gh.labels.has('gg:decide:other:approved'), true);
+});
+
+// A gh that cannot start is not GitHub's answer: it is no blip, and a Pending Ticket faults on it as any other does.
+test("a gh that cannot start at a Pending Ticket's Reconciliation is a fault", async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  const missing = Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' });
+  const transport = fakeGh.ghThrough(fixture.gh, async ({ args }, next) => {
+    if (args[0] === 'issue' && args[1] === 'view') throw missing;
+    return next();
+  });
+  const result = await laterRun(fixture, { deps: { ...fixture.options.deps, gh: github.createGh(transport) } });
+  assert.equal(result.fault, true);
+  assert.equal((await loadTicket(fixture)).state, 'fault');
+});
+
+// Only a Pending Ticket waits out a failed read: another Execution's Reconciliation faults on it, as before.
+test('a failed issue read at the Reconciliation of an Execution that is not Pending is a fault', async (t) => {
+  const fixture = await golden.fixture(t);
+  const commit = golden.markerOf(fixture.executionRecord, 'green', 1, 'commit');
+  await assert.rejects(
+    interpreter.runExecution({ ...fixture.options, crashAt: { marker: commit, point: 'before-effect' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
+  fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view', status: 502 });
+  const result = await laterRun(fixture);
+  assert.equal(result.fault, true);
 });

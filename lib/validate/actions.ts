@@ -194,6 +194,8 @@ function checkDecisions(problems: report.Report, decisions: unknown, location: s
   const message = 'decisions must be a non-empty list of names';
   if (!Array.isArray(decisions)) report.error(problems, location, 'not-a-list', message);
   else if (!decisions.length) report.error(problems, location, 'empty-list', message);
+  else if (new Set(decisions).size !== decisions.length)
+    report.error(problems, location, 'repeated-decision', 'a Decision is repeated');
   else
     for (const decision of decisions) {
       const shown = JSON.stringify(decision);
@@ -275,4 +277,17 @@ export function approvalLabelsOf(declared: unknown[] | undefined, vertex: string
     await: names.await(vertex),
     decide: procedures.decisionsOf(asking).map((decision) => names.decide(vertex, decision)),
   };
+}
+
+// A commit carries the agent Action's summary (G3), so a Procedure without one commits nothing.
+export function checkCommitsWithoutAgent(problems: report.Report, location: string, actions: unknown[]) {
+  actions.forEach((action, index) => {
+    if (referencePaths.isRecord(action) && action.do === 'commit')
+      report.error(
+        problems,
+        `${location}.actions[${index}]`,
+        'needs-agent-action',
+        "a commit carries the agent Action's summary, which this Procedure lacks",
+      );
+  });
 }

@@ -384,3 +384,26 @@ test('an edit made while a gate waits for its cleanup holds the Ticket and survi
   assert.deepEqual(intents(await loadTicket(fixture), 'reset'), []);
   assert.equal(readFileSync(join(fixture.worktree, 'package.json'), 'utf8'), '{"edited":"by a human"}\n');
 });
+
+// red has no gg commit behind it, so only the held call's own baseline sees the commit.
+test('a commit made before any gg commit, while a hold waits, is kept', async (t) => {
+  const redCall = keys.responseKey('red', 1, 'red', 1);
+  const fixture = await golden.fixture(t, {
+    integrity: 'real',
+    git: 'real',
+    responses: firstVisitWith({
+      [redCall]: {
+        ...golden.firstVisitResponses[redCall],
+        cleanup: { confirmed: false, survivors: [], reason: 'refused', containment: { kind: 'group', pgid: 4242 } },
+      },
+    }),
+  });
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  gitShell.sh(fixture.worktree, 'add', '-A');
+  gitShell.sh(fixture.worktree, 'commit', '-q', '-m', 'a human commits');
+  const committed = gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.held, true);
+  assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), committed);
+});

@@ -18,22 +18,28 @@ import * as writeAhead from './write-ahead.ts';
 export const AWAIT_VERTEX = 'cleanup';
 
 type HeldAction = Pick<marker.ActionIdentity, 'vertex' | 'visit' | 'action' | 'recovery'>;
-type Step = 'label' | 'comment' | 'release';
+type ReportAction = 'label' | 'comment' | 'release';
 
-// One step of a hold, an Action of its own outside the Procedure, named with the hold's number among those of this
+// One of a hold's own Actions, outside the Procedure, named with the hold's number among those of this
 // Action: its retry or its Check's re-run can hold again, and an Action's remote retry budget is kept by its name.
-const stepOf = (held: HeldAction, step: Step, number: number): marker.ActionIdentity & { procedure: null } => ({
+const reportActionOf = (
+  held: HeldAction,
+  part: ReportAction,
+  number: number,
+): marker.ActionIdentity & { procedure: null } => ({
   vertex: held.vertex,
   visit: held.visit,
   procedure: null,
-  action: `${held.action}.cleanup-${step}.${number}`,
+  action: `${held.action}.cleanup-${part}.${number}`,
   recovery: held.recovery,
 });
 
 // The holds of this Action already released, plus one.
 function holdNumber(runContext: RunContext, held: HeldAction): number {
   let number = 1;
-  while (writeAhead.findEntry(runContext.record, runContext.markerOf(stepOf(held, 'release', number)), 'complete'))
+  while (
+    writeAhead.findEntry(runContext.record, runContext.markerOf(reportActionOf(held, 'release', number)), 'complete')
+  )
     number++;
   return number;
 }
@@ -77,21 +83,23 @@ function commentBody(runContext: RunContext, held: HeldAction, report: commandCl
       survivors,
       advice: adviceOf(runContext, report),
     },
-    runContext.markerOf(stepOf(held, 'comment', number)),
+    runContext.markerOf(reportActionOf(held, 'comment', number)),
     runContext.publicText,
   );
 }
 
 async function report(runContext: RunContext, held: HeldAction, cleanup: commandCleanup.CleanupReport) {
   const number = holdNumber(runContext, held);
-  const complete = (step: Step) =>
-    writeAhead.findEntry(runContext.record, runContext.markerOf(stepOf(held, step, number)), 'complete');
+  const complete = (part: ReportAction) =>
+    writeAhead.findEntry(runContext.record, runContext.markerOf(reportActionOf(held, part, number)), 'complete');
   if (!complete('label'))
-    await pendingReport.labelAction(runContext, stepOf(held, 'label', number), { add: [awaitLabel(runContext)] });
+    await pendingReport.labelAction(runContext, reportActionOf(held, 'label', number), {
+      add: [awaitLabel(runContext)],
+    });
   if (!complete('comment'))
     await pendingReport.commentAction(
       runContext,
-      stepOf(held, 'comment', number),
+      reportActionOf(held, 'comment', number),
       await commentBody(runContext, held, cleanup, number),
     );
 }
@@ -115,7 +123,9 @@ async function confirm(
 ) {
   const { record: executionRecord, database } = runContext;
   const number = holdNumber(runContext, held);
-  const markers = (['label', 'comment'] as const).map((step) => runContext.markerOf(stepOf(held, step, number)));
+  const markers = (['label', 'comment'] as const).map((part) =>
+    runContext.markerOf(reportActionOf(held, part, number)),
+  );
   const decided = await pendingReport.keepPendingIfUnread(`The hold on ${held.action}`, () =>
     reconcile.terminalEffects(executionRecord, {
       gh: runContext.gh,
@@ -148,8 +158,10 @@ export async function awaitConfirmation(runContext: RunContext, find: effectEvid
   };
   if (state.unconfirmedCleanup) await confirm(runContext, held, state.unconfirmedCleanup, find);
   const number = holdNumber(runContext, held);
-  if (writeAhead.findEntry(executionRecord, runContext.markerOf(stepOf(held, 'label', number)), 'intent'))
-    await pendingReport.labelAction(runContext, stepOf(held, 'release', number), { remove: [awaitLabel(runContext)] });
+  if (writeAhead.findEntry(executionRecord, runContext.markerOf(reportActionOf(held, 'label', number)), 'intent'))
+    await pendingReport.labelAction(runContext, reportActionOf(held, 'release', number), {
+      remove: [awaitLabel(runContext)],
+    });
 }
 
 // The report as a later Run read it: its containment confirmed its processes gone.

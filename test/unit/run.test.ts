@@ -517,3 +517,22 @@ test('an epic Run resumes a Pending sub-issue', async (t) => {
     'the Await Label says the Ticket is healthy, though it reads as in progress',
   );
 });
+
+test('approvers in the repository Layer reach the reader through gg run', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.approvers = ['a-triager'];
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'pending');
+  fixture.gh.permissions.set('a-triager', 'read');
+  fixture.gh.humanAddsLabel('gg:decide:approve:approved', 'a-triager');
+
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'ready-for-qa', fixture.logs.join('\n'));
+});

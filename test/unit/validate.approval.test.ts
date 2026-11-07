@@ -122,3 +122,25 @@ test('a Decision named after an Object.prototype property is reported, not read'
   const found = exampleLayer.check(config).errors.map(({ at, code }) => ({ at, code }));
   assert.deepEqual(found, [{ at: 'procedures.approval.actions[0]', code: 'inherited-name' }]);
 });
+
+test('a repeated Decision is reported', () => {
+  const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['approved', 'approved', 'rejected'] });
+  const found = exampleLayer.check(config).errors.map(({ at, code }) => ({ at, code }));
+  assert.deepEqual(found, [{ at: 'procedures.approval.actions[0]', code: 'repeated-decision' }]);
+});
+
+test('otherwise beside an await-approval with no Check before it is reported: nothing can fail', () => {
+  const config = askingConfig();
+  config.procedures.approval!.otherwise = 'approved';
+  const found = exampleLayer.check(config).errors.map(({ at, code }) => ({ at, code }));
+  assert.deepEqual(found, [{ at: 'procedures.approval.otherwise', code: 'invalid-otherwise' }]);
+});
+
+test('otherwise beside an await-approval with a Check before it names the failed Outcome, and is kept', () => {
+  const config = askingConfig();
+  config.procedures.approval!.actions.unshift({ id: 'gate', do: 'check', kind: 'command', command: 'test' });
+  config.procedures.approval!.otherwise = 'rejected';
+  const { flows, errors } = exampleLayer.check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['approved', 'rejected']);
+});

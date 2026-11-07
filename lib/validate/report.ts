@@ -59,6 +59,7 @@ export const PROBLEM_CODES = [
   'needs-agent-action',
   'pr-ready-without-checks',
   'repeated-action-id',
+  'repeated-decision',
   'second-agent-action',
   'undeclared-check',
   'undeclared-command',
