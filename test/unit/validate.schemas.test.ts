@@ -119,6 +119,27 @@ test('tests: named reading anything but a list of strings is an error', () => {
   ]);
 });
 
+const NAMED_VALUES: [string, unknown, string][] = [
+  ['a number', 3, 'malformed-reference'],
+  ['empty', '', 'malformed-reference'],
+  ['undefined', undefined, 'invalid-tests-setting'],
+];
+for (const [what, named, code] of NAMED_VALUES) {
+  test(`tests: named that is ${what} is an error`, () => {
+    const config = exampleLayer.config();
+    config.procedures.fix.tests.named = named;
+    assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [{ at: 'procedures.fix.tests', code }]);
+  });
+}
+
+test('is left out on a field that is neither an enum nor a boolean reports the field', () => {
+  const config = exampleLayer.config();
+  procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'summary' };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.review.actions[1]', code: 'invalid-condition-field' },
+  ]);
+});
+
 test('a Check parameter of the wrong type is an error', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures['tests-fail'], 'red-check').testNames = 'response.summary';
