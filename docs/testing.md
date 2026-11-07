@@ -51,7 +51,8 @@ entry point since #199 (ADR 0019).
 7. **Tests change only when behaviour does.** A test edited by a refactor is a sign it tested implementation
    detail; fix the test's coupling, not just its expectation.
 8. **Each case cleans up after itself.** It ends every run it started and removes its temp directories. A fake reaches
-   a run only through the options the case passes (the seams below), so no fake outlives its case.
+   a run only through the options the case passes (the seams below), so no fake outlives its case. On Windows the
+   [census](#the-census) fails a stage that leaves a process behind.
 9. **No duplicated coverage.** A behaviour is asserted at the lowest size that can show it. A larger test covers
    what only it can show (the wiring, the real system), not the same branch again.
 
@@ -181,6 +182,39 @@ things outside the repository, such as the installed git, Node, Windows behaviou
 end-to-end tests check the wiring between real modules, which no single contract shows. grey-goo-ri issue #136
 (`database is locked` under load) was this kind of failure. When the environment changes (a new git, Node or
 runner image), run the full stage.
+
+### The census
+
+A case passing does not show its processes ended, and a leftover that holds no pipe delays nothing, so a mistake in a
+case's cleanup shows only if someone goes looking (#290). So the launcher runs the full and fast stages inside a job
+object it holds around itself (ADR 0016, amended), and when the tests end it looks in that job. A process still there has
+5 s to go, since one a file's exit ended takes a moment to leave the listing. What remains is named with its command line
+and ended, and the stage fails. A clean stage prints `census: no process left`. A stage with no job, on macOS and on
+Linux until #289, or where `node:ffi` or the job is refused, prints `census did not run: <why>` and stands on its tests.
+
+Only what this run started is in the job, so what another suite on the machine leaves behind cannot be reported here.
+
+Coverage has no census. Its one process runs `test/unit/`, which may not reach process boundaries, so it has nothing to
+find. The check stage runs no tests.
+
+What it sees, on Windows (probes on #290):
+
+- **A process a case started detached, and whatever descends from it:** seen. So are the descendants of a command on the
+  no-job path, since `cmd.exe` is outside any job of its own there.
+- **An attached child, and a job's members, `runShell`'s included:** not seen, because they do not outlive their test
+  file. libuv holds each attached child in a kill-on-close job of the node process that spawned it, and a command's job
+  nests inside that one. A job `runShell` keeps for a refused termination ends the same way. While they run they can
+  hold their file open: the file then ends only when they do, up to `LIVES_MS`, and shows only as a slow file.
+- **A child that asked to break away:** not seen, since it left the job. It stays the case's own to end.
+- **A detached process holding the test file's stdout:** not seen, because the runner waits for the pipe, so it has ended
+  by the time the census looks. It too shows only as a slow file.
+- **A console host:** never named, since it ends with the last process attached to it. It is in the job only sometimes
+  (#285), and whatever keeps it alive is named.
+
+The stages do not take `--test-force-exit`. It does not make a held file report anything on Windows: libuv's job ends
+what held it when the file exits, so the census finds nothing there either. It takes the slow file away, which is the
+only sign of that leak, and off Windows, where no census runs yet, it would leave those processes running with no sign at
+all. #289 can look again, since an attached child outlives its parent on Linux.
 
 ## Considered and deferred
 

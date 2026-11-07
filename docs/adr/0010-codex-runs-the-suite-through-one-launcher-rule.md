@@ -39,3 +39,7 @@ launcher accepts a stage and boundary names from a closed set, and still forward
 - Amended 2026-11-04 (grey-goo-ri issue #207): the launcher is `scripts/run-suite.ts` (ADR 0018), so the rule allows
   exactly `node scripts/run-suite.ts`, and `node scripts/run-suite.mjs` is one of its `not_match` examples. The decision
   stands.
+- Amended 2026-11-06 (grey-goo-ri issue #290): the launcher also holds a job object around the full and fast stages (ADR
+  0016, amended), so it creates one wherever Codex starts it. A job can be created there, nested in any Codex holds.
+  It loads the job calls from `lib/`, so the code running outside the sandbox grows by those two files. The rule does not
+  change.

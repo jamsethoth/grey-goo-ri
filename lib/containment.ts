@@ -57,7 +57,7 @@ export function openKernel32(): Kernel32 | null {
   }
 }
 
-function processes(kernel32: Kernel32): commandCleanup.ProcessEntry[] {
+export function processes(kernel32: Kernel32): commandCleanup.ProcessEntry[] {
   const snapshot = kernel32.CreateToolhelp32Snapshot(SNAPSHOT_PROCESSES, 0);
   if (BigInt.asUintN(64, snapshot) === INVALID_HANDLE) throw failure(kernel32, 'CreateToolhelp32Snapshot');
   const entry = Buffer.alloc(PROCESS_ENTRY_SIZE);
@@ -99,8 +99,9 @@ function setLimits(kernel32: Kernel32, handle: bigint, flags: number) {
   return kernel32.SetInformationJobObject(handle, EXTENDED_LIMIT_INFORMATION, limits, limits.length);
 }
 
-// A job holding pid, with kill-on-close: gg holds its only handle, so the job's processes die with gg too.
-function createJob(kernel32: Kernel32, pid: number): Job {
+// A job holding pid, with kill-on-close: gg holds its only handle, so the job's processes die with gg too. The suite
+// launcher holds one around itself (scripts/run-suite.ts).
+export function createJob(kernel32: Kernel32, pid: number): Job {
   const handle = kernel32.CreateJobObjectW(0n, 0n);
   if (!handle) throw failure(kernel32, 'CreateJobObjectW');
   try {

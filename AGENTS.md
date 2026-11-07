@@ -113,7 +113,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex. `gg init` is not built (#120) |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
-| `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010) |
+| `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
 | `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Agents |
 
 ## Misleading areas

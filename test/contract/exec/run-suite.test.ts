@@ -21,6 +21,7 @@ test('a job that cannot be read is a census that did not run, never a clean one'
   const kernel32 = kernel32Doubles.withKernel32({
     AssignProcessToJobObject: () => 1,
     QueryInformationJobObject: () => 0,
+    GetLastError: () => 5, // access denied: any other thread-wide last error could read as a list too small
   });
   const strays = (await runSuite.holdStage(kernel32)) as runSuite.Strays;
   const { failed, report } = await runSuite.census(strays);

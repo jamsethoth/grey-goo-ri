@@ -183,7 +183,7 @@ for (const [stage, argv] of [
     const copy = leakyCopy(t);
     const result = copy.run(argv);
     assert.equal(result.status, 1, result.stderr);
-    assert.match(result.stdout, /^ℹ pass 1$/m);
+    assert.match(result.stdout, /^ℹ fail 0$/m);
     assert.ok(
       result.stderr.includes(`pid ${processProbe.pidIn(copy.pidFile)}: `),
       `the leftover's pid is not named: ${result.stderr}`,
