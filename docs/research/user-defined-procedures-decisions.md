@@ -1228,6 +1228,19 @@ itself through `node:ffi`.
   The POSIX process group and `none` keep their rules, and a tool that explicitly breaks away from the job stays an
   accepted residual risk. ADR 0011 is amended; issues #118, #119 and #23 follow.
 
+## Cleanup containment and a Check with no command (2026-11-06)
+
+Taken by the owner with the audit of grey-goo-ri issue #118.
+
+- L14 amended: `cleanup.containment` is its own shape, saying how gg can check later that a call's processes are gone:
+  `{ kind: 'job' }` on Windows (gg holds the job's only handle, so the job dies with gg; no helper process id is
+  recorded), `{ kind: 'group', pgid }` on POSIX (empty means every inheriting child is gone), and `{ kind: 'none' }`, an
+  uncontained Windows command, which is always unconfirmed, because its orphans cannot be found, and stays held for a
+  human. `exec`'s own `containment` stays `job` or `none`: it says whether the command dies with gg, which is how #68 and
+  #289 read it.
+- A `command` or `tests-fail` Check that runs no command (a reused pass, the `unchanged` skip) started no process, so it
+  writes `{ confirmed: true, survivors: [] }`.
+
 ## Open
 
 - Step 2 is done: [user-defined-procedures-example-flow.md](user-defined-procedures-example-flow.md).

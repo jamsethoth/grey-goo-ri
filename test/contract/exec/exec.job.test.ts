@@ -109,6 +109,7 @@ test(
   },
 );
 
+// `start /b` leaves the child's parent pid the shell's, and a Windows snapshot keeps that pid after the shell has gone.
 test(
   "an uncontained command's leftover still linked to it is killed and named",
   options.UNSANDBOXED_WIN_CASE,
@@ -117,13 +118,11 @@ test(
     t.after(() => processProbe.endProcessIn(pidFile));
     const result = await exec
       .createExec({ kernel32: noJob() })
-      .runShell(nodeCommand(t, childScripts.BACKGROUND_STARTER, 'ignore', '0', pidFile, childScripts.LONG_LIVED), {
-        timeoutMs: 60_000,
-      });
-    const pid = pidIn(pidFile);
-    assert.ok(result.leftovers?.includes(pid), JSON.stringify(result.leftovers));
+      .runShell(`start "" /b ${nodeCommand(t, childScripts.LONG_LIVED, pidFile)}`, { timeoutMs: 60_000 });
+    assert.equal(result.leftovers?.length, 1, JSON.stringify(result.leftovers));
     assert.equal(result.cleanup.confirmed, false);
-    await waitFor(() => !alive(pid), t.signal); // one left running fails at the case timeout
+    // one left running fails at the case timeout
+    await waitFor(() => !alive(result.leftovers![0]!), t.signal);
   },
 );
 

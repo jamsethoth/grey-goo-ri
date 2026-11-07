@@ -32,9 +32,11 @@ created the job, and wrote its answers as `\x01GGJOB` notes into the command's o
   reported, its processes named as survivors, and its handle kept, so kill-on-close takes them when gg exits.
 - gg holds the job's only handle, so the job's processes also die when gg does. The result names its containment,
   `job` or `none`, which is what a call intent records (ADR 0011, decisions N1 and L14).
-- A command that finishes leaves its background processes running, reported as leftovers: gg drops kill-on-close and
-  closes its handle. If kill-on-close cannot be dropped, gg keeps the handle instead, so the leftovers run until gg
-  exits, and the output says so. libuv starts `cmd.exe`
+- A command that finishes has its background processes ended and named as leftovers: gg keeps kill-on-close and
+  terminates the job, and the job's member list confirms it (amended 2026-11-06 for grey-goo-ri issue #118, decision L6;
+  until then gg dropped kill-on-close and let them run on, which left a writer free to write after a rescue's
+  verification or into the next Vertex's worktree). A job it cannot terminate or read keeps its handle, names what is
+  left as survivors, and the Ticket holds (decision L11). libuv starts `cmd.exe`
   with CREATE_NO_WINDOW under `windowsHide`, which gives it a `conhost.exe` of its own in the job. That console host
   is excluded by name and parent rather than by spawning without `windowsHide`, which would open a console window
   whenever gg has none. A member listed in the job but no longer in a process snapshot is still exiting and is not a

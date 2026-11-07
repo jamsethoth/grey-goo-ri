@@ -151,6 +151,29 @@ test(
   },
 );
 
+// The listing that names what a command left sits in front of every Check, so one that stalls must not hold them.
+test(
+  'runShell: a listing that stalls after a command finished is cut short, and cleanup says it is unconfirmed',
+  POSIX_ONLY,
+  async (t) => {
+    const pidFile = join(scratch, 'stalled-listing.pid');
+    t.after(() => processProbe.endProcessIn(pidFile));
+    const result = await exec.runShell(
+      nodeCommand(t, childScripts.BACKGROUND_STARTER, 'ignore', '0', pidFile, childScripts.LONG_LIVED),
+      shellOptions({
+        timeoutMs: 20000,
+        signal: noClock(),
+        leftoverListingWaitMs: 200,
+        snapshotCommand: [process.execPath, [childScripts.LONG_LIVED, join(scratch, 'stalled-listing-ps.pid')]],
+      }),
+    );
+    assert.equal(result.code, 0);
+    assert.equal(result.cleanup.confirmed, false);
+    assert.match(result.cleanup.reason ?? '', /process snapshot failed/);
+    assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'the group was killed all the same');
+  },
+);
+
 // With no leftover alive every writer is gone, so the pipes close once read to their end (#245's shortcut, gone here).
 test('runShell answers with the line a background process printed before it was killed', CASE, async (t) => {
   const pidFile = join(scratch, 'late-line.pid');

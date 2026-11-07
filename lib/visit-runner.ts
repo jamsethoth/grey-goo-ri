@@ -7,7 +7,9 @@ import * as checkAction from './check-action.ts';
 import * as checks from './checks.ts';
 import * as config from './config.ts';
 import * as effectActions from './effect-actions.ts';
+import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects.ts';
+import * as events from './events.ts';
 import * as integrity from './integrity.ts';
 import * as labels from './labels.ts';
 import type * as marker from './marker.ts';
@@ -16,6 +18,7 @@ import type * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
+import * as rescue from './rescue.ts';
 import type { RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
 import type * as terminalReport from './terminal-report.ts';
@@ -63,7 +66,9 @@ function resolveInputs(
       for (const output of executionRecord.outputs.toReversed()) {
         for (const source of sources) {
           const matches = output.vertex === source.vertex && output.action === source.action;
-          const value = matches ? referencePaths.read(output.value, source.path) : undefined;
+          if (!matches) continue;
+          // `<vertex>.rescue` names the whole output, with no path into it (W3).
+          const value = source.path ? referencePaths.read(output.value, source.path) : output.value;
           if (value === undefined) continue;
           const picked =
             pick === undefined ? value : (value as unknown[]).map((item) => referencePaths.read(item, pick));
@@ -160,6 +165,7 @@ function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean
         checks: {},
         checkFollows: false,
         settled: null,
+        unconfirmedCleanup: null,
       });
   // Not enumerable, so the Procedure's data stays out of the saved record.
   Object.defineProperty(state, 'proc', { value: proc, enumerable: false });
@@ -241,11 +247,13 @@ async function stopVisit(runContext: RunContext, state: RunningVisit, ran: Ran, 
     };
     await runContext.database.save(runContext.record);
   }
+  if (resolution.row === 'cleanup-unconfirmed') throw cleanupHold(state, ran);
   // A prohibited change never survives into a retry or the next Action, whatever the Harness Result (request 3.4): an
   // agent Attempt's violation, Test Immutability included, rolls back to that Attempt's baseline. The call's own marker
-  // is complete, so its rollback is an Action of its own. A failure routed to an end leaves the work in place for the
-  // human (U10).
+  // is complete, so its rollback is an Action of its own. A failure routed to a Vertex is rescued, and one routed to an
+  // end leaves the work in place for the human (R5, U10).
   if (resolution.row === 'integrity-violation') await rollBack(runContext, state, ran);
+  else await rescueRouted(runContext, state, ran);
   const traversal = bounds.traverse(runContext, outcomeName);
   const text = terminal.stopText(actionIdentity, outcomeName, resolution);
   const spent = traversal.spent.length ? `${text.replace(/\.$/, '')}${bounds.spentText(traversal)}.` : text;
@@ -275,6 +283,54 @@ function stopOf(state: RunningVisit, { actionIdentity, resolution }: Ran): termi
   }
   if (resolution.outcome === 'run-stop') stop.failureClass = resolution.failureClass;
   return stop;
+}
+
+// A call whose processes may still be running: no further Action touches the worktree, no route or recovery applies,
+// and the Ticket holds with the survivors in its comment, fenced, since a command line is the command's own text (L11).
+// shortcut: a plain hold a human resolves; #119 makes it a Pending cleanup hold that resumes by itself.
+function cleanupHold(state: RunningVisit, { actionIdentity }: Ran) {
+  const { reason, survivors } = state.unconfirmedCleanup!;
+  const listed = survivors.map(
+    ({ pid, created, commandLine, error }) => `pid ${pid}, started ${created}: ${commandLine} (${error})`,
+  );
+  return new effectErrors.EarlyTerminalError({
+    next: 'hold',
+    name: 'cleanup-unconfirmed',
+    reason:
+      `gg could not confirm that what ${terminal.actionText(actionIdentity)} at ${actionIdentity.vertex} started has ` +
+      `ended (${reason}), so no further Action ran and nothing was reset.`,
+    advice: 'A process still running may go on writing to the worktree: end it before relying on the worktree.',
+    detail: listed.join('\n'),
+  });
+}
+
+// A failed or stopped write Vertex whose effective target is a Vertex (R5a, U5): its work moves to a Rescue Ref and the
+// worktree back to the Visit's baseline, and the ref is the Vertex's `rescue` output (W3), saved with the next Vertex's
+// entry. A Visit with no baseline ran no agent, and a read-only one wrote nothing. Before the traversal counts, so a
+// crash here routes the same way again.
+async function rescueRouted(runContext: RunContext, state: RunningVisit, { actionIdentity, resolution }: Ran) {
+  const executionRecord = runContext.record;
+  const baseline = state.firstAttemptBaseline;
+  const { access, testPaths } = executionRecord.configurationSnapshot!;
+  if (!baseline || access === 'read-only' || !bounds.routesToVertex(runContext, resolution.outcome)) return;
+  const rescued = await rescue.rescueAndReset(runContext, {
+    actionIdentity: { ...actionIdentity, attempt: resolution.attempt ?? 1 },
+    baseline,
+    failure: `${terminal.actionText(actionIdentity)} at ${actionIdentity.vertex} ended with ${resolution.outcome}`,
+  });
+  if (!rescued) return;
+  const files = await effects.whileBusy(runContext, () =>
+    runContext.git.diffStats(executionRecord.worktree, baseline.head, rescued.commit),
+  );
+  visitScope.recordOutput(
+    executionRecord,
+    { ...actionIdentity, action: 'rescue' },
+    {
+      ref: rescued.ref,
+      diffStat: events.diffStats(files, testPaths),
+      output: resolution.output ?? resolution.reason ?? '',
+    },
+  );
 }
 
 // The Visit's Outcome (Q3d): its required Checks passed, so the first `passed` row that matches, else `otherwise`, else
@@ -315,7 +371,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
 function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity, resolution }: Ran) {
   const { baseline } = state.call!;
   const testPaths = runContext.record.configurationSnapshot!.testPaths;
-  return discard(runContext, {
+  return rescue.reset(runContext, {
     actionIdentity: { ...actionIdentity, action: 'reset', attempt: resolution.attempt },
     baseline: baseline.head,
     history: {
@@ -326,40 +382,4 @@ function rollBack(runContext: RunContext, state: RunningVisit, { actionIdentity,
     },
     untracked: integrity.rollbackSet(baseline, runContext.protectedPaths, checks.testPathSet(testPaths)),
   });
-}
-
-// The History item is saved with the reset's evidence, so Reconciliation adds it exactly once. The intent saves what
-// git clean leaves, so a crash after the reset can still finish the restore.
-async function discard(
-  runContext: RunContext,
-  { actionIdentity, ...reset }: { actionIdentity: marker.ActionIdentity } & Omit<visit.ResetPayload, 'left'>,
-) {
-  const { record: executionRecord, git } = runContext;
-  // The worktree as the agent left it: at admission, only dirty state that still matches this is proven the agent's.
-  // The ignored Protected Files and tests are in it too: the tree cannot see them, but the restore rewrites them.
-  const left = await effects.whileBusy(runContext, async () => ({
-    ...(await runContext.integrity.snapshot(executionRecord.worktree)),
-    files: reset.untracked
-      ? await runContext.integrity.ignoredFiles(executionRecord.worktree, reset.untracked.within)
-      : {},
-  }));
-  const payload: visit.ResetPayload = {
-    ...reset,
-    left: { head: left.head, index: left.index, tree: left.tree, files: left.files },
-  };
-  await effects.whileBusy(runContext, () =>
-    effects.sideEffect(runContext, {
-      actionMarker: runContext.markerOf(actionIdentity),
-      effect: 'reset',
-      payload,
-      perform: async () => {
-        await git.resetTo(executionRecord.worktree, payload.baseline);
-        if (payload.untracked) await runContext.integrity.restoreUntracked(executionRecord.worktree, payload.untracked);
-        // HEAD is read first: nothing awaited may sit between the History push and saving the evidence that proves it.
-        const head = await git.headSha(executionRecord.worktree);
-        executionRecord.history.push(payload.history);
-        return { head };
-      },
-    }),
-  );
 }

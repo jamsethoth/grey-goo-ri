@@ -12,6 +12,7 @@ import * as publicText from '../../lib/public-text.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
+import * as addSuite from '../support/add-suite.ts';
 import * as caseDatabase from '../support/case-database.ts';
 import { actionEvent, attemptsOf, branchMessages, intents, loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
@@ -642,7 +643,7 @@ test('an exit-0 Check with unconfirmed cleanup holds before the commit', async (
   assert.equal(result.held, true);
   assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
   assert.equal(intents(fixture.executionRecord, 'commit').length, 1, "only red's commit");
-  assert.equal(actionEvent(fixture, 'green', 'test')!.cleanup?.confirmed, false);
+  assert.deepEqual(actionEvent(fixture, 'green', 'test')!.cleanup, UNCONFIRMED);
   assert.deepEqual(
     fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'test')!.value
       .cleanup,
@@ -668,7 +669,7 @@ test('a successful agent response with unconfirmed cleanup holds before its Chec
   assert.equal(result.held, true);
   assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
   assert.equal(actionEvent(fixture, 'green', 'test'), undefined, 'its Check never ran');
-  assert.equal(actionEvent(fixture, 'green', 'green')!.cleanup?.confirmed, false);
+  assert.deepEqual(actionEvent(fixture, 'green', 'green')!.cleanup, UNCONFIRMED);
   assert.deepEqual(
     fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'green')!.value
       .cleanup,
@@ -680,7 +681,7 @@ test('a successful agent response with unconfirmed cleanup holds before its Chec
 test("an agent call's confirmed cleanup is recorded in its Event and its output", async (t) => {
   const fixture = await golden.fixture(t);
   await interpreter.runExecution(fixture.options);
-  assert.equal(actionEvent(fixture, 'green', 'green')!.cleanup?.confirmed, true);
+  assert.deepEqual(actionEvent(fixture, 'green', 'green')!.cleanup, addSuite.CONFIRMED);
   assert.equal(
     (
       fixture.executionRecord.outputs.find((output) => output.vertex === 'green' && output.action === 'green')!.value
@@ -688,5 +689,5 @@ test("an agent call's confirmed cleanup is recorded in its Event and its output"
     ).confirmed,
     true,
   );
-  assert.equal(actionEvent(fixture, 'green', 'test')!.cleanup?.confirmed, true);
+  assert.deepEqual(actionEvent(fixture, 'green', 'test')!.cleanup, addSuite.CONFIRMED);
 });

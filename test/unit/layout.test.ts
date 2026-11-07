@@ -20,6 +20,7 @@ const MEDIUM: [RegExp, string][] = [
     'calls a support helper that spawns',
   ],
   [/\b(?:committingRepo|emptyWorktree|twoWorktrees)\(/, 'calls a support helper that spawns'],
+  [/\b(?:rescueFixture|rescueRefs|inRef)\(/, 'calls a support helper that spawns'],
 ];
 // This file is left out: its samples below spell every marker, and it only reads files.
 const unitFiles = readdirSync(new URL('./', import.meta.url), { recursive: true, encoding: 'utf8' })
@@ -161,6 +162,7 @@ test('no test/support file shares a lib module name', () => {
 });
 
 // lib/git.ts is the one git interface (grey-goo-ri issue #144): every other module calls its verbs with gg's values.
+// lib/git-temp-index.ts is its other half, which only it calls.
 test('no module outside lib/git.ts passes git a command line', async () => {
   const git = await import(pathToFileURL(`${root}lib/git.ts`).href);
   assert.equal(git.runGit, undefined, 'runGit is not exported');
@@ -172,7 +174,8 @@ test('no module outside lib/git.ts passes git a command line', async () => {
     // bin/gg.ts passes lib/git.ts in; a module that imported it could fall back to it instead of the git it was given.
     [/from ['"`]\.\/git\.ts['"`]/, 'an import of lib/git.ts'],
   ];
-  for (const path of [...modules.filter((path) => path !== 'lib/git.ts'), 'bin/gg.ts', 'scripts/run-suite.ts']) {
+  const others = modules.filter((path) => path !== 'lib/git.ts' && path !== 'lib/git-temp-index.ts');
+  for (const path of [...others, 'bin/gg.ts', 'scripts/run-suite.ts']) {
     const text = await readFile(root + path, 'utf8');
     for (const [re, what] of raw) assert.doesNotMatch(text, re, `${path} builds ${what}`);
   }

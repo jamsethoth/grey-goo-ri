@@ -47,6 +47,9 @@ export type RunGit = reconcile.ReconcileGit &
     commitTree(worktree: string, payload: { message: string; tree: string; parent: string }): Promise<string | null>;
     commitStaged(worktree: string, message: string): Promise<string | null>;
     push(worktree: string, branch: string, sha: string): Promise<unknown>;
+    rescueTree(worktree: string, options: { within?: integrity.Within }): Promise<string>;
+    rescueCommit(worktree: string, commit: { tree: string; parent: string; message: string }): Promise<string>;
+    createRef(worktree: string, ref: string, sha: string): Promise<boolean>;
     withGuard?: (guard: (verb: string, args: unknown[], unlocked: RunGit) => Promise<unknown>) => RunGit;
   } & AdmissionGit;
 

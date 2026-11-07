@@ -128,12 +128,6 @@ function commitVerbs({ store, placeAt, headOf, move, resolve, treeFiles, ancesto
       place.worktree.index = new Map(target);
       move(place, resolve(place, sha));
     },
-    // stubs for the rescue verbs (#118)
-    rescueTree: async (_cwd: string, _options: { within?: integrity.Within }): Promise<string> => '',
-    rescueCommit: async (_cwd: string, _commit: { tree: string; parent: string; message: string }): Promise<string> =>
-      '',
-    createRef: async (_cwd: string, _ref: string, _sha: string): Promise<boolean> => false,
-    refTarget: async (_cwd: string, _ref: string): Promise<string | null> => null,
     async push(cwd: string, branch: string, sha = branch) {
       const place = placeAt(cwd);
       const commit = resolve(place, sha);
@@ -144,6 +138,31 @@ function commitVerbs({ store, placeAt, headOf, move, resolve, treeFiles, ancesto
       place.repo.origin.set(branch, commit);
       place.repo.tracking.set(branch, commit);
     },
+  };
+}
+
+function rescueVerbs({ store, placeAt, ...files }: Parts) {
+  return {
+    // What `add -A` stages, and the ignored files within.
+    async rescueTree(cwd: string, { within }: { within?: integrity.Within }) {
+      const { worktree } = placeAt(cwd);
+      const match = within ? withinMatcher(within) : () => false;
+      const stages = files.addAll(worktree);
+      for (const [path, content] of files.disk(worktree)) if (match(path)) stages.set(path, content);
+      return store.putTree(stages);
+    },
+    async rescueCommit(cwd: string, { tree, parent, message }: { tree: string; parent: string; message: string }) {
+      placeAt(cwd);
+      if (!store.trees.has(tree)) throw fail(`fatal: ${tree} is not a valid 'tree' object`);
+      return store.putCommit(tree, [parent], message);
+    },
+    async createRef(cwd: string, ref: string, sha: string) {
+      const { repo } = placeAt(cwd);
+      if (repo.refs.has(ref)) return false;
+      repo.refs.set(ref, sha);
+      return true;
+    },
+    refTarget: async (cwd: string, ref: string) => placeAt(cwd).repo.refs.get(ref) ?? null,
   };
 }
 
@@ -249,8 +268,8 @@ function worktreeDiffVerbs({ placeAt, treeFiles, sinceBase, ...files }: Parts) {
         .map((path) => fakeGitPaths.patchOf(path, from.get(path), to.get(path)))
         .join('');
     },
-    async diffStats(cwd: string, base: string) {
-      const { from, to } = sinceBase(placeAt(cwd), base);
+    async diffStats(cwd: string, base: string, until = 'HEAD') {
+      const { from, to } = sinceBase(placeAt(cwd), base, until);
       return differing(from, to).map((path) => fakeGitPaths.statsOf(path, from.get(path), to.get(path)));
     },
     // No verb sets index flags here, so the tree `add -A` would stage is read from the files themselves.
@@ -266,13 +285,10 @@ function worktreeDiffVerbs({ placeAt, treeFiles, sinceBase, ...files }: Parts) {
   };
 }
 
-// The steps a test takes outside gg, as a human or another tool would with git.
-function humanSteps({ store, placeAt, headOf, move, addAll, writeFiles }: Parts) {
-  // A bare origin and its clone at root/main with one commit on main holding `files`, pushed: what tests start from.
-  function init(
-    root: string,
-    { files = {}, message = 'init' }: { files?: Record<string, string>; message?: string } = {},
-  ) {
+// A bare origin and its clone at root/main with one commit on main holding `files`, pushed: what tests start from.
+const initialRepo =
+  ({ store, writeFiles }: Pick<Parts, 'store' | 'writeFiles'>) =>
+  (root: string, { files = {}, message = 'init' }: { files?: Record<string, string>; message?: string } = {}) => {
     const mainRoot = join(root, 'main');
     const commonDir = join(mainRoot, '.git');
     mkdirSync(commonDir, { recursive: true });
@@ -285,12 +301,17 @@ function humanSteps({ store, placeAt, headOf, move, addAll, writeFiles }: Parts)
       branches: new Map([['main', base]]),
       origin: new Map([['main', base]]),
       tracking: new Map([['main', base]]),
+      refs: new Map(),
       worktrees: [{ path: mainRoot, branch: 'main', index: new Map(store.tree(tree)), main: true }],
     };
     store.repos.push(repo);
     writeFiles(mainRoot, store.tree(tree));
     return { mainRoot, commonDir, base };
-  }
+  };
+
+// The steps a test takes outside gg, as a human or another tool would with git.
+function humanSteps({ store, placeAt, headOf, move, addAll, writeFiles }: Parts) {
+  const init = initialRepo({ store, writeFiles });
   const commitAs = (directory: string, message: string, parentsOf: (place: Place) => string[], stage: boolean) => {
     const place = placeAt(directory);
     if (stage) place.worktree.index = addAll(place.worktree);
@@ -333,6 +354,7 @@ export function fakeGit() {
   const git = {
     ...worktreeVerbs(parts),
     ...commitVerbs(parts),
+    ...rescueVerbs(parts),
     ...refVerbs(parts),
     ...treeDiffVerbs(parts),
     ...worktreeDiffVerbs(parts),

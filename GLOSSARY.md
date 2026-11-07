@@ -162,9 +162,14 @@ retried once (ADR 0011).
 _Avoid_: crashed call, orphan
 
 **Rescue Ref**:
-The git ref under `refs/gg/rescue/` that keeps everything an Interrupted Attempt left in the worktree, untracked files
-included, before the reset.
+The git ref under `refs/gg/rescue/` that keeps everything a failure routed to another Vertex, or an Interrupted Attempt,
+left in the worktree before the reset: tracked and untracked files, and the ignored Protected Files and test files.
 _Avoid_: backup, stash
+
+**Rescue Ref output**:
+What a Vertex whose failure was rescued leaves for later Vertices: `<vertex>.rescue`, `{ ref, diffStat, output }`, with
+the ref, the rescued work's line counts and the failing Check's output (W3). A rescue with nothing to rescue leaves none.
+_Avoid_: rescue result
 
 **Brief**:
 The task text given to an agent for one Phase.
@@ -191,12 +196,14 @@ its watcher saw on POSIX, or the tree taskkill finds on Windows.
 _Avoid_: Confinement (which limits what an agent may touch)
 
 **Command Cleanup**:
-What gg does with the processes a shell command leaves. On a timeout it ends them: it terminates the Containment's
-job, or, uncontained, kills the tree the watcher saw on POSIX or runs taskkill on Windows. A process it cannot tie to
-the command is left alone, and each one it could not end or confirm gone is named as a survivor. A contained command
-that finishes but leaves processes running has them named as leftovers and let run on, unless the job cannot release
-them: then they end when gg exits. The `cleanup` output that agent Actions and command and tests-fail Checks declare
-is to carry its result; gg does not write it yet.
+What gg does with the processes a shell command leaves, whether it timed out or finished on its own: it ends them. It
+terminates the Containment's job; on POSIX it kills the process group and the tree the watcher saw, and confirms the
+group is empty; on an uncontained Windows command it runs taskkill. A process it cannot tie to the command is left
+alone, and each one it could not end or confirm gone is named as a survivor. A command that finishes has what it left
+named as leftovers. Agent Actions and command and tests-fail Checks record the result as their `cleanup` output,
+`{ confirmed, survivors, reason, containment }`: when `confirmed` is false no further Action touches the worktree and the
+Ticket holds. An uncontained Windows command is never confirmed, since its orphans cannot be found, and a process that
+starts its own session or breaks away from the job escapes, an accepted residual risk.
 _Avoid_: cleanup (alone, which also names removing a ticket's worktree), teardown, reaping
 
 **Permission Intent**:

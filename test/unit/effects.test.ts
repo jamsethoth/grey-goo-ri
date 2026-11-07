@@ -96,6 +96,7 @@ test("saveResolution saves a Flow Action's settled resolution with its Action Ev
     checks: {},
     checkFollows: false,
     settled: null,
+    unconfirmedCleanup: null,
   };
   const resolution: visit.TableResolution = {
     outcome: 'ok',
@@ -173,6 +174,7 @@ test("a Flow Action's retry is not settled, so a resumed Visit runs the Action a
     checks: {},
     checkFollows: false,
     settled: null,
+    unconfirmedCleanup: null,
   };
   const resolution: visit.TableResolution = {
     outcome: 'failed',

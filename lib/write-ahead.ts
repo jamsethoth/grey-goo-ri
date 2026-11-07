@@ -61,6 +61,14 @@ export function openIntents(executionRecord: record.ExecutionRecord): WriteAhead
   return executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent' && !done.has(entry.actionMarker));
 }
 
+// The Rescue Ref an unfinished rescue has made, for a hold to name: its work may be nowhere else by then.
+export const openRescueRef = (executionRecord: record.ExecutionRecord): string | null => {
+  const open = openIntents(executionRecord).find(
+    (entry) => entry.effect === 'rescue' && evidenceOf(executionRecord, entry.actionMarker),
+  );
+  return open ? (open.payload as { ref: string }).ref : null;
+};
+
 // The evidence of the last commit gg made, or undefined before its first: the branch must still be at its sha.
 export const lastCommit = (executionRecord: record.ExecutionRecord): WriteAheadEntry | undefined =>
   executionRecord.writeAheadLog.findLast(

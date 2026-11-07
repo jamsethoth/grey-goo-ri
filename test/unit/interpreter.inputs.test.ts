@@ -143,6 +143,7 @@ test('a Visit saves a state and inputs that declare every field', async (t) => {
       'checks',
       'checkFollows',
       'settled',
+      'unconfirmedCleanup',
     ]);
   const { settled } = states.findLast((state) => state.settled)!;
   assert.deepEqual(Object.keys(settled!), ['action', 'recovery', 'resolution']);

@@ -64,6 +64,11 @@ export function edge(runContext: RunContext, outcomeName: string): Traversal {
   return bounded && next === bounded.to ? { next, key, count: count + 1, spent } : { next, spent };
 }
 
+// Whether an Outcome's effective target is another Vertex, once its Bounds count (U5): its work must then leave the
+// worktree (R5a). An end leaves it in place for the human (R5b).
+export const routesToVertex = (runContext: RunContext, outcomeName: string): boolean =>
+  !flow.isEnd(edge(runContext, outcomeName).next);
+
 // A spent Bound's clause in a Terminal Reason, naming where the route went instead.
 export const spentText = (traversal: Traversal): string =>
   traversal.spent.length ? `, and ${traversal.spent.join(' and ')}, so the route ended at ${traversal.next}` : '';

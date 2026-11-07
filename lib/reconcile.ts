@@ -1,4 +1,5 @@
 import * as record from './record.ts';
+import type * as rescue from './rescue.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
 import * as effectEvidence from './effect-evidence.ts';
@@ -101,8 +102,8 @@ async function onlyRestored(
 }
 
 // True when the worktree is in a state an open intent proves the agent's (ADR-0005), for Reconciliation to finish the
-// intent: a reset's, or a commit's recorded parent and the tree it staged. push, pr-upsert, pr-ready, comment and label
-// leave the worktree alone and record none, so they prove no uncommitted change.
+// intent: a reset's, a rescue's worktree as it found it, or a commit's recorded parent and the tree it staged. push,
+// pr-upsert, pr-ready, comment and label leave the worktree alone and record none, so they prove no uncommitted change.
 async function asRecorded(
   worktree: string,
   { effect, payload }: writeAhead.WriteAheadEntry,
@@ -110,6 +111,11 @@ async function asRecorded(
   integrity: integrityModule.Integrity,
 ): Promise<boolean> {
   if (effect === 'reset') return (await resetState(worktree, payload as ResetPayload, git, integrity)) !== null;
+  if (effect === 'rescue') {
+    const { left } = payload as rescue.RescuePayload;
+    const now = await integrity.snapshot(worktree);
+    return now.head === left.head && now.index === left.index && now.tree === left.tree;
+  }
   if (effect !== 'commit') return false;
   const { parent, tree } = payload as effectEvidence.CommitPayload;
   const now = await integrity.snapshot(worktree);
@@ -211,6 +217,11 @@ async function findEffects(
 ): Promise<string | null> {
   for (const entry of entries) {
     if (writeAhead.evidenceOf(context.executionRecord, entry.actionMarker)) continue;
+    if (!effectEvidence.recognised(entry.effect))
+      return (
+        `The intent of Action Marker ${entry.actionMarker} names the effect ${entry.effect}, which this gg does not ` +
+        'recognise, so whether it happened cannot be told; nothing was run or discarded.'
+      );
     const result = await find(entry, context);
     if (result.status === 'unknown') throw result.error;
     if (result.status === 'conflicting') return result.reason;
@@ -306,8 +317,13 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   const held = configurationHold(executionRecord, flow);
   if (held) return held;
   const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
-  if ((await resets(executionRecord, { git, integrity, database })) === 'held')
-    return hold('An interrupted reset did not leave the worktree clean at its baseline; nothing was discarded.');
+  if ((await resets(executionRecord, { git, integrity, database })) === 'held') {
+    const ref = writeAhead.openRescueRef(executionRecord);
+    return hold(
+      'An interrupted reset did not leave the worktree clean at its baseline; nothing was discarded.' +
+        (ref ? ` Rescue Ref ${ref} keeps the work rescued before it.` : ''),
+    );
+  }
   const conflict = await findEffects(
     writeAhead.openIntents(executionRecord),
     { executionRecord, git, gh, cwd, issueLabels, database },

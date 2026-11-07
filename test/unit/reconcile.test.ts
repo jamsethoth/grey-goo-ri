@@ -136,7 +136,7 @@ test('a finder-less replay-safe action replays', async (t) => {
   assert.deepEqual(executionReads.writeAheadSteps(fixture.executionRecord, 'gg:pr-ready'), ['intent']);
 });
 
-test("a rescue intent is found by its ref's commit, redone when the ref is absent, and a conflict on another commit", async (t) => {
+test("a rescue intent is found by its ref's commit, absent with no ref, a conflict on another commit", async (t) => {
   const fixture = await golden.fixture(t);
   const { git } = fixture.options.deps;
   const context = { executionRecord: fixture.executionRecord, git, issueLabels: [] };

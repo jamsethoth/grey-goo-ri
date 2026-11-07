@@ -74,14 +74,19 @@ export const object = (properties: Record<string, referencePaths.SchemaNode>) =>
 export const STRING = { type: 'string' };
 export const INTEGER = { type: 'integer' };
 export const STRING_LIST = { type: 'array', items: STRING };
-// gg's own outputs: a Check's evidence (checks.checkEvidence), an Action's cleanup (L11, exec's survivors) and a
-// Vertex's rescue (W3), whose diffStat is events.diffStats' totals.
+// gg's own outputs: a Check's evidence (checks.checkEvidence), an Action's cleanup (L11, L14; commandCleanup's report)
+// and a Vertex's rescue (W3), whose diffStat is events.diffStats' totals.
 const EVIDENCE = object({ command: STRING, output: STRING });
 // A tests-fail pass found by the test's name alone says so (J8).
 const RED_EVIDENCE = object({ command: STRING, output: STRING, foundByNameOnly: { type: 'boolean' } });
 const CLEANUP = object({
   confirmed: { type: 'boolean' },
-  survivors: { type: 'array', items: object({ pid: INTEGER, error: STRING }) },
+  survivors: {
+    type: 'array',
+    items: object({ pid: INTEGER, created: STRING, commandLine: STRING, error: STRING }),
+  },
+  reason: STRING,
+  containment: object({ kind: { type: 'string', enum: ['job', 'group', 'none'] }, pgid: INTEGER }),
 });
 export const RESCUE = object({
   ref: STRING,
@@ -94,8 +99,8 @@ export const RESCUE = object({
     testInsertions: INTEGER,
   }),
 });
-// What each Check kind produces: a command or tests-fail Check runs a command, so it declares evidence and the cleanup
-// L11 will write; a response or repeat Check runs no command, so it has neither.
+// What each Check kind produces: a command or tests-fail Check runs a command, so it declares evidence and its cleanup
+// (L11); a response or repeat Check runs no command, so it has neither.
 const CHECK_OUTPUTS: Record<CheckKind, Record<string, referencePaths.SchemaNode>> = {
   command: { evidence: EVIDENCE, cleanup: CLEANUP },
   'tests-fail': { evidence: RED_EVIDENCE, cleanup: CLEANUP },

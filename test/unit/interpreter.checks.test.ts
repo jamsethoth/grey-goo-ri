@@ -4,6 +4,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
 import { signalsOf } from '../support/action-signals.ts';
+import * as addSuite from '../support/add-suite.ts';
 import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';
 import { actionEvent, headSha, intents, subjects } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
@@ -88,8 +89,9 @@ test('a final test failure is the Outcome failed naming the Check', async (t) =>
   });
   assert.match(signal!.tree!, /^[0-9a-f]{40}$/);
   assert.deepEqual(
-    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test'),
-    [],
+    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test')[0]!.value,
+    { cleanup: addSuite.CONFIRMED },
+    'no evidence, only what its command left',
   );
   const reason = fixture.executionRecord.terminalReason!;
   assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
@@ -360,8 +362,8 @@ test('a failed Check produces no evidence output', async (t) => {
   await interpreter.runExecution(fixture.options);
 
   assert.deepEqual(
-    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test'),
-    [],
+    fixture.executionRecord.outputs.filter((output) => output.vertex === 'green' && output.action === 'test')[0]!.value,
+    { cleanup: addSuite.CONFIRMED },
     'a failing test no token requires has no evidence',
   );
   assert.ok(

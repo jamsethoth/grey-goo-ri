@@ -78,6 +78,13 @@ interface TableRow {
 // gg's fixed rows, ordered; the first whose matches() holds fires. The last hands a valid Claim over to the
 // Procedure's tables (decide).
 export const FIXED_ROWS: TableRow[] = [
+  // Writers may still be running, so no Check, retry, rollback or route can be trusted (L11).
+  {
+    name: 'cleanup-unconfirmed',
+    matches: (signals) => signals.cleanup?.confirmed === false,
+    outcome: 'cleanup-unconfirmed',
+    direction: 'stop',
+  },
   {
     name: 'integrity-violation',
     matches: (signals) => !!violated(signals),
@@ -126,8 +133,9 @@ export function resolve({
   checks,
   retries,
   policy = DEFAULT_RESOLUTION_POLICY,
+  cleanup,
 }: Signals): visit.TableResolution {
-  const input = { result, claim, checks, retries, policy };
+  const input = { result, claim, checks, retries, policy, cleanup };
   // The last row matches every input.
   const row = FIXED_ROWS.find((candidate) => candidate.matches(input)) as TableRow;
   const check = row.name === 'integrity-violation' ? (violated(input) as TableCheck).name : null;

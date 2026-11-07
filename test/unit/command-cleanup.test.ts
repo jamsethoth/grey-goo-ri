@@ -133,7 +133,14 @@ test('killPlan leaves alone a seen pid listed with another start time, and what 
   };
   assert.deepEqual(commandCleanup.killPlan(ROOT, seen, listing, SELF), {
     kill: [ROOT],
-    survivors: [{ pid: 101, error: 'not verified gone: its pid now has another start time' }],
+    survivors: [
+      {
+        pid: 101,
+        created: 'reused',
+        commandLine: null,
+        error: 'not verified gone: its pid now has another start time',
+      },
+    ],
   });
 });
 
@@ -155,8 +162,8 @@ test('killPlan on a failed listing kills the root and names every seen pid unver
   assert.deepEqual(commandCleanup.killPlan(ROOT, seen, { processes: [], error }, SELF), {
     kill: [ROOT],
     survivors: [
-      { pid: 101, error: `not verified gone: ${error}` },
-      { pid: 102, error: `not verified gone: ${error}` },
+      { pid: 101, created: 't1', commandLine: null, error: `not verified gone: ${error}` },
+      { pid: 102, created: 't2', commandLine: null, error: `not verified gone: ${error}` },
     ],
   });
 });
@@ -197,7 +204,7 @@ test("parseListing reads a row's process group and command line after its start 
 });
 
 test('a command that has exited is not in its kill plan, and what its pid now names is left alone', () => {
-  const plan = commandCleanup.killPlan(
+  const plan = commandCleanup.leftoverPlan(
     ROOT,
     seenOf([101, ROOT, 't1']),
     {
@@ -209,15 +216,12 @@ test('a command that has exited is not in its kill plan, and what its pid now na
       error: undefined,
     },
     SELF,
-    { exited: true },
   );
   assert.deepEqual(plan.kill, [101]);
 });
 
 test('with an unusable listing, a command that has exited has nothing to attempt', () => {
-  const plan = commandCleanup.killPlan(ROOT, seenOf([101, ROOT, 't1']), { processes: [], error: 'no ps' }, SELF, {
-    exited: true,
-  });
+  const plan = commandCleanup.leftoverPlan(ROOT, seenOf([101, ROOT, 't1']), { processes: [], error: 'no ps' }, SELF);
   assert.deepEqual(plan.kill, []);
   assert.deepEqual(
     plan.survivors.map((survivor) => survivor.pid),
@@ -235,6 +239,7 @@ test('leftovers are what the plan kills and what its group still holds, less the
         [102, 1, 't2', ROOT, 'node b.js'],
         [ROOT, 1, 't0', ROOT, 'sh'],
         [103, 1, 't3', 7, 'node other.js'],
+        [104, 1, 't4', ROOT, '[node] <defunct>'],
       ],
       error: undefined,
     },
