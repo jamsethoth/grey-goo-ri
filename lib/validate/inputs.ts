@@ -130,7 +130,8 @@ export function checkInputs(
     if (declaration.optional !== undefined && typeof declaration.optional !== 'boolean')
       report.error(problems, inputLocation, 'not-a-boolean', 'optional must be true or false');
     const given = declaration.from;
-    const from = given === undefined ? [] : [given].flat();
+    const sources = Array.isArray(given) ? given : [given];
+    const from = given === undefined ? [] : sources;
     if (!from.length)
       report.error(problems, inputLocation, report.absentOr(given, 'empty-list'), 'from must name at least one source');
     const { pick } = declaration;
