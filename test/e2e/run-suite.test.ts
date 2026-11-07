@@ -31,9 +31,18 @@ test('the launcher exits 2 with its usage and runs nothing for an argument after
 
 // A copy of the launcher in a temp repo whose Prettier, ESLint and tsc bin scripts are fakes that log their step and
 // exit with the code a case gives; its one test file logs `tests`. Each step appends to steps.log, so the log is what
-// ran, in order.
-function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, installed = true } = {}) {
+// ran, in order. A copy that `leaves` a process has it named in leak.pid: first in, first out, so that process is ended
+// and the copy removed before tempDirectory's own removal. The retries are for here alone: a process just ended holds
+// its working directory for a moment, while anywhere else an EPERM on removal is a case's own mistake showing.
+function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, installed = true, leaves = false } = {}) {
+  let copyRoot = '';
+  if (leaves)
+    t.after(() => {
+      processProbe.endProcessIn(join(copyRoot, 'leak.pid'));
+      rmSync(copyRoot, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
+    });
   const root = tempDirectory.tempDirectory(t, 'gg-run-suite-');
+  copyRoot = root;
   mkdirSync(join(root, 'scripts'));
   mkdirSync(join(root, 'test', 'contract'), { recursive: true });
   mkdirSync(join(root, 'test', 'unit'));
@@ -70,11 +79,8 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
 // the process's pid to leak.pid, and the process's command line carries a mark to find it by. Ended when the case ends,
 // for a stage that left it running. A failing copy's test also fails.
 function leakyCopy(t: TestContext, { fails = false } = {}) {
-  // first in, first out: the process is ended while its pid file is still there
-  let pidFile = '';
-  t.after(() => processProbe.endProcessIn(pidFile));
-  const copy = launcherCopy(t);
-  pidFile = join(copy.root, 'leak.pid');
+  const copy = launcherCopy(t, { leaves: true });
+  const pidFile = join(copy.root, 'leak.pid');
   writeFileSync(
     join(copy.root, 'test', 'unit', 'leak.test.mjs'),
     `import { spawn } from 'node:child_process';
@@ -170,10 +176,8 @@ test(
 
 // The stage's first step is a process in the job too, and its exit code, unlike the test runner's, is not the census's.
 test('a first step that fails and leaves a process keeps its code, and the census names it', options.WIN_CASE, (t) => {
-  let pidFile = '';
-  t.after(() => processProbe.endProcessIn(pidFile));
-  const copy = launcherCopy(t);
-  pidFile = join(copy.root, 'leak.pid');
+  const copy = launcherCopy(t, { leaves: true });
+  const pidFile = join(copy.root, 'leak.pid');
   writeFileSync(
     join(copy.root, 'node_modules', 'prettier', 'bin', 'prettier.cjs'),
     `const child = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], {

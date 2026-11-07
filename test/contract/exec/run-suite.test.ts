@@ -63,15 +63,16 @@ test('the census has ended what it names by the time it answers', options.WIN_CA
   assert.equal(processProbe.alive(pid), false);
 });
 
-// Windows pids are multiples of 4, so this one is no process: its command line cannot be read and it never goes.
+// A pid past the 32 bits a Windows pid has is no process, and process.kill refuses it, so nothing real can be hit: its
+// command line cannot be read and it never goes.
 test(
   'a process with no command line to read is named by its exe, and one still listed is not called ended',
   options.WIN_CASE,
   async () => {
-    const entry = { pid: 999_999, parentPid: 1, exe: 'stray.exe' };
+    const entry = { pid: 2 ** 32, parentPid: 1, exe: 'stray.exe' };
     const { failed, report } = await runSuite.census(() => [entry]);
     assert.equal(failed, true);
-    assert.match(report, /^ {2}pid 999999: stray\.exe$/m);
-    assert.match(report, /not confirmed ended, so they end as this launcher exits: 999999$/);
+    assert.match(report, /^ {2}pid 4294967296: stray\.exe$/m);
+    assert.match(report, /not confirmed ended, so they end as this launcher exits: 4294967296$/);
   },
 );

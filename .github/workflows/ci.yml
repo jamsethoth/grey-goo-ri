@@ -188,7 +188,7 @@ jobs:
           {
             echo "### $LEG"
             echo '```'
-            grep -aE '^(ℹ (tests|pass|fail|cancelled|skipped|todo|duration_ms) |census|  pid )' "$log" || echo 'no summary: the suite did not finish'
+            grep -aE '^(ℹ (tests|pass|fail|cancelled|skipped|todo|duration_ms) |census|  pid |  not confirmed )' "$log" || echo 'no summary: the suite did not finish'
             grep -aE '^✖ ' "$log" | grep -v 'failing tests:' | sort -u || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

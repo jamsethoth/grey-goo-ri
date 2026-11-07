@@ -14,8 +14,7 @@ export function tempDirectory(t: TestContext, prefix: string, commonDirOf = (dir
   }
   t.after(() => {
     stateDatabase.close(commonDirOf(directory));
-    // a process just ended may still hold it as its working directory, for a moment: EPERM on Windows
-    rmSync(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    rmSync(directory, { recursive: true, force: true });
   });
   return directory;
 }
