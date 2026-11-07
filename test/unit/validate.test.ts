@@ -128,6 +128,23 @@ test("a Vertex's own access outside the Permission Intents is an error at the Ve
   ]);
 });
 
+// A rescue's or a rollback's reset is gg's own Action of the Visit: a declared agent Action of that name would share
+// its marker, and the reset would read as already done.
+test('an Action id gg keeps for itself is an error', () => {
+  const config = exampleLayer.config();
+  config.procedures['tests-fail'].actions[0].id = 'reset';
+  assert.ok(
+    exampleLayer
+      .check(config)
+      .errors.some(
+        (problem) =>
+          problem.at === 'procedures.tests-fail.actions[0]' &&
+          problem.message ===
+            'Action id "reset" is reserved for gg: claim, pass, check, response, inputs, rescue, reset',
+      ),
+  );
+});
+
 test('a Claim token named failed or harness-timeout is an error', () => {
   const config = exampleLayer.config();
   config.procedures['tests-fail'].claimTokens.failed = { stop: true };

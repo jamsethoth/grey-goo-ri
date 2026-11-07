@@ -381,3 +381,17 @@ test('after a crash between the hard reset and the clean, a file the agent did n
   assert.equal(inWorktree(fixture, 'by-hand.txt'), true, 'nothing was discarded');
   assert.ok(loaded.terminalReason!.text.includes(greenRescueRef(fixture)), 'the hold names the Rescue Ref');
 });
+
+test('admission names the Rescue Ref a crash left, when a human has since changed the worktree', async (t) => {
+  const fixture = await rescueFlow.rescueFixture(t, failedThenRight());
+  await assert.rejects(
+    interpreter.runExecution({ ...fixture.options, crashAt: { marker: rescueMarker(fixture), point: 'after-effect' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
+  writeFileSync(join(fixture.worktree, 'by-hand.txt'), 'a human wrote this\n');
+  const dirty = await reconcile.dirtyState(await loadTicket(fixture), {
+    git: fixture.options.deps.git,
+    worktree: fixture.worktree,
+  });
+  assert.equal(dirty?.rescueRef, greenRescueRef(fixture));
+});

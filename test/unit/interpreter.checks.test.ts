@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import { signalsOf } from '../support/action-signals.ts';
 import * as addSuite from '../support/add-suite.ts';
 import { GREEN_FAIL_OUTPUT } from '../support/add-suite.ts';
@@ -497,4 +498,15 @@ test('a reused pass writes a confirmed cleanup', async (t) => {
       .cleanup,
     { confirmed: true, survivors: [] },
   );
+});
+
+test('a pass with unconfirmed cleanup is not saved for reuse', async (t) => {
+  const fixture = await golden.fixture(t);
+  golden.configure(fixture, reuseTree('implement'));
+  const unconfirmed = { ...addSuite.CONFIRMED, confirmed: false, reason: 'termination refused' };
+  editRuns(fixture, (run) => (run.code === 0 ? { ...run, cleanup: unconfirmed } : run));
+  const { held } = await interpreter.runExecution(fixture.options);
+  assert.equal(held, true);
+  const { tree } = fixture.executionRecord.visitState!.checks.test!;
+  assert.equal(stateDatabase.reusablePass(fixture.commonDir, tree!, 'npm test'), null);
 });

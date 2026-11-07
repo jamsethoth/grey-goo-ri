@@ -61,11 +61,9 @@ export function openIntents(executionRecord: record.ExecutionRecord): WriteAhead
   return executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent' && !done.has(entry.actionMarker));
 }
 
-// The Rescue Ref an unfinished rescue has made, for a hold to name: its work may be nowhere else by then.
+// The Rescue Ref an unfinished rescue intends, which its ref may or may not hold yet: a caller asks git.
 export const openRescueRef = (executionRecord: record.ExecutionRecord): string | null => {
-  const open = openIntents(executionRecord).find(
-    (entry) => entry.effect === 'rescue' && evidenceOf(executionRecord, entry.actionMarker),
-  );
+  const open = openIntents(executionRecord).find((entry) => entry.effect === 'rescue');
   return open ? (open.payload as { ref: string }).ref : null;
 };
 

@@ -171,7 +171,7 @@ export async function dirtyState(
     locks?: Parameters<typeof integrityModule.createIntegrity>[2];
     integrity?: integrityModule.Integrity;
   },
-): Promise<{ conflicts: string[]; stat: string } | null> {
+): Promise<{ conflicts: string[]; stat: string; rescueRef: string | null } | null> {
   // git write-tree refuses unmerged entries, so a merge conflict cannot be fingerprinted: it is never the agent's.
   const conflicts = await git.conflictedPaths(worktree);
   const unmerged = conflicts.length > 0;
@@ -179,8 +179,10 @@ export async function dirtyState(
   for (const entry of !unmerged && executionRecord ? writeAhead.openIntents(executionRecord) : [])
     if (await asRecorded(worktree, entry, git, integrity)) return null;
   const untracked = await git.untrackedPaths(worktree);
+  const intended = executionRecord && writeAhead.openRescueRef(executionRecord);
   return {
     conflicts,
+    rescueRef: intended && (await git.refTarget(worktree, intended)) ? intended : null,
     stat: (await git.diffSummary(worktree)) + untracked.map((path) => ` ${path} (untracked)\n`).join(''),
   };
 }

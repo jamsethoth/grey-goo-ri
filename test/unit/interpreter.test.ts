@@ -711,3 +711,16 @@ test("unconfirmed cleanup keeps the worktree busy through the hold comment's bac
   assert.equal(result.held, true);
   assert.deepEqual(during, [true], 'still busy while the comment waits');
 });
+
+test('a Harness result that reports no cleanup holds', async (t) => {
+  const greenCall = keys.responseKey('green', 1, 'green', 1);
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({
+      [greenCall]: { ...golden.firstVisitResponses[greenCall], result: { cleanup: undefined } },
+    }),
+  });
+  const result = await interpreter.runExecution(fixture.options);
+  assert.equal(result.held, true);
+  assert.deepEqual(fixture.executionRecord.terminalReason!.decidedBy, { hold: 'cleanup-unconfirmed' });
+  assert.match(fixture.executionRecord.terminalReason!.text, /the Harness reported no cleanup/);
+});

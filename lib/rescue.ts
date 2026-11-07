@@ -87,7 +87,8 @@ async function atBaseline(
 
 // What the rescue is to make, read before its intent, or null when the worktree equals the baseline, with nothing to
 // rescue (N4). A reset touches only what gg's records prove the agent's (R5d): the agent cannot have moved HEAD or the
-// index without an Integrity Violation, and a merge in progress is no agent's, so those hold.
+// index without an Integrity Violation, so that holds. A merge in progress cannot reach here: the snapshot of the Check
+// or the call before it fails on one, and that fault resets nothing.
 async function planRescue(
   runContext: RunContext,
   { actionIdentity, baseline, failure }: Rescuing,
@@ -95,13 +96,13 @@ async function planRescue(
 ): Promise<RescuePayload | null> {
   const { record: executionRecord, git } = runContext;
   const { worktree } = executionRecord;
-  const refused = `, so it cannot be proven the agent's; no Rescue Ref was made and nothing was reset.`;
-  if ((await git.conflictedPaths(worktree)).length)
-    throw held(`The work of ${failure} is in a merge conflict${refused}`);
   if (await atBaseline(runContext, baseline, untracked)) return null;
   const left = await runContext.integrity.snapshot(worktree);
   if (left.head !== baseline.head || left.index !== baseline.own.index)
-    throw held(`HEAD or the index moved since the Visit's baseline when ${failure}${refused}`);
+    throw held(
+      `HEAD or the index moved since the Visit's baseline when ${failure}, so it cannot be proven the agent's; no ` +
+        'Rescue Ref was made and nothing was reset.',
+    );
   const actionMarker = runContext.markerOf({ ...actionIdentity, action: 'rescue' });
   const tree = await git.rescueTree(worktree, { within: untracked.within });
   const message = `gg rescue: ${failure}\n\n${marker.markerTrailer(actionMarker)}`;

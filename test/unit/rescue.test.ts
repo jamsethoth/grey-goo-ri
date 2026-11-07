@@ -70,6 +70,7 @@ test('a ref already holding another commit holds, with nothing overwritten or re
   assert.equal(await git.refTarget(fixture.worktree, refOf(fixture)), fixture.base);
   assert.equal(inWorktree(fixture, TEST_FILE), true);
   heldNaming(fixture, refOf(fixture));
+  assert.match(terminalReasonOf(fixture).text, /already holds/);
 });
 
 test('a worktree that changes once the ref is made holds before any reset', async (t) => {
@@ -158,3 +159,26 @@ for (const [place, crashAt] of Object.entries(CRASHES)) {
     assert.equal(saved.outputs.filter((output) => output.action === 'rescue').length, 1);
   });
 }
+
+test("a rescue's intent is saved before its ref is made", async (t) => {
+  const fixture = await failedRed(t);
+  await assert.rejects(
+    interpreter.runExecution({
+      ...fixture.options,
+      crashAt: { marker: rescueMarker(fixture), point: 'before-effect' },
+    }),
+    (err) => err instanceof interpreter.CrashError,
+  );
+  const saved = await loadTicket(fixture);
+  assert.equal((intents(saved, 'rescue')[0]!.payload as rescue.RescuePayload).ref, refOf(fixture));
+  assert.equal(await fixture.options.deps.git.refTarget(fixture.worktree, refOf(fixture)), null);
+});
+
+test('a read-only Vertex routed on is not rescued', async (t) => {
+  const fixture = await failedRed(t);
+  golden.configure(fixture, (configured) => {
+    configured.agents.implementer = { ...configured.agents.implementer!, access: 'read-only' };
+  });
+  await interpreter.runExecution(fixture.options);
+  assert.deepEqual(intents(fixture.executionRecord, 'rescue'), []);
+});
