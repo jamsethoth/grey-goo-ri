@@ -3,7 +3,6 @@
 // the Visit's Outcome. Nothing here reads the timeline once its consumption is recorded.
 import * as approval from './approval.ts';
 import * as bounds from './bounds.ts';
-import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects.ts';
 import * as labels from './labels.ts';
 import * as pendingReport from './pending-report.ts';
@@ -79,7 +78,9 @@ async function finishRequest(runContext: RunContext, running: Running, instance:
     writeAhead.findEntry(runContext.record, runContext.markerOf(stepOf(running, instance, step)), 'complete');
   if (!complete('retire'))
     await pendingReport.labelAction(runContext, stepOf(running, instance, 'retire'), {
-      remove: await earlierLabels(runContext, vertex),
+      remove: await pendingReport.keepPendingIfUnread(`The labels of request ${instance.id}`, () =>
+        earlierLabels(runContext, vertex),
+      ),
     });
   if (!complete('await'))
     await pendingReport.labelAction(runContext, stepOf(running, instance, 'await'), {
@@ -195,18 +196,6 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
   });
 }
 
-// A Run that cannot read the Decision changes nothing: the Ticket stays Pending for the next one.
-async function readOrStayPending(runContext: RunContext, running: Running, instance: PendingInstance) {
-  try {
-    return await readDecision(runContext, running, instance);
-  } catch (err) {
-    if (effectErrors.fatal(err)) throw err;
-    throw pendingReport.pending(
-      `The Decision on request ${instance.id} could not be read (${(err as Error).message.split('\n')[0]}).`,
-    );
-  }
-}
-
 // Under the ticket lock, so no other Run reads or consumes this request (request 3.5): a recorded consumption finishes,
 // an unfinished request finishes, and only then is the timeline read. A stale, ambiguous or missing request is retired
 // and asked again without ending the Visit (X1c).
@@ -220,7 +209,9 @@ export async function awaitApproval(runContext: RunContext, running: Running): P
     return consume(runContext, running, instance, null);
   if (!writeAhead.findEntry(executionRecord, runContext.markerOf(stepOf(running, instance, 'comment')), 'complete'))
     return finishRequest(runContext, running, instance);
-  const read = await readOrStayPending(runContext, running, instance);
+  const read = await pendingReport.keepPendingIfUnread(`The Decision on request ${instance.id}`, () =>
+    readDecision(runContext, running, instance),
+  );
   if (read.kind === 'consume') return consume(runContext, running, instance, read.decision);
   if (read.kind === 'waiting')
     throw pendingReport.pending(`Vertex ${vertex} waits for a Decision on request ${instance.id}.`);

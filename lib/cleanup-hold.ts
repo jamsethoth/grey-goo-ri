@@ -116,14 +116,16 @@ async function confirm(
   const { record: executionRecord, database } = runContext;
   const number = holdNumber(runContext, held);
   const markers = (['label', 'comment'] as const).map((step) => runContext.markerOf(stepOf(held, step, number)));
-  const decided = await reconcile.terminalEffects(executionRecord, {
-    gh: runContext.gh,
-    database,
-    labelPrefix: runContext.labelPrefix,
-    cwd: runContext.cwd,
-    markers,
-    find,
-  });
+  const decided = await pendingReport.keepPendingIfUnread(`The hold on ${held.action}`, () =>
+    reconcile.terminalEffects(executionRecord, {
+      gh: runContext.gh,
+      database,
+      labelPrefix: runContext.labelPrefix,
+      cwd: runContext.cwd,
+      markers,
+      find,
+    }),
+  );
   if (decided.next === 'abandon') throw new effectErrors.EarlyTerminalError(decided);
   await report(runContext, held, cleanup);
   if (!runContext.exec.cleanupConfirmed(cleanup.containment)) throw pendingEnding(held);

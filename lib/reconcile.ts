@@ -44,7 +44,7 @@ type Database = Pick<record.StateDatabase, 'evidence' | 'complete'>;
 
 // The Visit's result is a call held for cleanup (L11): what its worktree holds is for the suspended call's validation
 // to judge (L15), once a later Run has confirmed its processes gone.
-const heldForCleanup = (executionRecord: record.ExecutionRecord): boolean =>
+export const heldForCleanup = (executionRecord: record.ExecutionRecord): boolean =>
   executionRecord.visitState?.settled?.resolution.row === 'cleanup-unconfirmed';
 
 const ignoredOf = async (

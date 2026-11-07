@@ -361,3 +361,26 @@ for (const point of ['before-effect', 'after-effect', 'after-completion'] as con
     assert.equal(fixture.gh.labels.has(CLEANUP_LABEL), false);
   });
 }
+
+test('an issue that cannot be read leaves a cleanup hold Pending', async (t) => {
+  const fixture = await heldCheck(t);
+  await interpreter.runExecution(fixture.options);
+  fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view', status: 502 });
+
+  assert.equal((await laterRun(fixture)).outcome, 'pending');
+  const saved = await loadTicket(fixture);
+  assert.equal(saved.state, 'active');
+  assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED);
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa', 'the next Run goes on');
+});
+
+test('an issue unread at Reconciliation, once a hold is confirmed, leaves it to the next Run', async (t) => {
+  const fixture = await heldCheck(t);
+  await interpreter.runExecution(fixture.options);
+  let views = 0;
+  fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view' && ++views === 2, status: 502 });
+
+  assert.equal((await laterRun(fixture)).outcome, 'pending');
+  assert.equal((await loadTicket(fixture)).state, 'active');
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+});

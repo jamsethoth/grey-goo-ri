@@ -353,3 +353,34 @@ test('each re-request has its own retry budget', async (t) => {
   assert.equal((await laterRun(fixture, edited('fifth'))).outcome, 'pending');
   assert.equal(requestComments(fixture).length, 5);
 });
+
+// The nth issue view of the Runs that follow fails as gh does, once.
+function failIssueView(fixture: Pick<golden.GoldenFixture, 'gh'>, nth: number) {
+  let views = 0;
+  fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view' && ++views === nth, status: 502 });
+}
+
+test('an issue that cannot be read at Reconciliation leaves a Pending request as it was', async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  failIssueView(fixture, 1);
+
+  assert.equal((await laterRun(fixture)).outcome, 'pending');
+  assert.equal((await loadTicket(fixture)).state, 'active');
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa', 'the next Run goes on');
+});
+
+test("an issue that cannot be read for a re-request's labels leaves the Ticket Pending", async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  fixture.gh.humanRemovesLabel(AWAIT_LABEL, OWNER);
+  // Reconciliation's view, the Decision's, then the labels the new request retires.
+  failIssueView(fixture, 3);
+
+  assert.equal((await laterRun(fixture)).outcome, 'pending');
+  assert.equal((await loadTicket(fixture)).state, 'active');
+  assert.equal((await laterRun(fixture)).outcome, 'pending');
+  assert.equal(fixture.gh.labels.has(AWAIT_LABEL), true);
+  assert.equal(requestComments(fixture).length, 2);
+});

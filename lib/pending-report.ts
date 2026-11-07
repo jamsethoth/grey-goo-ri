@@ -14,6 +14,17 @@ export type LabelPayload = { ticket: number; add: string[]; remove: string[] };
 // The Run ends for this Ticket, whose Execution goes on at its next Run.
 export const pending = (reason: string) => new effectErrors.EarlyTerminalError({ next: 'pending', reason });
 
+// A gh read a Pending Ticket's Run could not make changes nothing, so the Ticket stays Pending for the next Run: a blip
+// on GitHub must not end an Execution that is healthy. Only a gh process that failed: anything else is a real fault.
+export async function keepPendingIfUnread<Result>(what: string, read: () => Promise<Result>): Promise<Result> {
+  try {
+    return await read();
+  } catch (err) {
+    if (!(err instanceof github.GhError)) throw err;
+    throw pending(`${what} could not be read from GitHub (${err.message.split('\n')[0]}).`);
+  }
+}
+
 // A label write that does not land leaves its intent open for the next Run, and the Ticket Pending: nothing was lost,
 // and setLabels has reported it.
 export const performLabels =

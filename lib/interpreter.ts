@@ -9,6 +9,7 @@ import * as effects from './effects.ts';
 import * as events from './events.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
+import * as pendingRun from './pending-report.ts';
 import * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
@@ -110,19 +111,24 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
 async function resume(runContext: RunContext): Promise<TerminalResult | null> {
   const { record: executionRecord } = runContext;
   await cleanupHold.awaitConfirmation(runContext, findEffect(runContext));
-  const decided = await effects.whileBusy(runContext, () =>
-    reconcile.reconcile({
-      record: executionRecord,
-      flow: runContext.flow,
-      git: runContext.git,
-      integrity: runContext.integrity,
-      gh: runContext.gh,
-      database: runContext.database,
-      labelPrefix: runContext.labelPrefix ?? labels.DEFAULT_PREFIX,
-      cwd: runContext.cwd,
-      find: findEffect(runContext),
-    }),
-  );
+  const reconciled = () =>
+    effects.whileBusy(runContext, () =>
+      reconcile.reconcile({
+        record: executionRecord,
+        flow: runContext.flow,
+        git: runContext.git,
+        integrity: runContext.integrity,
+        gh: runContext.gh,
+        database: runContext.database,
+        labelPrefix: runContext.labelPrefix ?? labels.DEFAULT_PREFIX,
+        cwd: runContext.cwd,
+        find: findEffect(runContext),
+      }),
+    );
+  const decided =
+    executionRecord.approvalRequest || reconcile.heldForCleanup(executionRecord)
+      ? await pendingRun.keepPendingIfUnread(`#${executionRecord.ticket}`, reconciled)
+      : await reconciled();
   if (decided.next !== 'continue') {
     const advice = 'advice' in decided && decided.advice ? ` ${decided.advice}` : '';
     runContext.log(`#${executionRecord.ticket} ${decided.next}: ${decided.reason}${advice}`);
