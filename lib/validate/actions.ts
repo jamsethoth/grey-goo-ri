@@ -194,9 +194,10 @@ function checkDecisions(problems: report.Report, decisions: unknown, location: s
   const message = 'decisions must be a non-empty list of names';
   if (!Array.isArray(decisions)) report.error(problems, location, 'not-a-list', message);
   else if (!decisions.length) report.error(problems, location, 'empty-list', message);
-  else if (new Set(decisions).size !== decisions.length)
-    report.error(problems, location, 'repeated-decision', 'a Decision is repeated');
-  else
+  else {
+    // Every mistake in the list at once, so one round of fixing clears it.
+    if (new Set(decisions).size !== decisions.length)
+      report.error(problems, location, 'repeated-decision', 'a Decision is repeated');
     for (const decision of decisions) {
       const shown = JSON.stringify(decision);
       if (typeof decision !== 'string' || !/^[a-z][a-z0-9-]*$/.test(decision))
@@ -204,6 +205,7 @@ function checkDecisions(problems: report.Report, decisions: unknown, location: s
       else if (report.isReserved(decision))
         report.error(problems, location, 'reserved-name', `Decision ${shown} ${report.RESERVED}`);
     }
+  }
 }
 
 // The Actions in order, and what they declared between them.

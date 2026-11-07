@@ -144,3 +144,9 @@ test('otherwise beside an await-approval with a Check before it names the failed
   assert.deepEqual(errors, []);
   assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['approved', 'rejected']);
 });
+
+test('a repeated Decision is reported beside every other mistake in its list', () => {
+  const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['failed', 'failed', 'Needs-Work'] });
+  const found = exampleLayer.check(config).errors.map(({ code }) => code);
+  assert.deepEqual(found, ['repeated-decision', 'reserved-name', 'invalid-name']);
+});

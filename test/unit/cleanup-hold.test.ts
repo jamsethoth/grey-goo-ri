@@ -417,3 +417,18 @@ test('a run stop met while a hold finishes its report leaves the hold Pending', 
   assert.equal(saved.state, 'active');
   assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED);
 });
+
+// A stopped Run starts no work, and confirming a hold leads straight to some: it waits for a Run with no stop.
+test('a stopped Run confirms no hold, and the next Run goes on', async (t) => {
+  const fixture = await heldCheck(t);
+  await interpreter.runExecution(fixture.options);
+  const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
+
+  assert.equal((await laterRun(fixture, { runState })).outcome, 'pending');
+  const saved = await loadTicket(fixture);
+  assert.equal(saved.state, 'active');
+  assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED, 'not confirmed by the stopped Run');
+  assert.equal(attemptsOf(fixture, 'green', 'commit').length, 0);
+
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+});

@@ -138,7 +138,8 @@ async function confirm(
   );
   if (decided.next === 'abandon') throw new effectErrors.EarlyTerminalError(decided);
   await report(runContext, held, cleanup);
-  if (!runContext.exec.cleanupConfirmed(cleanup.containment)) throw pendingEnding(held);
+  // A stopped Run starts no work, and a confirmed hold leads straight to some, so it waits for a Run with no stop.
+  if (runContext.runState.stop || !runContext.exec.cleanupConfirmed(cleanup.containment)) throw pendingEnding(held);
   executionRecord.visitState!.unconfirmedCleanup = null;
   await database.save(executionRecord);
 }
