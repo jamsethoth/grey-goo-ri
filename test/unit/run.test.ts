@@ -601,3 +601,24 @@ test('an abandoned Pending sub-issue is not admitted by a later epic Run', async
     return true;
   });
 });
+
+// A run stop ends what would start new work: a Ticket waiting on its request starts none, so it waits on.
+test("another Ticket's run stop leaves a Pending request as it was", async (t) => {
+  const fixture = await pendingApproval(t, { issues: epicRun.epicOf([TICKET, TICKET + 1]) });
+  fixture.options.target = epicRun.EPIC;
+  assert.equal((await run.runTarget(fixture.options))[1]!.outcome, 'pending');
+  // #15 reads first; its auth failure stops the Run before #16 reaches its request.
+  fixture.gh.fail({ matches: timelineRead, status: 401, body: { message: 'Bad credentials' } });
+
+  const results = await run.runTarget(fixture.options);
+  assert.deepEqual(
+    results.map((result) => [result.ticket, result.outcome]),
+    [
+      [TICKET, 'pending'],
+      [TICKET + 1, 'pending'],
+    ],
+  );
+  const sibling = await record.load(fixture.commonDir, 'ticket', TICKET + 1);
+  assert.equal(sibling!.state, 'active');
+  assert.ok(sibling!.approvalRequest, 'its request stands');
+});

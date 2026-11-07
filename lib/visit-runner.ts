@@ -220,6 +220,7 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
       actionIndex = actions.findIndex((candidate) => candidate.do === 'check') - 1;
       continue;
     }
+    approvalAction.waitThroughStop(runContext, { actionIdentity, action, state }, settled);
     const resolution: ActionResolution =
       settled ??
       terminal.runStopped(runContext) ??

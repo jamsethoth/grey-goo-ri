@@ -196,6 +196,19 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
   });
 }
 
+// A run stop ends an Execution before it starts new work (request 3.4). A request already made starts none, and ending
+// the Execution would lose it, so it waits on to the next Run as it was. One not yet made is new work.
+export function waitThroughStop(runContext: RunContext, running: Running, settled: unknown) {
+  const stop = runContext.runState.stop;
+  const given = runContext.record.approvalRequest;
+  const { vertex, visit: visitNumber } = running.actionIdentity;
+  if (settled || !stop || running.action.do !== 'await-approval' || given?.vertex !== vertex) return;
+  if (given.visit === visitNumber)
+    throw pendingReport.pending(
+      `The run stopped on class ${stop.failureClass}, so request ${given.id} waits for the next Run.`,
+    );
+}
+
 // Under the ticket lock, so no other Run reads or consumes this request (request 3.5): a recorded consumption finishes,
 // an unfinished request finishes, and only then is the timeline read. A stale, ambiguous or missing request is retired
 // and asked again without ending the Visit (X1c).
