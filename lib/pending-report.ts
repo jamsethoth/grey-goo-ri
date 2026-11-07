@@ -5,6 +5,7 @@ import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects.ts';
 import * as github from './github.ts';
+import * as outcome from './outcome.ts';
 import type * as marker from './marker.ts';
 import type { RunContext } from './run-context.ts';
 
@@ -15,13 +16,23 @@ export type LabelPayload = { ticket: number; add: string[]; remove: string[] };
 export const pending = (reason: string) => new effectErrors.EarlyTerminalError({ next: 'pending', reason });
 
 // A gh read a Pending Ticket's Run could not make changes nothing, so the Ticket stays Pending for the next Run: a blip
-// on GitHub must not end an Execution that is healthy. Only a gh process that failed: anything else is a real fault.
-export async function keepPendingIfUnread<Result>(what: string, read: () => Promise<Result>): Promise<Result> {
+// on GitHub must not end an Execution that is healthy. Only a gh process that failed: anything else is a real fault. A
+// blip passes by the next Run, but a refusal does not, so its class is the Ticket's result and fails the Run's exit
+// code, and one that reaches the whole Run (auth) stops it, as a remote Action's does (#240).
+export async function keepPendingIfUnread<Result>(
+  runContext: Pick<RunContext, 'record' | 'runState'>,
+  what: string,
+  read: () => Promise<Result>,
+): Promise<Result> {
   try {
     return await read();
   } catch (err) {
     if (!(err instanceof github.GhError)) throw err;
-    throw pending(`${what} could not be read from GitHub (${err.message.split('\n')[0]}).`);
+    const { failureClass, retryable } = outcome.classifyRemoteFailure(err);
+    if (outcome.FAILURE_CLASSES[failureClass].reach === 'run')
+      runContext.runState.stop ??= { failureClass, ticket: runContext.record.ticket, source: 'read' };
+    const reason = `${what} could not be read from GitHub, class ${failureClass} (${err.message.split('\n')[0]}).`;
+    throw new effectErrors.EarlyTerminalError({ next: 'pending', reason, ...(!retryable && { unread: failureClass }) });
   }
 }
 

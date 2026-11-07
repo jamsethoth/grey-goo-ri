@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -489,7 +489,7 @@ test('approvers reach the reader, and a malformed list fails preflight', async (
   const fixture = runFixture.fixture(t);
   fixture.options.config.approvers = 'some-login';
   await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
-    assert.match(err.message, /approvers must be a list of non-empty GitHub logins/);
+    assert.match(err.message, /approvers must be a list of GitHub logins/);
     return true;
   });
 });
@@ -535,4 +535,69 @@ test('approvers in the repository Layer reach the reader through gg run', async 
   fixture.gh.humanAddsLabel('gg:decide:approve:approved', 'a-triager');
 
   assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'ready-for-qa', fixture.logs.join('\n'));
+});
+
+// The golden Flow, asking at approve, Pending after one Run.
+async function pendingApproval(t: TestContext, options: runFixture.RunFixtureOptions = {}) {
+  const fixture = runFixture.fixture(t, options);
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'pending');
+  return fixture;
+}
+const timelineRead = (args: string[]) => args.some((arg) => arg.endsWith('/events'));
+
+test('a Pending Ticket whose read GitHub refuses stays Pending, and the Run exits 1 naming the class', async (t) => {
+  const fixture = await pendingApproval(t);
+  fixture.gh.fail({ matches: timelineRead, status: 403, body: { message: 'Resource not accessible by integration' } });
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(results[0]!.outcome, 'pending');
+  assert.equal(results[0]!.unread, 'permission');
+  assert.equal(run.runExitCode(results), 1);
+  assert.ok(
+    fixture.logs.some((line) => line.includes('class permission')),
+    fixture.logs.join('\n'),
+  );
+  assert.equal(JSON.parse(fixture.loadRow() as string).state, 'active', 'nothing was lost');
+});
+
+test('a Pending Ticket whose read fails on a blip stays Pending, and the Run exits 0', async (t) => {
+  const fixture = await pendingApproval(t);
+  fixture.gh.fail({ matches: timelineRead, status: 502 });
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(results[0]!.outcome, 'pending');
+  assert.equal(results[0]!.unread, undefined);
+  assert.equal(run.runExitCode(results), 0);
+});
+
+test("an auth failure reading a Pending Ticket stops the whole Run, as a remote Action's does", async (t) => {
+  const fixture = await pendingApproval(t);
+  fixture.gh.fail({ matches: timelineRead, status: 401, body: { message: 'Bad credentials' } });
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(results[0]!.unread, 'auth');
+  assert.equal(run.runExitCode(results), 1);
+  const ended = fixture.readEvents().findLast((event) => event.type === 'run_end') as { failureClass?: string };
+  assert.equal(ended.failureClass, 'auth');
+});
+
+test('an abandoned Pending sub-issue is not admitted by a later epic Run', async (t) => {
+  const fixture = await pendingApproval(t, { issues: epicRun.epicOf([TICKET]) });
+  fixture.gh.humanAddsLabel('gg:state:needs-human', 'the-owner');
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'abandoned');
+  fixture.options.target = epicRun.EPIC;
+
+  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
+    assert.match(err.message, /nothing ready/);
+    return true;
+  });
 });

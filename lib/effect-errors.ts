@@ -52,6 +52,8 @@ export interface RunStopEnding {
 export interface PendingEnding {
   next: 'pending';
   reason: string;
+  // The Failure Class of a read GitHub refused, which a next Run will not get past by itself.
+  unread?: string;
 }
 // How an Execution ends before its route reaches an end state: held, abandoned for a human's label, stopped, or left
 // Pending.

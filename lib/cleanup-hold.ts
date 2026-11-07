@@ -126,7 +126,7 @@ async function confirm(
   const markers = (['label', 'comment'] as const).map((part) =>
     runContext.markerOf(reportActionOf(held, part, number)),
   );
-  const decided = await pendingReport.keepPendingIfUnread(`The hold on ${held.action}`, () =>
+  const decided = await pendingReport.keepPendingIfUnread(runContext, `The hold on ${held.action}`, () =>
     reconcile.terminalEffects(executionRecord, {
       gh: runContext.gh,
       database,

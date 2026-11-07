@@ -422,3 +422,13 @@ test('a failed issue read at the Reconciliation of an Execution that is not Pend
   const result = await laterRun(fixture);
   assert.equal(result.fault, true);
 });
+
+test('an abandoned Pending request takes its Await Label down', async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  fixture.gh.humanAddsLabel('gg:state:needs-human', OWNER);
+
+  assert.equal((await laterRun(fixture)).outcome, 'abandoned');
+  assert.equal(fixture.gh.labels.has(AWAIT_LABEL), false, 'nothing waits for a Decision any more');
+  assert.equal(fixture.gh.labels.has('gg:state:needs-human'), true, "the human's label stays");
+});

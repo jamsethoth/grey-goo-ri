@@ -267,8 +267,11 @@ export function testPathsProblems(testPaths: unknown, file: string): string[] {
 // The repository Layer's approvers as preflight failures, each naming `file`; none for no list or a list of logins.
 export function approversProblems(approvers: unknown, file: string): string[] {
   if (approvers === undefined) return [];
-  const valid = Array.isArray(approvers) && approvers.every((login) => typeof login === 'string' && login.trim());
-  return valid ? [] : [`${file}: approvers must be a list of non-empty GitHub logins`];
+  // A login with space around it never matches the actor GitHub names.
+  const valid =
+    Array.isArray(approvers) &&
+    approvers.every((login) => typeof login === 'string' && login.trim() && login === login.trim());
+  return valid ? [] : [`${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`];
 }
 
 // The repository Layer's Declared Commands as preflight failures, each naming `file`; none for a valid set with a test.

@@ -127,7 +127,7 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
     );
   const decided =
     executionRecord.approvalRequest || reconcile.heldForCleanup(executionRecord)
-      ? await pendingRun.keepPendingIfUnread(`#${executionRecord.ticket}`, reconciled)
+      ? await pendingRun.keepPendingIfUnread(runContext, `#${executionRecord.ticket}`, reconciled)
       : await reconciled();
   if (decided.next !== 'continue') {
     const advice = 'advice' in decided && decided.advice ? ` ${decided.advice}` : '';

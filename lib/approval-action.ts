@@ -78,7 +78,7 @@ async function finishRequest(runContext: RunContext, running: Running, instance:
     writeAhead.findEntry(runContext.record, runContext.markerOf(reportActionOf(running, instance, part)), 'complete');
   if (!complete('retire'))
     await pendingReport.labelAction(runContext, reportActionOf(running, instance, 'retire'), {
-      remove: await pendingReport.keepPendingIfUnread(`The labels of request ${instance.id}`, () =>
+      remove: await pendingReport.keepPendingIfUnread(runContext, `The labels of request ${instance.id}`, () =>
         earlierLabels(runContext, vertex),
       ),
     });
@@ -217,7 +217,7 @@ export async function awaitApproval(runContext: RunContext, running: Running): P
     )
   )
     return finishRequest(runContext, running, instance);
-  const read = await pendingReport.keepPendingIfUnread(`The Decision on request ${instance.id}`, () =>
+  const read = await pendingReport.keepPendingIfUnread(runContext, `The Decision on request ${instance.id}`, () =>
     readDecision(runContext, running, instance),
   );
   if (read.kind === 'consume') return consume(runContext, running, instance, read.decision);

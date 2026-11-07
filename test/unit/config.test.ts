@@ -445,13 +445,14 @@ test('this repository AGENTS.md Commands line matches its repository Layer', (t)
 
 test('a malformed approvers list fails admission', () => {
   const layerFile = '/repo/.agents/gg/gg.json';
-  const notAList = `${layerFile}: approvers must be a list of non-empty GitHub logins`;
+  const notAList = `${layerFile}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
   assert.deepEqual(config.approversProblems(undefined, layerFile), []);
   assert.deepEqual(config.approversProblems([], layerFile), []);
   assert.deepEqual(config.approversProblems(['some-login'], layerFile), []);
   assert.deepEqual(config.approversProblems('some-login', layerFile), [notAList]);
   assert.deepEqual(config.approversProblems([''], layerFile), [notAList]);
   assert.deepEqual(config.approversProblems([' '], layerFile), [notAList]);
+  assert.deepEqual(config.approversProblems([' some-login '], layerFile), [notAList], 'it could never match a login');
   assert.deepEqual(config.approversProblems(['some-login', 3], layerFile), [notAList]);
 });
 

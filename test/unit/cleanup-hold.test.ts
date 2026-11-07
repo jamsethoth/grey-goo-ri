@@ -384,3 +384,19 @@ test('an issue unread at Reconciliation, once a hold is confirmed, leaves it to 
   assert.equal((await loadTicket(fixture)).state, 'active');
   assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
 });
+
+test('a Pending cleanup hold that is abandoned or held takes its Await Label down', async (t) => {
+  const abandoned = await heldCheck(t);
+  await interpreter.runExecution(abandoned.options);
+  abandoned.options.deps.exec.cleanupConfirmed = () => false;
+  abandoned.gh.labels.add('gg:state:needs-human');
+  assert.equal((await laterRun(abandoned)).outcome, 'abandoned');
+  assert.equal(abandoned.gh.labels.has(CLEANUP_LABEL), false);
+
+  const held = await heldCheck(t);
+  await interpreter.runExecution(held.options);
+  held.fakeIntegrity!.write(held.worktree, 'notes.txt');
+  held.fakeIntegrity!.commit(held.worktree);
+  assert.equal((await laterRun(held)).held, true);
+  assert.equal(held.gh.labels.has(CLEANUP_LABEL), false);
+});

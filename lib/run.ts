@@ -21,7 +21,7 @@ import * as validator from './validate/index.ts';
 type TicketResult = admission.TicketResult;
 
 export const runExitCode = (results: TicketResult[]): number => {
-  if (results.some((result) => result.labelFailed || result.fault)) return 1;
+  if (results.some((result) => result.labelFailed || result.fault || result.unread)) return 1;
   return results.some((result) => result.state === labels.NEEDS_HUMAN) ? 2 : 0;
 };
 
