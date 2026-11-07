@@ -162,7 +162,12 @@ function checkFlowKeys(problems: report.Report, location: string, declaration: V
   report.unknownKeys(problems, ticket, TICKET_KEYS, `${location}.ticket`);
   const vertices = referencePaths.isRecord(ticket.vertices) ? ticket.vertices : {};
   if (!Object.keys(vertices).length)
-    report.error(problems, `${location}.ticket.vertices`, 'empty-collection', 'vertices must be a non-empty object');
+    report.error(
+      problems,
+      `${location}.ticket.vertices`,
+      referencePaths.isRecord(ticket.vertices) ? 'no-vertex-declared' : 'not-an-object',
+      'vertices must be a non-empty object',
+    );
   if (typeof ticket.entry !== 'string' || !Object.hasOwn(vertices, ticket.entry))
     report.error(
       problems,

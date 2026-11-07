@@ -60,6 +60,13 @@ const requireFile = (problems: report.Report, action: Value, key: string, locati
   if (!report.isName(action[key])) report.error(problems, location, 'file-not-named', `${key} must name a file`);
 };
 
+// One sentence states three rules, and the code says which one the value breaks.
+function requireNames(problems: report.Report, names: unknown, location: string, message: string) {
+  if (!Array.isArray(names)) report.error(problems, location, 'not-a-list', message);
+  else if (!names.length) report.error(problems, location, 'empty-list', message);
+  else if (!names.every(report.isName)) report.error(problems, location, 'invalid-name', message);
+}
+
 function checkActionId(problems: report.Report, ids: unknown[], id: unknown, location: string) {
   if (!report.checkName(problems, location, id, { what: 'Action id', carried: true })) return;
   if (ids.includes(id))
@@ -139,9 +146,8 @@ function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
   if (check.kind === 'command' && check.reuse !== undefined && check.reuse !== 'tree')
     report.error(problems, location, 'invalid-reuse', 'reuse may only be tree');
   if (check.kind === 'response') declared.responseConditions.push([check, location]);
-  const { fields } = check;
-  if (check.kind === 'repeat' && !(Array.isArray(fields) && fields.length && fields.every(report.isName)))
-    report.error(problems, location, 'empty-collection', 'fields must be a non-empty list of field names');
+  if (check.kind === 'repeat')
+    requireNames(problems, check.fields, location, 'fields must be a non-empty list of field names');
 }
 
 function checkEffectAction(problems: report.Report, action: Value, location: string) {
@@ -158,9 +164,7 @@ function checkEffectAction(problems: report.Report, action: Value, location: str
     requireFile(problems, action, 'body', location);
   } else if (action.do === 'await-approval') {
     // The decisions' own rules are #119's.
-    const { decisions } = action;
-    if (!(Array.isArray(decisions) && decisions.length && decisions.every(report.isName)))
-      report.error(problems, location, 'empty-collection', 'decisions must be a non-empty list of names');
+    requireNames(problems, action.decisions, location, 'decisions must be a non-empty list of names');
   }
 }
 

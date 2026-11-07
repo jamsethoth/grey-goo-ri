@@ -8,7 +8,7 @@ import * as referencePaths from '../reference-paths.ts';
 // code reads on its own; a comment may cite the id.
 export const PROBLEM_CODES = [
   // A value of the wrong shape, wherever the configuration holds it.
-  'empty-collection',
+  'empty-list',
   'not-a-boolean',
   'not-a-list',
   'not-a-positive-integer',
@@ -24,6 +24,7 @@ export const PROBLEM_CODES = [
   'malformed-route-target',
   'max-without-exhausted',
   'no-flow-declared',
+  'no-vertex-declared',
   'plan-missing',
   'plan-not-null',
   'undeclared-procedure',

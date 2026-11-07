@@ -22,7 +22,7 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     (config) => {
       config.procedures.publish.actions = 3;
     },
-    [{ at: 'procedures.publish', code: 'empty-collection' }],
+    [{ at: 'procedures.publish', code: 'not-a-list' }],
   ],
   [
     'requires that is a number',
@@ -41,7 +41,52 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     (config) => {
       procedureActions.actionById(config.procedures.review, 'repeat').fields = true;
     },
-    [{ at: 'procedures.review.actions[2]', code: 'empty-collection' }],
+    [{ at: 'procedures.review.actions[2]', code: 'not-a-list' }],
+  ],
+  [
+    'actions that are empty',
+    (config) => {
+      config.procedures.publish.actions = [];
+    },
+    [{ at: 'procedures.publish', code: 'empty-list' }],
+  ],
+  [
+    'repeat fields that are empty',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'repeat').fields = [];
+    },
+    [{ at: 'procedures.review.actions[2]', code: 'empty-list' }],
+  ],
+  [
+    'repeat fields holding a number',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'repeat').fields = [1];
+    },
+    [{ at: 'procedures.review.actions[2]', code: 'invalid-name' }],
+  ],
+  [
+    'decisions that are a number',
+    (config) => {
+      config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval', decisions: 3 });
+    },
+    [{ at: 'procedures.publish.actions[3]', code: 'not-a-list' }],
+  ],
+  [
+    'decisions holding a number',
+    (config) => {
+      config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval', decisions: [1] });
+    },
+    [{ at: 'procedures.publish.actions[3]', code: 'invalid-name' }],
+  ],
+  [
+    'vertices that are a list',
+    (config) => {
+      config.flows.default.ticket.vertices = [];
+    },
+    [
+      { at: VERTICES, code: 'not-an-object' },
+      { at: 'flows.default.ticket.entry', code: 'unknown-vertex' },
+    ],
   ],
   [
     'a table row that is null',
@@ -286,7 +331,7 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     (config) => {
       config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval', decisions: [] });
     },
-    [{ at: 'procedures.publish.actions[3]', code: 'empty-collection' }],
+    [{ at: 'procedures.publish.actions[3]', code: 'empty-list' }],
   ],
   [
     'a list condition reading a string',
@@ -323,7 +368,7 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     },
     [
       { at: 'flows.default.ticket', code: 'not-an-object' },
-      { at: `${VERTICES}`, code: 'empty-collection' },
+      { at: VERTICES, code: 'not-an-object' },
       { at: 'flows.default.ticket.entry', code: 'unknown-vertex' },
     ],
   ],
@@ -333,7 +378,7 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
       config.flows.default.ticket.vertices = {};
     },
     [
-      { at: `${VERTICES}`, code: 'empty-collection' },
+      { at: VERTICES, code: 'no-vertex-declared' },
       { at: 'flows.default.ticket.entry', code: 'unknown-vertex' },
     ],
   ],
@@ -415,7 +460,7 @@ const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.Fir
     (config) => {
       config.flows.default.ticket.vertices.red.inputs.oddly = { from: [] };
     },
-    [{ at: `${VERTICES}.red.inputs.oddly`, code: 'empty-collection' }],
+    [{ at: `${VERTICES}.red.inputs.oddly`, code: 'empty-list' }],
   ],
   [
     'a Claim token that is a number',
