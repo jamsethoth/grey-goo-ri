@@ -175,7 +175,22 @@ const mergeLayer = (base: Layer, layer: Layer): Layer => ({
   ),
 });
 
-// defaults < user < repo, with the files each Layer names. `files` is gg's own: no Layer sets it.
+// A row's `when` and a response condition's `where`, each in an object of a list, hold values to match, not settings: a
+// null left out there would drop the condition and widen the row or Check (T10), so the validator reads them whole.
+const VALUES_TO_MATCH = ['when', 'where'];
+// In a configuration file a null means the key is left out. An array item is not a key, so a null one stays malformed.
+function withoutNulls(value: unknown, inList = false): unknown {
+  if (Array.isArray(value)) return value.map((item) => withoutNulls(item, true));
+  if (!referencePaths.isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== null)
+      .map(([key, entry]) => [key, inList && VALUES_TO_MATCH.includes(key) ? entry : withoutNulls(entry)]),
+  );
+}
+
+// defaults < user < repo, with the files each Layer names. `files` is gg's own: no Layer sets it. A null goes once the
+// last Layer is merged, so a later Layer's deletes what an earlier Layer set.
 // shortcut: a plain deep merge; slice 5 brings the migration table.
 export function loadLayers(repoRoot: string, home = homedir()): Config {
   const files: LayerFiles = {};
@@ -189,7 +204,7 @@ export function loadLayers(repoRoot: string, home = homedir()): Config {
     loadFiles(layer, path, files, from);
     config = mergeLayer(config, layer);
   }
-  return { ...config, files } as Config;
+  return { ...(withoutNulls(config) as Layer), files } as Config;
 }
 
 // A file a Layer named, by that name (loadLayers's `files`).

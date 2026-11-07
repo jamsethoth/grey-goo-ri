@@ -149,10 +149,8 @@ function checkRouteTarget(problems: report.Report, location: string, target: unk
 // The Flow's own keys, its ticket section and its routes; the ticket and its Vertices, whatever their shape.
 function checkFlowKeys(problems: report.Report, location: string, declaration: Value) {
   report.unknownKeys(problems, declaration, FLOW_KEYS, location);
-  // plan is never defaulted, and must be null until Epic planning is built (X2b, X2d).
-  if (!Object.hasOwn(declaration, 'plan'))
-    report.error(problems, location, 'plan-missing', 'plan is required: null when the Flow has no Epic-level planning');
-  else if (declaration.plan !== null)
+  // A Flow has no plan until Epic planning is built (X2d).
+  if (declaration.plan != null)
     report.error(problems, `${location}.plan`, 'plan-not-null', 'plan must be null until Epic planning is built');
   if (!report.isCount(declaration.actionCap))
     report.error(

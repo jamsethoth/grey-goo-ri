@@ -12,9 +12,9 @@ const VERTICES = 'flows.default.ticket.vertices';
 // Each malformed edit, named for the case, with the errors it gives.
 const MALFORMED: [string, (config: exampleLayer.Layer) => void, exampleLayer.FiredRule[]][] = [
   [
-    'a Procedure that is null',
+    'a Procedure that is a number',
     (config) => {
-      config.procedures.publish = null;
+      config.procedures.publish = 7;
     },
     [{ at: 'procedures.publish', code: 'not-an-object' }],
   ],

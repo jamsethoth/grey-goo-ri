@@ -261,7 +261,11 @@ const smallFlowLayer = (flow: Record<string, unknown> = {}) =>
     commands: { test: 'npm test' },
     procedures: { probe: { actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }] } },
     flows: {
-      small: { actionCap: 5, ticket: { entry: 'look', vertices: { look: { procedure: 'probe' } } }, ...flow },
+      small: {
+        actionCap: 5,
+        ticket: { entry: 'look', routes: { '*': { end: 'needs-human' } }, vertices: { look: { procedure: 'probe' } } },
+        ...flow,
+      },
     },
   });
 // Each error at or under `location`, as its location and the rule it broke.
@@ -381,7 +385,7 @@ test("a resolved Flow's hash is the same for a Layer that differs only in plan: 
 });
 
 test('a null ticket entry reports required-key-missing', (t) => {
-  const ticket = { entry: null, vertices: { look: { procedure: 'probe' } } };
+  const ticket = { entry: null, routes: { '*': { end: 'needs-human' } }, vertices: { look: { procedure: 'probe' } } };
   assert.deepEqual(smallFlowErrors(t, { ticket }), ['flows.small.ticket.entry: required-key-missing']);
 });
 

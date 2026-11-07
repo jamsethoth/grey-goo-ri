@@ -694,10 +694,11 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
   - (a) `gg run <n> --flow <name>` selects a Flow the repository Layer declares; without it, `default` runs. An
     unknown name fails preflight, listing the declared Flows. The chosen name is pinned with the record, and a
     resumed Execution keeps its Flow whatever `--flow` says.
-  - (b) A Flow declares `plan` explicitly, `null` when it has no Epic-level planning; a missing key is a validation
-    error, since nothing a repository configures is silently defaulted. The example writes `plan: null`.
+  - (b) Reversed on 2026-11-07, see [Null in a configuration file](#null-in-a-configuration-file-2026-11-07). A Flow
+    declares `plan` explicitly, `null` when it has no Epic-level planning; a missing key is a validation error, since
+    nothing a repository configures is silently defaulted. The example writes `plan: null`.
   - (c) Per-ticket Flow choice inside one Epic (for example by label) is not part of this design.
-  - (d) Until Epic planning is designed (request slice 7), `plan` must be `null`. A non-null value is a validation
+  - (d) Until Epic planning is designed (request slice 7), `plan` is left out or `null`. A non-null value is a validation
     error saying Epic planning is not built yet, so nothing unvalidated is accepted.
 
 ## For request slice 7: planning Flows (owner requirement, 2026-10-22; not yet designed)
@@ -1244,6 +1245,26 @@ Taken by the owner with the audit of grey-goo-ri issue #118.
   and no output (N4), so a required input met only by it could only fault at run time, where an agent failed without
   changing anything. Admission refuses that. The rescue counts for an optional input, which it may reach on a route, and
   a required list input needs another source that is guaranteed. The example Flow marks these inputs optional.
+
+## Null in a configuration file (2026-11-07)
+
+Taken by the owner on grey-goo-ri PR #292, for issue #298. The request's "null deletes" was not built, so a null meant
+three things depending on the key.
+
+- In a configuration file, `null` means the key is left out. One pass over the merged result, after the last Layer, so
+  a later Layer's null deletes what an earlier Layer set. An array item is not a key, so `actions: [null]` stays
+  malformed. gg's `files` key is its own and no Layer reaches it. Null in anything gg persists or emits keeps its
+  meaning, deliberately empty.
+- X2b is reversed: `plan` is optional. Left out or null means no Epic planning, and a resolved Flow reads `plan: null`
+  either way, so its hash does not change. `{...}` stays `plan-not-null` (X2d). `plan-missing` is gone. Rejected:
+  `plan: false`, keeping `plan: null` required as an exception, and removing the key from every fixture.
+- The exception is a null inside a Rule Table row's `when`, which stays `invalid-rule-condition`. `when` holds values
+  to match, not settings. Left out, the condition goes and the row widens: `{ "when": { "response.reason": null } }`
+  would become `when: {}` and fire for any reason, with only an `overlapping-rows` warning. Writing `null` to mean "this
+  field is absent" is an easy mistake to make (T10).
+- A response condition's `where` takes the same exception, for the same reason (found on #298, for the owner to
+  confirm). Left out, `{ "all": "findings", "where": { "severity": null } }` becomes `where: {}`, which admission accepts
+  and which holds of a blocker finding. It stays `condition-value-mismatch`.
 
 ## Open
 
