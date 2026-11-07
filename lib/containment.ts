@@ -83,23 +83,12 @@ function processes(kernel32: Kernel32): commandCleanup.ProcessEntry[] {
   return found;
 }
 
-function linkedIn(entries: commandCleanup.ProcessEntry[], rootPid: number): number[] {
-  const rows = entries.map(({ pid, parentPid }): commandCleanup.ProcessRow => [pid, parentPid, '']);
+// The pids still linked to rootPid through parent pids, for the fallback that has no job to list.
+export function linkedDescendants(kernel32: Kernel32, rootPid: number): number[] {
+  const rows = processes(kernel32).map(({ pid, parentPid }): commandCleanup.ProcessRow => [pid, parentPid, '']);
   const linked: number[] = [];
   commandCleanup.growTree(new Set([rootPid]), rows, process.pid, ([pid]) => linked.push(pid));
   return linked;
-}
-
-// The pids still linked to rootPid through parent pids, for the fallback that has no job to list.
-export const linkedDescendants = (kernel32: Kernel32, rootPid: number): number[] =>
-  linkedIn(processes(kernel32), rootPid);
-
-// What an uncontained command left once it has exited: a Windows snapshot keeps a dead parent's pid, so what is still
-// linked to it is listed, less the console host its spawn gave it. An orphan's own children are linked; an orphan whose
-// parent gg never saw is not.
-export function linkedLeftovers(kernel32: Kernel32, rootPid: number): number[] {
-  const entries = processes(kernel32);
-  return commandCleanup.leftoverPids(linkedIn(entries, rootPid), entries, rootPid);
 }
 
 function createdAt(kernel32: Kernel32, handle: bigint): string | null {

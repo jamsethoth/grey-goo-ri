@@ -54,26 +54,22 @@ export interface EffectContext {
   laterRunReport?: boolean;
 }
 
-// The worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone. It stays busy once a
-// call's cleanup is unconfirmed: a writer may still be running there (L11).
+// The worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone.
 export async function whileBusy<Result>(
   context: Pick<EffectContext, 'record' | 'database'>,
   work: () => Promise<Result>,
 ): Promise<Result> {
   const { record: executionRecord, database } = context;
   await integrity.markBusy(executionRecord, database);
-  const markIdle = async () => {
-    if (!executionRecord.visitState?.unconfirmedCleanup) await integrity.markIdle(executionRecord, database);
-  };
   let result;
   try {
     result = await work();
   } catch (err) {
     // A crashed process saves nothing more: marking idle would also persist whatever the crash left unsaved.
-    if (!effectErrors.fatal(err)) await markIdle();
+    if (!effectErrors.fatal(err)) await integrity.markIdle(executionRecord, database);
     throw err;
   }
-  await markIdle();
+  await integrity.markIdle(executionRecord, database);
   return result;
 }
 

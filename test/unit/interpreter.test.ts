@@ -691,3 +691,23 @@ test("an agent call's confirmed cleanup is recorded in its Event and its output"
   );
   assert.deepEqual(actionEvent(fixture, 'green', 'test')!.cleanup, addSuite.CONFIRMED);
 });
+
+// A remote Action's backoff marks a busy worktree idle while it waits, but this worktree's writer may still be running.
+test("unconfirmed cleanup keeps the worktree busy through the hold comment's backoff", async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({
+      [keys.responseKey('green', 1, 'green', 1)]: {
+        ...golden.firstVisitResponses[keys.responseKey('green', 1, 'green', 1)],
+        cleanup: UNCONFIRMED,
+      },
+    }),
+  });
+  const during: boolean[] = [];
+  fixture.clock.onSleep = () => {
+    during.push(fixture.executionRecord.activity.busy);
+  };
+  const runState = { stop: null, remoteNotBefore: fixture.clock.now() + 60_000 };
+  const result = await interpreter.runExecution({ ...fixture.options, runState });
+  assert.equal(result.held, true);
+  assert.deepEqual(during, [true], 'still busy while the comment waits');
+});

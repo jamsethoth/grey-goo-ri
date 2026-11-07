@@ -103,8 +103,14 @@ export async function isCleanAt(worktree: string, git: IntegrityGit, locks?: Rep
 
 export const markBusy = (executionRecord: record.ExecutionRecord, database?: Pick<record.StateDatabase, 'save'>) =>
   flip(executionRecord, true, database);
-export const markIdle = (executionRecord: record.ExecutionRecord, database?: Pick<record.StateDatabase, 'save'>) =>
-  flip(executionRecord, false, database);
+// Never once a call's cleanup is unconfirmed: a writer may still be running there, so other Tickets' Integrity
+// Assertions must keep off it (L11), whichever wait or report asks.
+export const markIdle = async (
+  executionRecord: record.ExecutionRecord,
+  database?: Pick<record.StateDatabase, 'save'>,
+) => {
+  if (!executionRecord.visitState?.unconfirmedCleanup) await flip(executionRecord, false, database);
+};
 
 export async function readActivity(
   commonDir: string,

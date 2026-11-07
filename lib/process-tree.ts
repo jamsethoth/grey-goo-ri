@@ -152,15 +152,20 @@ async function killGroup(
   const cleanupErrors: string[] = [];
   // Listed with the group stopped, before it is killed: no member can exit or start a process during the listing, so
   // a descendant detached from the group is still linked to its parent, not yet reparented.
+  // A group found gone is not signalled again: over the listing's wait its number can come to name another group.
+  let groupGone = false;
   try {
     process.kill(-rootPid, 'SIGSTOP');
-  } catch {} // the kill below reports a group it cannot signal
-  const listing = await list();
-  try {
-    process.kill(-rootPid, 'SIGKILL');
   } catch (err) {
-    if (errorCode(err) !== 'ESRCH') cleanupErrors.push(`kill group ${rootPid}: ${(err as Error).message}`);
+    groupGone = errorCode(err) === 'ESRCH'; // the kill below reports any other group it cannot signal
   }
+  const listing = await list();
+  if (!groupGone)
+    try {
+      process.kill(-rootPid, 'SIGKILL');
+    } catch (err) {
+      if (errorCode(err) !== 'ESRCH') cleanupErrors.push(`kill group ${rootPid}: ${(err as Error).message}`);
+    }
   if (listing.error) cleanupErrors.push(listing.error);
   const planned = plan(listing);
   const rowOf = (pid: number): commandCleanup.ProcessRow =>
@@ -173,7 +178,7 @@ async function killGroup(
       if (errorCode(err) !== 'ESRCH') survivors.push(commandCleanup.survivorOf(rowOf(pid), (err as Error).message));
     }
   const leftovers = commandCleanup.leftoverRows(rootPid, planned, listing);
-  if (!(await groupEmptied(rootPid))) {
+  if (!groupGone && !(await groupEmptied(rootPid))) {
     cleanupErrors.push(`process group ${rootPid} still has members after SIGKILL`);
     for (const { pid } of leftovers)
       if (isAlive(pid) && !survivors.some((survivor) => survivor.pid === pid))
@@ -319,41 +324,20 @@ async function settleJob(
   return { ...(await terminateJob(job, rootPid, kernel32)), leftovers };
 }
 
-// Windows without a job, once the command has exited: what is still linked to it is killed and named. An orphan cannot
-// be found, so the result stays unconfirmed however this goes.
-async function settleUncontained(
-  rootPid: number,
-  kernel32: containment.Kernel32 | null,
-  taskkillCommand: CommandLine | undefined,
-  containmentError: string | undefined,
-): Promise<Settled> {
-  const cleanupErrors = [containmentError] as string[];
-  let linked: number[] = [];
-  try {
-    if (kernel32) linked = containment.linkedLeftovers(kernel32, rootPid);
-  } catch (err) {
-    cleanupErrors.push(`could not list what the command left: ${(err as Error).message}`);
-  }
-  const leftovers = linked.map((pid) => containment.describe(kernel32, pid));
-  const [command, args] = taskkillCommand ?? [`${containment.SYSTEM32}\\taskkill.exe`, ['/T', '/F', '/PID']];
-  for (const pid of linked) await runHelper([command, [...args, String(pid)]]);
-  const survivors = leftovers
-    .filter(({ pid }) => isAlive(pid))
-    .map((named) => ({ ...named, error: 'still running after cleanup' }));
-  return { survivors, cleanupErrors, leftovers };
-}
-
-// A command that has exited: what it left is ended, as its containment allows.
+// A command that has exited: what it left is ended, as its containment allows. With no job on Windows nothing is: a
+// parent pid is not cleared when the parent ends and can be reused, so an unrelated older process can read as the
+// command's child (PR #294), and the result stays unconfirmed for a human.
 export function settle(
   { child, job, containmentError }: containment.Started,
   kernel32: containment.Kernel32 | null,
   watcher: Watcher | null,
   testHooks: CleanupHooks,
 ): Promise<Settled> {
-  const { killPid = (pid: number) => process.kill(pid, 'SIGKILL'), taskkillCommand } = testHooks;
+  const { killPid = (pid: number) => process.kill(pid, 'SIGKILL') } = testHooks;
   // The pid is unset only when spawn fails, which 'error' reports with no 'exit'.
   const pid = child.pid as number;
   if (job) return settleJob(job, pid, kernel32);
-  if (process.platform === 'win32') return settleUncontained(pid, kernel32, taskkillCommand, containmentError);
+  if (process.platform === 'win32')
+    return Promise.resolve({ survivors: [], cleanupErrors: [containmentError as string], leftovers: [] });
   return killLeftovers(pid, (watcher as Watcher).seen, killPid, testHooks);
 }

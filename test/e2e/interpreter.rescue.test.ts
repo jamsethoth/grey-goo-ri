@@ -331,3 +331,53 @@ test('golden: the same failure is left in place once the escalation is exhausted
   assert.equal(readFileSync(join(fixture.worktree, 'lib', 'add.mjs'), 'utf8'), goldenRun.WRONG_ADD);
   assert.match(fixture.executionRecord.terminalReason!.text, /had used its Bound/);
 });
+
+// resetTo is two git processes, so gg can die between them: the tracked files are back, and the untracked ones are
+// still as the agent left them. A tracked file must have changed, or the reset changes nothing and the worktree still
+// reads as the agent left it.
+const changesTracked = () => {
+  const work = goldenRun.greenWrites({ ...rescueFlow.FAILING_WORK, 'package.json': '{"name":"changed"}\n' });
+  return { [rescueFlow.GREEN_CALL]: work, [rescueFlow.GREEN_RECOVERY]: work, ...rescueFlow.rightSenior() };
+};
+
+test('a crash between the hard reset and the clean resumes by finishing the clean', async (t) => {
+  const fixture = await rescueFlow.rescueFixture(t, changesTracked());
+  const { git } = fixture.options.deps;
+  fixture.options.deps.git = {
+    ...git,
+    resetTo: async (_worktree, sha) => {
+      gitShell.sh(fixture.worktree, 'reset', '-q', '--hard', sha);
+      throw new interpreter.CrashError('crash between the reset and the clean');
+    },
+  };
+  await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
+  assert.equal(inWorktree(fixture, 'notes.txt'), true, 'the crash came before the clean');
+  fixture.options.deps.git = git;
+  const loaded = await loadTicket(fixture);
+  assert.equal(await reconcile.dirtyState(loaded, { git, worktree: fixture.worktree }), null);
+  const { outcome } = await interpreter.runExecution({ ...fixture.options, record: loaded });
+  assert.equal(outcome, 'ready-for-qa');
+  assert.equal(inWorktree(fixture, 'notes.txt'), false);
+  assert.deepEqual(rescueFlow.rescueRefs(fixture), [greenRescueRef(fixture)]);
+});
+
+// Only what the record proves the agent left may be cleaned: a file a human added after the crash holds instead.
+test('after a crash between the hard reset and the clean, a file the agent did not leave holds', async (t) => {
+  const fixture = await rescueFlow.rescueFixture(t, changesTracked());
+  const { git } = fixture.options.deps;
+  fixture.options.deps.git = {
+    ...git,
+    resetTo: async (_worktree, sha) => {
+      gitShell.sh(fixture.worktree, 'reset', '-q', '--hard', sha);
+      throw new interpreter.CrashError('crash between the reset and the clean');
+    },
+  };
+  await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
+  fixture.options.deps.git = git;
+  writeFileSync(join(fixture.worktree, 'by-hand.txt'), 'a human wrote this\n');
+  const loaded = await loadTicket(fixture);
+  const result = await interpreter.runExecution({ ...fixture.options, record: loaded });
+  assert.equal(result.held, true);
+  assert.equal(inWorktree(fixture, 'by-hand.txt'), true, 'nothing was discarded');
+  assert.ok(loaded.terminalReason!.text.includes(greenRescueRef(fixture)), 'the hold names the Rescue Ref');
+});
