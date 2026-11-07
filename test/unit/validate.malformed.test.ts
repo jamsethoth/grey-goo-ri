@@ -762,6 +762,15 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
     ],
   ],
 ];
+
+for (const [what, mutate, errors] of LEFT_OUT_KEYS) {
+  test(`a required key left out says so: ${what}`, () => {
+    const config = exampleLayer.config();
+    mutate(config);
+    assert.deepEqual(exampleLayer.check(config).errors, errors);
+  });
+}
+
 test('a response condition whose is fits no value of its enum field keeps its code and message', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures.review, 'review-pass').allOf[0] = { field: 'reason', is: 'x' };
@@ -774,7 +783,7 @@ test('a response condition whose is fits no value of its enum field keeps its co
   ]);
 });
 
-test('a present null id is a wrong value, so a Check still quotes it', () => {
+test('a present null id is a wrong value, so a Check still prints it', () => {
   const config = exampleLayer.config();
   const check = procedureActions.actionById(config.procedures['base-check'], 'test');
   check.id = null;
@@ -784,11 +793,3 @@ test('a present null id is a wrong value, so a Check still quotes it', () => {
     ['Action id null must be non-empty with no ":", ".", "/", "--" or whitespace', 'Check null must name a command'],
   );
 });
-
-for (const [what, mutate, errors] of LEFT_OUT_KEYS) {
-  test(`a required key left out says so: ${what}`, () => {
-    const config = exampleLayer.config();
-    mutate(config);
-    assert.deepEqual(exampleLayer.check(config).errors, errors);
-  });
-}

@@ -67,7 +67,7 @@ function requireNames(problems: report.Report, names: unknown, location: string,
   else if (!names.every(report.isName)) report.error(problems, location, 'invalid-name', message);
 }
 
-// How a sentence names an Action with its id left out. A present null is a wrong value, which it quotes.
+// How a sentence names an Action with its id left out. A present null is a wrong value, which it prints.
 const actionLabel = (id: unknown) => (id === undefined ? 'with no id' : id);
 
 function checkActionId(problems: report.Report, ids: unknown[], id: unknown, location: string) {
