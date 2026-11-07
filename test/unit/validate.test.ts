@@ -503,7 +503,7 @@ test('a Vertex named after an end, cleanup or done is an error', () => {
   ]);
 });
 
-test('a Flow without plan: null or a positive actionCap is an error', () => {
+test('a Flow with plan left out is no error, unlike one with a plan or no positive actionCap', () => {
   const config = exampleLayer.config();
   delete config.flows.default.plan;
   config.flows.default.actionCap = 0;
@@ -513,7 +513,6 @@ test('a Flow without plan: null or a positive actionCap is an error', () => {
     ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check' } } },
   };
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    { at: 'flows.default', code: 'plan-missing' },
     { at: 'flows.default.actionCap', code: 'not-a-positive-integer' },
     { at: 'flows.light.plan', code: 'plan-not-null' },
   ]);

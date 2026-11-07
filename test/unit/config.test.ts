@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.ts';
-import type * as exampleLayer from '../support/example-layer.ts';
+import * as validate from '../../lib/validate/index.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const personaPath = (name: string) => join(repoRoot, 'defaults', 'personas', name);
@@ -240,11 +241,189 @@ test('a Flow or Procedure a later Layer declares replaces the earlier one of its
     actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }],
   });
   assert.deepEqual(loaded.flows.default, {
-    plan: null,
     actionCap: 5,
     ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } },
   });
   assert.equal(loaded.procedures.implement.actions[0].id, 'green', 'a Procedure the Layer does not declare stays');
+});
+
+// The validator's result for a loaded configuration, as gg doctor and admission read it.
+function validated(loaded: config.Config) {
+  return validate.validate(loaded, {
+    harnesses: {},
+    readSchema: (name) => JSON.parse(config.layerFile(loaded.files, name)),
+    readTemplate: (name) => config.layerFile(loaded.files, name),
+  });
+}
+// A Layer declaring a Flow `small`, one Check of its own Procedure `probe`, with `flow` over the Flow's keys.
+const smallFlowLayer = (flow: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    commands: { test: 'npm test' },
+    procedures: { probe: { actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }] } },
+    flows: {
+      small: { actionCap: 5, ticket: { entry: 'look', vertices: { look: { procedure: 'probe' } } }, ...flow },
+    },
+  });
+// Each error at or under `location`, as its location and the rule it broke.
+const brokenUnder = (errors: ReturnType<typeof validated>['errors'], location: string) =>
+  errors.filter((problem) => problem.at.startsWith(location)).map((problem) => `${problem.at}: ${problem.code}`);
+const smallFlowErrors = (t: TestContext, flow: Record<string, unknown>) => {
+  const { repo, home } = layers(t, { repo: smallFlowLayer(flow) });
+  return brokenUnder(validated(config.loadLayers(repo, home)).errors, 'flows.small');
+};
+// The errors of a repository Layer whose Procedure `ask` asks an agent for a reason and findings, with `keys` over the
+// Procedure's own.
+function askErrors(t: TestContext, keys: Record<string, unknown>) {
+  const { repo, home } = layers(t, {
+    repo: JSON.stringify({
+      procedures: {
+        ask: {
+          actions: [{ id: 'ask', do: 'agent', brief: 'ask.md', schema: 'ask.schema.json' }],
+          claimTokens: { ok: { requires: [] } },
+          otherwise: 'changes',
+          ...keys,
+        },
+      },
+    }),
+  });
+  const severity = { type: 'string', enum: ['blocker', 'minor'] };
+  const finding = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['severity'],
+    properties: { severity },
+  };
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['claim', 'reason', 'findings'],
+    properties: {
+      claim: { type: 'string', enum: ['ok'] },
+      reason: { type: 'string', enum: ['bad-test', 'misscoped'] },
+      findings: { type: 'array', items: finding },
+    },
+  };
+  beside(repo, { 'ask.md': 'ask', 'ask.schema.json': JSON.stringify(schema) });
+  return validated(config.loadLayers(repo, home)).errors;
+}
+
+test("a Layer's null deletes an Agent, and a Vertex using it reports undeclared-agent", (t) => {
+  const { repo, home } = layers(t, { repo: JSON.stringify({ agents: { reviewer: null } }) });
+  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
+  assert.equal(Object.hasOwn(loaded.agents, 'reviewer'), false);
+  assert.ok(
+    brokenUnder(validated(loaded).errors, 'flows.default').includes(
+      'flows.default.ticket.vertices.reviewer: undeclared-agent',
+    ),
+  );
+});
+
+test("a later Layer's null deletes what an earlier Layer set", (t) => {
+  const { repo, home } = layers(t, {
+    home: JSON.stringify({ agents: { implementer: { model: 'home-model', effort: 'high' } } }),
+    repo: JSON.stringify({ agents: { implementer: { model: null } } }),
+  });
+  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
+  assert.equal(Object.hasOwn(loaded.agents.implementer, 'model'), false);
+  assert.equal(loaded.agents.implementer.effort, 'high');
+});
+
+test('a null array item stays, since an item is not a key', (t) => {
+  const { repo, home } = layers(t, {
+    repo: JSON.stringify({ procedures: { probe: { actions: [null] } }, testPaths: ['test/**', null] }),
+  });
+  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
+  assert.deepEqual(loaded.procedures.probe.actions, [null]);
+  assert.deepEqual(loaded.testPaths, ['test/**', null]);
+});
+
+test('a null key of an object in a list is left out', (t) => {
+  const { repo, home } = layers(t, {
+    repo: JSON.stringify({ procedures: { probe: { actions: [{ id: null, do: 'check', kind: 'command' }] } } }),
+  });
+  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
+  assert.deepEqual(loaded.procedures.probe.actions, [{ do: 'check', kind: 'command' }]);
+  assert.deepEqual(
+    validated(loaded)
+      .errors.filter((problem) => problem.at === 'procedures.probe.actions[0]')
+      .map((problem) => problem.message),
+    ['an Action must have an id', 'Check with no id must name a command'],
+  );
+});
+
+test("a Layer's null does not reach the files key, which stays gg's own", (t) => {
+  const { repo, home } = layers(t, { repo: JSON.stringify({ files: null }) });
+  const { files } = config.loadLayers(repo, home);
+  assert.equal(files['personas/reviewer.md'].bytes, readFileSync(personaPath('reviewer.md'), 'utf8'));
+});
+
+test('a Flow with plan left out or null resolves to plan null, with no problem', (t) => {
+  const leftOut = layers(t, { repo: smallFlowLayer() });
+  const present = layers(t, { repo: smallFlowLayer({ plan: null }) });
+  const fromLeftOut = validated(config.loadLayers(leftOut.repo, leftOut.home));
+  const fromPresent = validated(config.loadLayers(present.repo, present.home));
+  assert.deepEqual(brokenUnder(fromLeftOut.errors, 'flows.small'), []);
+  assert.deepEqual(brokenUnder(fromPresent.errors, 'flows.small'), []);
+  assert.equal((fromLeftOut.flows.small as exampleLayer.Layer).plan, null);
+  assert.equal((fromPresent.flows.small as exampleLayer.Layer).plan, null);
+});
+
+test('a Flow with a plan section reports plan-not-null', (t) => {
+  assert.deepEqual(smallFlowErrors(t, { plan: { entry: 'planner' } }), ['flows.small.plan: plan-not-null']);
+});
+
+test("a resolved Flow's hash is the same for a Layer that differs only in plan: null", (t) => {
+  const leftOut = layers(t, { repo: smallFlowLayer() });
+  const present = layers(t, { repo: smallFlowLayer({ plan: null }) });
+  const hash = config.hashOf(validated(config.loadLayers(leftOut.repo, leftOut.home)).flows.small);
+  assert.match(hash, /^[0-9a-f]{64}$/);
+  assert.equal(config.hashOf(validated(config.loadLayers(present.repo, present.home)).flows.small), hash);
+});
+
+test('a null ticket entry reports required-key-missing', (t) => {
+  const ticket = { entry: null, vertices: { look: { procedure: 'probe' } } };
+  assert.deepEqual(smallFlowErrors(t, { ticket }), ['flows.small.ticket.entry: required-key-missing']);
+});
+
+test("a Vertex's null procedure reports required-key-missing", (t) => {
+  const ticket = { entry: 'look', vertices: { look: { procedure: null } } };
+  assert.deepEqual(smallFlowErrors(t, { ticket }), ['flows.small.ticket.vertices.look: required-key-missing']);
+});
+
+// Left out, the second row's condition would go and the row would fire for any reason (T10).
+test('a null when condition alone in a row reports invalid-rule-condition', (t) => {
+  const errors = askErrors(t, {
+    passed: [
+      { when: { 'response.reason': 'bad-test' }, outcome: 'bad-test' },
+      { when: { 'response.reason': null }, outcome: 'misscoped' },
+    ],
+  });
+  assert.deepEqual(brokenUnder(errors, 'procedures.ask'), ['procedures.ask.passed[1]: invalid-rule-condition']);
+});
+
+test('a null when condition beside another condition reports invalid-rule-condition', (t) => {
+  const errors = askErrors(t, {
+    passed: [{ when: { claim: 'ok', 'response.reason': null }, outcome: 'misscoped' }],
+  });
+  assert.deepEqual(brokenUnder(errors, 'procedures.ask'), ['procedures.ask.passed[0]: invalid-rule-condition']);
+});
+
+// A Vertex, Agent or Outcome may be named `when`: only a row of a list holds conditions there.
+test('an object named when outside a list still has its null keys left out', (t) => {
+  const { repo, home } = layers(t, { repo: JSON.stringify({ agents: { when: { model: null, effort: 'high' } } }) });
+  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
+  assert.deepEqual(loaded.agents.when, { effort: 'high' });
+});
+
+// `where` holds values to match, as `when` does: left out, `all` would hold of every item, a blocker finding included.
+test('a null where value stays, so it reports condition-value-mismatch', (t) => {
+  const errors = askErrors(t, {
+    actions: [
+      { id: 'ask', do: 'agent', brief: 'ask.md', schema: 'ask.schema.json' },
+      { id: 'verdict', do: 'check', kind: 'response', all: 'findings', where: { severity: null } },
+    ],
+  });
+  assert.deepEqual(brokenUnder(errors, 'procedures.ask'), ['procedures.ask.actions[1]: condition-value-mismatch']);
 });
 
 test('loadLayers takes Declared Commands whole from the repository Layer', (t) => {

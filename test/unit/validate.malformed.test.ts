@@ -783,13 +783,13 @@ test('a response condition whose is fits no value of its enum field keeps its co
   ]);
 });
 
-test('a present null id is a wrong value, so a Check still prints it', () => {
+test('a wrong id, present but not a name, is what a Check prints', () => {
   const config = exampleLayer.config();
   const check = procedureActions.actionById(config.procedures['base-check'], 'test');
-  check.id = null;
+  check.id = 7;
   delete check.command;
   assert.deepEqual(
     exampleLayer.check(config).errors.map((problem) => problem.message),
-    ['Action id null must be non-empty with no ":", ".", "/", "--" or whitespace', 'Check null must name a command'],
+    ['Action id 7 must be non-empty with no ":", ".", "/", "--" or whitespace', 'Check 7 must name a command'],
   );
 });
