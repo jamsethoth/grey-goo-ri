@@ -34,7 +34,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   puts the code after it: `// A Hold needs an Await Label (R11f)`. Codes resolve in `docs/requests/node-harness-dag.md`
   and in `docs/research/user-defined-procedures-decisions.md` and its siblings.
 - Names: a domain concept takes its full GLOSSARY.md term in camelCase (`executionRecord`, not `rec`; `actionIdentity`,
-  not `at`). Single letters only within about 10 lines of scope. Abbreviations only from `id`, `url`, `sha`, `err`,
+  not `at`). Single letters only within about 10 lines of scope, except `t`, `node:test`'s test context, in tests only.
+  Abbreviations only from `id`, `url`, `sha`, `err`,
   `gh`, `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out`, `dir` and the like. Types are PascalCase,
   other identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
   lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.ts`).
@@ -99,7 +100,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/exec.ts` | process spawn (a nonzero exit rejects with a `CommandError`) and the shell runner, with its timeout and cleanup (ported) |
 | `lib/command-cleanup.ts` | Command Cleanup's decisions, with no I/O: the `ps` listing parse, the descendant closure, the watcher's update, the kill plan and its survivors, a job's leftovers |
 | `lib/process-tree.ts` | the POSIX process tree a timed-out shell command leaves: listing it, watching it and killing it as Command Cleanup decides, and the helper processes that do so (ported) |
-| `lib/containment.ts` | the Windows job object a shell command runs in, through `node:ffi`: start, list, terminate, confirm empty (ADR 0021) |
+| `lib/containment.ts` | the Windows job object a shell command, or the suite launcher's stage, runs in, through `node:ffi`: start, list, terminate, confirm empty (ADR 0021) |
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
@@ -113,7 +114,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex. `gg init` is not built (#120) |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
-| `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010) |
+| `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
 | `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Agents |
 
 ## Misleading areas

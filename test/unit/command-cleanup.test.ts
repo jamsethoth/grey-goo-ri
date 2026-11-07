@@ -183,6 +183,25 @@ test("leftoverPids drops the command's own console host, but not another conhost
   assert.deepEqual(commandCleanup.leftoverPids([201, 202], entries, ROOT), [202]);
 });
 
+test('strayProcesses names the members of a stage job still running, less the process holding it', () => {
+  const held = { pid: SELF, parentPid: 1, exe: 'node.exe' };
+  const stray = { pid: 201, parentPid: 200, exe: 'node.exe' };
+  const other = { pid: 7, parentPid: 1, exe: 'explorer.exe' };
+  assert.deepEqual(commandCleanup.strayProcesses([SELF, 201], [held, stray, other], SELF), [stray]);
+});
+
+test('strayProcesses drops a member no longer in the process list, which is still exiting', () => {
+  const stray = { pid: 201, parentPid: 200, exe: 'node.exe' };
+  assert.deepEqual(commandCleanup.strayProcesses([201, 202], [stray], SELF), [stray]);
+});
+
+// A console host ends with the last process attached to it, so a host left is never the leak: if something keeps it
+// alive, that process is named. Any parent, since a stage's hosts belong to the commands its tests run.
+test('strayProcesses drops every console host, whatever started it', () => {
+  const host = { pid: 201, parentPid: 300, exe: 'Conhost.exe' };
+  assert.deepEqual(commandCleanup.strayProcesses([201], [host], SELF), []);
+});
+
 test('lib/command-cleanup.ts imports nothing, so its decisions do no I/O', () => {
   const anyImport = /^import\b/m;
   assert.match("// one\nimport { dlopen } from 'node:ffi';", anyImport, 'an import is seen');
