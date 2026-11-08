@@ -344,6 +344,38 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
   });
 });
 
+// The counts a record keeps as Maps are read back from objects (#174): a row holding anything else is corrupt, and one
+// such row leaves every other row readable.
+test('a record whose visits, traversals or Check runs are not objects is corrupt; the rest load', async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  await record.save(newExecution(commonDir, 8));
+  const saved = JSON.parse(
+    withDb(commonDir, (db) => db.prepare('SELECT json FROM records WHERE n = 8').get()!.json as string),
+  );
+  const broken: [number, Record<string, unknown>][] = [
+    [20, { visits: null }],
+    [21, { traversals: undefined }],
+    [22, { visitState: { runs: {} } }],
+  ];
+  withDb(commonDir, (db) => {
+    for (const [ticket, change] of broken)
+      db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run(
+        'ticket',
+        ticket,
+        JSON.stringify({ ...saved, ticket, ...change }),
+      );
+  });
+  for (const [ticket] of broken)
+    await assert.rejects(record.load(commonDir, 'ticket', ticket), (err) => err instanceof record.RecordCorruptError);
+  const corrupt: record.RecordCorruptError[] = [];
+  const records = await record.loadAll(commonDir, 'ticket', { onCorrupt: (err) => corrupt.push(err) });
+  assert.deepEqual(
+    records.map((executionRecord) => executionRecord.ticket),
+    [8],
+  );
+  assert.equal(corrupt.length, broken.length);
+});
+
 test('a record written before Action ids is corrupt, not misread', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   // Its cursor names a phase and ordinal, which a resume would read as an Action id and a Recovery Number.

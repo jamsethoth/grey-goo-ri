@@ -298,8 +298,14 @@ function parseRow<Saved extends AnyRecord>(commonDir: string, { kind, n: recordN
       json,
     );
   }
-  const maps = (holder: Record<string, object> | null, keys: string[]) => {
-    for (const key of holder ? keys : []) holder![key] = new Map(Object.entries(holder![key]));
+  // The counts kept as Maps are saved as objects (#174); anything else makes the row corrupt, not a TypeError.
+  const maps = (holder: Record<string, unknown> | null, keys: string[]) => {
+    for (const key of holder ? keys : []) {
+      const saved = holder![key];
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved))
+        throw new RecordCorruptError(file, `its ${key} is not an object`, json);
+      holder![key] = new Map(Object.entries(saved));
+    }
   };
   if (kind === 'ticket') {
     maps(data, ['visits', 'traversals']);
