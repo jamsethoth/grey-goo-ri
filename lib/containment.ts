@@ -83,15 +83,24 @@ export function processes(kernel32: Kernel32): commandCleanup.ProcessEntry[] {
   return found;
 }
 
-// The pids still linked to rootPid through parent pids, for the fallback that has no job to list.
+// The pids still linked to rootPid through parent pids, each started no earlier than its parent, for the fallback that
+// has no job to list. Throws when the command's own start cannot be read, since no link to it can then be checked.
 export function linkedDescendants(kernel32: Kernel32, rootPid: number): number[] {
-  const rows = processes(kernel32).map(({ pid, parentPid }): commandCleanup.ProcessRow => [pid, parentPid, '']);
-  const linked: number[] = [];
-  commandCleanup.growTree(new Set([rootPid]), rows, process.pid, ([pid]) => linked.push(pid));
-  return linked;
+  const startOf = (pid: number) => {
+    const handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED, 0, pid);
+    if (!handle) return null;
+    try {
+      return creationTime(kernel32, handle);
+    } finally {
+      kernel32.CloseHandle(handle);
+    }
+  };
+  if (startOf(rootPid) === null) throw failure(kernel32, `the start of command pid ${rootPid}`);
+  return commandCleanup.linkedPids(rootPid, processes(kernel32), process.pid, startOf);
 }
 
-function createdAt(kernel32: Kernel32, handle: bigint): string | null {
+// A process's start as a FILETIME.
+function creationTime(kernel32: Kernel32, handle: bigint): bigint | null {
   const [creation, exit, inKernel, inUser] = [0, 1, 2, 3].map(() => Buffer.alloc(8)) as [
     Buffer,
     Buffer,
@@ -99,7 +108,12 @@ function createdAt(kernel32: Kernel32, handle: bigint): string | null {
     Buffer,
   ];
   if (!kernel32.GetProcessTimes(handle, creation, exit, inKernel, inUser)) return null;
-  return new Date(Number(creation.readBigUInt64LE() / 10_000n - FILETIME_TO_UNIX_MS)).toISOString();
+  return creation.readBigUInt64LE();
+}
+
+function createdAt(kernel32: Kernel32, handle: bigint): string | null {
+  const created = creationTime(kernel32, handle);
+  return created === null ? null : new Date(Number(created / 10_000n - FILETIME_TO_UNIX_MS)).toISOString();
 }
 
 function commandLineOf(kernel32: Kernel32, handle: bigint): string | null {

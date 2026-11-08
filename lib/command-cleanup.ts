@@ -116,23 +116,51 @@ export function parseListing({
   return { processes, error };
 }
 
-// Grows `tree` with every listed process whose parent is in it, until no more join; `onJoin` sees each that does.
-// selfPid, the process doing the cleanup, never joins.
+// Grows `tree` with every listed process whose parent is in it, until no more join; `onJoin` sees each that does, and
+// `joins` can refuse one. selfPid, the process doing the cleanup, never joins.
 export function growTree(
   tree: Set<number>,
   processes: ProcessRow[],
   selfPid: number,
-  onJoin: (processRow: ProcessRow) => void = () => {},
+  {
+    onJoin = () => {},
+    joins = () => true,
+  }: { onJoin?: (processRow: ProcessRow) => void; joins?: (processRow: ProcessRow) => boolean } = {},
 ) {
   for (let grew = true; grew;) {
     grew = false;
     for (const processRow of processes)
-      if (!tree.has(processRow[0]) && tree.has(processRow[1]) && processRow[0] !== selfPid) {
+      if (!tree.has(processRow[0]) && tree.has(processRow[1]) && processRow[0] !== selfPid && joins(processRow)) {
         tree.add(processRow[0]);
         onJoin(processRow);
         grew = true;
       }
   }
+}
+
+// The pids linked to rootPid through parent pids in a Windows snapshot, for the fallback that has no job to list. A
+// Windows parent pid is not cleared when the parent ends and can be reused, so a process joins only if it started no
+// earlier than the parent it names (#297). One whose start cannot be read, gone or closed to gg, is left out, with what
+// it started. startOf gives a process's start as a FILETIME.
+export function linkedPids(
+  rootPid: number,
+  entries: ProcessEntry[],
+  selfPid: number,
+  startOf: (pid: number) => bigint | null,
+): number[] {
+  const starts = new Map<number, bigint | null>();
+  const started = (pid: number) => {
+    if (!starts.has(pid)) starts.set(pid, startOf(pid));
+    return starts.get(pid) as bigint | null;
+  };
+  const startedAfterParent = ([pid, parentPid]: ProcessRow) => {
+    const [child, parent] = [started(pid), started(parentPid)];
+    return child !== null && parent !== null && child >= parent;
+  };
+  const rows = entries.map(({ pid, parentPid }): ProcessRow => [pid, parentPid, '']);
+  const linked: number[] = [];
+  growTree(new Set([rootPid]), rows, selfPid, { onJoin: ([pid]) => linked.push(pid), joins: startedAfterParent });
+  return linked;
 }
 
 // The watcher's update from one listing: a seen pid no longer listed is forgotten, since its pid may come to name
@@ -141,7 +169,9 @@ export function growTree(
 export function observe(seen: Seen, rootPid: number, processes: ProcessRow[], selfPid: number) {
   const listed = new Set(processes.map((processRow) => processRow[0]));
   for (const pid of seen.keys()) if (!listed.has(pid)) seen.delete(pid);
-  growTree(new Set([rootPid, ...seen.keys()]), processes, selfPid, (processRow) => seen.set(processRow[0], processRow));
+  growTree(new Set([rootPid, ...seen.keys()]), processes, selfPid, {
+    onJoin: (processRow) => seen.set(processRow[0], processRow),
+  });
 }
 
 const sameProcess = (left: ProcessRow, right: ProcessRow) => left[0] === right[0] && left[2] === right[2];

@@ -2,10 +2,11 @@
 // command a finished job leaves running.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, linkSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
 import * as childScripts from '../../support/child-scripts.ts';
 import * as kernel32Doubles from '../../support/kernel32-doubles.ts';
@@ -293,6 +294,50 @@ test(
   },
 );
 
+// A Windows parent pid outlives its parent and can be reused, so an older process can name the shell's pid as its
+// parent (#297). The snapshot here says the case's own older process has the shell as its parent; real taskkill /T
+// leaves such a process alone (#302), so it is not named a survivor once the tree is down.
+test(
+  "runShell: when the job cannot be set up, an older process that names the shell's pid as its parent is not named",
+  WIN_CASE,
+  async (t) => {
+    const olderFile = join(scratch, 'older-under-reused.pid');
+    t.after(() => processProbe.endProcessIn(olderFile));
+    spawn(process.execPath, [childScripts.LONG_LIVED, olderFile], { stdio: 'ignore', windowsHide: true });
+    await waitFor(() => pidIn(olderFile) > 0, t.signal);
+    const older = pidIn(olderFile);
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-older');
+    // the shell is the linked child's grandparent: cmd.exe, then linked-starter.ts
+    const parentOf = (pid: number) =>
+      containment.processes(realKernel32!).find((entry) => entry.pid === pid)?.parentPid;
+    type Walk = (...args: Parameters<containment.Kernel32['Process32FirstW']>) => number;
+    const reading =
+      (read: Walk): Walk =>
+      (snapshot, entry) => {
+        const more = read(snapshot, entry);
+        if (more && (entry as Buffer).readUInt32LE(8) === older)
+          (entry as Buffer).writeUInt32LE(parentOf(parentOf(pidIn(pidFile)) ?? 0) ?? 0, 32);
+        return more;
+      };
+    const kernel32 = withKernel32({
+      CreateJobObjectW: () => 0n,
+      Process32FirstW: reading((...read) => realKernel32!.Process32FirstW(...read)),
+      Process32NextW: reading((...read) => realKernel32!.Process32NextW(...read)),
+    });
+    const { result, ready } = await timedOutShell.timeOutWhen(
+      commandLine,
+      { timeoutMs: 4000, kernel32, taskkillCommand: [process.execPath, [childScripts.FAILING_TASKKILL, 'tree']] },
+      () => pidIn(pidFile) > 0,
+      t,
+    );
+    assert.ok(ready, `child never started: ${result.output}`);
+    assert.equal(result.timedOut, true);
+    assert.deepEqual(result.survivors, []);
+    assert.ok(!result.cleanupErrors.some((error) => /taskkill/.test(error)), JSON.stringify(result.cleanupErrors));
+    assert.ok(alive(older), 'the older process was left alone');
+  },
+);
+
 test(
   'runShell: when the job cannot be set up, a taskkill that fails with a child left names it, not the gone shell',
   WIN_CASE,
@@ -322,6 +367,29 @@ test(
       result.cleanupErrors.some((error) => /taskkill/.test(error)),
       JSON.stringify(result.cleanupErrors),
     );
+  },
+);
+
+// Each link is checked against its parent's start, so with the shell's start unread no descendant can be told from an
+// older process under a reused pid.
+test(
+  "runShell: when the job cannot be set up and the shell's start cannot be read, its descendants are not verified gone",
+  WIN_CASE,
+  async (t) => {
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-unread-start');
+    const { result, ready } = await timedOutShell.timeOutWhen(
+      commandLine,
+      { timeoutMs: 4000, kernel32: withKernel32({ CreateJobObjectW: () => 0n, OpenProcess: () => 0n }) },
+      () => pidIn(pidFile) > 0,
+      t,
+    );
+    assert.ok(ready, `child never started: ${result.output}`);
+    assert.equal(result.timedOut, true);
+    assert.ok(
+      result.cleanupErrors.some((error) => /could not list the command's descendants/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
+    await waitFor(() => !alive(pidIn(pidFile)), t.signal); // taskkill still takes the tree down
   },
 );
 
