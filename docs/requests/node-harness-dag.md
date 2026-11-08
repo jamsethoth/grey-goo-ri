@@ -633,7 +633,7 @@ blocking issues as today.
 
 ### 3.9 Config and migration
 
-Three layers, defaults < user < repo, same merge rules as flows, under `.agents/gg/`. The shipped defaults declare
+Three layers, defaults < user < repo, merged as 3.3 says, under `.agents/gg/`. The shipped defaults declare
 no agents, flows, Procedures or Personas (ADR 0014): `gg init` writes an example into the repo Layer, whose agents
 have empty `skills`, `mcp` and `plugins`, no hooks and no injection. They name no harness, model or effort; a user or
 repo Layer supplies them, and `examples/` holds a Claude and a Codex Layer to copy. Until Layers land, only
