@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as validate from '../../lib/validate/index.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as exampleLayer from '../support/example-layer.ts';
+import * as namedFlow from '../support/named-flow.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 import * as requestTables from '../support/request-tables.ts';
 
@@ -199,60 +200,6 @@ test('a table outcome or otherwise named after an end is an error', () => {
     {
       at: 'procedures.review.otherwise',
       code: 'reserved-name',
-    },
-  ]);
-});
-
-test('a Vertex named __proto__ is an error, never dropped', () => {
-  const config = exampleLayer.config();
-  const { vertices } = config.flows.default.ticket;
-  // JSON.parse and spread make __proto__ an own key, as a Layer's JSON does; assignment would set the prototype.
-  config.flows.default.ticket.vertices = { ...vertices, ...JSON.parse('{"__proto__": {"procedure": "base-check"}}') };
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    { at: `${VERTICES}.__proto__`, code: 'inherited-name' },
-  ]);
-});
-
-test('a name of an Object.prototype property is reserved wherever the configuration names something', () => {
-  const config = exampleLayer.config();
-  config.agents.valueOf = { persona: 'implementer.md', harness: 'fake' };
-  config.procedures['tests-fail'].claimTokens.isPrototypeOf = { stop: true };
-  config.procedures['tests-fail'].stopped[0].outcome = 'toString';
-  config.procedures.review.otherwise = 'toLocaleString';
-  config.procedures.gate = {
-    actions: [{ id: 'constructor', do: 'check', kind: 'command', command: 'test' }],
-    passed: [{ when: { 'check.constructor': 'passed' }, outcome: 'ok' }],
-  };
-  config.procedures.hasOwnProperty = config.procedures['base-check'];
-  config.flows.propertyIsEnumerable = {
-    actionCap: 1,
-    ticket: {
-      entry: 'valueOf',
-      routes: { toString: { end: 'needs-human' } },
-      vertices: {
-        valueOf: {
-          procedure: 'gate',
-          inputs: { constructor: { from: 'valueOf.rescue', optional: true } },
-          route: { __lookupGetter__: { end: 'needs-human' } },
-        },
-      },
-    },
-  };
-  const ticketLocation = 'flows.propertyIsEnumerable.ticket';
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    { at: 'agents.valueOf', code: 'inherited-name' },
-    { at: 'procedures.tests-fail.claimTokens.isPrototypeOf', code: 'inherited-name' },
-    { at: 'procedures.tests-fail.stopped[0]', code: 'inherited-name' },
-    { at: 'procedures.review.otherwise', code: 'inherited-name' },
-    { at: 'procedures.gate.actions[0]', code: 'inherited-name' },
-    { at: 'procedures.hasOwnProperty', code: 'inherited-name' },
-    { at: 'flows.propertyIsEnumerable', code: 'inherited-name' },
-    { at: `${ticketLocation}.routes.toString`, code: 'inherited-name' },
-    { at: `${ticketLocation}.vertices.valueOf`, code: 'inherited-name' },
-    { at: `${ticketLocation}.vertices.valueOf.inputs.constructor`, code: 'inherited-name' },
-    {
-      at: `${ticketLocation}.vertices.valueOf.route.__lookupGetter__`,
-      code: 'inherited-name',
     },
   ]);
 });
@@ -753,3 +700,63 @@ test("the request's Procedure table lists exactly the keys of a Procedure and a 
 test("the request's Agent table lists exactly the keys an Agent accepts", () => {
   assert.deepEqual(requestTables.firstColumn('| Field | Meaning |'), [...validate.AGENT_KEYS].sort());
 });
+
+// A Procedure's hash is of the Procedure as declared, names and all, so a case comparing two namings leaves it out.
+const withoutHashes = (value: unknown): unknown =>
+  JSON.parse(JSON.stringify(value, (key, item: unknown) => (key === 'hash' ? undefined : item)));
+
+test('a Flow named entirely with Object.prototype names resolves like one with ordinary names', () => {
+  const ordinary = namedFlow.validated(namedFlow.ORDINARY);
+  assert.deepEqual([...ordinary.errors, ...ordinary.warnings], []);
+  const prototype = namedFlow.validated(namedFlow.PROTOTYPE);
+  assert.deepEqual(
+    withoutHashes({ ...prototype, flows: Object.entries(prototype.flows) }),
+    withoutHashes(namedFlow.renamed({ ...ordinary, flows: Object.entries(ordinary.flows) })),
+  );
+});
+
+test('an Action id that is an object is an error, never a throw', () => {
+  const config = exampleLayer.config();
+  // A Procedure with no agent Action, whose implicit Claim ok requires every Check.
+  config.procedures['base-check'].actions[0].id = JSON.parse('{"toString": 1}');
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.base-check.actions[0]', code: 'invalid-name' },
+  ]);
+});
+
+test('an otherwise that is an object is an error, never a throw', () => {
+  const config = exampleLayer.config();
+  config.procedures.review.otherwise = JSON.parse('{"toString": 1}');
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.review.otherwise', code: 'invalid-otherwise' },
+  ]);
+});
+
+// Each slot the configuration names something in, given a value that is not a string (an object whose toString is not
+// callable, so a property key or a route lookup made of it would throw): the validator reports it at its location and
+// keeps it out of every collection and route (#174).
+const REJECTED_NAME = '{"toString": 1}';
+const REJECTED_SLOTS: [string, (config: exampleLayer.Layer, value: unknown) => void, string][] = [
+  ['an Action id', (config, value) => (config.procedures['base-check'].actions[0].id = value), 'procedures.base-check'],
+  ['an otherwise', (config, value) => (config.procedures.review.otherwise = value), 'procedures.review'],
+  ['a table outcome', (config, value) => (config.procedures.review.passed[0].outcome = value), 'procedures.review'],
+  [
+    'a Decision',
+    (config, value) => {
+      config.procedures.approval = { actions: [{ id: 'ask', do: 'await-approval', decisions: [value] }] };
+      config.flows.default.ticket.vertices.approve = { procedure: 'approval', route: {} };
+    },
+    'procedures.approval',
+  ],
+];
+for (const [what, mutate, location] of REJECTED_SLOTS) {
+  test(`${what} that is not a string is reported at its location and never thrown on`, () => {
+    const config = exampleLayer.config();
+    mutate(config, JSON.parse(REJECTED_NAME));
+    const { errors } = exampleLayer.check(config);
+    assert.ok(
+      errors.some((problem) => problem.at.startsWith(location)),
+      `an error at ${location}, got ${JSON.stringify(exampleLayer.firedRules(errors))}`,
+    );
+  });
+}

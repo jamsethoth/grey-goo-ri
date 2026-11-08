@@ -38,14 +38,11 @@ const typeKey = (node: referencePaths.SchemaNode) =>
   });
 
 // `<vertex>.<action id>.<output>` and `<vertex>.rescue`, for every input's `from`.
-export function sourceScope(procs: Record<string, checked.CheckedProcedure | undefined>, vertices: Value) {
+export function sourceScope(procs: Map<string, checked.CheckedProcedure | undefined>, vertices: Value) {
   return procedures.object(
     Object.fromEntries(
       Object.entries(vertices).map(([id, vertex]) => {
-        const proc =
-          referencePaths.isRecord(vertex) && report.hasOwnKey(procs, vertex.procedure)
-            ? procs[vertex.procedure]
-            : undefined;
+        const proc = referencePaths.isRecord(vertex) ? procs.get(vertex.procedure as string) : undefined;
         if (!proc) return [id, referencePaths.ANY];
         const actions = proc.actions.filter(
           (action) => referencePaths.isRecord(action) && typeof action.id === 'string',
@@ -114,7 +111,8 @@ export function checkInputs(
   declared: unknown,
   scope: referencePaths.SchemaNode,
 ) {
-  const typed: TypedInputs = { inputs: {}, nodes: {} };
+  const inputs: [string, ResolvedInput][] = [];
+  const nodes: [string, referencePaths.SchemaNode][] = [];
   if (declared !== undefined && !referencePaths.isRecord(declared))
     report.error(
       problems,
@@ -142,9 +140,11 @@ export function checkInputs(
         report.absentOr(given, 'from', 'empty-list', 'from must name at least one source'),
       );
     const { pick } = declaration;
-    typed.inputs[input] = { from, optional: declaration.optional === true, ...(pick !== undefined && { pick }) };
+    inputs.push([input, { from, optional: declaration.optional === true, ...(pick !== undefined && { pick }) }]);
     const first = firstSource(problems, inputLocation, from, scope);
-    typed.nodes[input] = pickedNode(problems, inputLocation, pick, first);
+    nodes.push([input, pickedNode(problems, inputLocation, pick, first)]);
   }
+  // Built from entries, so an input such as __proto__ is an own key.
+  const typed: TypedInputs = { inputs: Object.fromEntries(inputs), nodes: Object.fromEntries(nodes) };
   return typed;
 }

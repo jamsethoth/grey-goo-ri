@@ -74,12 +74,10 @@ test('a completed call is not rerun after a crash before the next action', async
       ['changes'],
     );
     const final = await loadTicket(fixture);
-    assert.equal(
-      final.traversals['reviewer->implementer-fix:changes'],
-      1,
-      'the saved changes result routed to the fix',
-    );
-    assert.deepEqual(final.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
+    const routed = 'the saved changes result routed to the fix';
+    assert.equal(final.traversals.get('reviewer->implementer-fix:changes'), 1, routed);
+    const visits = { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 };
+    assert.deepEqual(Object.fromEntries(final.visits), visits);
   });
 });
 

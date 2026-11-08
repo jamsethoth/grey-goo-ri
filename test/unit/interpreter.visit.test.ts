@@ -133,7 +133,7 @@ type Seen = { agent: { model: string; effort: string }; access: string; persona:
 // green's agent changes everything it can reach mid-Visit: the Flow's Vertex, the commands, the testPaths, its own
 // call and the Persona file. Returns what each phase's call carried.
 function changeMidVisit(fixture: golden.GoldenFixture): Record<string, Seen> {
-  const vertex = fixture.flow.ticket.vertices.green as unknown as Record<string, unknown> & {
+  const vertex = fixture.flow.ticket.vertices.get('green') as unknown as Record<string, unknown> & {
     agent: { model: string };
   };
   const run = fixture.harness.run;

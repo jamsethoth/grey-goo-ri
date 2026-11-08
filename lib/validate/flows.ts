@@ -48,8 +48,8 @@ type FallThroughs = checked.FallThroughs;
 export interface FlowContext {
   report: report.Report;
   config: Value;
-  procedures: Record<string, checked.CheckedProcedure | undefined>;
-  procedureFalls: Record<string, FallThroughs>;
+  procedures: Map<string, checked.CheckedProcedure | undefined>;
+  procedureFalls: Map<string, FallThroughs>;
   failedAgents: Set<unknown>;
   harnesses: unknown;
   reader: templates.TemplateReader | null;
@@ -67,10 +67,10 @@ interface FlowState {
   location: string;
   vertices: Value;
   sources: referencePaths.SchemaNode;
-  resolved: Record<string, graph.ResolvedVertex>;
+  resolved: Map<string, graph.ResolvedVertex>;
   used: Set<string>;
-  procs: Record<string, checked.CheckedProcedure | undefined>;
-  fallsOf: Record<string, FallThroughs>;
+  procs: Map<string, checked.CheckedProcedure | undefined>;
+  fallsOf: Map<string, FallThroughs>;
   held: boolean;
 }
 
@@ -228,7 +228,7 @@ function vertexAgent(
   const agents = checking.config.agents;
   const overrides = Object.fromEntries(Object.entries(vertex).filter(([key]) => AGENT_KEYS.includes(key)));
   if (refusesAgent(checking, { vertex, overrides, location }, proc)) return null;
-  const declared = vertex.use === undefined ? {} : (agents as Value)[vertex.use as string];
+  const declared = vertex.use === undefined ? {} : new Map(report.entries(agents)).get(vertex.use as string);
   // A declared Agent that is not an object, or names an unregistered harness, is reported at agents.<name>.
   if (!proc?.agent || !referencePaths.isRecord(declared)) return null;
   const merged: Value = { ...declared, ...overrides };
@@ -267,11 +267,12 @@ function vertexFalls(
   typed: inputs.TypedInputs,
   proc: checked.CheckedProcedure,
 ) {
+  const declaredInputs = new Map(Object.entries(typed.inputs));
   const falls = {
-    ...(checking.procedureFalls[proc.name] ?? {}),
+    ...(checking.procedureFalls.get(proc.name) ?? {}),
     ...references.checkReferences(checking.report, proc, {
       inputs: procedures.object(typed.nodes),
-      optional: (input) => typed.inputs[input]?.optional === true,
+      optional: (input) => declaredInputs.get(input)?.optional === true,
       vertex,
     }),
   };
@@ -319,9 +320,7 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
     return report.error(problems, location, 'not-an-object', 'a Vertex must be an object');
   report.unknownKeys(problems, vertex, [...VERTEX_KEYS, ...AGENT_KEYS], location);
   checkAccess(problems, `${location}.access`, vertex.access);
-  const proc = report.hasOwnKey(checking.procedures, vertex.procedure)
-    ? checking.procedures[vertex.procedure]
-    : undefined;
+  const proc = checking.procedures.get(vertex.procedure as string);
   if (vertex.procedure === undefined)
     report.error(problems, location, 'required-key-missing', 'a Vertex must name a procedure', { key: 'procedure' });
   else if (!report.hasOwnKey(checking.config.procedures, vertex.procedure))
@@ -343,18 +342,19 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
     id,
     checking.config.labelPrefix as string | undefined,
   );
-  state.resolved[id] = resolveVertex(vertex, { agent, inputs: typed.inputs, falls, approvalLabels }, proc);
-  state.procs[id] = proc;
-  state.fallsOf[id] = falls;
+  state.resolved.set(id, resolveVertex(vertex, { agent, inputs: typed.inputs, falls, approvalLabels }, proc));
+  state.procs.set(id, proc);
+  state.fallsOf.set(id, falls);
 }
 
 // Each Procedure a Vertex uses, as declared and hashed, so a resumed Visit can tell it has changed (S6).
 function usedProcedures(checking: FlowContext, used: Set<string>) {
+  const declared = new Map(report.entries(checking.config.procedures));
   return Object.fromEntries(
     [...used].map((name) => {
-      const proc = checking.procedures[name] as checked.CheckedProcedure;
+      const proc = checking.procedures.get(name) as checked.CheckedProcedure;
       const { actions, claimTokens, tests, access, recover, tables, otherwise, checkIds } = proc;
-      const hash = config.hashOf((checking.config.procedures as Value)[name]);
+      const hash = config.hashOf(declared.get(name));
       const resolved = { actions, claimTokens, tests, access, recover, ...tables, otherwise: otherwise ?? null };
       return [name, { ...resolved, checks: checkIds, hash }];
     }),
@@ -377,10 +377,10 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
     location,
     vertices,
     sources: inputs.sourceScope(checking.procedures, vertices),
-    resolved: {},
+    resolved: new Map(),
     used: new Set(),
-    procs: {},
-    fallsOf: {},
+    procs: new Map(),
+    fallsOf: new Map(),
     held: false,
   };
   for (const [id, vertex] of Object.entries(vertices)) checkVertex(checking, state, id, vertex);
@@ -391,6 +391,6 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
     name,
     actionCap: declaration.actionCap ?? null,
     procedures: usedProcedures(checking, state.used),
-    ticket: { entry: ticket.entry ?? null, routes: ticket.routes ?? {}, vertices: resolved },
+    ticket: { entry: ticket.entry ?? null, routes: ticket.routes ?? {}, vertices: Object.fromEntries(resolved) },
   };
 }

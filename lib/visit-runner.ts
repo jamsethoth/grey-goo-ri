@@ -14,6 +14,7 @@ import * as events from './events.ts';
 import * as integrity from './integrity.ts';
 import * as labels from './labels.ts';
 import type * as marker from './marker.ts';
+import * as model from './model.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
@@ -100,9 +101,9 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     executionRecord.configurationSnapshot?.vertex === vertexId &&
     executionRecord.configurationSnapshot.visit === visitNumber &&
     !!executionRecord.visitState;
-  executionRecord.visits[vertexId] = visitNumber;
+  executionRecord.visits.set(vertexId, visitNumber);
   if (resuming) return true;
-  const { agent, access, procedure, outcomes, route, inputs: declared } = flow.ticket.vertices[vertexId];
+  const { agent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
   // The Persona's bytes from the Layer that names it; a Vertex without an Agent (publish) pins none.
   const bytes = agent && config.layerFile(runContext.files, agent.persona);
   executionRecord.configurationSnapshot = structuredClone({
@@ -110,7 +111,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     visit: visitNumber,
     agent,
     access,
-    procedure: { name: procedure, hash: flow.procedures[procedure].hash },
+    procedure: { name: procedure, hash: model.procedure(flow, procedure).hash },
     outcomes,
     route: route ?? null,
     routes: flow.ticket.routes ?? null,
@@ -157,7 +158,7 @@ async function heldDirty(runContext: RunContext, vertexId: string): Promise<Visi
 // Saved with the record, so a restart has the agent call and Check runs the remaining Actions read. `call` is the agent
 // Action's latest Attempt, `checks` each Check's latest signal, `runs` what the recovery Brief and the Terminal Reason
 // read.
-function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean, proc: procedures.Procedure) {
+function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean, proc: model.Procedure) {
   const state = (executionRecord.visitState = resuming
     ? executionRecord.visitState!
     : {
@@ -165,8 +166,8 @@ function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean
         firstAttemptBaseline: null,
         call: null,
         response: null,
-        runs: {},
-        checks: {},
+        runs: new Map(),
+        checks: new Map(),
         checkFollows: false,
         settled: null,
         unconfirmedCleanup: null,
@@ -180,7 +181,7 @@ function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean
 export async function runVisit(runContext: RunContext, vertexId: string, visitNumber: number): Promise<VisitEnd> {
   const { flow, record: executionRecord } = runContext;
   const resuming = await enterVisit(runContext, vertexId, visitNumber);
-  const proc = flow.procedures[executionRecord.configurationSnapshot!.procedure.name];
+  const proc = model.procedure(flow, executionRecord.configurationSnapshot!.procedure.name);
   if (!resuming) {
     const held = await heldDirty(runContext, vertexId);
     if (held) return held;
@@ -339,7 +340,7 @@ async function rescueRouted(runContext: RunContext, state: RunningVisit, { actio
 // the Claim token; a Check counts only on the current tree.
 async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, state: RunningVisit): Promise<VisitEnd> {
   const { vertex, visit: visitNumber, procedure } = actionIdentity;
-  const signals = Object.values(state.checks);
+  const signals = [...state.checks.values()];
   const checked =
     state.proc.passed.length && signals.some((signal) => signal.tree)
       ? await effects.whileBusy(runContext, () => visitScope.fresh(runContext, signals))

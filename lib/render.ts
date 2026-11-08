@@ -276,12 +276,12 @@ export interface ProvenanceRow {
 // One row per Vertex. Each agent Attempt is one call counted by its own usage.delta, so the tokens of a Session it
 // resumed are not counted again.
 export function provenance(executionRecord: record.ExecutionRecord): ProvenanceRow[] {
-  const rows: Record<string, ProvenanceRow> = {};
+  const rows = new Map<string, ProvenanceRow>();
   for (const entry of executionRecord.writeAheadLog) {
     if (entry.step !== 'evidence' || entry.effect !== 'call') continue;
     const { vertex, visit, action } = marker.partsOf(entry.actionMarker);
     const session = executionRecord.sessions[`${vertex}/${visit}/${action}`];
-    const row = (rows[vertex] ??= {
+    const row = rows.get(vertex) ?? {
       vertex,
       harness: session.harness,
       model: session.model,
@@ -292,14 +292,15 @@ export function provenance(executionRecord: record.ExecutionRecord): ProvenanceR
       inputTokens: 0,
       cacheReadTokens: 0,
       outputTokens: 0,
-    });
+    };
+    rows.set(vertex, row);
     const usage = entry.evidence!.usageDelta as Record<'inputTokens' | 'cacheReadTokens' | 'outputTokens', number>;
     row.calls++;
     row.inputTokens += usage.inputTokens;
     row.cacheReadTokens += usage.cacheReadTokens;
     row.outputTokens += usage.outputTokens;
   }
-  return Object.values(rows);
+  return [...rows.values()];
 }
 
 // A public template's values are redacted once as each is emitted, and fenced past their own backticks where the

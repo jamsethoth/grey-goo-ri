@@ -34,7 +34,7 @@ interface Reference {
 // Why a typed reference cannot be read as its parameter needs, or null.
 type Want = (type: referencePaths.FieldType, node: referencePaths.SchemaNode, path: unknown) => report.Finding | null;
 
-// What a Visit reads of itself: its own outputs by Action id and its `inputs` (record.visitScope), and the response.
+// What a Visit reads of itself: its own outputs by Action id and its `inputs` (lib/visit-scope.ts), and the response.
 export const ownScope = (proc: checked.CheckedProcedure, inputs: referencePaths.SchemaNode) => ({
   ...(proc.agent && { response: proc.schema }),
   inputs,

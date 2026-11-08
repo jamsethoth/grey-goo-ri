@@ -41,9 +41,9 @@ export interface ResolvedVertex {
 export interface Graph {
   location: string;
   ticket: Record<string, unknown>;
-  resolved: Record<string, ResolvedVertex>;
-  procs: Record<string, checked.CheckedProcedure | undefined>;
-  fallsOf: Record<string, FallThroughs>;
+  resolved: Map<string, ResolvedVertex>;
+  procs: Map<string, checked.CheckedProcedure | undefined>;
+  fallsOf: Map<string, FallThroughs>;
   clean: boolean;
 }
 // Where a route lands: a Vertex or an end, and whether only an exhausted Bound leads there.
@@ -83,8 +83,8 @@ function leaves(id: string, proc: checked.CheckedProcedure, ending: OutcomeCase,
 }
 
 // The strongly connected components of `next` that hold a cycle, each in declaration order (Tarjan).
-function cycles(next: Record<string, string[]>) {
-  const ids = Object.keys(next);
+function cycles(next: Map<string, string[]>) {
+  const ids = [...next.keys()];
   const index = new Map<string, number>();
   const low = new Map<string, number>();
   const stack: string[] = [];
@@ -93,7 +93,7 @@ function cycles(next: Record<string, string[]>) {
     index.set(vertex, index.size);
     low.set(vertex, index.get(vertex) as number);
     stack.push(vertex);
-    for (const successor of next[vertex]) {
+    for (const successor of next.get(vertex) as string[]) {
       if (!index.has(successor)) {
         visit(successor);
         low.set(vertex, Math.min(low.get(vertex) as number, low.get(successor) as number));
@@ -102,7 +102,8 @@ function cycles(next: Record<string, string[]>) {
     }
     if (low.get(vertex) !== index.get(vertex)) return;
     const component = stack.splice(stack.indexOf(vertex));
-    if (component.length > 1 || next[vertex].includes(vertex)) found.push(ids.filter((id) => component.includes(id)));
+    if (component.length > 1 || next.get(vertex)?.includes(vertex))
+      found.push(ids.filter((id) => component.includes(id)));
   };
   for (const vertex of ids) if (!index.has(vertex)) visit(vertex);
   return found;
@@ -112,7 +113,7 @@ function cycles(next: Record<string, string[]>) {
 // `exhausted` marks a landing that no edge max bounds. A missing exhausted target is H8's error, so its needs-human
 // here only fills in routing for doctor.
 function landingsOf(
-  resolved: Record<string, ResolvedVertex>,
+  resolved: Map<string, ResolvedVertex>,
   target: unknown,
   exhausted = false,
   seen: string[] = [],
@@ -125,12 +126,12 @@ function landingsOf(
     ];
   }
   if (referencePaths.isRecord(target)) return flow.isEnd(target.end) ? [{ end: target.end, exhausted }] : [];
-  if (typeof target !== 'string' || !Object.hasOwn(resolved, target) || seen.includes(target)) return [];
-  const vertex = resolved[target];
+  const vertex = typeof target === 'string' && !seen.includes(target) ? resolved.get(target) : undefined;
+  if (!vertex) return [];
   const next = vertex.exhausted ?? flow.NEEDS_HUMAN_ROUTE;
   return [
-    { vertex: target, exhausted },
-    ...(report.isCount(vertex.max) ? landingsOf(resolved, next, true, [...seen, target]) : []),
+    { vertex: target as string, exhausted },
+    ...(report.isCount(vertex.max) ? landingsOf(resolved, next, true, [...seen, target as string]) : []),
   ];
 }
 
@@ -176,12 +177,12 @@ function routeEdges(problems: report.Report, graph: Graph) {
     if (graph.clean) report.errorOf(problems, `${graph.location}.ticket.vertices.${id}`, finding);
   };
   const edges: Edge[] = [];
-  for (const [id, vertex] of Object.entries(resolved)) {
-    const proc = graph.procs[id];
+  for (const [id, vertex] of resolved) {
+    const proc = graph.procs.get(id);
     if (!proc) continue;
     const write = vertex.access !== 'read-only';
     if (write) checkWrites(fail, id, proc);
-    const cases = checked.casesOf(proc, graph.fallsOf[id]);
+    const cases = checked.casesOf(proc, graph.fallsOf.get(id) as FallThroughs);
     for (const name of vertex.outcomes) {
       const route = flow.route(vertex.route, ticket.routes, name);
       if (!route) {
@@ -212,13 +213,13 @@ function routeEdges(problems: report.Report, graph: Graph) {
 // A cycle needs an edge or Vertex with max; the Action Cap does not bound one.
 function checkCycles(problems: report.Report, graph: Graph, edges: Edge[]) {
   const { resolved } = graph;
-  const bounded = (id: string) => report.isCount(resolved[id].max);
-  const next: Record<string, string[]> = Object.fromEntries(Object.keys(resolved).map((id) => [id, []]));
+  const bounded = (id: string) => report.isCount(resolved.get(id)?.max);
+  const next = new Map<string, string[]>([...resolved.keys()].map((id) => [id, []]));
   for (const edge of edges) {
     for (const landing of edge.landings) {
       const { vertex } = landing;
       if (!vertex || bounded(edge.from) || bounded(vertex) || (vertex === edge.bounded && !landing.exhausted)) continue;
-      next[edge.from].push(vertex);
+      next.get(edge.from)?.push(vertex);
     }
   }
   for (const cycle of cycles(next)) {
@@ -235,19 +236,18 @@ function checkCycles(problems: report.Report, graph: Graph, edges: Edge[]) {
 // Once every Vertex of such a loop is spent, an entry passes from exhausted target to exhausted target forever (H12).
 function checkExhaustedLoops(problems: report.Report, graph: Graph) {
   const { resolved } = graph;
-  const ids = Object.keys(resolved);
+  const ids = [...resolved.keys()];
   const loops = new Map<string, string[]>();
   for (const id of ids) {
     const chain: unknown[] = [];
     let current: unknown = id;
-    while (
-      typeof current === 'string' &&
-      Object.hasOwn(resolved, current) &&
-      report.isCount(resolved[current].max) &&
-      !chain.includes(current)
+    for (
+      let vertex = resolved.get(id);
+      vertex && report.isCount(vertex.max) && !chain.includes(current);
+      vertex = typeof current === 'string' ? resolved.get(current) : undefined
     ) {
       chain.push(current);
-      current = resolved[current].exhausted;
+      current = vertex.exhausted;
     }
     if (!chain.includes(current)) continue;
     const loop = chain.slice(chain.indexOf(current));
@@ -271,9 +271,9 @@ const producer = (source: unknown) => {
   const [vertex, action, output] = referencePaths.parse(source).steps as string[];
   return action === 'rescue' ? `${vertex}.rescue` : `${vertex}.${action}.${output}`;
 };
-function groupsOf(resolved: Record<string, ResolvedVertex>) {
+function groupsOf(resolved: Map<string, ResolvedVertex>) {
   const groups = new Map<string, string[]>();
-  for (const vertex of Object.values(resolved))
+  for (const vertex of resolved.values())
     for (const input of Object.values(vertex.inputs)) groups.set(JSON.stringify(input.from), input.from.map(producer));
   return groups;
 }
@@ -284,7 +284,8 @@ function groupsOf(resolved: Record<string, ResolvedVertex>) {
 // leaves none (N4), so it never guarantees one.
 function gained(graph: Graph, groups: Map<string, string[]>, edge: Edge, every: boolean) {
   const ways = edge.cases.map((ending) => {
-    const keys = leaves(edge.from, graph.procs[edge.from] as checked.CheckedProcedure, ending, edge.write && !every);
+    const proc = graph.procs.get(edge.from) as checked.CheckedProcedure;
+    const keys = leaves(edge.from, proc, ending, edge.write && !every);
     const facts = [...groups]
       .filter(([, sources]) => sources.some((key) => keys.includes(key)))
       .map(([group]) => group);
@@ -326,7 +327,7 @@ function checkFacts(problems: report.Report, graph: Graph, edges: Edge[]) {
   const groups = groupsOf(graph.resolved);
   const every = factsAt(graph, edges, groups, true);
   const some = factsAt(graph, edges, groups, false);
-  for (const id of Object.keys(graph.resolved))
+  for (const id of graph.resolved.keys())
     if (!every.has(id))
       report.warn(problems, vertexAt(id), 'unreachable-vertex', `Vertex ${id} is not reachable from the entry`, {
         vertex: id,
@@ -344,7 +345,7 @@ function checkFacts(problems: report.Report, graph: Graph, edges: Edge[]) {
       );
     }
   }
-  for (const [id, vertex] of Object.entries(graph.resolved)) {
+  for (const [id, vertex] of graph.resolved) {
     if (every.has(id)) checkInputFacts(problems, { id, location: vertexAt(id), vertex }, every, some);
   }
 }

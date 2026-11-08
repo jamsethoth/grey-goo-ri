@@ -117,10 +117,16 @@ test('a passed table beside an await-approval never applies: a Decision is the O
   assert.deepEqual(found, [{ at: 'procedures.approval.passed', code: 'table-never-applies' }]);
 });
 
-test('a Decision named after an Object.prototype property is reported, not read', () => {
-  const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['constructor'] });
-  const found = exampleLayer.check(config).errors.map(({ at, code }) => ({ at, code }));
-  assert.deepEqual(found, [{ at: 'procedures.approval.actions[0]', code: 'inherited-name' }]);
+test('a Decision named after an Object.prototype property is an Outcome like any other', () => {
+  const config = askingConfig({ id: 'ask', do: 'await-approval', decisions: ['constructor', 'rejected'] });
+  config.flows.default.ticket.vertices.approve.route = { constructor: { end: 'needs-human' } };
+  const { flows, errors } = exampleLayer.check(config);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(flows.default.ticket.vertices.approve.outcomes, ['constructor', 'rejected']);
+  assert.deepEqual(flows.default.ticket.vertices.approve.approvalLabels?.decide, [
+    'gg:decide:approve:constructor',
+    'gg:decide:approve:rejected',
+  ]);
 });
 
 test('a repeated Decision is reported', () => {

@@ -12,6 +12,7 @@ import * as github from '../../lib/github.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
+import * as model from '../../lib/model.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as validate from '../../lib/validate/index.ts';
@@ -139,8 +140,8 @@ export function goldenConfig(): GoldenConfig {
   };
 }
 
-// The golden Flow as admission resolves it; a configuration the validator rejects fails the case.
-export function resolve(goldenConfiguration: GoldenConfig): runContext.RunFlow {
+// The configuration's one Flow as admission resolves it; a configuration the validator rejects fails the case.
+export function resolve(goldenConfiguration: GoldenConfig): model.ResolvedFlow {
   const { flows, errors } = validate.validate(goldenConfiguration, {
     harnesses: { fake: {} },
     readSchema: (name: string) => JSON.parse(config.layerFile(goldenConfiguration.files, name)),
@@ -150,7 +151,7 @@ export function resolve(goldenConfiguration: GoldenConfig): runContext.RunFlow {
     const listed = errors.map((problem) => `${problem.at}: ${problem.message}`).join('\n');
     throw new Error(`the golden configuration is invalid:\n${listed}`);
   }
-  return (flows as Record<string, unknown>).golden as runContext.RunFlow;
+  return model.fromJson(Object.values(flows)[0]);
 }
 
 // Reduces Action Events to what a golden trace asserts.
@@ -252,7 +253,7 @@ type Repos = {
 type Planned = {
   responses: fakeHarnessModule.ScriptedResponses;
   configured: GoldenConfig;
-  flow: runContext.RunFlow;
+  flow: model.ResolvedFlow;
   executionRecord: record.ExecutionRecord;
   database: record.StateDatabase;
 };
@@ -392,6 +393,5 @@ export type GoldenFixture = Awaited<ReturnType<typeof fixture>>;
 export function configure(golden: GoldenFixture, edit: (configured: GoldenConfig) => void): void {
   edit(golden.config);
   golden.flow = golden.options.flow = resolve(golden.config);
-  if (!Object.keys(golden.executionRecord.visits).length)
-    golden.executionRecord.cursor.vertex = golden.flow.ticket.entry as string;
+  if (!golden.executionRecord.visits.size) golden.executionRecord.cursor.vertex = golden.flow.ticket.entry as string;
 }

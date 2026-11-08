@@ -5,6 +5,7 @@ import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
+import * as namedFlow from '../support/named-flow.ts';
 
 // A case that asks nobody reads no labels.
 const DEPS = {
@@ -121,11 +122,12 @@ test("gg doctor says an Edge's target is missing when the Edge leaves out to", a
   assert.ok(text.includes('\n    retest -> no target (max 2, exhausted senior-red)\n'), text);
 });
 
-test('gg doctor says a Claim token requires a Check with no id when the Check leaves it out', async () => {
+// An id that is not a string is kept out of every collection keyed by id, so no Claim token requires it (#174).
+test('gg doctor lists a Check with no id, which no Claim token requires', async () => {
   const config = example();
   delete config.procedures['base-check'].actions[0].id;
   const { text } = await doctor.doctor({ config, ...DEPS });
-  assert.ok(text.includes('\n  claimTokens: ok requires no id\n'), text);
+  assert.ok(text.includes('\n  checks: no id (command test)\n  claimTokens: ok requires none\n'), text);
 });
 
 test('gg doctor says an input has no source when it leaves out from', async () => {
@@ -176,18 +178,6 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
         'workspace-write [unknown-permission-intent]\n1 error, 2 warnings\n',
     ),
     text,
-  );
-});
-
-test('gg doctor reports an Outcome named after an Object.prototype property as reserved', async () => {
-  const config = example();
-  config.procedures['tests-fail'].stopped[0].outcome = 'toString';
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
-  assert.equal(exitCode, 1);
-  assert.equal(
-    text,
-    'error: procedures.tests-fail.stopped[0]: outcome "toString" is reserved: every object inherits a property of ' +
-      'that name from Object.prototype [inherited-name]\n1 error\n',
   );
 });
 
@@ -286,4 +276,17 @@ test('gg doctor reads no labels for a Flow that asks nobody', async () => {
   const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
   await doctor.doctor({ config: example(), harnesses: { fake: {} }, gh: github.createGh(fake.gh), cwd: '/repo' });
   assert.deepEqual(fake.calls, []);
+});
+
+test('gg doctor prints a Flow named entirely with Object.prototype names like one with ordinary names', async () => {
+  const print = (names: namedFlow.Names) =>
+    doctor.doctor({ config: namedFlow.namedConfig(names) as unknown as config.Config, ...DEPS });
+  const ordinary = await print(namedFlow.ORDINARY);
+  // Its one command is named for the comparison, which the repository Layer's command rule refuses, as gg run
+  // preflight does (#301); the Flow itself is clean.
+  assert.deepEqual(
+    ordinary.text.split('\n').filter((line) => line.startsWith('error: ') && !line.startsWith('error: commands: ')),
+    [],
+  );
+  assert.deepEqual(await print(namedFlow.PROTOTYPE), namedFlow.renamed(ordinary));
 });

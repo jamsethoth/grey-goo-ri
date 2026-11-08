@@ -51,6 +51,12 @@ test('loadLayers reads the Layer identified by layerPath', (t) => {
   assert.equal(config.loadLayers(directory, join(directory, 'no-user-layer')).baseBranch, 'layer-base');
 });
 
+// JSON.stringify and the hash's key sort see no entry of a Map, so a Map reaching the hash would hash as {} in silence;
+// the model's toJson converts first (#174).
+test('hashOf refuses a Map, which it would otherwise hash as an empty object', () => {
+  assert.throws(() => config.hashOf({ flow: { vertices: new Map([['red', 1]]) } }), /Map/);
+});
+
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
   const defaults: exampleLayer.Layer = config.loadDefaults();
   const base = {
@@ -193,6 +199,16 @@ test('an inherited file reference keeps its declaring Layer', (t) => {
   assert.equal(loaded.agents.implementer.persona, 'shared.md');
   assert.equal(loaded.files['shared.md'].bytes, '# from the user Layer\n');
   assert.equal(loaded.files['fix-it.md'].bytes, 'fix it');
+});
+
+// A file name is a key of the Layer file map, so one named after an Object.prototype property must load as data (#174).
+test('a Layer file named __proto__ loads like any other', (t) => {
+  const name = '__proto__';
+  const { repo, home } = layers(t, { repo: JSON.stringify({ agents: { implementer: { persona: name } } }) });
+  // A computed key, which an object literal makes an own key; a literal __proto__: would set the prototype.
+  beside(repo, { [name]: '# a persona named __proto__\n' });
+  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
+  assert.equal(config.layerFile(loaded.files, name), '# a persona named __proto__\n');
 });
 
 test('an inline Vertex persona loads from its declaring Layer', (t) => {

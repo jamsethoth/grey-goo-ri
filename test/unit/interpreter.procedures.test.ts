@@ -235,8 +235,7 @@ test("the Visit snapshot pins the Procedure's name and hash", async (t) => {
   const fixture = await golden.fixture(t);
   await interpreter.runExecution(fixture.options);
 
-  const procedures = fixture.flow.procedures as Record<string, { hash: string }>;
-  assert.deepEqual(seen['green/1'], { name: 'implement', hash: procedures.implement!.hash });
+  assert.deepEqual(seen['green/1'], { name: 'implement', hash: fixture.flow.procedures.get('implement')!.hash });
   assert.match(seen['green/1']!.hash, /^[0-9a-f]{64}$/);
   assert.notEqual(seen['red/1']!.hash, seen['green/1']!.hash);
 });

@@ -78,7 +78,10 @@ for (const state of ['ready-for-qa', 'fault', 'abandoned'] as const) {
     const { mainRoot, worktree } = fixture;
     await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
     const executionRecord = unvisitedExecution.unvisitedExecution(fixture);
-    executionRecord.visits = { red: 1, green: 1 };
+    executionRecord.visits = new Map([
+      ['red', 1],
+      ['green', 1],
+    ]);
     executionRecord.cursor = { vertex: 'needs-human', visit: null, action: null, recovery: 0, attempt: 1 };
     const actionMarker = golden.markerOf(executionRecord, 'ready-for-qa', 1, 'end-comment', 0);
     await record.intent(executionRecord, actionMarker, 'comment', {

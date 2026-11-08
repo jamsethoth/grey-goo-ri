@@ -17,7 +17,6 @@ export const PROBLEM_CODES = [
   'required-key-missing',
   'unknown-key',
   // Names.
-  'inherited-name',
   'invalid-name',
   'reserved-name',
   // Flows, Vertices and routes.
@@ -145,7 +144,7 @@ type RuleRow = RuleTable & { row: number; outcome: string };
 // The values each code's sentence names, as Ajv's params are typed by keyword, even where `at` spells one too; a code
 // missing here names none. A label that only places the problem inside the value at `at` (`allOf[n]:`, `pick:`,
 // `where "f":`, `agent X's harness`) is not repeated here, except a bad item's index in a repeat Check's fields (owner,
-// #301). inherited-name's guard is #174's to replace, so it takes none yet.
+// #301).
 interface ProblemParams {
   'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] } & InLayerFile;
   'empty-list': InLayerFile;
