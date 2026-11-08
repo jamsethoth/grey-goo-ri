@@ -151,8 +151,8 @@ function beside(root: string, files: Record<string, string>) {
 
 test('loadLayers reads each file from the Layer that declares its name', (t) => {
   const { repo, home } = layers(t, {
-    repo: JSON.stringify({ agents: { implementer: { persona: 'repo-implementer.md' } } }),
-    home: JSON.stringify({
+    home: JSON.stringify({ agents: { implementer: { persona: 'home-implementer.md' } } }),
+    repo: JSON.stringify({
       procedures: {
         probe: {
           actions: [
@@ -165,8 +165,8 @@ test('loadLayers reads each file from the Layer that declares its name', (t) => 
       },
     }),
   });
-  beside(repo, { 'repo-implementer.md': '# repo implementer\n' });
-  beside(home, {
+  beside(home, { 'home-implementer.md': '# home implementer\n' });
+  beside(repo, {
     'ask.md': 'ask',
     'ask.schema.json': '{}',
     'body.md': 'body',
@@ -174,7 +174,7 @@ test('loadLayers reads each file from the Layer that declares its name', (t) => 
     'stopped.md': 'stopped',
   });
   const { files } = config.loadLayers(repo, home);
-  assert.deepEqual(files['repo-implementer.md'], layerFile('# repo implementer\n'));
+  assert.deepEqual(files['home-implementer.md'], layerFile('# home implementer\n'));
   assert.deepEqual(files['ask.md'], layerFile('ask'));
   assert.deepEqual(files['ask.schema.json'], layerFile('{}'));
   assert.deepEqual(files['body.md'], layerFile('body'));
@@ -243,24 +243,20 @@ test('a declared file that does not exist is a load error naming the Layer file 
   });
 });
 
-test('a Flow or Procedure a later Layer declares replaces the earlier one of its name whole', (t) => {
-  const { repo, home } = layers(t, {
-    repo: JSON.stringify({
-      procedures: { review: { actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }] } },
-      flows: {
-        default: { actionCap: 5, ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } } },
-      },
-    }),
+// A Flow arrives whole from the repository Layer, so no other Layer declares a Flow or a Procedure (P2).
+for (const key of ['flows', 'procedures']) {
+  test(`a ${key} key in the user Layer is a load error naming the file`, (t) => {
+    const { repo, home } = layers(t, { home: JSON.stringify({ [key]: {} }) });
+    assert.throws(() => config.loadLayers(repo, home), {
+      message: `${config.layerPath(home)}: ${key} may be set only in a repository Layer`,
+    });
   });
-  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
-  assert.deepEqual(loaded.procedures.review, {
-    actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }],
-  });
-  assert.deepEqual(loaded.flows.default, {
-    actionCap: 5,
-    ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } },
-  });
-  assert.equal(loaded.procedures.implement.actions[0].id, 'green', 'a Procedure the Layer does not declare stays');
+}
+
+test('the shipped defaults declare no agents, flows or procedures', () => {
+  const defaults = config.loadDefaults();
+  for (const key of ['agents', 'flows', 'procedures']) assert.equal(Object.hasOwn(defaults, key), false, key);
+  assert.deepEqual(defaults.files, {}, 'and name no file');
 });
 
 // In a configuration file null is never a value and a Layer cannot delete an inherited key (#298): the merge keeps a
@@ -316,16 +312,22 @@ test('a testPaths key in the user Layer is a load error naming the file', (t) =>
   });
 });
 
-test('a testPaths key in the defaults Layer is a load error naming the file', async (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'gg-install-defaults-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  copyInstall(root);
-  const file = join(root, 'defaults', 'gg.json');
-  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), testPaths: ['test/**'] }));
-  // The copy's own module, so it reads the copy's defaults.
-  const copied = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
-  assert.throws(() => copied.loadDefaults(), { message: `${file}: testPaths may be set only in a repository Layer` });
-});
+for (const [key, value] of [
+  ['testPaths', ['test/**']],
+  ['flows', {}],
+  ['procedures', {}],
+] as const) {
+  test(`a ${key} key in the defaults Layer is a load error naming the file`, async (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'gg-install-defaults-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    copyInstall(root);
+    const file = join(root, 'defaults', 'gg.json');
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), [key]: value }));
+    // The copy's own module, so it reads the copy's defaults.
+    const copied = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
+    assert.throws(() => copied.loadDefaults(), { message: `${file}: ${key} may be set only in a repository Layer` });
+  });
+}
 
 test('a Layer with a duplicate key in one object is a load error naming the file and key', (t) => {
   const repoDup = layers(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
