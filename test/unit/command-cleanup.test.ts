@@ -70,6 +70,36 @@ test('growTree never adds selfPid, nor what it starts', () => {
   assert.deepEqual([...tree], [ROOT, 101]);
 });
 
+// A Windows snapshot's rows, and each process's start as a FILETIME; a pid with no start reads as gone.
+const entryOf = (pid: number, parentPid: number): commandCleanup.ProcessEntry => ({ pid, parentPid, exe: 'node.exe' });
+const startsOf = (starts: Record<number, bigint>) => (pid: number) => starts[pid] ?? null;
+
+test("linkedPids leaves out an older process whose parent pid is the shell's, reused", () => {
+  const entries = [entryOf(77, ROOT), entryOf(101, ROOT), entryOf(102, 101)];
+  // 101 started in the shell's own tick, which a FILETIME read at tick granularity gives; 77 started before the shell
+  const starts = startsOf({ 77: 10n, [ROOT]: 20n, 101: 20n, 102: 30n });
+  assert.deepEqual(commandCleanup.linkedPids(ROOT, entries, SELF, starts), [101, 102]);
+});
+
+test('linkedPids leaves out an older process under a reused descendant pid, and what that one started', () => {
+  // 55 started before 101 took its parent's pid; 56 is 55's own child, younger than both
+  const entries = [entryOf(101, ROOT), entryOf(55, 101), entryOf(56, 55)];
+  const starts = startsOf({ [ROOT]: 20n, 55: 25n, 101: 30n, 56: 40n });
+  assert.deepEqual(commandCleanup.linkedPids(ROOT, entries, SELF, starts), [101]);
+});
+
+test('linkedPids leaves out a process whose start cannot be read, and what it started', () => {
+  const entries = [entryOf(101, ROOT), entryOf(103, ROOT), entryOf(104, 103)];
+  const starts = startsOf({ [ROOT]: 20n, 101: 30n, 104: 40n });
+  assert.deepEqual(commandCleanup.linkedPids(ROOT, entries, SELF, starts), [101]);
+});
+
+test('linkedPids never adds selfPid, nor what it starts', () => {
+  const entries = [entryOf(SELF, ROOT), entryOf(9001, SELF), entryOf(101, ROOT)];
+  const starts = startsOf({ [ROOT]: 20n, [SELF]: 30n, 9001: 40n, 101: 30n });
+  assert.deepEqual(commandCleanup.linkedPids(ROOT, entries, SELF, starts), [101]);
+});
+
 test('observe records a new descendant with its start time, and no other process', () => {
   const seen: Seen = new Map();
   commandCleanup.observe(

@@ -135,6 +135,15 @@ export function growTree(
   }
 }
 
+export function linkedPids(
+  rootPid: number,
+  entries: ProcessEntry[],
+  selfPid: number,
+  startOf: (pid: number) => bigint | null,
+): number[] {
+  return [];
+}
+
 // The watcher's update from one listing: a seen pid no longer listed is forgotten, since its pid may come to name
 // another process, and each new process linked to rootPid or a seen descendant is recorded with its start time, so it
 // is still recognised after its parent exits and it is reparented.
