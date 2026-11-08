@@ -184,11 +184,18 @@ test('no module outside lib/git.ts passes git a command line', async () => {
 // The shapes that hold a Map (the Execution Record, its Visit state and the Resolved Flow) are stringified only where
 // their Maps are converted first: lib/record.ts's replacer and lib/model.ts's toJson. Anywhere else JSON.stringify
 // would write {} for each Map in silence (#174).
-const MAP_HOLDERS = /JSON\.stringify\(\s*(?:executionRecord|record|visitState|state|flow|runFlow)\b/;
+// A holder may be reached through its context (runContext.record, running.state).
+const MAP_HOLDERS =
+  /JSON\.stringify\(\s*(?:[A-Za-z_$][\w$]*\.)*(?:executionRecord|record|visitState|state|flow|runFlow)\b/;
 const JSON_OWNERS = new Set(['lib/record.ts']);
 
 test('no module outside the JSON owners stringifies a record, Visit state or Resolved Flow', () => {
-  assert.match('JSON.stringify(executionRecord, null, 2)', MAP_HOLDERS, 'the pattern finds a sample violation');
+  for (const sample of [
+    'JSON.stringify(executionRecord, null, 2)',
+    'JSON.stringify(runContext.record)',
+    'JSON.stringify(running.state)',
+  ])
+    assert.match(sample, MAP_HOLDERS, `the pattern finds the sample violation ${sample}`);
   const found = modules
     .filter((path) => !JSON_OWNERS.has(path))
     .flatMap((path) =>
