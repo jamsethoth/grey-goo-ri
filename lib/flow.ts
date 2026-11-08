@@ -42,7 +42,7 @@ export function route(vertexRoutes: unknown, flowRoutes: unknown, outcomeName: s
 
 // The Await and Decide Labels a Resolved Flow can request, each Vertex's, in Flow order (X1d).
 export const approvalLabels = (resolved: {
-  ticket: { vertices: Map<string, { approvalLabels?: { await: string; decide: string[] } | null }> };
+  ticket: { vertices: ReadonlyMap<string, { approvalLabels?: { await: string; decide: string[] } | null }> };
 }): string[] =>
   [...resolved.ticket.vertices.values()].flatMap((vertex) =>
     vertex.approvalLabels ? [vertex.approvalLabels.await, ...vertex.approvalLabels.decide] : [],

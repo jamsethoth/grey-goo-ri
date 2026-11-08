@@ -14,7 +14,7 @@ import * as events from './events.ts';
 import * as integrity from './integrity.ts';
 import * as labels from './labels.ts';
 import type * as marker from './marker.ts';
-import type * as model from './model.ts';
+import * as model from './model.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
@@ -103,7 +103,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     !!executionRecord.visitState;
   executionRecord.visits.set(vertexId, visitNumber);
   if (resuming) return true;
-  const { agent, access, procedure, outcomes, route, inputs: declared } = flow.ticket.vertices.get(vertexId)!;
+  const { agent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
   // The Persona's bytes from the Layer that names it; a Vertex without an Agent (publish) pins none.
   const bytes = agent && config.layerFile(runContext.files, agent.persona);
   executionRecord.configurationSnapshot = structuredClone({
@@ -111,7 +111,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     visit: visitNumber,
     agent,
     access,
-    procedure: { name: procedure, hash: flow.procedures.get(procedure)!.hash },
+    procedure: { name: procedure, hash: model.procedure(flow, procedure).hash },
     outcomes,
     route: route ?? null,
     routes: flow.ticket.routes ?? null,
@@ -181,7 +181,7 @@ function visitStateOf(executionRecord: record.ExecutionRecord, resuming: boolean
 export async function runVisit(runContext: RunContext, vertexId: string, visitNumber: number): Promise<VisitEnd> {
   const { flow, record: executionRecord } = runContext;
   const resuming = await enterVisit(runContext, vertexId, visitNumber);
-  const proc = flow.procedures.get(executionRecord.configurationSnapshot!.procedure.name)!;
+  const proc = model.procedure(flow, executionRecord.configurationSnapshot!.procedure.name);
   if (!resuming) {
     const held = await heldDirty(runContext, vertexId);
     if (held) return held;

@@ -1177,7 +1177,10 @@ exact admission must be, or which way it may be wrong.
   `otherwise`, input or route key may use one; admission reports it as an error. Before this, a Flow, Vertex or
   Procedure named `__proto__` was silently dropped. Extends V4. Issue #169. Issue #174 holds each collection keyed by a
   configured name in a Map (`lib/model.ts` for the Resolved Flow, `lib/record.ts` for the Execution Record's counts),
-  so a Vertex may be called `constructor` or `__proto__` like any other name, and the reservation is withdrawn.
+  so a Vertex may be called `constructor` or `__proto__` like any other name, and the reservation is withdrawn. Those
+  collections iterate in declaration order; their JSON form (`flow.json`, the Pinned Configuration, the record) may
+  place an integer-like name such as `1` first, as the language orders object keys, and nothing compares the two
+  orders (owner, 2026-11-08; `docs/research/configured-name-collections.md`).
 - H11. `gg doctor` prints each Vertex's `maxVisits` and its `exhausted` target when set, beside its routes, so the
   bounds can be read against the cycles. Issue #107.
 - H12. Vertices with `maxVisits` whose `exhausted` targets lead back to one another are an error, whatever routes them:

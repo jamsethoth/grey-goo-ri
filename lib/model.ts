@@ -22,15 +22,15 @@ export interface Vertex {
 
 // A Procedure with its Claim tokens by name.
 export type Procedure = Omit<procedures.Procedure, 'claimTokens'> & {
-  claimTokens: Map<string, procedures.ClaimToken>;
+  claimTokens: ReadonlyMap<string, procedures.ClaimToken>;
 };
 
-// The Resolved Flow an Execution runs.
+// The Resolved Flow an Execution runs. Only the validator and fromJson produce one, so its collections are read-only.
 export interface ResolvedFlow {
   name: string;
   actionCap: number;
-  procedures: Map<string, Procedure>;
-  ticket: { entry: string | null; routes?: unknown; vertices: Map<string, Vertex> };
+  procedures: ReadonlyMap<string, Procedure>;
+  ticket: { entry: string | null; routes?: unknown; vertices: ReadonlyMap<string, Vertex> };
 }
 
 // The Resolved Flow's JSON, as the validator gives it.
@@ -53,6 +53,20 @@ export function fromJson(json: unknown): ResolvedFlow {
     procedures: new Map(procedureEntries),
     ticket: { ...flow.ticket, vertices: new Map(Object.entries(flow.ticket.vertices)) },
   };
+}
+
+// A Vertex or Procedure the validator admitted: every route target and Vertex procedure is checked at admission, and
+// Reconciliation holds a record at a name the Flow lacks, so a miss here is a broken invariant, named.
+export function vertex(flow: ResolvedFlow, id: string): Vertex {
+  const found = flow.ticket.vertices.get(id);
+  if (!found) throw new Error(`Vertex ${JSON.stringify(id)} is not in Flow ${flow.name}`);
+  return found;
+}
+
+export function procedure(flow: ResolvedFlow, name: string): Procedure {
+  const found = flow.procedures.get(name);
+  if (!found) throw new Error(`Procedure ${JSON.stringify(name)} is not in Flow ${flow.name}`);
+  return found;
 }
 
 // Object.fromEntries defines own keys, so a name such as __proto__ stays data in the JSON.

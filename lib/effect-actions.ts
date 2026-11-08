@@ -37,7 +37,7 @@ async function makeCommit(
   const { record: executionRecord, git } = runContext;
   const worktree = executionRecord.worktree;
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as CommitPayload | undefined;
-  const requires = visitScope.tokenOf(state).requires!.map((id) => state.checks.get(id)!);
+  const requires = visitScope.tokenOf(state).requires!.map((id) => visitScope.checkSignal(state, id));
   const stale = intended
     ? []
     : (await visitScope.fresh(runContext, requires)).filter((check) => check.state !== 'passed');

@@ -267,7 +267,7 @@ export async function completeHeld(
     await agentCall.validateHeld(runContext, running, { baseline, response: state.response });
     return (await integrity.snapshot(executionRecord.worktree, git, locks)).tree;
   });
-  const signal = state.checks.get(action.id)!;
+  const signal = visitScope.checkSignal(state, action.id);
   const held = visitScope.outputOf(executionRecord, actionIdentity)?.value.cleanup as commandCleanup.CleanupReport;
   const confirmed = cleanupHold.confirmedReport(held);
   visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: confirmed });
@@ -287,7 +287,7 @@ export async function completeHeld(
     checks: visitScope.resolverChecks([], [signal]),
     retries: {},
   });
-  const { output, reason } = state.runs.get(action.id)!;
+  const { output, reason } = visitScope.checkRun(state, action.id);
   return effects.replaceResolution(runContext, {
     actionIdentity,
     startedAt,

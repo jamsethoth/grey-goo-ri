@@ -51,6 +51,12 @@ test('loadLayers reads the Layer identified by layerPath', (t) => {
   assert.equal(config.loadLayers(directory, join(directory, 'no-user-layer')).baseBranch, 'layer-base');
 });
 
+// JSON.stringify and the hash's key sort see no entry of a Map, so a Map reaching the hash would hash as {} in silence;
+// the model's toJson converts first (#174).
+test('hashOf refuses a Map, which it would otherwise hash as an empty object', () => {
+  assert.throws(() => config.hashOf({ flow: { vertices: new Map([['red', 1]]) } }), /Map/);
+});
+
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
   const defaults: exampleLayer.Layer = config.loadDefaults();
   const base = {

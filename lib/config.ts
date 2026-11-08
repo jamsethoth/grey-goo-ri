@@ -203,8 +203,10 @@ export function layerFile(files: unknown, name: unknown): string {
   return (files as LayerFiles)[name as string].bytes;
 }
 
-// Sorted keys at every depth, so the hash ignores key order.
+// Sorted keys at every depth, so the hash ignores key order. A Map has no keys here and would hash as {} in silence,
+// so it is refused: the model's toJson gives the JSON to hash (#174).
 function canonical(value: unknown): unknown {
+  if (value instanceof Map) throw new Error('a Map cannot be hashed; convert it to an object first (model.toJson)');
   if (Array.isArray(value)) return value.map(canonical);
   if (!value || typeof value !== 'object') return value;
   const object = value as Record<string, unknown>;

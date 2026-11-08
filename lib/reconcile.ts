@@ -24,8 +24,8 @@ export interface ReconcileGh extends effectEvidence.EvidenceGh {
 
 // The parts of the Resolved Flow a record is checked against.
 export interface ReconciledFlow {
-  ticket: { vertices: Map<string, unknown> };
-  procedures: Map<string, { hash: string }>;
+  ticket: { vertices: ReadonlyMap<string, unknown> };
+  procedures: ReadonlyMap<string, { hash: string }>;
 }
 
 type ResetPayload = visit.ResetPayload;

@@ -55,6 +55,20 @@ const claimOf = (response: unknown): string => (response as { claim?: string } |
 export const tokenOf = (state: RunningVisit): procedures.ClaimToken =>
   state.claimTokens.get(claimOf(state.response)) as procedures.ClaimToken;
 
+// A Check's saved signal and run, by Action id. The validator admits only ids the Procedure declares and puts every
+// Check before the first effect, so a result that is missing is a broken record, named.
+export function checkSignal(state: Pick<visit.VisitState, 'checks'>, id: string): visit.CheckSignal {
+  const found = state.checks.get(id);
+  if (!found) throw new Error(`Check ${JSON.stringify(id)} has no saved result`);
+  return found;
+}
+
+export function checkRun(state: Pick<visit.VisitState, 'runs'>, id: string): visit.CheckRun {
+  const found = state.runs.get(id);
+  if (!found) throw new Error(`Check ${JSON.stringify(id)} has no saved run`);
+  return found;
+}
+
 // What a reference or template may name of a Visit (W2): its own outputs by Action id, and its `inputs`, where an
 // absent input reads as nothing so a template renders it empty (T10).
 export const visitScope = (
@@ -155,7 +169,7 @@ export function settle(
   const failing = token.stop ? [] : token.requires.filter((id) => state.checks.get(id)?.state !== 'passed');
   if (!token.stop && !failing.length) return resolution;
   const recoverable =
-    failing.some((id) => state.runs.get(id)!.recoverable) && state.recovery < (state.proc.recover?.max ?? 0);
+    failing.some((id) => checkRun(state, id).recoverable) && state.recovery < (state.proc.recover?.max ?? 0);
   const [first] = failing;
   const decided = outcome.decide({
     ...input,
@@ -168,8 +182,8 @@ export function settle(
   if (!first) return decided;
   return {
     ...decided,
-    signal: state.checks.get(first),
-    reason: state.runs.get(first)!.reason,
-    output: state.runs.get(first)!.output,
+    signal: checkSignal(state, first),
+    reason: checkRun(state, first).reason,
+    output: checkRun(state, first).output,
   };
 }
