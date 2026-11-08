@@ -232,14 +232,21 @@ const findingOf = <C extends ProblemCode>(code: C, [message, params]: Detail<C>)
 
 // A required key left out breaks that rule, whichever rule a value there would break, and its params name the key
 // beside the values the sentence names.
+// Params a key left out moves into required-key-missing, so they take only the keys it can carry.
+type LeftOutFitting<P> = P & { [K in Exclude<keyof P, keyof ProblemParams['required-key-missing']>]?: never };
+type LeftOutDetail<C extends ProblemCode> = [ParamsOf<C>] extends [never]
+  ? [message: string]
+  : object extends ParamsOf<C>
+    ? [message: string, params?: LeftOutFitting<ParamsOf<C>>]
+    : [message: string, params: LeftOutFitting<ParamsOf<C>>];
 export function absentOr<C extends ProblemCode>(
   value: unknown,
   key: string,
   code: C,
-  ...[message, params]: Detail<C>
+  ...[message, params]: LeftOutDetail<C>
 ): Finding {
   if (value === undefined) return { code: 'required-key-missing', message, params: { ...params, key } };
-  return findingOf(code, [message, params] as Detail<C>);
+  return findingOf(code, [message, params] as unknown as Detail<C>);
 }
 
 export function error<C extends ProblemCode>(report: Report, location: string, code: C, ...detail: Detail<C>) {

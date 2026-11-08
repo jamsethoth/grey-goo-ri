@@ -112,15 +112,15 @@ function checkClaimTokens(
     return { ok: { requires: checkIds as string[] } };
   }
   const declaredTokens = declaration.claimTokens;
+  // A present value that is not an object says so, rather than read as though the key were left out (#301).
+  if (declaredTokens !== undefined && !referencePaths.isRecord(declaredTokens)) {
+    const message = `claimTokens must be an object from token to form, not ${JSON.stringify(declaredTokens)}`;
+    report.error(problems, `${location}.claimTokens`, 'not-an-object', message);
+    return {};
+  }
   if (!referencePaths.isRecord(declaredTokens) || !Object.keys(declaredTokens).length) {
-    report.error(
-      problems,
-      `${location}.claimTokens`,
-      declaredTokens === undefined || referencePaths.isRecord(declaredTokens)
-        ? 'claim-tokens-missing'
-        : 'not-an-object',
-      'a Procedure with an agent Action declares its claimTokens',
-    );
+    const message = 'a Procedure with an agent Action declares its claimTokens';
+    report.error(problems, `${location}.claimTokens`, 'claim-tokens-missing', message);
     return {};
   }
   const claimTokens: Record<string, procedures.ClaimToken> = {};

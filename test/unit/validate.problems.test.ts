@@ -226,7 +226,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
       {
         at: 'procedures.review.actions[2]',
         code: LEFT_OUT,
-        message: 'fields must be a non-empty list of field names',
+        message: 'a repeat Check must name its fields, a non-empty list of field names',
         params: { key: 'fields' },
       },
     ],
@@ -546,3 +546,98 @@ test("a Finding takes its code's params as report.error does", () => {
   report.errorOf(problems, 'agents', { code: 'unknown-key', message: 'unknown key "x"', params: { key: 'x' } });
   assert.equal(problems.errors.length, 2);
 });
+
+test('absentOr takes only the params required-key-missing can carry, since a key left out puts them there', () => {
+  // @ts-expect-error -- required-key-missing takes no check, so undeclared-check's params cannot pass through absentOr
+  report.absentOr(undefined, 'requires', 'undeclared-check', 'requires "x"', { check: 'x' });
+  const finding = report.absentOr(undefined, 'is', 'condition-value-mismatch', 'is must be true or false', {
+    field: 'flag',
+  });
+  assert.deepEqual(finding.params, { field: 'flag', key: 'is' });
+});
+
+// The owner's decisions on #301: these two sentences split by code, as their shared wording misread a value.
+const SPLIT: [string, (config: exampleLayer.Layer) => void, string, report.Problem[]][] = [
+  [
+    'claimTokens that is not an object',
+    (config) => {
+      config.procedures['tests-fail'].claimTokens = 3;
+    },
+    'procedures.tests-fail.claimTokens',
+    [
+      {
+        at: 'procedures.tests-fail.claimTokens',
+        code: 'not-an-object',
+        message: 'claimTokens must be an object from token to form, not 3',
+      },
+    ],
+  ],
+  [
+    'claimTokens left out keeps its sentence',
+    (config) => {
+      delete config.procedures['tests-fail'].claimTokens;
+    },
+    'procedures.tests-fail.claimTokens',
+    [
+      {
+        at: 'procedures.tests-fail.claimTokens',
+        code: 'claim-tokens-missing',
+        message: 'a Procedure with an agent Action declares its claimTokens',
+      },
+    ],
+  ],
+  [
+    'fields that is not a list',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'repeat').fields = 3;
+    },
+    'procedures.review.actions[2]',
+    [
+      {
+        at: 'procedures.review.actions[2]',
+        code: 'not-a-list',
+        message: 'fields must be a list of field names, not 3',
+      },
+    ],
+  ],
+  [
+    'fields that is empty',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'repeat').fields = [];
+    },
+    'procedures.review.actions[2]',
+    [{ at: 'procedures.review.actions[2]', code: 'empty-list', message: 'fields must name at least one field' }],
+  ],
+  [
+    'fields with items that are not names, each named by its index',
+    (config) => {
+      procedureActions.actionById(config.procedures.review, 'repeat').fields = ['file', '', 7];
+    },
+    'procedures.review.actions[2]',
+    [
+      {
+        at: 'procedures.review.actions[2]',
+        code: 'invalid-name',
+        message: 'fields[1] must be a field name, not ""',
+        params: { name: '' },
+      },
+      {
+        at: 'procedures.review.actions[2]',
+        code: 'invalid-name',
+        message: 'fields[2] must be a field name, not 7',
+        params: { name: 7 },
+      },
+    ],
+  ],
+];
+for (const [what, mutate, location, expected] of SPLIT) {
+  test(`a sentence split by code says which rule the value breaks: ${what}`, () => {
+    const config = exampleLayer.config();
+    mutate(config);
+    const { errors } = exampleLayer.check(config);
+    assert.deepEqual(
+      errors.filter((problem) => problem.at === location),
+      expected,
+    );
+  });
+}

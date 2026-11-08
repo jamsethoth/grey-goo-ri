@@ -72,12 +72,33 @@ const requireFile = (problems: report.Report, action: Value, key: string, locati
     report.error(problems, location, 'file-not-named', `${key} must name a file`, { key });
 };
 
-// One sentence states three rules, and the code says which one the value breaks.
-function requireNames(problems: report.Report, names: unknown, location: string, key: string) {
-  const message = `${key} must be a non-empty list of field names`;
-  if (!Array.isArray(names)) report.errorOf(problems, location, report.absentOr(names, key, 'not-a-list', message));
-  else if (!names.length) report.error(problems, location, 'empty-list', message);
-  else if (!names.every(report.isName)) report.error(problems, location, 'invalid-name', message);
+// Each rule a repeat Check's fields can break has its own sentence, and each item that is not a name is named by its
+// index, since one shared sentence left the reader to find the bad item (#301).
+function requireFields(problems: report.Report, fields: unknown, location: string) {
+  if (fields === undefined) {
+    const message = 'a repeat Check must name its fields, a non-empty list of field names';
+    return report.error(problems, location, 'required-key-missing', message, { key: 'fields' });
+  }
+  if (!Array.isArray(fields))
+    return report.error(
+      problems,
+      location,
+      'not-a-list',
+      `fields must be a list of field names, not ${JSON.stringify(fields)}`,
+    );
+  if (!fields.length) return report.error(problems, location, 'empty-list', 'fields must name at least one field');
+  fields.forEach((name, index) => {
+    if (!report.isName(name))
+      report.error(
+        problems,
+        location,
+        'invalid-name',
+        `fields[${index}] must be a field name, not ${JSON.stringify(name)}`,
+        {
+          name,
+        },
+      );
+  });
 }
 
 // How a sentence names an Action with its id left out. A present null is a wrong value, which it prints; params name
@@ -184,7 +205,7 @@ function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
   if (check.kind === 'command' && check.reuse !== undefined && check.reuse !== 'tree')
     report.error(problems, location, 'invalid-reuse', 'reuse may only be tree');
   if (check.kind === 'response') declared.responseConditions.push([check, location]);
-  if (check.kind === 'repeat') requireNames(problems, check.fields, location, 'fields');
+  if (check.kind === 'repeat') requireFields(problems, check.fields, location);
 }
 
 function checkEffectAction(problems: report.Report, action: Value, location: string) {
