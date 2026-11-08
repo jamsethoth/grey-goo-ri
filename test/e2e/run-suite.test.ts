@@ -67,10 +67,10 @@ function launcherCopy(t: TestContext, { prettier = 0, eslint = 0, tsc = 0, insta
   );
   // The runner running this file sets NODE_TEST_CONTEXT, which would make the copy's own node --test run no file.
   const { NODE_TEST_CONTEXT: _runnerContext, ...env } = process.env;
-  const run = (argv: string[], nodeFlags: string[] = []) =>
+  const run = (argv: string[], nodeFlags: string[] = [], given: Record<string, string> = {}) =>
     spawnSync(process.execPath, [...nodeFlags, join(root, 'scripts', 'run-suite.ts'), ...argv], {
       encoding: 'utf8',
-      env,
+      env: { ...env, ...given },
     });
   const steps = () => (existsSync(join(root, 'steps.log')) ? readFileSync(join(root, 'steps.log'), 'utf8') : '');
   return { root, run, steps };
@@ -192,6 +192,24 @@ process.exit(4);
   const result = copy.run(['fast']);
   assert.equal(result.status, 4, result.stderr);
   assert.ok(result.stderr.includes(`pid ${processProbe.pidIn(pidFile)}: `), result.stderr);
+});
+
+// A developer's global core.fsmonitor=true leaves git's daemon running on Windows, and the census fails the stage (#300).
+// Outside a repository git has no local config, so what it lists is everything it read.
+test("a stage's tests run git with no global or system config, whatever the caller's", (t) => {
+  const copy = launcherCopy(t);
+  const developerConfig = join(copy.root, 'developer.gitconfig');
+  writeFileSync(developerConfig, '[core]\n\tfsmonitor = true\n');
+  writeFileSync(
+    join(copy.root, 'test', 'unit', 'git-config.test.mjs'),
+    `import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+writeFileSync('git-config.log', execFileSync('git', ['config', '--list', '--show-scope'], { encoding: 'utf8' }));
+`,
+  );
+  const result = copy.run(['fast'], [], { GIT_CONFIG_GLOBAL: developerConfig });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(copy.root, 'git-config.log'), 'utf8'), '');
 });
 
 // Run with node:ffi off, so it says the same on every platform: off Windows there is no boundary at all.

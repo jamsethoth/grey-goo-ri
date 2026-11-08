@@ -202,7 +202,12 @@ test('suiteCommand drops NODE_OPTIONS, NODE_PATH and npm_config_* and keeps the 
     { NODE_OPTIONS: '--import=x', NODE_PATH: 'p', npm_config_node_options: '--import=x', KEEP: '1' },
     [],
   );
-  assert.deepEqual(env, { KEEP: '1' });
+  assert.deepEqual(env, { KEEP: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' });
+});
+
+test("suiteCommand gives git an empty global config and no system config, in place of the caller's", () => {
+  const { env } = runSuite.suiteCommand({ git_config_global: 'C:/Users/dev/.gitconfig', Git_Config_NoSystem: '0' }, []);
+  assert.deepEqual(env, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' });
 });
 
 test('the launcher is not a default node --test file', async () => {
