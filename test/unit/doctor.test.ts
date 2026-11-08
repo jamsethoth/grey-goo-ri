@@ -80,6 +80,21 @@ test('gg doctor reports the repository Layer problems gg run preflight refuses',
   );
 });
 
+// Doctor lists the repository Layer's problems first, as gg run preflight does, so the two read the same (#301).
+test("gg doctor prints the repository Layer's errors before the Flows', as preflight does", async () => {
+  const layer = example();
+  layer.commands = { ...layer.commands, Test: 'npm test' };
+  layer.flows.default.ticket.vertices.red.procedure = 'red';
+  const { text } = await doctor.doctor({ config: layer, ...DEPS });
+  assert.deepEqual(
+    text
+      .split('\n')
+      .filter((line) => line.startsWith('error: '))
+      .map((line) => line.slice('error: '.length, line.indexOf(': ', 'error: '.length))),
+    ['commands', 'flows.default.ticket.vertices.red'],
+  );
+});
+
 test("gg doctor says a row's outcome is missing when the row leaves it out", async () => {
   const config = example();
   delete config.procedures['tests-fail'].stopped[0].outcome;
