@@ -187,7 +187,7 @@ function endsAtReadyForQa(fixture: FirstVisitPass) {
     recovery: 0,
     attempt: 1,
   });
-  assert.deepEqual(fixture.executionRecord.visits, { red: 1, green: 1, publish: 1 });
+  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), { red: 1, green: 1, publish: 1 });
   assert.equal(fixture.executionRecord.state, 'ready-for-qa');
   assert.ok(fixture.gh.labels.has('gg:state:ready-for-qa'));
   assert.equal(
@@ -240,7 +240,7 @@ test("a write Vertex on a dirty worktree gg's records do not explain is held", a
   assert.match(gitShell.sh(fixture.worktree, 'log', '-1', '--format=%s'), /^test: /, "red's commit stays");
   assert.deepEqual(intents(fixture.executionRecord, 'reset'), []);
   assert.equal(fixture.executionRecord.history.at(-1)?.kind, 'held');
-  assert.deepEqual(fixture.executionRecord.visits, { red: 1, green: 1 });
+  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), { red: 1, green: 1 });
   const reason = terminalReasonOf(fixture);
   assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
   assert.match(reason.text, /uncommitted changes before green/);

@@ -12,6 +12,7 @@ import * as contract from './harnesses/contract.ts';
 import * as interpreter from './interpreter.ts';
 import * as labels from './labels.ts';
 import * as locksModule from './locks.ts';
+import * as model from './model.ts';
 import * as record from './record.ts';
 import type * as runContext from './run-context.ts';
 import type * as report from './validate/report.ts';
@@ -100,9 +101,9 @@ interface PreflightHarness {
 }
 
 // Each active Vertex's registered Harness, checked by name before any GitHub access.
-async function harnessProblems(flow: runContext.RunFlow | undefined, harnesses: Record<string, unknown>) {
+async function harnessProblems(flow: model.ResolvedFlow | undefined, harnesses: Record<string, unknown>) {
   const failed: string[] = [];
-  for (const [id, { agent }] of Object.entries(flow?.ticket.vertices ?? {})) {
+  for (const [id, { agent }] of flow?.ticket.vertices ?? []) {
     const harness =
       agent && typeof agent.harness === 'string' && Object.hasOwn(harnesses, agent.harness)
         ? (harnesses[agent.harness] as PreflightHarness)
@@ -127,7 +128,7 @@ async function harnessProblems(flow: runContext.RunFlow | undefined, harnesses: 
 // The configuration's errors, as gg doctor prints them (V1), and every active Vertex's registered Harness, all failures
 // in one error. An unset Harness is a configuration gap, so any one makes the error exit 2.
 async function preflight(
-  flow: runContext.RunFlow | undefined,
+  flow: model.ResolvedFlow | undefined,
   errors: report.Problem[],
   layers: config.Config,
   { harnesses, repoRoot }: { harnesses: Record<string, unknown>; repoRoot: string },
@@ -185,11 +186,12 @@ async function admitConfiguration(layers: config.Config, harnesses: Record<strin
     readTemplate: (name) => config.layerFile(layers.files, name),
   });
   // shortcut: gg run runs the Flow named default until --flow selects one (#122).
-  const flow = (flows as Record<string, unknown>).default as runContext.RunFlow;
+  const json = (flows as Record<string, unknown>).default;
+  const flow = json === undefined ? undefined : model.fromJson(json);
   await preflight(flow, errors, layers, { harnesses, repoRoot: repo.mainRoot });
   const commands = (layers.commands ?? {}) as Record<string, unknown>;
   const pinned = {
-    flow,
+    flow: json,
     files: layers.files,
     harnesses: layers.harnesses ?? {},
     launchProfile: null,
@@ -197,7 +199,7 @@ async function admitConfiguration(layers: config.Config, harnesses: Record<strin
     testPaths: layers.testPaths,
     approvers: layers.approvers,
   };
-  return { flow, warnings, commands, pinned, hash: config.configHash(pinned) };
+  return { flow: flow as model.ResolvedFlow, warnings, commands, pinned, hash: config.configHash(pinned) };
 }
 
 // The Ticket, or an Epic's ready sub-issues. Every sub-issue is read before the Run's first effect, so an epic with
@@ -225,7 +227,7 @@ function labelEnsuringGh(
   gh: github.Gh,
   repo: admission.Repo,
   layers: config.Config,
-  flow: runContext.RunFlow,
+  flow: model.ResolvedFlow,
 ): github.Gh {
   const flowLabels = [
     labels.labelsFor(layers.labelPrefix).await(cleanupHold.AWAIT_VERTEX),
@@ -253,12 +255,12 @@ function labelEnsuringGh(
 // The Run's directory, Pinned Configuration and log: each line goes to the run log and the caller's log, named.
 function startRun(
   repo: admission.Repo,
-  { flow, hash, pinned, clock }: { flow: runContext.RunFlow; hash: string; pinned: unknown; clock: runContext.Clock },
+  { flow, hash, pinned, clock }: { flow: model.ResolvedFlow; hash: string; pinned: unknown; clock: runContext.Clock },
   { named, log }: { named: (message: string) => string; log: (line: string) => void },
 ) {
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
   const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
-  flowModule.writeResolved(runDir, flow, hash);
+  flowModule.writeResolved(runDir, model.toJson(flow), hash);
   stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, JSON.stringify(pinned));
   const runLog = (message: string) => {
     const line = named(message);

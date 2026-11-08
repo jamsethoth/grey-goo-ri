@@ -507,6 +507,6 @@ test('a pass with unconfirmed cleanup is not saved for reuse', async (t) => {
   editRuns(fixture, (run) => (run.code === 0 ? { ...run, cleanup: unconfirmed } : run));
   const { outcome } = await interpreter.runExecution(fixture.options);
   assert.equal(outcome, 'pending');
-  const { tree } = fixture.executionRecord.visitState!.checks.test!;
+  const { tree } = fixture.executionRecord.visitState!.checks.get('test')!;
   assert.equal(stateDatabase.reusablePass(fixture.commonDir, tree!, 'npm test'), null);
 });

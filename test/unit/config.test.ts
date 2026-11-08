@@ -195,6 +195,16 @@ test('an inherited file reference keeps its declaring Layer', (t) => {
   assert.equal(loaded.files['fix-it.md'].bytes, 'fix it');
 });
 
+// A file name is a key of the Layer file map, so one named after an Object.prototype property must load as data (#174).
+test('a Layer file named __proto__ loads like any other', (t) => {
+  const name = '__proto__';
+  const { repo, home } = layers(t, { repo: JSON.stringify({ agents: { implementer: { persona: name } } }) });
+  // A computed key, which an object literal makes an own key; a literal __proto__: would set the prototype.
+  beside(repo, { [name]: '# a persona named __proto__\n' });
+  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
+  assert.equal(config.layerFile(loaded.files, name), '# a persona named __proto__\n');
+});
+
 test('an inline Vertex persona loads from its declaring Layer', (t) => {
   const { repo, home } = layers(t, {
     repo: JSON.stringify({ flows: { default: { ticket: { vertices: { red: { persona: 'red-persona.md' } } } } } }),

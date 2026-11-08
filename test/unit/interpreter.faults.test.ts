@@ -115,7 +115,11 @@ test('golden: a failing test Check is recovered once then fails with the Outcome
   const exhausted = actionEvent(fixture, 'green', 'test', 1)!;
   assert.equal(exhausted.outcome, 'failed');
   assert.deepEqual(exhausted.rule, { table: 'failed', row: null });
-  assert.deepEqual(fixture.executionRecord.visits, { red: 1, green: 1 }, 'no Edge was traversed for the retry');
+  assert.deepEqual(
+    Object.fromEntries(fixture.executionRecord.visits),
+    { red: 1, green: 1 },
+    'no Edge was traversed for the retry',
+  );
   const reason = stopReason(fixture, {
     vertex: 'green',
     action: 'test',

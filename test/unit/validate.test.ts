@@ -196,60 +196,6 @@ test('a table outcome or otherwise named after an end is an error', () => {
   ]);
 });
 
-test('a Vertex named __proto__ is an error, never dropped', () => {
-  const config = exampleLayer.config();
-  const { vertices } = config.flows.default.ticket;
-  // JSON.parse and spread make __proto__ an own key, as a Layer's JSON does; assignment would set the prototype.
-  config.flows.default.ticket.vertices = { ...vertices, ...JSON.parse('{"__proto__": {"procedure": "base-check"}}') };
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    { at: `${VERTICES}.__proto__`, code: 'inherited-name' },
-  ]);
-});
-
-test('a name of an Object.prototype property is reserved wherever the configuration names something', () => {
-  const config = exampleLayer.config();
-  config.agents.valueOf = { persona: 'implementer.md', harness: 'fake' };
-  config.procedures['tests-fail'].claimTokens.isPrototypeOf = { stop: true };
-  config.procedures['tests-fail'].stopped[0].outcome = 'toString';
-  config.procedures.review.otherwise = 'toLocaleString';
-  config.procedures.gate = {
-    actions: [{ id: 'constructor', do: 'check', kind: 'command', command: 'test' }],
-    passed: [{ when: { 'check.constructor': 'passed' }, outcome: 'ok' }],
-  };
-  config.procedures.hasOwnProperty = config.procedures['base-check'];
-  config.flows.propertyIsEnumerable = {
-    actionCap: 1,
-    ticket: {
-      entry: 'valueOf',
-      routes: { toString: { end: 'needs-human' } },
-      vertices: {
-        valueOf: {
-          procedure: 'gate',
-          inputs: { constructor: { from: 'valueOf.rescue', optional: true } },
-          route: { __lookupGetter__: { end: 'needs-human' } },
-        },
-      },
-    },
-  };
-  const ticketLocation = 'flows.propertyIsEnumerable.ticket';
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    { at: 'agents.valueOf', code: 'inherited-name' },
-    { at: 'procedures.tests-fail.claimTokens.isPrototypeOf', code: 'inherited-name' },
-    { at: 'procedures.tests-fail.stopped[0]', code: 'inherited-name' },
-    { at: 'procedures.review.otherwise', code: 'inherited-name' },
-    { at: 'procedures.gate.actions[0]', code: 'inherited-name' },
-    { at: 'procedures.hasOwnProperty', code: 'inherited-name' },
-    { at: 'flows.propertyIsEnumerable', code: 'inherited-name' },
-    { at: `${ticketLocation}.routes.toString`, code: 'inherited-name' },
-    { at: `${ticketLocation}.vertices.valueOf`, code: 'inherited-name' },
-    { at: `${ticketLocation}.vertices.valueOf.inputs.constructor`, code: 'inherited-name' },
-    {
-      at: `${ticketLocation}.vertices.valueOf.route.__lookupGetter__`,
-      code: 'inherited-name',
-    },
-  ]);
-});
-
 // Each form a carried name may not take, named for the case.
 const CARRIED_BREAKS = [
   ['', 'that is empty'],

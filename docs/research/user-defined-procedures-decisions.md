@@ -81,7 +81,7 @@ Decisions are recorded in the order they were made; a later one wins. In particu
 | Q7, S4, R11e: inputs and `pr-ready` on every path, per Outcome | H1–H4: on the route map, never admitting an unsafe Flow |
 | T9: an optional input produced on no path is an error | H5: a warning, when no route guarantees any of its sources |
 | T3: a Vertex's own `route` before the Flow's `routes` | H7: explicit Outcome names before either `"*"` |
-| V4: engine Outcome names are reserved | H10: so are the names of `Object.prototype`'s properties |
+| H10: the names of `Object.prototype`'s properties are reserved, beside V4's engine Outcome names | #174 (2026-11-07): configured names are held in Maps; none is reserved for that |
 | V3: every cycle has an edge with `max` or a Vertex with `maxVisits` | H12: and no loop is made of exhausted targets alone |
 | Request 3.3, V3: a Vertex's Bound is `maxVisits` | O1: `max`, the same key as an edge's |
 | N1, L14: the record keeps the Windows job helper's process identity | #245 (2026-11-02): the containment kind `job`; kill-on-close confirms |
@@ -1172,10 +1172,12 @@ exact admission must be, or which way it may be wrong.
   - the Harness, which launches without write permission.
 
   `gg doctor` shows a defaulted value as `read-only (default)`. Issue #107.
-- H10. The name of a property of `Object.prototype` (`__proto__`, `constructor`, `toString`, `valueOf` and the rest) is
-  reserved. No Flow, Vertex, Procedure, Agent, Action, Claim token, table `outcome`, `otherwise`, input or route key may
-  use one; admission reports it as an error. Before this, a Flow, Vertex or Procedure named `__proto__` was silently
-  dropped. Extends V4. Issue #169.
+- H10. (Superseded by #174.) The name of a property of `Object.prototype` (`__proto__`, `constructor`, `toString`,
+  `valueOf` and the rest) is reserved. No Flow, Vertex, Procedure, Agent, Action, Claim token, table `outcome`,
+  `otherwise`, input or route key may use one; admission reports it as an error. Before this, a Flow, Vertex or
+  Procedure named `__proto__` was silently dropped. Extends V4. Issue #169. Issue #174 holds each collection keyed by a
+  configured name in a Map (`lib/model.ts` for the Resolved Flow, `lib/record.ts` for the Execution Record's counts),
+  so a Vertex may be called `constructor` or `__proto__` like any other name, and the reservation is withdrawn.
 - H11. `gg doctor` prints each Vertex's `maxVisits` and its `exhausted` target when set, beside its routes, so the
   bounds can be read against the cycles. Issue #107.
 - H12. Vertices with `maxVisits` whose `exhausted` targets lead back to one another are an error, whatever routes them:

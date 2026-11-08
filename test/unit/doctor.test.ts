@@ -88,11 +88,12 @@ test("gg doctor says an Edge's target is missing when the Edge leaves out to", a
   assert.ok(text.includes('\n    retest -> no target (max 2, exhausted senior-red)\n'), text);
 });
 
-test('gg doctor says a Claim token requires a Check with no id when the Check leaves it out', async () => {
+// An id that is not a string is kept out of every collection keyed by id, so no Claim token requires it (#174).
+test('gg doctor lists a Check with no id, which no Claim token requires', async () => {
   const config = example();
   delete config.procedures['base-check'].actions[0].id;
   const { text } = await doctor.doctor({ config, ...DEPS });
-  assert.ok(text.includes('\n  claimTokens: ok requires no id\n'), text);
+  assert.ok(text.includes('\n  checks: no id (command test)\n  claimTokens: ok requires none\n'), text);
 });
 
 test('gg doctor says an input has no source when it leaves out from', async () => {
@@ -140,18 +141,6 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
         'workspace-write\n1 error, 2 warnings\n',
     ),
     text,
-  );
-});
-
-test('gg doctor reports an Outcome named after an Object.prototype property as reserved', async () => {
-  const config = example();
-  config.procedures['tests-fail'].stopped[0].outcome = 'toString';
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
-  assert.equal(exitCode, 1);
-  assert.equal(
-    text,
-    'error: procedures.tests-fail.stopped[0]: outcome "toString" is reserved: every object inherits a property of ' +
-      'that name from Object.prototype\n1 error\n',
   );
 });
 

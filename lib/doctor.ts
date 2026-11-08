@@ -79,10 +79,11 @@ function procedureLines(procedure: ShownProcedure): string[] {
 
 // R12d, U5: which route each Outcome takes, unless the Vertex names it, and where a failure's work goes.
 function routeLines(vertex: graph.ResolvedVertex): string[] {
+  const routings = new Map(Object.entries(vertex.routing));
   return [
     `  routes:${vertex.outcomes.length ? '' : ' none'}`,
     ...vertex.outcomes.map((outcome) => {
-      const routing = Object.hasOwn(vertex.routing, outcome) ? vertex.routing[outcome] : null;
+      const routing = routings.get(outcome);
       if (!routing) return `    ${outcome} -> unrouted`;
       const by = routing.by === 'Vertex route' ? '' : ` (${routing.by})`;
       return `    ${outcome} -> ${target(routing.target)}${by}${routing.work ? `; work ${routing.work}` : ''}`;
@@ -137,8 +138,9 @@ function flowLines(flow: ShownFlow): string[] {
     `  entry: ${flow.ticket.entry ?? 'none'}`,
     `  routes: ${list(routes)}`,
   ];
+  const procedures = new Map(Object.entries(flow.procedures));
   for (const [id, vertex] of Object.entries(flow.ticket.vertices))
-    lines.push('', ...vertexLines(id, vertex, flow.procedures[vertex.procedure as string]));
+    lines.push('', ...vertexLines(id, vertex, procedures.get(vertex.procedure as string)));
   return [...lines, ''];
 }
 

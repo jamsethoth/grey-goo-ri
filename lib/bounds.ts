@@ -43,13 +43,13 @@ function targetOf(runContext: RunContext, outcomeName: string): Target | Bounded
 export function edge(runContext: RunContext, outcomeName: string): Traversal {
   const { record: executionRecord, flow: runFlow } = runContext;
   const target = targetOf(runContext, outcomeName);
-  const bound = (id: string) => runFlow.ticket.vertices[id]?.max;
-  const full = (id: string) => !!bound(id) && (executionRecord.visits[id] ?? 0) >= bound(id)!;
+  const bound = (id: string) => runFlow.ticket.vertices.get(id)?.max;
+  const full = (id: string) => !!bound(id) && (executionRecord.visits.get(id) ?? 0) >= bound(id)!;
   const spent: string[] = [];
   const bounded = typeof target === 'object' && 'to' in target ? target : null;
   let next = bounded ? bounded.to : nameOf(target as Target);
   const key = bounded ? `${executionRecord.configurationSnapshot!.vertex}->${bounded.to}:${outcomeName}` : undefined;
-  const count = key ? (executionRecord.traversals[key] ?? 0) : 0;
+  const count = key ? (executionRecord.traversals.get(key) ?? 0) : 0;
   if (bounded && count >= bounded.max) {
     spent.push(`its Edge to ${bounded.to} had used its Bound of ${plural(bounded.max, 'traversal')}`);
     if (!full(bounded.to)) next = nameOf(bounded.exhausted);
@@ -59,7 +59,7 @@ export function edge(runContext: RunContext, outcomeName: string): Traversal {
     if (seen.has(next)) return { next: labels.NEEDS_HUMAN, spent };
     seen.add(next);
     spent.push(`${next} had used its Bound of ${plural(bound(next)!, 'Visit')}`);
-    next = nameOf(runFlow.ticket.vertices[next].exhausted as Target);
+    next = nameOf(runFlow.ticket.vertices.get(next)?.exhausted as Target);
   }
   return bounded && next === bounded.to ? { next, key, count: count + 1, spent } : { next, spent };
 }
@@ -76,7 +76,7 @@ export const spentText = (traversal: Traversal): string =>
 // Takes the Edge; the count is saved with the next Vertex's entry, before it runs, so a restart routes the same way.
 export function traverse(runContext: RunContext, outcomeName: string): Traversal {
   const traversal = edge(runContext, outcomeName);
-  if (traversal.key) runContext.record.traversals[traversal.key] = traversal.count!;
+  if (traversal.key) runContext.record.traversals.set(traversal.key, traversal.count!);
   return traversal;
 }
 

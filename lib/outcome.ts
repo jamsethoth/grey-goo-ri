@@ -163,7 +163,7 @@ export function resolve({
 // and whether a recovery pass is left.
 export interface DecideInput extends Signals {
   token: procedures.ClaimToken;
-  procedure: procedures.Procedure;
+  procedure: Pick<procedures.Procedure, 'passed' | 'failed' | 'stopped' | 'otherwise'>;
   scope: unknown;
   recoverable?: boolean;
 }

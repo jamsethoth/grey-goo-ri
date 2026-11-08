@@ -11,6 +11,7 @@ import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.ts';
 import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
+import * as model from '../../lib/model.ts';
 import type * as runModule from '../../lib/run.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as record from '../../lib/record.ts';
@@ -238,7 +239,7 @@ export async function seedExecution(
     readSchema: (name: string) => JSON.parse(config.layerFile(configured.files, name)),
     readTemplate: (name: string) => config.layerFile(configured.files, name),
   }).flows as Record<string, unknown>;
-  const flow = flows.default as runContext.RunFlow;
+  const flow = model.fromJson(flows.default);
   const executionRecord = record.createExecutionRecord({
     commonDir,
     ticket: TICKET,

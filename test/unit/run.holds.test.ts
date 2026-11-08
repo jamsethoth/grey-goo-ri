@@ -351,7 +351,7 @@ async function assertAbandonedBeforeFirstVisit(fixture: RunFixture, before: inte
   );
   const final = await executionReads.loadTicket(fixture);
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
-  assert.deepEqual(final.visits, {});
+  assert.deepEqual(Object.fromEntries(final.visits), {});
   assert.deepEqual(
     final.writeAheadLog.map((entry) => `${entry.step} ${entry.effect}`),
     ['intent label', 'evidence label', 'complete label'],

@@ -14,7 +14,9 @@ type Layer = Record<string, unknown>;
 // Each file a Layer named, by that name: its text and the hash the Config Hash takes of it.
 export type LayerFiles = Record<string, { bytes: string; hash: string }>;
 // Where each name's file was read from, and the Layer file that named it.
-type FileSources = Record<string, { path: string; file: string }>;
+type FileSources = Map<string, { path: string; file: string }>;
+// The files read so far by name: a Map, so a file such as __proto__ loads like any other (#174).
+type FilesRead = Map<string, LayerFiles[string]>;
 // The merged Layers as gg reads them. The defaults Layer sets every field typed here; the validator checks the rest.
 export interface Config {
   files: LayerFiles;
@@ -115,13 +117,14 @@ function declaredFiles(layer: Layer): string[] {
 // Each file `layer` (read from `file`) declares, read beside `file` into `files` as { bytes, hash }. The Layer whose
 // own JSON holds a name owns its file, so a later Layer that only sets an Agent's harness does not move its Persona.
 // `from` records each name's path and Layer file: one name naming two files is a load error.
-function loadFiles(layer: Layer, file: string, files: LayerFiles, from: FileSources): void {
+function loadFiles(layer: Layer, file: string, files: FilesRead, from: FileSources): void {
   for (const name of declaredFiles(layer)) {
     const path = resolve(dirname(file), name);
-    if (Object.hasOwn(from, name)) {
-      if (from[name].path !== path)
+    const declared = from.get(name);
+    if (declared) {
+      if (declared.path !== path)
         throw new Error(
-          `file ${JSON.stringify(name)} is declared by ${from[name].file} and by ${file}, each beside its own ` +
+          `file ${JSON.stringify(name)} is declared by ${declared.file} and by ${file}, each beside its own ` +
             'Layer; give one of them another name',
         );
       continue;
@@ -133,12 +136,12 @@ function loadFiles(layer: Layer, file: string, files: LayerFiles, from: FileSour
       const { code, message } = err as NodeJS.ErrnoException;
       throw new Error(`${file} names file ${JSON.stringify(name)}, which cannot be read (${code ?? message})`);
     }
-    from[name] = { path, file };
-    files[name] = { bytes, hash: sha256(bytes) };
+    from.set(name, { path, file });
+    files.set(name, { bytes, hash: sha256(bytes) });
   }
 }
 
-function readDefaults(files: LayerFiles, from: FileSources): Layer {
+function readDefaults(files: FilesRead, from: FileSources): Layer {
   const file = join(DEFAULTS_DIRECTORY, 'gg.json');
   const config = readLayer(file);
   rejectRepoOnly(config, file);
@@ -148,8 +151,8 @@ function readDefaults(files: LayerFiles, from: FileSources): Layer {
 
 // The shipped Layer: defaults/gg.json plus the bytes and hash of every file it names (`files`).
 export function loadDefaults(): Config {
-  const files: LayerFiles = {};
-  return { ...readDefaults(files, {}), files } as Config;
+  const files: FilesRead = new Map();
+  return { ...readDefaults(files, new Map()), files: Object.fromEntries(files) } as Config;
 }
 
 // Objects merge key by key at every depth; anything else in the later Layer replaces the earlier value.
@@ -179,8 +182,8 @@ const mergeLayer = (base: Layer, layer: Layer): Layer => ({
 // defaults < user < repo, with the files each Layer names. `files` is gg's own: no Layer sets it.
 // shortcut: a plain deep merge; slice 5 brings the migration table.
 export function loadLayers(repoRoot: string, home = homedir()): Config {
-  const files: LayerFiles = {};
-  const from: FileSources = {};
+  const files: FilesRead = new Map();
+  const from: FileSources = new Map();
   let config = readDefaults(files, from);
   for (const directory of [home, repoRoot]) {
     const path = layerPath(directory);
@@ -190,7 +193,7 @@ export function loadLayers(repoRoot: string, home = homedir()): Config {
     loadFiles(layer, path, files, from);
     config = mergeLayer(config, layer);
   }
-  return { ...config, files } as Config;
+  return { ...config, files: Object.fromEntries(files) } as Config;
 }
 
 // A file a Layer named, by that name (loadLayers's `files`).

@@ -24,8 +24,8 @@ export interface ReconcileGh extends effectEvidence.EvidenceGh {
 
 // The parts of the Resolved Flow a record is checked against.
 export interface ReconciledFlow {
-  ticket: { vertices: Record<string, unknown> };
-  procedures: Record<string, { hash: string } | undefined>;
+  ticket: { vertices: Map<string, unknown> };
+  procedures: Map<string, { hash: string }>;
 }
 
 type ResetPayload = visit.ResetPayload;
@@ -373,7 +373,7 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
       advice: INTERRUPTED_ADVICE,
     };
   }
-  if (!(labels.END_STATES as string[]).includes(vertex) && !flow.ticket.vertices[vertex])
+  if (!(labels.END_STATES as string[]).includes(vertex) && !flow.ticket.vertices.has(vertex))
     return hold(`The record continues at Vertex ${vertex}, which the Flow no longer has.`);
   // A Visit in progress runs on the Procedure it entered with, so one whose Procedure has changed is held, not resumed
   // (S6).
@@ -381,7 +381,7 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
   if (
     executionRecord.cursor.action !== null &&
     configurationSnapshot?.vertex === vertex &&
-    flow.procedures[configurationSnapshot.procedure.name]?.hash !== configurationSnapshot.procedure.hash
+    flow.procedures.get(configurationSnapshot.procedure.name)?.hash !== configurationSnapshot.procedure.hash
   ) {
     return hold(
       `The Visit in progress at Vertex ${vertex} entered with Procedure ${configurationSnapshot.procedure.name} ` +

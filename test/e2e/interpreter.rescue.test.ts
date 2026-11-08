@@ -57,7 +57,12 @@ test('a failure routed to a Vertex is rescued and reset', async (t) => {
   const rescued = fixture.executionRecord.history.filter((item) => String(item.text).includes(ref));
   assert.equal(rescued.length, 1, 'one History item names the failure and the ref');
   assert.match(String(rescued[0]!.text), /test .*failed/);
-  assert.deepEqual(fixture.executionRecord.visits, { red: 1, green: 1, 'senior-green': 1, publish: 1 });
+  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), {
+    red: 1,
+    green: 1,
+    'senior-green': 1,
+    publish: 1,
+  });
 });
 
 test('a failure routed to an end is left in place', async (t) => {
@@ -201,7 +206,12 @@ test('a clean worktree is not rescued or reset', async (t) => {
   });
   const { outcome } = await interpreter.runExecution(fixture.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.deepEqual(fixture.executionRecord.visits, { red: 1, green: 1, 'senior-green': 1, publish: 1 });
+  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), {
+    red: 1,
+    green: 1,
+    'senior-green': 1,
+    publish: 1,
+  });
   assert.deepEqual(rescueFlow.rescueRefs(fixture), []);
   assert.deepEqual(intents(fixture.executionRecord, 'rescue'), []);
   assert.deepEqual(intents(fixture.executionRecord, 'reset'), []);

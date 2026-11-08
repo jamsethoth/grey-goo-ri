@@ -141,8 +141,8 @@ test(
 
     await assertFixPushedAndCommented(fixture);
 
-    assert.equal(fixture.executionRecord.traversals['reviewer->implementer-fix:changes'], 1);
-    assert.deepEqual(fixture.executionRecord.visits, {
+    assert.equal(fixture.executionRecord.traversals.get('reviewer->implementer-fix:changes'), 1);
+    assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), {
       red: 1,
       green: 1,
       reviewer: 2,
@@ -179,7 +179,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
     (err: unknown) => err instanceof interpreter.CrashError,
   );
   const saved = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
-  assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
+  assert.equal(saved.traversals.get('reviewer->implementer-fix:changes'), 1);
   assert.equal(saved.cursor.vertex, 'implementer-fix');
 
   const before = fixture.harness.calls.length;
@@ -190,8 +190,14 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
     ['fix', 'read-only'],
     'the restart runs the pending fix, then review, not the entry',
   );
-  assert.equal(saved.traversals['reviewer->implementer-fix:changes'], 1);
-  assert.deepEqual(saved.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 });
+  assert.equal(saved.traversals.get('reviewer->implementer-fix:changes'), 1);
+  assert.deepEqual(Object.fromEntries(saved.visits), {
+    red: 1,
+    green: 1,
+    reviewer: 2,
+    'implementer-fix': 1,
+    publish: 1,
+  });
 });
 
 test('two reviewer vertices keep their own sessions and provenance rows', async (t) => {
@@ -235,12 +241,12 @@ test('the changes edge exhausts after max traversals to needs-human', async (t) 
 
   assert.equal(fixture.result.outcome, 'needs-human');
   assert.equal(
-    fixture.executionRecord.traversals['reviewer->implementer-fix:changes'],
+    fixture.executionRecord.traversals.get('reviewer->implementer-fix:changes'),
     2,
     'two changes verdicts traverse the edge twice',
   );
-  assert.equal(fixture.executionRecord.visits['implementer-fix'], 2);
-  assert.equal(fixture.executionRecord.visits.reviewer, 3);
+  assert.equal(fixture.executionRecord.visits.get('implementer-fix'), 2);
+  assert.equal(fixture.executionRecord.visits.get('reviewer'), 3);
   assert.equal(
     fixture.harness.calls.filter((call) => call.brief!.startsWith('FIX VISIT')).length,
     2,
@@ -280,7 +286,11 @@ test('golden: a review ok without evidence routes as changes through the passed 
   assert.equal(fixture.actionsAt('reviewer', 1, 'comment', 0).length, 1);
   assert.equal(fixture.actionsAt('reviewer', 1, 'pr', 0).length, 1);
   // The passed table's only ok row needs review-pass passed, so the Visit routes by otherwise: changes.
-  assert.equal(fixture.executionRecord.traversals['reviewer->implementer-fix:changes'], 1, 'the changes edge is taken');
+  assert.equal(
+    fixture.executionRecord.traversals.get('reviewer->implementer-fix:changes'),
+    1,
+    'the changes edge is taken',
+  );
   assert.equal(fixture.result.outcome, 'ready-for-qa');
 });
 
@@ -317,7 +327,7 @@ test('a repeated findings hash is flagged', async (t) => {
     'the second review is a repeat',
   );
   assert.deepEqual(
-    fixture.executionRecord.traversals,
+    Object.fromEntries(fixture.executionRecord.traversals),
     { 'reviewer->implementer-fix:changes': 1, 'reviewer->senior-dev:repeat': 1 },
     'the repeat routes as repeat',
   );

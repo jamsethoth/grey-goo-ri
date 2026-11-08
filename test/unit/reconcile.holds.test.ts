@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
 import * as effectEvidence from '../../lib/effect-evidence.ts';
 import * as interpreter from '../../lib/interpreter.ts';
+import type * as model from '../../lib/model.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
@@ -23,9 +24,9 @@ const CRASH_POINTS = Object.keys(crashResume.POINTS) as (keyof typeof crashResum
 const ticketEnds = (fixture: golden.GoldenFixture) =>
   fixture.readEvents().filter((event): event is events.TicketEndEvent => event.type === 'ticket_end');
 // The golden Flow with its green Vertex renamed, so a record that visited green names a Vertex it no longer has.
-function withoutGreen(fixture: golden.GoldenFixture): runContext.RunFlow {
+function withoutGreen(fixture: golden.GoldenFixture): model.ResolvedFlow {
   const flow = structuredClone(fixture.flow);
-  flow.ticket.vertices = { builder: flow.ticket.vertices.green as runContext.RunFlow['ticket']['vertices'][string] };
+  flow.ticket.vertices = new Map([['builder', flow.ticket.vertices.get('green')!]]);
   flow.ticket.entry = 'builder';
   return flow;
 }
@@ -228,7 +229,7 @@ test('bounds survive a restart', async (t) => {
   );
   const key = 'reviewer->implementer-fix:changes';
   const { loaded } = await crashResume.crashed(fixture, ['reviewer', 2, 'comment', 0], 'after-completion');
-  assert.equal(loaded.traversals[key], 1, 'the Edge is at its Bound');
+  assert.equal(loaded.traversals.get(key), 1, 'the Edge is at its Bound');
 
   const before = fixture.harness.calls.length;
   const result = await interpreter.runExecution({ ...fixture.options, record: loaded });
@@ -238,8 +239,8 @@ test('bounds survive a restart', async (t) => {
     'no fix call after the restart',
   );
   const final = await executionReads.loadTicket(fixture);
-  assert.equal(final.traversals[key], 1);
-  assert.deepEqual(final.visits, { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
+  assert.equal(final.traversals.get(key), 1);
+  assert.deepEqual(Object.fromEntries(final.visits), { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
 });
 
 test('a corrupt record holds the ticket', async (t) => {

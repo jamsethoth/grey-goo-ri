@@ -8,7 +8,7 @@ import * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
-import type * as visitScope from './visit-scope.ts';
+import * as visitScope from './visit-scope.ts';
 
 // One Attempt of the agent Action: `resume` and `nudge` come from the Attempt before it, if any.
 export interface Attempt extends visitScope.Running {
@@ -73,7 +73,7 @@ async function changedTests(
   if (typeof tests === 'object' && tests?.named) {
     const named = new Set(
       (referencePaths.read(
-        { ...record.visitScope(executionRecord, actionIdentity), response: called.response },
+        { ...visitScope.visitScope(executionRecord, actionIdentity), response: called.response },
         tests.named,
       ) as string[]) ?? [],
     );

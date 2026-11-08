@@ -97,9 +97,9 @@ test('a rejected decision routes back', async (t) => {
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'pending', 'green ran again and the next Visit asks again');
   const saved = await loadTicket(fixture);
-  assert.equal(saved.visits.green, 2);
-  assert.equal(saved.visits.approve, 2);
-  assert.equal(saved.traversals['approve->green:rejected'], 1);
+  assert.equal(saved.visits.get('green'), 2);
+  assert.equal(saved.visits.get('approve'), 2);
+  assert.equal(saved.traversals.get('approve->green:rejected'), 1);
   assert.equal(saved.approvalRequest!.id, `${saved.execution}:approve:2:1`);
   assert.equal(fixture.gh.labels.has(REJECTED_LABEL), false);
   assert.equal(fixture.gh.labels.has(AWAIT_LABEL), true);

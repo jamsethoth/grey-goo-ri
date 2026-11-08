@@ -37,7 +37,7 @@ async function makeCommit(
   const { record: executionRecord, git } = runContext;
   const worktree = executionRecord.worktree;
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as CommitPayload | undefined;
-  const requires = visitScope.tokenOf(state).requires!.map((id) => state.checks[id]);
+  const requires = visitScope.tokenOf(state).requires!.map((id) => state.checks.get(id)!);
   const stale = intended
     ? []
     : (await visitScope.fresh(runContext, requires)).filter((check) => check.state !== 'passed');
@@ -73,10 +73,12 @@ function refuseStale(
     retries: {},
     token: visitScope.tokenOf(state),
     procedure: state.proc,
-    scope: visitScope.scopeOf(runContext.record, actionIdentity, state, {
-      ...state.checks,
-      ...Object.fromEntries(stale.map((check) => [check.id, check])),
-    }),
+    scope: visitScope.scopeOf(
+      runContext.record,
+      actionIdentity,
+      state,
+      new Map([...state.checks, ...stale.map((check) => [check.id, check] as const)]),
+    ),
   });
   return effects.saveResolution(runContext, {
     actionIdentity,
@@ -250,8 +252,8 @@ async function prReady(runContext: RunContext, { actionIdentity, state }: Runnin
   const actionMarker = runContext.markerOf(actionIdentity);
   const checked = visitScope
     .tokenOf(state)
-    .requires!.map((id) => state.checks[id])
-    .filter((check) => check?.tree);
+    .requires!.map((id) => state.checks.get(id))
+    .filter((check): check is visit.CheckSignal => !!check?.tree);
   const [first] = checked;
   const tree =
     first && checked.every((check) => check.state === 'passed' && check.tree === first.tree) ? first.tree : null;

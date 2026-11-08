@@ -41,10 +41,28 @@ export interface ResolvedFlowJson {
   ticket: { entry: string | null; routes?: unknown; vertices: Record<string, Vertex> };
 }
 
-export function fromJson(_json: unknown): ResolvedFlow {
-  return { name: '', actionCap: 0, procedures: new Map(), ticket: { entry: null, vertices: new Map() } };
+// JSON.parse, the validator and Object.entries give only own keys, so every name read from the JSON is one it declares.
+export function fromJson(json: unknown): ResolvedFlow {
+  const flow = json as ResolvedFlowJson;
+  const procedureEntries = Object.entries(flow.procedures).map(
+    ([name, procedure]) =>
+      [name, { ...procedure, claimTokens: new Map(Object.entries(procedure.claimTokens)) }] as const,
+  );
+  return {
+    ...flow,
+    procedures: new Map(procedureEntries),
+    ticket: { ...flow.ticket, vertices: new Map(Object.entries(flow.ticket.vertices)) },
+  };
 }
 
-export function toJson(_flow: ResolvedFlow): ResolvedFlowJson {
-  return { name: '', actionCap: 0, procedures: {}, ticket: { entry: null, vertices: {} } };
+// Object.fromEntries defines own keys, so a name such as __proto__ stays data in the JSON.
+export function toJson(flow: ResolvedFlow): ResolvedFlowJson {
+  const procedureEntries = [...flow.procedures].map(
+    ([name, procedure]) => [name, { ...procedure, claimTokens: Object.fromEntries(procedure.claimTokens) }] as const,
+  );
+  return {
+    ...flow,
+    procedures: Object.fromEntries(procedureEntries),
+    ticket: { ...flow.ticket, vertices: Object.fromEntries(flow.ticket.vertices) },
+  };
 }
