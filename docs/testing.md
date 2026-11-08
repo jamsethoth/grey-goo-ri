@@ -170,7 +170,10 @@ amended). Coverage only climbs. The
 coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
 recorded, so the next change cannot spend the gain. `node scripts/run-suite.ts coverage update` records a rise; CI's
-failure message prints the other platform's figures to paste. The measured set is what a small test can reach: `lib/`
+failure message prints the other platform's figures to paste. Each PR's figures hold only for its own tree, so the Main
+ruleset requires a branch to be up to date with `main` before it merges: #310 and #311 each recorded a rise from 98.28
+to 98.29, merged cleanly, and their combined tree measured 98.3, which failed `main`'s coverage jobs (2026-11-08). The
+measured set is what a small test can reach: `lib/`
 without `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
 them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command
 left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
