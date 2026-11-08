@@ -125,12 +125,12 @@ type RuleTable = { table: string } & AtVertex;
 type RuleRow = RuleTable & { row: number; outcome: string };
 // The values each code's sentence names, as Ajv's params are typed by keyword, even where `at` spells one too; a code
 // missing here names none. A label that only places the problem inside the value at `at` (`allOf[n]:`, `pick:`,
-// `where "f":`, `agent X's harness`) is not repeated here. inherited-name's guard is #174's to replace, so it takes
-// none yet.
+// `where "f":`, `agent X's harness`) is not repeated here, except a bad item's index in a repeat Check's fields (owner,
+// #301). inherited-name's guard is #174's to replace, so it takes none yet.
 interface ProblemParams {
   'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] };
   'unknown-key': { key: string };
-  'invalid-name': { name?: unknown };
+  'invalid-name': { name?: unknown; index?: number };
   'reserved-name': { name: string };
   'unknown-vertex': { vertex: unknown };
   'unknown-end': { end: unknown };

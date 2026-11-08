@@ -95,9 +95,7 @@ function requireFields(problems: report.Report, fields: unknown, location: strin
         location,
         'invalid-name',
         `fields[${index}] must be a field name, not ${JSON.stringify(name)}`,
-        {
-          name,
-        },
+        { name, index },
       );
   });
 }
