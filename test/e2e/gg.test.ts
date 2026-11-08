@@ -139,13 +139,15 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   assert.equal(result.status, 2, result.stderr);
   assert.ok(
     result.stderr.includes(
-      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer\n',
+      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer ' +
+        '[harness-unset]\n',
     ),
     result.stderr,
   );
   assert.ok(
     result.stderr.includes(
-      'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer\n',
+      'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer ' +
+        '[harness-unset]\n',
     ),
     result.stderr,
   );

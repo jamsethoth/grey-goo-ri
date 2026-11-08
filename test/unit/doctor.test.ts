@@ -40,9 +40,58 @@ test('gg doctor reports a malformed table row rather than throwing', async () =>
   assert.ok(text.includes('\n  passed:\n    1. no conditions -> no outcome\n'), text);
   assert.ok(
     text.includes(
-      '\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> }\n',
+      '\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> } ' +
+        '[malformed-row]\n',
     ),
     text,
+  );
+});
+
+// The code goes last, as ESLint prints a rule id, so each line keeps the prefix it had.
+test('an error line ends in its code', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.red.procedure = 'red';
+  const { text } = await doctor.doctor({ config, ...DEPS });
+  assert.ok(
+    text.includes(
+      '\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared [undeclared-procedure]\n',
+    ),
+    text,
+  );
+});
+
+test('a warning line ends in its code', async () => {
+  const config = example();
+  config.agents.spare = { harness: 'fake' };
+  const { text } = await doctor.doctor({ config, ...DEPS });
+  assert.ok(text.includes('\nwarning: agents.spare: agent spare is used by no Vertex [unused-agent]\n'), text);
+});
+
+// gg doctor and gg run preflight check the same repository Layer, so doctor never passes what run refuses (#301).
+test('gg doctor reports the repository Layer problems gg run preflight refuses', async () => {
+  const layer = example();
+  layer.commands = { ...layer.commands, Test: 'npm test' };
+  const { text, exitCode } = await doctor.doctor({ config: layer, ...DEPS });
+  assert.equal(exitCode, 1);
+  const file = config.layerPath(DEPS.cwd);
+  assert.ok(
+    text.includes(`\nerror: commands: ${file}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]\n`),
+    text,
+  );
+});
+
+// Doctor lists the repository Layer's problems first, as gg run preflight does, so the two read the same (#301).
+test("gg doctor prints the repository Layer's errors before the Flows', as preflight does", async () => {
+  const layer = example();
+  layer.commands = { ...layer.commands, Test: 'npm test' };
+  layer.flows.default.ticket.vertices.red.procedure = 'red';
+  const { text } = await doctor.doctor({ config: layer, ...DEPS });
+  assert.deepEqual(
+    text
+      .split('\n')
+      .filter((line) => line.startsWith('error: '))
+      .map((line) => line.slice('error: '.length, line.indexOf(': ', 'error: '.length))),
+    ['commands', 'flows.default.ticket.vertices.red'],
   );
 });
 
@@ -109,7 +158,10 @@ test('gg doctor exits non-zero on an error', async () => {
   const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
-    text.endsWith('\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared\n1 error, 2 warnings\n'),
+    text.endsWith(
+      '\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared [undeclared-procedure]\n' +
+        '1 error, 2 warnings\n',
+    ),
     text,
   );
 });
@@ -124,7 +176,7 @@ test('gg doctor reports a Procedure name with a colon at its location', async ()
   assert.ok(
     text.includes(
       '\nerror: procedures.base:check: Procedure "base:check" must be non-empty with no ":", ".", "/", "--" or ' +
-        'whitespace\n',
+        'whitespace [invalid-name]\n',
     ),
     text,
   );
@@ -138,7 +190,7 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
   assert.ok(
     text.endsWith(
       '\nerror: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or ' +
-        'workspace-write\n1 error, 2 warnings\n',
+        'workspace-write [unknown-permission-intent]\n1 error, 2 warnings\n',
     ),
     text,
   );
@@ -154,7 +206,7 @@ test('gg doctor reads schemas from the loaded Layer files', async () => {
   assert.ok(
     text.includes(
       '\nerror: procedures.review.claimTokens: review.schema.json: claim: enum "ok" | "changes" does not equal the ' +
-        'declared tokens "ok" | "changes" | "blocked"\n',
+        'declared tokens "ok" | "changes" | "blocked" [claim-enum-mismatch]\n',
     ),
     text,
   );
@@ -165,6 +217,7 @@ test('gg doctor accepts the shipped defaults once a harness is set', async () =>
   shipped.agents.implementer.harness = 'fake';
   shipped.agents.reviewer.harness = 'fake';
   shipped.commands = { test: 'npm test' };
+  shipped.testPaths = ['test/**'];
   const { text, exitCode } = await doctor.doctor({ config: shipped, ...DEPS });
   assert.ok(text.startsWith('flow default\n  actionCap: 180\n  entry: red\n'), text);
   // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.
@@ -173,7 +226,7 @@ test('gg doctor accepts the shipped defaults once a harness is set', async () =>
       '\nwarning: procedures.review.passed: rule table review.passed: ' +
         'row 2 (check.repeat = failed) is partly taken by ' +
         'row 1 (claim = ok and check.review-pass = passed), ' +
-        'for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}}\n' +
+        'for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}} [overlapping-rows]\n' +
         '0 errors, 1 warning\n',
     ),
     text,
@@ -215,7 +268,7 @@ test('gg doctor reports the labels a Flow can request that the repository lacks'
   assert.ok(
     text.includes(
       `\nwarning: flows.default.ticket.vertices.approve: labels missing from the repository: ` +
-        `${APPROVED_LABEL}, ${REJECTED_LABEL}\n`,
+        `${APPROVED_LABEL}, ${REJECTED_LABEL} [repository-labels-missing]\n`,
     ),
     text,
   );
@@ -231,7 +284,7 @@ test("gg doctor says when it cannot read the repository's labels", async () => {
     cwd: '/repo',
   });
   assert.equal(exitCode, 0);
-  assert.match(text, /warning: could not read the repository's labels: /);
+  assert.match(text, /\nwarning: could not read the repository's labels: .* \[repository-labels-unread\]\n/);
 });
 
 test('gg doctor reads no labels for a Flow that asks nobody', async () => {
@@ -244,6 +297,11 @@ test('gg doctor prints a Flow named entirely with Object.prototype names like on
   const print = (names: namedFlow.Names) =>
     doctor.doctor({ config: namedFlow.namedConfig(names) as unknown as config.Config, ...DEPS });
   const ordinary = await print(namedFlow.ORDINARY);
-  assert.equal(ordinary.exitCode, 0);
+  // Its one command is named for the comparison, which the repository Layer's command rule refuses, as gg run
+  // preflight does (#301); the Flow itself is clean.
+  assert.deepEqual(
+    ordinary.text.split('\n').filter((line) => line.startsWith('error: ') && !line.startsWith('error: commands: ')),
+    [],
+  );
   assert.deepEqual(await print(namedFlow.PROTOTYPE), namedFlow.renamed(ordinary));
 });

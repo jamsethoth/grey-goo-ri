@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
 import * as referencePaths from './reference-paths.ts';
+import * as report from './validate/report.ts';
 
 export const DEFAULTS_DIRECTORY = fileURLToPath(new URL('../defaults/', import.meta.url));
 export const EXAMPLES_DIRECTORY = fileURLToPath(new URL('../examples/', import.meta.url));
@@ -254,42 +255,73 @@ const badGlob = (glob: unknown): boolean =>
     .split('/')
     .some((segment) => !segment || segment === '.' || segment === '..' || (segment.includes('**') && segment !== '**'));
 
-// The repository Layer's testPaths as preflight failures, each naming `file`; none for a non-empty list of globs.
-export function testPathsProblems(testPaths: unknown, file: string): string[] {
-  if (testPaths === undefined) return [`${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it`];
-  if (!Array.isArray(testPaths) || !testPaths.length)
-    return [`${file}: testPaths must be a non-empty list of glob strings`];
-  return testPaths
-    .filter(badGlob)
-    .map(
-      (glob) =>
+// The repository Layer's testPaths as Problems, each sentence naming `file`; none for a non-empty list of globs.
+export function testPathsProblems(testPaths: unknown, file: string): report.Problem[] {
+  const found = report.newReport();
+  if (testPaths === undefined) {
+    const message = `${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it`;
+    report.error(found, 'testPaths', 'required-key-missing', message, { key: 'testPaths', file });
+  } else if (!Array.isArray(testPaths) || !testPaths.length) {
+    const code = Array.isArray(testPaths) ? 'empty-list' : 'not-a-list';
+    report.error(found, 'testPaths', code, `${file}: testPaths must be a non-empty list of glob strings`, { file });
+  } else {
+    testPaths.forEach((glob, index) => {
+      if (!badGlob(glob)) return;
+      const message =
         `${file}: testPaths entry ${JSON.stringify(glob)} must be a glob relative to the repository root: ` +
         'non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, ' +
-        'and no [ ] ? \\ : or control character',
-    );
-}
-
-// The repository Layer's approvers as preflight failures, each naming `file`; none for no list or a list of logins.
-export function approversProblems(approvers: unknown, file: string): string[] {
-  if (approvers === undefined) return [];
-  // A login with space around it never matches the actor GitHub names.
-  const valid =
-    Array.isArray(approvers) &&
-    approvers.every((login) => typeof login === 'string' && login.trim() && login === login.trim());
-  return valid ? [] : [`${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`];
-}
-
-// The repository Layer's Declared Commands as preflight failures, each naming `file`; none for a valid set with a test.
-export function commandProblems(declared: unknown, file: string): string[] {
-  const commands = declared === undefined ? {} : declared;
-  if (!referencePaths.isRecord(commands)) return [`${file}: commands must be an object from name to command line`];
-  const problems: string[] = [];
-  for (const [name, line] of Object.entries(commands)) {
-    if (!/^[a-z][a-z0-9-]*$/.test(name)) problems.push(`${file}: command name "${name}" must match [a-z][a-z0-9-]*`);
-    else if (typeof line !== 'string' || !line.trim() || /[\r\n]/.test(line))
-      problems.push(`${file}: command ${name} must be a non-empty single-line string`);
+        'and no [ ] ? \\ : or control character';
+      report.error(found, `testPaths[${index}]`, 'invalid-glob', message, { glob, file });
+    });
   }
-  if (!Object.hasOwn(commands, 'test'))
-    problems.push(`${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`);
-  return problems;
+  return found.errors;
 }
+
+// The repository Layer's approvers as Problems, naming `file`; none for no list or a list of logins.
+export function approversProblems(approvers: unknown, file: string): report.Problem[] {
+  const found = report.newReport();
+  if (approvers === undefined) return found.errors;
+  // A login with space around it never matches the actor GitHub names.
+  const logins = Array.isArray(approvers) ? approvers : null;
+  const valid = logins?.every((login) => typeof login === 'string' && login.trim() && login === login.trim());
+  const message = `${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
+  if (!valid) report.error(found, 'approvers', logins ? 'invalid-name' : 'not-a-list', message, { file });
+  return found.errors;
+}
+
+// The repository Layer's Declared Commands as Problems, each sentence naming `file`; none for a valid set with a test.
+export function commandProblems(declared: unknown, file: string): report.Problem[] {
+  const found = report.newReport();
+  const commands = declared === undefined ? {} : declared;
+  if (!referencePaths.isRecord(commands)) {
+    report.error(found, 'commands', 'not-an-object', `${file}: commands must be an object from name to command line`, {
+      file,
+    });
+    return found.errors;
+  }
+  for (const [name, line] of Object.entries(commands)) {
+    // A name that breaks the rule may hold any character, so it is located at commands, not in a path of its own.
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      const message = `${file}: command name "${name}" must match [a-z][a-z0-9-]*`;
+      report.error(found, 'commands', 'invalid-name', message, { name, file });
+    } else if (typeof line !== 'string' || !line.trim() || /[\r\n]/.test(line)) {
+      const message = `${file}: command ${name} must be a non-empty single-line string`;
+      report.error(found, `commands.${name}`, 'invalid-command-line', message, { command: name, file });
+    }
+  }
+  if (!Object.hasOwn(commands, 'test')) {
+    const message = `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
+    report.error(found, 'commands', 'required-key-missing', message, { key: 'test', file });
+  }
+  return found.errors;
+}
+
+// What gg run preflight and gg doctor both check of the keys only the repository Layer at `file` declares.
+export const repositoryLayerProblems = (
+  layer: { commands?: unknown; testPaths?: unknown; approvers?: unknown },
+  file: string,
+): report.Problem[] => [
+  ...commandProblems(layer.commands, file),
+  ...testPathsProblems(layer.testPaths, file),
+  ...approversProblems(layer.approvers, file),
+];

@@ -39,9 +39,14 @@ test("resolve types a path through a scope, keeping gg's integer bounds", () => 
     type: { kind: 'integer', min: 1, max: 2 },
     node: scope.properties.pass,
   });
+  // A path that does not resolve gives the validator's Finding, its params naming the path and the missing segment.
   assert.deepEqual(referencePaths.resolve(scope, 'pass.x'), {
-    code: 'undefined-reference',
     error: '"pass.x" is not defined',
+    finding: {
+      code: 'undefined-reference',
+      message: '"pass.x" is not defined',
+      params: { path: 'pass.x', missing: 'pass.x' },
+    },
   });
 });
 
@@ -53,9 +58,14 @@ test("resolve in read mode types a path as read reads it: a list by length or in
     { kind: 'list', of: { kind: 'string' } },
     'typing projects',
   );
+  const intoList = '"findings.file": "findings" is a list, so a path reads only its length or an item by index';
   assert.deepEqual(referencePaths.resolve(scope, 'findings.file', 'defined', { read: true }), {
-    code: 'reference-into-list',
-    error: '"findings.file": "findings" is a list, so a path reads only its length or an item by index',
+    error: intoList,
+    finding: {
+      code: 'reference-into-list',
+      message: intoList,
+      params: { path: 'findings.file', list: 'findings' },
+    },
     list: 'findings',
   });
   assert.deepEqual(referencePaths.resolve(scope, 'findings.length', 'defined', { read: true }).type, {

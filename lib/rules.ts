@@ -3,6 +3,7 @@
 import type * as procedures from './procedures.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as ruleDomain from './rule-domain.ts';
+import type * as report from './validate/report.ts';
 
 export type RuleValue = string | number | boolean;
 // A row's condition on one field: the value it must equal, or integer comparisons that must all hold.
@@ -25,20 +26,15 @@ export interface RuleTable {
   boxes?: FieldMap[];
 }
 type Example = Record<string, unknown>;
-export interface RuleError {
-  row: number | null;
-  code: 'never-firing-row' | 'rule-table-too-large' | 'undeclared-rule-field' | 'unreachable-row';
-  message: string;
-}
+// A type, not an interface: an interface cannot extend Finding, which gives each code its own params.
+export type RuleError = report.Finding<
+  'never-firing-row' | 'rule-table-too-large' | 'undeclared-rule-field' | 'unreachable-row'
+> & { row: number | null };
 // Rows `rows` (first and last, by index) are each partly taken by the `earlier` row ranges it names, `more` beyond
 // them, or by every earlier firing row from row `from` on.
-export interface OverlapWarning {
-  rows: [number, number];
-  earlier: [number, number][];
-  more: number;
-  from: number | null;
-  fields: string[];
-  example: Example;
+export interface OverlapWarning extends report.Overlap {
+  // The conditions the sentence quotes: the taken row's, then each named earlier row's; none for a run.
+  conditions: { row: number; when: Record<string, Condition> }[];
   code: 'overlapping-rows';
   message: string;
 }
@@ -74,22 +70,25 @@ export const conditions = (when: Record<string, Condition>) =>
     )
     .join(' and ') || 'no conditions';
 
-const refuse = (code: RuleError['code'], message: string): Analysis => ({
-  errors: [{ row: null, code, message }],
+const refuse = (error: report.Finding<'rule-table-too-large' | 'undeclared-rule-field'>): Analysis => ({
+  errors: [{ row: null, ...error }],
   warnings: [],
   defaultExample: null,
   falls: [],
 });
 
-function overLimit(name: string, paths: string[], values: ruleDomain.Value[][][], work: number) {
+function overLimit(name: string, paths: string[], values: ruleDomain.Value[][][], work: number): Analysis {
   const largest = paths
     .map((path, field): [string, number] => [path, Math.max(...values.map((box) => box[field].length))])
     .sort((left, right) => right[1] - left[1])
     .slice(0, 3);
-  return (
-    `rule table ${name} needs ${work} row checks, above the limit of ${WORK_LIMIT}; ` +
-    `its largest fields: ${largest.map(([path, count]) => `${path} (${count} values)`).join(', ')}`
-  );
+  return refuse({
+    code: 'rule-table-too-large',
+    message:
+      `rule table ${name} needs ${work} row checks, above the limit of ${WORK_LIMIT}; ` +
+      `its largest fields: ${largest.map(([path, count]) => `${path} (${count} values)`).join(', ')}`,
+    params: { table: name, work, limit: WORK_LIMIT, largest },
+  });
 }
 
 const neverFiring = (domain: ruleDomain.Domain, reached: Uint32Array, fires: Uint32Array): RuleError[] =>
@@ -105,6 +104,7 @@ const neverFiring = (domain: ruleDomain.Domain, reached: Uint32Array, fires: Uin
               (ruleDomain.bitAt(reached, i)
                 ? 'never fires: earlier rows match every input it matches'
                 : 'is unreachable: it matches no input'),
+            params: { table: domain.name, row: i, outcome: row.outcome },
           },
         ],
   );
@@ -253,17 +253,12 @@ function overlapWarning({ name, rows }: ruleDomain.Domain, run: Run): OverlapWar
     mode,
   } = run;
   const rest = more ? `, and ${more} more ${more === 1 ? 'row' : 'rows'}` : '';
+  const named = earlier.flatMap(([low, high]) => Array.from({ length: high - low + 1 }, (_, offset) => low + offset));
+  const quoted = first === last ? [first, ...named] : [];
   const message =
     first === last
       ? `row ${first + 1} (${conditions(rows[first].when)}) is partly taken by ` +
-        earlier
-          .flatMap(([low, high]) =>
-            Array.from(
-              { length: high - low + 1 },
-              (_, offset) => `row ${low + offset + 1} (${conditions(rows[low + offset].when)})`,
-            ),
-          )
-          .join(', ') +
+        named.map((row) => `row ${row + 1} (${conditions(rows[row].when)})`).join(', ') +
         rest
       : `rows ${first + 1}-${last + 1} are each partly taken by ${takersText(run, rest)}, all on ${fields.join(', ')}`;
   return {
@@ -273,6 +268,8 @@ function overlapWarning({ name, rows }: ruleDomain.Domain, run: Run): OverlapWar
     from: mode === 'from' ? from : null,
     fields,
     example: run.example,
+    table: name,
+    conditions: quoted.map((row) => ({ row, when: rows[row].when })),
     code: 'overlapping-rows',
     message: `rule table ${name}: ${message}, for example ${JSON.stringify(run.example)}`,
   };
@@ -286,7 +283,11 @@ export function analyse(table: RuleTable): Analysis {
   const paths = [...new Set(rows.flatMap((row) => Object.keys(row.when)))];
   const undeclared = paths.filter((path) => !boxes.every((fields) => Object.hasOwn(fields, path)));
   if (undeclared.length)
-    return refuse('undeclared-rule-field', `rule table ${name} names undeclared fields: ${undeclared.join(', ')}`);
+    return refuse({
+      code: 'undeclared-rule-field',
+      message: `rule table ${name} names undeclared fields: ${undeclared.join(', ')}`,
+      params: { table: name, fields: undeclared },
+    });
   const values = boxes.map((fields) =>
     paths.map((path) =>
       ruleDomain.partition(
@@ -297,7 +298,7 @@ export function analyse(table: RuleTable): Analysis {
   );
   const points = values.map((box) => box.reduce((count, fieldValues) => count * fieldValues.length, 1));
   const work = points.reduce((sum, count) => sum + count, 0) * rows.length;
-  if (work > WORK_LIMIT) return refuse('rule-table-too-large', overLimit(name, paths, values, work));
+  if (work > WORK_LIMIT) return overLimit(name, paths, values, work);
 
   const domain = ruleDomain.domainOf({ name, rows, paths, values, points });
   const { reached, fires, fallen } = ruleDomain.reachedRows(domain);

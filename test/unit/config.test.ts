@@ -362,6 +362,13 @@ test('a Layer that is not JSON is a load error naming the file, line and column 
 });
 
 const layerPath = config.layerPath('repo');
+// The sentences a repository Layer check gives, for the cases about its wording.
+const commandMessages = (declared: unknown, file: string) =>
+  config.commandProblems(declared, file).map((problem) => problem.message);
+const testPathsMessages = (testPaths: unknown, file: string) =>
+  config.testPathsProblems(testPaths, file).map((problem) => problem.message);
+const approversMessages = (approvers: unknown, file: string) =>
+  config.approversProblems(approvers, file).map((problem) => problem.message);
 // The message for a testPaths entry that is not a glob relative to the repository root.
 const notAGlob = (shown: string) =>
   `${layerPath}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split ` +
@@ -369,9 +376,9 @@ const notAGlob = (shown: string) =>
 
 test('commandProblems accepts a valid set and names each malformed entry', () => {
   const missing = `${layerPath} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
-  assert.deepEqual(config.commandProblems({ test: 'npm test', 'lint-js': 'x' }, layerPath), []);
-  assert.deepEqual(config.commandProblems(undefined, layerPath), [missing]);
-  assert.deepEqual(config.commandProblems({ Test: 'npm test' }, layerPath), [
+  assert.deepEqual(commandMessages({ test: 'npm test', 'lint-js': 'x' }, layerPath), []);
+  assert.deepEqual(commandMessages(undefined, layerPath), [missing]);
+  assert.deepEqual(commandMessages({ Test: 'npm test' }, layerPath), [
     `${layerPath}: command name "Test" must match [a-z][a-z0-9-]*`,
     missing,
   ]);
@@ -379,7 +386,7 @@ test('commandProblems accepts a valid set and names each malformed entry', () =>
 
 for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) {
   test(`commandProblems names a test command of ${JSON.stringify(bad)} as malformed`, () => {
-    assert.deepEqual(config.commandProblems({ test: bad }, layerPath), [
+    assert.deepEqual(commandMessages({ test: bad }, layerPath), [
       `${layerPath}: command test must be a non-empty single-line string`,
     ]);
   });
@@ -387,7 +394,7 @@ for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) {
 
 for (const bad of [['npm test'], 'npm test', null]) {
   test(`commandProblems names commands of ${JSON.stringify(bad)} as not an object`, () => {
-    assert.deepEqual(config.commandProblems(bad, layerPath), [
+    assert.deepEqual(commandMessages(bad, layerPath), [
       `${layerPath}: commands must be an object from name to command line`,
     ]);
   });
@@ -395,14 +402,14 @@ for (const bad of [['npm test'], 'npm test', null]) {
 
 test('testPathsProblems names a missing, empty or malformed testPaths', () => {
   const notAList = `${layerPath}: testPaths must be a non-empty list of glob strings`;
-  assert.deepEqual(config.testPathsProblems(['test/**', '**/*.spec.*'], layerPath), []);
-  assert.deepEqual(config.testPathsProblems(undefined, layerPath), [
+  assert.deepEqual(testPathsMessages(['test/**', '**/*.spec.*'], layerPath), []);
+  assert.deepEqual(testPathsMessages(undefined, layerPath), [
     `${layerPath} declares no testPaths; merge {"testPaths":["<glob>"]} into it`,
   ]);
-  assert.deepEqual(config.testPathsProblems([], layerPath), [notAList]);
-  assert.deepEqual(config.testPathsProblems('test/**', layerPath), [notAList]);
-  assert.deepEqual(config.testPathsProblems({ globs: ['test/**'] }, layerPath), [notAList]);
-  assert.deepEqual(config.testPathsProblems(['test/**', 1, '', ' ', 'a\nb', null], layerPath), [
+  assert.deepEqual(testPathsMessages([], layerPath), [notAList]);
+  assert.deepEqual(testPathsMessages('test/**', layerPath), [notAList]);
+  assert.deepEqual(testPathsMessages({ globs: ['test/**'] }, layerPath), [notAList]);
+  assert.deepEqual(testPathsMessages(['test/**', 1, '', ' ', 'a\nb', null], layerPath), [
     notAGlob('1'),
     notAGlob('""'),
     notAGlob('" "'),
@@ -418,14 +425,11 @@ test(
   'testPathsProblems names a testPaths entry git would reject ' + 'or read differently from Test Immutability',
   () => {
     assert.deepEqual(
-      config.testPathsProblems(
-        ['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs'],
-        layerPath,
-      ),
+      testPathsMessages(['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs'], layerPath),
       [],
     );
     assert.deepEqual(
-      config.testPathsProblems(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], layerPath),
+      testPathsMessages(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], layerPath),
       [
         notAGlob('"../tests/**"'),
         notAGlob('"/abs/**"'),
@@ -436,7 +440,7 @@ test(
       ],
     );
     assert.deepEqual(
-      config.testPathsProblems(
+      testPathsMessages(
         ['spec/[ab].mjs', 'spec\\a.mjs', '**.test.mjs', 'deep**', 'a/***/b', 'a\u0000b', 'spec/a?.mjs'],
         layerPath,
       ),
@@ -474,14 +478,14 @@ test('this repository AGENTS.md Commands line matches its repository Layer', (t)
 test('a malformed approvers list fails admission', () => {
   const layerFile = '/repo/.agents/gg/gg.json';
   const notAList = `${layerFile}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
-  assert.deepEqual(config.approversProblems(undefined, layerFile), []);
-  assert.deepEqual(config.approversProblems([], layerFile), []);
-  assert.deepEqual(config.approversProblems(['some-login'], layerFile), []);
-  assert.deepEqual(config.approversProblems('some-login', layerFile), [notAList]);
-  assert.deepEqual(config.approversProblems([''], layerFile), [notAList]);
-  assert.deepEqual(config.approversProblems([' '], layerFile), [notAList]);
-  assert.deepEqual(config.approversProblems([' some-login '], layerFile), [notAList], 'it could never match a login');
-  assert.deepEqual(config.approversProblems(['some-login', 3], layerFile), [notAList]);
+  assert.deepEqual(approversMessages(undefined, layerFile), []);
+  assert.deepEqual(approversMessages([], layerFile), []);
+  assert.deepEqual(approversMessages(['some-login'], layerFile), []);
+  assert.deepEqual(approversMessages('some-login', layerFile), [notAList]);
+  assert.deepEqual(approversMessages([''], layerFile), [notAList]);
+  assert.deepEqual(approversMessages([' '], layerFile), [notAList]);
+  assert.deepEqual(approversMessages([' some-login '], layerFile), [notAList], 'it could never match a login');
+  assert.deepEqual(approversMessages(['some-login', 3], layerFile), [notAList]);
 });
 
 test('an approvers key in the user Layer is a load error naming the file', (t) => {
@@ -499,4 +503,62 @@ test('approvers change the Config Hash, and none leaves it as it was', () => {
   const hash = config.configHash(pinned);
   assert.notEqual(config.configHash({ ...pinned, approvers: ['some-login'] }), hash);
   assert.equal(config.configHash({ ...pinned, approvers: undefined }), hash);
+});
+
+/* eslint-disable id-denylist -- a Problem's key is at */
+// Each repository Layer problem is a Problem like the validator's (#301): located at its key, coded by the rule it
+// breaks, and carrying the values its sentence names, the Layer file among them.
+test('each repository Layer problem carries its location, code and params', () => {
+  const file = layerPath;
+  assert.deepEqual(config.commandProblems({ Test: 'npm test', lint: '' }, file), [
+    {
+      at: 'commands',
+      code: 'invalid-name',
+      message: `${file}: command name "Test" must match [a-z][a-z0-9-]*`,
+      params: { name: 'Test', file },
+    },
+    {
+      at: 'commands.lint',
+      code: 'invalid-command-line',
+      message: `${file}: command lint must be a non-empty single-line string`,
+      params: { command: 'lint', file },
+    },
+    {
+      at: 'commands',
+      code: 'required-key-missing',
+      message: `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`,
+      params: { key: 'test', file },
+    },
+  ]);
+  const codes = (problems: { at: string; code: string; params?: unknown }[]) =>
+    problems.map(({ at, code, params }) => ({ at, code, params }));
+  assert.deepEqual(codes(config.commandProblems('npm test', file)), [
+    { at: 'commands', code: 'not-an-object', params: { file } },
+  ]);
+  assert.deepEqual(codes(config.testPathsProblems(undefined, file)), [
+    { at: 'testPaths', code: 'required-key-missing', params: { key: 'testPaths', file } },
+  ]);
+  assert.deepEqual(codes(config.testPathsProblems([], file)), [
+    { at: 'testPaths', code: 'empty-list', params: { file } },
+  ]);
+  assert.deepEqual(codes(config.testPathsProblems('test/**', file)), [
+    { at: 'testPaths', code: 'not-a-list', params: { file } },
+  ]);
+  assert.deepEqual(codes(config.testPathsProblems(['test/**', '../x'], file)), [
+    { at: 'testPaths[1]', code: 'invalid-glob', params: { glob: '../x', file } },
+  ]);
+  assert.deepEqual(codes(config.approversProblems('some-login', file)), [
+    { at: 'approvers', code: 'not-a-list', params: { file } },
+  ]);
+  assert.deepEqual(codes(config.approversProblems(['some-login', 3], file)), [
+    { at: 'approvers', code: 'invalid-name', params: { file } },
+  ]);
+});
+
+test('the repository Layer problems are its commands, testPaths and approvers problems, in that order', () => {
+  const layer = { commands: { Test: 'x', test: 'x' }, testPaths: [], approvers: 3 };
+  assert.deepEqual(
+    config.repositoryLayerProblems(layer, layerPath).map(({ at, code }) => `${at} ${code}`),
+    ['commands invalid-name', 'testPaths empty-list', 'approvers not-a-list'],
+  );
 });

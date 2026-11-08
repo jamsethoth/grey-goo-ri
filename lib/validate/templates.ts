@@ -57,7 +57,7 @@ interface TemplateTag {
   children?: TemplateNode[];
 }
 type TemplateNode = string | TemplateTag;
-type Template = { nodes: TemplateNode[]; error?: undefined } | { error: string; nodes?: undefined };
+type Template = { nodes: TemplateNode[]; error?: undefined } | { error: string; reason: string; nodes?: undefined };
 export type TemplateReader = (name: string) => Template;
 type Scope = Record<string, referencePaths.SchemaNode>;
 
@@ -70,7 +70,8 @@ export function templateReader(readTemplate: ((name: string) => string) | undefi
       try {
         templates.set(name, { nodes: render.parseTemplate(readTemplate(name)) as TemplateNode[] });
       } catch (err) {
-        templates.set(name, { error: `${name} cannot be read: ${(err as Error).message}` });
+        const reason = (err as Error).message;
+        templates.set(name, { error: `${name} cannot be read: ${reason}`, reason });
       }
     }
     return templates.get(name) as Template;
@@ -100,7 +101,7 @@ function nodeOf(
   );
   if (item === referencePaths.ANY) return referencePaths.ANY;
   const resolved = lookup(item ?? scope, tag.name);
-  if (resolved.error) problems.push({ code: resolved.code, message: `{{${tag.name}}}: ${resolved.error}` });
+  if (resolved.error) problems.push({ ...resolved.finding, message: `{{${tag.name}}}: ${resolved.error}` });
   return resolved.node ?? referencePaths.ANY;
 }
 
@@ -140,9 +141,16 @@ function readTemplate(reading: Reading, place: { where: string; key: string }, n
   const template = reading.reader(name);
   const problems: report.Finding[] = template.nodes
     ? templateProblems(template.nodes, procedures.object(scope))
-    : [{ code: 'template-unreadable', message: template.error }];
-  for (const { code, message } of problems)
-    reading.found.push({ where: place.where, code, message: `${place.key} ${name}: ${message}` });
+    : [{ code: 'template-unreadable', message: template.error, params: { template: name, reason: template.reason } }];
+  for (const problem of problems) {
+    const message = `${place.key} ${name}: ${problem.message}`;
+    reading.found.push({
+      ...problem,
+      where: place.where,
+      message,
+      params: { ...problem.params, template: name },
+    } as report.Finding & { where: string });
+  }
 }
 
 // A PR body reads the Visit, each `with` name bound to the node its path reads, the Ticket and the provenance.

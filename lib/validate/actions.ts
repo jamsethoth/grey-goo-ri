@@ -39,7 +39,7 @@ function loadSchema(declaring: ProcedureContext, name: string, location: string)
   const { schemas } = declaring;
   if (!schemas.has(name)) schemas.set(name, readSchema(declaring.readSchema, name));
   const loaded = schemas.get(name) as LoadedSchema;
-  if (loaded.error) report.error(declaring.report, location, loaded.error.code, loaded.error.message);
+  if (loaded.error) report.errorOf(declaring.report, location, loaded.error);
   return loaded.node;
 }
 function readSchema(read: ProcedureContext['readSchema'], name: string): LoadedSchema {
@@ -47,46 +47,79 @@ function readSchema(read: ProcedureContext['readSchema'], name: string): LoadedS
   try {
     schema = read(name);
   } catch (err) {
-    const message = `schema ${name} cannot be read: ${(err as Error).message}`;
-    return { node: referencePaths.ANY, error: { code: 'schema-unreadable', message } };
+    const reason = (err as Error).message;
+    const message = `schema ${name} cannot be read: ${reason}`;
+    return {
+      node: referencePaths.ANY,
+      error: { code: 'schema-unreadable', message, params: { schema: name, reason } },
+    };
   }
   try {
     briefs.assertStrict(schema);
     return { node: schema as referencePaths.SchemaNode };
   } catch (err) {
-    const message = `${name}: ${(err as Error).message}`;
-    return { node: referencePaths.ANY, error: { code: 'schema-not-strict', message } };
+    const reason = (err as Error).message;
+    const message = `${name}: ${reason}`;
+    return {
+      node: referencePaths.ANY,
+      error: { code: 'schema-not-strict', message, params: { schema: name, reason } },
+    };
   }
 }
 
 const requireFile = (problems: report.Report, action: Value, key: string, location: string) => {
-  if (!report.isName(action[key])) report.error(problems, location, 'file-not-named', `${key} must name a file`);
+  if (!report.isName(action[key]))
+    report.error(problems, location, 'file-not-named', `${key} must name a file`, { key });
 };
 
-// One sentence states three rules, and the code says which one the value breaks.
-function requireNames(problems: report.Report, names: unknown, location: string, message: string) {
-  if (!Array.isArray(names)) report.error(problems, location, report.absentOr(names, 'not-a-list'), message);
-  else if (!names.length) report.error(problems, location, 'empty-list', message);
-  else if (!names.every(report.isName)) report.error(problems, location, 'invalid-name', message);
+// Each rule a repeat Check's fields can break has its own sentence, and each item that is not a name is named by its
+// index, since one shared sentence left the reader to find the bad item (#301).
+function requireFields(problems: report.Report, fields: unknown, location: string) {
+  if (fields === undefined) {
+    const message = 'a repeat Check must name its fields, a non-empty list of field names';
+    return report.error(problems, location, 'required-key-missing', message, { key: 'fields' });
+  }
+  if (!Array.isArray(fields))
+    return report.error(
+      problems,
+      location,
+      'not-a-list',
+      `fields must be a list of field names, not ${JSON.stringify(fields)}`,
+      { value: fields },
+    );
+  if (!fields.length) return report.error(problems, location, 'empty-list', 'fields must name at least one field');
+  fields.forEach((name, index) => {
+    if (!report.isName(name))
+      report.error(
+        problems,
+        location,
+        'invalid-name',
+        `fields[${index}] must be a field name, not ${JSON.stringify(name)}`,
+        { name, index },
+      );
+  });
 }
 
-// How a sentence names an Action with its id left out. A present null is a wrong value, which it prints.
+// How a sentence names an Action with its id left out. A present null is a wrong value, which it prints; params name
+// an id only where there is one.
 const actionLabel = (id: unknown) => (id === undefined ? 'with no id' : id);
+const idOf = (id: unknown) => (id === undefined ? {} : { id });
 
 function checkActionId(problems: report.Report, ids: unknown[], id: unknown, location: string) {
   if (id === undefined) {
-    report.error(problems, location, 'required-key-missing', 'an Action must have an id');
+    report.error(problems, location, 'required-key-missing', 'an Action must have an id', { key: 'id' });
     return;
   }
   if (!report.checkName(problems, location, id, { what: 'Action id', carried: true })) return;
   if (ids.includes(id))
-    report.error(problems, location, 'repeated-action-id', `Action id ${JSON.stringify(id)} is repeated`);
+    report.error(problems, location, 'repeated-action-id', `Action id ${JSON.stringify(id)} is repeated`, { id });
   else if (RESERVED_IDS.includes(id))
     report.error(
       problems,
       location,
       'reserved-name',
       `Action id ${JSON.stringify(id)} is reserved for gg: ${RESERVED_IDS.join(', ')}`,
+      { name: id },
     );
 }
 
@@ -97,7 +130,9 @@ function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, actio
   checkActionId(problems, declared.ids, action.id, location);
   declared.ids.push(action.id);
   if (action.do === undefined)
-    return report.error(problems, location, 'required-key-missing', 'an Action must name its kind in do');
+    return report.error(problems, location, 'required-key-missing', 'an Action must name its kind in do', {
+      key: 'do',
+    });
   const kinds = Object.keys(procedures.ACTION_KEYS).join(', ');
   if (!report.hasOwnKey(procedures.ACTION_KEYS, action.do))
     return report.error(
@@ -105,18 +140,20 @@ function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, actio
       location,
       'unknown-action-kind',
       `do ${JSON.stringify(action.do)} is not one of ${kinds}`,
+      { kind: action.do },
     );
   const isCheck = action.do === 'check';
   if (isCheck && !report.hasOwnKey(procedures.CHECK_KEYS, action.kind)) {
     declared.checks.push(action);
     if (action.kind === undefined)
-      return report.error(problems, location, 'required-key-missing', 'a Check must name its kind');
+      return report.error(problems, location, 'required-key-missing', 'a Check must name its kind', { key: 'kind' });
     const checkKinds = Object.keys(procedures.CHECK_KEYS).join(', ');
     return report.error(
       problems,
       location,
       'unknown-check-kind',
       `Check kind ${JSON.stringify(action.kind)} is not one of ${checkKinds}`,
+      { kind: action.kind },
     );
   }
   const checkKeys = isCheck ? procedures.CHECK_KEYS[action.kind as procedures.CheckKind] : [];
@@ -151,20 +188,23 @@ function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
   ) {
     const command = JSON.stringify(check.command);
     if (check.command === undefined)
-      report.error(problems, location, 'required-key-missing', `Check ${actionLabel(check.id)} must name a command`);
+      report.error(problems, location, 'required-key-missing', `Check ${actionLabel(check.id)} must name a command`, {
+        key: 'command',
+        ...idOf(check.id),
+      });
     else
       report.error(
         problems,
         location,
         'undeclared-command',
         `Check ${actionLabel(check.id)} names command ${command}, which the repository Layer does not declare`,
+        { ...idOf(check.id), command: check.command },
       );
   }
   if (check.kind === 'command' && check.reuse !== undefined && check.reuse !== 'tree')
     report.error(problems, location, 'invalid-reuse', 'reuse may only be tree');
   if (check.kind === 'response') declared.responseConditions.push([check, location]);
-  if (check.kind === 'repeat')
-    requireNames(problems, check.fields, location, 'fields must be a non-empty list of field names');
+  if (check.kind === 'repeat') requireFields(problems, check.fields, location);
 }
 
 function checkEffectAction(problems: report.Report, action: Value, location: string) {
@@ -177,11 +217,10 @@ function checkEffectAction(problems: report.Report, action: Value, location: str
       report.error(problems, location, 'not-an-object', 'with must be an object of reference paths');
   } else if (action.do === 'comment') {
     if (action.target !== 'pr' && action.target !== 'ticket')
-      report.error(
+      report.errorOf(
         problems,
         location,
-        report.absentOr(action.target, 'invalid-comment-target'),
-        'target must be pr or ticket',
+        report.absentOr(action.target, 'target', 'invalid-comment-target', 'target must be pr or ticket'),
       );
     requireFile(problems, action, 'body', location);
   } else if (action.do === 'await-approval' && action.decisions !== undefined) {
@@ -201,9 +240,10 @@ function checkDecisions(problems: report.Report, decisions: unknown, location: s
     for (const decision of decisions) {
       const shown = JSON.stringify(decision);
       if (typeof decision !== 'string' || !/^[a-z][a-z0-9-]*$/.test(decision))
-        report.error(problems, location, 'invalid-name', `Decision ${shown} must match [a-z][a-z0-9-]*`);
-      else if (report.isReserved(decision))
-        report.error(problems, location, 'reserved-name', `Decision ${shown} ${report.RESERVED}`);
+        report.error(problems, location, 'invalid-name', `Decision ${shown} must match [a-z][a-z0-9-]*`, {
+          name: decision,
+        });
+      else report.checkReserved(problems, location, 'Decision', decision);
     }
   }
 }
@@ -265,6 +305,11 @@ export function checkOrder(problems: report.Report, location: string, actions: u
         'check-after-effect',
         `Check ${actionLabel(action.id)} comes after ${effect.do} Action ${actionLabel(effect.id)}; ` +
           'every Check comes before any effect, so no effect runs before its pass is decided',
+        {
+          ...idOf(action.id),
+          effect: effect.do as string,
+          ...(effect.id !== undefined && { effectId: effect.id }),
+        },
       );
     }
   });

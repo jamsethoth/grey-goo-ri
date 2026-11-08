@@ -2,6 +2,8 @@
 // `from` and `pick` of inputs. It types a path by walking a schema-shaped scope, where gg's own facts are nodes too and
 // an integer fact may carry `min` and `max` (J15).
 
+import type * as report from './validate/report.ts';
+
 // A node of a schema-shaped scope: a Structured Response schema's node, or one of gg's own facts.
 export interface SchemaNode {
   type?: string;
@@ -103,11 +105,12 @@ function walk(scope: SchemaNode, steps: string[], readsAtRunTime: boolean): Walk
   return { node };
 }
 
+// A path that does not resolve: its sentence, and the validator's Finding of it, whose params the code types.
 export type Resolved =
   | { type: FieldType | null; node: SchemaNode; error?: undefined }
   | {
       error: string;
-      code: 'malformed-reference' | 'reference-into-list' | 'undefined-reference';
+      finding: report.Finding<'malformed-reference' | 'reference-into-list' | 'undefined-reference'>;
       list?: string;
       type?: undefined;
       node?: undefined;
@@ -118,22 +121,23 @@ export type Resolved =
 // stepped into.
 export function resolve(scope: SchemaNode, path: unknown, what = 'defined', { read = false } = {}): Resolved {
   const parsed = parse(path);
-  if (!parsed.steps) return { code: 'malformed-reference', error: parsed.error };
-  const walked = walk(scope, parsed.steps, read);
-  if (walked.list !== undefined)
+  if (!parsed.steps)
     return {
-      code: 'reference-into-list',
-      error:
-        `${JSON.stringify(path)}: ${JSON.stringify(walked.list)} is a list, ` +
-        'so a path reads only its length or an item by index',
-      list: walked.list,
+      error: parsed.error,
+      finding: { code: 'malformed-reference', message: parsed.error, params: { path } },
     };
+  const walked = walk(scope, parsed.steps, read);
+  if (walked.list !== undefined) {
+    const { list } = walked;
+    const error =
+      `${JSON.stringify(path)}: ${JSON.stringify(list)} is a list, ` +
+      'so a path reads only its length or an item by index';
+    return { error, finding: { code: 'reference-into-list', message: error, params: { path, list } }, list };
+  }
   if (walked.missing !== undefined) {
     const { missing } = walked;
-    return {
-      code: 'undefined-reference',
-      error: `${missing === path ? '' : `${JSON.stringify(path)}: `}${JSON.stringify(missing)} is not ${what}`,
-    };
+    const error = `${missing === path ? '' : `${JSON.stringify(path)}: `}${JSON.stringify(missing)} is not ${what}`;
+    return { error, finding: { code: 'undefined-reference', message: error, params: { path, missing } } };
   }
   return { type: kindOf(walked.node), node: walked.node };
 }

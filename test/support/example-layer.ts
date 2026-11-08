@@ -55,6 +55,12 @@ export type FiredRule = Pick<report.Problem, 'at' | 'code'>;
 export const firedRules = (problems: report.Problem[]): FiredRule[] =>
   // eslint-disable-next-line id-denylist -- a Problem's key is at
   problems.map(({ at, code }) => ({ at, code }));
+// ...and, for a Procedure's problem found at a Vertex, the Flow and Vertex whose inputs exposed it.
+export const firedAtVertices = (problems: report.Problem[]) =>
+  firedRules(problems).map((fired, index) => {
+    const { params } = problems[index];
+    return { ...fired, ...(params && 'flow' in params && { flow: params.flow, vertex: params.vertex }) };
+  });
 
 // Validates `layer` with the fake harness registered, reading schemas and templates from the files given.
 export function check(layer: Layer, files = schemas(), templateFiles?: Record<string, string>) {

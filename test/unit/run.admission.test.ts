@@ -34,17 +34,18 @@ test('preflight lists every malformed Declared Command and a missing test, namin
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      `${file}: command name "Test" must match [a-z][a-z0-9-]*`,
-      `${file}: command lint must be a non-empty single-line string`,
-      `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`,
+      `error: commands: ${file}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]`,
+      `error: commands.lint: ${file}: command lint must be a non-empty single-line string [invalid-command-line]`,
+      `error: commands: ${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it ` +
+        '[required-key-missing]',
       'error: procedures.tests-fail.actions[1]: Check red-check names command "test", ' +
-        'which the repository Layer does not declare',
+        'which the repository Layer does not declare [undeclared-command]',
       'error: procedures.implement.actions[1]: Check test names command "test", ' +
-        'which the repository Layer does not declare',
+        'which the repository Layer does not declare [undeclared-command]',
       'error: procedures.fix.actions[1]: Check test names command "test", ' +
-        'which the repository Layer does not declare',
+        'which the repository Layer does not declare [undeclared-command]',
       'error: procedures.publish.actions[0]: Check test names command "test", ' +
-        'which the repository Layer does not declare',
+        'which the repository Layer does not declare [undeclared-command]',
     ]);
     assert.equal(err.exitCode, 1);
     return true;
@@ -61,7 +62,7 @@ test('a Flow with a plan key fails admission before any effect', async (t) => {
   await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: flows.default: unknown key "plan"',
+      'error: flows.default: unknown key "plan" [unknown-key]',
     ]);
     return true;
   });
@@ -76,7 +77,8 @@ test("an Agent's access outside the Permission Intents fails admission before an
   await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or workspace-write',
+      'error: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or ' +
+        'workspace-write [unknown-permission-intent]',
     ]);
     return true;
   });
