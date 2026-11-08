@@ -148,10 +148,10 @@ export function fieldType(schema: referencePaths.SchemaNode, path: unknown) {
 // Each Brief's excerpt of the output it quotes, by the name its own context holds it under, as before templates: a
 // command Check's section shows more of a failing run (U1: size stays per Brief). A section item's field is not cut.
 const EXCERPT = { output: 3000 };
-const OUTPUT_LIMIT: Record<string, Record<string, number>> = {
-  'templates/green.md': { 'inputs.red.output': 4000 },
-  'templates/test-fix.md': { output: 6000 },
-};
+const OUTPUT_LIMIT = new Map<string, Record<string, number>>([
+  ['templates/green.md', { 'inputs.red.output': 4000 }],
+  ['templates/test-fix.md', { output: 6000 }],
+]);
 
 // What a Brief reads beside its template: the Vertex's scope and gg's facts, each a value or a function computed only
 // when the Brief names it (U1). `failure` is how a recovery section's Check failed.
@@ -183,7 +183,7 @@ function printed(limits: Record<string, number>, value: unknown, ref: string, it
 // when the kind recorded that failure).
 // `text` is the template a Layer declares as `name`.
 export function brief(name: string, text: string, { commands = {}, history = [], failure, ...context }: BriefContext) {
-  const limits = { ...EXCERPT, ...OUTPUT_LIMIT[name] };
+  const limits = { ...EXCERPT, ...OUTPUT_LIMIT.get(name) };
   const emit = (value: unknown, { name: ref }: { name: string }, _fenced: boolean, item: unknown) =>
     printed(limits, value, ref, item);
   return render.renderTemplate(

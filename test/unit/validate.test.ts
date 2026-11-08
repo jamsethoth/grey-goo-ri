@@ -715,3 +715,40 @@ test('an Action id that is an object is an error, never a throw', () => {
     { at: 'procedures.base-check.actions[0]', code: 'invalid-name' },
   ]);
 });
+
+test('an otherwise that is an object is an error, never a throw', () => {
+  const config = exampleLayer.config();
+  config.procedures.review.otherwise = JSON.parse('{"toString": 1}');
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.review.otherwise', code: 'invalid-otherwise' },
+  ]);
+});
+
+// Each slot the configuration names something in, given a value that is not a string (an object whose toString is not
+// callable, so a property key or a route lookup made of it would throw): the validator reports it at its location and
+// keeps it out of every collection and route (#174).
+const REJECTED_NAME = '{"toString": 1}';
+const REJECTED_SLOTS: [string, (config: exampleLayer.Layer, value: unknown) => void, string][] = [
+  ['an Action id', (config, value) => (config.procedures['base-check'].actions[0].id = value), 'procedures.base-check'],
+  ['an otherwise', (config, value) => (config.procedures.review.otherwise = value), 'procedures.review'],
+  ['a table outcome', (config, value) => (config.procedures.review.passed[0].outcome = value), 'procedures.review'],
+  [
+    'a Decision',
+    (config, value) => {
+      config.procedures.approval = { actions: [{ id: 'ask', do: 'await-approval', decisions: [value] }] };
+      config.flows.default.ticket.vertices.approve = { procedure: 'approval', route: {} };
+    },
+    'procedures.approval',
+  ],
+];
+for (const [what, mutate, location] of REJECTED_SLOTS) {
+  test(`${what} that is not a string is reported at its location and never thrown on`, () => {
+    const config = exampleLayer.config();
+    mutate(config, JSON.parse(REJECTED_NAME));
+    const { errors } = exampleLayer.check(config);
+    assert.ok(
+      errors.some((problem) => problem.at.startsWith(location)),
+      `an error at ${location}, got ${JSON.stringify(exampleLayer.firedRules(errors))}`,
+    );
+  });
+}

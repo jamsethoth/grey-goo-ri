@@ -355,7 +355,7 @@ export function checkProcedure(
     recover: declaration.recover ?? null,
     tables,
     malformed,
-    otherwise: declaration.otherwise,
+    otherwise: report.isName(declaration.otherwise) ? declaration.otherwise : undefined, // reported, kept out (#174)
   };
   checkPrReady(problems, proc);
   return proc;

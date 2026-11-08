@@ -3,8 +3,11 @@
 // ordinary names and with the names of Object.prototype's properties, and the two compared (#174).
 import type { TestContext } from 'node:test';
 import * as config from '../../lib/config.ts';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as validate from '../../lib/validate/index.ts';
 import type * as fakeHarnessModule from './fake-harness.ts';
+import * as crashResume from './crash-resume.ts';
+import * as executionReads from './execution-reads.ts';
 import * as golden from './golden.ts';
 import * as keys from './keys.ts';
 
@@ -204,6 +207,29 @@ export async function namedFixture(t: TestContext, names: Names, claim = 'ok') {
   golden.configure(fixture, (configured) => Object.assign(configured, namedConfig(names)));
   Object.assign(fixture.options, { commands: fixture.config.commands, files: fixture.config.files });
   return fixture;
+}
+
+// What a run of the fixture left: its result, every Action Event, the record's counts and ending, and the PR's body,
+// with the Execution's id, which differs per run, left out of its Action Markers.
+async function left(fixture: golden.GoldenFixture, result: Awaited<ReturnType<typeof interpreter.runExecution>>) {
+  const { visits, traversals, cursor, terminalReason, state, execution } = await executionReads.loadTicket(fixture);
+  const body = (fixture.gh.pr()?.body as string | undefined)?.replaceAll(execution, '<execution>') ?? null;
+  return { result, trace: golden.trace(fixture.readEvents()), visits, traversals, cursor, terminalReason, state, body };
+}
+
+// Runs the Flow named with `names` to its end, its agent answering `claim`, and gives what the run left.
+export async function runNamed(t: TestContext, names: Names, claim = 'ok') {
+  const fixture = await namedFixture(t, names, claim);
+  return left(fixture, await interpreter.runExecution(fixture.options));
+}
+
+// Runs the Flow named with `names` until it crashes after the first Vertex's commit, then resumes it on a freshly
+// loaded record through Reconciliation to its end, and gives what the two runs left.
+export async function restartNamed(t: TestContext, names: Names) {
+  const fixture = await namedFixture(t, names);
+  await crashResume.crashed(fixture, [names.first, 1, names.commit, 0], 'after-completion');
+  const record = await executionReads.loadTicket(fixture);
+  return left(fixture, await interpreter.runExecution({ ...fixture.options, record }));
 }
 
 const ORDINARY_TO_PROTOTYPE = new Map(

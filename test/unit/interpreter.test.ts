@@ -671,21 +671,15 @@ test("unconfirmed cleanup keeps the worktree busy through the hold comment's bac
   assert.deepEqual(during, [true], 'still busy while the comment waits');
 });
 
-// Runs the Flow named with `names` to its end, its agent answering `claim`, and gives what the run left: the PR's
-// body, with the Execution's id, which differs per run, left out of its Action Markers.
-async function runNamed(t: TestContext, names: namedFlow.Names, claim: string) {
-  const fixture = await namedFlow.namedFixture(t, names, claim);
-  const result = await interpreter.runExecution(fixture.options);
-  const { visits, traversals, cursor, terminalReason, state, execution } = await loadTicket(fixture);
-  const body = (fixture.gh.pr()?.body as string | undefined)?.replaceAll(execution, '<execution>') ?? null;
-  return { result, trace: golden.trace(fixture.readEvents()), visits, traversals, cursor, terminalReason, state, body };
-}
-
 for (const claim of ['ok', 'halt'] as const) {
   const name = 'a Flow named entirely with Object.prototype names runs and routes like one with ordinary names';
   test(`${name} (${claim})`, async (t) => {
-    const ordinary = await runNamed(t, namedFlow.ORDINARY, claim === 'ok' ? 'ok' : namedFlow.ORDINARY.halt);
-    const prototype = await runNamed(t, namedFlow.PROTOTYPE, claim === 'ok' ? 'ok' : namedFlow.PROTOTYPE.halt);
+    const ordinary = await namedFlow.runNamed(t, namedFlow.ORDINARY, claim === 'ok' ? 'ok' : namedFlow.ORDINARY.halt);
+    const prototype = await namedFlow.runNamed(
+      t,
+      namedFlow.PROTOTYPE,
+      claim === 'ok' ? 'ok' : namedFlow.PROTOTYPE.halt,
+    );
     assert.equal(ordinary.result.outcome, claim === 'ok' ? 'ready-for-qa' : 'needs-replan');
     assert.deepEqual(prototype, namedFlow.renamed(ordinary));
   });

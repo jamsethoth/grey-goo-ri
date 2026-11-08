@@ -161,18 +161,14 @@ test("a rescue intent is found by its ref's commit, absent with no ref, a confli
 
 test('a record at a Vertex named constructor resumes, and one the Flow lacks holds', async (t) => {
   const names = namedFlow.PROTOTYPE;
-  // The commit of the Visit to the Vertex named constructor, after which the run crashes.
-  const place: golden.MarkerPlace = [names.first, 1, names.commit, 0];
-  const resumed = await namedFlow.namedFixture(t, names);
-  await crashResume.crashed(resumed, place, 'after-completion');
-  const result = await interpreter.runExecution({
-    ...resumed.options,
-    record: await executionReads.loadTicket(resumed),
-  });
-  assert.equal(result.outcome, 'ready-for-qa');
+  // Crashed after the commit of the Visit to the Vertex named constructor, then resumed: the same as the ordinary
+  // Flow's restart, renamed.
+  const ordinary = await namedFlow.restartNamed(t, namedFlow.ORDINARY);
+  assert.equal(ordinary.result.outcome, 'ready-for-qa');
+  assert.deepEqual(await namedFlow.restartNamed(t, names), namedFlow.renamed(ordinary));
 
   const held = await namedFlow.namedFixture(t, names);
-  await crashResume.crashed(held, place, 'after-completion');
+  await crashResume.crashed(held, [names.first, 1, names.commit, 0], 'after-completion');
   // The same Flow with that Vertex renamed, so the record continues at a Vertex the Flow lacks.
   const lacking = golden.resolve(namedFlow.namedConfig({ ...names, first: 'builder' }));
   const ended = await interpreter.runExecution({
