@@ -97,7 +97,6 @@
   },
   "flows": {
     "default": {
-      "plan": null,
       "actionCap": 180,
       "ticket": {
         "entry": "red",

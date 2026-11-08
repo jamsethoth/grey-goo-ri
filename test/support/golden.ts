@@ -93,7 +93,6 @@ export const implementationInputs = (vertices: string[]) => ({
 
 // A Flow as a case edits it in the configuration, before the validator resolves it.
 export interface ConfiguredFlow {
-  plan: unknown;
   actionCap: number;
   ticket: { entry: string; routes: Record<string, unknown>; vertices: Record<string, Record<string, unknown>> };
 }
@@ -101,7 +100,6 @@ export interface ConfiguredFlow {
 // A red, green and publish Flow: red's tests-fail Visit, green's implement Visit, then publish's Visit, which has no
 // Agent, to ready-for-qa. A misscoped Claim reaches the planner through the Flow's routes, as in the shipped Flow.
 export const redGreenFlow = (): ConfiguredFlow => ({
-  plan: null,
   actionCap: 180,
   ticket: {
     entry: 'red',

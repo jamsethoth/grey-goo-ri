@@ -277,8 +277,8 @@ const MERGE_ADVICE =
 
 test('preflight lists every unset Vertex and Agent before one merge advice line', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
-  fixture.options.config.agents.implementer.harness = null;
-  fixture.options.config.agents.reviewer.harness = null;
+  delete (fixture.options.config.agents.implementer as { harness?: unknown }).harness;
+  delete (fixture.options.config.agents.reviewer as { harness?: unknown }).harness;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.equal(err.exitCode, 2);
     assert.deepEqual(err.message.split('\n'), [
@@ -309,7 +309,7 @@ test('an error quoting the unset-harness sentence is no configuration gap: exit 
 
 test('preflight names an unset harness and an unknown harness in one error', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
-  fixture.options.config.agents.implementer.harness = null;
+  delete (fixture.options.config.agents.implementer as { harness?: unknown }).harness;
   fixture.options.config.agents.reviewer.harness = 'nope';
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.match(err.message, /agent implementer names no harness/);
@@ -383,7 +383,7 @@ test('gg run rejects pick over a value that is not a list of objects', async (t)
 
 test('an Agent naming no harness still exits 2 naming the example Layers', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.agents.implementer.harness = null;
+  delete (fixture.options.config.agents.implementer as { harness?: unknown }).harness;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',

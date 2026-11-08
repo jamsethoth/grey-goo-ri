@@ -47,7 +47,6 @@ test('defaults/gg.json declares the default flow and its two agents', () => {
   }
 
   assert.deepEqual(gg.flows.default, {
-    plan: null,
     actionCap: 180,
     ticket: {
       entry: 'red',

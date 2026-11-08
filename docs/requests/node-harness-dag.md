@@ -185,7 +185,7 @@ admission (`lib/validate/` holds the lists):
 
 | Flow object | Keys | What each key takes |
 |---|---|---|
-| `flows.<name>` | `plan`, `actionCap`, `ticket` | `null` until Epic planning is built; the Action Cap, a positive integer; the ticket section |
+| `flows.<name>` | `actionCap`, `ticket` | the Action Cap, a positive integer; the ticket section |
 | `ticket` | `entry`, `routes`, `vertices` | the id of the first Vertex; the Flow-wide routes, from Outcome to target, for an Outcome a Vertex's own route does not name, where `*` catches any Outcome no route names and no Vertex's `*` caught; the Vertices by id |
 | `vertices.<id>` | `use`, `procedure`, `inputs`, `route`, `max`, `exhausted`, and any Agent key (3.1) | the Agent it uses, whose keys it may override; the Procedure it runs (3.4); its Vertex inputs by name; its routes, from Outcome to target, where `*` catches any Outcome named in neither the Vertex's nor the Flow's routes; optional, the Bound on its Visits and the target when that Bound is exhausted |
 | `route.<outcome>` | `to`, `max`, `exhausted` | a target is a Vertex id, `{ end: <end> }`, or this edge: the Vertex to go to; optional, the Bound on its traversals and the target when that Bound is exhausted, required with it |
@@ -229,12 +229,12 @@ Procedure name takes the same form. Admission reports a name that breaks the rul
   Vertex within the same execution only. One worked example with nested retries, a cap boundary
   and a restart ships with the interpreter tests, since the validator never runs a flow.
 - Per-ticket graphs are sequential. Parallelism is across tickets only.
-- Two sections: `plan` (epic level, used by `gg plan`) and `ticket` (used by `gg run`). The planner is never a ticket
-  vertex. The small flow sets `plan` to null.
+- A Flow is one graph, its `ticket` section, under an `actionCap`; `gg run` runs it per ticket. A planning Flow is
+  another Flow, run at epic level by `gg plan`; how it is selected and told apart is slice 7's design (3.8), and a
+  Flow has no `plan` key until then (grey-goo-ri issue #298). The planner is never a ticket vertex.
 - Entry cases: `gg run <epic>` runs every ready ticket of the epic under the epic's plan approval; `gg run <ticket>`
   runs one ticket under the repo's default flow or `--flow`. A ticket inside an epic inherits the epic's plan
-  approval. A standalone ticket under a flow whose `plan` section is non-null is rejected before any effect, with
-  the message naming a flow that sets `plan` to null. Readiness requires every blocking issue closed, as today.
+  approval. Readiness requires every blocking issue closed, as today.
   Epic-level state, including a pending plan approval, lives in an epic record under the same records directory
   (3.5), and executions reference it by epic number.
 
@@ -251,7 +251,8 @@ publish(no agent: test Check, pr-ready) -> end: ready-for-qa
 
 Flows and Procedures live in the repo Layer only, as `flows` and `procedures` maps; either key in the defaults or
 user Layer is a load error naming the file (ADR 0014). A flow is selected by `--flow <name>`, else `default`. Layering
-of the other keys: maps merge key by key, arrays replace whole, null deletes, validation
+of the other keys: maps merge key by key, arrays replace whole, a Layer cannot delete an inherited key, and `null` is
+never a value (the validator reports it, `null-value`; grey-goo-ri issue #298); validation
 runs after the merge and names the layer file that broke it. Every run writes the fully resolved flow (after layering
 and `use` expansion) to the run directory and hashes that file.
 
@@ -625,8 +626,10 @@ sessions avoid.
 
 The planner is an agent with `mode: interactive`, run at epic level by `gg plan`, with the context-budget stop hook and
 background sessions ported. In the example Flow, `misscoped` from any ticket vertex lands in `end: needs-replan` through the Flow's defaults; `gg plan --replan <epic>`
-resumes planning with the collected diagnoses. Publish keeps its planning-session guard for flows with a plan
-section, and publish resolves ticket dependencies into blocking issues as today.
+resumes planning with the collected diagnoses. A planning Flow is a Flow run at epic level; how `gg plan` selects it
+and what tells it apart from a ticket Flow is this slice's design, with no `plan` key on a Flow before it (grey-goo-ri
+issue #298). Publish keeps its planning-session guard for planning Flows, and publish resolves ticket dependencies into
+blocking issues as today.
 
 ### 3.9 Config and migration
 

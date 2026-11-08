@@ -55,7 +55,7 @@ test("the example Flow warns only of the review table's two intended overlaps", 
 test("the Resolved Flow carries each Vertex's Agent, Procedure, access, tests and Outcomes", () => {
   const { flows } = exampleLayer.check(exampleLayer.config());
   assert.equal(flows.default.actionCap, 180);
-  assert.equal(flows.default.plan, null);
+  assert.equal(Object.hasOwn(flows.default, 'plan'), false, 'a Flow has no plan');
   assert.equal(flows.default.ticket.entry, 'baseline');
   const red = flows.default.ticket.vertices.red;
   assert.deepEqual(red.agent, {
@@ -217,7 +217,6 @@ test('a name of an Object.prototype property is reserved wherever the configurat
   };
   config.procedures.hasOwnProperty = config.procedures['base-check'];
   config.flows.propertyIsEnumerable = {
-    plan: null,
     actionCap: 1,
     ticket: {
       entry: 'valueOf',
@@ -277,7 +276,6 @@ for (const [id, form] of CARRIED_BREAKS) {
 
 // A second Flow of one Vertex, whose id the case chooses, running the example's base-check.
 const oneVertexFlow = (id: string) => ({
-  plan: null,
   actionCap: 1,
   ticket: { entry: id, vertices: { [id]: { procedure: 'base-check', route: { ok: { end: 'needs-human' } } } } },
 });
@@ -503,20 +501,93 @@ test('a Vertex named after an end, cleanup or done is an error', () => {
   ]);
 });
 
-test('a Flow without plan: null or a positive actionCap is an error', () => {
+// A Flow has no plan key: a planning Flow is a Flow run at Epic level, request slice 7's design (#298).
+test('a Flow with a plan key, or without a positive actionCap, is an error', () => {
   const config = exampleLayer.config();
-  delete config.flows.default.plan;
   config.flows.default.actionCap = 0;
   config.flows.light = {
-    plan: 'epic',
+    plan: null,
     actionCap: 20,
     ticket: { entry: 'baseline', vertices: { baseline: { procedure: 'base-check' } } },
   };
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    { at: 'flows.default', code: 'plan-missing' },
+    { at: 'flows.light.plan', code: 'null-value' },
     { at: 'flows.default.actionCap', code: 'not-a-positive-integer' },
-    { at: 'flows.light.plan', code: 'plan-not-null' },
+    { at: 'flows.light', code: 'unknown-key' },
   ]);
+});
+
+// In a configuration file null is never a value (#298): one pass reports each null at its path, and the checks of the
+// key it sits on still run on it, so a null may be reported twice. A missing key is a different thing.
+test('a null anywhere in the configuration is reported at its path, beside the rule the key breaks', () => {
+  const config = exampleLayer.config();
+  config.agents.reviewer = null;
+  config.agents.implementer.harness = null;
+  config.flows.default.ticket.entry = null;
+  config.flows.default.ticket.vertices.red.procedure = null;
+  config.flows.default.ticket.vertices.green.model = null;
+  config.procedures['tests-fail'].actions[1] = null;
+  const { errors } = exampleLayer.check(config);
+  assert.deepEqual(
+    errors.filter((problem) => problem.code === 'null-value').map((problem) => problem.at),
+    [
+      'agents.implementer.harness',
+      'agents.reviewer',
+      'procedures.tests-fail.actions[1]',
+      'flows.default.ticket.entry',
+      'flows.default.ticket.vertices.red.procedure',
+      'flows.default.ticket.vertices.green.model',
+    ],
+  );
+  assert.equal(errors[0].message, 'null is not a value in a configuration file; set a value or leave the key out');
+  assert.ok(
+    errors.some((problem) => problem.at === 'agents.reviewer' && problem.code === 'not-an-object'),
+    'the key its own check reports too',
+  );
+  assert.equal(
+    errors.some((problem) => problem.code === 'harness-unset' || problem.code === 'harness-unregistered'),
+    false,
+    'a null harness is neither unset nor a harness to look up',
+  );
+});
+
+// Null errors are not shared errors: they hold no Flow's graph checks, since the key's own check already holds the
+// Flow a null breaks.
+test("a null does not hold another Flow's graph checks", () => {
+  const config = exampleLayer.config();
+  config.agents.spare = { persona: 'implementer.md', harness: null };
+  config.flows.default.ticket.vertices.green.model = null;
+  config.flows.light = { actionCap: 1, ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } } };
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'agents.spare.harness', code: 'null-value' },
+    { at: 'flows.default.ticket.vertices.green.model', code: 'null-value' },
+    { at: 'agents.spare', code: 'invalid-name' },
+    { at: 'flows.light.ticket.vertices.gate', code: 'unrouted-outcome' },
+  ]);
+});
+
+// A harness is a name the registry is asked for; a value of another shape is never looked up.
+test('a harness that is not a name is an invalid name, not an unregistered harness', () => {
+  const config = exampleLayer.config();
+  config.agents.implementer.harness = 7;
+  const { errors } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'agents.implementer', code: 'invalid-name' }]);
+  assert.equal(errors[0].message, "agent implementer's harness 7 must not be empty or only whitespace");
+});
+
+test('a present null id is a wrong value, so a Check still prints it', () => {
+  const config = exampleLayer.config();
+  const check = procedureActions.actionById(config.procedures['base-check'], 'test');
+  check.id = null;
+  delete check.command;
+  assert.deepEqual(
+    exampleLayer.check(config).errors.map((problem) => problem.message),
+    [
+      'null is not a value in a configuration file; set a value or leave the key out',
+      'Action id null must be non-empty with no ":", ".", "/", "--" or whitespace',
+      'Check null must name a command',
+    ],
+  );
 });
 
 test('a configuration that is not an object is one error, not a throw', () => {

@@ -16,7 +16,7 @@ from the repository at ddd552d.
 | Locks | `lib/locks.ts` | 54 | already `node:sqlite` (ADR 0008) | an exclusive transaction locks a whole file | none | **Kept as separate files**; sharing `gg.db` would block record writes |
 | Argument parsing | `lib/options.ts` | 42 | `node:util.parseArgs` (stable built-in); `commander`, `yargs`, `minimist` considered | no optional-value flags: `plan --finish` takes a required id | none | **Adopted**: `parseOpts` becomes a thin mapping onto `parseArgs`; own ticket |
 | Canonical JSON for the Config Hash | #20 | ~1 | `fast-json-stable-stringify` | none | none | **Hand-rolled**: a sorted-key replacer in `JSON.stringify` |
-| Layer merge (maps merge, arrays replace, null deletes) | slice 5; feature-flow's `config.mjs:16-26` | 12 | `deepmerge`, `lodash.merge` | neither does null-delete; lodash merges arrays by index | none | **Hand-rolled**: port ff's merge and add null-delete |
+| Layer merge (maps merge, arrays replace; null is never a value since #298) | slice 5; feature-flow's `config.mjs:16-26` | 12 | `deepmerge`, `lodash.merge` | lodash merges arrays by index | none | **Hand-rolled**: port ff's merge |
 | Config file format | `defaults/gg.json` | 0 | `yaml`, `smol-toml`, JSON5, `gg.config.mjs`, `cosmiconfig` | YAML quoting traps; executable config is unsafe for agent edits; three fixed Layer paths need no discovery | none | **JSON stays** |
 | Structured Response and config shape validation | `lib/briefs.ts`; slice 5 validator | ~25 | `ajv` (pure JS, about 1 MB) | the validator's graph checks are not shape checks; payoff unknown until slice 5 is sliced | pure JS | **Deferred**: decide in the slice 5 validator ticket |
 | Reconciliation | #19 | git log and gh lookups | none applicable | | | **Hand-rolled** |

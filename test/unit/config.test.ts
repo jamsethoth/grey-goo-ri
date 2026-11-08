@@ -231,7 +231,7 @@ test('a Flow or Procedure a later Layer declares replaces the earlier one of its
     repo: JSON.stringify({
       procedures: { review: { actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }] } },
       flows: {
-        default: { plan: null, actionCap: 5, ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } } },
+        default: { actionCap: 5, ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } } },
       },
     }),
   });
@@ -240,11 +240,23 @@ test('a Flow or Procedure a later Layer declares replaces the earlier one of its
     actions: [{ id: 'look', do: 'check', kind: 'command', command: 'test' }],
   });
   assert.deepEqual(loaded.flows.default, {
-    plan: null,
     actionCap: 5,
     ticket: { entry: 'look', vertices: { look: { procedure: 'review' } } },
   });
   assert.equal(loaded.procedures.implement.actions[0].id, 'green', 'a Procedure the Layer does not declare stays');
+});
+
+// In a configuration file null is never a value and a Layer cannot delete an inherited key (#298): the merge keeps a
+// later Layer's null where the earlier value was, for the validator to report.
+test("a later Layer's null stays in the merged configuration in place of the earlier value", (t) => {
+  const { repo, home } = layers(t, {
+    home: JSON.stringify({ agents: { reviewer: { effort: 'high' } } }),
+    repo: JSON.stringify({ agents: { reviewer: null, implementer: { effort: null } } }),
+  });
+  const loaded = config.loadLayers(repo, home) as unknown as { agents: Record<string, unknown> };
+  assert.equal(loaded.agents.reviewer, null, 'the Agent is not deleted');
+  const shipped: exampleLayer.Layer = config.loadDefaults();
+  assert.deepEqual(loaded.agents.implementer, { ...shipped.agents.implementer, effort: null });
 });
 
 test('loadLayers takes Declared Commands whole from the repository Layer', (t) => {
