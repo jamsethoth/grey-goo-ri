@@ -139,7 +139,7 @@ export function goldenConfig(): GoldenConfig {
   };
 }
 
-// The golden Flow as admission resolves it; a configuration the validator rejects fails the case.
+// The configuration's one Flow as admission resolves it; a configuration the validator rejects fails the case.
 export function resolve(goldenConfiguration: GoldenConfig): runContext.RunFlow {
   const { flows, errors } = validate.validate(goldenConfiguration, {
     harnesses: { fake: {} },
@@ -150,7 +150,7 @@ export function resolve(goldenConfiguration: GoldenConfig): runContext.RunFlow {
     const listed = errors.map((problem) => `${problem.at}: ${problem.message}`).join('\n');
     throw new Error(`the golden configuration is invalid:\n${listed}`);
   }
-  return (flows as Record<string, unknown>).golden as runContext.RunFlow;
+  return Object.values(flows)[0] as unknown as runContext.RunFlow;
 }
 
 // Reduces Action Events to what a golden trace asserts.

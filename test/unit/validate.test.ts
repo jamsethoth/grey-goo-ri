@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as validate from '../../lib/validate/index.ts';
 import * as report from '../../lib/validate/report.ts';
 import * as exampleLayer from '../support/example-layer.ts';
+import * as namedFlow from '../support/named-flow.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 import * as requestTables from '../support/request-tables.ts';
 
@@ -744,4 +745,27 @@ test("the request's Procedure table lists exactly the keys of a Procedure and a 
 
 test("the request's Agent table lists exactly the keys an Agent accepts", () => {
   assert.deepEqual(requestTables.firstColumn('| Field | Meaning |'), [...validate.AGENT_KEYS].sort());
+});
+
+// A Procedure's hash is of the Procedure as declared, names and all, so a case comparing two namings leaves it out.
+const withoutHashes = (value: unknown): unknown =>
+  JSON.parse(JSON.stringify(value, (key, item: unknown) => (key === 'hash' ? undefined : item)));
+
+test('a Flow named entirely with Object.prototype names resolves like one with ordinary names', () => {
+  const ordinary = namedFlow.validated(namedFlow.ORDINARY);
+  assert.deepEqual([...ordinary.errors, ...ordinary.warnings], []);
+  const prototype = namedFlow.validated(namedFlow.PROTOTYPE);
+  assert.deepEqual(
+    withoutHashes({ ...prototype, flows: Object.entries(prototype.flows) }),
+    withoutHashes(namedFlow.renamed({ ...ordinary, flows: Object.entries(ordinary.flows) })),
+  );
+});
+
+test('an Action id that is an object is an error, never a throw', () => {
+  const config = exampleLayer.config();
+  // A Procedure with no agent Action, whose implicit Claim ok requires every Check.
+  config.procedures['base-check'].actions[0].id = JSON.parse('{"toString": 1}');
+  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+    { at: 'procedures.base-check.actions[0]', code: 'invalid-name' },
+  ]);
 });

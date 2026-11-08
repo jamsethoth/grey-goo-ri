@@ -11,6 +11,7 @@ import * as stateDatabase from '../../lib/state-database.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as executionReads from '../support/execution-reads.ts';
+import * as namedFlow from '../support/named-flow.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -156,4 +157,32 @@ test("a rescue intent is found by its ref's commit, absent with no ref, a confli
   });
   const other = { ...entry, payload: { ref: 'refs/gg/rescue/abc', commit: 'f'.repeat(40) } };
   assert.equal((await effectEvidence.findEffect(other, context)).status, 'conflicting');
+});
+
+test('a record at a Vertex named constructor resumes, and one the Flow lacks holds', async (t) => {
+  const names = namedFlow.PROTOTYPE;
+  // The commit of the Visit to the Vertex named constructor, after which the run crashes.
+  const place: golden.MarkerPlace = [names.first, 1, names.commit, 0];
+  const resumed = await namedFlow.namedFixture(t, names);
+  await crashResume.crashed(resumed, place, 'after-completion');
+  const result = await interpreter.runExecution({
+    ...resumed.options,
+    record: await executionReads.loadTicket(resumed),
+  });
+  assert.equal(result.outcome, 'ready-for-qa');
+
+  const held = await namedFlow.namedFixture(t, names);
+  await crashResume.crashed(held, place, 'after-completion');
+  // The same Flow with that Vertex renamed, so the record continues at a Vertex the Flow lacks.
+  const lacking = golden.resolve(namedFlow.namedConfig({ ...names, first: 'builder' }));
+  const ended = await interpreter.runExecution({
+    ...held.options,
+    flow: lacking,
+    record: await executionReads.loadTicket(held),
+  });
+  assert.deepEqual([ended.outcome, ended.held], ['needs-human', true]);
+  assert.match(
+    (await executionReads.loadTicket(held)).terminalReason!.text,
+    /The record continues at Vertex constructor, which the Flow no longer has\./,
+  );
 });

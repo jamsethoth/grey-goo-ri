@@ -5,6 +5,7 @@ import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
+import * as namedFlow from '../support/named-flow.ts';
 
 // A case that asks nobody reads no labels.
 const DEPS = {
@@ -248,4 +249,12 @@ test('gg doctor reads no labels for a Flow that asks nobody', async () => {
   const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
   await doctor.doctor({ config: example(), harnesses: { fake: {} }, gh: github.createGh(fake.gh), cwd: '/repo' });
   assert.deepEqual(fake.calls, []);
+});
+
+test('gg doctor prints a Flow named entirely with Object.prototype names like one with ordinary names', async () => {
+  const print = (names: namedFlow.Names) =>
+    doctor.doctor({ config: namedFlow.namedConfig(names) as unknown as config.Config, ...DEPS });
+  const ordinary = await print(namedFlow.ORDINARY);
+  assert.equal(ordinary.exitCode, 0);
+  assert.deepEqual(await print(namedFlow.PROTOTYPE), namedFlow.renamed(ordinary));
 });
