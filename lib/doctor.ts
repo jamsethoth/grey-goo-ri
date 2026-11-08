@@ -188,11 +188,14 @@ export async function doctor({ config: layers, harnesses, gh, cwd }: DoctorOptio
   text: string;
   exitCode: number;
 }> {
-  const { flows, errors, warnings } = validator.validate(layers, {
+  const validated = validator.validate(layers, {
     harnesses,
     readSchema: (name) => JSON.parse(config.layerFile(layers.files, name)),
     readTemplate: (name) => config.layerFile(layers.files, name),
   });
+  const { flows, warnings } = validated;
+  // What gg run preflight refuses in the repository Layer, so doctor never passes a Layer run will not (#301).
+  const errors = [...validated.errors, ...config.repositoryLayerProblems(layers, config.layerPath(cwd))];
   const lines: string[] = [];
   for (const flow of Object.values(flows)) if (flow) lines.push(...flowLines(flow as unknown as ShownFlow));
   for (const warning of warnings) lines.push(report.line('warning', warning));

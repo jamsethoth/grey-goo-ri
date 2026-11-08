@@ -26,19 +26,13 @@ export interface RuleTable {
   boxes?: FieldMap[];
 }
 type Example = Record<string, unknown>;
+// A type, not an interface: an interface cannot extend Finding, which gives each code its own params.
 export type RuleError = report.Finding<
   'never-firing-row' | 'rule-table-too-large' | 'undeclared-rule-field' | 'unreachable-row'
 > & { row: number | null };
 // Rows `rows` (first and last, by index) are each partly taken by the `earlier` row ranges it names, `more` beyond
 // them, or by every earlier firing row from row `from` on.
-export interface OverlapWarning {
-  rows: [number, number];
-  earlier: [number, number][];
-  more: number;
-  from: number | null;
-  fields: string[];
-  example: Example;
-  table: string;
+export interface OverlapWarning extends report.Overlap {
   // The conditions the sentence quotes: the taken row's, then each named earlier row's; none for a run.
   conditions: { row: number; when: Record<string, Condition> }[];
   code: 'overlapping-rows';

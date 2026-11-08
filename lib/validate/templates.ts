@@ -101,7 +101,7 @@ function nodeOf(
   );
   if (item === referencePaths.ANY) return referencePaths.ANY;
   const resolved = lookup(item ?? scope, tag.name);
-  if (resolved.error) problems.push(report.unresolved(resolved, tag.name, `{{${tag.name}}}: ${resolved.error}`));
+  if (resolved.error) problems.push({ ...resolved.finding, message: `{{${tag.name}}}: ${resolved.error}` });
   return resolved.node ?? referencePaths.ANY;
 }
 

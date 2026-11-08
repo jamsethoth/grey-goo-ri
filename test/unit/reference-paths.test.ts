@@ -58,9 +58,14 @@ test("resolve in read mode types a path as read reads it: a list by length or in
     { kind: 'list', of: { kind: 'string' } },
     'typing projects',
   );
+  const intoList = '"findings.file": "findings" is a list, so a path reads only its length or an item by index';
   assert.deepEqual(referencePaths.resolve(scope, 'findings.file', 'defined', { read: true }), {
-    code: 'reference-into-list',
-    error: '"findings.file": "findings" is a list, so a path reads only its length or an item by index',
+    error: intoList,
+    finding: {
+      code: 'reference-into-list',
+      message: intoList,
+      params: { path: 'findings.file', list: 'findings' },
+    },
     list: 'findings',
   });
   assert.deepEqual(referencePaths.resolve(scope, 'findings.length', 'defined', { read: true }).type, {

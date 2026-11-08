@@ -63,7 +63,7 @@ function firstSource(problems: report.Report, location: string, from: unknown[],
   for (const source of from) {
     const resolved = referencePaths.resolve(scope, source, 'defined', { read: true });
     if (resolved.error !== undefined) {
-      report.errorOf(problems, location, report.unresolved(resolved, source));
+      report.errorOf(problems, location, resolved.finding);
       continue;
     }
     if (resolved.node === referencePaths.ANY) continue;
@@ -102,7 +102,7 @@ function pickedNode(problems: report.Report, location: string, pick: unknown, fi
   // The interpreter reads `pick` in each item, so it is typed in an item, as it is read.
   const resolved = referencePaths.resolve(node.items as referencePaths.SchemaNode, pick, 'defined', { read: true });
   if (resolved.error) {
-    report.errorOf(problems, location, report.unresolved(resolved, pick, `pick: ${resolved.error}`));
+    report.errorOf(problems, location, { ...resolved.finding, message: `pick: ${resolved.error}` });
     return referencePaths.ANY;
   }
   return { type: 'array', items: resolved.node };

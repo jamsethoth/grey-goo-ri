@@ -46,7 +46,7 @@ const typedPath = (schema: referencePaths.SchemaNode, path: unknown) =>
 
 function fieldProblems(condition: Value, schema: referencePaths.SchemaNode): report.Finding[] {
   const resolved = typedPath(schema, condition.field);
-  if (resolved.error) return [report.unresolved(resolved, condition.field)];
+  if (resolved.error) return [resolved.finding];
   const { type } = resolved;
   const field = JSON.stringify(condition.field);
   const named = { field: condition.field };
@@ -66,7 +66,7 @@ function fieldProblems(condition: Value, schema: referencePaths.SchemaNode): rep
 function listProblems(condition: Value, form: string, schema: referencePaths.SchemaNode): report.Finding[] {
   const list = condition[form];
   const resolved = typedPath(schema, list);
-  if (resolved.error) return [report.unresolved(resolved, list)];
+  if (resolved.error) return [resolved.finding];
   const { type, node } = resolved;
   if (type && !isObjectList(type)) {
     const message = `${form} must read a list of objects; ${JSON.stringify(list)} is ${JSON.stringify(type)}`;

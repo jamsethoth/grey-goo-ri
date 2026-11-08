@@ -106,6 +106,10 @@ export const PROBLEM_CODES = [
   // What gg doctor reads from GitHub beside the configuration.
   'repository-labels-missing',
   'repository-labels-unread',
+  // The repository Layer's commands and testPaths, and each Vertex's Harness, which gg run preflight checks.
+  'harness-preflight-failed',
+  'invalid-command-line',
+  'invalid-glob',
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
@@ -117,10 +121,25 @@ interface AtVertex {
 // A reference path that does not type, and the template that names it, if one does.
 type Reference = { path: unknown; template?: string } & AtVertex;
 type RuleField = { field: string } & AtVertex;
+// A repository Layer problem's sentence names the Layer file, the one place its keys may be declared (ADR 0013).
+interface InLayerFile {
+  file?: string;
+}
 // A harness's owner: a declared Agent, or the Vertex whose own Agent keys set it.
 type HarnessOwner = { agent: string; vertex?: undefined } | { vertex: string; agent?: undefined };
 // A Rule Table by the name its sentence gives it, <procedure>.<table>.
 type RuleTable = { table: string } & AtVertex;
+// An overlap warning's values, declared once: lib/rules.ts's warning carries them as fields, the Problem as params.
+export interface Overlap {
+  table: string;
+  rows: [number, number];
+  earlier: [number, number][];
+  more: number;
+  from: number | null;
+  fields: string[];
+  example: Record<string, unknown>;
+  conditions: { row: number; when: Record<string, unknown> }[];
+}
 // A row as an index of its table, as `at` writes it.
 type RuleRow = RuleTable & { row: number; outcome: string };
 // The values each code's sentence names, as Ajv's params are typed by keyword, even where `at` spells one too; a code
@@ -128,9 +147,10 @@ type RuleRow = RuleTable & { row: number; outcome: string };
 // `where "f":`, `agent X's harness`) is not repeated here, except a bad item's index in a repeat Check's fields (owner,
 // #301). inherited-name's guard is #174's to replace, so it takes none yet.
 interface ProblemParams {
-  'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] };
+  'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] } & InLayerFile;
+  'empty-list': InLayerFile;
   'unknown-key': { key: string };
-  'invalid-name': { name?: unknown; index?: number };
+  'invalid-name': { name?: unknown; index?: number } & InLayerFile;
   'reserved-name': { name: string };
   'unknown-vertex': { vertex: unknown };
   'unknown-end': { end: unknown };
@@ -166,22 +186,17 @@ interface ProblemParams {
   'invalid-rule-condition': RuleField;
   'invalid-rule-field': RuleField & { type: unknown };
   'never-firing-row': RuleRow;
-  'overlapping-rows': {
-    rows: [number, number];
-    earlier: [number, number][];
-    more: number;
-    from: number | null;
-    fields: string[];
-    example: Record<string, unknown>;
-    conditions: { row: number; when: Record<string, unknown> }[];
-  } & RuleTable;
+  'overlapping-rows': Overlap & AtVertex;
   'rule-condition-mismatch': RuleField & { condition: unknown; type: unknown };
   'rule-table-too-large': RuleTable & { work: number; limit: number; largest: [string, number][] };
   'undeclared-rule-field': RuleTable & { fields: string[] };
   'unreachable-row': RuleRow;
   'commit-without-check': { vertex: string; token: string };
-  'not-a-list': { table?: string; value?: unknown };
-  'not-an-object': { value?: unknown };
+  'not-a-list': { table?: string; value?: unknown } & InLayerFile;
+  'not-an-object': { value?: unknown } & InLayerFile;
+  'invalid-command-line': { command: string; file: string };
+  'invalid-glob': { glob: unknown; file: string };
+  'harness-preflight-failed': { vertex: string; harness: string; reason: string };
   'table-never-applies': { table: string };
   'optional-input-unsure': { input: string; vertex: string };
   'required-input-unsure': { input: string; vertex: string };
@@ -279,18 +294,6 @@ export function unknownKeys(report: Report, value: Record<string, unknown>, keys
 export const dedupe = (list: Problem[]) => [
   ...new Map(list.map((problem) => [`${problem.at}\n${problem.message}`, problem])).values(),
 ];
-// The Finding of a reference path that does not resolve (referencePaths.resolve), naming the path.
-export function unresolved(
-  resolved: Extract<referencePaths.Resolved, { error: string }>,
-  path: unknown,
-  message = resolved.error,
-): Finding {
-  if (resolved.code === 'reference-into-list')
-    return { code: resolved.code, message, params: { path, list: resolved.list as string } };
-  if (resolved.code === 'undefined-reference')
-    return { code: resolved.code, message, params: { path, missing: resolved.missing as string } };
-  return { code: resolved.code, message, params: { path } };
-}
 
 // A string key only: Object.hasOwn would coerce a list such as ["push"] to the key it spells.
 export function hasOwnKey<T extends object>(value: T, key: unknown): key is Extract<keyof T, string>;

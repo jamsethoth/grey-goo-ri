@@ -69,7 +69,7 @@ function typeReference(found: Found[], reference: Reference, want: Want) {
   const problem =
     resolved.error === undefined
       ? resolved.type && want(resolved.type, resolved.node, reference.path)
-      : report.unresolved(resolved, reference.path);
+      : resolved.finding;
   if (problem) found.push({ where: reference.where, path: reference.path, ...problem });
   return resolved;
 }

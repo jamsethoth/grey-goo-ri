@@ -285,7 +285,7 @@ test('preflight rejects a repository Layer without testPaths', async (t) => {
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      `${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it`,
+      `error: testPaths: ${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it [required-key-missing]`,
     ]);
     assert.equal(err.exitCode, 1);
     return true;

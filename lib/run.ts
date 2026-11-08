@@ -101,7 +101,7 @@ interface PreflightHarness {
 
 // Each active Vertex's registered Harness, checked by name before any GitHub access.
 async function harnessProblems(flow: runContext.RunFlow | undefined, harnesses: Record<string, unknown>) {
-  const failed: string[] = [];
+  const failed = report.newReport();
   for (const [id, { agent }] of Object.entries(flow?.ticket.vertices ?? {})) {
     const harness =
       agent && typeof agent.harness === 'string' && Object.hasOwn(harnesses, agent.harness)
@@ -118,10 +118,14 @@ async function harnessProblems(flow: runContext.RunFlow | undefined, harnesses: 
       if (!ok) throw new Error(errors.join(', '));
       await harness.resolveTools(agent);
     } catch (err) {
-      failed.push(`vertex ${id}: harness ${agent!.harness}: ${(err as Error).message.split('\n')[0]}`);
+      const reason = (err as Error).message.split('\n')[0];
+      const harnessName = agent!.harness as string;
+      const location = `flows.${flow!.name}.ticket.vertices.${id}`;
+      const message = `vertex ${id}: harness ${harnessName}: ${reason}`;
+      report.error(failed, location, 'harness-preflight-failed', message, { vertex: id, harness: harnessName, reason });
     }
   }
-  return failed;
+  return failed.errors;
 }
 
 // The configuration's errors, as gg doctor prints them (V1), and every active Vertex's registered Harness, all failures
@@ -132,14 +136,10 @@ async function preflight(
   layers: config.Config,
   { harnesses, repoRoot }: { harnesses: Record<string, unknown>; repoRoot: string },
 ) {
-  const failed = [
-    ...config.commandProblems(layers.commands, config.layerPath(repoRoot)),
-    ...config.testPathsProblems(layers.testPaths, config.layerPath(repoRoot)),
-    ...config.approversProblems(layers.approvers, config.layerPath(repoRoot)),
-    ...errors.map((error) => report.line('error', error)),
-  ];
+  const problems = [...config.repositoryLayerProblems(layers, config.layerPath(repoRoot)), ...errors];
   const unset = errors.some((error) => error.code === 'harness-unset');
-  failed.push(...(await harnessProblems(flow, harnesses)));
+  problems.push(...(await harnessProblems(flow, harnesses)));
+  const failed = problems.map((problem) => report.line('error', problem));
   if (unset) {
     const examples = readdirSync(config.EXAMPLES_DIRECTORY)
       .filter((file) => file.endsWith('.json'))
