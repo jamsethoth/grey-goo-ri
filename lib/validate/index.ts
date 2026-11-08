@@ -113,6 +113,24 @@ function checkProcedures(problems: report.Report, config: Value, readSchema: Sou
   return { checkedProcedures, procedureFalls };
 }
 
+// In a configuration file null is never a value, where a missing key is inherited, optional or required (#298). Every
+// null is reported at its path, and the check of the key it sits on still runs on it.
+function reportNulls(problems: report.Report, value: unknown, location: string) {
+  if (value === null) {
+    report.error(
+      problems,
+      location,
+      'null-value',
+      'null is not a value in a configuration file; set a value or leave the key out',
+    );
+  } else if (Array.isArray(value)) {
+    value.forEach((item, index) => reportNulls(problems, item, `${location}[${index}]`));
+  } else if (referencePaths.isRecord(value)) {
+    for (const [key, entry] of Object.entries(value))
+      reportNulls(problems, entry, location === '' ? key : `${location}.${key}`);
+  }
+}
+
 export function validate(config: unknown, { harnesses, readSchema, readTemplate }: Sources) {
   const problems = report.newReport();
   if (!referencePaths.isRecord(config)) {
@@ -122,6 +140,9 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
   // Every later check keys plain objects by the configuration's names, so none runs while one is inherited (H10).
   const inherited = inheritedNames(config);
   if (inherited.length) return { flows: {}, errors: inherited, warnings: [] };
+  // Null errors come first in the report but are not shared errors: the key's own check holds the Flow a null breaks.
+  const nulls = report.newReport();
+  reportNulls(nulls, config, '');
   if (config.procedures !== undefined && !referencePaths.isRecord(config.procedures))
     report.error(problems, 'procedures', 'not-an-object', 'procedures must be an object from name to Procedure');
   if (config.agents !== undefined && !referencePaths.isRecord(config.agents))
@@ -153,5 +174,9 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
   const resolved: Record<string, ReturnType<typeof flows.checkFlow>> = {};
   for (const [name, declaration] of report.entries(config.flows))
     resolved[name] = flows.checkFlow(checking, name, declaration);
-  return { flows: resolved, errors: report.dedupe(problems.errors), warnings: report.dedupe(problems.warnings) };
+  return {
+    flows: resolved,
+    errors: report.dedupe([...nulls.errors, ...problems.errors]),
+    warnings: report.dedupe(problems.warnings),
+  };
 }

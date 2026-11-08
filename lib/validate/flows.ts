@@ -31,7 +31,7 @@ export const AGENT_KEYS = [
 ];
 // A Vertex also takes any Agent key, overriding its Agent's.
 export const VERTEX_KEYS = ['use', 'procedure', 'inputs', 'route', 'max', 'exhausted'];
-export const FLOW_KEYS = ['plan', 'actionCap', 'ticket'];
+export const FLOW_KEYS = ['actionCap', 'ticket'];
 export const TICKET_KEYS = ['entry', 'routes', 'vertices'];
 // A route target is a Vertex id, { end }, or this edge form.
 export const EDGE_KEYS = ['to', 'max', 'exhausted'];
@@ -91,13 +91,15 @@ export function checkHarness(
   location: string,
 ) {
   const problems = checking.report;
-  if (harness == null)
+  // Only a missing harness is unset; a null one is a null-value where it sits, and no name to look up.
+  if (harness === undefined)
     report.error(
       problems,
       location,
       'harness-unset',
       `${label} names no harness; set one in a user or repository Layer`,
     );
+  else if (!report.checkName(problems, location, harness, { what: `${label}'s harness`, carried: false })) return;
   else if (!report.hasOwnKey(checking.harnesses, harness))
     report.error(
       problems,
@@ -149,11 +151,6 @@ function checkRouteTarget(problems: report.Report, location: string, target: unk
 // The Flow's own keys, its ticket section and its routes; the ticket and its Vertices, whatever their shape.
 function checkFlowKeys(problems: report.Report, location: string, declaration: Value) {
   report.unknownKeys(problems, declaration, FLOW_KEYS, location);
-  // plan is never defaulted, and must be null until Epic planning is built (X2b, X2d).
-  if (!Object.hasOwn(declaration, 'plan'))
-    report.error(problems, location, 'plan-missing', 'plan is required: null when the Flow has no Epic-level planning');
-  else if (declaration.plan !== null)
-    report.error(problems, `${location}.plan`, 'plan-not-null', 'plan must be null until Epic planning is built');
   if (!report.isCount(declaration.actionCap))
     report.error(
       problems,
@@ -382,7 +379,6 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
   graph.checkGraph(problems, { location, ticket, resolved, procs, fallsOf, clean });
   return {
     name,
-    plan: declaration.plan ?? null,
     actionCap: declaration.actionCap ?? null,
     procedures: usedProcedures(checking, state.used),
     ticket: { entry: ticket.entry ?? null, routes: ticket.routes ?? {}, vertices: resolved },

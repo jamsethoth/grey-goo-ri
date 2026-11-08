@@ -378,12 +378,10 @@ test('an exhausted target without a bound is an error', () => {
 
 test("a Flow's graph checks wait only for its own errors and those outside every Flow, in either order", () => {
   const unrouted = {
-    plan: null,
     actionCap: 20,
     ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
   };
   const misspelt = {
-    plan: null,
     actionCap: 20,
     ticket: {
       entry: 'gate',
@@ -414,7 +412,6 @@ test("an error outside every Flow holds every Flow's graph checks", () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures['base-check'], 'test').command = 'lint';
   config.flows.light = {
-    plan: null,
     actionCap: 20,
     ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
   };
@@ -467,7 +464,6 @@ test("an Agent's error holds the graph checks of the Flows that use it, and only
   config.agents.spare = { persona: 'implementer.md', harness: 'other' };
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
   config.flows.unrouted = {
-    plan: null,
     actionCap: 20,
     ticket: { entry: 'gate', vertices: { gate: { procedure: 'base-check' } } },
   };

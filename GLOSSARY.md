@@ -34,7 +34,7 @@ One invocation of `gg run` over a target. One Run may admit several Executions, 
 _Avoid_: session (reserved for agents)
 
 **Flow**:
-A named, authored bounded workflow graph with a plan section used at Epic level and a ticket section used per Ticket.
+A named, authored bounded workflow graph, run per Ticket by `gg run`. A planning Flow is one run at Epic level by `gg plan`.
 _Avoid_: pipeline, DAG, workflow (as the noun for a specific flow)
 
 **Plan**:

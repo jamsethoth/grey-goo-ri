@@ -251,7 +251,7 @@ export async function report(
   const reporting: Reporting = { name, stop, reason: executionRecord.terminalReason };
   // An abandonment posts nothing.
   if (!stop?.abandoned) await postComment(context, reporting, { number: executionRecord.ticket, effect: 'comment' });
-  // The Epic's plan section replans, so needs-replan posts the same comment there (W9).
+  // The Epic's planning Flow replans, so needs-replan posts the same comment there (W9).
   if (name === 'needs-replan' && executionRecord.epic)
     await postComment(context, reporting, { number: executionRecord.epic, effect: 'epic-comment' });
   // Read outside the label's effect, which a Terminal resumed after it does not run again.

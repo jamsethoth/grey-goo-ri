@@ -168,7 +168,7 @@ test('gg doctor accepts the shipped defaults once a harness is set', () => {
   shipped.agents.reviewer.harness = 'fake';
   shipped.commands = { test: 'npm test' };
   const { text, exitCode } = doctor.doctor({ config: shipped, harnesses: { fake: {} } });
-  assert.ok(text.startsWith('flow default\n  plan: null\n  actionCap: 180\n  entry: red\n'), text);
+  assert.ok(text.startsWith('flow default\n  actionCap: 180\n  entry: red\n'), text);
   // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.
   assert.ok(
     text.endsWith(

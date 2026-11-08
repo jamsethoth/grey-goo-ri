@@ -13,6 +13,7 @@ export const PROBLEM_CODES = [
   'not-a-list',
   'not-a-positive-integer',
   'not-an-object',
+  'null-value',
   'required-key-missing',
   'unknown-key',
   // Names.
@@ -26,8 +27,6 @@ export const PROBLEM_CODES = [
   'max-without-exhausted',
   'no-flow-declared',
   'no-vertex-declared',
-  'plan-missing',
-  'plan-not-null',
   'undeclared-procedure',
   'unknown-end',
   'unknown-vertex',

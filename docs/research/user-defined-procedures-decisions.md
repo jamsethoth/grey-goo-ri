@@ -694,11 +694,12 @@ The merged review is [user-defined-procedures-review4.md](user-defined-procedure
   - (a) `gg run <n> --flow <name>` selects a Flow the repository Layer declares; without it, `default` runs. An
     unknown name fails preflight, listing the declared Flows. The chosen name is pinned with the record, and a
     resumed Execution keeps its Flow whatever `--flow` says.
-  - (b) A Flow declares `plan` explicitly, `null` when it has no Epic-level planning; a missing key is a validation
-    error, since nothing a repository configures is silently defaulted. The example writes `plan: null`.
+  - (b) Retired on 2026-11-07, see [Null in a configuration file](#null-in-a-configuration-file-and-no-plan-key-2026-11-07).
+    It read: a Flow declares `plan` explicitly, `null` when it has no Epic-level planning; a missing key is a validation
+    error, since nothing a repository configures is silently defaulted.
   - (c) Per-ticket Flow choice inside one Epic (for example by label) is not part of this design.
-  - (d) Until Epic planning is designed (request slice 7), `plan` must be `null`. A non-null value is a validation
-    error saying Epic planning is not built yet, so nothing unvalidated is accepted.
+  - (d) Retired with (b). It read: until Epic planning is designed (request slice 7), `plan` must be `null`, and a
+    non-null value is a validation error saying Epic planning is not built yet.
 
 ## For request slice 7: planning Flows (owner requirement, 2026-10-22; not yet designed)
 
@@ -1244,6 +1245,26 @@ Taken by the owner with the audit of grey-goo-ri issue #118.
   and no output (N4), so a required input met only by it could only fault at run time, where an agent failed without
   changing anything. Admission refuses that. The rescue counts for an optional input, which it may reach on a route, and
   a required list input needs another source that is guaranteed. The example Flow marks these inputs optional.
+
+## Null in a configuration file, and no plan key (2026-11-07)
+
+Taken by the owner in a grilling session on grey-goo-ri issue #298, reversing the same day's decision on PR #292 that
+null meant the key was left out.
+
+- In a configuration file `null` is never a value. One pass over the merged configuration reports every null at its
+  path, object values and list items alike, with the code `null-value`; the check of the key it sits on still runs, so
+  a null in a Rule Table `when` or a null Action is reported twice. A missing key is a different thing: inherited from
+  an earlier Layer, optional, or `required-key-missing`. A `harness: null` is a null-value, not `harness-unset`.
+- A Layer cannot delete an inherited key, only replace it. The request's "null deletes" goes; a deletion mechanism can
+  come if a real Layer ever needs one.
+- The rule covers configuration files only. Anything gg persists or emits keeps AGENTS.md's rule, where `null` means
+  deliberately empty.
+- `plan` leaves the Flow schema. Epic planning is not a parameter of a Flow: a planning Flow is another Flow, run at
+  Epic level by `gg plan`, and how it is selected and told apart is slice 7's design. X2b and X2d are retired, with
+  the codes `plan-missing` and `plan-not-null`. A Flow is `{ actionCap, ticket }`; `ticket` keeps its name.
+- Rejected: null as "the key is left out" (it makes null and a missing key the same thing to the validator); keeping
+  `plan: null` required (a `plan` key says there is a plan, and none can exist yet); per-key type checks in place of
+  the one pass (`model: 7` still passes, a backlog item).
 
 ## Open
 
