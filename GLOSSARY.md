@@ -472,8 +472,9 @@ The shared set of named Agents that Vertices use or override.
 _Avoid_: node library, agent registry, catalog
 
 **Layer**:
-One of the three configuration sources, defaults, user and repository, merged in that order. The defaults Layer is
-harness-neutral: its Agents name no Harness, model or effort, so a user or repository Layer supplies them.
+One of the three configuration sources, defaults, user and repository, merged in that order. The defaults Layer holds
+only the Run's settings; Flows and Procedures are declared in the repository Layer alone, and an Agent's Harness, model
+and effort come from the user or repository Layer.
 _Avoid_: tier, override file
 
 **Resolved Flow**:

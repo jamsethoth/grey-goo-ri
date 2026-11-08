@@ -84,7 +84,7 @@ export const implementerAgent = (persona: string) => ({
   network: false,
 });
 
-// The inputs the shipped Flow declares: green reads red's committed tests and Red Evidence; a reviewer or publish reads
+// The shipped-flow fixture's inputs: green reads red's committed tests and Red Evidence; a reviewer or publish reads
 // the latest implementation report and Green Evidence across the implementing Vertices, and the Red Evidence.
 export const GREEN_INPUTS = { testFiles: { from: 'red.commit.files' }, red: { from: 'red.red-check.evidence' } };
 export const implementationInputs = (vertices: string[]) => ({
@@ -100,7 +100,7 @@ export interface ConfiguredFlow {
 }
 
 // A red, green and publish Flow: red's tests-fail Visit, green's implement Visit, then publish's Visit, which has no
-// Agent, to ready-for-qa. A misscoped Claim reaches the planner through the Flow's routes, as in the shipped Flow.
+// Agent, to ready-for-qa. A misscoped Claim reaches the planner through the Flow's routes, as in shipped-flow/.
 export const redGreenFlow = (): ConfiguredFlow => ({
   actionCap: 180,
   ticket: {

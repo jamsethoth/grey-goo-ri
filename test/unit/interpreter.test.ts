@@ -65,10 +65,10 @@ test('a Persona from the repository Layer is pinned with its hash', async (t) =>
   const layered = config.loadLayers(repo, join(directory, 'home'));
   const fixture = await golden.fixture(t);
   golden.configure(fixture, (configured) => {
-    configured.files = layered.files;
+    configured.files = { ...configured.files, ...layered.files };
     configured.agents.implementer!.persona = (layered.agents as GoldenConfig['agents']).implementer!.persona;
   });
-  fixture.options.files = layered.files;
+  fixture.options.files = fixture.config.files;
   await interpreter.runExecution(fixture.options);
   const [red, green] = fixture.harness.calls;
   assert.equal(red.personaBytes, '# repo implementer\n');
@@ -543,8 +543,9 @@ test('an end without a stop token still posts its Terminal Reason comment', asyn
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   const executionRecord = await loadTicket(fixture);
   const [terminal] = fixture.gh.comments.filter((comment) => comment.number === golden.TICKET);
-  assert.ok(terminal!.body.startsWith('### gg: needs-human\n\n**Terminal Reason:** '), terminal!.body);
-  assert.ok(terminal!.body.includes(executionRecord.terminalReason!.text), terminal!.body);
+  assert.ok(terminal, 'a comment on the Ticket');
+  assert.ok(terminal.body.startsWith('### gg: needs-human\n\n**Terminal Reason:** '), terminal.body);
+  assert.ok(terminal.body.includes(executionRecord.terminalReason!.text), terminal.body);
 });
 
 test('a stop comment replaces the end comment and reaches the Epic at needs-replan', async (t) => {

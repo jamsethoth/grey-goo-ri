@@ -112,7 +112,7 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
       problems,
       'flows',
       'no-flow-declared',
-      'no Flow is declared; docs/requests/node-harness-dag.md tables the keys of a Flow (3.3) and of a Procedure (3.4)',
+      'no Flow is declared; run gg init to write the example Flow into the repository Layer',
     );
   }
   const reader = templates.templateReader(readTemplate);

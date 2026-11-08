@@ -125,8 +125,24 @@ function tempRepo(t: TestContext, layer?: string) {
   return { repo, ggIn };
 }
 
+// gg ships no Flow (P1a), so a repository that declares none is told to run gg init.
+test('gg run in a repository without a Flow fails preflight naming gg init', (t) => {
+  const { repo, ggIn } = tempRepo(t);
+  const result = ggIn('run', '1');
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(
+    result.stderr.includes(
+      'error: flows: no Flow is declared; run gg init to write the example Flow into the repository Layer ' +
+        '[no-flow-declared]\n',
+    ),
+    result.stderr,
+  );
+  assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
+});
+
 test('gg run fails preflight naming the unimplemented harness', (t) => {
   const { repo, ggIn } = tempRepo(t, readFileSync(new URL('../../examples/claude.json', import.meta.url), 'utf8'));
+  writeExampleLayer(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1');
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /harness claude: not implemented/);
@@ -135,6 +151,7 @@ test('gg run fails preflight naming the unimplemented harness', (t) => {
 
 test('gg run without a harness fails admission naming the vertex and agent', (t) => {
   const { repo, ggIn } = tempRepo(t);
+  writeExampleLayer(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1');
   assert.equal(result.status, 2, result.stderr);
   assert.ok(
@@ -186,8 +203,6 @@ test('gg doctor reads the repository Layer and its schemas and prints the Resolv
     result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'),
     result.stdout + result.stderr,
   );
-  // The defaults Layer still ships its Flow and Procedures until #121; the example's own of the same names replace them
-  // whole (P2).
   assert.ok(result.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), result.stdout);
   assert.ok(!result.stdout.includes('\nerror: '), result.stdout);
   assert.equal(result.status, 0, result.stdout);

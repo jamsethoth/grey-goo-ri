@@ -1,6 +1,5 @@
-// Briefs, and the checks on a Structured Response schema and a response. A schema is a Layer file (shipped:
-// defaults/schemas/), and stays inside the strict subset below, which every Harness accepts
-// (docs/interfaces/harness.md, `run(call)`).
+// Briefs, and the checks on a Structured Response schema and a response. A schema is a Layer file, and stays inside the
+// strict subset below, which every Harness accepts (docs/interfaces/harness.md, `run(call)`).
 
 import * as referencePaths from './reference-paths.ts';
 import * as publicText from './public-text.ts';
