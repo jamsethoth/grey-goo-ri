@@ -274,6 +274,14 @@ export function approversProblems(approvers: unknown, file: string): string[] {
   return valid ? [] : [`${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`];
 }
 
+// shortcut: red stub for #301; returns no problems until green.
+export function repositoryLayerProblems(
+  _layer: { commands?: unknown; testPaths?: unknown; approvers?: unknown },
+  _file: string,
+): string[] {
+  return [];
+}
+
 // The repository Layer's Declared Commands as preflight failures, each naming `file`; none for a valid set with a test.
 export function commandProblems(declared: unknown, file: string): string[] {
   const commands = declared === undefined ? {} : declared;

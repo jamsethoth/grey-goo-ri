@@ -34,9 +34,10 @@ test('preflight lists every malformed Declared Command and a missing test, namin
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      `${file}: command name "Test" must match [a-z][a-z0-9-]*`,
-      `${file}: command lint must be a non-empty single-line string`,
-      `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`,
+      `error: commands: ${file}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]`,
+      `error: commands.lint: ${file}: command lint must be a non-empty single-line string [invalid-command-line]`,
+      `error: commands: ${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it ` +
+        '[required-key-missing]',
       'error: procedures.tests-fail.actions[1]: Check red-check names command "test", ' +
         'which the repository Layer does not declare [undeclared-command]',
       'error: procedures.implement.actions[1]: Check test names command "test", ' +

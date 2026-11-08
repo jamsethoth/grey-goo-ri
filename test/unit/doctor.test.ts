@@ -66,6 +66,19 @@ test('a warning line ends in its code', async () => {
   assert.ok(text.includes('\nwarning: agents.spare: agent spare is used by no Vertex [unused-agent]\n'), text);
 });
 
+// gg doctor and gg run preflight check the same repository Layer, so doctor never passes what run refuses (#301).
+test('gg doctor reports the repository Layer problems gg run preflight refuses', async () => {
+  const layer = example();
+  layer.commands = { ...layer.commands, Test: 'npm test' };
+  const { text, exitCode } = await doctor.doctor({ config: layer, ...DEPS });
+  assert.equal(exitCode, 1);
+  const file = config.layerPath(DEPS.cwd);
+  assert.ok(
+    text.includes(`\nerror: commands: ${file}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]\n`),
+    text,
+  );
+});
+
 test("gg doctor says a row's outcome is missing when the row leaves it out", async () => {
   const config = example();
   delete config.procedures['tests-fail'].stopped[0].outcome;
@@ -199,6 +212,7 @@ test('gg doctor accepts the shipped defaults once a harness is set', async () =>
   shipped.agents.implementer.harness = 'fake';
   shipped.agents.reviewer.harness = 'fake';
   shipped.commands = { test: 'npm test' };
+  shipped.testPaths = ['test/**'];
   const { text, exitCode } = await doctor.doctor({ config: shipped, ...DEPS });
   assert.ok(text.startsWith('flow default\n  actionCap: 180\n  entry: red\n'), text);
   // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.

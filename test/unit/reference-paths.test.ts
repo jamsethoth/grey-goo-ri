@@ -39,10 +39,14 @@ test("resolve types a path through a scope, keeping gg's integer bounds", () => 
     type: { kind: 'integer', min: 1, max: 2 },
     node: scope.properties.pass,
   });
+  // A path that does not resolve gives the validator's Finding, its params naming the path and the missing segment.
   assert.deepEqual(referencePaths.resolve(scope, 'pass.x'), {
-    code: 'undefined-reference',
     error: '"pass.x" is not defined',
-    missing: 'pass.x',
+    finding: {
+      code: 'undefined-reference',
+      message: '"pass.x" is not defined',
+      params: { path: 'pass.x', missing: 'pass.x' },
+    },
   });
 });
 

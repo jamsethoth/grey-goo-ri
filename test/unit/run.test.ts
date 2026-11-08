@@ -265,8 +265,9 @@ test('preflight names every failing vertex in one error, before any gh call, wor
     );
     assert.match(err.message, /reviewer/);
     assert.equal(
-      err.message.split('\n').find((line) => line.startsWith('vertex reviewer')),
-      'vertex reviewer: harness claude: not implemented',
+      err.message.split('\n').find((line) => line.includes('vertex reviewer')),
+      'error: flows.default.ticket.vertices.reviewer: vertex reviewer: harness claude: not implemented ' +
+        '[harness-preflight-failed]',
     );
     return true;
   });
