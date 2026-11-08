@@ -212,3 +212,8 @@ export async function doctor({ config: layers, harnesses, gh, cwd }: DoctorOptio
   lines.push(`${plural(errors.length, 'error')}${warned ? `, ${plural(warned, 'warning')}` : ''}`);
   return { text: `${lines.join('\n')}\n`, exitCode: errors.length ? 1 : 0 };
 }
+
+// `gg init`: writes the example Layer into `repoRoot`'s .agents/gg/, unless any file it would write exists.
+export function init(_repoRoot: string): { text: string; exitCode: number } {
+  return { text: '', exitCode: 1 };
+}

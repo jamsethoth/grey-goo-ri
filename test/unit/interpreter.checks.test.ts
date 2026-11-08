@@ -97,7 +97,7 @@ test('a final test failure is the Outcome failed naming the Check', async (t) =>
   const reason = fixture.executionRecord.terminalReason!;
   assert.deepEqual(reason.decidedBy, { vertex: 'green', visit: 1, action: 'test', recovery: 1 });
   assert.equal(reason.outcome, 'failed');
-  assert.equal(reason.text, 'The command Check test failed with no recovery left.');
+  assert.equal(reason.text, 'The command Check green.test failed with no recovery left.');
   assert.ok(
     fixture.gh.comments[0]!.body.includes(`\`\`\`\n${GREEN_FAIL_OUTPUT}\n\`\`\``),
     fixture.gh.comments[0]!.body,

@@ -1,6 +1,6 @@
 // The bare origin.git and its clone main that every real-git test repo starts from, built once per test process:
 // building them costs a test seven git processes. Auto maintenance and gc are off, so no git call spawns another.
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import * as gitShell from './git-shell.ts';
@@ -39,9 +39,10 @@ function buildTemplate(): Template {
 const templates: Template[] = [];
 const template = () => templates[0] ?? (templates[0] = buildTemplate());
 
-// Copies the template's origin.git and main into `directory`, a fresh mkdtemp directory, and returns main's SHA. git
-// records a clone's origin by its real path with forward slashes, so `directory` is the real one, never a link to it.
-export function seedRepos(directory: string): string {
+// Copies the template's origin.git and main into `directory`, a fresh mkdtemp directory, commits `files` to main when
+// given, and returns main's SHA. git records a clone's origin by its real path with forward slashes, so `directory` is
+// the real one, never a link to it.
+export function seedRepos(directory: string, files: Record<string, string> = {}): string {
   const { root, url: templateUrl, base } = template();
   cpSync(root, directory, { recursive: true });
   const config = join(directory, 'main', '.git', 'config');
@@ -50,5 +51,13 @@ export function seedRepos(directory: string): string {
   if (dirname(directory) !== dirname(root) || text.split(templateUrl).length !== 2)
     throw new Error(`cannot point ${config} at ${url}`);
   writeFileSync(config, text.replace(templateUrl, url));
-  return base;
+  if (!Object.keys(files).length) return base;
+  const mainRoot = join(directory, 'main');
+  for (const [path, bytes] of Object.entries(files)) {
+    mkdirSync(dirname(join(mainRoot, path)), { recursive: true });
+    writeFileSync(join(mainRoot, path), bytes);
+  }
+  sh(mainRoot, 'add', '-A');
+  sh(mainRoot, 'commit', '-q', '-m', 'files');
+  return sh(mainRoot, 'rev-parse', 'main');
 }

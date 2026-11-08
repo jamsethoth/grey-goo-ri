@@ -10,6 +10,6 @@ Two bugs.
 
 _No findings._
 
-VERDICT: ok
+Verdict: ok
 
 <!-- gg-action gg:e1:implement:1:pr:0:r1:1 -->

@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as briefs from '../../lib/briefs.ts';
 import * as checks from '../../lib/checks.ts';
-import * as config from '../../lib/config.ts';
 import type * as referencePaths from '../../lib/reference-paths.ts';
 import * as render from '../../lib/render.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 import { homedir } from 'node:os';
 import { readFileSync } from 'node:fs';
 
@@ -23,26 +23,24 @@ const greenInputs = { testFiles, red: { command: 'npm test', output: redOutput }
 const IMMUTABLE = /committed tests must not be changed/i;
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
 
-// The shipped Briefs and schemas, as the defaults Layer loads them.
-const SHIPPED = config.loadDefaults().files;
-// A template by its name under defaults/templates/, or gg's own (the nudge is an engine template).
-const text = (name: string) => SHIPPED[`templates/${name}`]?.bytes ?? render.engineTemplate(name);
-// A shipped Brief by its file name under defaults/templates/, and the recovery Brief with a section per
-// `{ brief, ...check }`.
-const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(`templates/${name}`, text(name), context);
+// A template of the example `gg init` writes, or gg's own (the nudge is an engine template).
+const text = (name: string) =>
+  exampleLayer.TEMPLATE_NAMES.includes(name) ? exampleLayer.fixtureText(name) : render.engineTemplate(name);
+// An example Brief by its file name, and the recovery Brief with a section per `{ brief, ...check }`.
+const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(name, text(name), context);
 type RecoveryContext = briefs.BriefContext & { sections: { brief: string; [field: string]: unknown }[] };
 const recovery = (name: string, context: RecoveryContext) =>
-  briefs.recoveryBrief(`templates/${name}`, text(name), {
+  briefs.recoveryBrief(name, text(name), {
     ...context,
     sections: context.sections.map(({ brief, ...check }) => ({
-      name: `templates/${brief}`,
+      name: brief,
       text: text(brief),
       ...check,
     })),
   });
-// A shipped schema declares its properties and which are required.
+// An example schema declares its properties and which are required.
 type ShippedSchema = referencePaths.SchemaNode & Required<Pick<referencePaths.SchemaNode, 'properties' | 'required'>>;
-const schema = (name: string): ShippedSchema => JSON.parse(SHIPPED[`schemas/${name}.schema.json`].bytes);
+const schema = (name: string): ShippedSchema => JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`));
 const SCHEMAS: Record<string, ShippedSchema> = {
   RED_SCHEMA: schema('red'),
   IMPLEMENT_SCHEMA: schema('implement'),
@@ -63,7 +61,7 @@ for (const [name, briefFixture] of Object.entries(BRIEF_FIXTURES)) {
 }
 
 // The stop comment shows diagnosis, not notes (W6), so a Brief that offers a blocked Claim says where its reason goes.
-for (const name of ['green.md', 'test-fix.md', 'recover.md']) {
+for (const name of ['green.md', 'command-recovery.md', 'recover.md']) {
   test(`the ${name} Brief tells a blocked agent to explain in diagnosis`, async () => {
     assert.match(
       await shipped(name, { ...base, inputs: greenInputs, output: 'not ok 1' }),
@@ -76,25 +74,22 @@ test('a Brief that does not name the diff never computes it', async () => {
   const diff = () => {
     throw new Error('the diff was computed');
   };
-  assert.match(await shipped('red.md', { ...base, diff, changedTestFiles: diff }), /^RED PHASE/);
+  assert.match(await shipped('red.md', { ...base, diff, changedTestFiles: diff }), /^RED VISIT/);
 });
 
-test("direct input references retain each Brief's excerpt limit", async () => {
+// One limit covers every output a Brief quotes, whatever its template or reference (owner, 2026-11-06).
+test('every quoted output keeps its last 6000 characters', async () => {
   const old = 'old diagnostic '.repeat(100) + '\n';
-  const green = await shipped('green.md', {
-    ...base,
-    inputs: { testFiles: testFiles, red: { command: 'npm test', output: old + 'x'.repeat(3980) + '\nlast line' } },
-  });
-  const testFix = await shipped('test-fix.md', { ...base, output: old + 'x'.repeat(5980) + '\nlast line' });
-  const stillGreen = await shipped('still-green.md', {
-    ...base,
-    output: old + 'x'.repeat(2980) + '\nlast line',
-    failure: 'passed',
-  });
-  assert.ok(green.includes('```\n' + 'x'.repeat(3980) + '\nlast line\n```'), green);
-  assert.ok(testFix.includes('```\n' + 'x'.repeat(5980) + '\nlast line\n```'), testFix);
-  assert.ok(stillGreen.includes('```\n' + 'x'.repeat(2980) + '\nlast line\n```'), stillGreen);
-  assert.doesNotMatch(green + testFix + stillGreen, /old diagnostic/);
+  const output = old + 'x'.repeat(5980) + '\nlast line';
+  const quoted = [
+    await shipped('green.md', { ...base, inputs: { testFiles, red: { command: 'npm test', output } } }),
+    await shipped('command-recovery.md', { ...base, output }),
+    await shipped('tests-fail-recovery.md', { ...base, output, failure: 'passed' }),
+  ];
+  for (const brief of quoted) {
+    assert.ok(brief.includes('```\n' + 'x'.repeat(5980) + '\nlast line\n```'), brief);
+    assert.doesNotMatch(brief, /old diagnostic/);
+  }
 });
 
 test('an absent optional input renders empty through a direct reference', async () => {
@@ -117,7 +112,7 @@ test('an absent optional input renders empty through a direct reference', async 
   assert.match(review, /## Green Evidence\nThe test command has no passing run\.\n/);
 });
 
-for (const name of ['test-fix.md', 'still-green.md']) {
+for (const name of ['command-recovery.md', 'tests-fail-recovery.md']) {
   test(`agent-facing ${name} preserves distinguishable path-case failures`, async () => {
     const output = `expected '${homedir().toLowerCase()}\\a' to equal '${homedir().toUpperCase()}\\a'`;
     const brief = await shipped(name, { ...base, output, failure: 'passed' });
@@ -148,7 +143,7 @@ test('stored Check evidence reaches the review Brief unredacted', async () => {
   assert.ok(!review.includes('[local]'), review);
 });
 
-const validRed = { claim: 'ok', summary: 's', tests: ['widgets render'], notes: '', diagnosis: '' };
+const validRed = { claim: 'ok', reason: 'none', summary: 's', tests: ['widgets render'], notes: '', diagnosis: '' };
 for (const name of ['RED_SCHEMA', 'IMPLEMENT_SCHEMA', 'REVIEW_SCHEMA']) {
   test(`${name} is strict`, () => {
     assert.equal(typeof SCHEMAS[name], 'object');
@@ -504,15 +499,15 @@ for (const [what, schema, path, error] of [
 
 test('validateResponse accepts exactly one lowercase enum token as the claim', () => {
   assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, validRed), { valid: true, token: 'ok', reason: null });
-  assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, { ...validRed, claim: 'misscoped' }), {
+  assert.deepEqual(briefs.validateResponse(SCHEMAS.RED_SCHEMA, { ...validRed, claim: 'blocked' }), {
     valid: true,
-    token: 'misscoped',
+    token: 'blocked',
     reason: null,
   });
-  assert.deepEqual(SCHEMAS.RED_SCHEMA.properties.claim.enum, ['ok', 'blocked', 'misscoped']);
-  assert.deepEqual(SCHEMAS.IMPLEMENT_SCHEMA.properties.claim.enum, ['ok', 'blocked', 'misscoped']);
-  // Deliberate change: ff's verdict PASS | CHANGES becomes the lowercase claim ok | changes | misscoped.
-  assert.deepEqual(SCHEMAS.REVIEW_SCHEMA.properties.claim.enum, ['ok', 'changes', 'misscoped']);
+  assert.deepEqual(SCHEMAS.RED_SCHEMA.properties.claim.enum, ['ok', 'blocked']);
+  assert.deepEqual(SCHEMAS.IMPLEMENT_SCHEMA.properties.claim.enum, ['ok', 'blocked']);
+  // Deliberate change: ff's verdict PASS | CHANGES becomes the lowercase claim ok | changes | blocked (R9).
+  assert.deepEqual(SCHEMAS.REVIEW_SCHEMA.properties.claim.enum, ['ok', 'changes', 'blocked']);
 });
 
 for (const name of ['RED_SCHEMA', 'IMPLEMENT_SCHEMA', 'REVIEW_SCHEMA']) {
@@ -563,6 +558,7 @@ test('validateResponse and assertStrict catch an empty-named property', () => {
   const step = { action: 'a', expected: 'b', '': 'x' };
   const impl = {
     claim: 'ok',
+    reason: 'none',
     summary: 's',
     definitionOfDone: [],
     qa: { setup: '', steps: [step], edgeCases: [], automated: [], manual: [] },
@@ -611,9 +607,15 @@ test('the recovery Brief carries every failing Check its own section, in order',
   const recoveryBrief = await recovery('recover.md', {
     ...base,
     sections: [
-      { brief: 'test-fix.md', id: 'test', kind: 'command', command: 'npm test', output: 'not ok 3 - widgets render' },
       {
-        brief: 'test-fix.md',
+        brief: 'command-recovery.md',
+        id: 'test',
+        kind: 'command',
+        command: 'npm test',
+        output: 'not ok 3 - widgets render',
+      },
+      {
+        brief: 'command-recovery.md',
         id: 'lint',
         kind: 'command',
         command: 'npm run lint',
@@ -628,16 +630,16 @@ test('the recovery Brief carries every failing Check its own section, in order',
     recoveryBrief.includes('not ok 3 - widgets render') && recoveryBrief.includes('lib/widgets.mjs: 1 problem'),
     recoveryBrief,
   );
-  assert.equal(recoveryBrief.match(/## Repo commands/g)?.length, 1, 'the frame lists the commands once');
+  assert.equal(recoveryBrief.match(/## Declared Commands/g)?.length, 1, 'the frame lists the commands once');
 });
 
-test('the test-fix brief forbids changing committed tests', async () => {
-  const testFix = await shipped('test-fix.md', { ...base, output: 'not ok 3 - widgets render' });
-  assert.match(testFix, IMMUTABLE);
-  assert.match(testFix, /notes/);
-  assert.match(testFix, /blocked/);
-  assert.doesNotMatch(testFix, /fix it/i);
-  assert.ok(testFix.includes('not ok 3 - widgets render'), testFix);
+test('the command-recovery Brief forbids changing committed tests', async () => {
+  const commandRecovery = await shipped('command-recovery.md', { ...base, output: 'not ok 3 - widgets render' });
+  assert.match(commandRecovery, IMMUTABLE);
+  assert.match(commandRecovery, /notes/);
+  assert.match(commandRecovery, /blocked/);
+  assert.doesNotMatch(commandRecovery, /fix it/i);
+  assert.ok(commandRecovery.includes('not ok 3 - widgets render'), commandRecovery);
 });
 
 for (const name of ['RED_SCHEMA', 'REVIEW_SCHEMA', 'IMPLEMENT_SCHEMA']) {
@@ -668,14 +670,14 @@ const BUILDS: [string, () => Promise<string>][] = [
         ...base,
         sections: [
           {
-            brief: 'test-fix.md',
+            brief: 'command-recovery.md',
             id: 'test',
             kind: 'command',
             command: 'npm test',
             output: 'not ok 3 - widgets render',
           },
           {
-            brief: 'still-green.md',
+            brief: 'tests-fail-recovery.md',
             id: 'red-check',
             kind: 'tests-fail',
             command: 'npm test',

@@ -18,24 +18,33 @@ export function config() {
 export type Layer = ReturnType<typeof config>;
 
 export const SCHEMA_NAMES = ['red.schema.json', 'implement.schema.json', 'review.schema.json'];
-// The templates the example names. Its own templates arrive with #120, so each case reads one that names nothing.
+// The templates the example names.
 export const TEMPLATE_NAMES = [
   'red.md',
   'green.md',
   'fix.md',
   'review.md',
   'recover.md',
-  'still-green.md',
-  'test-fix.md',
+  'tests-fail-recovery.md',
+  'command-recovery.md',
   'blocked.md',
   'pr-body.md',
   'review-comment.md',
 ];
+export const PERSONA_NAMES = ['implementer.md', 'reviewer.md'];
+// Every file `gg init` writes: gg.json and the files it names.
+export const WRITTEN_NAMES = ['gg.json', ...SCHEMA_NAMES, ...TEMPLATE_NAMES, ...PERSONA_NAMES];
+
+// The example's test paths, the only list of them: today's `testPaths` default that gg init writes.
+export const TEST_GLOBS: string[] = JSON.parse(fixtureText('gg.json')).testPaths;
 
 // The example's schemas, parsed, by file name.
 export const schemas = () => Object.fromEntries(SCHEMA_NAMES.map((name) => [name, JSON.parse(fixtureText(name))]));
 
-// The example's templates, each naming nothing, with `changes` in place of one.
+// The example's own templates, by file name.
+export const exampleTemplates = () => Object.fromEntries(TEMPLATE_NAMES.map((name) => [name, fixtureText(name)]));
+
+// The example's templates, each naming nothing, with `changes` in place of one: a case about one rule reads no other.
 export const templates = (changes: Record<string, string> = {}) => ({
   ...Object.fromEntries(TEMPLATE_NAMES.map((name) => [name, `${name}\n`])),
   ...changes,

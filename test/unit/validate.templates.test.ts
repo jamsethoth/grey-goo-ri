@@ -38,7 +38,7 @@ test('a template may name gg context, own outputs, inputs and with aliases', () 
         '{{review.response.summary}} {{#review.response.findings}}{{issue}}{{/review.response.findings}} ' +
         '{{agent.model}} {{marker}}\n',
       'blocked.md': '{{response.summary}} {{outcome}} {{end}} {{reason}} {{marker}}\n',
-      'test-fix.md': '{{id}} {{kind}} {{command}} {{output}} {{#failure.passed}}p{{/failure.passed}}\n',
+      'command-recovery.md': '{{id}} {{kind}} {{command}} {{output}} {{#failure.passed}}p{{/failure.passed}}\n',
       'recover.md': '{{#sections}}{{.}}{{/sections}} {{ticket.branch}}\n',
     }),
   );

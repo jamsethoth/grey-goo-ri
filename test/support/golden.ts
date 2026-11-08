@@ -187,12 +187,13 @@ export type Which = 'fake' | 'real';
 export const fakeIntegrityFor = (integrity: Which, head: string, git: runContext.RunGit) =>
   integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head, git });
 
-// The template's repos, in real git or in a fake git, and the git verbs to inject. Returns main's SHA as `base`.
-export function seedGit(root: string, which: Which) {
+// The template's repos, in real git or in a fake git, and the git verbs to inject. Returns main's SHA as `base`, which
+// also holds `baseFiles`.
+export function seedGit(root: string, which: Which, baseFiles: Record<string, string> = {}) {
   if (which === 'real')
-    return { base: templateRepos.seedRepos(root), git: gitModule as runContext.RunGit, fakeGit: null };
+    return { base: templateRepos.seedRepos(root, baseFiles), git: gitModule as runContext.RunGit, fakeGit: null };
   const fakeGit = fakeGitModule.fakeGit();
-  const { base } = fakeGit.init(root, { files: { 'package.json': templateRepos.TEMPLATE_PACKAGE } });
+  const { base } = fakeGit.init(root, { files: { 'package.json': templateRepos.TEMPLATE_PACKAGE, ...baseFiles } });
   return { base, git: fakeGit.git as runContext.RunGit, fakeGit };
 }
 
@@ -208,13 +209,15 @@ export interface GoldenOptions {
   responses?: fakeHarnessModule.ScriptedResponses;
   integrity?: Which;
   git?: Which;
+  // Files main holds beside package.json.
+  baseFiles?: Record<string, string>;
 }
 
 // git and integrity are fakes unless the case asks for either by name, for a test whose subject is git behaviour.
 export async function fixture(t: TestContext, options: GoldenOptions = {}) {
-  const { responses = firstVisitResponses, integrity = 'fake', git: which = 'fake' } = options;
+  const { responses = firstVisitResponses, integrity = 'fake', git: which = 'fake', baseFiles } = options;
   const root = tempDirectory.tempDirectory(t, 'gg-golden-', (directory) => join(directory, 'main', '.git'));
-  const { base, git, fakeGit } = seedGit(root, which);
+  const { base, git, fakeGit } = seedGit(root, which, baseFiles);
   const fakeIntegrity = fakeIntegrityFor(integrity, base, git);
   const mainRoot = join(root, 'main');
   const worktree = join(root, 'wt', 'ticket-15');

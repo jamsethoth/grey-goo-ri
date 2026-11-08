@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -52,7 +53,7 @@ test('usage marks each unimplemented command', () => {
   const marked = commandLines
     .filter((line) => line.endsWith(' (not implemented)'))
     .map((line) => line.trim().split(' ')[0]);
-  assert.deepEqual(marked, ['init', 'plan', 'publish', 'work', 'trace', 'stats']);
+  assert.deepEqual(marked, ['plan', 'publish', 'work', 'trace', 'stats']);
   assert.match(gg('--help').stdout, /^ {2}doctor {4}validate the configuration and print each Resolved Flow$/m);
 });
 
@@ -64,7 +65,6 @@ test('gg with an unknown command prints usage to stderr and exits 1', () => {
 });
 
 for (const [name, message] of [
-  ['init', 'gg init: not implemented'],
   ['plan', 'gg plan: not implemented'],
   ['publish', 'gg publish: not implemented'],
   ['work', 'gg work: not implemented'],
@@ -160,16 +160,22 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
-// The example fixture as a repository Layer at `layer`: its gg.json and schemas, and every other file it names, each a
-// template naming nothing (the example's own Personas and templates arrive with #120).
+// The example fixture as a repository Layer at `layer`: its gg.json and every file it names.
 function writeExampleLayer(layer: string) {
   mkdirSync(layer, { recursive: true });
-  for (const name of ['gg.json', ...exampleLayer.SCHEMA_NAMES]) {
-    writeFileSync(join(layer, name), exampleLayer.fixtureText(name));
-  }
-  for (const name of ['implementer.md', 'reviewer.md', ...exampleLayer.TEMPLATE_NAMES])
-    writeFileSync(join(layer, name), `${name}\n`);
+  for (const name of exampleLayer.WRITTEN_NAMES) writeFileSync(join(layer, name), exampleLayer.fixtureText(name));
 }
+
+test('gg init writes the example Layer at the repository root, and a second gg init keeps it', (t) => {
+  const { repo, ggIn } = tempRepo(t);
+  const first = ggIn('init');
+  assert.equal(first.status, 0, first.stderr);
+  const layer = join(repo, '.agents', 'gg');
+  assert.deepEqual(readdirSync(layer).sort(), [...exampleLayer.WRITTEN_NAMES].sort());
+  const second = ggIn('init');
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(second.stdout, /^gg init kept the existing Layer and wrote nothing: /);
+});
 
 test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {
   const agents = { implementer: { harness: 'claude' }, reviewer: { harness: 'claude' }, senior: { harness: 'claude' } };

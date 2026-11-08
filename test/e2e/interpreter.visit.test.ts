@@ -134,7 +134,7 @@ test('golden: a failed red is recovered once then fails at needs-human with its 
   assert.deepEqual(reason.decidedBy, { vertex: 'red', visit: 1, action: 'red-check', recovery: 1 });
   assert.equal(reason.outcome, 'failed');
   assert.deepEqual(reason.rule, { table: 'failed', row: null });
-  assert.equal(reason.text, 'The tests-fail Check red-check failed with no recovery left.');
+  assert.equal(reason.text, 'The tests-fail Check red.red-check failed with no recovery left.');
   assert.match(
     fixture.gh.comments[0].body,
     /```\nThe new tests did not fail before implementation/,

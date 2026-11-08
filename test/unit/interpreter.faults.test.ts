@@ -127,7 +127,7 @@ test('golden: a failing test Check is recovered once then fails with the Outcome
     outcome: 'failed',
     rule: { table: 'failed', row: null },
   });
-  assert.equal(reason.text, 'The command Check test failed with no recovery left.');
+  assert.equal(reason.text, 'The command Check green.test failed with no recovery left.');
   assert.equal(
     readFileSync(join(fixture.worktree, 'lib', 'add.mjs'), 'utf8'),
     'export const add = (a, b) => a - b;\n',
