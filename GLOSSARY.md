@@ -414,7 +414,8 @@ continues.
 _Avoid_: sync, repair
 
 **Pending**:
-An Execution waiting for a Decision an `await-approval` Action asked for. Healthy, not Stuck.
+An Execution waiting for a Decision at a Vertex whose Procedure ends in an `await-approval` Action, or for a cleanup
+confirmation (L11, J6). Its Run ended for the Ticket and its record stays active. Healthy, not Stuck.
 _Avoid_: blocked, paused, waiting
 
 **Held**:
@@ -435,7 +436,8 @@ A GitHub label gg writes to mirror an Execution's state.
 _Avoid_: status label, lifecycle label
 
 **Await Label**:
-A GitHub label gg writes to ask for a Decision, from an `await-approval` Action.
+A GitHub label gg writes to ask for a Decision, from an `await-approval` Action, or to say a Ticket waits for a cleanup
+confirmation (`gg:await:cleanup`).
 _Avoid_: request label, pending label
 
 **Decide Label**:

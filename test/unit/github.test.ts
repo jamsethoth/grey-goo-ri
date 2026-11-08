@@ -560,3 +560,45 @@ test('a failed rate-limit probe keeps the 60/120 s fallback', async (t) => {
   assert.equal(outcome.remoteRetryDelay(failure, 1, NOW), 60_000);
   assert.equal(outcome.remoteRetryDelay(failure, 2, NOW), 120_000);
 });
+
+test("ensureLabels creates the Flow's await and decide labels", async (t) => {
+  const { gh, calls } = scriptedGh(() => [[{ name: 'gg:await:approve' }]]);
+  const client = github.createGh(gh);
+  await client.ensureLabels('/repo', {
+    prefix: 'gg',
+    flowLabels: ['gg:await:approve', 'gg:decide:approve:approved', 'gg:decide:approve:rejected'],
+  });
+  const created = calls.filter(({ args }) => args[0] === 'label').map(({ args }) => args[2]);
+  assert.deepEqual(
+    created.filter((name) => !name!.includes(':state:')),
+    ['gg:decide:approve:approved', 'gg:decide:approve:rejected'],
+    'only those missing',
+  );
+});
+
+test("repositoryLabels reads every page of the repository's label names", async (t) => {
+  const { gh } = scriptedGh(() => [[{ name: 'one' }], [{ name: 'two' }]]);
+  assert.deepEqual(await github.createGh(gh).repositoryLabels('/repo'), ['one', 'two']);
+});
+
+test("issueEvents reads every page of an issue's events", async (t) => {
+  const first = { id: 1, event: 'labeled', created_at: '2026-10-15T00:00:00Z' };
+  const second = { id: 2, event: 'unlabeled', created_at: '2026-10-15T00:00:01Z' };
+  const { gh, calls } = scriptedGh(() => [[first], [second]]);
+  assert.deepEqual(await github.createGh(gh).issueEvents(7, '/repo'), [first, second]);
+  assert.deepEqual(calls[0]!.args, ['api', '--paginate', '--slurp', 'repos/{owner}/{repo}/issues/7/events']);
+});
+
+test("collaboratorPermission reads an actor's permission", async (t) => {
+  const { gh, calls } = scriptedGh(() => ({ permission: 'maintain', role_name: 'maintain' }));
+  assert.equal(await github.createGh(gh).collaboratorPermission('some-actor', '/repo'), 'maintain');
+  assert.deepEqual(calls[0]!.args, ['api', 'repos/{owner}/{repo}/collaborators/some-actor/permission']);
+});
+
+test('an actor GitHub does not know as a collaborator has no permission, and any other failure throws', async (t) => {
+  const notFound = fakeGhModule.fakeGh({ branch: 'b', ticket: 1 });
+  assert.equal(await github.createGh(notFound.gh).collaboratorPermission('a-stranger', '/repo'), 'none');
+  const denied = fakeGhModule.fakeGh({ branch: 'b', ticket: 1 });
+  denied.fail({ matches: () => true, status: 502 });
+  await assert.rejects(github.createGh(denied.gh).collaboratorPermission('anyone', '/repo'), github.GhError);
+});

@@ -2,12 +2,14 @@
 // reconciles a resumed record first, finishes a report a Run before decided, and ends whatever is thrown as a Terminal.
 // Its modules: run-context (the deps and the context every step reads), visit-runner (one Visit), the Action kinds
 // (agent-action, check-action, effect-actions), visit-scope (what every Action reads) and bounds (Edge traversal).
+import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effectEvidence from './effect-evidence.ts';
 import * as effects from './effects.ts';
 import * as events from './events.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
+import * as pendingRun from './pending-report.ts';
 import * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
@@ -73,8 +75,14 @@ export async function runExecution(options: context.ExecutionOptions): Promise<T
     return await runVertices(runContext);
   } catch (caught) {
     return await endCaught(runContext, caught);
+  } finally {
+    closeHeldJob(executionRecord);
   }
 }
+
+// Before the ticket lock is released, so kill-on-close has fired by the time a later Run holds it (#245).
+const closeHeldJob = (executionRecord: record.ExecutionRecord) =>
+  executionRecord.visitState?.unconfirmedCleanup?.closeJob?.();
 type HoldDecision = Parameters<typeof terminal.hold>[1];
 type AbandonDecision = Parameters<typeof terminal.abandon>[1];
 
@@ -102,19 +110,25 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
 // Reconciliation of a resumed record: a hold or abandonment it decides ends the Execution here, else it continues.
 async function resume(runContext: RunContext): Promise<TerminalResult | null> {
   const { record: executionRecord } = runContext;
-  const decided = await effects.whileBusy(runContext, () =>
-    reconcile.reconcile({
-      record: executionRecord,
-      flow: runContext.flow,
-      git: runContext.git,
-      integrity: runContext.integrity,
-      gh: runContext.gh,
-      database: runContext.database,
-      labelPrefix: runContext.labelPrefix ?? labels.DEFAULT_PREFIX,
-      cwd: runContext.cwd,
-      find: findEffect(runContext),
-    }),
-  );
+  await cleanupHold.awaitConfirmation(runContext, findEffect(runContext));
+  const reconciled = () =>
+    effects.whileBusy(runContext, () =>
+      reconcile.reconcile({
+        record: executionRecord,
+        flow: runContext.flow,
+        git: runContext.git,
+        integrity: runContext.integrity,
+        gh: runContext.gh,
+        database: runContext.database,
+        labelPrefix: runContext.labelPrefix ?? labels.DEFAULT_PREFIX,
+        cwd: runContext.cwd,
+        find: findEffect(runContext),
+      }),
+    );
+  const decided =
+    executionRecord.approvalRequest || reconcile.heldForCleanup(executionRecord)
+      ? await pendingRun.keepPendingIfUnread(runContext, `#${executionRecord.ticket}`, reconciled)
+      : await reconciled();
   if (decided.next !== 'continue') {
     const advice = 'advice' in decided && decided.advice ? ` ${decided.advice}` : '';
     runContext.log(`#${executionRecord.ticket} ${decided.next}: ${decided.reason}${advice}`);

@@ -72,7 +72,7 @@ export interface AdmissionGit {
 export interface Deps {
   gh: github.Gh;
   git: RunGit;
-  exec: Pick<exec.Exec, 'runShell'>;
+  exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed'>;
   locks?: locks.Locks;
   database?: record.StateDatabase;
   clock?: Clock;
@@ -104,6 +104,7 @@ export interface RunVertex {
   access: string;
   procedure: string;
   outcomes: string[];
+  approvalLabels?: { await: string; decide: string[] } | null;
   route?: unknown;
   inputs?: Record<string, inputs.ResolvedInput>;
   max?: number;
@@ -159,6 +160,9 @@ export interface ExecutionOptions {
   runState?: effects.RunState;
   testImmutability?: TestImmutability;
   publicText?: (text: string) => string;
+  // The Approvers the repository Layer lists, and the Config Hash this Run admitted under, perhaps not the record's.
+  approvers?: string[];
+  configHash?: string;
   crashAt?: effects.EffectContext['crashAt'];
   fault?: unknown;
   admission?: Admission | null;
@@ -169,7 +173,7 @@ export interface ExecutionOptions {
 export interface RunContext extends Omit<ExecutionOptions, 'deps'>, terminalReport.TerminalContext {
   gh: github.Gh;
   git: RunGit;
-  exec: Pick<exec.Exec, 'runShell'>;
+  exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed'>;
   locks: locks.Locks | undefined;
   database: record.StateDatabase;
   clock: Clock;

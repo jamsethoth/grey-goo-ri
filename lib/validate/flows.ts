@@ -6,6 +6,7 @@ import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
 import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
+import * as actionChecks from './actions.ts';
 import * as graph from './graph.ts';
 import * as inputs from './inputs.ts';
 import * as checked from './procedures.ts';
@@ -282,7 +283,7 @@ function vertexFalls(
 // A Vertex as the Resolved Flow carries it. A Procedure's read-only caps its Agent's access.
 function resolveVertex(
   vertex: Value,
-  resolved: { agent: Value | null; inputs: Record<string, inputs.ResolvedInput>; falls: FallThroughs },
+  resolved: Pick<graph.ResolvedVertex, 'agent' | 'inputs' | 'approvalLabels'> & { falls: FallThroughs },
   proc?: checked.CheckedProcedure,
 ): graph.ResolvedVertex {
   const { agent, falls } = resolved;
@@ -293,6 +294,7 @@ function resolveVertex(
     access: proc?.access === 'read-only' ? 'read-only' : (agent?.access ?? 'read-only'),
     tests: proc?.tests ?? null,
     outcomes: proc ? checked.outcomesOf(proc, falls) : [],
+    approvalLabels: resolved.approvalLabels,
     routing: {},
     inputs: resolved.inputs,
     route: vertex.route ?? {},
@@ -334,7 +336,12 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   checkVertexRoutes(problems, location, vertex, state.vertices);
   const falls = proc ? vertexFalls(checking, location, typed, proc) : {};
-  state.resolved[id] = resolveVertex(vertex, { agent, inputs: typed.inputs, falls }, proc);
+  const approvalLabels = actionChecks.approvalLabelsOf(
+    proc?.actions,
+    id,
+    checking.config.labelPrefix as string | undefined,
+  );
+  state.resolved[id] = resolveVertex(vertex, { agent, inputs: typed.inputs, falls, approvalLabels }, proc);
   state.procs[id] = proc;
   state.fallsOf[id] = falls;
 }

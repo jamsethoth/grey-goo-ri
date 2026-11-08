@@ -647,13 +647,6 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
     [{ at: 'procedures.review.actions[2]', code: LEFT_OUT, message: 'fields must be a non-empty list of field names' }],
   ],
   [
-    "an await-approval's decisions",
-    (config) => {
-      config.procedures.publish.actions.push({ id: 'ask', do: 'await-approval' });
-    },
-    [{ at: 'procedures.publish.actions[3]', code: LEFT_OUT, message: 'decisions must be a non-empty list of names' }],
-  ],
-  [
     "a comment's target",
     (config) => {
       delete procedureActions.actionById(config.procedures.review, 'comment').target;

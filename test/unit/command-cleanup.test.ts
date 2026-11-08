@@ -309,3 +309,32 @@ test('cleanupReport: an uncontained command is always unconfirmed', () => {
 test('a Check that ran no command names no process and no containment', () => {
   assert.deepEqual(commandCleanup.NO_COMMAND, { confirmed: true, survivors: [] });
 });
+
+test('a job is confirmed gone by a later Run: the Run that held it closed its handle', () => {
+  assert.equal(
+    commandCleanup.confirmedUnder({ kind: 'job' }, () => true),
+    true,
+  );
+});
+
+test('a process group is confirmed gone once it has no member', () => {
+  const asked: number[] = [];
+  const hasMembers = (pgid: number) => {
+    asked.push(pgid);
+    return pgid === 41;
+  };
+  assert.equal(commandCleanup.confirmedUnder({ kind: 'group', pgid: 41 }, hasMembers), false);
+  assert.equal(commandCleanup.confirmedUnder({ kind: 'group', pgid: 42 }, hasMembers), true);
+  assert.deepEqual(asked, [41, 42]);
+});
+
+test('no containment is never confirmed, and a report that names none reads as no containment', () => {
+  assert.equal(
+    commandCleanup.confirmedUnder({ kind: 'none' }, () => false),
+    false,
+  );
+  assert.equal(
+    commandCleanup.confirmedUnder(undefined, () => false),
+    false,
+  );
+});

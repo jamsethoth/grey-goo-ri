@@ -43,6 +43,7 @@ export interface EffectContext {
   log: (line: string) => void;
   // Records one Action Event: the Action's identity, when it began, and its outcome and payload.
   emit: (actionIdentity: marker.ActionIdentity, startedAt: number, fields: Record<string, unknown>) => void;
+  markerOf: (actionIdentity: marker.ActionIdentity) => string;
   gh: reconcile.ReconcileGh;
   git?: effectEvidence.EvidenceGit;
   cwd?: string;
@@ -158,6 +159,33 @@ export async function saveResolution<Settled extends visit.Resolution>(
   return resolution;
 }
 
+// A result a later Run decided for an Action held for cleanup (J4): it replaces the one the hold saved, with its Action
+// Event and whatever its caller spent, in one write. A retried Attempt's stays in its evidence for the next to read, as
+// saveResolution's does.
+export async function replaceResolution<Settled extends visit.Resolution>(
+  context: EffectContext,
+  { actionIdentity, startedAt, resolution, fields = {}, actionMarker = null }: SavedResolution<Settled>,
+): Promise<Settled> {
+  const { record: executionRecord } = context;
+  executionRecord.visitState!.settled =
+    resolution.direction === 'retry'
+      ? null
+      : { action: actionIdentity.action, recovery: actionIdentity.recovery, resolution };
+  const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
+  if (saved) saved.evidence = { ...saved.evidence, ...resolution };
+  await context.database.save(executionRecord, () =>
+    context.emit(actionIdentity, startedAt, {
+      outcome: resolution.outcome,
+      direction: resolution.direction,
+      rule: resolution.rule,
+      signals: {},
+      ...fields,
+    }),
+  );
+  if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
+  return resolution;
+}
+
 export const completeEffect = (
   context: EffectContext,
   actionIdentity: marker.ActionIdentity,
@@ -176,3 +204,19 @@ export const completeEffect = (
     fields: {},
     actionMarker,
   });
+
+// One deterministic Action outside any Visit's Actions, a Terminal's or a Pending report's: bracketed, write-ahead,
+// with its own Action Event.
+export async function effectAction<Payload>(
+  context: EffectContext,
+  actionIdentity: marker.ActionIdentity,
+  { effect, payload, perform }: Omit<SideEffect<Payload>, 'actionMarker' | 'deferred'>,
+) {
+  const startedAt = context.clock.now();
+  const actionMarker = context.markerOf(actionIdentity);
+  const evidence = await whileBusy(context, () =>
+    sideEffect(context, { actionMarker, effect, payload, perform, deferred: true }),
+  );
+  await completeEffect(context, actionIdentity, startedAt, actionMarker);
+  return evidence;
+}

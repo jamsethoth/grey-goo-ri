@@ -156,6 +156,8 @@ export function createJob(kernel32: Kernel32, pid: number): Job {
     kernel32.CloseHandle(handle);
     throw err;
   }
+  // Closed once: a handle's number can come to name another object, so a second close could close that.
+  let open = true;
   const members = () => {
     let room = 64;
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -181,7 +183,8 @@ export function createJob(kernel32: Kernel32, pid: number): Job {
       while (members().length) await sleep(20);
     },
     close() {
-      kernel32.CloseHandle(handle);
+      if (open) kernel32.CloseHandle(handle);
+      open = false;
     },
   };
 }

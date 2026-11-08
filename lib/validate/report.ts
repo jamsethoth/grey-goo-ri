@@ -40,6 +40,8 @@ export const PROBLEM_CODES = [
   'vertex-takes-no-agent',
   // A Procedure's Actions, Claim tokens and settings.
   'agent-action-not-first',
+  'await-approval-not-last',
+  'await-approval-with-agent',
   'check-after-effect',
   'claim-enum-mismatch',
   'claim-tokens-missing',
@@ -56,6 +58,7 @@ export const PROBLEM_CODES = [
   'needs-agent-action',
   'pr-ready-without-checks',
   'repeated-action-id',
+  'repeated-decision',
   'second-agent-action',
   'undeclared-check',
   'undeclared-command',

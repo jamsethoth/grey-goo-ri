@@ -20,8 +20,12 @@ export interface OutcomeCase {
   table: TableName | null;
   token: string | null;
 }
+const OTHERWISE = {
+  never: 'otherwise never applies: a Decision is the Outcome',
+  unnamed: 'otherwise must name an Outcome',
+};
 const NO_TOKEN: Record<TableName, string> = {
-  passed: 'no Claim token passes',
+  passed: 'no Claim token passes, or a Decision is the Outcome of a Visit whose Checks passed',
   failed: 'no Claim token requires a Check',
   stopped: 'no Claim token stops',
 };
@@ -228,10 +232,10 @@ function checkTables(
   return { tables, malformed };
 }
 
-function checkOtherwise(problems: report.Report, location: string, otherwise: unknown) {
+function checkOtherwise(problems: report.Report, location: string, otherwise: unknown, decided: boolean) {
   if (otherwise === undefined) return;
-  if (!report.isName(otherwise))
-    report.error(problems, `${location}.otherwise`, 'invalid-otherwise', 'otherwise must name an Outcome');
+  if (!report.isName(otherwise) || decided)
+    report.error(problems, `${location}.otherwise`, 'invalid-otherwise', OTHERWISE[decided ? 'never' : 'unnamed']);
   else if (report.isReserved(otherwise))
     report.error(
       problems,
@@ -315,23 +319,20 @@ export function checkProcedure(
     report.error(problems, location, code, 'actions must be a non-empty list');
   }
   const declared = actionChecks.checkActions(declaring, actions, location);
-  if (!declared.agent) {
-    actions.forEach((action, index) => {
-      if (referencePaths.isRecord(action) && action.do === 'commit')
-        report.error(
-          problems,
-          `${location}.actions[${index}]`,
-          'needs-agent-action',
-          "a commit carries the agent Action's summary, which this Procedure lacks",
-        );
-    });
-  }
+  if (!declared.agent) actionChecks.checkCommitsWithoutAgent(problems, location, actions);
   const claimTokens = checkClaimTokens(problems, location, declaration, declared);
   const checkIds = declared.checks.map((check) => check.id);
   const tokens = tokensOf(claimTokens, (token) => requiredOf(claimTokens, checkIds, token));
   const tests = checkSettings(problems, location, declaration, declared);
-  const { tables, malformed } = checkTables(problems, location, declaration, tokens);
-  checkOtherwise(problems, location, declaration.otherwise);
+  // A Decision takes the `passed` table's place (X1c), and otherwise's too where no Check can fail.
+  const asking = !!procedures.approvalActionOf(actions);
+  const { tables, malformed } = checkTables(
+    problems,
+    location,
+    declaration,
+    asking ? { ...tokens, passed: [] } : tokens,
+  );
+  checkOtherwise(problems, location, declaration.otherwise, asking && !tokens.failed.length);
   checkResponseConditions(problems, declared);
   actionChecks.checkOrder(problems, location, actions);
   const proc: CheckedProcedure = {
@@ -368,7 +369,9 @@ export function outcomesOf(proc: CheckedProcedure, falls: FallThroughs) {
     const fell = falls[table] ?? tokens[table];
     if (fell.length) found.push(...(fallback(fell) as string[]));
   };
-  add('passed', (fell) => (otherwise ? [otherwise] : fell));
+  const asking = procedures.approvalActionOf(proc.actions);
+  const decided = otherwise ? [otherwise] : null;
+  add('passed', (fell) => (asking ? procedures.decisionsOf(asking) : (decided ?? fell)));
   add('failed', () => [otherwise ?? 'failed']);
   add('stopped', (fell) => fell);
   if (proc.agent) found.push(...outcome.HARNESS_OUTCOMES);

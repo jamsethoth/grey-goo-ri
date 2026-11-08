@@ -7,6 +7,7 @@ import * as run from '../../lib/run.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as gitShell from '../support/git-shell.ts';
 import * as runFixture from '../support/run-fixture.ts';
+import * as suiteRuns from '../support/suite-runs.ts';
 
 const { BRANCH, TICKET } = runFixture;
 
@@ -53,4 +54,40 @@ test('an in-progress ticket with a recoverable record is resumed', async (t) => 
     1,
     'one PR is opened',
   );
+});
+
+// The held call left its work uncommitted, which no open intent explains: its own validation judges that, not
+// admission.
+test('a later Run resumes a Pending cleanup hold however dirty its worktree', async (t) => {
+  const fixture = runFixture.fixture(t, { git: 'real', integrity: 'real' });
+  let held = false;
+  suiteRuns.editRuns(fixture, (ran) => {
+    if (held || ran.code !== 0) return ran;
+    held = true;
+    const cleanup = { confirmed: false, survivors: [], reason: 'refused', containment: { kind: 'job' } };
+    return { ...ran, cleanup };
+  });
+  const [first] = await run.runTarget(fixture.options);
+  assert.equal(first!.outcome, 'pending', fixture.logs.join('\n'));
+  assert.notEqual(gitShell.sh(fixture.worktree, 'status', '--porcelain'), '', 'the work is uncommitted');
+
+  const [later] = await run.runTarget(fixture.options);
+  assert.equal(later!.outcome, 'ready-for-qa', fixture.logs.join('\n'));
+});
+
+test('a Pending cleanup hold on a merge conflict is held: nothing can be fingerprinted', async (t) => {
+  const fixture = runFixture.fixture(t, { git: 'real', integrity: 'real' });
+  let held = false;
+  suiteRuns.editRuns(fixture, (ran) => {
+    if (held || ran.code !== 0) return ran;
+    held = true;
+    const cleanup = { confirmed: false, survivors: [], reason: 'refused', containment: { kind: 'job' } };
+    return { ...ran, cleanup };
+  });
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'pending');
+  runFixture.conflict(fixture.worktree);
+
+  const [later] = await run.runTarget(fixture.options);
+  assert.equal(later!.state, 'needs-human', fixture.logs.join('\n'));
+  assert.ok(fixture.logs.some((line) => line.includes('merge conflict')));
 });

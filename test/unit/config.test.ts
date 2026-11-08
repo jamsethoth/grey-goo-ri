@@ -454,3 +454,33 @@ test('this repository AGENTS.md Commands line matches its repository Layer', (t)
   const { home } = layers(t);
   assert.deepEqual(config.loadLayers(repoRoot, home).commands, listed);
 });
+
+test('a malformed approvers list fails admission', () => {
+  const layerFile = '/repo/.agents/gg/gg.json';
+  const notAList = `${layerFile}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
+  assert.deepEqual(config.approversProblems(undefined, layerFile), []);
+  assert.deepEqual(config.approversProblems([], layerFile), []);
+  assert.deepEqual(config.approversProblems(['some-login'], layerFile), []);
+  assert.deepEqual(config.approversProblems('some-login', layerFile), [notAList]);
+  assert.deepEqual(config.approversProblems([''], layerFile), [notAList]);
+  assert.deepEqual(config.approversProblems([' '], layerFile), [notAList]);
+  assert.deepEqual(config.approversProblems([' some-login '], layerFile), [notAList], 'it could never match a login');
+  assert.deepEqual(config.approversProblems(['some-login', 3], layerFile), [notAList]);
+});
+
+test('an approvers key in the user Layer is a load error naming the file', (t) => {
+  const { repo, home } = layers(t, {
+    repo: JSON.stringify({ approvers: ['some-login'] }),
+    home: JSON.stringify({ approvers: ['another-login'] }),
+  });
+  assert.throws(() => config.loadLayers(repo, home), {
+    message: `${config.layerPath(home)}: approvers may be set only in a repository Layer`,
+  });
+});
+
+test('approvers change the Config Hash, and none leaves it as it was', () => {
+  const pinned = { flow: {}, files: {}, harnesses: {}, commands: {}, testPaths: [] };
+  const hash = config.configHash(pinned);
+  assert.notEqual(config.configHash({ ...pinned, approvers: ['some-login'] }), hash);
+  assert.equal(config.configHash({ ...pinned, approvers: undefined }), hash);
+});

@@ -78,13 +78,14 @@ interface DecisionScope {
   issueLabels: string[];
   names: labels.GgLabels;
   accepts: (actor: string | undefined) => boolean;
+  decisions: string[] | undefined;
 }
 
 // The Decisions after the Pending Instance's latest Await Label event that still count: a Decide Label for its Vertex,
 // still on the issue and not removed since, from an actor with write permission or an Approver.
 function decisionsAfter(
   after: IssueEvent[],
-  { approvalRequest, issueLabels, names, accepts }: DecisionScope,
+  { approvalRequest, issueLabels, names, accepts, decisions }: DecisionScope,
 ): Decision[] {
   return after.flatMap((issueEvent, i) => {
     const parsed = issueEvent.event === 'labeled' ? names.parse(labelOf(issueEvent)) : null;
@@ -92,7 +93,8 @@ function decisionsAfter(
     if (
       parsed?.family !== 'decide' ||
       !labels.hasLabel([parsed.vertex], approvalRequest.vertex) ||
-      !labels.hasLabel(issueLabels, labelOf(issueEvent))
+      !labels.hasLabel(issueLabels, labelOf(issueEvent)) ||
+      (decisions && !labels.hasLabel(decisions, parsed.outcome))
     )
       return [];
     const removed = after
@@ -108,7 +110,8 @@ function decisionsAfter(
 // Reads an issue's current labels and events (REST shape) for the Pending Instance's Decision: consume (exactly one),
 // stale (the Approval Digest differs), ambiguous (more than one), missing (no instance or request), or waiting.
 // `permissions` maps each deciding actor's login to its permission; `approvers` are logins accepted below write.
-// Both match logins in any case, as GitHub does.
+// Both match logins in any case, as GitHub does. `decisions`, when given, are the only Outcomes a Decide Label can
+// carry.
 export function read({
   approvalRequest,
   issueLabels,
@@ -117,6 +120,7 @@ export function read({
   permissions,
   approvers = [],
   prefix = labels.DEFAULT_PREFIX,
+  decisions,
 }: {
   approvalRequest: PendingInstance | null;
   issueLabels: string[];
@@ -125,6 +129,7 @@ export function read({
   permissions: Record<string, string>;
   approvers?: string[];
   prefix?: string;
+  decisions?: string[];
 }): DecisionRead {
   if (!approvalRequest) return { kind: 'missing' };
   const permission = new Map(Object.entries(permissions).map(([login, level]) => [login.toLowerCase(), level]));
@@ -143,7 +148,26 @@ export function read({
   if (current !== approvalRequest.digest) return { kind: 'stale' };
   const accepts = (actor: string | undefined) =>
     WRITE.includes(permission.get(actor?.toLowerCase() as string) as string) || labels.hasLabel(approvers, actor ?? '');
-  const decisions = decisionsAfter(events.slice(last + 1), { approvalRequest, issueLabels, names, accepts });
-  if (decisions.length > 1) return { kind: 'ambiguous', decisions };
-  return decisions.length ? { kind: 'consume', decision: decisions[0] as Decision } : { kind: 'waiting' };
+  const found = decisionsAfter(events.slice(last + 1), { approvalRequest, issueLabels, names, accepts, decisions });
+  if (found.length > 1) return { kind: 'ambiguous', decisions: found };
+  return found.length ? { kind: 'consume', decision: found[0] as Decision } : { kind: 'waiting' };
+}
+
+// The logins a read needs permissions for: the actors of the Decide Labels for this Vertex in the timeline.
+export function decidingActors({
+  vertex,
+  timeline,
+  prefix = labels.DEFAULT_PREFIX,
+}: {
+  vertex: string;
+  timeline: IssueEvent[];
+  prefix?: string;
+}): string[] {
+  const names = labels.labelsFor(prefix);
+  const actors = timeline.flatMap((issueEvent) => {
+    const parsed = issueEvent.event === 'labeled' ? names.parse(labelOf(issueEvent)) : null;
+    const actor = issueEvent.actor?.login;
+    return parsed?.family === 'decide' && labels.hasLabel([parsed.vertex], vertex) && actor ? [actor] : [];
+  });
+  return [...new Set(actors)];
 }

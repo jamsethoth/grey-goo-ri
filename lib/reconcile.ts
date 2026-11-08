@@ -42,6 +42,11 @@ export type ReconcileResult = { next: 'continue'; cursor: record.Cursor; reason:
 
 type Database = Pick<record.StateDatabase, 'evidence' | 'complete'>;
 
+// The Visit's result is a call held for cleanup (L11): what its worktree holds is for the suspended call's validation
+// to judge (L15), once a later Run has confirmed its processes gone.
+export const heldForCleanup = (executionRecord: record.ExecutionRecord): boolean =>
+  executionRecord.visitState?.settled?.resolution.row === 'cleanup-unconfirmed';
+
 const ignoredOf = async (
   worktree: string,
   untracked: integrityModule.RollbackSet | undefined,
@@ -175,6 +180,7 @@ export async function dirtyState(
   // git write-tree refuses unmerged entries, so a merge conflict cannot be fingerprinted: it is never the agent's.
   const conflicts = await git.conflictedPaths(worktree);
   const unmerged = conflicts.length > 0;
+  if (!unmerged && executionRecord && heldForCleanup(executionRecord)) return null;
   if (!unmerged && (await integrity.isCleanAt(worktree))) return null;
   for (const entry of !unmerged && executionRecord ? writeAhead.openIntents(executionRecord) : [])
     if (await asRecorded(worktree, entry, git, integrity)) return null;

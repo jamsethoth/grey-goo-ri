@@ -24,6 +24,7 @@ export interface Config {
   maxParallel: number;
   commands?: unknown;
   testPaths?: unknown;
+  approvers?: unknown;
   harnesses?: unknown;
   [key: string]: unknown;
 }
@@ -81,10 +82,10 @@ function readLayer(file: string): Layer {
   return layer;
 }
 
-// A repository's unsandboxed commands and its test paths arrive whole from its own Layer: no other Layer may extend or
-// narrow them (ADR 0013, ADR 0014).
+// A repository's unsandboxed commands, its test paths and who decides its approvals arrive whole from its own Layer: no
+// other Layer may extend or narrow them (ADR 0013, ADR 0014).
 function rejectRepoOnly(layer: Layer, file: string): void {
-  const key = ['commands', 'testPaths'].find((name) => Object.hasOwn(layer, name));
+  const key = ['commands', 'testPaths', 'approvers'].find((name) => Object.hasOwn(layer, name));
   if (key) throw new Error(`${file}: ${key} may be set only in a repository Layer`);
 }
 
@@ -221,6 +222,7 @@ export interface PinnedConfiguration {
   launchProfile?: unknown;
   commands: unknown;
   testPaths: unknown;
+  approvers?: unknown;
 }
 
 // The Pinned Configuration's hash: the Resolved Flow and every Layer file by name, never by path (no install path
@@ -232,8 +234,9 @@ export function configHash({
   launchProfile = null,
   commands,
   testPaths,
+  approvers,
 }: PinnedConfiguration): string {
-  return hashOf({ flow, files, harnesses, launchProfile, commands, testPaths });
+  return hashOf({ flow, files, harnesses, launchProfile, commands, testPaths, approvers });
 }
 
 // Only globs that git's pathspecs (rollback) and checks.testPathMatcher (Test Immutability) read alike, and that git
@@ -259,6 +262,16 @@ export function testPathsProblems(testPaths: unknown, file: string): string[] {
         'non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, ' +
         'and no [ ] ? \\ : or control character',
     );
+}
+
+// The repository Layer's approvers as preflight failures, each naming `file`; none for no list or a list of logins.
+export function approversProblems(approvers: unknown, file: string): string[] {
+  if (approvers === undefined) return [];
+  // A login with space around it never matches the actor GitHub names.
+  const valid =
+    Array.isArray(approvers) &&
+    approvers.every((login) => typeof login === 'string' && login.trim() && login === login.trim());
+  return valid ? [] : [`${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`];
 }
 
 // The repository Layer's Declared Commands as preflight failures, each naming `file`; none for a valid set with a test.

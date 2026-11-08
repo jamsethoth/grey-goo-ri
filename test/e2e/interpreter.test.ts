@@ -1,13 +1,17 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as golden from '../support/golden.ts';
+import { laterRun } from '../support/approval-flow.ts';
 import { actionEvent, actionMarker, intents, loadTicket } from '../support/execution-reads.ts';
+import { firstVisitWith } from '../support/first-visit.ts';
+import * as keys from '../support/keys.ts';
+import * as suiteRuns from '../support/suite-runs.ts';
 import { FIRST_VISIT, TDD_VERTICES, terminalReasonOf } from '../support/golden-run.ts';
 import { contendRepoLock, onLockedGit } from '../support/repo-lock-contention.ts';
 import { ticketComments } from '../support/review-flow.ts';
@@ -286,4 +290,120 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.ok(fakeGhModule.isCommentPost(writes[0].args, golden.TICKET), 'the needs-human comment');
   assert.ok(ticketComments(fixture).at(-1)!.body.startsWith('### gg: needs-human'));
   assert.ok(writes[1].args.join(' ').includes('--add-label gg:state:needs-human'), 'the needs-human label');
+});
+
+// A green call held for cleanup, on real git with the real integrity, whose survivor writes before the later Run looks.
+async function heldGreen(t: TestContext) {
+  const greenCall = keys.responseKey('green', 1, 'green', 1);
+  const fixture = await golden.fixture(t, {
+    integrity: 'real',
+    git: 'real',
+    responses: firstVisitWith({
+      [greenCall]: {
+        ...golden.firstVisitResponses[greenCall],
+        cleanup: {
+          confirmed: false,
+          survivors: [{ pid: 4242, created: null, commandLine: 'node writer.js', error: 'still running' }],
+          reason: 'termination refused',
+          containment: { kind: 'group', pgid: 4242 },
+        },
+      },
+    }),
+  });
+  return fixture;
+}
+
+test('a workflow file a survivor changed is an integrity violation on resume', async (t) => {
+  const fixture = await heldGreen(t);
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  mkdirSync(join(fixture.worktree, '.github', 'workflows'), { recursive: true });
+  writeFileSync(join(fixture.worktree, '.github', 'workflows', 'ci.yml'), 'name: changed\n');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.outcome, 'needs-human');
+  assert.equal(result.held, true);
+  const saved = await loadTicket(fixture);
+  assert.match(saved.terminalReason!.text, /protected changed while the Ticket waited/);
+  assert.deepEqual(intents(saved, 'reset'), [], 'nothing tells a survivor from a human, so nothing is reset');
+  assert.equal(readFileSync(join(fixture.worktree, '.github', 'workflows', 'ci.yml'), 'utf8'), 'name: changed\n');
+});
+
+test('an ignored Protected File a survivor changed is an integrity violation on resume', async (t) => {
+  const fixture = await heldGreen(t);
+  mkdirSync(join(fixture.worktree, '.claude'), { recursive: true });
+  writeFileSync(join(fixture.worktree, '.claude', '.gitignore'), '*\n');
+  const local = join(fixture.worktree, '.claude', 'settings.local.json');
+  writeFileSync(local, '{"owner":true}\n');
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  writeFileSync(local, '{"survivor":true}\n');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.outcome, 'needs-human');
+  assert.equal(result.held, true);
+  const saved = await loadTicket(fixture);
+  assert.match(saved.terminalReason!.text, /protected changed while the Ticket waited/);
+  assert.deepEqual(intents(saved, 'reset'), []);
+  assert.equal(readFileSync(local, 'utf8'), '{"survivor":true}\n', 'it is kept for a human to judge');
+});
+
+test('a held call whose worktree is unchanged goes on over real git', async (t) => {
+  const fixture = await heldGreen(t);
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+  assert.deepEqual([...fixture.gh.labels], ['gg:state:ready-for-qa']);
+});
+
+test('a commit made while a cleanup hold waits is kept, and holds the Ticket', async (t) => {
+  const fixture = await heldGreen(t);
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  gitShell.sh(fixture.worktree, 'add', '-A');
+  gitShell.sh(fixture.worktree, 'commit', '-q', '-m', 'a human or a survivor commits');
+  const committed = gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.outcome, 'needs-human');
+  assert.equal(result.held, true);
+  assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), committed, 'nothing was reset');
+});
+
+// A gate is read-only, so any change to its tree breaks an Assertion, and it may be a human's edit.
+test('an edit made while a gate waits for its cleanup holds the Ticket and survives', async (t) => {
+  const fixture = await golden.fixture(t, { integrity: 'real', git: 'real' });
+  let held = false;
+  suiteRuns.editRuns(fixture, (run) => {
+    if (held || run.code !== 0 || fixture.executionRecord.cursor.vertex !== 'publish') return run;
+    held = true;
+    const cleanup = { confirmed: false, survivors: [], reason: 'refused', containment: { kind: 'group', pgid: 4242 } };
+    return { ...run, cleanup };
+  });
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  writeFileSync(join(fixture.worktree, 'package.json'), '{"edited":"by a human"}\n');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.held, true);
+  assert.deepEqual(intents(await loadTicket(fixture), 'reset'), []);
+  assert.equal(readFileSync(join(fixture.worktree, 'package.json'), 'utf8'), '{"edited":"by a human"}\n');
+});
+
+// red has no gg commit behind it, so only the held call's own baseline sees the commit.
+test('a commit made before any gg commit, while a hold waits, is kept', async (t) => {
+  const redCall = keys.responseKey('red', 1, 'red', 1);
+  const fixture = await golden.fixture(t, {
+    integrity: 'real',
+    git: 'real',
+    responses: firstVisitWith({
+      [redCall]: {
+        ...golden.firstVisitResponses[redCall],
+        cleanup: { confirmed: false, survivors: [], reason: 'refused', containment: { kind: 'group', pgid: 4242 } },
+      },
+    }),
+  });
+  assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
+  gitShell.sh(fixture.worktree, 'add', '-A');
+  gitShell.sh(fixture.worktree, 'commit', '-q', '-m', 'a human commits');
+  const committed = gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD');
+
+  const result = await laterRun(fixture);
+  assert.equal(result.held, true);
+  assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), committed);
 });

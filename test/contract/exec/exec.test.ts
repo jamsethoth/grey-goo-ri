@@ -2,6 +2,7 @@
 // The descendants a timeout kills are in exec.timeout.test.ts, and the Windows job object in exec.job.test.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -267,4 +268,25 @@ test('a long commit message does not displace a failing hook reason from the fen
 test('run never spawns through a shell', async () => {
   const result = await exec.run(process.execPath, ['-e', 'process.stdout.write(process.argv[1])', 'a&b|c']);
   assert.equal(result.stdout, 'a&b|c');
+});
+
+// L14: a process group is the containment a later Run checks, however its leader ended.
+test("a survivor's child that outlives it keeps the hold", options.POSIX_CASE, async (t) => {
+  const pidFile = join(scratch, 'survivor-child.pid');
+  const script = 'sleep 300 & echo $! > "$1"; wait';
+  const group = spawn('sh', ['-c', script, 'sh', pidFile], { detached: true, stdio: 'ignore' });
+  const pgid = group.pid as number;
+  t.after(() => {
+    try {
+      process.kill(-pgid, 'SIGKILL');
+    } catch {}
+  });
+  const exited = new Promise((settled) => group.on('exit', settled));
+  // The leader is killed only once its child exists: killed sooner, it leaves an empty group.
+  await processProbe.waitFor(() => existsSync(pidFile), t.signal);
+  process.kill(pgid, 'SIGKILL');
+  await exited;
+  assert.equal(exec.cleanupConfirmed({ kind: 'group', pgid }), false, 'its children are still in the group');
+  process.kill(-pgid, 'SIGKILL');
+  await processProbe.waitFor(() => exec.cleanupConfirmed({ kind: 'group', pgid }), t.signal);
 });

@@ -29,6 +29,8 @@ export interface ResolvedVertex {
   access: unknown;
   tests: unknown;
   outcomes: string[];
+  // The Await and Decide Labels a Vertex whose Procedure ends in await-approval can request, else null (X1d).
+  approvalLabels: { await: string; decide: string[] } | null;
   routing: Record<string, Routing>;
   inputs: Record<string, inputs.ResolvedInput>;
   route: unknown;

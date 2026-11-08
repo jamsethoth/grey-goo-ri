@@ -1,6 +1,8 @@
 // The check Action (R1, R4): its Check kind checks, on the tree it read when the kind reads one, and its result is the
 // Check signal { id, kind, state, tree }, with the output and reason the recovery Brief and Terminal Reason read.
+import * as agentCall from './agent-call.ts';
 import * as checks from './checks.ts';
+import * as cleanupHold from './cleanup-hold.ts';
 import * as commandCleanup from './command-cleanup.ts';
 import * as effects from './effects.ts';
 import * as integrity from './integrity.ts';
@@ -156,6 +158,8 @@ async function runCheck(runContext: RunContext, running: visitScope.Running): Pr
   const { action } = running;
   const kind = CHECK_KINDS[action.kind!];
   const tree = kind.tree ? (await integrity.snapshot(executionRecord.worktree, git, locks)).tree : null;
+  if (kind.tree && !running.state.call)
+    running.state.firstAttemptBaseline ??= await agentCall.checkBaseline(runContext);
   const checked = { ...(await kind.run(runContext, { ...running, tree })), tree };
   if (checked.cleanup?.confirmed === false) {
     running.state.unconfirmedCleanup = checked.cleanup as commandCleanup.CleanupReport;
@@ -244,6 +248,59 @@ export async function check(runContext: RunContext, running: visitScope.Running)
         checks: [{ ...signal, ...(output && { output }) }],
         integrity: [],
       },
+    },
+  });
+}
+
+// A Check held for cleanup, its processes now confirmed gone (J4, L15). Its result stands on the tree it read; a
+// changed one, which the Assertions allowed, re-runs the Visit's Checks from the first (T1), so nothing reads a pass of
+// an older tree: the cursor moves there in the same write, so a crash re-runs them all.
+export async function completeHeld(
+  runContext: RunContext,
+  running: visitScope.Running,
+): Promise<visitScope.ActionResolution | 'rerun-checks'> {
+  const { record: executionRecord, git, locks } = runContext;
+  const { actionIdentity, action, state } = running;
+  const startedAt = runContext.clock.now();
+  const baseline = state.call?.baseline ?? state.firstAttemptBaseline!;
+  const tree = await effects.whileBusy(runContext, async () => {
+    await agentCall.validateHeld(runContext, running, { baseline, response: state.response });
+    return (await integrity.snapshot(executionRecord.worktree, git, locks)).tree;
+  });
+  const signal = state.checks[action.id];
+  const held = visitScope.outputOf(executionRecord, actionIdentity)?.value.cleanup as commandCleanup.CleanupReport;
+  const confirmed = cleanupHold.confirmedReport(held);
+  visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: confirmed });
+  if (tree !== signal.tree) {
+    const firstCheck = state.proc.actions.find((candidate) => candidate.do === 'check')!;
+    state.settled = null;
+    executionRecord.cursor = { ...executionRecord.cursor, action: firstCheck.id, attempt: 1 };
+    // Saved with the cursor, which then reads as this Attempt already entered, so the Action Cap counts it once.
+    executionRecord.attempts += 1;
+    await runContext.database.save(executionRecord);
+    return 'rerun-checks';
+  }
+  const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;
+  const resolution = visitScope.settle(executionRecord, actionIdentity, state, {
+    result: callSignal,
+    claim,
+    checks: visitScope.resolverChecks([], [signal]),
+    retries: {},
+  });
+  const { output, reason } = state.runs[action.id];
+  return effects.replaceResolution(runContext, {
+    actionIdentity,
+    startedAt,
+    resolution: {
+      reason,
+      signal,
+      output: signal.state === 'failed' ? output : null,
+      ...resolution,
+    },
+    fields: {
+      check: action.id,
+      cleanup: confirmed,
+      signals: { harnessResult: { status: result.status }, claim, checks: [signal], integrity: [] },
     },
   });
 }

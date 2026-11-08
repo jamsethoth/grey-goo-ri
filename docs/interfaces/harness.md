@@ -66,7 +66,9 @@ The Harness receives the Persona bytes, never a path.
   `commandsRun` is diagnostic only. Outcomes are classified from the final event, not the exit code.
   `cleanup` is `{ confirmed, survivors, reason, containment }` (`CleanupReport`, `lib/command-cleanup.ts`; decisions L6,
   L11, L14): a call returns only once its processes are gone, or says it could not confirm it. A result with no `cleanup`
-  reads as unconfirmed, and unconfirmed holds the Ticket, whatever the `status`.
+  reads as unconfirmed, and unconfirmed holds the Ticket, whatever the `status`: it is Pending until a later Run confirms
+  cleanup under the `containment` reported. A Harness that holds a job for an unconfirmed call gives the report a
+  `closeJob`, as `exec.runShell` does, which gg calls before it releases the ticket lock.
 - `failure`: for `failed`, `{ failureClass: 'auth' | 'quota' | 'budget' | 'rate-limited' | 'transient' | 'unknown',
   retryAfterMs, message }`; otherwise `null`.
 

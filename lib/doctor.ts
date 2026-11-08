@@ -1,6 +1,8 @@
 // `gg doctor`: the validator's Resolved Flow, warnings and errors, printed per Vertex (V1).
 
 import * as config from './config.ts';
+import type * as github from './github.ts';
+import * as labels from './labels.ts';
 import * as rules from './rules.ts';
 import type * as graph from './validate/graph.ts';
 import * as validator from './validate/index.ts';
@@ -111,6 +113,8 @@ function vertexLines(id: string, vertex: graph.ResolvedVertex, procedure: ShownP
   ];
   if (procedure) lines.push(...procedureLines(procedure));
   lines.push(`  outcomes: ${list(vertex.outcomes)}`);
+  if (vertex.approvalLabels)
+    lines.push(`  approval labels: ${[vertex.approvalLabels.await, ...vertex.approvalLabels.decide].join(', ')}`);
   // H11: a Vertex's bound, beside its routes.
   if (vertex.max !== null)
     lines.push(`  max: ${vertex.max}, exhausted ${vertex.exhausted === null ? 'none' : target(vertex.exhausted)}`);
@@ -138,11 +142,44 @@ function flowLines(flow: ShownFlow): string[] {
   return [...lines, ''];
 }
 
+// The labels the Flows can request that the repository lacks (request 3.3), each a warning: gg run creates them before
+// its first request. Nothing is read for Flows that ask nobody, and doctor's other findings stand when GitHub cannot
+// say.
+async function labelWarnings(flows: ShownFlow[], { gh, cwd }: Pick<DoctorOptions, 'gh' | 'cwd'>): Promise<string[]> {
+  const asking = flows.flatMap((flow) =>
+    Object.entries(flow.ticket.vertices)
+      .filter(([, vertex]) => vertex.approvalLabels)
+      .map(([id, vertex]) => ({ flow: flow.name, id, vertex })),
+  );
+  if (!asking.length) return [];
+  let existing: string[];
+  try {
+    existing = await gh.repositoryLabels(cwd);
+  } catch (err) {
+    return [`warning: could not read the repository's labels: ${gh.errorExcerpt(err as Error)}`];
+  }
+  return asking.flatMap(({ flow, id, vertex }) => {
+    const { await: awaitLabel, decide } = vertex.approvalLabels!;
+    const missing = [awaitLabel, ...decide].filter((label) => !labels.hasLabel(existing, label));
+    return missing.length
+      ? [`warning: flows.${flow}.ticket.vertices.${id}: labels missing from the repository: ${missing.join(', ')}`]
+      : [];
+  });
+}
+
+// What gg doctor reads: the merged Layers and the registered Harnesses, and GitHub for the labels a Flow can request.
+export interface DoctorOptions {
+  config: config.Config;
+  harnesses: unknown;
+  gh: github.Gh;
+  cwd: string;
+}
+
 // Schemas and templates are read through the loader, from the Layer files loadLayers loaded (`config.files`).
-export function doctor({ config: layers, harnesses }: { config: config.Config; harnesses: unknown }): {
+export async function doctor({ config: layers, harnesses, gh, cwd }: DoctorOptions): Promise<{
   text: string;
   exitCode: number;
-} {
+}> {
   const { flows, errors, warnings } = validator.validate(layers, {
     harnesses,
     readSchema: (name) => JSON.parse(config.layerFile(layers.files, name)),
@@ -151,7 +188,10 @@ export function doctor({ config: layers, harnesses }: { config: config.Config; h
   const lines: string[] = [];
   for (const flow of Object.values(flows)) if (flow) lines.push(...flowLines(flow as unknown as ShownFlow));
   for (const warning of warnings) lines.push(`warning: ${warning.at}: ${warning.message}`);
+  const labelLines = await labelWarnings(Object.values(flows).filter(Boolean) as unknown as ShownFlow[], { gh, cwd });
+  lines.push(...labelLines);
   for (const error of errors) lines.push(`error: ${error.at}: ${error.message}`);
-  lines.push(`${plural(errors.length, 'error')}${warnings.length ? `, ${plural(warnings.length, 'warning')}` : ''}`);
+  const warned = warnings.length + labelLines.length;
+  lines.push(`${plural(errors.length, 'error')}${warned ? `, ${plural(warned, 'warning')}` : ''}`);
   return { text: `${lines.join('\n')}\n`, exitCode: errors.length ? 1 : 0 };
 }

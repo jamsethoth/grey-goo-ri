@@ -52,6 +52,7 @@ export interface TicketResult {
   held?: boolean;
   fault?: boolean;
   error?: unknown;
+  unread?: string;
 }
 
 // One Ticket's admission as it goes: what it read before deciding, the record it decided on, and whether a label
@@ -358,6 +359,8 @@ async function runAdmitted(admitting: Admitting, decided: Decided): Promise<Tick
     ticket: { number: ticket, title: issue.title, body: issue.body, branch: executionRecord.branch },
     base: context.config.baseBranch,
     labelPrefix: context.config.labelPrefix,
+    approvers: context.config.approvers as string[] | undefined,
+    configHash: context.hash,
     others: decided.others,
     fault: decided.fault,
     admission: decided.admission,
@@ -368,6 +371,7 @@ async function runAdmitted(admitting: Admitting, decided: Decided): Promise<Tick
     outcome: result.outcome,
     state: stateOf(result.outcome),
     labelFailed: admitting.labelFailed,
+    ...(result.unread && { unread: result.unread }),
     ...(result.fault && {
       fault: true,
       error: (result as { error?: unknown }).error ?? executionRecord.terminalStop?.error,

@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -8,8 +8,12 @@ import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
+import type * as commandCleanup from '../../lib/command-cleanup.ts';
+import * as locks from '../../lib/locks.ts';
 import * as run from '../../lib/run.ts';
 import * as epicRun from '../support/epic-run.ts';
+import type * as golden from '../support/golden.ts';
+import * as suiteRuns from '../support/suite-runs.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as failingGit from '../support/failing-git.ts';
@@ -43,7 +47,7 @@ for (const { repoLabels, created } of LABEL_SETUPS) {
     const reads = fixture.gh.calls.filter((call) => isLabelRead(call.args));
     assert.equal(reads.length, 1, 'one repository label read per Run');
     const creates = fixture.gh.calls.filter((call) => call.args[0] === 'label');
-    assert.deepEqual(creates.map((call) => call.args[2]).sort(), created);
+    assert.deepEqual(creates.map((call) => call.args[2]).sort(), ['gg:await:cleanup', ...created]);
     assert.deepEqual(
       creates.filter((call) => call.args.includes('--force')),
       [],
@@ -51,7 +55,7 @@ for (const { repoLabels, created } of LABEL_SETUPS) {
     );
     const firstEdit = fixture.gh.calls.findIndex((call) => call.args[0] === 'issue' && call.args[1] === 'edit');
     assert.deepEqual(
-      fixture.gh.calls.slice(firstEdit - 1 - created.length, firstEdit),
+      fixture.gh.calls.slice(firstEdit - 2 - created.length, firstEdit),
       [reads[0], ...creates],
       'the label read and its creates immediately precede the first label edit',
     );
@@ -327,7 +331,12 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
   const line =
     'error: procedures.implement.actions[1]: Check test names command "lint", ' +
     'which the repository Layer does not declare';
-  const { text } = doctor.doctor({ config: fixture.options.config, harnesses: fixture.options.harnesses });
+  const { text } = await doctor.doctor({
+    config: fixture.options.config,
+    harnesses: fixture.options.harnesses,
+    gh: fixture.options.deps.gh,
+    cwd: fixture.mainRoot,
+  });
   assert.ok(text.includes(`\n${line}\n`), text);
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', line]);
@@ -412,4 +421,204 @@ test('an admission hold saves an admission stop that declares every field', asyn
   assert.equal(typeof admissionStop.terminalReasonText, 'string');
   assert.equal(typeof admissionStop.advice, 'string');
   assert.equal((await executionReads.loadTicket(fixture)).admissionStop, null, 'its Terminal retires it');
+});
+
+// A Run's Ticket whose green Check holds for cleanup, its first run only; its job's handle is this report's to close.
+function heldForCleanup(fixture: runFixture.RunFixture, order: string[]) {
+  const report = {
+    confirmed: false,
+    survivors: [],
+    reason: 'termination refused',
+    containment: { kind: 'job' },
+  } as unknown as commandCleanup.CleanupReport;
+  Object.defineProperty(report, 'closeJob', { value: () => order.push('job closed'), enumerable: false });
+  let held = false;
+  suiteRuns.editRuns(fixture, (ran) => {
+    if (held || ran.code !== 0) return ran;
+    held = true;
+    return { ...ran, cleanup: report };
+  });
+}
+
+test("a run closes an unconfirmed job's handle before it releases the ticket lock", async (t) => {
+  const fixture = runFixture.fixture(t);
+  const order: string[] = [];
+  heldForCleanup(fixture, order);
+  const given = locks.createLocks();
+  fixture.options.deps.locks = {
+    ...given,
+    release: async (lock) => {
+      order.push('lock released');
+      return given.release(lock);
+    },
+  };
+  const [result] = await run.runTarget(fixture.options);
+  assert.equal(result!.outcome, 'pending');
+  assert.deepEqual(order.slice(0, 2), ['job closed', 'lock released']);
+});
+
+test('a Pending Ticket ends its Run with exit 0', async (t) => {
+  const fixture = runFixture.fixture(t);
+  heldForCleanup(fixture, []);
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
+  assert.equal(results[0]!.outcome, 'pending');
+  assert.equal(results[0]!.state, undefined, 'it has no end state');
+});
+
+test("a Run creates the Flow's await and decide labels before it asks", async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  const [result] = await run.runTarget(fixture.options);
+  assert.equal(result!.outcome, 'pending', fixture.logs.join('\n'));
+  for (const label of ['gg:await:approve', 'gg:decide:approve:approved', 'gg:decide:approve:rejected'])
+    assert.ok(fixture.gh.repoLabels.has(label), label);
+  assert.ok(fixture.gh.repoLabels.has('gg:await:cleanup'), 'and the label a cleanup hold asks with');
+  assert.ok(fixture.gh.labels.has('gg:await:approve'));
+});
+
+test('approvers reach the reader, and a malformed list fails preflight', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.approvers = 'some-login';
+  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
+    assert.match(err.message, /approvers must be a list of GitHub logins/);
+    return true;
+  });
+});
+
+test('an epic Run resumes a Pending sub-issue', async (t) => {
+  const fixture = runFixture.fixture(t, {
+    issues: epicRun.epicOf([TICKET]),
+    labels: ['gg:state:in-progress', 'gg:await:approve'],
+  });
+  fixture.options.target = epicRun.EPIC;
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  await assert.doesNotReject(run.runTarget(fixture.options));
+  const results = await run.runTarget(fixture.options);
+  assert.deepEqual(
+    results.map((result) => result.ticket),
+    [TICKET],
+    'the Await Label says the Ticket is healthy, though it reads as in progress',
+  );
+});
+
+test('approvers in the repository Layer reach the reader through gg run', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.approvers = ['a-triager'];
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'pending');
+  fixture.gh.permissions.set('a-triager', 'read');
+  fixture.gh.humanAddsLabel('gg:decide:approve:approved', 'a-triager');
+
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'ready-for-qa', fixture.logs.join('\n'));
+});
+
+// The golden Flow, asking at approve, Pending after one Run.
+async function pendingApproval(t: TestContext, options: runFixture.RunFixtureOptions = {}) {
+  const fixture = runFixture.fixture(t, options);
+  fixture.options.config.procedures.approval = {
+    actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
+  };
+  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  shipped.ticket.vertices.green!.route = { ok: 'approve' };
+  shipped.ticket.vertices.approve = {
+    procedure: 'approval',
+    route: { approved: 'publish', rejected: { end: 'needs-replan' } },
+  };
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'pending');
+  return fixture;
+}
+const timelineRead = (args: string[]) => args.some((arg) => arg.endsWith('/events'));
+
+test('a Pending Ticket whose read GitHub refuses stays Pending, and the Run exits 1 naming the class', async (t) => {
+  const fixture = await pendingApproval(t);
+  fixture.gh.fail({ matches: timelineRead, status: 403, body: { message: 'Resource not accessible by integration' } });
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(results[0]!.outcome, 'pending');
+  assert.equal(results[0]!.unread, 'permission');
+  assert.equal(run.runExitCode(results), 1);
+  assert.ok(
+    fixture.logs.some((line) => line.includes('class permission')),
+    fixture.logs.join('\n'),
+  );
+  assert.equal(JSON.parse(fixture.loadRow() as string).state, 'active', 'nothing was lost');
+});
+
+test('a Pending Ticket whose read fails on a blip stays Pending, and the Run exits 0', async (t) => {
+  const fixture = await pendingApproval(t);
+  fixture.gh.fail({ matches: timelineRead, status: 502 });
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(results[0]!.outcome, 'pending');
+  assert.equal(results[0]!.unread, undefined);
+  assert.equal(run.runExitCode(results), 0);
+});
+
+test("an auth failure reading a Pending Ticket stops the whole Run, as a remote Action's does", async (t) => {
+  const fixture = await pendingApproval(t);
+  fixture.gh.fail({ matches: timelineRead, status: 401, body: { message: 'Bad credentials' } });
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(results[0]!.unread, 'auth');
+  assert.equal(run.runExitCode(results), 1);
+  const ended = fixture.readEvents().findLast((event) => event.type === 'run_end') as { failureClass?: string };
+  assert.equal(ended.failureClass, 'auth');
+});
+
+test('an abandoned Pending sub-issue is not admitted by a later epic Run', async (t) => {
+  const fixture = await pendingApproval(t, { issues: epicRun.epicOf([TICKET]) });
+  fixture.gh.humanAddsLabel('gg:state:needs-human', 'the-owner');
+  assert.equal((await run.runTarget(fixture.options))[0]!.outcome, 'abandoned');
+  fixture.options.target = epicRun.EPIC;
+
+  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
+    assert.match(err.message, /nothing ready/);
+    return true;
+  });
+});
+
+// A run stop ends what would start new work: a Ticket waiting on its request starts none, so it waits on.
+test("another Ticket's run stop leaves a Pending request as it was", async (t) => {
+  const fixture = await pendingApproval(t, { issues: epicRun.epicOf([TICKET, TICKET + 1]) });
+  fixture.options.target = epicRun.EPIC;
+  assert.equal((await run.runTarget(fixture.options))[1]!.outcome, 'pending');
+  // #15 reads first; its auth failure stops the Run before #16 reaches its request.
+  fixture.gh.fail({ matches: timelineRead, status: 401, body: { message: 'Bad credentials' } });
+
+  const results = await run.runTarget(fixture.options);
+  assert.deepEqual(
+    results.map((result) => [result.ticket, result.outcome]),
+    [
+      [TICKET, 'pending'],
+      [TICKET + 1, 'pending'],
+    ],
+  );
+  const sibling = await record.load(fixture.commonDir, 'ticket', TICKET + 1);
+  assert.equal(sibling!.state, 'active');
+  assert.ok(sibling!.approvalRequest, 'its request stands');
 });

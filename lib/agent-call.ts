@@ -59,7 +59,7 @@ async function withHeartbeat<Result>(runContext: RunContext, run: () => Promise<
 // Procedure that writes tests is not held to it, and `tests: named` frees the tests its reference names.
 async function changedTests(
   runContext: RunContext,
-  { actionIdentity, state }: Attempt,
+  { actionIdentity, state }: visitScope.Running,
   baseline: integrity.IntegrityBaseline,
   called: { response: unknown },
 ): Promise<integrity.IntegrityViolation | null> {
@@ -93,15 +93,10 @@ export async function guardedCall(
   call: Record<string, unknown>,
   harness: Harness,
 ): Promise<Called> {
-  const { record: executionRecord, protectedPaths, others: listed } = runContext;
+  const { record: executionRecord } = runContext;
   const access = call.access as string;
-  const others = typeof listed === 'function' ? await listed() : (listed ?? []);
-  const baseline = await runContext.integrity.takeBaseline({
-    record: executionRecord,
-    others,
-    protectedPaths,
-    testPaths: checks.testPathSet(executionRecord.configurationSnapshot!.testPaths),
-  });
+  const others = await othersOf(runContext);
+  const baseline = await visitBaseline(runContext, others);
   attempt.state.firstAttemptBaseline ??= baseline;
   effectErrors.crashPoint(runContext, call.marker as string, 'before-intent');
   executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
@@ -113,16 +108,78 @@ export async function guardedCall(
     attempt.state.unconfirmedCleanup = called.result.cleanup as commandCleanup.CleanupReport;
     return { ...called, violations: [], baseline };
   }
-  const { violations } = await runContext.integrity.findViolations({
+  const violations = await callViolations(runContext, attempt, { baseline, others, access, response: called.response });
+  return { ...called, violations, baseline };
+}
+
+const othersOf = async ({ others: listed }: RunContext) =>
+  typeof listed === 'function' ? await listed() : (listed ?? []);
+
+// What the Integrity Assertions compare an Action's run with: a snapshot of the worktree as it stands.
+const visitBaseline = (runContext: RunContext, others: string[]) =>
+  runContext.integrity.takeBaseline({
+    record: runContext.record,
+    others,
+    protectedPaths: runContext.protectedPaths,
+    testPaths: checks.testPathSet(runContext.record.configurationSnapshot!.testPaths),
+  });
+
+// The baseline of a Check with no agent Action before it, whose run is otherwise compared with nothing if it holds for
+// cleanup (L15): a Check starts no agent, so the Visit's first Attempt never takes one.
+export async function checkBaseline(runContext: RunContext): Promise<integrity.IntegrityBaseline> {
+  return visitBaseline(runContext, await othersOf(runContext));
+}
+
+// The fixed Integrity Assertions against a baseline, Test Immutability included. `others` are the worktrees that
+// baseline guarded, read once per Attempt.
+async function callViolations(
+  runContext: RunContext,
+  running: visitScope.Running,
+  {
     baseline,
-    record: executionRecord,
     others,
     access,
-    protectedPaths,
+    response,
+  }: { baseline: integrity.IntegrityBaseline; others: string[]; access: string; response: unknown },
+) {
+  const { violations } = await runContext.integrity.findViolations({
+    baseline,
+    record: runContext.record,
+    others,
+    access,
+    protectedPaths: runContext.protectedPaths,
   });
-  if (access !== 'read-only' && attempt.state.proc.tests !== 'write') {
-    const violation = await changedTests(runContext, attempt, baseline, called);
+  if (access !== 'read-only' && running.state.proc.tests !== 'write') {
+    const violation = await changedTests(runContext, running, baseline, { response });
     if (violation) violations.push(violation);
   }
-  return { ...called, violations, baseline };
+  return violations;
+}
+
+// A held call's validation at a later Run, once its containment confirms its writers gone: every fixed Assertion
+// against its original baseline, before any Check, commit or routing (L15). While the Ticket waited a human could
+// change the worktree as well as a survivor, and nothing tells them apart. A rollback is safe only for what the agent
+// made (request 3.5), so whatever broke an Assertion holds the Ticket and is kept.
+export async function validateHeld(
+  runContext: RunContext,
+  running: visitScope.Running,
+  { baseline, response }: { baseline: integrity.IntegrityBaseline; response: unknown },
+): Promise<void> {
+  const violations = await callViolations(runContext, running, {
+    baseline,
+    others: await othersOf(runContext),
+    access: runContext.record.configurationSnapshot!.access,
+    response,
+  });
+  if (!violations.length) return;
+  const surfaces = [...new Set(violations.map(({ surface }) => surface))];
+  const changed = violations.flatMap(({ after }) => (Array.isArray(after) ? after : []));
+  throw new effectErrors.EarlyTerminalError({
+    next: 'hold',
+    name: 'changed-while-held',
+    reason:
+      `${surfaces.join(' and ')} changed while the Ticket waited for its cleanup, by a survivor or a human, so the ` +
+      'Ticket is held and nothing was reset.',
+    ...(changed.length && { detail: changed.join('\n') }),
+  });
 }

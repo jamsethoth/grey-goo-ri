@@ -36,6 +36,8 @@ export interface TerminalResult {
   held?: true;
   fault?: true;
   runStop?: { failureClass: string };
+  // A Pending Ticket's read GitHub refused, by its Failure Class.
+  unread?: string;
 }
 
 // Any of a Terminal stop's fields; declaredStop fills the rest.
@@ -105,14 +107,8 @@ async function terminalAction<Payload>(
   actionIdentity: marker.ActionIdentity,
   { effect, payload, perform }: Omit<effects.SideEffect<Payload>, 'actionMarker' | 'deferred'>,
 ) {
-  const startedAt = context.clock.now();
   await context.enter(actionIdentity);
-  const actionMarker = context.markerOf(actionIdentity);
-  const evidence = await effects.whileBusy(context, () =>
-    effects.sideEffect(context, { actionMarker, effect, payload, perform, deferred: true }),
-  );
-  await effects.completeEffect(context, actionIdentity, startedAt, actionMarker);
-  return evidence;
+  return effects.effectAction(context, actionIdentity, { effect, payload, perform });
 }
 
 // Saved before the first Terminal Action, so a restart inside the Terminal runs the same Actions under the same ids and
@@ -201,11 +197,22 @@ async function postComment(
   );
 }
 
-// The end's State Label replaces in-progress; an abandonment, under the human's label, only removes in-progress.
+// An Execution that ends waits for nothing, so the Await Labels it may have on the issue come down: an epic Run reads
+// one as Pending.
+function asked({ record: executionRecord, labelPrefix }: TerminalContext): string[] {
+  const names = labels.labelsFor(labelPrefix ?? labels.DEFAULT_PREFIX);
+  const { approvalRequest, visitState } = executionRecord;
+  return [
+    ...(approvalRequest ? [names.await(approvalRequest.vertex)] : []),
+    ...(visitState?.unconfirmedCleanup ? [names.await('cleanup')] : []),
+  ];
+}
+
+// The end's State Label replaces in-progress; an abandonment, under the human's label, only takes labels down.
 function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
   const { record: executionRecord, labelPrefix = labels.DEFAULT_PREFIX } = context;
   const state = labels.labelsFor(labelPrefix).state;
-  const change = { add: stop?.abandoned ? [] : [state(name)], remove: [state('in-progress')] };
+  const change = { add: stop?.abandoned ? [] : [state(name)], remove: [state('in-progress'), ...asked(context)] };
   return tolerated(
     context,
     stop,
@@ -262,7 +269,7 @@ export async function report(
           executionRecord.configurationSnapshot!.testPaths,
         )
       : null;
-  if (!stop?.abandoned || stop.inProgress) await setStateLabel(context, reporting);
+  if (!stop?.abandoned || stop.inProgress || asked(context).length) await setStateLabel(context, reporting);
   executionRecord.state = landedState(name, stop);
   // The final state and ticket_end commit together: a Terminal has landed in both or in neither.
   await context.database.save(executionRecord, () =>

@@ -196,6 +196,7 @@ export function stopText(
   resolution: StopResolution,
 ): string {
   const where = actionText(actionIdentity);
+  if (resolution.row === 'decision') return `The Decision at ${actionIdentity.vertex} was ${outcomeName}.`;
   const fixed = rowText(where, actionIdentity.vertex, resolution);
   if (fixed !== undefined) return fixed;
   // A final failure names its Check from the Check signal (U14); the Check's reason is posted fenced, as it may quote
@@ -213,6 +214,14 @@ export function stopText(
 // An Execution ended early, as an Action found it must (effectErrors.EarlyTerminalError): held, abandoned, or stopped.
 export function endEarly(context: TerminalContext, ending: effectErrors.Ending): Promise<TerminalResult> {
   context.log(`#${context.record.ticket} ${ending.next}: ${ending.reason}`);
+  if (ending.next === 'pending')
+    return Promise.resolve({ outcome: 'pending', ...(ending.unread && { unread: ending.unread }) });
+  // A run stop ends what would start new work (request 3.4). An Execution Pending on its request or on a cleanup hold
+  // starts none, and ending it would lose the request or end a hold whose writers may still run, so it waits on as it
+  // was, its intents and retry budgets with it.
+  const { approvalRequest, visitState } = context.record;
+  if (ending.next === 'run-stopped' && (approvalRequest || visitState?.unconfirmedCleanup))
+    return Promise.resolve({ outcome: 'pending' });
   if (ending.next === 'run-stopped') return runStoppedAt(context, ending.retrying);
   if (ending.next === 'run-stop') return runStopAt(context, ending);
   return ending.next === 'abandon'

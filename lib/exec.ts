@@ -132,8 +132,13 @@ export function createExec({ kernel32 = containment.openKernel32() }: { kernel32
   return {
     run,
     runShell: (commandLine: string, options?: ShellOptions) => shell(kernel32, commandLine, options),
+    cleanupConfirmed,
   };
 }
+
+// Whether a later Run finds a held call's processes gone under the containment its cleanup recorded (L14).
+export const cleanupConfirmed = (containment: commandCleanup.CleanupContainment | undefined): boolean =>
+  commandCleanup.confirmedUnder(containment, processTree.groupHasMembers);
 
 // The process runner the entry point builds and passes down as `exec` (ADR 0019).
 export type Exec = ReturnType<typeof createExec>;
@@ -209,10 +214,12 @@ function shell(
   const { child } = started;
   const kind = containmentOf(started);
   const cleanupContainment = cleanupContainmentOf(started);
-  const resultOf = (cleanup: commandCleanup.Cleanup) => ({
-    cleanup: commandCleanup.cleanupReport(cleanupContainment, cleanup),
-    ...kind,
-  });
+  const resultOf = (cleanup: commandCleanup.Cleanup) => {
+    const report = commandCleanup.cleanupReport(cleanupContainment, cleanup);
+    if (started.job && !report.confirmed)
+      Object.defineProperty(report, 'closeJob', { value: () => (started.job as containment.Job).close() });
+    return { cleanup: report, ...kind };
+  };
   return new Promise((resolve, reject) => {
     let output = '';
     for (const pipe of pipesOf(child)) pipe.setEncoding('utf8').on('data', (data: string) => (output += data));

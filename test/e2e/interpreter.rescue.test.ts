@@ -222,6 +222,7 @@ test('a background writer left by a returned call is killed before the rescue', 
   const real = exec.createExec();
   let first = true;
   fixture.options.deps.exec = {
+    ...suite,
     runShell: (command, options) => {
       if (!existsSync(join(fixture.worktree, 'lib', 'add.mjs')) || !first) return suite.runShell(command, options);
       first = false;
