@@ -633,9 +633,12 @@ test('the recovery Brief carries every failing Check its own section, in order',
   assert.equal(recoveryBrief.match(/## Declared Commands/g)?.length, 1, 'the frame lists the commands once');
 });
 
-test('the command-recovery Brief forbids changing committed tests', async () => {
+// green and fix Visits share it, and a fix may change the test files its findings name (tests: named).
+test('the command-recovery Brief forbids changing a test the Visit may not change', async () => {
   const commandRecovery = await shipped('command-recovery.md', { ...base, output: 'not ok 3 - widgets render' });
-  assert.match(commandRecovery, IMMUTABLE);
+  assert.doesNotMatch(commandRecovery, IMMUTABLE);
+  assert.match(commandRecovery, /Do not change a test your Visit may not change/);
+  assert.match(commandRecovery, /if such a test is wrong, claim blocked with reason\s+bad-test/);
   assert.match(commandRecovery, /notes/);
   assert.match(commandRecovery, /blocked/);
   assert.doesNotMatch(commandRecovery, /fix it/i);
