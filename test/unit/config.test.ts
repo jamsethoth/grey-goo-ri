@@ -5,12 +5,11 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.ts';
-import type * as exampleLayer from '../support/example-layer.ts';
+import * as doctor from '../../lib/doctor.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-const personaPath = (name: string) => join(repoRoot, 'defaults', 'personas', name);
 const sha256 = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 // A Layer file as loadLayers gives it: its text and the hash of its bytes.
 const layerFile = (bytes: string) => ({ bytes, hash: sha256(bytes) });
@@ -26,15 +25,16 @@ function reversed<Value>(value: Value): Value {
   ) as Value;
 }
 
-test('loadDefaults reads the shipped flow', () => {
-  const defaults: exampleLayer.Layer = config.loadDefaults();
-  assert.equal(defaults.flows.default.ticket.entry, 'red');
+test('loadDefaults reads defaults/gg.json', () => {
+  assert.equal(config.loadDefaults().labelPrefix, 'gg');
 });
 
 for (const name of ['implementer.md', 'reviewer.md']) {
-  test(`loadDefaults reads the shipped persona ${name} with its hash`, () => {
-    const file = readFileSync(personaPath(name));
-    const persona = config.loadDefaults().files[`personas/${name}`];
+  test(`loadLayers reads the example Persona ${name} that gg init wrote, with its hash`, (t) => {
+    const { repo, home } = layers(t);
+    doctor.init(repo);
+    const file = readFileSync(join(repo, '.agents', 'gg', name));
+    const persona = config.loadLayers(repo, home).files[name];
     assert.ok(persona, `${name} is loaded`);
     assert.equal(String(persona.bytes), file.toString('utf8'));
     assert.equal(persona.hash, sha256(file));
@@ -58,10 +58,12 @@ test('hashOf refuses a Map, which it would otherwise hash as an empty object', (
 });
 
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
-  const defaults: exampleLayer.Layer = config.loadDefaults();
+  const example = exampleLayer.config();
   const base = {
-    flow: defaults.flows.default,
-    files: defaults.files,
+    flow: example.flows.default,
+    files: Object.fromEntries(
+      exampleLayer.PERSONA_NAMES.map((name) => [name, layerFile(exampleLayer.fixtureText(name))]),
+    ),
     harnesses: { claude: {} },
     launchProfile: null,
     commands: { test: 'npm test' },
@@ -73,8 +75,8 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   assert.equal(config.configHash(reversed(base)), hash, 'stable across key order');
 
   const persona = structuredClone(base);
-  const bytes = `${String(persona.files['personas/implementer.md'].bytes)} `;
-  persona.files['personas/implementer.md'] = { bytes, hash: sha256(bytes) };
+  const bytes = `${String(persona.files['implementer.md'].bytes)} `;
+  persona.files['implementer.md'] = { bytes, hash: sha256(bytes) };
   assert.notEqual(config.configHash(persona), hash, 'a Persona byte changes the hash');
 
   const vertex = structuredClone(base);
@@ -90,9 +92,10 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   assert.notEqual(config.configHash(testPaths), hash, 'a test path changes the hash');
 });
 
-// gg's lib, defaults and runtime dependencies copied under `root`, laid out as an install lays them out.
+// gg's lib, defaults, the example gg init writes and runtime dependencies copied under `root`, laid out as an install
+// lays them out.
 function copyInstall(root: string) {
-  for (const directory of ['lib', 'defaults'])
+  for (const directory of ['lib', 'defaults', 'test/fixtures/example'])
     cpSync(join(repoRoot, directory), join(root, directory), { recursive: true });
   const { dependencies = {} } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
   for (const name of Object.keys(dependencies))
@@ -100,30 +103,33 @@ function copyInstall(root: string) {
 }
 
 // A copy of gg installed under its own root, with `edit` applied to the copy, and the Config Hash input and hash it
-// gives the defaults.
+// gives a repository its gg init wrote.
 async function installed(t: TestContext, install: string, edit = (_root: string) => {}) {
   const root = join(mkdtempSync(join(tmpdir(), `gg-install-${install}-`)), 'gg');
   t.after(() => rmSync(join(root, '..'), { recursive: true, force: true }));
   copyInstall(root);
   edit(root);
-  // The copy's own module, so its paths are the copy's: a namespace import would load this checkout's.
+  // The copy's own modules, so their paths are the copy's: a namespace import would load this checkout's.
   const copied = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
-  const defaults = copied.loadDefaults();
-  const input = { flow: defaults.flows.default, files: defaults.files, harnesses: {}, commands: {} };
+  const copiedDoctor = await import(pathToFileURL(join(root, 'lib', 'doctor.ts')).href);
+  const repo = join(root, '..', 'repo');
+  copiedDoctor.init(repo);
+  const loaded = copied.loadLayers(repo, join(root, '..', 'home'));
+  const input = { flow: loaded.flows.default, files: loaded.files, harnesses: {}, commands: {} };
   return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: copied.configHash(input) };
 }
 
 test('asset bytes change the Config Hash but installation paths do not', async (t) => {
-  // Two copies of gg installed under different roots must hash the shipped defaults the same.
+  // Two copies of gg installed under different roots must hash what they ship the same.
   const one = await installed(t, 'one');
   const two = await installed(t, 'two');
   assert.ok(!one.input.includes(one.root), 'no install path in the hashed input');
   assert.ok(!two.input.includes(two.root), 'no install path in the hashed input');
   assert.equal(one.hash, two.hash);
   const edited = await installed(t, 'edited', (root) =>
-    writeFileSync(join(root, 'defaults', 'personas', 'reviewer.md'), '# reviewer, edited\n'),
+    writeFileSync(join(root, 'test', 'fixtures', 'example', 'reviewer.md'), '# reviewer, edited\n'),
   );
-  assert.notEqual(edited.hash, one.hash, 'a shipped Persona byte changes the hash');
+  assert.notEqual(edited.hash, one.hash, 'a byte of a Persona gg init writes changes the hash');
 });
 
 // A repository root and a home directory, each with the Layer text given (or none).
@@ -174,11 +180,6 @@ test('loadLayers reads each file from the Layer that declares its name', (t) => 
   assert.deepEqual(files['body.md'], layerFile('body'));
   assert.deepEqual(files['again.md'], layerFile('again'));
   assert.deepEqual(files['stopped.md'], layerFile('stopped'));
-  assert.equal(
-    files['personas/implementer.md'].bytes,
-    readFileSync(personaPath('implementer.md'), 'utf8'),
-    'the defaults keep their own files',
-  );
 });
 
 test('an inherited file reference keeps its declaring Layer', (t) => {
@@ -271,8 +272,7 @@ test("a later Layer's null stays in the merged configuration in place of the ear
   });
   const loaded = config.loadLayers(repo, home) as unknown as { agents: Record<string, unknown> };
   assert.equal(loaded.agents.reviewer, null, 'the Agent is not deleted');
-  const shipped: exampleLayer.Layer = config.loadDefaults();
-  assert.deepEqual(loaded.agents.implementer, { ...shipped.agents.implementer, effort: null });
+  assert.equal((loaded.agents.implementer as { effort?: unknown }).effort, null, 'the key is not deleted');
 });
 
 test('loadLayers takes Declared Commands whole from the repository Layer', (t) => {
@@ -457,9 +457,10 @@ test(
   },
 );
 
-test('this repository Layer declares the default test globs as its testPaths', (t) => {
+// U15, #96: the repository adds its test launcher, so Test Immutability freezes what `test` runs.
+test("this repository Layer declares the example's test globs and its suite launcher as its testPaths", (t) => {
   const { home } = layers(t);
-  assert.deepEqual(config.loadLayers(repoRoot, home).testPaths, checks.DEFAULT_TEST_GLOBS);
+  assert.deepEqual(config.loadLayers(repoRoot, home).testPaths, [...exampleLayer.TEST_GLOBS, 'scripts/run-suite.ts']);
 });
 
 // Until the cutover (grey-goo-ri issue #97): feature-flow builds this repository and reads its AGENTS.md line.

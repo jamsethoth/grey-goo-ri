@@ -13,8 +13,7 @@ const base = { ticket, baseBranch: 'origin/main', commands: { test: 'npm test' }
 const redEvidence = { command: 'npm test', output: 'not ok 1 - widgets render' };
 const greenInputs = { testFiles: ['test/widgets.test.mjs'], red: redEvidence };
 // An example Brief by its file name.
-const shipped = (name: string, context: briefs.BriefContext) =>
-  briefs.brief(name, exampleLayer.fixtureText(name), context);
+const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(exampleLayer.fixtureText(name), context);
 
 // What the example's Briefs say (#120): GLOSSARY terms, the Visit's inputs, and nothing a Procedure does not read.
 const VISIT_BRIEFS = { 'red.md': 'RED', 'green.md': 'GREEN', 'fix.md': 'FIX' };
@@ -43,7 +42,7 @@ test('a History entry is numbered by attemptNumber', async () => {
     { kind: 'red-failed', text: 'one' },
     { kind: 'rescued', text: 'two' },
   ];
-  const numbered = await briefs.brief('numbered.md', '{{#history}}{{attemptNumber}} {{kind}}\n{{/history}}', {
+  const numbered = await briefs.brief('{{#history}}{{attemptNumber}} {{kind}}\n{{/history}}', {
     history,
   });
   assert.equal(numbered, '1 red-failed\n2 rescued\n');

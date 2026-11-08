@@ -6,9 +6,9 @@ It failed.
 ## The command Check lint
 It failed too.
 
-## Repo commands
+## Declared Commands
 - test: `npm test`
 - lint: `npm run lint`
 
-Fix what each section asks, then return the structured result again; every Check runs again.
+Fix what each section asks, then return the Structured Response again; every Check runs again.
 If you cannot, claim blocked and say why in "diagnosis".

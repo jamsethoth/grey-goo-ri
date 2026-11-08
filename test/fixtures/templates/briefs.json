@@ -64,6 +64,16 @@
         "red": {
           "command": "npm test",
           "output": "not ok 1 - widgets render\n  AssertionError: expected widget"
+        },
+        "redReport": {
+          "claim": "ok",
+          "reason": "none",
+          "summary": "Failing tests for widgets.",
+          "tests": [
+            "widgets render"
+          ],
+          "notes": "widgets() does not exist yet.",
+          "diagnosis": ""
         }
       }
     }
@@ -250,6 +260,16 @@
         "green": {
           "command": "npm test",
           "output": "ok 1 - widgets render"
+        },
+        "redReport": {
+          "claim": "ok",
+          "reason": "none",
+          "summary": "Failing tests for widgets.",
+          "tests": [
+            "widgets render"
+          ],
+          "notes": "widgets() does not exist yet.",
+          "diagnosis": ""
         }
       }
     }
@@ -282,6 +302,16 @@
         "green": {
           "command": "npm test",
           "output": "ok 1 - widgets render"
+        },
+        "redReport": {
+          "claim": "ok",
+          "reason": "none",
+          "summary": "Failing tests for widgets.",
+          "tests": [
+            "widgets render"
+          ],
+          "notes": "widgets() does not exist yet.",
+          "diagnosis": ""
         }
       }
     }

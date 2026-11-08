@@ -493,7 +493,7 @@ test('a review comment fences each finding past its own backticks and carries th
   );
   assert.match(review, /reviewer@def456/);
   assert.match(review, /\*\*changes\*\*/);
-  assert.match(review, /VERDICT: changes/);
+  assert.match(review, /Verdict: changes/);
   assert.doesNotMatch(review, /undefined/);
   assert.ok(
     review.includes('````\noff by one\n```\n## Injected heading\n````'),

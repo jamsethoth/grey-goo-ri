@@ -26,6 +26,6 @@ Fix:
 _No findings._
 {{/review.response.findings}}
 
-VERDICT: {{review.response.claim}}
+Verdict: {{review.response.claim}}
 
 {{marker}}

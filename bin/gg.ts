@@ -46,6 +46,11 @@ async function runCommand(parsed: options.ParsedOptions) {
   process.exitCode = run.runExitCode(results);
 }
 
+async function initCommand() {
+  const { mainRoot } = await git.repoInfo(process.cwd());
+  process.stdout.write(doctor.init(mainRoot));
+}
+
 async function doctorCommand() {
   const { mainRoot } = await git.repoInfo(process.cwd());
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
@@ -60,7 +65,7 @@ async function doctorCommand() {
 }
 
 const COMMANDS: Record<string, Command> = {
-  init: { summary: 'set up a repository for gg' },
+  init: { summary: 'write the example Layer into the repository', run: initCommand },
   doctor: { summary: 'validate the configuration and print each Resolved Flow', run: doctorCommand },
   plan: {
     summary: 'produce the Plan for an Epic; plan --finish <planId> finishes one',

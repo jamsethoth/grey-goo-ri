@@ -594,7 +594,8 @@ The merged review is [user-defined-procedures-review3.md](user-defined-procedure
   History, provenance, Action Marker, and the test files changed since the Execution's first test commit, R3d) is
   available to a Brief or template that names it, never inserted; gg computes a value only when a template names it.
   Everything a Vertex produced comes through `inputs` (Q7). The example's `reviewer`, `publish`, `implementer-fix`
-  and `senior-dev` declare `report`, `red` and `green` (T6 lists). Context size stays per Brief, as today.
+  and `senior-dev` declare `report`, `red` and `green` (T6 lists). Context size stays per Brief, as today. Amended by
+  the owner, 2026-11-06 (#120): one limit, the last 6000 characters, covers every output a Brief quotes.
 - U2. "No file under `testPaths` changed since the Visit's baseline" is a non-recoverable `tests-fail` failure (T4c),
   as today's "No tests were written". In the example it is `failed`, routed by the Flow's `"*"` to `needs-human`, on a
   retest Visit too. A `commit` with nothing to commit is a no-op with `files: []`. Amended by K7: the failure is

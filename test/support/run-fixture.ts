@@ -5,7 +5,6 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.ts';
 import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.ts';
@@ -19,11 +18,13 @@ import * as validate from '../../lib/validate/index.ts';
 import * as addSuite from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';
 import * as executionContext from './execution-context.ts';
+import * as exampleLayer from './example-layer.ts';
 import * as executionReads from './execution-reads.ts';
 import * as fakeGh from './fake-gh.ts';
 import * as fakeHarnessModule from './fake-harness.ts';
 import * as gitShell from './git-shell.ts';
 import * as golden from './golden.ts';
+import * as shippedFlow from './shipped-flow.ts';
 import * as tempDirectory from './temp-directory.ts';
 
 export { BRANCH, TICKET } from './golden.ts';
@@ -35,12 +36,12 @@ type Configuration = config.Config & {
   procedures: Record<string, { actions: { id: string; [key: string]: unknown }[] }>;
 };
 
-// The shipped defaults with every Agent on `harness`, the repository Layer's test command and, unless `fullFlow`, a
-// red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
+// The Layer gg shipped until #120 with every Agent on `harness`, the repository Layer's test command and, unless
+// `fullFlow`, a red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
 export function testConfig(root: string, { harness = 'fake', fullFlow = false } = {}): Configuration {
-  const configured = config.loadDefaults() as Configuration;
+  const configured = shippedFlow.shippedLayer() as Configuration;
   configured.commands = { test: 'npm test' };
-  configured.testPaths = [...checks.DEFAULT_TEST_GLOBS];
+  configured.testPaths = [...exampleLayer.TEST_GLOBS];
   for (const agent of Object.values(configured.agents))
     Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
   configured.worktreeRoot = join(root, 'wt');
@@ -263,7 +264,7 @@ export async function seedExecution(
       log: () => {},
       cwd: mainRoot,
       commands: { test: 'npm test' },
-      testPaths: [...checks.DEFAULT_TEST_GLOBS],
+      testPaths: [...exampleLayer.TEST_GLOBS],
       ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
       base: 'main',
       labelPrefix: 'gg',

@@ -5,7 +5,7 @@ You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here
 ## Ticket
 {{ticket.body}}
 
-## Repo commands
+## Declared Commands
 {{#commands}}
 - {{name}}: `{{command}}`
 {{/commands}}
@@ -15,7 +15,7 @@ You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here
 
 ## Rules
 - Do not run git add, git commit, git push or gh: the orchestrator runs the tests, commits and handles GitHub.
-- Run repo commands plainly, without command substitution or heredocs: they are permission-checked.
+- Run Declared Commands plainly, without command substitution or heredocs: they are permission-checked.
 - Stay inside the ticket's scope.
 {{#history}}
 {{#first}}
@@ -25,7 +25,7 @@ You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here
 {{^first}}
 
 {{/first}}
-### Attempt {{n}}: {{kind}}
+### Attempt {{attemptNumber}}: {{kind}}
 {{text}}
 {{/history}}
 {{#inputs.findings.length}}
@@ -36,8 +36,24 @@ You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here
 - {{severity}} in {{file}}: {{issue}}
   Fix: {{fix}}
 {{/inputs.findings}}
+{{#inputs.previous}}
+
+## Work rescued from an earlier Visit
+An earlier Visit's work did not pass its Checks and was kept at {{inputs.previous.ref}}:
+
+```
+{{inputs.previous.diffStat}}
+```
+
+Read it with `git diff HEAD {{inputs.previous.ref}}` and keep what is right. The output it failed with:
+
+```
+{{inputs.previous.output}}
+```
+{{/inputs.previous}}
 
 The branch already holds the previous work. Address every blocker and major finding above.
 If a fix changes behaviour, add or adjust a failing test first. Finish with the test command passing.
-Return the structured result: claim ok, blocked or misscoped; every definition-of-done item with evidence,
-QA instructions, and notes. "diagnosis" is empty unless your claim is blocked or misscoped, or your persona asks for one.
+Return the Structured Response: claim ok with reason none; every definition-of-done item with evidence, QA
+instructions, and notes. If you cannot, claim blocked and say why in "diagnosis", with reason misscoped when the ticket
+itself is wrong or contradictory, or needs-input or environment when something outside the ticket is missing.

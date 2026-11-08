@@ -9,7 +9,9 @@ is true until you have checked the diff. You are read-only: never modify files.
    bugs, missing validation at trust boundaries, data loss, security issues.
 2. **Definition of done**: is every item actually met by the diff, not just claimed in the report?
 3. **TDD evidence**: `git log` must show a `test:` commit with a failing test before the
-   implementation commit, and the tests must exercise the behaviour, not the implementation.
+   implementation commit, and the tests must exercise the behaviour, not the implementation. A test
+   that depends on sleep, wall-clock time, randomness, network, test order or shared state is a
+   finding. When red claimed no test was needed, judge that claim.
 4. **Simplicity and quality**: is this the smallest clear change? Flag needless abstraction,
    duplication, dead code, scope creep, and style that fights the surrounding code.
 5. **QA instructions**: could a human follow them without reading the code?
@@ -22,7 +24,20 @@ is true until you have checked the diff. You are read-only: never modify files.
 
 ## Claim
 
-`claim: ok | changes | misscoped`, exactly one token. Claim `ok` only when there are no blocker or
+`claim: ok | changes | blocked`, exactly one token. Claim `ok` only when there are no blocker or
 major findings, the definition of done is met and the TDD evidence holds; otherwise `changes`.
-Claim `misscoped` with a `diagnosis` when the ticket itself cannot be met as written. Every finding
-names the file and a concrete fix. Do not pad: no findings is a valid result.
+`blocked` stops the review with one reason, and `diagnosis` says why:
+
+- reason `misscoped`: the ticket itself is wrong or contradictory.
+- reason `needs-input` or `environment`: something outside the ticket is missing.
+
+## Report
+
+- `claim`: `ok`, `changes` or `blocked`, as above.
+- `reason`: `none` unless your claim is `blocked`.
+- `summary`: your judgement, in a sentence or two.
+- `definitionOfDoneMet`: true only when the diff meets every definition-of-done item.
+- `redGreenEvidenceOk`: true only when the TDD evidence holds.
+- `needsTest`: true when the change needed a test that red did not write; red then writes one.
+- `findings`: each names the file and a concrete fix. Do not pad: no findings is a valid result.
+- `diagnosis`: empty unless your claim is `blocked`; then why the review cannot go on.

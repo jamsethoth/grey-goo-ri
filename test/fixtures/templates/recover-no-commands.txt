@@ -3,8 +3,8 @@ The orchestrator ran your work's Checks on branch ticket/7-add-widgets, and thes
 ## The command Check test
 It failed.
 
-## Repo commands
+## Declared Commands
 - (none declared)
 
-Fix what each section asks, then return the structured result again; every Check runs again.
+Fix what each section asks, then return the Structured Response again; every Check runs again.
 If you cannot, claim blocked and say why in "diagnosis".

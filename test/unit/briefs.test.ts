@@ -27,13 +27,12 @@ const fixture = (name: string) => readFileSync(new URL(`../fixtures/templates/${
 const text = (name: string) =>
   exampleLayer.TEMPLATE_NAMES.includes(name) ? exampleLayer.fixtureText(name) : render.engineTemplate(name);
 // An example Brief by its file name, and the recovery Brief with a section per `{ brief, ...check }`.
-const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(name, text(name), context);
+const shipped = (name: string, context: briefs.BriefContext) => briefs.brief(text(name), context);
 type RecoveryContext = briefs.BriefContext & { sections: { brief: string; [field: string]: unknown }[] };
 const recovery = (name: string, context: RecoveryContext) =>
-  briefs.recoveryBrief(name, text(name), {
+  briefs.recoveryBrief(text(name), {
     ...context,
     sections: context.sections.map(({ brief, ...check }) => ({
-      name: brief,
       text: text(brief),
       ...check,
     })),
@@ -101,13 +100,7 @@ test('an absent optional input renders empty through a direct reference', async 
     diff: '',
     changedTestFiles: [],
   });
-  assert.match(
-    green,
-    new RegExp(
-      '## Committed tests\n\nThe orchestrator committed these failing tests; the test command failed as expected:' +
-        '\n\n```\n\n```\n',
-    ),
-  );
+  assert.match(green, /## Committed tests\nNo failing test was committed\.\n/);
   assert.doesNotMatch(fix, /## Review findings/);
   assert.match(review, /## Green Evidence\nThe test command has no passing run\.\n/);
 });
@@ -725,18 +718,18 @@ test('the review brief lists test files changed since the red commit', async () 
 
 // Carried from #183: a limit is keyed on the name the Brief's own context holds, never on a section item's field.
 test("an excerpt limit applies only to a name the Brief's own context holds", async () => {
-  const own = 'x'.repeat(3100);
-  const item = 'y'.repeat(3100);
-  const rendered = await briefs.brief('own.md', '{{output}}|{{#items}}{{output}}{{/items}}', {
+  const own = 'x'.repeat(6100);
+  const item = 'y'.repeat(6100);
+  const rendered = await briefs.brief('{{output}}|{{#items}}{{output}}{{/items}}', {
     output: own,
     items: [{ output: item }],
   });
-  assert.equal(rendered, `${'x'.repeat(3000)}|${item}`);
+  assert.equal(rendered, `${'x'.repeat(6000)}|${item}`);
 });
 
 // An untyped value, such as a History entry's list, prints as JSON, never as [object Object] (#198).
 test('an untyped list of objects renders as JSON', async () => {
   const items = [{ file: 'a.mjs', line: 3 }];
-  const rendered = await briefs.brief('own.md', '{{items}}', { items });
+  const rendered = await briefs.brief('{{items}}', { items });
   assert.equal(rendered, JSON.stringify(items, null, 2));
 });

@@ -4,13 +4,24 @@ Read-only: do not modify files.
 ## Ticket (includes the definition of done)
 {{ticket.body}}
 
-## Repo commands
+## Declared Commands
 {{#commands}}
 - {{name}}: `{{command}}`
 {{/commands}}
 {{^commands}}
 - (none declared)
 {{/commands}}
+{{#history}}
+{{#first}}
+
+## What happened on this branch (newest last)
+{{/first}}
+{{^first}}
+
+{{/first}}
+### Attempt {{attemptNumber}}: {{kind}}
+{{text}}
+{{/history}}
 
 ## Diff
 ```diff
@@ -27,11 +38,23 @@ Read-only: do not modify files.
 ## Implementer's report
 {{inputs.report}}
 
+## The red Visit's report
+Claim {{inputs.redReport.claim}}, reason {{inputs.redReport.reason}}: {{inputs.redReport.summary}}
+{{inputs.redReport.notes}}
+
+When its reason is no-test-needed, red claims the ticket needs no test, and the Red Evidence below, if any, is from an
+earlier red Visit. Judge that claim: if the change needed a test, set `needsTest: true`.
+
 ## Red Evidence
+{{#inputs.red}}
 `{{inputs.red.command}}` failed before the implementation:
 ```
 {{inputs.red.output}}
 ```
+{{/inputs.red}}
+{{^inputs.red}}
+No failing test was committed.
+{{/inputs.red}}
 {{#inputs.red.foundByNameOnly}}
 
 The Red Check found the failing test by its name only: the runner printed no per-test statuses. Check that the test
@@ -51,6 +74,10 @@ The test command has no passing run.
 
 Check correctness, code quality and simplicity, and definition-of-done coverage. The orchestrator itself verified
 that the "test:" commit's tests failed before implementation and pass now (the evidence above); check that
-those tests actually exercise the ticket's behaviour and were not weakened afterwards.
-Return claim ok only if there are no blocker or major findings, changes otherwise, or misscoped with a diagnosis
-when the ticket itself cannot be met as written.
+those tests actually exercise the ticket's behaviour and were not weakened afterwards. That proof assumes each test is
+deterministic: report as a finding any new or changed test that depends on
+sleep, wall-clock time, randomness, network, test order or shared state.
+Return claim ok only if there are no blocker or major findings, changes otherwise. Set `needsTest: true` when the
+change needed a test that red did not write. If the review cannot go on, claim blocked and say why in "diagnosis", with
+reason misscoped when the ticket itself is wrong or contradictory, or needs-input or environment when something
+outside the ticket is missing.

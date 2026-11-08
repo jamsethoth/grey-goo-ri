@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
 import * as events from '../../lib/events.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 import { fakeGit } from '../support/fake-git.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -461,7 +462,7 @@ test('diffStats splits test and non-test insertions', () => {
       { path: 'src/util.spec.ts', insertions: 2, deletions: 2 },
       { path: 'img.png', insertions: null, deletions: null },
     ],
-    checks.DEFAULT_TEST_GLOBS,
+    exampleLayer.TEST_GLOBS,
   );
   assert.deepEqual(stats, { files: 4, insertions: 15, deletions: 3, testFiles: 2, testInsertions: 12 });
 });
@@ -484,7 +485,7 @@ test('diffStats counts exactly the files Test Immutability treats as tests', asy
   add('fixtures/x.json');
   add('lib/x.mjs');
   const immutability = await checks.testImmutability(mainRoot, base, {
-    globs: checks.DEFAULT_TEST_GLOBS,
+    globs: exampleLayer.TEST_GLOBS,
     git: fake.git,
   });
   const stats = events.diffStats(
@@ -496,7 +497,7 @@ test('diffStats counts exactly the files Test Immutability treats as tests', asy
       { path: 'fixtures/x.json', insertions: 16, deletions: 0 },
       { path: 'lib/x.mjs', insertions: 32, deletions: 0 },
     ],
-    checks.DEFAULT_TEST_GLOBS,
+    exampleLayer.TEST_GLOBS,
   );
 
   assert.deepEqual(immutability.changed, ['Tests/a.mjs', 'fixtures/x.json', 'src/a.TEST.mjs', 'test/b.mjs']);

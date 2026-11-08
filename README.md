@@ -6,10 +6,12 @@ with deterministic gates, full tracing and usage metrics. Successor to feature-f
 
 Status: under construction, and not yet usable on a real ticket.
 
+- `gg init` writes an example Layer, a Flow with its Agents, Procedures, Briefs and Personas, into
+  `.agents/gg/` of the repository, and keeps one that is already there.
 - `gg doctor` validates the configuration and prints each Resolved Flow.
 - `gg run <ticket>` would carry a Ticket through its Flow, but the Claude Code and Codex Harnesses are stubs, so its
   preflight fails with "not implemented" for every Vertex that has an Agent, before any Ticket is admitted.
-- `gg init`, `plan`, `publish`, `work`, `trace` and `stats` are not implemented.
+- `plan`, `publish`, `work`, `trace` and `stats` are not implemented.
 
 ## Install
 

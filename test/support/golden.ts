@@ -4,7 +4,6 @@
 import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import * as checks from '../../lib/checks.ts';
 import * as config from '../../lib/config.ts';
 import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.ts';
@@ -18,12 +17,14 @@ import type * as runContext from '../../lib/run-context.ts';
 import * as validate from '../../lib/validate/index.ts';
 import * as addSuiteModule from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';
+import * as exampleLayer from './example-layer.ts';
 import * as fakeGhModule from './fake-gh.ts';
 import * as fakeGitModule from './fake-git.ts';
 import * as fakeHarnessModule from './fake-harness.ts';
 import * as fakeIntegrityModule from './fake-integrity.ts';
 import * as gitShell from './git-shell.ts';
 import * as keys from './keys.ts';
+import * as shippedFlow from './shipped-flow.ts';
 import * as tempDirectory from './temp-directory.ts';
 import * as templateRepos from './template-repos.ts';
 
@@ -126,17 +127,17 @@ export interface GoldenConfig {
   files: config.LayerFiles;
 }
 
-// The golden configuration: the shipped Procedures and their files, the implementer on the fake Harness with the golden
-// Persona, the repository's commands and test paths, and the golden Flow.
+// The golden configuration: gg's Procedures until #120 and their files, the implementer on the fake Harness with the
+// golden Persona, the repository's commands and test paths, and the golden Flow.
 export function goldenConfig(): GoldenConfig {
-  const defaults = config.loadDefaults();
+  const shipped = shippedFlow.shippedLayer();
   return {
     commands: { test: 'npm test' },
-    testPaths: [...checks.DEFAULT_TEST_GLOBS],
+    testPaths: [...exampleLayer.TEST_GLOBS],
     agents: { implementer: implementerAgent('implementer.md') },
-    procedures: defaults.procedures as GoldenConfig['procedures'],
+    procedures: shipped.procedures as GoldenConfig['procedures'],
     flows: { golden: redGreenFlow() },
-    files: { ...defaults.files, 'implementer.md': layerFile(PERSONA) },
+    files: { ...shipped.files, 'implementer.md': layerFile(PERSONA) },
   };
 }
 
@@ -187,8 +188,7 @@ export type Which = 'fake' | 'real';
 export const fakeIntegrityFor = (integrity: Which, head: string, git: runContext.RunGit) =>
   integrity === 'real' ? null : fakeIntegrityModule.fakeIntegrity({ head, git });
 
-// The template's repos, in real git or in a fake git, and the git verbs to inject. Returns main's SHA as `base`, which
-// also holds `baseFiles`.
+// The template's repos, in real git or a fake git, with `baseFiles` on main; the git verbs to inject; main's SHA.
 export function seedGit(root: string, which: Which, baseFiles: Record<string, string> = {}) {
   if (which === 'real')
     return { base: templateRepos.seedRepos(root, baseFiles), git: gitModule as runContext.RunGit, fakeGit: null };

@@ -662,7 +662,7 @@ Ported as they are:
   records the reason into history, "No tests were written" as a distinct failure. A failed red now leaves its work in
   place at an end, or rescues it to a Rescue Ref when routed to another Vertex (ADR 0014).
 - Resume rules: recovery resumes its Visit's agent Session, and a new Visit never resumes (ADR 0014); history goes
-  to red and fix briefs only.
+  to the red, fix and review briefs (the review's since #120, decision L4).
 - Review is read-only with the before and after HEAD and dirty comparison; order after review: event, PR comment, PR
   body re-render with provenance, then ready and labels.
 - Draft PR upserted after every green commit and push; escalation diagnosis comment when non-empty; provenance table

@@ -1,0 +1,43 @@
+FIX VISIT for GitHub issue #{{ticket.number}}: {{ticket.title}}
+
+You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here.
+
+## Ticket
+{{ticket.body}}
+
+## Repo commands
+{{#commands}}
+- {{name}}: `{{command}}`
+{{/commands}}
+{{^commands}}
+- (none declared)
+{{/commands}}
+
+## Rules
+- Do not run git add, git commit, git push or gh: the orchestrator runs the tests, commits and handles GitHub.
+- Run repo commands plainly, without command substitution or heredocs: they are permission-checked.
+- Stay inside the ticket's scope.
+{{#history}}
+{{#first}}
+
+## Previous attempts on this branch (newest last)
+{{/first}}
+{{^first}}
+
+{{/first}}
+### Attempt {{attemptNumber}}: {{kind}}
+{{text}}
+{{/history}}
+{{#inputs.findings.length}}
+
+## Review findings
+{{/inputs.findings.length}}
+{{#inputs.findings}}
+- {{severity}} in {{file}}: {{issue}}
+  Fix: {{fix}}
+{{/inputs.findings}}
+
+The branch already holds the previous work. Address every blocker and major finding above.
+If a fix changes behaviour, add or adjust a failing test first. Finish with the test command passing.
+Return the structured result: claim ok, blocked or misscoped; every definition-of-done item with evidence,
+QA instructions, and notes. "diagnosis" is empty unless your claim is blocked or misscoped, or your persona asks for one.

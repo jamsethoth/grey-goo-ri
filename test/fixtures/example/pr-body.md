@@ -9,10 +9,21 @@ Closes #{{ticket.number}}
 {{/report.definitionOfDone}}
 
 ## TDD evidence
+{{#red}}
 **Red** (`{{red.command}}`)
 ```
 {{red.output}}
 ```
+{{/red}}
+{{^red}}
+**Red**: no failing test was committed.
+{{/red}}
+{{#redReport}}
+**The red Visit's report**: claim {{claim}}, reason {{reason}}.
+```
+{{notes}}
+```
+{{/redReport}}
 {{#green}}
 **Green** (`{{green.command}}`)
 ```

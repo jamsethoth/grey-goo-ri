@@ -1,5 +1,10 @@
-// `gg doctor`: the validator's Resolved Flow, warnings and errors, printed per Vertex (V1).
+// `gg doctor`: the validator's Resolved Flow, warnings and errors, printed per Vertex (V1). `gg init`: the example
+// Layer written into a repository.
 
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as jsonc from 'jsonc-parser';
 import * as config from './config.ts';
 import type * as github from './github.ts';
 import * as labels from './labels.ts';
@@ -213,7 +218,41 @@ export async function doctor({ config: layers, harnesses, gh, cwd }: DoctorOptio
   return { text: `${lines.join('\n')}\n`, exitCode: errors.length ? 1 : 0 };
 }
 
-// `gg init`: writes the example Layer into `repoRoot`'s .agents/gg/, unless any file it would write exists.
-export function init(_repoRoot: string): { text: string; exitCode: number } {
-  return { text: '', exitCode: 1 };
+// The example `gg init` writes is the fixture the tests run, so the two cannot drift; doctor.txt is that fixture's
+// expected gg doctor output, not part of the example.
+const EXAMPLE_DIRECTORY = fileURLToPath(new URL('../test/fixtures/example/', import.meta.url));
+
+function initAdvice(directory: string, names: string[]): string {
+  return `gg init wrote the example Layer to ${directory}: ${names.join(', ')}.
+
+Before gg doctor passes:
+- Declare the command that runs your tests as commands.test in gg.json. Every Check in the example runs it.
+- Name a harness, model and effort for each Agent (implementer, reviewer, senior) in your user Layer,
+  ~/.agents/gg/gg.json. ${config.EXAMPLES_DIRECTORY} holds one to copy for each Harness gg ships.
+
+gg assumes the test command is deterministic: a test that fails on a tree it passed on ends the Ticket at needs-human.
+gg pushes agent-written commits, which this repository's CI runs with its GITHUB_TOKEN, so we recommend
+read-only default workflow permissions (Settings > Actions > General > Workflow permissions).
+`;
+}
+
+// Writes the example Layer into `repoRoot`'s .agents/gg/, unless a file it would write exists: then it writes nothing,
+// so gg init is safe to repeat (owner, 2026-11-06). The example's gg.json leaves out commands.test, which only the
+// repository can say.
+export function init(repoRoot: string): string {
+  const directory = dirname(config.layerPath(repoRoot));
+  const names = [
+    'gg.json',
+    ...readdirSync(EXAMPLE_DIRECTORY).filter((name) => !['gg.json', 'doctor.txt'].includes(name)),
+  ];
+  const existing = names.map((name) => join(directory, name)).find((path) => existsSync(path));
+  if (existing) return `gg init kept the existing Layer and wrote nothing: ${existing} exists.\n`;
+  mkdirSync(directory, { recursive: true });
+  for (const name of names) {
+    const text = readFileSync(join(EXAMPLE_DIRECTORY, name), 'utf8');
+    const written =
+      name === 'gg.json' ? jsonc.applyEdits(text, jsonc.modify(text, ['commands', 'test'], undefined, {})) : text;
+    writeFileSync(join(directory, name), written, { flag: 'wx' });
+  }
+  return initAdvice(directory, names);
 }

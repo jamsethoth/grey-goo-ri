@@ -118,15 +118,17 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/work.ts` | **stub** (`export {}`): `gg work` and the Registry |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
-| `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex, and the labels they can request that the repository lacks. `gg init` is not built (#120) |
+| `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex, and the labels they can request that the repository lacks; `gg init`: the example Layer, `test/fixtures/example/`, written into a repository |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
-| `examples/` | user Layers to copy: a Claude and a Codex harness choice for the shipped Agents |
+| `examples/` | user Layers to copy: a Claude and a Codex harness choice for the example's Agents |
 
 ## Misleading areas
 
-- The stubs marked in Layout: `gg init`, `plan`, `publish`, `work`, `trace` and `stats` print "not implemented".
+- The stubs marked in Layout: `plan`, `publish`, `work`, `trace` and `stats` print "not implemented".
+- `gg init` writes `test/fixtures/example/`, the example the tests run, so the fixture is shipped content: a change to it
+  changes what a new repository gets. `test/fixtures/shipped-flow/` keeps the defaults' Flow for the golden traces.
 - The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
 - `git.ts`, `locks.ts` and `record.ts` also export the functions of their real instance, for callers that take no

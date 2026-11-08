@@ -8,9 +8,9 @@ const properties = (...schemas: string[]) =>
   new Set(
     schemas.flatMap((name) => Object.keys(JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)).properties)),
   );
-// The fields a Persona's report section asks for, one `- \`field\`:` line each.
+// The fields a Persona's report section asks for, one `- \`field\`` line each.
 const asked = (text: string) =>
-  new Map([...text.matchAll(/^- `(\w+)`(.*)$/gm)].map(([, field, rest]) => [field, rest]));
+  new Map([...text.split('## Report')[1]!.matchAll(/^- `(\w+)`(.*)$/gm)].map(([, field, rest]) => [field, rest]));
 // ff's personas asked for PASS and a "blocked" status; every Claim token is now lowercase (GLOSSARY.md, Verdict).
 const UPPERCASE_CLAIMS = /\b(?:OK|PASS|CHANGES|REPEAT|BLOCKED|MISSCOPED)\b/;
 

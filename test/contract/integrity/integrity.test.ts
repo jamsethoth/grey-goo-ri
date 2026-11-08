@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import * as checks from '../../../lib/checks.ts';
 import * as integrity from '../../../lib/integrity.ts';
 import * as gitModule from '../../../lib/git.ts';
+import * as exampleLayer from '../../support/example-layer.ts';
 import * as fakeGitModule from '../../support/fake-git.ts';
 import * as fakeIntegrityModule from '../../support/fake-integrity.ts';
 import * as gitShell from '../../support/git-shell.ts';
@@ -141,7 +142,7 @@ test('the fake integrity records the untracked tests the real one records', asyn
     others: [],
     access: 'workspace-write',
     protectedPaths: worktrees.PROTECTED,
-    testPaths: checks.testPathSet(checks.DEFAULT_TEST_GLOBS),
+    testPaths: checks.testPathSet(exampleLayer.TEST_GLOBS),
   };
   const real = await integrity.createIntegrity(gitModule).takeBaseline(beginArguments);
   const fake = await fakeIntegrityModule.fakeIntegrity({ git: gitModule }).integrity.takeBaseline(beginArguments);
@@ -199,7 +200,7 @@ contract('Test Immutability fails when a protected test file changed', async (si
   writeFileSync(join(mainRoot, 'test', 'add.test.mjs'), 'weakened\n');
   writeFileSync(join(mainRoot, 'lib', 'add.mjs'), 'b\n');
 
-  assert.deepEqual(await side.bound(git).testImmutability(mainRoot, base, checks.DEFAULT_TEST_GLOBS), {
+  assert.deepEqual(await side.bound(git).testImmutability(mainRoot, base, exampleLayer.TEST_GLOBS), {
     ok: false,
     changed: ['test/add.test.mjs'],
   });
@@ -209,7 +210,7 @@ contract('Test Immutability passes when only code outside the test paths changed
   const { mainRoot, base, git } = side.repo(t, { 'test/add.test.mjs': 'strict\n', 'lib/add.mjs': 'a\n' });
   writeFileSync(join(mainRoot, 'lib', 'add.mjs'), 'b\n');
 
-  assert.deepEqual(await side.bound(git).testImmutability(mainRoot, base, checks.DEFAULT_TEST_GLOBS), {
+  assert.deepEqual(await side.bound(git).testImmutability(mainRoot, base, exampleLayer.TEST_GLOBS), {
     ok: true,
     changed: [],
   });
@@ -218,7 +219,7 @@ contract('Test Immutability passes when only code outside the test paths changed
 contract('a rollback puts back the untracked and ignored tests it listed', async (side, t) => {
   const { mainRoot, git } = side.repo(t, { '.gitignore': 'test/cache/\n' });
   const bound = side.bound(git).integrity;
-  const within = checks.testPathSet(checks.DEFAULT_TEST_GLOBS);
+  const within = checks.testPathSet(exampleLayer.TEST_GLOBS);
   mkdirSync(join(mainRoot, 'test', 'cache'), { recursive: true });
   writeFileSync(join(mainRoot, 'test', 'new.test.mjs'), 'new\n');
   writeFileSync(join(mainRoot, 'test', 'cache', 'out.json'), '{}\n');

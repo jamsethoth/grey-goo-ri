@@ -145,13 +145,10 @@ export function fieldType(schema: referencePaths.SchemaNode, path: unknown) {
   return error ? { error } : type;
 }
 
-// Each Brief's excerpt of the output it quotes, by the name its own context holds it under, as before templates: a
-// command Check's section shows more of a failing run (U1: size stays per Brief). A section item's field is not cut.
-const EXCERPT = { output: 3000 };
-const OUTPUT_LIMIT = new Map<string, Record<string, number>>([
-  ['templates/green.md', { 'inputs.red.output': 4000 }],
-  ['templates/test-fix.md', { output: 6000 }],
-]);
+// The tail of a command's output a Brief quotes, whichever template quotes it and by whichever reference: `output`, or
+// a path ending in it, such as `inputs.red.output` (owner, 2026-11-06; amends U1). A section item's field is not cut.
+const OUTPUT_LIMIT = 6000;
+const quotesOutput = (ref: string) => ref === 'output' || ref.endsWith('.output');
 
 // What a Brief reads beside its template: the Vertex's scope and gg's facts, each a value or a function computed only
 // when the Brief names it (U1). `failure` is how a recovery section's Check failed.
@@ -161,16 +158,15 @@ export interface BriefContext {
   failure?: string | null;
   [name: string]: unknown;
 }
-// A recovery Brief's section: its template's name and text, and the failing Check's fields.
+// A recovery Brief's section: its template's text, and the failing Check's fields.
 export interface BriefSection {
-  name: string;
   text: string;
   [field: string]: unknown;
 }
 
-// How a Brief prints a value: an excerpt where its context names a limit, an object as JSON, else the value itself.
-function printed(limits: Record<string, number>, value: unknown, ref: string, item: unknown) {
-  if (!item && Object.hasOwn(limits, ref)) return publicText.publicTail(value, String, limits[ref]);
+// How a Brief prints a value: the tail of a command's output, an object as JSON, else the value itself.
+function printed(value: unknown, ref: string, item: unknown) {
+  if (!item && quotesOutput(ref)) return publicText.publicTail(value, String, OUTPUT_LIMIT);
   if (referencePaths.isRecord(value) || (Array.isArray(value) && value.some(referencePaths.isRecord)))
     return JSON.stringify(value, null, 2);
   return value ?? '';
@@ -181,29 +177,27 @@ function printed(limits: Record<string, number>, value: unknown, ref: string, it
 // test files as functions, since they read git. `first` lets a template separate History entries as a join would.
 // A recovery Brief section reads its Check's `id`, `kind`, `command` line, `output` and `failure` (`failure.missing`
 // when the kind recorded that failure).
-// `text` is the template a Layer declares as `name`.
-export function brief(name: string, text: string, { commands = {}, history = [], failure, ...context }: BriefContext) {
-  const limits = { ...EXCERPT, ...OUTPUT_LIMIT.get(name) };
+// `text` is the template a Layer declares.
+export function brief(text: string, { commands = {}, history = [], failure, ...context }: BriefContext) {
   const emit = (value: unknown, { name: ref }: { name: string }, _fenced: boolean, item: unknown) =>
-    printed(limits, value, ref, item);
+    printed(value, ref, item);
   return render.renderTemplate(
     text,
     {
       ...context,
       failure: failure && { [failure]: true },
       commands: () => Object.entries(commands).map(([key, command]) => ({ name: key, command })),
-      // eslint-disable-next-line id-length -- History templates number each entry as {{n}}
-      history: () => history.map((entry, i) => ({ ...entry, n: i + 1, first: i === 0 })),
+      history: () => history.map((entry, index) => ({ ...entry, attemptNumber: index + 1, first: index === 0 })),
     },
     emit,
   );
 }
 
 // The recovery Brief (T4b): the Procedure's `recover.brief` frame, with a section for each failing Check, each section
-// `{ name, text }` a template and the Check's fields.
-export async function recoveryBrief(name: string, text: string, context: BriefContext & { sections: BriefSection[] }) {
+// `{ text }` a template and the Check's fields.
+export async function recoveryBrief(text: string, context: BriefContext & { sections: BriefSection[] }) {
   const sections = [];
-  for (const { name: section, text: sectionText, ...check } of context.sections)
-    sections.push((await brief(section, sectionText, { ...context, ...check })).trimEnd());
-  return brief(name, text, { ...context, sections });
+  for (const { text: sectionText, ...check } of context.sections)
+    sections.push((await brief(sectionText, { ...context, ...check })).trimEnd());
+  return brief(text, { ...context, sections });
 }

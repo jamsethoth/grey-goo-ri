@@ -2,6 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
@@ -226,8 +227,7 @@ const layerDirectory = (root: string) => join(root, '.agents', 'gg');
 
 test('gg init writes the example and gg doctor accepts it', async (t) => {
   const { repo, home } = initRoots(t);
-  const { text, exitCode } = doctor.init(repo);
-  assert.equal(exitCode, 0, text);
+  const text = doctor.init(repo);
   const written = layerDirectory(repo);
   assert.deepEqual(readdirSync(written).sort(), [...exampleLayer.WRITTEN_NAMES].sort(), 'every file but doctor.txt');
   for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
@@ -258,13 +258,15 @@ test('gg init writes the example and gg doctor accepts it', async (t) => {
 });
 
 test('gg init keeps an existing Layer, says so and exits successfully', (t) => {
+  // It returns what it says, and throws only on a failed write, so gg exits 0 (test/e2e/gg.test.ts).
   const { repo } = initRoots(t);
   mkdirSync(layerDirectory(repo), { recursive: true });
   const kept = '{ "commands": { "test": "make test" } }\n';
   writeFileSync(config.layerPath(repo), kept);
-  const { text, exitCode } = doctor.init(repo);
-  assert.equal(exitCode, 0);
-  assert.equal(text, `gg init kept the existing Layer and wrote nothing: ${config.layerPath(repo)} exists.\n`);
+  assert.equal(
+    doctor.init(repo),
+    `gg init kept the existing Layer and wrote nothing: ${config.layerPath(repo)} exists.\n`,
+  );
   assert.deepEqual(readdirSync(layerDirectory(repo)), ['gg.json']);
   assert.equal(readFileSync(config.layerPath(repo), 'utf8'), kept);
 });
@@ -274,10 +276,91 @@ test('gg init writes nothing over any file it would write', (t) => {
   mkdirSync(layerDirectory(repo), { recursive: true });
   const red = join(layerDirectory(repo), 'red.md');
   writeFileSync(red, '# our own red Brief\n');
-  const { text, exitCode } = doctor.init(repo);
-  assert.equal(exitCode, 0);
-  assert.equal(text, `gg init kept the existing Layer and wrote nothing: ${red} exists.\n`);
+  assert.equal(doctor.init(repo), `gg init kept the existing Layer and wrote nothing: ${red} exists.\n`);
   assert.deepEqual(readdirSync(layerDirectory(repo)), ['red.md']);
+});
+
+// This repository's Layer was merged by hand from gg init's output (#120), so it runs on the example's own Flow.
+test(
+  "this repository's Layer is the example with its own commands and testPaths, " + 'and gg doctor accepts it',
+  async (t) => {
+    const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+    const own = JSON.parse(readFileSync(config.layerPath(repoRoot), 'utf8'));
+    const example = JSON.parse(exampleLayer.fixtureText('gg.json'));
+    assert.deepEqual(
+      { ...own, commands: undefined, testPaths: undefined },
+      { ...example, commands: undefined, testPaths: undefined },
+    );
+    for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
+      assert.equal(readFileSync(join(layerDirectory(repoRoot), name), 'utf8'), exampleLayer.fixtureText(name), name);
+    const { home } = initRoots(t);
+    mkdirSync(layerDirectory(home), { recursive: true });
+    copyFileSync(join(config.EXAMPLES_DIRECTORY, 'claude.json'), config.layerPath(home));
+    const { text, exitCode } = await doctor.doctor({
+      config: config.loadLayers(repoRoot, home),
+      harnesses: shipped.HARNESSES,
+      gh: DEPS.gh,
+      cwd: repoRoot,
+    });
+    assert.equal(exitCode, 0, text);
+    assert.match(text, /\n0 errors, 2 warnings\n$/);
+  },
+);
+
+// The harness, model and effort come from the user Layer (P2).
+test("the example's Agents name no harness, model or effort", () => {
+  const { agents } = JSON.parse(exampleLayer.fixtureText('gg.json'));
+  assert.deepEqual(agents, {
+    implementer: { persona: 'implementer.md', access: 'workspace-write' },
+    reviewer: { persona: 'reviewer.md', access: 'read-only' },
+    senior: { persona: 'implementer.md', access: 'workspace-write' },
+  });
+});
+
+test("the example declares its Procedures in the validator's shape", () => {
+  const { flows, errors } = exampleLayer.check(
+    exampleLayer.config(),
+    exampleLayer.schemas(),
+    exampleLayer.exampleTemplates(),
+  );
+  assert.deepEqual(errors, []);
+  const actions = (name: string) =>
+    flows.default.procedures[name].actions.map((action) => [action.id, action.do].join(':'));
+  assert.deepEqual(actions('base-check'), ['test:check']);
+  assert.deepEqual(actions('tests-fail'), ['red:agent', 'red-check:check', 'commit:commit']);
+  assert.deepEqual(actions('implement'), ['green:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert']);
+  assert.deepEqual(actions('fix'), ['fix:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert']);
+  assert.deepEqual(actions('review'), [
+    'review:agent',
+    'review-pass:check',
+    'repeat:check',
+    'comment:comment',
+    'pr:pr-upsert',
+  ]);
+  assert.deepEqual(actions('publish'), ['test:check', 'pr:pr-upsert', 'pr-ready:pr-ready']);
+});
+
+test("the example's schemas spell the Definition of Done and the red and green evidence in full", () => {
+  const required = (name: string) => JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)).required;
+  assert.deepEqual(required('implement'), [
+    'claim',
+    'reason',
+    'summary',
+    'definitionOfDone',
+    'qa',
+    'diagnosis',
+    'notes',
+  ]);
+  assert.deepEqual(required('review'), [
+    'claim',
+    'reason',
+    'summary',
+    'definitionOfDoneMet',
+    'redGreenEvidenceOk',
+    'needsTest',
+    'findings',
+    'diagnosis',
+  ]);
 });
 
 test('every template the example writes names only declared inputs at every Vertex that uses it', () => {

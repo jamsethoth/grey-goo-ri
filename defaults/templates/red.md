@@ -25,7 +25,7 @@ You are on branch {{ticket.branch}}, created from {{baseBranch}}. Work only here
 {{^first}}
 
 {{/first}}
-### Attempt {{n}}: {{kind}}
+### Attempt {{attemptNumber}}: {{kind}}
 {{text}}
 {{/history}}
 

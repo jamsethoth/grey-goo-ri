@@ -4,7 +4,7 @@ The orchestrator ran your work's Checks on branch {{ticket.branch}}, and these f
 {{.}}
 {{/sections}}
 
-## Repo commands
+## Declared Commands
 {{#commands}}
 - {{name}}: `{{command}}`
 {{/commands}}
@@ -12,5 +12,5 @@ The orchestrator ran your work's Checks on branch {{ticket.branch}}, and these f
 - (none declared)
 {{/commands}}
 
-Fix what each section asks, then return the structured result again; every Check runs again.
+Fix what each section asks, then return the Structured Response again; every Check runs again.
 If you cannot, claim blocked and say why in "diagnosis".
