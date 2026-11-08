@@ -135,8 +135,11 @@ function checkClaimTokens(
       briefs.assertClaimEnum(declared.schema, Object.keys(declaredTokens));
     } catch (err) {
       const message = `${declared.schemaName}: ${(err as Error).message}`;
+      const values = declared.schema.properties?.claim?.enum;
       report.error(problems, `${location}.claimTokens`, 'claim-enum-mismatch', message, {
         schema: declared.schemaName as string,
+        ...(Array.isArray(values) && { enum: values }),
+        tokens: Object.keys(declaredTokens),
       });
     }
   }

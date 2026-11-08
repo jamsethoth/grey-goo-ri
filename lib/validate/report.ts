@@ -141,7 +141,7 @@ interface ProblemParams {
   'vertex-needs-agent': { procedure: string };
   'vertex-takes-no-agent': { procedure: string };
   'check-after-effect': { id?: unknown; effect: string; effectId?: unknown };
-  'claim-enum-mismatch': { schema: string };
+  'claim-enum-mismatch': { schema: string; enum?: string[]; tokens: string[] };
   'file-not-named': { key: string };
   'pr-ready-without-checks': { token: string };
   'repeated-action-id': { id: string };
@@ -149,9 +149,9 @@ interface ProblemParams {
   'undeclared-command': { id?: unknown; command: unknown };
   'unknown-action-kind': { kind: unknown };
   'unknown-check-kind': { kind: unknown };
-  'schema-not-strict': { schema: string };
-  'schema-unreadable': { schema: string };
-  'template-unreadable': { template: string } & AtVertex;
+  'schema-not-strict': { schema: string; reason: string };
+  'schema-unreadable': { schema: string; reason: string };
+  'template-unreadable': { template: string; reason: string } & AtVertex;
   'malformed-reference': Reference;
   'not-a-list-of-objects': Reference & { type: unknown };
   'not-a-list-of-strings': Reference & { type: unknown };

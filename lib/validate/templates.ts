@@ -57,7 +57,7 @@ interface TemplateTag {
   children?: TemplateNode[];
 }
 type TemplateNode = string | TemplateTag;
-type Template = { nodes: TemplateNode[]; error?: undefined } | { error: string; nodes?: undefined };
+type Template = { nodes: TemplateNode[]; error?: undefined } | { error: string; reason: string; nodes?: undefined };
 export type TemplateReader = (name: string) => Template;
 type Scope = Record<string, referencePaths.SchemaNode>;
 
@@ -70,7 +70,8 @@ export function templateReader(readTemplate: ((name: string) => string) | undefi
       try {
         templates.set(name, { nodes: render.parseTemplate(readTemplate(name)) as TemplateNode[] });
       } catch (err) {
-        templates.set(name, { error: `${name} cannot be read: ${(err as Error).message}` });
+        const reason = (err as Error).message;
+        templates.set(name, { error: `${name} cannot be read: ${reason}`, reason });
       }
     }
     return templates.get(name) as Template;
@@ -140,7 +141,7 @@ function readTemplate(reading: Reading, place: { where: string; key: string }, n
   const template = reading.reader(name);
   const problems: report.Finding[] = template.nodes
     ? templateProblems(template.nodes, procedures.object(scope))
-    : [{ code: 'template-unreadable', message: template.error, params: { template: name } }];
+    : [{ code: 'template-unreadable', message: template.error, params: { template: name, reason: template.reason } }];
   for (const problem of problems) {
     const message = `${place.key} ${name}: ${problem.message}`;
     reading.found.push({

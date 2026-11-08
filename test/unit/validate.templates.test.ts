@@ -80,7 +80,12 @@ test('a template that cannot be read is an error at each Vertex rendering it', (
   assert.deepEqual(exampleLayer.firedAtVertices(errors), [
     { at: 'procedures.review.actions[0]', code: 'template-unreadable', flow: 'default', vertex: 'reviewer' },
   ]);
-  assert.deepEqual(errors[0].params, { template: 'review.md', flow: 'default', vertex: 'reviewer' });
+  assert.deepEqual(errors[0].params, {
+    template: 'review.md',
+    reason: 'no such file',
+    flow: 'default',
+    vertex: 'reviewer',
+  });
 });
 
 test('a Brief reads the base branch as baseBranch', () => {

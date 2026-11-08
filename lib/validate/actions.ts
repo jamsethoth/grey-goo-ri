@@ -47,15 +47,23 @@ function readSchema(read: ProcedureContext['readSchema'], name: string): LoadedS
   try {
     schema = read(name);
   } catch (err) {
-    const message = `schema ${name} cannot be read: ${(err as Error).message}`;
-    return { node: referencePaths.ANY, error: { code: 'schema-unreadable', message, params: { schema: name } } };
+    const reason = (err as Error).message;
+    const message = `schema ${name} cannot be read: ${reason}`;
+    return {
+      node: referencePaths.ANY,
+      error: { code: 'schema-unreadable', message, params: { schema: name, reason } },
+    };
   }
   try {
     briefs.assertStrict(schema);
     return { node: schema as referencePaths.SchemaNode };
   } catch (err) {
-    const message = `${name}: ${(err as Error).message}`;
-    return { node: referencePaths.ANY, error: { code: 'schema-not-strict', message, params: { schema: name } } };
+    const reason = (err as Error).message;
+    const message = `${name}: ${reason}`;
+    return {
+      node: referencePaths.ANY,
+      error: { code: 'schema-not-strict', message, params: { schema: name, reason } },
+    };
   }
 }
 

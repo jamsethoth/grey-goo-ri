@@ -11,12 +11,18 @@ const VERTICES = 'flows.default.ticket.vertices';
 test('a Claim enum that differs from the declared tokens is an error', () => {
   const config = exampleLayer.config();
   config.procedures['tests-fail'].claimTokens.stuck = { stop: true };
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
+  const { errors } = exampleLayer.check(config);
+  assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: 'procedures.tests-fail.claimTokens',
       code: 'claim-enum-mismatch',
     },
   ]);
+  assert.deepEqual(errors[0].params, {
+    schema: 'red.schema.json',
+    enum: ['ok', 'blocked'],
+    tokens: ['ok', 'blocked', 'stuck'],
+  });
 });
 
 test('a schema outside the strict subset is an error naming the file', () => {
@@ -26,7 +32,10 @@ test('a schema outside the strict subset is an error naming the file', () => {
   assert.deepEqual(exampleLayer.firedRules(errors), [
     { at: 'procedures.review.actions[0]', code: 'schema-not-strict' },
   ]);
-  assert.deepEqual(errors[0].params, { schema: 'review.schema.json' });
+  assert.deepEqual(errors[0].params, {
+    schema: 'review.schema.json',
+    reason: '(root).summary: keyword "minLength" is outside the strict subset',
+  });
 });
 
 test('a schema that cannot be read is an error naming the file', () => {
@@ -36,7 +45,7 @@ test('a schema that cannot be read is an error naming the file', () => {
   assert.deepEqual(exampleLayer.firedRules(errors), [
     { at: 'procedures.review.actions[0]', code: 'schema-unreadable' },
   ]);
-  assert.deepEqual(errors[0].params, { schema: 'review.schema.json' });
+  assert.deepEqual(errors[0].params, { schema: 'review.schema.json', reason: 'no such file' });
 });
 
 test('an undeclared command is an error naming the Check', () => {
