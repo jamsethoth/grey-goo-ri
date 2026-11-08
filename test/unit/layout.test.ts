@@ -185,8 +185,10 @@ test('no module outside lib/git.ts passes git a command line', async () => {
 // their Maps are converted first: lib/record.ts's replacer and lib/model.ts's toJson. Anywhere else JSON.stringify
 // would write {} for each Map in silence (#174).
 // A holder may be reached through its context (runContext.record, running.state), and so may one of its Map fields
-// (state.checks, flow.procedures); a scalar field of one (flow.name) is neither. shortcut: a scalar that is itself
-// named state or flow would be refused too; rename it or list its owner.
+// (state.checks, flow.procedures); a scalar field of one (flow.name) is neither. shortcut: a tripwire on names, not
+// types: a holder under another name or reached by computed access passes, and a scalar or plain JSON collection
+// named like one is refused (rename it, or list its owner); the safety is the two owners' conversions, which
+// test/unit/record.test.ts and test/unit/model.test.ts hold. Replace with a type-aware lint if one appears.
 const HOLDER_NAMES = 'executionRecord|record|visitState|state|flow|runFlow';
 const MAP_FIELDS = 'checks|runs|visits|traversals|procedures|vertices|claimTokens';
 const MAP_HOLDERS = new RegExp(
