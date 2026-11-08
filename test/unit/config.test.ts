@@ -255,7 +255,9 @@ for (const key of ['flows', 'procedures']) {
 
 test('the shipped defaults declare no agents, flows or procedures', () => {
   const defaults = config.loadDefaults();
-  for (const key of ['agents', 'flows', 'procedures']) assert.equal(Object.hasOwn(defaults, key), false, key);
+  assert.equal(Object.hasOwn(defaults, 'agents'), false, 'no agents');
+  assert.equal(Object.hasOwn(defaults, 'flows'), false, 'no flows');
+  assert.equal(Object.hasOwn(defaults, 'procedures'), false, 'no procedures');
   assert.deepEqual(defaults.files, {}, 'and name no file');
 });
 
