@@ -242,6 +242,6 @@ vertex publish
     redReport <- red.red.response | senior-red.red.response
     green <- green.test.evidence | senior-green.test.evidence | implementer-fix.test.evidence | senior-dev.test.evidence
 
-warning: procedures.review.passed: rule table review.passed: row 2 (check.repeat = failed) is partly taken by row 1 (claim = ok and check.review-pass = passed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"},"response":{"needsTest":true}}
-warning: procedures.review.passed: rule table review.passed: row 3 (response.needsTest = true) is partly taken by row 1 (claim = ok and check.review-pass = passed), row 2 (check.repeat = failed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"passed"},"response":{"needsTest":true}}
+warning: procedures.review.passed: rule table review.passed: row 2 (check.repeat = failed) is partly taken by row 1 (claim = ok and check.review-pass = passed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"},"response":{"needsTest":true}} [overlapping-rows]
+warning: procedures.review.passed: rule table review.passed: row 3 (response.needsTest = true) is partly taken by row 1 (claim = ok and check.review-pass = passed), row 2 (check.repeat = failed), for example {"claim":"ok","check":{"review-pass":"passed","repeat":"passed"},"response":{"needsTest":true}} [overlapping-rows]
 0 errors, 2 warnings

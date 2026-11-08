@@ -3,6 +3,7 @@
 import type * as procedures from './procedures.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as ruleDomain from './rule-domain.ts';
+import type * as report from './validate/report.ts';
 
 export type RuleValue = string | number | boolean;
 // A row's condition on one field: the value it must equal, or integer comparisons that must all hold.
@@ -25,11 +26,9 @@ export interface RuleTable {
   boxes?: FieldMap[];
 }
 type Example = Record<string, unknown>;
-export interface RuleError {
-  row: number | null;
-  code: 'never-firing-row' | 'rule-table-too-large' | 'undeclared-rule-field' | 'unreachable-row';
-  message: string;
-}
+export type RuleError = report.Finding<
+  'never-firing-row' | 'rule-table-too-large' | 'undeclared-rule-field' | 'unreachable-row'
+> & { row: number | null };
 // Rows `rows` (first and last, by index) are each partly taken by the `earlier` row ranges it names, `more` beyond
 // them, or by every earlier firing row from row `from` on.
 export interface OverlapWarning {
@@ -74,22 +73,25 @@ export const conditions = (when: Record<string, Condition>) =>
     )
     .join(' and ') || 'no conditions';
 
-const refuse = (code: RuleError['code'], message: string): Analysis => ({
-  errors: [{ row: null, code, message }],
+const refuse = (error: report.Finding<'rule-table-too-large' | 'undeclared-rule-field'>): Analysis => ({
+  errors: [{ row: null, ...error }],
   warnings: [],
   defaultExample: null,
   falls: [],
 });
 
-function overLimit(name: string, paths: string[], values: ruleDomain.Value[][][], work: number) {
+function overLimit(name: string, paths: string[], values: ruleDomain.Value[][][], work: number): Analysis {
   const largest = paths
     .map((path, field): [string, number] => [path, Math.max(...values.map((box) => box[field].length))])
     .sort((left, right) => right[1] - left[1])
     .slice(0, 3);
-  return (
-    `rule table ${name} needs ${work} row checks, above the limit of ${WORK_LIMIT}; ` +
-    `its largest fields: ${largest.map(([path, count]) => `${path} (${count} values)`).join(', ')}`
-  );
+  return refuse({
+    code: 'rule-table-too-large',
+    message:
+      `rule table ${name} needs ${work} row checks, above the limit of ${WORK_LIMIT}; ` +
+      `its largest fields: ${largest.map(([path, count]) => `${path} (${count} values)`).join(', ')}`,
+    params: { work, limit: WORK_LIMIT, largest },
+  });
 }
 
 const neverFiring = (domain: ruleDomain.Domain, reached: Uint32Array, fires: Uint32Array): RuleError[] =>
@@ -105,6 +107,7 @@ const neverFiring = (domain: ruleDomain.Domain, reached: Uint32Array, fires: Uin
               (ruleDomain.bitAt(reached, i)
                 ? 'never fires: earlier rows match every input it matches'
                 : 'is unreachable: it matches no input'),
+            params: { row: i, outcome: row.outcome },
           },
         ],
   );
@@ -286,7 +289,11 @@ export function analyse(table: RuleTable): Analysis {
   const paths = [...new Set(rows.flatMap((row) => Object.keys(row.when)))];
   const undeclared = paths.filter((path) => !boxes.every((fields) => Object.hasOwn(fields, path)));
   if (undeclared.length)
-    return refuse('undeclared-rule-field', `rule table ${name} names undeclared fields: ${undeclared.join(', ')}`);
+    return refuse({
+      code: 'undeclared-rule-field',
+      message: `rule table ${name} names undeclared fields: ${undeclared.join(', ')}`,
+      params: { fields: undeclared },
+    });
   const values = boxes.map((fields) =>
     paths.map((path) =>
       ruleDomain.partition(
@@ -297,7 +304,7 @@ export function analyse(table: RuleTable): Analysis {
   );
   const points = values.map((box) => box.reduce((count, fieldValues) => count * fieldValues.length, 1));
   const work = points.reduce((sum, count) => sum + count, 0) * rows.length;
-  if (work > WORK_LIMIT) return refuse('rule-table-too-large', overLimit(name, paths, values, work));
+  if (work > WORK_LIMIT) return overLimit(name, paths, values, work);
 
   const domain = ruleDomain.domainOf({ name, rows, paths, values, points });
   const { reached, fires, fallen } = ruleDomain.reachedRows(domain);

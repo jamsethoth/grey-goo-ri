@@ -14,7 +14,7 @@ import * as labels from './labels.ts';
 import * as locksModule from './locks.ts';
 import * as record from './record.ts';
 import type * as runContext from './run-context.ts';
-import type * as report from './validate/report.ts';
+import * as report from './validate/report.ts';
 import * as stateDatabase from './state-database.ts';
 import * as validator from './validate/index.ts';
 
@@ -136,7 +136,7 @@ async function preflight(
     ...config.commandProblems(layers.commands, config.layerPath(repoRoot)),
     ...config.testPathsProblems(layers.testPaths, config.layerPath(repoRoot)),
     ...config.approversProblems(layers.approvers, config.layerPath(repoRoot)),
-    ...errors.map((error) => `error: ${error.at}: ${error.message}`),
+    ...errors.map((error) => report.line('error', error)),
   ];
   const unset = errors.some((error) => error.code === 'harness-unset');
   failed.push(...(await harnessProblems(flow, harnesses)));
@@ -277,7 +277,7 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
   runLog(`run ${runId} started for #${target} under Flow ${flow.name} (config ${hash.slice(0, 12)})`);
-  for (const warning of warnings) runLog(`warning: ${warning.at}: ${warning.message}`);
+  for (const warning of warnings) runLog(report.line('warning', warning));
   const results: TicketResult[] = [];
   // The first run stop of any Execution, which ends every other one before its next Action, and the cooldown every
   // remote Action of the Run waits for after any one of them backs off.

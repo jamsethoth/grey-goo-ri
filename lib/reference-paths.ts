@@ -109,6 +109,7 @@ export type Resolved =
       error: string;
       code: 'malformed-reference' | 'reference-into-list' | 'undefined-reference';
       list?: string;
+      missing?: string;
       type?: undefined;
       node?: undefined;
     };
@@ -133,6 +134,7 @@ export function resolve(scope: SchemaNode, path: unknown, what = 'defined', { re
     return {
       code: 'undefined-reference',
       error: `${missing === path ? '' : `${JSON.stringify(path)}: `}${JSON.stringify(missing)} is not ${what}`,
+      missing,
     };
   }
   return { type: kindOf(walked.node), node: walked.node };

@@ -4,8 +4,8 @@ import * as report from '../../lib/validate/report.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as procedureActions from '../support/procedure-actions.ts';
 
-// What every Problem carries beside its code (lib/validate/report.ts): the values its sentence names, in `params`, and a
-// location that is a plain path in the merged configuration.
+// What every Problem carries beside its code (lib/validate/report.ts): the values its sentence names, in `params`, and
+// a location that is a plain path in the merged configuration.
 /* eslint-disable id-denylist -- a Problem's key is at */
 
 const VERTICES = 'flows.default.ticket.vertices';
@@ -417,9 +417,7 @@ test('a response condition whose is fits no value of its enum field keeps its co
 function valuePaths(value: unknown, path: (string | number)[] = []): (string | number)[][] {
   const children: [string | number, unknown][] = Array.isArray(value)
     ? value.map((item, index) => [index, item])
-    : value !== null && typeof value === 'object'
-      ? Object.entries(value)
-      : [];
+    : Object.entries(value !== null && typeof value === 'object' ? value : {});
   return [...(path.length ? [path] : []), ...children.flatMap(([key, item]) => valuePaths(item, [...path, key]))];
 }
 // A key's value left out, or replaced by a number, which every key but a count refuses.
@@ -472,4 +470,26 @@ test('the same Vertex in two Flows reports a Procedure problem once in each', ()
     exampleLayer.firedAtVertices(errors).map(({ flow, vertex }) => `${flow}.${vertex}`),
     ['default.implementer-fix', 'default.senior-dev', 'other.implementer-fix', 'other.senior-dev'],
   );
+});
+
+test("an unset harness names its Agent in params, and a Vertex's own Agent, which has no name, takes none", () => {
+  const config = exampleLayer.config();
+  delete config.agents.reviewer.harness;
+  const red = config.flows.default.ticket.vertices.red;
+  delete red.use;
+  red.model = 'model-x';
+  const unset = exampleLayer.check(config).errors.filter((problem) => problem.code === 'harness-unset');
+  assert.deepEqual(unset, [
+    {
+      at: 'agents.reviewer',
+      code: 'harness-unset',
+      message: 'agent reviewer names no harness; set one in a user or repository Layer',
+      params: { agent: 'reviewer' },
+    },
+    {
+      at: `${VERTICES}.red`,
+      code: 'harness-unset',
+      message: 'the agent of Vertex red names no harness; set one in a user or repository Layer',
+    },
+  ]);
 });

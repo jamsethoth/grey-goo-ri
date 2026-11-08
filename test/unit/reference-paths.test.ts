@@ -42,6 +42,7 @@ test("resolve types a path through a scope, keeping gg's integer bounds", () => 
   assert.deepEqual(referencePaths.resolve(scope, 'pass.x'), {
     code: 'undefined-reference',
     error: '"pass.x" is not defined',
+    missing: 'pass.x',
   });
 });
 

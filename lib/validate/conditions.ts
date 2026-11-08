@@ -24,19 +24,21 @@ export function itemField(items: referencePaths.SchemaNode | undefined, field: s
 }
 
 // Why a response condition's value cannot match its field, or null.
-function valueProblem(type: referencePaths.FieldType | null, value: unknown): report.Finding | null {
+function valueProblem(field: unknown, type: referencePaths.FieldType | null, value: unknown): report.Finding | null {
   if (type === null) return null;
-  const mismatch = (message: string): report.Finding => ({ code: 'condition-value-mismatch', message });
-  if (type.kind === 'boolean')
-    return typeof value === 'boolean' ? null : mismatch(`${JSON.stringify(value)} is not true or false`);
+  if (type.kind === 'boolean') {
+    const message = `${JSON.stringify(value)} is not true or false`;
+    return typeof value === 'boolean' ? null : { code: 'condition-value-mismatch', message, params: { field, value } };
+  }
   if (type.kind === 'enum') {
     const { values } = type as { values: string[] };
+    const message = `${JSON.stringify(value)} is not one of ${values.join(' | ')}`;
     return values.includes(value as string)
       ? null
-      : mismatch(`${JSON.stringify(value)} is not one of ${values.join(' | ')}`);
+      : { code: 'condition-value-mismatch', message, params: { field, value, values } };
   }
   const message = `the field is ${JSON.stringify(type)}; a response condition reads only enum and boolean fields`;
-  return { code: 'invalid-condition-field', message };
+  return { code: 'invalid-condition-field', message, params: { field, type } };
 }
 
 const typedPath = (schema: referencePaths.SchemaNode, path: unknown) =>
@@ -44,33 +46,31 @@ const typedPath = (schema: referencePaths.SchemaNode, path: unknown) =>
 
 function fieldProblems(condition: Value, schema: referencePaths.SchemaNode): report.Finding[] {
   const resolved = typedPath(schema, condition.field);
-  if (resolved.error) return [{ code: resolved.code, message: resolved.error }];
+  if (resolved.error) return [report.unresolved(resolved, condition.field)];
   const { type } = resolved;
   const field = JSON.stringify(condition.field);
-  if (type?.kind === 'boolean' && typeof condition.is !== 'boolean')
-    return [
-      {
-        code: report.absentOr(condition.is, 'condition-value-mismatch'),
-        message: `${field} is a boolean, so is must be true or false`,
-      },
-    ];
+  const named = { field: condition.field };
+  if (type?.kind === 'boolean' && typeof condition.is !== 'boolean') {
+    const message = `${field} is a boolean, so is must be true or false`;
+    return [report.absentOr(condition.is, 'is', 'condition-value-mismatch', message, named)];
+  }
   if (type?.kind === 'enum' && condition.is === undefined) {
     const { values } = type as { values: string[] };
     const message = `${field} is an enum, so is must be one of ${values.join(' | ')}`;
-    return [{ code: 'required-key-missing', message }];
+    return [{ code: 'required-key-missing', message, params: { key: 'is', ...named, values } }];
   }
-  const problem = valueProblem(type ?? null, condition.is);
-  return problem ? [{ code: problem.code, message: `${field}: ${problem.message}` }] : [];
+  const problem = valueProblem(condition.field, type ?? null, condition.is);
+  return problem ? [{ ...problem, message: `${field}: ${problem.message}` }] : [];
 }
 
 function listProblems(condition: Value, form: string, schema: referencePaths.SchemaNode): report.Finding[] {
   const list = condition[form];
   const resolved = typedPath(schema, list);
-  if (resolved.error) return [{ code: resolved.code, message: resolved.error }];
+  if (resolved.error) return [report.unresolved(resolved, list)];
   const { type, node } = resolved;
   if (type && !isObjectList(type)) {
     const message = `${form} must read a list of objects; ${JSON.stringify(list)} is ${JSON.stringify(type)}`;
-    return [{ code: 'not-a-list-of-objects', message }];
+    return [{ code: 'not-a-list-of-objects', message, params: { path: list, type } }];
   }
   const problems: report.Finding[] = [];
   if (form === 'count') {
@@ -84,7 +84,7 @@ function listProblems(condition: Value, form: string, schema: referencePaths.Sch
   if (!referencePaths.isRecord(condition.where))
     return [
       ...problems,
-      { code: report.absentOr(condition.where, 'not-an-object'), message: 'where must be an object of item fields' },
+      report.absentOr(condition.where, 'where', 'not-an-object', 'where must be an object of item fields'),
     ];
   return [...problems, ...whereProblems(condition.where, node)];
 }
@@ -95,12 +95,12 @@ function whereProblems(where: Value, list: referencePaths.SchemaNode | undefined
   for (const [field, wanted] of Object.entries(where)) {
     const item = list && list !== referencePaths.ANY ? itemField(list.items, field) : { type: null };
     if (item.error) {
-      problems.push({ code: 'unknown-item-field', message: `where: ${item.error}` });
+      problems.push({ code: 'unknown-item-field', message: `where: ${item.error}`, params: { field } });
       continue;
     }
     for (const one of Array.isArray(wanted) ? wanted : [wanted]) {
-      const problem = valueProblem(item.type ?? null, one);
-      if (problem) problems.push({ code: problem.code, message: `where ${JSON.stringify(field)}: ${problem.message}` });
+      const problem = valueProblem(field, item.type ?? null, one);
+      if (problem) problems.push({ ...problem, message: `where ${JSON.stringify(field)}: ${problem.message}` });
     }
   }
   return problems;

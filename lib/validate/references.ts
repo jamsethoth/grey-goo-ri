@@ -12,10 +12,10 @@ const STATES = ['passed', 'failed', 'not-run'];
 const RULE_KINDS = ['enum', 'boolean', 'integer'];
 
 // A reference that does not type, at `where` in the Procedure.
-export interface Found extends report.Finding {
+export type Found = report.Finding & {
   where: string;
   path: unknown;
-}
+};
 // A table whose every field typed: its fields and rows, for the analysis.
 interface Typed {
   fields: rules.FieldMap;
@@ -69,7 +69,7 @@ function typeReference(found: Found[], reference: Reference, want: Want) {
   const problem =
     resolved.error === undefined
       ? resolved.type && want(resolved.type, resolved.node, reference.path)
-      : { code: resolved.code, message: resolved.error };
+      : report.unresolved(resolved, reference.path);
   if (problem) found.push({ where: reference.where, path: reference.path, ...problem });
   return resolved;
 }
@@ -82,6 +82,7 @@ const stringList =
       : {
           code: 'not-a-list-of-strings',
           message: `${label} must read a list of strings; ${JSON.stringify(path)} is ${JSON.stringify(type)}`,
+          params: { path, type },
         };
 const anyType: Want = () => null;
 const repeatList =
@@ -91,17 +92,22 @@ const repeatList =
       return {
         code: 'not-a-list-of-objects',
         message: `list must read a list of objects; ${JSON.stringify(check.list)} is ${JSON.stringify(type)}`,
+        params: { path: check.list, type },
       };
     const field = (Array.isArray(check.fields) ? check.fields : []).find(
       (name) => report.isName(name) && conditions.itemField(node.items, name).error,
     );
     return field === undefined
       ? null
-      : { code: 'unknown-item-field', message: `fields: ${JSON.stringify(field)} is not a field of the list's items` };
+      : {
+          code: 'unknown-item-field',
+          message: `fields: ${JSON.stringify(field)} is not a field of the list's items`,
+          params: { field },
+        };
   };
 
-const leftOut = (found: Found[], where: string, message: string) =>
-  found.push({ where, path: undefined, code: 'required-key-missing', message });
+const leftOut = (found: Found[], where: string, key: string, message: string) =>
+  found.push({ where, path: undefined, code: 'required-key-missing', message, params: { key } });
 
 // `tests: named` and each Action's reference parameters, all read when the Visit passes.
 function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope: referencePaths.SchemaNode) {
@@ -111,11 +117,11 @@ function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope:
     if (!referencePaths.isRecord(action)) return;
     const where = `actions[${index}]`;
     if (action.do === 'check' && action.kind === 'tests-fail') {
-      if (action.testNames === undefined) leftOut(found, where, 'a tests-fail Check must name testNames');
+      if (action.testNames === undefined) leftOut(found, where, 'testNames', 'a tests-fail Check must name testNames');
       else typeReference(found, { where, path: action.testNames, scope }, stringList('testNames'));
     }
     if (action.do === 'check' && action.kind === 'repeat') {
-      if (action.list === undefined) leftOut(found, where, 'a repeat Check must name its list');
+      if (action.list === undefined) leftOut(found, where, 'list', 'a repeat Check must name its list');
       else typeReference(found, { where, path: action.list, scope }, repeatList(action));
     }
     if (action.do === 'pr-upsert') {
@@ -143,7 +149,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
     const message =
       `condition on ${JSON.stringify(path)} must be a string, boolean or integer, ` +
       `or an object of ${procedures.OPERATORS.join(', ')} with integers`;
-    found.push({ where, path, code: 'invalid-rule-condition', message });
+    found.push({ where, path, code: 'invalid-rule-condition', message, params: { field: path } });
     return null;
   }
   const { type, error } = typeReference(found, reference, (fieldType) =>
@@ -154,6 +160,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
           message:
             `rule field ${JSON.stringify(path)} is ${JSON.stringify(fieldType)}; ` +
             'rules match only enum, boolean and integer fields',
+          params: { field: path, type: fieldType },
         },
   );
   if (error || !type || !RULE_KINDS.includes(type.kind as string)) return null;
@@ -166,7 +173,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
     const message =
       `condition ${JSON.stringify(condition)} on ${JSON.stringify(path)} ` +
       `does not fit its field, which is ${JSON.stringify(type)}`;
-    found.push({ where, path, code: 'rule-condition-mismatch', message });
+    found.push({ where, path, code: 'rule-condition-mismatch', message, params: { field: path, condition, type } });
     return null;
   }
   // An absent optional input is a value of the domain (T10).
@@ -244,25 +251,44 @@ function analyseTable(proc: checked.CheckedProcedure, table: checked.TableName, 
 
 const isInputPath = (path: unknown) => typeof path === 'string' && referencePaths.parse(path).steps?.[0] === 'inputs';
 
-// Where a typing runs: alone (`atVertex` false) it reports everything but the references to `inputs` and the tables
-// that read one, which each Vertex using the Procedure reports in its own scope. `locate` gives a finding's location.
+// A Vertex of a Flow, where a Procedure is typed with that Vertex's inputs.
+export interface VertexPlace {
+  flow: string;
+  id: string;
+}
+// A Procedure's problem found at a Vertex names that Vertex, in its sentence and its params, so each Vertex exposing it
+// reports it once (report.dedupe).
+export const atVertex = (finding: report.Finding, vertex: VertexPlace | null): report.Finding =>
+  vertex
+    ? ({
+        ...finding,
+        message: `Vertex ${vertex.id} of Flow ${vertex.flow}: ${finding.message}`,
+        params: { ...finding.params, flow: vertex.flow, vertex: vertex.id },
+      } as report.Finding)
+    : finding;
+
+// Where a typing runs: alone (`vertex` null) it reports everything but the references to `inputs` and the tables that
+// read one, which each Vertex using the Procedure reports in its own scope. Either way a problem is at the Procedure's
+// own path.
 export interface ReferenceContext extends Typing {
-  atVertex: boolean;
-  locate: (where: string) => string;
+  vertex: VertexPlace | null;
 }
 
 // A Procedure's typed references, typed alone or at a Vertex; the tokens some input falls through each table for.
 export function checkReferences(problems: report.Report, proc: checked.CheckedProcedure, run: ReferenceContext) {
   const { found, falls } = typeReferences(proc, run);
-  for (const finding of found)
-    if (run.atVertex === isInputPath(finding.path))
-      report.error(problems, run.locate(finding.where), finding.code, finding.message);
+  const atTable = (table: checked.TableName) => `${proc.location}.${table}`;
+  for (const { where, path, ...finding } of found)
+    if ((run.vertex !== null) === isInputPath(path))
+      report.errorOf(problems, `${proc.location}.${where}`, atVertex(finding as report.Finding, run.vertex));
   const result: Partial<Record<checked.TableName, string[]>> = {};
   for (const [table, typed] of Object.entries(falls) as [checked.TableName, Typed][]) {
-    if (run.atVertex !== Object.keys(typed.fields).some(isInputPath)) continue;
+    if ((run.vertex !== null) !== Object.keys(typed.fields).some(isInputPath)) continue;
     const analysis = analyseTable(proc, table, typed);
-    for (const { code, message } of analysis.errors) report.error(problems, run.locate(table), code, message);
-    for (const { code, message } of analysis.warnings) report.warn(problems, run.locate(table), code, message);
+    for (const { row, ...finding } of analysis.errors)
+      report.errorOf(problems, atTable(table), atVertex(finding as report.Finding, run.vertex));
+    for (const { code, message, ...params } of analysis.warnings)
+      report.warnOf(problems, atTable(table), atVertex({ code, message, params }, run.vertex));
     result[table] = analysis.falls;
   }
   return result;

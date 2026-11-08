@@ -63,14 +63,16 @@ function firstSource(problems: report.Report, location: string, from: unknown[],
   for (const source of from) {
     const resolved = referencePaths.resolve(scope, source, 'defined', { read: true });
     if (resolved.error !== undefined) {
-      report.error(problems, location, resolved.code, resolved.error);
+      report.errorOf(problems, location, report.unresolved(resolved, source));
       continue;
     }
     if (resolved.node === referencePaths.ANY) continue;
     if (!first) first = { source, node: resolved.node };
     else if (typeKey(first.node) !== typeKey(resolved.node)) {
       const sources = `${JSON.stringify(first.source)} and ${JSON.stringify(source)}`;
-      report.error(problems, location, 'source-types-differ', `sources ${sources} have different types`);
+      report.error(problems, location, 'source-types-differ', `sources ${sources} have different types`, {
+        sources: [first.source, source],
+      });
     }
   }
   return first;
@@ -82,24 +84,25 @@ function pickedNode(problems: report.Report, location: string, pick: unknown, fi
   if (pick === undefined) return node;
   if (node === referencePaths.ANY) {
     const parsed = referencePaths.parse(pick);
-    if (parsed.error) report.error(problems, location, 'malformed-reference', `pick: ${parsed.error}`);
+    if (parsed.error) report.error(problems, location, 'malformed-reference', `pick: ${parsed.error}`, { path: pick });
     return node;
   }
   const type = referencePaths.kindOf(node);
   if (!(type?.kind === 'list' && (type as { of: referencePaths.FieldType | null }).of?.kind === 'object')) {
-    const source = JSON.stringify((first as Source).source);
+    const { source } = first as Source;
     report.error(
       problems,
       location,
       'not-a-list-of-objects',
-      `pick needs a list of objects; ${source} is ${JSON.stringify(type)}`,
+      `pick needs a list of objects; ${JSON.stringify(source)} is ${JSON.stringify(type)}`,
+      { path: source, type },
     );
     return referencePaths.ANY;
   }
   // The interpreter reads `pick` in each item, so it is typed in an item, as it is read.
   const resolved = referencePaths.resolve(node.items as referencePaths.SchemaNode, pick, 'defined', { read: true });
   if (resolved.error) {
-    report.error(problems, location, resolved.code, `pick: ${resolved.error}`);
+    report.errorOf(problems, location, report.unresolved(resolved, pick, `pick: ${resolved.error}`));
     return referencePaths.ANY;
   }
   return { type: 'array', items: resolved.node };
@@ -133,7 +136,11 @@ export function checkInputs(
     const sources = Array.isArray(given) ? given : [given];
     const from = given === undefined ? [] : sources;
     if (!from.length)
-      report.error(problems, inputLocation, report.absentOr(given, 'empty-list'), 'from must name at least one source');
+      report.errorOf(
+        problems,
+        inputLocation,
+        report.absentOr(given, 'from', 'empty-list', 'from must name at least one source'),
+      );
     const { pick } = declaration;
     typed.inputs[input] = { from, optional: declaration.optional === true, ...(pick !== undefined && { pick }) };
     const first = firstSource(problems, inputLocation, from, scope);

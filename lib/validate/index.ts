@@ -90,11 +90,12 @@ function checkAgents(problems: report.Report, config: Value, harnesses: unknown)
       report.error(problems, location, 'not-an-object', 'an Agent must be an object');
     else {
       report.unknownKeys(problems, agent, flows.AGENT_KEYS, location);
-      flows.checkHarness({ report: problems, harnesses }, `agent ${name}`, agent.harness, location);
+      flows.checkHarness({ report: problems, harnesses }, { agent: name }, agent.harness, location);
       flows.checkAccess(problems, `${location}.access`, agent.access);
     }
     if (problems.errors.length > before) failedAgents.add(name);
-    if (!usedAgents.has(name)) report.warn(problems, location, 'unused-agent', `agent ${name} is used by no Vertex`);
+    if (!usedAgents.has(name))
+      report.warn(problems, location, 'unused-agent', `agent ${name} is used by no Vertex`, { agent: name });
   }
   return failedAgents;
 }
@@ -111,8 +112,7 @@ function checkProcedures(problems: report.Report, config: Value, readSchema: Sou
     procedureFalls[proc.name] = references.checkReferences(problems, proc, {
       inputs: referencePaths.ANY,
       optional: () => false,
-      atVertex: false,
-      locate: (where) => `${proc.location}.${where}`,
+      vertex: null,
     });
   }
   return { checkedProcedures, procedureFalls };
@@ -139,7 +139,7 @@ function reportNulls(problems: report.Report, value: unknown, location: string) 
 export function validate(config: unknown, { harnesses, readSchema, readTemplate }: Sources) {
   const problems = report.newReport();
   if (!referencePaths.isRecord(config)) {
-    report.error(problems, '(root)', 'not-an-object', 'the configuration must be an object');
+    report.error(problems, '', 'not-an-object', 'the configuration must be an object');
     return { flows: {}, ...problems };
   }
   // Every later check keys plain objects by the configuration's names, so none runs while one is inherited (H10).

@@ -468,6 +468,7 @@ test('rows that never fire are one error each, naming no earlier row', () => {
     row: 9_999,
     code: 'never-firing-row',
     message: 'rule table heavy.passed: row 10000 (o9999) never fires: earlier rows match every input it matches',
+    params: { row: 9_999, outcome: 'o9999' },
   });
   assert.deepEqual(result.warnings, []);
 });
@@ -517,13 +518,16 @@ test('a table just over it (many booleans) is an error naming the table', () => 
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].row, null);
   assert.equal(result.errors[0].code, 'rule-table-too-large');
-  assert.match(
-    result.errors[0].message,
-    new RegExp(
-      String.raw`^rule table wide\.failed needs 10485760 row checks, ` +
-        String.raw`above the limit of 10000000; its largest fields: response\.b0 \(2 values\)`,
-    ),
-  );
+  assert.deepEqual(result.errors[0].params, {
+    work: 10_485_760,
+    limit: 10_000_000,
+    largest: [
+      ['response.b0', 2],
+      ['response.b1', 2],
+      ['response.b2', 2],
+    ],
+  });
+  assert.match(result.errors[0].message, /^rule table wide\.failed needs /);
   assert.deepEqual(result.warnings, []);
 });
 
@@ -590,9 +594,9 @@ test('the work limit counts every box', () => {
   assert.equal(result.errors.length, 1);
   assert.equal(result.errors[0].row, null);
   assert.equal(result.errors[0].code, 'rule-table-too-large');
-  assert.match(
-    result.errors[0].message,
-    /^rule table wide\.passed needs 10485760 row checks, above the limit of 10000000; /,
+  assert.deepEqual(
+    result.errors[0].params && 'work' in result.errors[0].params && result.errors[0].params.work,
+    10_485_760,
   );
   assert.deepEqual(result.warnings, []);
 });

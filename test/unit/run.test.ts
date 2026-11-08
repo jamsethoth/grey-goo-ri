@@ -307,8 +307,9 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
     assert.equal(err.exitCode, 2);
     assert.deepEqual(err.message.split('\n'), [
       '[main] preflight failed:',
-      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer',
-      'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer',
+      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer ' +
+        '[harness-unset]',
+      'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer [harness-unset]',
       MERGE_ADVICE,
     ]);
     return true;
@@ -324,7 +325,7 @@ test('an error quoting the unset-harness sentence is no configuration gap: exit 
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: agents.implementer: unknown key "x names no harness; y"',
+      'error: agents.implementer: unknown key "x names no harness; y" [unknown-key]',
     ]);
     assert.equal(err.exitCode, 1);
     return true;
@@ -354,7 +355,7 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
   fixture.options.config.procedures.implement.actions[1].command = 'lint';
   const line =
     'error: procedures.implement.actions[1]: Check test names command "lint", ' +
-    'which the repository Layer does not declare';
+    'which the repository Layer does not declare [undeclared-command]';
   const { text } = await doctor.doctor({
     config: fixture.options.config,
     harnesses: fixture.options.harnesses,
@@ -382,7 +383,7 @@ test('gg run rejects a required input that a route may not produce', async (t) =
       '[main] preflight failed:',
       'error: flows.default.ticket.vertices.green.inputs.previous: input previous is required, but some route to ' +
         'green may not produce any of its sources; admission checks routes, not runs, so if every run does produce ' +
-        'one, mark the input optional',
+        'one, mark the input optional [required-input-unsure]',
     ]);
     return true;
   });
@@ -397,7 +398,7 @@ test('gg run rejects pick over a value that is not a list of objects', async (t)
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
       'error: flows.default.ticket.vertices.green.inputs.names: pick needs a list of objects; "red.commit.files" is ' +
-        '{"kind":"list","of":{"kind":"string"}}',
+        '{"kind":"list","of":{"kind":"string"}} [not-a-list-of-objects]',
     ]);
     return true;
   });
@@ -411,7 +412,8 @@ test('an Agent naming no harness still exits 2 naming the example Layers', async
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer',
+      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer ' +
+        '[harness-unset]',
       MERGE_ADVICE,
     ]);
     assert.equal(err.exitCode, 2);

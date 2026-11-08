@@ -6,6 +6,7 @@ import * as labels from './labels.ts';
 import * as rules from './rules.ts';
 import type * as graph from './validate/graph.ts';
 import * as validator from './validate/index.ts';
+import * as report from './validate/report.ts';
 
 type Value = Record<string, unknown>;
 // A Procedure as the Resolved Flow carries it, as written; doctor prints what each field holds.
@@ -187,10 +188,10 @@ export async function doctor({ config: layers, harnesses, gh, cwd }: DoctorOptio
   });
   const lines: string[] = [];
   for (const flow of Object.values(flows)) if (flow) lines.push(...flowLines(flow as unknown as ShownFlow));
-  for (const warning of warnings) lines.push(`warning: ${warning.at}: ${warning.message}`);
+  for (const warning of warnings) lines.push(report.line('warning', warning));
   const labelLines = await labelWarnings(Object.values(flows).filter(Boolean) as unknown as ShownFlow[], { gh, cwd });
   lines.push(...labelLines);
-  for (const error of errors) lines.push(`error: ${error.at}: ${error.message}`);
+  for (const error of errors) lines.push(report.line('error', error));
   const warned = warnings.length + labelLines.length;
   lines.push(`${plural(errors.length, 'error')}${warned ? `, ${plural(warned, 'warning')}` : ''}`);
   return { text: `${lines.join('\n')}\n`, exitCode: errors.length ? 1 : 0 };

@@ -57,11 +57,10 @@ export const firedRules = (problems: report.Problem[]): FiredRule[] =>
   problems.map(({ at, code }) => ({ at, code }));
 // ...and, for a Procedure's problem found at a Vertex, the Flow and Vertex whose inputs exposed it.
 export const firedAtVertices = (problems: report.Problem[]) =>
-  problems.map(({ at, code, params }) => ({
-    at,
-    code,
-    ...(params && 'vertex' in params && { flow: params.flow, vertex: params.vertex }),
-  }));
+  firedRules(problems).map((fired, index) => {
+    const { params } = problems[index];
+    return { ...fired, ...(params && 'flow' in params && { flow: params.flow, vertex: params.vertex }) };
+  });
 
 // Validates `layer` with the fake harness registered, reading schemas and templates from the files given.
 export function check(layer: Layer, files = schemas(), templateFiles?: Record<string, string>) {

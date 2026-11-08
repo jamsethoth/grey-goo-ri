@@ -106,22 +106,97 @@ export const PROBLEM_CODES = [
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
-// A problem found away from the report: the caller gives it its location.
-export interface Finding {
-  code: ProblemCode;
-  message: string;
+// A Procedure's problem found while typing it at a Vertex: the Flow and Vertex whose inputs exposed it.
+interface AtVertex {
+  flow?: string;
+  vertex?: string;
 }
-// A required key left out breaks that rule, whichever rule a value there would break.
-export const absentOr = (value: unknown, code: ProblemCode): ProblemCode =>
-  value === undefined ? 'required-key-missing' : code;
+// A reference path that does not type, and the template that names it, if one does.
+type Reference = { path: unknown; template?: string } & AtVertex;
+type RuleField = { field: string } & AtVertex;
+// A row as an index of its table, as `at` writes it.
+type RuleRow = { row: number; outcome: string } & AtVertex;
+// The values each code's sentence names, as Ajv's params are typed by keyword; a code missing here names none. A value
+// a sentence names only as the last key of `at`, or as a place inside the value at `at` (`allOf[n]:`, `pick:`), is not
+// repeated here. inherited-name's guard is #174's to replace, so it takes none yet.
+interface ProblemParams {
+  'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] };
+  'unknown-key': { key: string };
+  'invalid-name': { name?: unknown };
+  'reserved-name': { name: string };
+  'unknown-vertex': { vertex: unknown };
+  'unknown-end': { end: unknown };
+  'undeclared-procedure': { procedure: unknown };
+  'harness-unregistered': { agent?: string; harness: string };
+  'harness-unset': { agent?: string };
+  'undeclared-agent': { agent: unknown };
+  'unknown-permission-intent': { access: unknown };
+  'unused-agent': { agent: string };
+  'vertex-needs-agent': { procedure: string };
+  'vertex-takes-no-agent': { procedure: string };
+  'check-after-effect': { id?: unknown; effect: string; effectId?: unknown };
+  'claim-enum-mismatch': { schema: string };
+  'file-not-named': { key: string };
+  'pr-ready-without-checks': { token: string };
+  'repeated-action-id': { id: string };
+  'undeclared-check': { check: unknown };
+  'undeclared-command': { id?: unknown; command: unknown };
+  'unknown-action-kind': { kind: unknown };
+  'unknown-check-kind': { kind: unknown };
+  'schema-not-strict': { schema: string };
+  'schema-unreadable': { schema: string };
+  'template-unreadable': { template: string } & AtVertex;
+  'malformed-reference': Reference;
+  'not-a-list-of-objects': Reference & { type: unknown };
+  'not-a-list-of-strings': Reference & { type: unknown };
+  'reference-into-list': Reference & { list: string };
+  'source-types-differ': { sources: unknown[] };
+  'undefined-reference': Reference & { missing: string };
+  'unknown-item-field': { field: unknown } & AtVertex;
+  'condition-value-mismatch': { field: unknown; value?: unknown; values?: string[] };
+  'invalid-condition-field': { field: unknown; type: unknown };
+  'invalid-rule-condition': RuleField;
+  'invalid-rule-field': RuleField & { type: unknown };
+  'never-firing-row': RuleRow;
+  'overlapping-rows': {
+    rows: [number, number];
+    earlier: [number, number][];
+    more: number;
+    from: number | null;
+    fields: string[];
+    example: Record<string, unknown>;
+  } & AtVertex;
+  'rule-condition-mismatch': RuleField & { condition: unknown; type: unknown };
+  'rule-table-too-large': { work: number; limit: number; largest: [string, number][] } & AtVertex;
+  'undeclared-rule-field': { fields: string[] } & AtVertex;
+  'unreachable-row': RuleRow;
+  'commit-without-check': { token: string };
+  'exhausted-loop': { loop: string[] };
+  'pr-ready-skippable': { outcome: string };
+  'unbounded-cycle': { cycle: string[] };
+  'unrouted-outcome': { outcome: string };
+  'write-without-commit': { procedure: string };
+}
+type ParamsOf<C extends ProblemCode> = C extends keyof ProblemParams ? ProblemParams[C] : never;
+// What follows a code: its sentence, then its params where it takes any, which may be left out only when every key of
+// them is optional.
+type Detail<C extends ProblemCode> = [ParamsOf<C>] extends [never]
+  ? [message: string]
+  : object extends ParamsOf<C>
+    ? [message: string, params?: ParamsOf<C>]
+    : [message: string, params: ParamsOf<C>];
 
-// `at` is the key gg doctor and admission print and tests read, so it keeps the short name the rules otherwise deny.
-export interface Problem extends Finding {
+// A problem found away from the report: the caller gives it its location.
+export type Finding<C extends ProblemCode = ProblemCode> = C extends ProblemCode
+  ? { code: C; message: string } & ([ParamsOf<C>] extends [never] ? { params?: undefined } : { params?: ParamsOf<C> })
+  : never;
+
+// `at` is the key gg doctor and admission print and tests read, so it keeps the short name the rules otherwise deny. It
+// is a plain path in the merged configuration, dotted keys and [index], and '' for the whole of it.
+export type Problem<C extends ProblemCode = ProblemCode> = Finding<C> & {
   // eslint-disable-next-line id-denylist -- the location each printed error and warning starts with
   at: string;
-}
-// eslint-disable-next-line id-denylist -- builds the Problem's location
-const problemAt = (location: string, code: ProblemCode, message: string): Problem => ({ at: location, code, message });
+};
 // Errors fail admission and gg doctor; warnings only print.
 export interface Report {
   errors: Problem[];
@@ -129,20 +204,62 @@ export interface Report {
 }
 export const newReport = (): Report => ({ errors: [], warnings: [] });
 
-export function error(report: Report, location: string, code: ProblemCode, message: string) {
-  report.errors.push(problemAt(location, code, message));
+// eslint-disable-next-line id-denylist -- builds the Problem's location
+const problemAt = (location: string, finding: Finding): Problem => ({ at: location, ...finding });
+// A Problem whose sentence names no value has no params, not empty ones.
+const findingOf = <C extends ProblemCode>(code: C, [message, params]: Detail<C>) =>
+  ({ code, message, ...(Object.keys(params ?? {}).length ? { params } : {}) }) as Finding;
+
+// A required key left out breaks that rule, whichever rule a value there would break, and its params name the key
+// beside the values the sentence names.
+export function absentOr<C extends ProblemCode>(
+  value: unknown,
+  key: string,
+  code: C,
+  ...[message, params]: Detail<C>
+): Finding {
+  if (value === undefined) return { code: 'required-key-missing', message, params: { ...params, key } };
+  return findingOf(code, [message, params] as Detail<C>);
 }
-export function warn(report: Report, location: string, code: ProblemCode, message: string) {
-  report.warnings.push(problemAt(location, code, message));
+
+export function error<C extends ProblemCode>(report: Report, location: string, code: C, ...detail: Detail<C>) {
+  report.errors.push(problemAt(location, findingOf(code, detail)));
 }
+export function warn<C extends ProblemCode>(report: Report, location: string, code: C, ...detail: Detail<C>) {
+  report.warnings.push(problemAt(location, findingOf(code, detail)));
+}
+// A problem a part found on its own, located where the caller says.
+export function errorOf(report: Report, location: string, finding: Finding) {
+  report.errors.push(problemAt(location, finding));
+}
+export function warnOf(report: Report, location: string, finding: Finding) {
+  report.warnings.push(problemAt(location, finding));
+}
+// A printed line ends in its code, as ESLint prints a rule id, so each line keeps the prefix it had.
+export const line = (severity: 'error' | 'warning', problem: Problem) =>
+  `${severity}: ${problem.at === '' ? '' : `${problem.at}: `}${problem.message} [${problem.code}]`;
+
 export function unknownKeys(report: Report, value: Record<string, unknown>, keys: readonly string[], location: string) {
   for (const key of Object.keys(value))
-    if (!keys.includes(key)) error(report, location, 'unknown-key', `unknown key ${JSON.stringify(key)}`);
+    if (!keys.includes(key)) error(report, location, 'unknown-key', `unknown key ${JSON.stringify(key)}`, { key });
 }
-// A check reached on two paths reports once.
+// A check reached on two paths reports once. A Procedure's problem found at two Vertices is two: its sentence names
+// the Vertex.
 export const dedupe = (list: Problem[]) => [
   ...new Map(list.map((problem) => [`${problem.at}\n${problem.message}`, problem])).values(),
 ];
+// The Finding of a reference path that does not resolve (referencePaths.resolve), naming the path.
+export function unresolved(
+  resolved: Extract<referencePaths.Resolved, { error: string }>,
+  path: unknown,
+  message = resolved.error,
+): Finding {
+  if (resolved.code === 'reference-into-list')
+    return { code: resolved.code, message, params: { path, list: resolved.list as string } };
+  if (resolved.code === 'undefined-reference')
+    return { code: resolved.code, message, params: { path, missing: resolved.missing as string } };
+  return { code: resolved.code, message, params: { path } };
+}
 
 // A string key only: Object.hasOwn would coerce a list such as ["push"] to the key it spells.
 export function hasOwnKey<T extends object>(value: T, key: unknown): key is Extract<keyof T, string>;
@@ -165,7 +282,7 @@ export function checkName(
   const rule = carried
     ? 'must be non-empty with no ":", ".", "/", "--" or whitespace'
     : 'must not be empty or only whitespace';
-  if (!valid) error(report, location, 'invalid-name', `${what} ${JSON.stringify(name)} ${rule}`);
+  if (!valid) error(report, location, 'invalid-name', `${what} ${JSON.stringify(name)} ${rule}`, { name });
   return valid;
 }
 export const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;
@@ -174,4 +291,8 @@ export const unique = <T>(list: T[]) => [...new Set(list)];
 // What a Procedure's Outcomes and Claim tokens may not be named.
 export const isReserved = (name: string) =>
   name === 'failed' || (labels.END_STATES as string[]).includes(name) || name.startsWith('harness-');
-export const RESERVED = 'is reserved for the engine: failed, an end name or harness-*';
+const RESERVED = 'is reserved for the engine: failed, an end name or harness-*';
+export function checkReserved(report: Report, location: string, what: string, name: string) {
+  if (isReserved(name))
+    error(report, location, 'reserved-name', `${what} ${JSON.stringify(name)} ${RESERVED}`, { name });
+}

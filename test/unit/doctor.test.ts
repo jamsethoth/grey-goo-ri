@@ -39,7 +39,8 @@ test('gg doctor reports a malformed table row rather than throwing', async () =>
   assert.ok(text.includes('\n  passed:\n    1. no conditions -> no outcome\n'), text);
   assert.ok(
     text.includes(
-      '\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> }\n',
+      '\nerror: procedures.review.passed[0]: a row is { when: { <field>: <condition> }, outcome: <name> } ' +
+        '[malformed-row]\n',
     ),
     text,
   );
@@ -127,7 +128,10 @@ test('gg doctor exits non-zero on an error', async () => {
   const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
-    text.endsWith('\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared\n1 error, 2 warnings\n'),
+    text.endsWith(
+      '\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared [undeclared-procedure]\n' +
+        '1 error, 2 warnings\n',
+    ),
     text,
   );
 });
@@ -142,7 +146,7 @@ test('gg doctor reports a Procedure name with a colon at its location', async ()
   assert.ok(
     text.includes(
       '\nerror: procedures.base:check: Procedure "base:check" must be non-empty with no ":", ".", "/", "--" or ' +
-        'whitespace\n',
+        'whitespace [invalid-name]\n',
     ),
     text,
   );
@@ -156,7 +160,7 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
   assert.ok(
     text.endsWith(
       '\nerror: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or ' +
-        'workspace-write\n1 error, 2 warnings\n',
+        'workspace-write [unknown-permission-intent]\n1 error, 2 warnings\n',
     ),
     text,
   );
@@ -170,7 +174,7 @@ test('gg doctor reports an Outcome named after an Object.prototype property as r
   assert.equal(
     text,
     'error: procedures.tests-fail.stopped[0]: outcome "toString" is reserved: every object inherits a property of ' +
-      'that name from Object.prototype\n1 error\n',
+      'that name from Object.prototype [inherited-name]\n1 error\n',
   );
 });
 
@@ -184,7 +188,7 @@ test('gg doctor reads schemas from the loaded Layer files', async () => {
   assert.ok(
     text.includes(
       '\nerror: procedures.review.claimTokens: review.schema.json: claim: enum "ok" | "changes" does not equal the ' +
-        'declared tokens "ok" | "changes" | "blocked"\n',
+        'declared tokens "ok" | "changes" | "blocked" [claim-enum-mismatch]\n',
     ),
     text,
   );
@@ -203,7 +207,7 @@ test('gg doctor accepts the shipped defaults once a harness is set', async () =>
       '\nwarning: procedures.review.passed: rule table review.passed: ' +
         'row 2 (check.repeat = failed) is partly taken by ' +
         'row 1 (claim = ok and check.review-pass = passed), ' +
-        'for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}}\n' +
+        'for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}} [overlapping-rows]\n' +
         '0 errors, 1 warning\n',
     ),
     text,

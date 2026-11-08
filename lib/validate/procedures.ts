@@ -71,7 +71,7 @@ function checkClaimToken(problems: report.Report, token: unknown, checkIds: unkn
   const keysOf = (forms: string[]) => Object.keys(token).every((key) => forms.includes(key));
   if (token.stop === true && keysOf(CLAIM_TOKEN_FORMS.stop)) {
     if (token.comment !== undefined && !report.isName(token.comment))
-      report.error(problems, location, 'file-not-named', 'comment must name a file');
+      report.error(problems, location, 'file-not-named', 'comment must name a file', { key: 'comment' });
   } else if (Array.isArray(token.requires) && keysOf(CLAIM_TOKEN_FORMS.requires)) {
     for (const id of token.requires) {
       if (!checkIds.includes(id))
@@ -80,6 +80,7 @@ function checkClaimToken(problems: report.Report, token: unknown, checkIds: unkn
           location,
           'undeclared-check',
           `requires ${JSON.stringify(id)}, which is not a Check of this Procedure`,
+          { check: id },
         );
     }
   } else {
@@ -126,8 +127,7 @@ function checkClaimTokens(
   for (const [token, form] of Object.entries(declaredTokens)) {
     const atToken = `${location}.claimTokens.${token}`;
     report.checkName(problems, atToken, token, { what: 'Claim token', carried: false });
-    if (report.isReserved(token))
-      report.error(problems, atToken, 'reserved-name', `Claim token ${JSON.stringify(token)} ${report.RESERVED}`);
+    report.checkReserved(problems, atToken, 'Claim token', token);
     claimTokens[token] = checkClaimToken(problems, form, checkIds, atToken);
   }
   if (declared.schema !== referencePaths.ANY) {
@@ -135,7 +135,9 @@ function checkClaimTokens(
       briefs.assertClaimEnum(declared.schema, Object.keys(declaredTokens));
     } catch (err) {
       const message = `${declared.schemaName}: ${(err as Error).message}`;
-      report.error(problems, `${location}.claimTokens`, 'claim-enum-mismatch', message);
+      report.error(problems, `${location}.claimTokens`, 'claim-enum-mismatch', message, {
+        schema: declared.schemaName as string,
+      });
     }
   }
   return claimTokens;
@@ -225,8 +227,7 @@ function checkTables(
           'a row is { when: { <field>: <condition> }, outcome: <name> }',
         );
       }
-      if (report.isReserved(row.outcome as string))
-        report.error(problems, atRow, 'reserved-name', `outcome ${JSON.stringify(row.outcome)} ${report.RESERVED}`);
+      report.checkReserved(problems, atRow, 'outcome', row.outcome as string);
     });
   }
   return { tables, malformed };
@@ -236,13 +237,7 @@ function checkOtherwise(problems: report.Report, location: string, otherwise: un
   if (otherwise === undefined) return;
   if (!report.isName(otherwise) || decided)
     report.error(problems, `${location}.otherwise`, 'invalid-otherwise', OTHERWISE[decided ? 'never' : 'unnamed']);
-  else if (report.isReserved(otherwise))
-    report.error(
-      problems,
-      `${location}.otherwise`,
-      'reserved-name',
-      `otherwise ${JSON.stringify(otherwise)} ${report.RESERVED}`,
-    );
+  else report.checkReserved(problems, `${location}.otherwise`, 'otherwise', otherwise);
 }
 
 function checkResponseConditions(problems: report.Report, declared: actionChecks.DeclaredSoFar) {
@@ -258,8 +253,8 @@ function checkResponseConditions(problems: report.Report, declared: actionChecks
     }
     const list = check.allOf;
     if (list === undefined) {
-      for (const { code, message } of conditions.conditionProblems(check, declared.schema))
-        report.error(problems, location, code, message);
+      for (const finding of conditions.conditionProblems(check, declared.schema))
+        report.errorOf(problems, location, finding);
     } else if (
       !Array.isArray(list) ||
       !list.length ||
@@ -268,8 +263,8 @@ function checkResponseConditions(problems: report.Report, declared: actionChecks
       report.error(problems, location, 'malformed-all-of', 'allOf is a non-empty list of conditions, alone');
     else {
       list.forEach((condition, index) => {
-        for (const { code, message } of conditions.conditionProblems(condition, declared.schema))
-          report.error(problems, location, code, `allOf[${index}]: ${message}`);
+        for (const finding of conditions.conditionProblems(condition, declared.schema))
+          report.errorOf(problems, location, { ...finding, message: `allOf[${index}]: ${finding.message}` });
       });
     }
   }
@@ -285,6 +280,7 @@ function checkPrReady(problems: report.Report, proc: CheckedProcedure) {
         `${proc.location}.actions[${ready}]`,
         'pr-ready-without-checks',
         `pr-ready publishes only after passing Checks, but Claim token ${token} requires none`,
+        { token },
       );
     }
   }
@@ -315,8 +311,9 @@ export function checkProcedure(
   report.unknownKeys(problems, declaration, PROCEDURE_KEYS, location);
   const actions: unknown[] = Array.isArray(declaration.actions) ? declaration.actions : [];
   if (!actions.length) {
-    const code = report.absentOr(declaration.actions, Array.isArray(declaration.actions) ? 'empty-list' : 'not-a-list');
-    report.error(problems, location, code, 'actions must be a non-empty list');
+    const code = Array.isArray(declaration.actions) ? 'empty-list' : 'not-a-list';
+    const message = 'actions must be a non-empty list';
+    report.errorOf(problems, location, report.absentOr(declaration.actions, 'actions', code, message));
   }
   const declared = actionChecks.checkActions(declaring, actions, location);
   if (!declared.agent) actionChecks.checkCommitsWithoutAgent(problems, location, actions);
