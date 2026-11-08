@@ -186,10 +186,12 @@ runner image), run the full stage.
 ### Git config
 
 The launcher runs every stage with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`, in place of any the caller
-set, so a test's real git reads no global or system config and behaves the same on every machine (#300). A developer's
-global `core.fsmonitor=true` left git's daemon running, which the census ended and failed the stage for, and a global
-`commit.gpgsign=true` with no key to sign with fails every commit a test makes. Git for Windows' system config is no
-neutral default either: it sets `core.autocrlf=true`, so the same test would see CRLF on one machine and LF on another.
+set, so a test's real git reads no global or system config and behaves the same on every machine (#300). Before, a
+developer's global `commit.gpgsign=true` with no key to sign with failed 46 cases of `fast git`, each on a commit, and a
+global `core.fsmonitor=true` started git's daemon in each repository a test ran `git status` in. That daemon ends when
+its repository is removed, so only one that outlives its case reaches the census, as in #290's probe. Git for Windows'
+system config is no neutral default either: it sets `core.autocrlf=true`, so the same test would see CRLF on one machine
+and LF on another.
 With no global identity to fall back on, a helper that commits sets `user.name` and `user.email` in its own repository.
 `gg` itself still reads the user's config: the two variables are the launcher's alone. Git for Windows reads `/dev/null`
 as its null device and refuses node's `os.devNull`.
