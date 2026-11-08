@@ -472,7 +472,7 @@ test('the same Vertex in two Flows reports a Procedure problem once in each', ()
   );
 });
 
-test("an unset harness names its Agent in params, and a Vertex's own Agent, which has no name, takes none", () => {
+test('an unset harness names its Agent in params, or the Vertex whose own Agent keys left it out', () => {
   const config = exampleLayer.config();
   delete config.agents.reviewer.harness;
   const red = config.flows.default.ticket.vertices.red;
@@ -490,6 +490,59 @@ test("an unset harness names its Agent in params, and a Vertex's own Agent, whic
       at: `${VERTICES}.red`,
       code: 'harness-unset',
       message: 'the agent of Vertex red names no harness; set one in a user or repository Layer',
+      params: { vertex: 'red' },
     },
   ]);
+});
+
+// A value a sentence names is in params even where `at` spells it too, so a program never parses `at` for it.
+const NAMED_IN_AT: [string, (config: exampleLayer.Layer) => void, Pick<report.Problem, 'code' | 'params'>][] = [
+  [
+    'a required input some route may not produce',
+    (config) => {
+      config.flows.default.ticket.vertices.green.inputs.previous = { from: 'green.commit.files' };
+    },
+    { code: 'required-input-unsure', params: { input: 'previous', vertex: 'green' } },
+  ],
+  [
+    'an unreachable Vertex',
+    (config) => {
+      config.flows.default.ticket.vertices.spare = { procedure: 'base-check', route: { ok: { end: 'needs-human' } } };
+    },
+    { code: 'unreachable-vertex', params: { vertex: 'spare' } },
+  ],
+  [
+    'a table no Claim token reaches',
+    (config) => {
+      config.procedures['base-check'].stopped = [{ when: {}, outcome: 'x' }];
+    },
+    { code: 'table-never-applies', params: { table: 'stopped' } },
+  ],
+  [
+    'a table that is not a list',
+    (config) => {
+      config.procedures['base-check'].passed = 3;
+    },
+    { code: 'not-a-list', params: { table: 'passed' } },
+  ],
+];
+for (const [what, mutate, expected] of NAMED_IN_AT) {
+  test(`a value the sentence names is in params, though at spells it too: ${what}`, () => {
+    const config = exampleLayer.config();
+    mutate(config);
+    const { errors, warnings } = exampleLayer.check(config);
+    const found = [...errors, ...warnings].filter((problem) => problem.code === expected.code);
+    assert.deepEqual(
+      found.map(({ code, params }) => ({ code, params })),
+      [expected],
+    );
+  });
+}
+
+test("a Finding takes its code's params as report.error does", () => {
+  const problems = report.newReport();
+  // @ts-expect-error -- unknown-key's params name the key, so a Finding of it carries them
+  report.errorOf(problems, 'agents', { code: 'unknown-key', message: 'unknown key "x"' });
+  report.errorOf(problems, 'agents', { code: 'unknown-key', message: 'unknown key "x"', params: { key: 'x' } });
+  assert.equal(problems.errors.length, 2);
 });

@@ -249,7 +249,7 @@ test('gg doctor reports the labels a Flow can request that the repository lacks'
   assert.ok(
     text.includes(
       `\nwarning: flows.default.ticket.vertices.approve: labels missing from the repository: ` +
-        `${APPROVED_LABEL}, ${REJECTED_LABEL}\n`,
+        `${APPROVED_LABEL}, ${REJECTED_LABEL} [repository-labels-missing]\n`,
     ),
     text,
   );
@@ -265,7 +265,7 @@ test("gg doctor says when it cannot read the repository's labels", async () => {
     cwd: '/repo',
   });
   assert.equal(exitCode, 0);
-  assert.match(text, /warning: could not read the repository's labels: /);
+  assert.match(text, /\nwarning: could not read the repository's labels: .* \[repository-labels-unread\]\n/);
 });
 
 test('gg doctor reads no labels for a Flow that asks nobody', async () => {

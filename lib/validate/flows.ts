@@ -96,7 +96,6 @@ export function checkHarness(
 ) {
   const problems = checking.report;
   const label = 'agent' in owner ? `agent ${owner.agent}` : `the agent of Vertex ${owner.vertex}`;
-  const agent = 'agent' in owner ? { agent: owner.agent } : {};
   // Only a missing harness is unset; a null one is a null-value where it sits, and no name to look up.
   if (harness === undefined)
     report.error(
@@ -104,7 +103,7 @@ export function checkHarness(
       location,
       'harness-unset',
       `${label} names no harness; set one in a user or repository Layer`,
-      agent,
+      owner,
     );
   else if (!report.checkName(problems, location, harness, { what: `${label}'s harness`, carried: false })) return;
   else if (!report.hasOwnKey(checking.harnesses, harness))
@@ -113,7 +112,7 @@ export function checkHarness(
       location,
       'harness-unregistered',
       `${label} names harness ${JSON.stringify(harness)}, which is not registered`,
-      { ...agent, harness },
+      { ...owner, harness },
     );
 }
 

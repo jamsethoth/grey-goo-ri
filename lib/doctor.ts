@@ -146,26 +146,33 @@ function flowLines(flow: ShownFlow): string[] {
 // The labels the Flows can request that the repository lacks (request 3.3), each a warning: gg run creates them before
 // its first request. Nothing is read for Flows that ask nobody, and doctor's other findings stand when GitHub cannot
 // say.
-async function labelWarnings(flows: ShownFlow[], { gh, cwd }: Pick<DoctorOptions, 'gh' | 'cwd'>): Promise<string[]> {
+async function labelWarnings(
+  flows: ShownFlow[],
+  { gh, cwd }: Pick<DoctorOptions, 'gh' | 'cwd'>,
+): Promise<report.Problem[]> {
   const asking = flows.flatMap((flow) =>
     Object.entries(flow.ticket.vertices)
       .filter(([, vertex]) => vertex.approvalLabels)
       .map(([id, vertex]) => ({ flow: flow.name, id, vertex })),
   );
   if (!asking.length) return [];
+  const found = report.newReport();
   let existing: string[];
   try {
     existing = await gh.repositoryLabels(cwd);
   } catch (err) {
-    return [`warning: could not read the repository's labels: ${gh.errorExcerpt(err as Error)}`];
+    const reason = gh.errorExcerpt(err as Error);
+    report.warn(found, '', 'repository-labels-unread', `could not read the repository's labels: ${reason}`, { reason });
+    return found.warnings;
   }
-  return asking.flatMap(({ flow, id, vertex }) => {
+  for (const { flow, id, vertex } of asking) {
     const { await: awaitLabel, decide } = vertex.approvalLabels!;
     const missing = [awaitLabel, ...decide].filter((label) => !labels.hasLabel(existing, label));
-    return missing.length
-      ? [`warning: flows.${flow}.ticket.vertices.${id}: labels missing from the repository: ${missing.join(', ')}`]
-      : [];
-  });
+    const message = `labels missing from the repository: ${missing.join(', ')}`;
+    const location = `flows.${flow}.ticket.vertices.${id}`;
+    if (missing.length) report.warn(found, location, 'repository-labels-missing', message, { labels: missing });
+  }
+  return found.warnings;
 }
 
 // What gg doctor reads: the merged Layers and the registered Harnesses, and GitHub for the labels a Flow can request.
@@ -189,10 +196,13 @@ export async function doctor({ config: layers, harnesses, gh, cwd }: DoctorOptio
   const lines: string[] = [];
   for (const flow of Object.values(flows)) if (flow) lines.push(...flowLines(flow as unknown as ShownFlow));
   for (const warning of warnings) lines.push(report.line('warning', warning));
-  const labelLines = await labelWarnings(Object.values(flows).filter(Boolean) as unknown as ShownFlow[], { gh, cwd });
-  lines.push(...labelLines);
+  const labelProblems = await labelWarnings(Object.values(flows).filter(Boolean) as unknown as ShownFlow[], {
+    gh,
+    cwd,
+  });
+  lines.push(...labelProblems.map((warning) => report.line('warning', warning)));
   for (const error of errors) lines.push(report.line('error', error));
-  const warned = warnings.length + labelLines.length;
+  const warned = warnings.length + labelProblems.length;
   lines.push(`${plural(errors.length, 'error')}${warned ? `, ${plural(warned, 'warning')}` : ''}`);
   return { text: `${lines.join('\n')}\n`, exitCode: errors.length ? 1 : 0 };
 }

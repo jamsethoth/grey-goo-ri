@@ -103,6 +103,9 @@ export const PROBLEM_CODES = [
   'unreachable-vertex',
   'unrouted-outcome',
   'write-without-commit',
+  // What gg doctor reads from GitHub beside the configuration.
+  'repository-labels-missing',
+  'repository-labels-unread',
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
@@ -114,11 +117,14 @@ interface AtVertex {
 // A reference path that does not type, and the template that names it, if one does.
 type Reference = { path: unknown; template?: string } & AtVertex;
 type RuleField = { field: string } & AtVertex;
+// A harness's owner: a declared Agent, or the Vertex whose own Agent keys set it.
+type HarnessOwner = { agent: string; vertex?: undefined } | { vertex: string; agent?: undefined };
 // A row as an index of its table, as `at` writes it.
 type RuleRow = { row: number; outcome: string } & AtVertex;
-// The values each code's sentence names, as Ajv's params are typed by keyword; a code missing here names none. A value
-// a sentence names only as the last key of `at`, or as a place inside the value at `at` (`allOf[n]:`, `pick:`), is not
-// repeated here. inherited-name's guard is #174's to replace, so it takes none yet.
+// The values each code's sentence names, as Ajv's params are typed by keyword, even where `at` spells one too; a code
+// missing here names none. A label that only places the problem inside the value at `at` (`allOf[n]:`, `pick:`,
+// `where "f":`, `agent X's harness`) is not repeated here. inherited-name's guard is #174's to replace, so it takes
+// none yet.
 interface ProblemParams {
   'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] };
   'unknown-key': { key: string };
@@ -127,8 +133,8 @@ interface ProblemParams {
   'unknown-vertex': { vertex: unknown };
   'unknown-end': { end: unknown };
   'undeclared-procedure': { procedure: unknown };
-  'harness-unregistered': { agent?: string; harness: string };
-  'harness-unset': { agent?: string };
+  'harness-unregistered': HarnessOwner & { harness: string };
+  'harness-unset': HarnessOwner;
   'undeclared-agent': { agent: unknown };
   'unknown-permission-intent': { access: unknown };
   'unused-agent': { agent: string };
@@ -170,12 +176,19 @@ interface ProblemParams {
   'rule-table-too-large': { work: number; limit: number; largest: [string, number][] } & AtVertex;
   'undeclared-rule-field': { fields: string[] } & AtVertex;
   'unreachable-row': RuleRow;
-  'commit-without-check': { token: string };
+  'commit-without-check': { vertex: string; token: string };
+  'not-a-list': { table?: string };
+  'table-never-applies': { table: string };
+  'optional-input-unsure': { input: string; vertex: string };
+  'required-input-unsure': { input: string; vertex: string };
+  'unreachable-vertex': { vertex: string };
+  'repository-labels-missing': { labels: string[] };
+  'repository-labels-unread': { reason: string };
   'exhausted-loop': { loop: string[] };
   'pr-ready-skippable': { outcome: string };
   'unbounded-cycle': { cycle: string[] };
   'unrouted-outcome': { outcome: string };
-  'write-without-commit': { procedure: string };
+  'write-without-commit': { vertex: string; procedure: string };
 }
 type ParamsOf<C extends ProblemCode> = C extends keyof ProblemParams ? ProblemParams[C] : never;
 // What follows a code: its sentence, then its params where it takes any, which may be left out only when every key of
@@ -188,7 +201,11 @@ type Detail<C extends ProblemCode> = [ParamsOf<C>] extends [never]
 
 // A problem found away from the report: the caller gives it its location.
 export type Finding<C extends ProblemCode = ProblemCode> = C extends ProblemCode
-  ? { code: C; message: string } & ([ParamsOf<C>] extends [never] ? { params?: undefined } : { params?: ParamsOf<C> })
+  ? { code: C; message: string } & ([ParamsOf<C>] extends [never]
+      ? { params?: undefined }
+      : object extends ParamsOf<C>
+        ? { params?: ParamsOf<C> }
+        : { params: ParamsOf<C> })
   : never;
 
 // `at` is the key gg doctor and admission print and tests read, so it keeps the short name the rules otherwise deny. It

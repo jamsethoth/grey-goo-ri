@@ -24,10 +24,10 @@ test('every Problem code is one closed list of readable kebab-case names, not de
 test('a Problem carries its code beside its location and message', () => {
   const problems = report.newReport();
   report.error(problems, 'flows', 'no-flow-declared', 'an error');
-  report.warn(problems, 'flows.default.ticket.vertices.spare', 'unreachable-vertex', 'a warning');
+  report.warn(problems, 'agents.spare', 'unused-agent', 'a warning', { agent: 'spare' });
   assert.deepEqual(problems, {
     errors: [{ at: 'flows', code: 'no-flow-declared', message: 'an error' }],
-    warnings: [{ at: 'flows.default.ticket.vertices.spare', code: 'unreachable-vertex', message: 'a warning' }],
+    warnings: [{ at: 'agents.spare', code: 'unused-agent', message: 'a warning', params: { agent: 'spare' } }],
   });
 });
 

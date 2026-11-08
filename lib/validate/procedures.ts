@@ -201,7 +201,7 @@ function checkTables(
     const rows = declaration[table] ?? [];
     tables[table] = Array.isArray(rows) ? rows : [];
     if (!Array.isArray(rows)) {
-      report.error(problems, `${location}.${table}`, 'not-a-list', `${table} must be a list of rows`);
+      report.error(problems, `${location}.${table}`, 'not-a-list', `${table} must be a list of rows`, { table });
       continue;
     }
     if (rows.length && !tokens[table].length)
@@ -210,6 +210,7 @@ function checkTables(
         `${location}.${table}`,
         'table-never-applies',
         `${NO_TOKEN[table]}, so the ${table} table never applies`,
+        { table },
       );
     rows.forEach((row: unknown, index) => {
       const atRow = `${location}.${table}[${index}]`;

@@ -156,7 +156,7 @@ function checkWrites(
       message:
         `Vertex ${id} writes, so it must commit on every passing path, ` +
         `but procedure ${proc.name} has no commit Action`,
-      params: { procedure: proc.name },
+      params: { vertex: id, procedure: proc.name },
     });
   }
   for (const token of proc.tokens.passed) {
@@ -164,7 +164,7 @@ function checkWrites(
       fail(id, {
         code: 'commit-without-check',
         message: `Vertex ${id} writes, so its committing Claim token ${token} must require a Check`,
-        params: { token },
+        params: { vertex: id, token },
       });
   }
 }
@@ -328,7 +328,9 @@ function checkFacts(problems: report.Report, graph: Graph, edges: Edge[]) {
   const some = factsAt(graph, edges, groups, false);
   for (const id of Object.keys(graph.resolved))
     if (!every.has(id))
-      report.warn(problems, vertexAt(id), 'unreachable-vertex', `Vertex ${id} is not reachable from the entry`);
+      report.warn(problems, vertexAt(id), 'unreachable-vertex', `Vertex ${id} is not reachable from the entry`, {
+        vertex: id,
+      });
   for (const edge of edges) {
     if (!every.has(edge.from) || !edge.landings.some((landing) => landing.end === 'ready-for-qa')) continue;
     if (![...(every.get(edge.from) as string[]), ...gained(graph, groups, edge, false)].includes(PR_READY)) {
@@ -364,6 +366,7 @@ function checkInputFacts(
         'required-input-unsure',
         `input ${name} is required, but some route to ${id} may not produce any of its sources; ` +
           'admission checks routes, not runs, so if every run does produce one, mark the input optional',
+        { input: name, vertex: id },
       );
     }
     if (input.optional && !(some.get(id) as string[]).includes(group)) {
@@ -373,6 +376,7 @@ function checkInputFacts(
         'optional-input-unsure',
         `input ${name} is optional, but no route to ${id} is sure to produce any of its sources; ` +
           'admission checks routes, not runs, so it may still arrive on some runs',
+        { input: name, vertex: id },
       );
     }
   }
