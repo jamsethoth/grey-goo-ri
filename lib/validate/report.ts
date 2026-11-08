@@ -17,7 +17,6 @@ export const PROBLEM_CODES = [
   'required-key-missing',
   'unknown-key',
   // Names.
-  'inherited-name',
   'invalid-name',
   'reserved-name',
   // Flows, Vertices and routes.

@@ -206,13 +206,13 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
       output: checked.output!,
     });
   }
-  state.checks[action.id] = signal;
-  state.runs[action.id] = {
+  state.checks.set(action.id, signal);
+  state.runs.set(action.id, {
     output: checked.output ?? null,
     reason: checked.reason ?? null,
     failure: checked.failure ?? null,
     recoverable: !checked.passed && !!checked.recoverable && action.recoverable !== false,
-  };
+  });
   keepOutputs(executionRecord, actionIdentity, checked);
   return signal;
 }
@@ -267,7 +267,7 @@ export async function completeHeld(
     await agentCall.validateHeld(runContext, running, { baseline, response: state.response });
     return (await integrity.snapshot(executionRecord.worktree, git, locks)).tree;
   });
-  const signal = state.checks[action.id];
+  const signal = visitScope.checkSignal(state, action.id);
   const held = visitScope.outputOf(executionRecord, actionIdentity)?.value.cleanup as commandCleanup.CleanupReport;
   const confirmed = cleanupHold.confirmedReport(held);
   visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: confirmed });
@@ -287,7 +287,7 @@ export async function completeHeld(
     checks: visitScope.resolverChecks([], [signal]),
     retries: {},
   });
-  const { output, reason } = state.runs[action.id];
+  const { output, reason } = visitScope.checkRun(state, action.id);
   return effects.replaceResolution(runContext, {
     actionIdentity,
     startedAt,

@@ -10,6 +10,7 @@ import type * as github from './github.ts';
 import * as interpreter from './interpreter.ts';
 import * as labels from './labels.ts';
 import * as marker from './marker.ts';
+import type * as model from './model.ts';
 import * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
 import * as publicText from './public-text.ts';
@@ -27,7 +28,7 @@ export interface Repo {
 // Run shares them (labels ensured once, writes under the repo lock), its log and Events, and its run stop.
 export interface AdmissionContext {
   config: config.Config;
-  flow: runContext.RunFlow;
+  flow: model.ResolvedFlow;
   hash: string;
   runId: string;
   repo: Repo;
@@ -153,7 +154,7 @@ async function holdCorruptRecord(admitting: Admitting, corrupt: record.RecordCor
     return skip(admitting, `it is labelled ${state(labels.NEEDS_HUMAN)}`);
   const { reason } = await reconcile.reconcile({
     corrupt,
-    flow: context.flow as unknown as reconcile.ReconcileOptions['flow'],
+    flow: context.flow,
     git: context.deps.git,
     gh,
     labelPrefix: context.config.labelPrefix,

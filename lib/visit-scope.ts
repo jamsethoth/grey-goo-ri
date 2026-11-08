@@ -2,6 +2,7 @@
 // view of its Signals, and settle, which decides whether a pass's result ends the Visit.
 import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
+import type * as model from './model.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as record from './record.ts';
@@ -12,8 +13,8 @@ import type * as visit from './visit.ts';
 // The Visit's saved progress (visit.VisitState), with its Procedure and Claim tokens, which runVisit adds as
 // non-enumerable properties so they stay out of the saved record.
 export interface RunningVisit extends visit.VisitState {
-  readonly proc: procedures.Procedure;
-  readonly claimTokens: Record<string, procedures.ClaimToken>;
+  readonly proc: model.Procedure;
+  readonly claimTokens: model.Procedure['claimTokens'];
 }
 
 // An Action's result as the Visit routes it: any row's, with the fields a table row or a failing Check adds.
@@ -51,7 +52,40 @@ export const resolverChecks = (
 
 // The agent's claimed token name, or the implicit ok of a Vertex with no agent Action (R11f).
 const claimOf = (response: unknown): string => (response as { claim?: string } | null)?.claim ?? 'ok';
-export const tokenOf = (state: RunningVisit): procedures.ClaimToken => state.claimTokens[claimOf(state.response)];
+export const tokenOf = (state: RunningVisit): procedures.ClaimToken =>
+  state.claimTokens.get(claimOf(state.response)) as procedures.ClaimToken;
+
+// A Check's saved signal and run, by Action id. The validator admits only ids the Procedure declares and puts every
+// Check before the first effect, so a result that is missing is a broken record, named.
+export function checkSignal(state: Pick<visit.VisitState, 'checks'>, id: string): visit.CheckSignal {
+  const found = state.checks.get(id);
+  if (!found) throw new Error(`Check ${JSON.stringify(id)} has no saved result`);
+  return found;
+}
+
+export function checkRun(state: Pick<visit.VisitState, 'runs'>, id: string): visit.CheckRun {
+  const found = state.runs.get(id);
+  if (!found) throw new Error(`Check ${JSON.stringify(id)} has no saved run`);
+  return found;
+}
+
+// What a reference or template may name of a Visit (W2): its own outputs by Action id, and its `inputs`, where an
+// absent input reads as nothing so a template renders it empty (T10).
+export const visitScope = (
+  executionRecord: record.ExecutionRecord,
+  { vertex, visit }: { vertex: string; visit: number },
+): Record<string, unknown> => ({
+  ...Object.fromEntries(
+    executionRecord.outputs
+      .filter((output) => output.vertex === vertex && output.visit === visit)
+      .map((output) => [output.action, output.value]),
+  ),
+  inputs: Object.fromEntries(
+    Object.entries((executionRecord.configurationSnapshot as visit.ConfigurationSnapshot).inputs).map(
+      ([name, input]) => [name, input.absent ? undefined : input.value],
+    ),
+  ),
+});
 
 // What a Check parameter, a `with`, a rule or a template may name (U1, W2): the Vertex's own outputs by Action id, its
 // inputs, the agent's response and Claim token, the pass (Recovery Number + 1, T4d) and each Check's state
@@ -60,14 +94,14 @@ export function scopeOf(
   executionRecord: record.ExecutionRecord,
   actionIdentity: marker.ActionIdentity,
   state: RunningVisit,
-  checkSignals: Record<string, visit.CheckSignal> | visit.CheckSignal[] = state.checks,
+  checkSignals: Map<string, visit.CheckSignal> | visit.CheckSignal[] = state.checks,
 ): Record<string, unknown> {
   return {
-    ...record.visitScope(executionRecord, actionIdentity),
+    ...visitScope(executionRecord, actionIdentity),
     response: state.response,
     claim: claimOf(state.response),
     pass: state.recovery + 1,
-    check: Object.fromEntries(Object.values(checkSignals).map((signal) => [signal.id, signal.state])),
+    check: Object.fromEntries([...checkSignals.values()].map((signal) => [signal.id, signal.state])),
   };
 }
 
@@ -132,14 +166,14 @@ export function settle(
   const resolution = outcome.resolve(input);
   if (resolution.row !== 'claimed' || state.checkFollows) return resolution;
   const token = tokenOf(state);
-  const failing = token.stop ? [] : token.requires.filter((id) => state.checks[id]?.state !== 'passed');
+  const failing = token.stop ? [] : token.requires.filter((id) => state.checks.get(id)?.state !== 'passed');
   if (!token.stop && !failing.length) return resolution;
   const recoverable =
-    failing.some((id) => state.runs[id].recoverable) && state.recovery < (state.proc.recover?.max ?? 0);
+    failing.some((id) => checkRun(state, id).recoverable) && state.recovery < (state.proc.recover?.max ?? 0);
   const [first] = failing;
   const decided = outcome.decide({
     ...input,
-    checks: resolverChecks([], Object.values(state.checks)),
+    checks: resolverChecks([], [...state.checks.values()]),
     token,
     procedure: state.proc,
     scope: scopeOf(executionRecord, actionIdentity, state),
@@ -148,8 +182,8 @@ export function settle(
   if (!first) return decided;
   return {
     ...decided,
-    signal: state.checks[first],
-    reason: state.runs[first].reason,
-    output: state.runs[first].output,
+    signal: checkSignal(state, first),
+    reason: checkRun(state, first).reason,
+    output: checkRun(state, first).output,
   };
 }

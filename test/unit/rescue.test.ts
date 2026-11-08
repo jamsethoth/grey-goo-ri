@@ -58,7 +58,7 @@ test('a worktree at its baseline makes no ref and no reset', async (t) => {
   assert.equal(await fixture.options.deps.git.refTarget(fixture.worktree, refOf(fixture)), null);
   assert.deepEqual(intents(fixture.executionRecord, 'rescue'), []);
   assert.deepEqual(intents(fixture.executionRecord, 'reset'), []);
-  assert.equal(fixture.executionRecord.visits['senior-red'], 1, 'the route is still taken');
+  assert.equal(fixture.executionRecord.visits.get('senior-red'), 1, 'the route is still taken');
 });
 
 test('a ref already holding another commit holds, with nothing overwritten or reset', async (t) => {
@@ -156,7 +156,7 @@ for (const [place, crashAt] of Object.entries(CRASHES)) {
     assert.equal(outcome, 'needs-human', 'senior-red stopped');
     const saved = await loadTicket(fixture);
     assert.equal(saved.history.filter((item) => item.kind === 'rescued').length, 1);
-    assert.equal(saved.visits['senior-red'], 1);
+    assert.equal(saved.visits.get('senior-red'), 1);
     assert.equal(saved.outputs.filter((output) => output.action === 'rescue').length, 1);
   });
 }

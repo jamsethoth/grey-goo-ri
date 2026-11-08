@@ -22,55 +22,7 @@ export interface Sources {
   readTemplate?: (name: string) => string;
 }
 
-const INHERITED = Object.getOwnPropertyNames(Object.prototype);
-const PROTOTYPE = 'is reserved: every object inherits a property of that name from Object.prototype';
 const field = (value: unknown, key: string) => (referencePaths.isRecord(value) ? value[key] : undefined);
-
-// Each name the configuration gives that a plain object already has, which as a key is dropped (__proto__) or read as
-// the inherited property (H10).
-function inheritedNames(config: Value) {
-  const problems = report.newReport();
-  const name = (location: string, what: string, given: unknown) => {
-    if (INHERITED.includes(given as string))
-      report.error(problems, location, 'inherited-name', `${what} ${JSON.stringify(given)} ${PROTOTYPE}`);
-  };
-  const keys = (value: unknown, location: string, what: string) => {
-    for (const [key] of report.entries(value)) name(`${location}.${key}`, what, key);
-  };
-  keys(config.agents, 'agents', 'Agent');
-  for (const [procedureName, proc] of report.entries(config.procedures)) {
-    const location = `procedures.${procedureName}`;
-    name(location, 'Procedure', procedureName);
-    const actions = field(proc, 'actions');
-    if (Array.isArray(actions))
-      actions.forEach((action, index) => {
-        name(`${location}.actions[${index}]`, 'Action id', field(action, 'id'));
-        const decisions = field(action, 'decisions');
-        for (const decision of Array.isArray(decisions) ? decisions : [])
-          name(`${location}.actions[${index}]`, 'Decision', decision);
-      });
-    keys(field(proc, 'claimTokens'), `${location}.claimTokens`, 'Claim token');
-    for (const table of procedures.TABLES) {
-      const rows = field(proc, table);
-      if (Array.isArray(rows))
-        rows.forEach((row, index) => name(`${location}.${table}[${index}]`, 'outcome', field(row, 'outcome')));
-    }
-    name(`${location}.otherwise`, 'otherwise', field(proc, 'otherwise'));
-  }
-  for (const [flowName, declared] of report.entries(config.flows)) {
-    const location = `flows.${flowName}`;
-    name(location, 'Flow', flowName);
-    const ticket = field(declared, 'ticket');
-    keys(field(ticket, 'routes'), `${location}.ticket.routes`, 'route key');
-    for (const [id, vertex] of report.entries(field(ticket, 'vertices'))) {
-      const vertexLocation = `${location}.ticket.vertices.${id}`;
-      name(vertexLocation, 'Vertex id', id);
-      keys(field(vertex, 'inputs'), `${vertexLocation}.inputs`, 'input');
-      keys(field(vertex, 'route'), `${vertexLocation}.route`, 'route key');
-    }
-  }
-  return problems.errors;
-}
 
 // Every declared Agent is checked once, used or not; its errors hold only the Flows that use it (H6).
 function checkAgents(problems: report.Report, config: Value, harnesses: unknown) {
@@ -101,19 +53,20 @@ function checkAgents(problems: report.Report, config: Value, harnesses: unknown)
 
 function checkProcedures(problems: report.Report, config: Value, readSchema: Sources['readSchema']) {
   const declaring = { report: problems, readSchema, schemas: new Map(), commands: config.commands };
-  const checkedProcedures: Record<string, procedures.CheckedProcedure | undefined> = {};
+  const checkedProcedures = new Map<string, procedures.CheckedProcedure | undefined>();
   for (const [name, declaration] of report.entries(config.procedures))
-    checkedProcedures[name] = procedures.checkProcedure(declaring, name, declaration);
+    checkedProcedures.set(name, procedures.checkProcedure(declaring, name, declaration));
   // Each Procedure's references typed alone; each Vertex using it types those that read `inputs`.
-  const procedureFalls: Record<string, Partial<Record<procedures.TableName, string[]>>> = {};
-  for (const proc of Object.values(checkedProcedures)) {
+  const procedureFalls = new Map<string, Partial<Record<procedures.TableName, string[]>>>();
+  for (const proc of checkedProcedures.values()) {
     if (!proc) continue;
-    procedureFalls[proc.name] = references.checkReferences(problems, proc, {
+    const falls = references.checkReferences(problems, proc, {
       inputs: referencePaths.ANY,
       optional: () => false,
       atVertex: false,
       locate: (where) => `${proc.location}.${where}`,
     });
+    procedureFalls.set(proc.name, falls);
   }
   return { checkedProcedures, procedureFalls };
 }
@@ -142,9 +95,6 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
     report.error(problems, '(root)', 'not-an-object', 'the configuration must be an object');
     return { flows: {}, ...problems };
   }
-  // Every later check keys plain objects by the configuration's names, so none runs while one is inherited (H10).
-  const inherited = inheritedNames(config);
-  if (inherited.length) return { flows: {}, errors: inherited, warnings: [] };
   // Null errors come first in the report but are not shared errors: the key's own check holds the Flow a null breaks.
   const nulls = report.newReport();
   reportNulls(nulls, config, '');
@@ -176,9 +126,10 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
     reader,
     sharedErrors,
   };
-  const resolved: Record<string, ReturnType<typeof flows.checkFlow>> = {};
-  for (const [name, declaration] of report.entries(config.flows))
-    resolved[name] = flows.checkFlow(checking, name, declaration);
+  // Built from entries, so a Flow such as __proto__ is an own key.
+  const resolved = Object.fromEntries(
+    report.entries(config.flows).map(([name, declaration]) => [name, flows.checkFlow(checking, name, declaration)]),
+  );
   return {
     flows: resolved,
     errors: report.dedupe([...nulls.errors, ...problems.errors]),

@@ -9,6 +9,7 @@ import type * as github from './github.ts';
 import * as integrity from './integrity.ts';
 import type * as locks from './locks.ts';
 import * as marker from './marker.ts';
+import type * as model from './model.ts';
 import type * as procedures from './procedures.ts';
 import type * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
@@ -98,26 +99,6 @@ export interface Harness {
   capabilities: { confinement?: unknown; sessionResume?: { supported?: boolean } };
 }
 
-// A Vertex as the Resolved Flow carries it (lib/validate/), as the interpreter reads it.
-export interface RunVertex {
-  agent: visit.ConfigurationSnapshot['agent'];
-  access: string;
-  procedure: string;
-  outcomes: string[];
-  approvalLabels?: { await: string; decide: string[] } | null;
-  route?: unknown;
-  inputs?: Record<string, inputs.ResolvedInput>;
-  max?: number;
-  exhausted?: unknown;
-}
-// The Resolved Flow an Execution runs.
-export interface RunFlow {
-  name: string;
-  actionCap: number;
-  procedures: Record<string, procedures.Procedure>;
-  ticket: { entry: string | null; routes?: unknown; vertices: Record<string, RunVertex> };
-}
-
 export interface Ticket {
   number: number;
   title: string;
@@ -139,7 +120,7 @@ export type Admission = Pick<record.AdmissionStop, 'kind'> & Partial<record.Admi
 // unexpected fault without running it; `admission`, a hold or abandonment the caller decided, is its Terminal.
 export interface ExecutionOptions {
   deps: Deps;
-  flow: RunFlow;
+  flow: model.ResolvedFlow;
   record: record.ExecutionRecord;
   events: ReturnType<typeof events.eventLog>;
   protectedPaths: string[];

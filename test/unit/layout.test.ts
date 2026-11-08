@@ -181,6 +181,43 @@ test('no module outside lib/git.ts passes git a command line', async () => {
   }
 });
 
+// The shapes that hold a Map (the Execution Record, its Visit state and the Resolved Flow) are stringified only where
+// their Maps are converted first: lib/record.ts's replacer and lib/model.ts's toJson. Anywhere else JSON.stringify
+// would write {} for each Map in silence (#174).
+// A holder may be reached through its context (runContext.record, running.state), and so may one of its Map fields
+// (state.checks, flow.procedures); a scalar field of one (flow.name) is neither. shortcut: a tripwire on names, not
+// types: a holder under another name or reached by computed access passes, and a scalar or plain JSON collection
+// named like one is refused (rename it, or list its owner); the safety is the two owners' conversions, which
+// test/unit/record.test.ts and test/unit/model.test.ts hold. Replace with a type-aware lint if one appears.
+const HOLDER_NAMES = 'executionRecord|record|visitState|state|flow|runFlow';
+const MAP_FIELDS = 'checks|runs|visits|traversals|procedures|vertices|claimTokens';
+const MAP_HOLDERS = new RegExp(
+  `JSON\\.stringify\\(\\s*(?:[A-Za-z_$][\\w$]*\\.)*(?:${HOLDER_NAMES}|${MAP_FIELDS})(?![\\w$.[])`,
+);
+const JSON_OWNERS = new Set(['lib/record.ts']);
+
+test('no module outside the JSON owners stringifies a record, Visit state or Resolved Flow', () => {
+  for (const sample of [
+    'JSON.stringify(executionRecord, null, 2)',
+    'JSON.stringify(runContext.record)',
+    'JSON.stringify(running.state)',
+    'JSON.stringify(state.checks)',
+    'JSON.stringify(executionRecord.visits)',
+    'JSON.stringify(flow.procedures, null, 2)',
+  ])
+    assert.match(sample, MAP_HOLDERS, `the pattern finds the sample violation ${sample}`);
+  for (const sample of ['JSON.stringify(flow.name)', 'JSON.stringify(state.recovery)', 'JSON.stringify(flows)'])
+    assert.doesNotMatch(sample, MAP_HOLDERS, `the pattern passes a field or another name: ${sample}`);
+  const found = modules
+    .filter((path) => !JSON_OWNERS.has(path))
+    .flatMap((path) =>
+      readFileSync(root + path, 'utf8')
+        .split('\n')
+        .flatMap((line, i) => (MAP_HOLDERS.test(line) ? [`${path}:${i + 1}: ${line.trim()}`] : [])),
+    );
+  assert.deepEqual(found, []);
+});
+
 // Every file gg runs from, except lib/harnesses/, the one place a Harness is named.
 const filesOutsideHarnesses = [...repoFiles('lib/'), ...repoFiles('bin/')].filter(
   (path) => !path.startsWith('lib/harnesses/'),

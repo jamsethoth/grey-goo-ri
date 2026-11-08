@@ -19,6 +19,7 @@ import { firstVisitWith } from '../support/first-visit.ts';
 import * as golden from '../support/golden.ts';
 import { WRONG_ADD, greenFixture, greenWrites, runFirstVisit } from '../support/golden-run.ts';
 import * as keys from '../support/keys.ts';
+import * as namedFlow from '../support/named-flow.ts';
 import { editRuns } from '../support/suite-runs.ts';
 
 type GoldenFixture = golden.GoldenFixture;
@@ -669,3 +670,17 @@ test("unconfirmed cleanup keeps the worktree busy through the hold comment's bac
   assert.equal(result.outcome, 'pending');
   assert.deepEqual(during, [true], 'still busy while the comment waits');
 });
+
+for (const claim of ['ok', 'halt'] as const) {
+  const name = 'a Flow named entirely with Object.prototype names runs and routes like one with ordinary names';
+  test(`${name} (${claim})`, async (t) => {
+    const ordinary = await namedFlow.runNamed(t, namedFlow.ORDINARY, claim === 'ok' ? 'ok' : namedFlow.ORDINARY.halt);
+    const prototype = await namedFlow.runNamed(
+      t,
+      namedFlow.PROTOTYPE,
+      claim === 'ok' ? 'ok' : namedFlow.PROTOTYPE.halt,
+    );
+    assert.equal(ordinary.result.outcome, claim === 'ok' ? 'ready-for-qa' : 'needs-replan');
+    assert.deepEqual(prototype, namedFlow.renamed(ordinary));
+  });
+}

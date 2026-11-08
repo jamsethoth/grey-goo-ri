@@ -138,8 +138,9 @@ export interface VisitState {
   firstAttemptBaseline: integrity.IntegrityBaseline | null;
   call: AgentCall | null;
   response: unknown;
-  runs: Record<string, CheckRun>;
-  checks: Record<string, CheckSignal>;
+  // Each Check's run and signal by Action id: Maps, so a Check such as __proto__ is kept like any other (#174).
+  runs: Map<string, CheckRun>;
+  checks: Map<string, CheckSignal>;
   checkFollows: boolean;
   settled: { action: string; recovery: number; resolution: Resolution } | null;
   // The report that stopped the Visit: its writers may still run, so nothing marks the worktree idle (L11).

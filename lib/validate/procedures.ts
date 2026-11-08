@@ -56,6 +56,10 @@ export interface CheckedProcedure {
   otherwise: unknown;
 }
 
+// The Checks' ids that are strings; any other is reported at its Action and kept out of what is keyed by id (#174).
+const checkIdsOf = (declared: actionChecks.DeclaredSoFar) =>
+  declared.checks.map((check) => check.id).filter((id) => typeof id === 'string');
+
 // The Check ids a Claim token requires that are Checks of the Procedure, each once.
 const requiredOf = (claimTokens: Record<string, procedures.ClaimToken>, checkIds: unknown[], token: string) =>
   report.unique(claimTokens[token].requires ?? []).filter((id) => checkIds.includes(id));
@@ -96,7 +100,7 @@ function checkClaimTokens(
   declaration: Value,
   declared: actionChecks.DeclaredSoFar,
 ) {
-  const checkIds = declared.checks.map((check) => check.id);
+  const checkIds = checkIdsOf(declared);
   // No agent Action, so the implicit Claim ok requires every Check (R11f).
   if (!declared.agent) {
     if (declaration.claimTokens !== undefined) {
@@ -122,13 +126,13 @@ function checkClaimTokens(
     );
     return {};
   }
-  const claimTokens: Record<string, procedures.ClaimToken> = {};
+  const claimTokens: [string, procedures.ClaimToken][] = [];
   for (const [token, form] of Object.entries(declaredTokens)) {
     const atToken = `${location}.claimTokens.${token}`;
     report.checkName(problems, atToken, token, { what: 'Claim token', carried: false });
     if (report.isReserved(token))
       report.error(problems, atToken, 'reserved-name', `Claim token ${JSON.stringify(token)} ${report.RESERVED}`);
-    claimTokens[token] = checkClaimToken(problems, form, checkIds, atToken);
+    claimTokens.push([token, checkClaimToken(problems, form, checkIds, atToken)]);
   }
   if (declared.schema !== referencePaths.ANY) {
     try {
@@ -138,7 +142,8 @@ function checkClaimTokens(
       report.error(problems, `${location}.claimTokens`, 'claim-enum-mismatch', message);
     }
   }
-  return claimTokens;
+  // Built from entries, so a Claim token such as __proto__ is an own key.
+  return Object.fromEntries(claimTokens);
 }
 
 const namesTests = (tests: unknown) =>
@@ -321,7 +326,7 @@ export function checkProcedure(
   const declared = actionChecks.checkActions(declaring, actions, location);
   if (!declared.agent) actionChecks.checkCommitsWithoutAgent(problems, location, actions);
   const claimTokens = checkClaimTokens(problems, location, declaration, declared);
-  const checkIds = declared.checks.map((check) => check.id);
+  const checkIds = checkIdsOf(declared);
   const tokens = tokensOf(claimTokens, (token) => requiredOf(claimTokens, checkIds, token));
   const tests = checkSettings(problems, location, declaration, declared);
   // A Decision takes the `passed` table's place (X1c), and otherwise's too where no Check can fail.
@@ -350,7 +355,7 @@ export function checkProcedure(
     recover: declaration.recover ?? null,
     tables,
     malformed,
-    otherwise: declaration.otherwise,
+    otherwise: report.isName(declaration.otherwise) ? declaration.otherwise : undefined, // reported, kept out (#174)
   };
   checkPrReady(problems, proc);
   return proc;

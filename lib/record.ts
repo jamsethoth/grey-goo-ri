@@ -107,8 +107,10 @@ export interface ExecutionRecord {
   terminalStop: TerminalStop | null;
   admissionStop: AdmissionStop | null;
   cursor: Cursor;
-  visits: Record<string, number>;
-  traversals: Record<string, number>;
+  // Visits by Vertex and traversals by bounded Edge (from->to:outcome): Maps, so a Vertex such as __proto__ counts like
+  // any other (#174). The saved JSON holds them as objects.
+  visits: Map<string, number>;
+  traversals: Map<string, number>;
   retries: Record<
     string,
     Partial<Record<NonNullable<visit.TableResolution['retryKind']>, number>> & { remote?: effects.RemoteRetry }
@@ -175,8 +177,8 @@ export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
     // A hold, abandonment or fault admission decided, until its Terminal reports it (admission.ts).
     admissionStop: null,
     cursor: { vertex: flow.entry, visit: 1, action: null, recovery: 0, attempt: 1 },
-    visits: {},
-    traversals: {},
+    visits: new Map(),
+    traversals: new Map(),
     retries: {},
     sessions: {},
     // The Flow Attempts entered, which the Action Cap bounds (request 3.3).
@@ -249,7 +251,8 @@ async function saveRecord(
       .run(
         kind,
         kind === 'ticket' ? (record as ExecutionRecord).ticket : record.epic,
-        JSON.stringify(data, null, 2) + '\n',
+        JSON.stringify(data, (_key, value: unknown) => (value instanceof Map ? Object.fromEntries(value) : value), 2) +
+          '\n',
       );
   };
   if (!writeEvent) {
@@ -294,6 +297,19 @@ function parseRow<Saved extends AnyRecord>(commonDir: string, { kind, n: recordN
       'its cursor has no Recovery Number, so it was written before Action ids (#111)',
       json,
     );
+  }
+  // The counts kept as Maps are saved as objects (#174); anything else makes the row corrupt, not a TypeError.
+  const maps = (holder: Record<string, unknown> | null, keys: string[]) => {
+    for (const key of holder ? keys : []) {
+      const saved = holder![key];
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved))
+        throw new RecordCorruptError(file, `its ${key} is not an object`, json);
+      holder![key] = new Map(Object.entries(saved));
+    }
+  };
+  if (kind === 'ticket') {
+    maps(data, ['visits', 'traversals']);
+    maps(data.visitState, ['runs', 'checks']);
   }
   return { ...data, commonDir };
 }
@@ -379,22 +395,3 @@ export type StateDatabase = ReturnType<typeof createStateDatabase>;
 
 // The real State Database, for callers that take no seam: this module is itself one, so it can stand for a `database`.
 export const { save, intent, evidence, complete, beforeAppend } = createStateDatabase();
-
-// What a reference or template may name of a Visit (W2): its own outputs by Action id, and its `inputs`, where an
-// absent input reads as nothing so a template renders it empty (T10).
-export const visitScope = (
-  record: ExecutionRecord,
-  { vertex, visit }: { vertex: string; visit: number },
-): Record<string, unknown> => ({
-  ...Object.fromEntries(
-    record.outputs
-      .filter((output) => output.vertex === vertex && output.visit === visit)
-      .map((output) => [output.action, output.value]),
-  ),
-  inputs: Object.fromEntries(
-    Object.entries((record.configurationSnapshot as visit.ConfigurationSnapshot).inputs).map(([name, input]) => [
-      name,
-      input.absent ? undefined : input.value,
-    ]),
-  ),
-});

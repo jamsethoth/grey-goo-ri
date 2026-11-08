@@ -96,7 +96,7 @@ function previousAttempt(
 // Check with no recoverBrief gets gg's own section.
 const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): briefs.BriefSection[] =>
   state.proc.actions
-    .filter((action) => action.do === 'check' && state.checks[action.id]?.state === 'failed')
+    .filter((action) => action.do === 'check' && state.checks.get(action.id)?.state === 'failed')
     .map((action) => ({
       name: (action.recoverBrief as string | undefined) ?? 'recover-section.md',
       text: action.recoverBrief
@@ -105,7 +105,7 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
       id: action.id,
       kind: action.kind,
       command: runContext.record.configurationSnapshot!.commands[action.command as string],
-      ...state.runs[action.id],
+      ...state.runs.get(action.id),
     }));
 // A recovery pass gets the recovery Brief with a section for each Check that failed in the pass before it (T4b); a
 // parse retry gets gg's own nudge.

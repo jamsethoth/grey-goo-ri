@@ -68,7 +68,7 @@ export async function runExecution(options: context.ExecutionOptions): Promise<T
     if (admission?.kind === 'abandon') return await terminal.abandon(runContext, admission as AbandonDecision);
     if (runContext.laterRunReport) return await finishReport(runContext);
     // A record that has entered a Vertex is resumed, so GitHub and git are reconciled with it first.
-    if (Object.keys(executionRecord.visits).length) {
+    if (executionRecord.visits.size) {
       const ended = await resume(runContext);
       if (ended) return ended;
     }
@@ -154,7 +154,7 @@ async function runVertices(runContext: RunContext): Promise<TerminalResult> {
   while (!flow.isEnd(ended.next)) {
     ended = await visitRunner.runVisit(runContext, ended.next, executionRecord.cursor.visit!);
     if (flow.isEnd(ended.next)) break;
-    const visitNumber = (executionRecord.visits[ended.next] ?? 0) + 1;
+    const visitNumber = (executionRecord.visits.get(ended.next) ?? 0) + 1;
     executionRecord.cursor = { vertex: ended.next, visit: visitNumber, action: null, recovery: 0, attempt: 1 };
     await runContext.database.save(executionRecord);
   }

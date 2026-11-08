@@ -85,11 +85,11 @@ test('golden: a repeated review escalates', async (t) => {
     { id: 'repeat', kind: 'repeat', state: 'failed', tree: null },
   ]);
   assert.deepEqual(
-    fixture.executionRecord.traversals,
+    Object.fromEntries(fixture.executionRecord.traversals),
     { 'reviewer->implementer-fix:changes': 1, 'reviewer->senior-dev:repeat': 1 },
     'the repeat takes its own Edge, not changes',
   );
-  assert.deepEqual(fixture.executionRecord.visits, {
+  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), {
     red: 1,
     green: 1,
     reviewer: 3,
@@ -131,11 +131,11 @@ test("golden: a spent Vertex max takes the Vertex's exhausted target", async (t)
   assert.equal(fixture.result.outcome, 'ready-for-qa');
   assert.deepEqual(reviewTrace(fixture), THREE_REVIEWS);
   assert.deepEqual(
-    fixture.executionRecord.traversals,
+    Object.fromEntries(fixture.executionRecord.traversals),
     { 'reviewer->implementer-fix:changes': 1 },
     'an Edge whose Vertex is spent is not traversed',
   );
-  assert.deepEqual(fixture.executionRecord.visits, {
+  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), {
     red: 1,
     green: 1,
     reviewer: 3,
@@ -149,7 +149,7 @@ test("when an Edge and its Vertex exhaust together the Vertex's exhausted target
   const fixture = await runReview(await fixBoundSetup(t, { max: 1, exhausted: { end: 'needs-human' } }));
 
   assert.equal(fixture.result.outcome, 'ready-for-qa');
-  assert.deepEqual(fixture.executionRecord.visits, {
+  assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), {
     red: 1,
     green: 1,
     reviewer: 3,
@@ -201,7 +201,14 @@ test('a restart at a bound routes the same way', async (t) => {
     fixture.harness.calls.slice(calls).map((call) => call.marker),
     [golden.markerOf(saved, 'senior-dev', 1, 'fix'), golden.markerOf(saved, 'reviewer', 3, 'review')],
   );
-  assert.deepEqual(saved.visits, { red: 1, green: 1, reviewer: 3, 'implementer-fix': 1, 'senior-dev': 1, publish: 1 });
+  assert.deepEqual(Object.fromEntries(saved.visits), {
+    red: 1,
+    green: 1,
+    reviewer: 3,
+    'implementer-fix': 1,
+    'senior-dev': 1,
+    publish: 1,
+  });
 });
 
 // red's three Actions and green's agent call are the four Attempts of a cap of 4, so green's test Check is refused.
@@ -295,7 +302,7 @@ test('a stop a Visit decides saves a Terminal stop and Check runs that declare e
     recovery: 0,
   });
   assert.equal(terminalStop!.commentTemplate, null);
-  const redCheck = saved.findLast((next) => next.visitState?.runs['red-check'])?.visitState!.runs['red-check'];
+  const redCheck = saved.findLast((next) => next.visitState?.runs.get('red-check'))?.visitState!.runs.get('red-check');
   assert.deepEqual(Object.keys(redCheck ?? {}), ['output', 'reason', 'failure', 'recoverable']);
   assert.equal(redCheck!.reason, null, 'a command Check gives no reason');
   assert.deepEqual(
@@ -539,11 +546,13 @@ test(
       'the 26 Attempts the cap allows',
     );
     assert.deepEqual(
-      fixture.executionRecord.visits,
+      Object.fromEntries(fixture.executionRecord.visits),
       { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, 'senior-dev': 1 },
       'retries and recovery add no Visit',
     );
-    assert.deepEqual(fixture.executionRecord.traversals, { 'reviewer->implementer-fix:changes': 1 });
+    assert.deepEqual(Object.fromEntries(fixture.executionRecord.traversals), {
+      'reviewer->implementer-fix:changes': 1,
+    });
     // The review's comments are write-ahead too, so the Terminal Reason's comment is found on the Ticket.
     const reason = stopReason(fixture, {
       vertex: 'senior-dev',
@@ -667,7 +676,7 @@ test("a repeat Check ignores an earlier Execution's identical findings", async (
     "ticket 15's second review is not ticket 16's first",
   );
   assert.deepEqual(
-    next.traversals,
+    Object.fromEntries(next.traversals),
     { 'reviewer->implementer-fix:changes': 1 },
     'the review routes as changes, not repeat',
   );

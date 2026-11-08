@@ -1,10 +1,10 @@
 {
   "linux": {
-    "lines": 99.06,
-    "functions": 98.26
+    "lines": 99.07,
+    "functions": 98.27
   },
   "win32": {
-    "lines": 99.06,
-    "functions": 98.26
+    "lines": 99.07,
+    "functions": 98.27
   }
 }

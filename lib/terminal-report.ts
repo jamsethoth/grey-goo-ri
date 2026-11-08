@@ -11,6 +11,7 @@ import type * as marker from './marker.ts';
 import * as outcome from './outcome.ts';
 import * as record from './record.ts';
 import * as render from './render.ts';
+import * as visitScope from './visit-scope.ts';
 
 type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 
@@ -148,7 +149,7 @@ function commentBody(
     return render.publicBody(
       config.layerFile(context.files, stop.commentTemplate),
       {
-        ...record.visitScope(executionRecord, stop.actionRef!),
+        ...visitScope.visitScope(executionRecord, stop.actionRef!),
         response: stop.response,
         end: name,
         outcome: stop.outcome,
