@@ -119,8 +119,10 @@ type Reference = { path: unknown; template?: string } & AtVertex;
 type RuleField = { field: string } & AtVertex;
 // A harness's owner: a declared Agent, or the Vertex whose own Agent keys set it.
 type HarnessOwner = { agent: string; vertex?: undefined } | { vertex: string; agent?: undefined };
+// A Rule Table by the name its sentence gives it, <procedure>.<table>.
+type RuleTable = { table: string } & AtVertex;
 // A row as an index of its table, as `at` writes it.
-type RuleRow = { row: number; outcome: string } & AtVertex;
+type RuleRow = RuleTable & { row: number; outcome: string };
 // The values each code's sentence names, as Ajv's params are typed by keyword, even where `at` spells one too; a code
 // missing here names none. A label that only places the problem inside the value at `at` (`allOf[n]:`, `pick:`,
 // `where "f":`, `agent X's harness`) is not repeated here. inherited-name's guard is #174's to replace, so it takes
@@ -171,10 +173,11 @@ interface ProblemParams {
     from: number | null;
     fields: string[];
     example: Record<string, unknown>;
-  } & AtVertex;
+    conditions: { row: number; when: Record<string, unknown> }[];
+  } & RuleTable;
   'rule-condition-mismatch': RuleField & { condition: unknown; type: unknown };
-  'rule-table-too-large': { work: number; limit: number; largest: [string, number][] } & AtVertex;
-  'undeclared-rule-field': { fields: string[] } & AtVertex;
+  'rule-table-too-large': RuleTable & { work: number; limit: number; largest: [string, number][] };
+  'undeclared-rule-field': RuleTable & { fields: string[] };
   'unreachable-row': RuleRow;
   'commit-without-check': { vertex: string; token: string };
   'not-a-list': { table?: string };

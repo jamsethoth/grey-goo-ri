@@ -140,6 +140,11 @@ test("a partial overlap is a warning naming both rows' conditions and an example
       from: null,
       fields: ['claim', 'response.needsTest'],
       example: { claim: 'ok', response: { needsTest: true } },
+      table: 'review.passed',
+      conditions: [
+        { row: 1, when: { 'response.needsTest': true } },
+        { row: 0, when: { claim: 'ok' } },
+      ],
       code: 'overlapping-rows',
       message:
         'rule table review.passed: row 2 (response.needsTest = true) is partly taken by ' +
@@ -279,6 +284,12 @@ test('a warning names at most ten earlier rows and counts the rest', () => {
     ),
   );
   assert.doesNotMatch(result.warnings[0].message, /row 11 \(/);
+  // The conditions the sentence quotes, the row's own and its ten named takers', and no more.
+  assert.deepEqual(
+    result.warnings[0].conditions.map(({ row }) => row),
+    [12, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  );
+  assert.deepEqual(result.warnings[0].conditions[0].when, { n: { '>=': 0 } });
 });
 
 test('rows that share their first ten earlier rows but not the rest are separate warnings', () => {
@@ -468,7 +479,7 @@ test('rows that never fire are one error each, naming no earlier row', () => {
     row: 9_999,
     code: 'never-firing-row',
     message: 'rule table heavy.passed: row 10000 (o9999) never fires: earlier rows match every input it matches',
-    params: { row: 9_999, outcome: 'o9999' },
+    params: { table: 'heavy.passed', row: 9_999, outcome: 'o9999' },
   });
   assert.deepEqual(result.warnings, []);
 });
@@ -484,6 +495,8 @@ test('a long run of overlapping rows is one warning naming only its first taker'
       from: 0,
       fields: ['pass'],
       example: { pass: 3_000 },
+      table: 'fix.failed',
+      conditions: [],
       code: 'overlapping-rows',
       message:
         'rule table fix.failed: rows 2-3000 are each partly taken by every earlier firing row, all on pass, ' +
@@ -519,6 +532,7 @@ test('a table just over it (many booleans) is an error naming the table', () => 
   assert.equal(result.errors[0].row, null);
   assert.equal(result.errors[0].code, 'rule-table-too-large');
   assert.deepEqual(result.errors[0].params, {
+    table: 'wide.failed',
     work: 10_485_760,
     limit: 10_000_000,
     largest: [

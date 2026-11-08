@@ -43,10 +43,19 @@ test("the example Flow warns only of the review table's two intended overlaps", 
     { at: 'procedures.review.passed', code: 'overlapping-rows' },
   ]);
   assert.deepEqual(
-    warnings.map(({ params }) => params && 'rows' in params && { rows: params.rows, earlier: params.earlier }),
+    warnings.map(
+      ({ params }) =>
+        params &&
+        'rows' in params && {
+          table: params.table,
+          rows: params.rows,
+          earlier: params.earlier,
+          conditions: params.conditions.map(({ row }) => row),
+        },
+    ),
     [
-      { rows: [1, 1], earlier: [[0, 0]] },
-      { rows: [2, 2], earlier: [[0, 1]] },
+      { table: 'review.passed', rows: [1, 1], earlier: [[0, 0]], conditions: [1, 0] },
+      { table: 'review.passed', rows: [2, 2], earlier: [[0, 1]], conditions: [2, 0, 1] },
     ],
   );
 });

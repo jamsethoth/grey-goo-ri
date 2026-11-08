@@ -38,6 +38,9 @@ export interface OverlapWarning {
   from: number | null;
   fields: string[];
   example: Example;
+  table: string;
+  // The conditions the sentence quotes: the taken row's, then each named earlier row's; none for a run.
+  conditions: { row: number; when: Record<string, Condition> }[];
   code: 'overlapping-rows';
   message: string;
 }
@@ -90,7 +93,7 @@ function overLimit(name: string, paths: string[], values: ruleDomain.Value[][][]
     message:
       `rule table ${name} needs ${work} row checks, above the limit of ${WORK_LIMIT}; ` +
       `its largest fields: ${largest.map(([path, count]) => `${path} (${count} values)`).join(', ')}`,
-    params: { work, limit: WORK_LIMIT, largest },
+    params: { table: name, work, limit: WORK_LIMIT, largest },
   });
 }
 
@@ -107,7 +110,7 @@ const neverFiring = (domain: ruleDomain.Domain, reached: Uint32Array, fires: Uin
               (ruleDomain.bitAt(reached, i)
                 ? 'never fires: earlier rows match every input it matches'
                 : 'is unreachable: it matches no input'),
-            params: { row: i, outcome: row.outcome },
+            params: { table: domain.name, row: i, outcome: row.outcome },
           },
         ],
   );
@@ -256,17 +259,12 @@ function overlapWarning({ name, rows }: ruleDomain.Domain, run: Run): OverlapWar
     mode,
   } = run;
   const rest = more ? `, and ${more} more ${more === 1 ? 'row' : 'rows'}` : '';
+  const named = earlier.flatMap(([low, high]) => Array.from({ length: high - low + 1 }, (_, offset) => low + offset));
+  const quoted = first === last ? [first, ...named] : [];
   const message =
     first === last
       ? `row ${first + 1} (${conditions(rows[first].when)}) is partly taken by ` +
-        earlier
-          .flatMap(([low, high]) =>
-            Array.from(
-              { length: high - low + 1 },
-              (_, offset) => `row ${low + offset + 1} (${conditions(rows[low + offset].when)})`,
-            ),
-          )
-          .join(', ') +
+        named.map((row) => `row ${row + 1} (${conditions(rows[row].when)})`).join(', ') +
         rest
       : `rows ${first + 1}-${last + 1} are each partly taken by ${takersText(run, rest)}, all on ${fields.join(', ')}`;
   return {
@@ -276,6 +274,8 @@ function overlapWarning({ name, rows }: ruleDomain.Domain, run: Run): OverlapWar
     from: mode === 'from' ? from : null,
     fields,
     example: run.example,
+    table: name,
+    conditions: quoted.map((row) => ({ row, when: rows[row].when })),
     code: 'overlapping-rows',
     message: `rule table ${name}: ${message}, for example ${JSON.stringify(run.example)}`,
   };
@@ -292,7 +292,7 @@ export function analyse(table: RuleTable): Analysis {
     return refuse({
       code: 'undeclared-rule-field',
       message: `rule table ${name} names undeclared fields: ${undeclared.join(', ')}`,
-      params: { fields: undeclared },
+      params: { table: name, fields: undeclared },
     });
   const values = boxes.map((fields) =>
     paths.map((path) =>
