@@ -26,7 +26,7 @@ test('a schema outside the strict subset is an error naming the file', () => {
   assert.deepEqual(exampleLayer.firedRules(errors), [
     { at: 'procedures.review.actions[0]', code: 'schema-not-strict' },
   ]);
-  assert.match(errors[0].message, /^review\.schema\.json: /);
+  assert.deepEqual(errors[0].params, { schema: 'review.schema.json' });
 });
 
 test('a schema that cannot be read is an error naming the file', () => {
@@ -36,7 +36,7 @@ test('a schema that cannot be read is an error naming the file', () => {
   assert.deepEqual(exampleLayer.firedRules(errors), [
     { at: 'procedures.review.actions[0]', code: 'schema-unreadable' },
   ]);
-  assert.match(errors[0].message, /^schema review\.schema\.json cannot be read/);
+  assert.deepEqual(errors[0].params, { schema: 'review.schema.json' });
 });
 
 test('an undeclared command is an error naming the Check', () => {
@@ -107,15 +107,9 @@ test('pick on a source that is not a list of objects is an error', () => {
 test('tests: named reading anything but a list of strings is an error', () => {
   const config = exampleLayer.config();
   config.procedures.fix.tests.named = 'inputs.findings';
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    {
-      at: `${VERTICES}.implementer-fix (procedure fix).tests`,
-      code: 'not-a-list-of-strings',
-    },
-    {
-      at: `${VERTICES}.senior-dev (procedure fix).tests`,
-      code: 'not-a-list-of-strings',
-    },
+  assert.deepEqual(exampleLayer.firedAtVertices(exampleLayer.check(config).errors), [
+    { at: 'procedures.fix.tests', code: 'not-a-list-of-strings', flow: 'default', vertex: 'implementer-fix' },
+    { at: 'procedures.fix.tests', code: 'not-a-list-of-strings', flow: 'default', vertex: 'senior-dev' },
   ]);
 });
 
@@ -257,11 +251,8 @@ test('a rule on an input is typed at each Vertex using the Procedure', () => {
     optional: true,
   };
   config.procedures.fix.passed = [{ when: { 'inputs.needsTest': true }, outcome: 'ok' }];
-  assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-    {
-      at: `${VERTICES}.senior-dev (procedure fix).passed[0]`,
-      code: 'undefined-reference',
-    },
+  assert.deepEqual(exampleLayer.firedAtVertices(exampleLayer.check(config).errors), [
+    { at: 'procedures.fix.passed[0]', code: 'undefined-reference', flow: 'default', vertex: 'senior-dev' },
   ]);
 });
 
@@ -406,15 +397,9 @@ test('a with alias that steps into a list of objects is an error', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures.fix, 'pr').with.files = 'inputs.findings.file';
   const { errors } = exampleLayer.check(config, exampleLayer.schemas(), exampleLayer.templates());
-  assert.deepEqual(exampleLayer.firedRules(errors), [
-    {
-      at: `${VERTICES}.implementer-fix (procedure fix).actions[4]`,
-      code: 'reference-into-list',
-    },
-    {
-      at: `${VERTICES}.senior-dev (procedure fix).actions[4]`,
-      code: 'reference-into-list',
-    },
+  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+    { at: 'procedures.fix.actions[4]', code: 'reference-into-list', flow: 'default', vertex: 'implementer-fix' },
+    { at: 'procedures.fix.actions[4]', code: 'reference-into-list', flow: 'default', vertex: 'senior-dev' },
   ]);
 });
 

@@ -200,6 +200,30 @@ test('every line a Run prints names its repository, in the terminal and in run.l
   );
 });
 
+test('an error line ends in its code', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.procedures.implement.actions[1].command = 'lint';
+  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
+    assert.deepEqual(err?.message.split('\n'), [
+      '[main] preflight failed:',
+      'error: procedures.implement.actions[1]: Check test names command "lint", ' +
+        'which the repository Layer does not declare [undeclared-command]',
+    ]);
+    return true;
+  });
+});
+
+test('a warning line ends in its code, in run.log', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.options.config.agents.spare = { harness: 'fake' };
+  await run.runTarget(fixture.options);
+  const runLog = readFileSync(
+    join(fixture.commonDir, 'gg', 'runs', runFixture.lastRun(fixture) as string, 'run.log'),
+    'utf8',
+  );
+  assert.match(runLog, / warning: agents\.spare: agent spare is used by no Vertex \[unused-agent\]\n/);
+});
+
 test('every error a Run throws names its repository', async (t) => {
   const preflight = runFixture.fixture(t);
   preflight.options.config.agents.implementer.harness = 'nope';

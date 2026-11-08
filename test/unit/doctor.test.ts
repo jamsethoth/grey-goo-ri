@@ -45,6 +45,26 @@ test('gg doctor reports a malformed table row rather than throwing', async () =>
   );
 });
 
+// The code goes last, as ESLint prints a rule id, so each line keeps the prefix it had.
+test('an error line ends in its code', async () => {
+  const config = example();
+  config.flows.default.ticket.vertices.red.procedure = 'red';
+  const { text } = await doctor.doctor({ config, ...DEPS });
+  assert.ok(
+    text.includes(
+      '\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared [undeclared-procedure]\n',
+    ),
+    text,
+  );
+});
+
+test('a warning line ends in its code', async () => {
+  const config = example();
+  config.agents.spare = { harness: 'fake' };
+  const { text } = await doctor.doctor({ config, ...DEPS });
+  assert.ok(text.includes('\nwarning: agents.spare: agent spare is used by no Vertex [unused-agent]\n'), text);
+});
+
 test("gg doctor says a row's outcome is missing when the row leaves it out", async () => {
   const config = example();
   delete config.procedures['tests-fail'].stopped[0].outcome;

@@ -5,8 +5,6 @@ import * as exampleLayer from '../support/example-layer.ts';
 // A case about a rule asserts which one fired and where: a Problem's `code` and `at` (lib/validate/report.ts).
 /* eslint-disable id-denylist -- a Problem's key is at */
 
-const VERTICES = 'flows.default.ticket.vertices';
-
 // #116 (Y20, L2): every name a template reads resolves in the scope of each Vertex that uses it.
 test('a template that names an undeclared input is an error at its Action', () => {
   const { errors } = exampleLayer.check(
@@ -14,15 +12,9 @@ test('a template that names an undeclared input is an error at its Action', () =
     exampleLayer.schemas(),
     exampleLayer.templates({ 'green.md': 'tests: {{#inputs.testFiles}}{{.}}{{/inputs.testFiles}}\n{{inputs.nope}}\n' }),
   );
-  assert.deepEqual(exampleLayer.firedRules(errors), [
-    {
-      at: `${VERTICES}.green (procedure implement).actions[0]`,
-      code: 'undefined-reference',
-    },
-    {
-      at: `${VERTICES}.senior-green (procedure implement).actions[0]`,
-      code: 'undefined-reference',
-    },
+  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+    { at: 'procedures.implement.actions[0]', code: 'undefined-reference', flow: 'default', vertex: 'green' },
+    { at: 'procedures.implement.actions[0]', code: 'undefined-reference', flow: 'default', vertex: 'senior-green' },
   ]);
 });
 
@@ -62,15 +54,9 @@ test('a template path that steps into a list of objects is an error, as renderin
         '{{#inputs.findings}}{{file}}{{/inputs.findings}} {{inputs.findings.length}} {{inputs.findings.file}}\n',
     }),
   );
-  assert.deepEqual(exampleLayer.firedRules(errors), [
-    {
-      at: `${VERTICES}.implementer-fix (procedure fix).actions[0]`,
-      code: 'reference-into-list',
-    },
-    {
-      at: `${VERTICES}.senior-dev (procedure fix).actions[0]`,
-      code: 'reference-into-list',
-    },
+  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+    { at: 'procedures.fix.actions[0]', code: 'reference-into-list', flow: 'default', vertex: 'implementer-fix' },
+    { at: 'procedures.fix.actions[0]', code: 'reference-into-list', flow: 'default', vertex: 'senior-dev' },
   ]);
 });
 
@@ -82,11 +68,8 @@ test('a comment of a Procedure with no agent Action may not name the Agent', () 
     exampleLayer.schemas(),
     exampleLayer.templates({ 'note.md': '{{agent.model}} {{marker}}\n' }),
   );
-  assert.deepEqual(exampleLayer.firedRules(errors), [
-    {
-      at: `${VERTICES}.baseline (procedure base-check).actions[1]`,
-      code: 'undefined-reference',
-    },
+  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+    { at: 'procedures.base-check.actions[1]', code: 'undefined-reference', flow: 'default', vertex: 'baseline' },
   ]);
 });
 
@@ -94,10 +77,10 @@ test('a template that cannot be read is an error at each Vertex rendering it', (
   const templates = exampleLayer.templates();
   delete templates['review.md'];
   const { errors } = exampleLayer.check(exampleLayer.config(), exampleLayer.schemas(), templates);
-  assert.deepEqual(exampleLayer.firedRules(errors), [
-    { at: `${VERTICES}.reviewer (procedure review).actions[0]`, code: 'template-unreadable' },
+  assert.deepEqual(exampleLayer.firedAtVertices(errors), [
+    { at: 'procedures.review.actions[0]', code: 'template-unreadable', flow: 'default', vertex: 'reviewer' },
   ]);
-  assert.match(errors[0].message, /^brief review\.md: review\.md cannot be read/);
+  assert.deepEqual(errors[0].params, { template: 'review.md', flow: 'default', vertex: 'reviewer' });
 });
 
 test('a Brief reads the base branch as baseBranch', () => {
@@ -107,8 +90,14 @@ test('a Brief reads the base branch as baseBranch', () => {
     exampleLayer.templates({ 'green.md': '{{baseBranch}} {{base}}\n' }),
   );
   assert.deepEqual(
-    [...new Set(errors.map((problem) => problem.message))],
-    ['brief green.md: {{base}}: "base" is not defined'],
+    errors.map((problem) => problem.params),
+    ['green', 'senior-green'].map((vertex) => ({
+      path: 'base',
+      missing: 'base',
+      template: 'green.md',
+      flow: 'default',
+      vertex,
+    })),
   );
 });
 
@@ -119,7 +108,7 @@ test("a comment reads its Agent's Persona hash as agent.personaHash", () => {
     exampleLayer.templates({ 'review-comment.md': '{{agent.personaHash}} {{agent.hash}} {{marker}}\n' }),
   );
   assert.deepEqual(
-    [...new Set(errors.map((problem) => problem.message))],
-    ['body review-comment.md: {{agent.hash}}: "agent.hash" is not defined'],
+    errors.map((problem) => problem.params),
+    [{ path: 'agent.hash', missing: 'agent.hash', template: 'review-comment.md', flow: 'default', vertex: 'reviewer' }],
   );
 });

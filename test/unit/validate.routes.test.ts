@@ -69,7 +69,7 @@ test('a cycle bounded only by the Action Cap is an error', () => {
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
   const { errors } = exampleLayer.check(config);
   assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'flows.default.ticket', code: 'unbounded-cycle' }]);
-  assert.match(errors[0].message, /^the cycle through reviewer, implementer-fix has /);
+  assert.deepEqual(errors[0].params, { cycle: ['reviewer', 'implementer-fix'] });
 });
 
 test("a cycle through an edge's exhausted target is not bounded by that edge's max", () => {
@@ -455,7 +455,7 @@ test('a loop of exhausted targets reached through a tail names only the loop, on
   };
   const { errors } = exampleLayer.check(config);
   assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'flows.default.ticket', code: 'exhausted-loop' }]);
-  assert.match(errors[0].message, /^the exhausted targets of a, b form a loop/);
+  assert.deepEqual(errors[0].params, { loop: ['a', 'b'] });
 });
 
 test("an Agent's error holds the graph checks of the Flows that use it, and only them", () => {

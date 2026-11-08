@@ -42,13 +42,12 @@ test("the example Flow warns only of the review table's two intended overlaps", 
     { at: 'procedures.review.passed', code: 'overlapping-rows' },
     { at: 'procedures.review.passed', code: 'overlapping-rows' },
   ]);
-  assert.match(
-    warnings[0].message,
-    /^rule table review\.passed: row 2 \(check\.repeat = failed\) is partly taken by row 1 /,
-  );
-  assert.match(
-    warnings[1].message,
-    /^rule table review\.passed: row 3 \(response\.needsTest = true\) is partly taken by row 1 .*, row 2 /,
+  assert.deepEqual(
+    warnings.map(({ params }) => params && 'rows' in params && { rows: params.rows, earlier: params.earlier }),
+    [
+      { rows: [1, 1], earlier: [[0, 0]] },
+      { rows: [2, 2], earlier: [[0, 1]] },
+    ],
   );
 });
 
@@ -158,7 +157,7 @@ test('an Action id gg keeps for itself is an error', () => {
   assert.deepEqual(exampleLayer.firedRules(refused), [
     { at: 'procedures.tests-fail.actions[0]', code: 'reserved-name' },
   ]);
-  assert.match(refused[0]!.message, /"reset"/);
+  assert.deepEqual(refused[0]!.params, { name: 'reset' });
 });
 
 test('a Claim token named failed or harness-timeout is an error', () => {
@@ -594,7 +593,7 @@ test('a configuration that is not an object is one error, not a throw', () => {
   const { flows, errors, warnings } = validate.validate(null, { harnesses: {}, readSchema: () => ({}) });
   assert.deepEqual(
     { flows, errors: exampleLayer.firedRules(errors), warnings },
-    { flows: {}, errors: [{ at: '(root)', code: 'not-an-object' }], warnings: [] },
+    { flows: {}, errors: [{ at: '', code: 'not-an-object' }], warnings: [] },
   );
 });
 
