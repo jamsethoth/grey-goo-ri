@@ -370,6 +370,29 @@ test(
   },
 );
 
+// Each link is checked against its parent's start, so with the shell's start unread no descendant can be told from an
+// older process under a reused pid.
+test(
+  "runShell: when the job cannot be set up and the shell's start cannot be read, its descendants are not verified gone",
+  WIN_CASE,
+  async (t) => {
+    const { pidFile, commandLine } = childScripts.linkedChild(t, scratch, 'nojob-unread-start');
+    const { result, ready } = await timedOutShell.timeOutWhen(
+      commandLine,
+      { timeoutMs: 4000, kernel32: withKernel32({ CreateJobObjectW: () => 0n, OpenProcess: () => 0n }) },
+      () => pidIn(pidFile) > 0,
+      t,
+    );
+    assert.ok(ready, `child never started: ${result.output}`);
+    assert.equal(result.timedOut, true);
+    assert.ok(
+      result.cleanupErrors.some((error) => /could not list the command's descendants/.test(error)),
+      JSON.stringify(result.cleanupErrors),
+    );
+    await waitFor(() => !alive(pidIn(pidFile)), t.signal); // taskkill still takes the tree down
+  },
+);
+
 // With no listing, what taskkill left cannot be known, so its failure is reported even with the shell gone.
 test(
   'runShell: when node:ffi is unavailable, a taskkill that fails with the shell gone is reported',

@@ -54,7 +54,7 @@ test('growTree adds a grandchild through its parent, whichever order the rows co
     [7, 1, 't'],
     [101, ROOT, 't'],
   ];
-  commandCleanup.growTree(tree, rows, SELF, ([pid]) => joined.push(pid));
+  commandCleanup.growTree(tree, rows, SELF, { onJoin: ([pid]) => joined.push(pid) });
   assert.deepEqual([...tree], [ROOT, 101, 102]);
   assert.deepEqual(joined, [101, 102]);
 });

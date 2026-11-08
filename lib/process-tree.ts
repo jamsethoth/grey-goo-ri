@@ -253,7 +253,8 @@ async function terminateJob(
 
 // Windows without a job: taskkill /T takes down what is still linked to the shell; orphans cannot be found. The linked
 // descendants are listed first, while the links exist, to be named if taskkill is refused. taskkill is let finish:
-// stopped partway on a loaded machine it can kill the shell but not the children it then no longer finds. The
+// stopped partway on a loaded machine it can kill the shell but not the children it then no longer finds. /T spares a
+// process older than the parent pid it names, which a probe forcing a reuse showed 8 times of 8 (#302). The
 // taskkillCommand seam gets the pid as its last argument.
 async function takeDownTree(
   rootPid: number,
