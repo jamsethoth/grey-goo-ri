@@ -194,8 +194,8 @@ process.exit(4);
   assert.ok(result.stderr.includes(`pid ${processProbe.pidIn(pidFile)}: `), result.stderr);
 });
 
-// A developer's global core.fsmonitor=true leaves git's daemon running on Windows, and the census fails the stage (#300).
-// Outside a repository git has no local config, so what it lists is everything it read.
+// A developer's global core.fsmonitor=true leaves git's daemon running on Windows, and the census fails the stage
+// (#300). Outside a repository git has no local config, so what it lists is everything it read.
 test("a stage's tests run git with no global or system config, whatever the caller's", (t) => {
   const copy = launcherCopy(t);
   const developerConfig = join(copy.root, 'developer.gitconfig');

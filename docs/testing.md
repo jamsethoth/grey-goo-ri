@@ -183,6 +183,20 @@ end-to-end tests check the wiring between real modules, which no single contract
 (`database is locked` under load) was this kind of failure. When the environment changes (a new git, Node or
 runner image), run the full stage.
 
+### Git config
+
+The launcher runs every stage with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`, in place of any the caller
+set, so a test's real git reads no global or system config and behaves the same on every machine (#300). A developer's
+global `core.fsmonitor=true` left git's daemon running, which the census ended and failed the stage for, and a global
+`commit.gpgsign=true` with no key to sign with fails every commit a test makes. Git for Windows' system config is no
+neutral default either: it sets `core.autocrlf=true`, so the same test would see CRLF on one machine and LF on another.
+With no global identity to fall back on, a helper that commits sets `user.name` and `user.email` in its own repository.
+`gg` itself still reads the user's config: the two variables are the launcher's alone. Git for Windows reads `/dev/null`
+as its null device and refuses node's `os.devNull`.
+
+A focused `node --test` run is not a stage, so its git reads the developer's config; set the two variables to run it as a
+stage does.
+
 ### The census
 
 A case passing does not show its processes ended, and a leftover that holds no pipe delays nothing, so a mistake in a
@@ -211,6 +225,9 @@ What it sees, on Windows (probes on #290):
   nests inside that one. A job `runShell` keeps for a refused termination ends the same way. While they run they can
   hold their file open: the file then ends only when they do, up to `LIVES_MS`, and shows only as a slow file.
 - **A child that asked to break away:** not seen, since it left the job. It stays the case's own to end.
+- **A process created through `Win32_Process.Create`, or started by a service on a test's behalf:** not seen, since
+  neither joins the job ([Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)). Nothing
+  in the suite was seen starting a process that way.
 - **A detached process holding the test file's stdout:** not seen, because the runner waits for the pipe, so it has ended
   by the time the census looks. It too shows only as a slow file.
 - **A console host:** never named, since it ends with the last process attached to it. It is in the job only sometimes

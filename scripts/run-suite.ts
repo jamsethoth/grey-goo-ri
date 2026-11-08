@@ -1,6 +1,6 @@
 // The one command Codex may run outside its sandbox (ADR 0010). It takes a stage from a closed set (ADR 0016) and drops
-// every environment variable that could make node load other code. The full and fast stages run in a job it holds, and
-// fail when a test leaves a process in it (docs/testing.md).
+// every environment variable that could make node load other code, and gives git no global or system config. The full
+// and fast stages run in a job it holds, and fail when a test leaves a process in it (docs/testing.md).
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
@@ -33,6 +33,10 @@ export const BASELINE = 'coverage-baseline.json';
 // lib/git-temp-index.ts only through lib/git.ts. Their contract suites cover them; the decisions are in
 // lib/command-cleanup.ts, which is measured.
 const NOT_UNIT = ['lib/exec.ts', 'lib/git.ts', 'lib/git-temp-index.ts', 'lib/process-tree.ts', 'lib/containment.ts'];
+// A test's git reads no global or system config, so the developer's own cannot change what it does: a global
+// core.fsmonitor=true left git's daemon running and failed the census (grey-goo-ri issue #300). Git for Windows reads
+// /dev/null as its null device and refuses node's os.devNull.
+const GIT_CONFIG = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 
 // Its message is the whole usage text. lib/options.ts has its own UsageError, which this launcher does not load: of
 // lib/ it loads only the job calls and their one import (ADR 0010, ADR 0016).
@@ -80,13 +84,15 @@ function stage(argv: string[]): string[] | null {
 export function suiteCommand(env: Record<string, string | undefined>, argv: string[]): SuiteCommand {
   const kept = Object.entries(env).filter(([key]) => {
     const upper = key.toUpperCase(); // Windows environment keys are case-insensitive
-    return upper !== 'NODE_OPTIONS' && upper !== 'NODE_PATH' && !upper.startsWith('NPM_CONFIG_');
+    return (
+      !['NODE_OPTIONS', 'NODE_PATH', ...Object.keys(GIT_CONFIG)].includes(upper) && !upper.startsWith('NPM_CONFIG_')
+    );
   });
   // Saturating the machine slows every test: on a 20-core machine the suite took 680 s at 2 files at once, 440 s at 4,
   // 345 s at 8 and 339 s at 12 (grey-goo-ri issue #143), against 652 s at the default 19 (grey-goo-ri PR #141). Small
   // CI runners keep their default of one fewer than their cores.
   const concurrency = Math.min(12, Math.max(1, availableParallelism() - 1));
-  const base = { command: process.execPath, cwd: root, env: Object.fromEntries(kept) };
+  const base = { command: process.execPath, cwd: root, env: { ...Object.fromEntries(kept), ...GIT_CONFIG } };
   // The check job and the suite stages already run CHECKS, so the coverage stage runs only the measured tests.
   if (argv[0] === 'coverage') {
     if (argv.length > 2 || (argv.length === 2 && argv[1] !== 'update')) throw new SuiteUsageError();
