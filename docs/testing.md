@@ -186,7 +186,8 @@ runner image), run the full stage.
 ### Git config
 
 The launcher runs every stage with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`, in place of any the caller
-set, so a test's real git reads no global or system config and behaves the same on every machine (#300). Before, a
+set, so a test's real git reads no global or system config file (#300). Git still reads its default `ignore` and
+`attributes` files under `$XDG_CONFIG_HOME/git/` (`~/.config/git/`), which take no config to find. Before, a
 developer's global `commit.gpgsign=true` with no key to sign with failed 46 cases of `fast git`, each on a commit, and a
 global `core.fsmonitor=true` started git's daemon in each repository a test ran `git status` in. That daemon ends when
 its repository is removed, so only one that outlives its case reaches the census, as in #290's probe. Git for Windows'
