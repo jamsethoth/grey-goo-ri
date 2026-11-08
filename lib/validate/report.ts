@@ -180,7 +180,8 @@ interface ProblemParams {
   'undeclared-rule-field': RuleTable & { fields: string[] };
   'unreachable-row': RuleRow;
   'commit-without-check': { vertex: string; token: string };
-  'not-a-list': { table?: string };
+  'not-a-list': { table?: string; value?: unknown };
+  'not-an-object': { value?: unknown };
   'table-never-applies': { table: string };
   'optional-input-unsure': { input: string; vertex: string };
   'required-input-unsure': { input: string; vertex: string };
@@ -233,7 +234,10 @@ const findingOf = <C extends ProblemCode>(code: C, [message, params]: Detail<C>)
 // A required key left out breaks that rule, whichever rule a value there would break, and its params name the key
 // beside the values the sentence names.
 // Params a key left out moves into required-key-missing, so they take only the keys it can carry.
-type LeftOutFitting<P> = P & { [K in Exclude<keyof P, keyof ProblemParams['required-key-missing']>]?: never };
+// Each code of a union on its own, so one code's keys never excuse another's.
+type LeftOutFitting<P> = P extends unknown
+  ? P & { [K in Exclude<keyof P, keyof ProblemParams['required-key-missing']>]?: never }
+  : never;
 type LeftOutDetail<C extends ProblemCode> = [ParamsOf<C>] extends [never]
   ? [message: string]
   : object extends ParamsOf<C>

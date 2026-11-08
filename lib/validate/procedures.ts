@@ -115,7 +115,7 @@ function checkClaimTokens(
   // A present value that is not an object says so, rather than read as though the key were left out (#301).
   if (declaredTokens !== undefined && !referencePaths.isRecord(declaredTokens)) {
     const message = `claimTokens must be an object from token to form, not ${JSON.stringify(declaredTokens)}`;
-    report.error(problems, `${location}.claimTokens`, 'not-an-object', message);
+    report.error(problems, `${location}.claimTokens`, 'not-an-object', message, { value: declaredTokens });
     return {};
   }
   if (!referencePaths.isRecord(declaredTokens) || !Object.keys(declaredTokens).length) {

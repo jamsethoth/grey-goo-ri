@@ -547,9 +547,15 @@ test("a Finding takes its code's params as report.error does", () => {
   assert.equal(problems.errors.length, 2);
 });
 
+// A value the type check cannot narrow, so a code chosen by it stays a union.
+const problemsSeen = () => report.newReport().errors.length > 0;
+
 test('absentOr takes only the params required-key-missing can carry, since a key left out puts them there', () => {
   // @ts-expect-error -- required-key-missing takes no check, so undeclared-check's params cannot pass through absentOr
   report.absentOr(undefined, 'requires', 'undeclared-check', 'requires "x"', { check: 'x' });
+  const either = problemsSeen() ? ('undeclared-check' as const) : ('unknown-key' as const);
+  // @ts-expect-error -- nor through a fallback that may be either of two codes
+  report.absentOr(undefined, 'requires', either, 'requires "x"', { check: 'x' });
   const finding = report.absentOr(undefined, 'is', 'condition-value-mismatch', 'is must be true or false', {
     field: 'flag',
   });
@@ -569,6 +575,7 @@ const SPLIT: [string, (config: exampleLayer.Layer) => void, string, report.Probl
         at: 'procedures.tests-fail.claimTokens',
         code: 'not-an-object',
         message: 'claimTokens must be an object from token to form, not 3',
+        params: { value: 3 },
       },
     ],
   ],
@@ -597,6 +604,7 @@ const SPLIT: [string, (config: exampleLayer.Layer) => void, string, report.Probl
         at: 'procedures.review.actions[2]',
         code: 'not-a-list',
         message: 'fields must be a list of field names, not 3',
+        params: { value: 3 },
       },
     ],
   ],

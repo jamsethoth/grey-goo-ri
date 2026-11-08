@@ -85,6 +85,7 @@ function requireFields(problems: report.Report, fields: unknown, location: strin
       location,
       'not-a-list',
       `fields must be a list of field names, not ${JSON.stringify(fields)}`,
+      { value: fields },
     );
   if (!fields.length) return report.error(problems, location, 'empty-list', 'fields must name at least one field');
   fields.forEach((name, index) => {
