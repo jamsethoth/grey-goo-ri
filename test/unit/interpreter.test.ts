@@ -534,8 +534,15 @@ test('a routed harness-timeout takes its route', async (t) => {
 test('an end without a stop token still posts its Terminal Reason comment', async (t) => {
   const fixture = await golden.fixture(t, { responses: firstVisitWith(timedOut) });
   golden.configure(fixture, (configured) => {
-    for (const procedure of Object.values(configured.procedures) as ConfiguredProcedure[])
-      for (const token of Object.values(procedure.claimTokens ?? {})) delete token.comment;
+    // Every Claim token that names templates/stop.md, so the Layer can do without it.
+    const tokens = (procedure: string) => (configured.procedures[procedure] as ConfiguredProcedure).claimTokens;
+    delete tokens('tests-fail').blocked!.comment;
+    delete tokens('tests-fail').misscoped!.comment;
+    delete tokens('implement').blocked!.comment;
+    delete tokens('implement').misscoped!.comment;
+    delete tokens('fix').blocked!.comment;
+    delete tokens('fix').misscoped!.comment;
+    delete tokens('review').misscoped!.comment;
     delete configured.files['templates/stop.md'];
   });
   const result = await interpreter.runExecution(fixture.options);
