@@ -231,8 +231,6 @@ const problemAt = (location: string, finding: Finding): Problem => ({ at: locati
 const findingOf = <C extends ProblemCode>(code: C, [message, params]: Detail<C>) =>
   ({ code, message, ...(Object.keys(params ?? {}).length ? { params } : {}) }) as Finding;
 
-// A required key left out breaks that rule, whichever rule a value there would break, and its params name the key
-// beside the values the sentence names.
 // Params a key left out moves into required-key-missing, so they take only the keys it can carry.
 // Each code of a union on its own, so one code's keys never excuse another's.
 type LeftOutFitting<P> = P extends unknown
@@ -243,6 +241,8 @@ type LeftOutDetail<C extends ProblemCode> = [ParamsOf<C>] extends [never]
   : object extends ParamsOf<C>
     ? [message: string, params?: LeftOutFitting<ParamsOf<C>>]
     : [message: string, params: LeftOutFitting<ParamsOf<C>>];
+// A required key left out breaks that rule, whichever rule a value there would break, and its params name the key
+// beside the values the sentence names.
 export function absentOr<C extends ProblemCode>(
   value: unknown,
   key: string,
