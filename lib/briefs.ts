@@ -164,9 +164,10 @@ export interface BriefSection {
   [field: string]: unknown;
 }
 
-// How a Brief prints a value: the tail of a command's output, an object as JSON, else the value itself.
+// How a Brief prints a value: the tail of a command's output text, an object as JSON, else the value itself.
 function printed(value: unknown, ref: string, item: unknown) {
-  if (!item && quotesOutput(ref)) return publicText.publicTail(value, String, OUTPUT_LIMIT);
+  if (!item && typeof value === 'string' && quotesOutput(ref))
+    return publicText.publicTail(value, String, OUTPUT_LIMIT);
   if (referencePaths.isRecord(value) || (Array.isArray(value) && value.some(referencePaths.isRecord)))
     return JSON.stringify(value, null, 2);
   return value ?? '';

@@ -91,6 +91,13 @@ test('every quoted output keeps its last 6000 characters', async () => {
   }
 });
 
+// The limit cuts a command's text; a response field that happens to be named output keeps its structure.
+test('a structured field named output prints as JSON, uncut', async () => {
+  const output = { answer: 'details', steps: ['x'.repeat(7000)] };
+  const rendered = await briefs.brief('{{inputs.report.output}}', { inputs: { report: { output } } });
+  assert.equal(rendered, JSON.stringify(output, null, 2));
+});
+
 test('an absent optional input renders empty through a direct reference', async () => {
   const green = await shipped('green.md', { ...base, inputs: { testFiles: undefined, red: undefined } });
   const fix = await shipped('fix.md', { ...base, inputs: { findings: undefined } });
