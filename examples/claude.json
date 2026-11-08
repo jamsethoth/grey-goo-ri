@@ -1,6 +1,7 @@
 {
   "agents": {
     "implementer": { "harness": "claude", "model": "opus", "effort": "high" },
-    "reviewer": { "harness": "claude", "model": "sonnet", "effort": "high" }
+    "reviewer": { "harness": "claude", "model": "sonnet", "effort": "high" },
+    "senior": { "harness": "claude", "model": "opus", "effort": "max" }
   }
 }

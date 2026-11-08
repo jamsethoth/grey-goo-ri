@@ -201,8 +201,10 @@ export function stopText(
   if (fixed !== undefined) return fixed;
   // A final failure names its Check from the Check signal (U14); the Check's reason is posted fenced, as it may quote
   // the agent.
-  if (outcomeName === 'failed' && resolution.signal)
-    return `The ${resolution.signal.kind} Check ${resolution.signal.id} failed with no recovery left.`;
+  if (outcomeName === 'failed' && resolution.signal) {
+    const check = `${actionIdentity.vertex}.${resolution.signal.id}`;
+    return `The ${resolution.signal.kind} Check ${check} failed with no recovery left.`;
+  }
   // The agent's diagnosis stays out: the blocked comment posts it fenced, and it need not be one sentence.
   if (outcomeName === 'blocked')
     return `The agent made a blocked Claim at ${actionIdentity.vertex}; its diagnosis in the blocked comment says why.`;

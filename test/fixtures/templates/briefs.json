@@ -64,12 +64,22 @@
         "red": {
           "command": "npm test",
           "output": "not ok 1 - widgets render\n  AssertionError: expected widget"
+        },
+        "redReport": {
+          "claim": "ok",
+          "reason": "none",
+          "summary": "Failing tests for widgets.",
+          "tests": [
+            "widgets render"
+          ],
+          "notes": "widgets() does not exist yet.",
+          "diagnosis": ""
         }
       }
     }
   },
-  "still-green-passed": {
-    "template": "still-green.md",
+  "tests-fail-recovery-passed": {
+    "template": "tests-fail-recovery.md",
     "opts": {
       "ticket": {
         "number": 7,
@@ -89,8 +99,8 @@
       "output": "ok 1 - widgets render"
     }
   },
-  "still-green-unchanged": {
-    "template": "still-green.md",
+  "tests-fail-recovery-unchanged": {
+    "template": "tests-fail-recovery.md",
     "opts": {
       "ticket": {
         "number": 7,
@@ -110,8 +120,8 @@
       "output": "ok 1 - widgets render"
     }
   },
-  "still-green-missing": {
-    "template": "still-green.md",
+  "tests-fail-recovery-missing": {
+    "template": "tests-fail-recovery.md",
     "opts": {
       "ticket": {
         "number": 7,
@@ -167,8 +177,8 @@
       ]
     }
   },
-  "test-fix": {
-    "template": "test-fix.md",
+  "command-recovery": {
+    "template": "command-recovery.md",
     "opts": {
       "ticket": {
         "number": 7,
@@ -250,6 +260,16 @@
         "green": {
           "command": "npm test",
           "output": "ok 1 - widgets render"
+        },
+        "redReport": {
+          "claim": "ok",
+          "reason": "none",
+          "summary": "Failing tests for widgets.",
+          "tests": [
+            "widgets render"
+          ],
+          "notes": "widgets() does not exist yet.",
+          "diagnosis": ""
         }
       }
     }
@@ -282,6 +302,16 @@
         "green": {
           "command": "npm test",
           "output": "ok 1 - widgets render"
+        },
+        "redReport": {
+          "claim": "ok",
+          "reason": "none",
+          "summary": "Failing tests for widgets.",
+          "tests": [
+            "widgets render"
+          ],
+          "notes": "widgets() does not exist yet.",
+          "diagnosis": ""
         }
       }
     }

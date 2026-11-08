@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as config from '../../lib/config.ts';
 import * as flow from '../../lib/flow.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 
 test('writeResolved writes the flow and hash to the run directory', (t) => {
   const runDir = mkdtempSync(join(tmpdir(), 'gg-flow-'));
   t.after(() => rmSync(runDir, { recursive: true, force: true }));
-  const resolved = (config.loadDefaults().flows as Record<string, unknown>).default;
+  const resolved = exampleLayer.config().flows.default;
   const hash = 'a'.repeat(64);
   flow.writeResolved(runDir, resolved, hash);
   assert.deepEqual(JSON.parse(readFileSync(join(runDir, 'flow.json'), 'utf8')), resolved);

@@ -284,7 +284,7 @@ Vertex with no agent Action has the implicit token ok, which requires every Chec
 _Avoid_: stop claim, advance claim
 
 **Verdict**:
-A reviewer's Claim about the change: ok, changes or misscoped. The derived repeat, from a repeated Findings Hash,
+A reviewer's Claim about the change: ok, changes or blocked. The derived repeat, from a repeated Findings Hash,
 routes in place of changes and is never claimed. Every Claim and Outcome token is lowercase.
 _Avoid_: review result, judgement
 

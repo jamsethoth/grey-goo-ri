@@ -1,4 +1,4 @@
-GREEN PHASE for GitHub issue #7: Add widgets
+GREEN VISIT for GitHub issue #7: Add widgets
 
 You are on branch ticket/7-add-widgets, created from origin/main. Work only here.
 
@@ -6,13 +6,13 @@ You are on branch ticket/7-add-widgets, created from origin/main. Work only here
 ## Definition of done
 - [ ] widgets
 
-## Repo commands
+## Declared Commands
 - test: `npm test`
 - lint: `npm run lint`
 
 ## Rules
 - Do not run git add, git commit, git push or gh: the orchestrator runs the tests, commits and handles GitHub.
-- Run repo commands plainly, without command substitution or heredocs: they are permission-checked.
+- Run Declared Commands plainly, without command substitution or heredocs: they are permission-checked.
 - Stay inside the ticket's scope.
 
 ## Committed tests
@@ -26,9 +26,16 @@ not ok 1 - widgets render
   AssertionError: expected widget
 ```
 
-Write the smallest implementation that makes them pass and meets every definition-of-done item.
-Committed tests must not be changed. If one is genuinely wrong, claim ok only if the implementation
-still passes it as written, and say why in notes; otherwise claim blocked and say why in "diagnosis".
-Finish with the test command passing.
-Return the structured result: claim ok, blocked or misscoped; every definition-of-done item with evidence,
-QA instructions, and notes. "diagnosis" is empty unless your claim is blocked or misscoped, or your persona asks for one.
+## The red Visit's report
+Claim ok, reason none: Failing tests for widgets.
+widgets() does not exist yet.
+
+When its reason is no-test-needed, red wrote no failing test for this ticket and the reviewer judges that claim:
+implement the ticket and keep the test command passing.
+
+Write the smallest implementation that makes the committed tests pass and meets every definition-of-done item.
+Committed tests must not be changed. If one is wrong, claim blocked with reason bad-test and say in "diagnosis" what
+is wrong with it: red rewrites it. Finish with the test command passing.
+Return the Structured Response: claim ok with reason none; every definition-of-done item with evidence, QA
+instructions, and notes. If you cannot, claim blocked and say why in "diagnosis", with reason misscoped when the ticket
+itself is wrong or contradictory, or needs-input or environment when something outside the ticket is missing.

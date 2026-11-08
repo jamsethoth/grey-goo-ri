@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
 import * as git from '../../lib/git.ts';
 import * as committingRepo from '../support/committing-repo.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 import * as gitShell from '../support/git-shell.ts';
 
 test('test immutability lists added, renamed and modified test paths and ignores lib', async (t) => {
@@ -17,7 +18,7 @@ test('test immutability lists added, renamed and modified test paths and ignores
   gitShell.sh(repo, 'add', '-A');
   gitShell.sh(repo, 'commit', '-q', '-m', 'baseline');
   const baseline = gitShell.sh(repo, 'rev-parse', 'HEAD');
-  assert.deepEqual(await checks.testImmutability(repo, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git }), {
+  assert.deepEqual(await checks.testImmutability(repo, baseline, { globs: exampleLayer.TEST_GLOBS, git }), {
     ok: true,
     changed: [],
   });
@@ -29,7 +30,7 @@ test('test immutability lists added, renamed and modified test paths and ignores
   writeFileSync(join(repo, 'lib', 'x.mjs'), 'x changed');
 
   // A rename lists both its paths.
-  assert.deepEqual(await checks.testImmutability(repo, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git }), {
+  assert.deepEqual(await checks.testImmutability(repo, baseline, { globs: exampleLayer.TEST_GLOBS, git }), {
     ok: false,
     changed: ['test/a.test.mjs', 'test/new.test.mjs', 'test/old.test.mjs', 'test/renamed.test.mjs'],
   });
@@ -48,7 +49,7 @@ test('test immutability sees non-ASCII and git-ignored test paths', async (t) =>
   writeFileSync(join(repo, 'test', 'naïve.mjs'), 'new');
   writeFileSync(join(repo, 'test', 'ignored.mjs'), 'new');
 
-  const result = await checks.testImmutability(repo, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git });
+  const result = await checks.testImmutability(repo, baseline, { globs: exampleLayer.TEST_GLOBS, git });
   assert.deepEqual(result, { ok: false, changed: ['test/café.mjs', 'test/ignored.mjs', 'test/naïve.mjs'] });
 });
 
@@ -64,7 +65,7 @@ test('test immutability sees a test added under an ignored directory but not ins
   mkdirSync(join(repo, 'node_modules', 'dep', 'test'), { recursive: true });
   writeFileSync(join(repo, 'node_modules', 'dep', 'test', 'index.js'), 'dep');
 
-  const result = await checks.testImmutability(repo, baseline, { globs: checks.DEFAULT_TEST_GLOBS, git });
+  const result = await checks.testImmutability(repo, baseline, { globs: exampleLayer.TEST_GLOBS, git });
   assert.deepEqual(result, { ok: false, changed: ['generated/new.test.mjs'] });
 });
 

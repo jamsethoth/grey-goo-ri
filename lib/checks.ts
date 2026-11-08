@@ -139,15 +139,6 @@ export function checkEvidence(command: string, result: { output?: unknown }) {
   return { command, output: kept || `[${output.length} characters of output omitted]` };
 }
 
-export const DEFAULT_TEST_GLOBS = [
-  '**/test/**',
-  '**/tests/**',
-  '**/__tests__/**',
-  '**/*.test.*',
-  '**/*.spec.*',
-  '**/fixtures/**',
-];
-
 function globPart(part: string) {
   if (part === '**/') return '(?:.*/)?';
   if (part === '**') return '.*';

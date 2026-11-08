@@ -1,5 +1,5 @@
 {
-  "testPaths": ["**/test/**", "**/*.test.*"],
+  "testPaths": ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/fixtures/**"],
   "commands": { "test": "npm test" },
   "agents": {
     "implementer": { "persona": "implementer.md", "access": "workspace-write" },
@@ -23,7 +23,7 @@
       "actions": [
         { "id": "red", "do": "agent", "brief": "red.md", "schema": "red.schema.json" },
         { "id": "red-check", "do": "check", "kind": "tests-fail", "command": "test", "testNames": "response.tests",
-          "recoverBrief": "still-green.md" },
+          "recoverBrief": "tests-fail-recovery.md" },
         { "id": "commit", "do": "commit", "type": "test" }
       ],
       "recover": { "max": 1, "brief": "recover.md" },
@@ -42,7 +42,7 @@
       },
       "actions": [
         { "id": "green", "do": "agent", "brief": "green.md", "schema": "implement.schema.json" },
-        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "test-fix.md" },
+        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "command-recovery.md" },
         { "id": "commit", "do": "commit", "type": "feat" },
         { "id": "push", "do": "push" },
         { "id": "pr", "do": "pr-upsert", "body": "pr-body.md",
@@ -64,7 +64,7 @@
       },
       "actions": [
         { "id": "fix", "do": "agent", "brief": "fix.md", "schema": "implement.schema.json" },
-        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "test-fix.md" },
+        { "id": "test", "do": "check", "kind": "command", "command": "test", "recoverBrief": "command-recovery.md" },
         { "id": "commit", "do": "commit", "type": "fix" },
         { "id": "push", "do": "push" },
         { "id": "pr", "do": "pr-upsert", "body": "pr-body.md",

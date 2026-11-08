@@ -1,11 +1,16 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
+import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as namedFlow from '../support/named-flow.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 
 // A case that asks nobody reads no labels.
 const DEPS = {
@@ -15,14 +20,15 @@ const DEPS = {
 };
 const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
 
-// The example Layer as loadLayers gives it: its schemas loaded beside it, and a template naming nothing for each
-// template it names (its own templates arrive with #120).
+// The example Layer as loadLayers gives it: every file it names loaded beside it.
 function example() {
   const layer = exampleLayer.config();
-  layer.files = Object.fromEntries([
-    ...exampleLayer.SCHEMA_NAMES.map((name) => [name, file(exampleLayer.fixtureText(name))]),
-    ...Object.entries(exampleLayer.templates()).map(([name, text]) => [name, file(text)]),
-  ]);
+  layer.files = Object.fromEntries(
+    exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json').map((name) => [
+      name,
+      file(exampleLayer.fixtureText(name)),
+    ]),
+  );
   return layer;
 }
 
@@ -212,26 +218,162 @@ test('gg doctor reads schemas from the loaded Layer files', async () => {
   );
 });
 
-test('gg doctor accepts the shipped defaults once a harness is set', async () => {
-  const shipped: exampleLayer.Layer = config.loadDefaults();
-  shipped.agents.implementer.harness = 'fake';
-  shipped.agents.reviewer.harness = 'fake';
-  shipped.commands = { test: 'npm test' };
-  shipped.testPaths = ['test/**'];
-  const { text, exitCode } = await doctor.doctor({ config: shipped, ...DEPS });
-  assert.ok(text.startsWith('flow default\n  actionCap: 180\n  entry: red\n'), text);
-  // The example's intended overlap (U4): a clean ok whose findings repeat earlier ones stays ok.
-  assert.ok(
-    text.endsWith(
-      '\nwarning: procedures.review.passed: rule table review.passed: ' +
-        'row 2 (check.repeat = failed) is partly taken by ' +
-        'row 1 (claim = ok and check.review-pass = passed), ' +
-        'for example {"claim":"ok","check":{"review-pass":"passed","repeat":"failed"}} [overlapping-rows]\n' +
-        '0 errors, 1 warning\n',
-    ),
-    text,
+// A repository and a home directory for `gg init`, neither holding a Layer yet.
+function initRoots(t: TestContext) {
+  const directory = tempDirectory.tempDirectory(t, 'gg-init-');
+  return { repo: join(directory, 'repo'), home: join(directory, 'home') };
+}
+const layerDirectory = (root: string) => join(root, '.agents', 'gg');
+
+test('gg init writes the example and gg doctor accepts it', async (t) => {
+  const { repo, home } = initRoots(t);
+  const text = doctor.init(repo);
+  const written = layerDirectory(repo);
+  assert.deepEqual(readdirSync(written).sort(), [...exampleLayer.WRITTEN_NAMES].sort(), 'every file but doctor.txt');
+  for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
+    assert.equal(readFileSync(join(written, name), 'utf8'), exampleLayer.fixtureText(name), name);
+  const layer = JSON.parse(readFileSync(join(written, 'gg.json'), 'utf8'));
+  const expected = JSON.parse(exampleLayer.fixtureText('gg.json'));
+  delete expected.commands.test;
+  assert.deepEqual(layer, expected, "the fixture's gg.json with commands.test removed");
+  // The advice gg init gives the person who runs it (L9, J11).
+  assert.match(text, /read-only default workflow permissions/);
+  assert.match(text, /assumes the test command is deterministic/);
+
+  // A test command added, and each example user Layer, which names the Harnesses.
+  layer.commands.test = 'npm test';
+  writeFileSync(join(written, 'gg.json'), JSON.stringify(layer));
+  mkdirSync(layerDirectory(home), { recursive: true });
+  for (const example of ['claude.json', 'codex.json']) {
+    copyFileSync(join(config.EXAMPLES_DIRECTORY, example), config.layerPath(home));
+    const accepted = await doctor.doctor({
+      config: config.loadLayers(repo, home),
+      harnesses: shipped.HARNESSES,
+      gh: DEPS.gh,
+      cwd: repo,
+    });
+    assert.equal(accepted.exitCode, 0, `${example}\n${accepted.text}`);
+    assert.match(accepted.text, /\n0 errors, 2 warnings\n$/, example);
+  }
+});
+
+test('gg init keeps an existing Layer, says so and exits successfully', (t) => {
+  // It returns what it says, and throws only on a failed write, so gg exits 0 (test/e2e/gg.test.ts).
+  const { repo } = initRoots(t);
+  mkdirSync(layerDirectory(repo), { recursive: true });
+  const kept = '{ "commands": { "test": "make test" } }\n';
+  writeFileSync(config.layerPath(repo), kept);
+  assert.equal(
+    doctor.init(repo),
+    `gg init kept the existing Layer and wrote nothing: ${config.layerPath(repo)} exists.\n`,
   );
-  assert.equal(exitCode, 0);
+  assert.deepEqual(readdirSync(layerDirectory(repo)), ['gg.json']);
+  assert.equal(readFileSync(config.layerPath(repo), 'utf8'), kept);
+});
+
+test('gg init writes nothing over any file it would write', (t) => {
+  const { repo } = initRoots(t);
+  mkdirSync(layerDirectory(repo), { recursive: true });
+  const red = join(layerDirectory(repo), 'red.md');
+  writeFileSync(red, '# our own red Brief\n');
+  assert.equal(doctor.init(repo), `gg init kept the existing Layer and wrote nothing: ${red} exists.\n`);
+  assert.deepEqual(readdirSync(layerDirectory(repo)), ['red.md']);
+});
+
+// This repository's Layer was merged by hand from gg init's output (#120), so it runs on the example's own Flow.
+test(
+  "this repository's Layer is the example with its own commands and testPaths, " + 'and gg doctor accepts it',
+  async (t) => {
+    const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+    const own = JSON.parse(readFileSync(config.layerPath(repoRoot), 'utf8'));
+    const example = JSON.parse(exampleLayer.fixtureText('gg.json'));
+    assert.deepEqual(
+      { ...own, commands: undefined, testPaths: undefined },
+      { ...example, commands: undefined, testPaths: undefined },
+    );
+    for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
+      assert.equal(readFileSync(join(layerDirectory(repoRoot), name), 'utf8'), exampleLayer.fixtureText(name), name);
+    const { home } = initRoots(t);
+    mkdirSync(layerDirectory(home), { recursive: true });
+    copyFileSync(join(config.EXAMPLES_DIRECTORY, 'claude.json'), config.layerPath(home));
+    const { text, exitCode } = await doctor.doctor({
+      config: config.loadLayers(repoRoot, home),
+      harnesses: shipped.HARNESSES,
+      gh: DEPS.gh,
+      cwd: repoRoot,
+    });
+    assert.equal(exitCode, 0, text);
+    assert.match(text, /\n0 errors, 2 warnings\n$/);
+  },
+);
+
+// The harness, model and effort come from the user Layer (P2).
+test("the example's Agents name no harness, model or effort", () => {
+  const { agents } = JSON.parse(exampleLayer.fixtureText('gg.json'));
+  assert.deepEqual(agents, {
+    implementer: { persona: 'implementer.md', access: 'workspace-write' },
+    reviewer: { persona: 'reviewer.md', access: 'read-only' },
+    senior: { persona: 'implementer.md', access: 'workspace-write' },
+  });
+});
+
+test("the example declares its Procedures in the validator's shape", () => {
+  const { flows, errors } = exampleLayer.check(
+    exampleLayer.config(),
+    exampleLayer.schemas(),
+    exampleLayer.exampleTemplates(),
+  );
+  assert.deepEqual(errors, []);
+  const actions = (name: string) =>
+    flows.default.procedures[name].actions.map((action) => [action.id, action.do].join(':'));
+  assert.deepEqual(actions('base-check'), ['test:check']);
+  assert.deepEqual(actions('tests-fail'), ['red:agent', 'red-check:check', 'commit:commit']);
+  assert.deepEqual(actions('implement'), ['green:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert']);
+  assert.deepEqual(actions('fix'), ['fix:agent', 'test:check', 'commit:commit', 'push:push', 'pr:pr-upsert']);
+  assert.deepEqual(actions('review'), [
+    'review:agent',
+    'review-pass:check',
+    'repeat:check',
+    'comment:comment',
+    'pr:pr-upsert',
+  ]);
+  assert.deepEqual(actions('publish'), ['test:check', 'pr:pr-upsert', 'pr-ready:pr-ready']);
+});
+
+test("the example's schemas spell the Definition of Done and the red and green evidence in full", () => {
+  const required = (name: string) => JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)).required;
+  assert.deepEqual(required('implement'), [
+    'claim',
+    'reason',
+    'summary',
+    'definitionOfDone',
+    'qa',
+    'diagnosis',
+    'notes',
+  ]);
+  assert.deepEqual(required('review'), [
+    'claim',
+    'reason',
+    'summary',
+    'definitionOfDoneMet',
+    'redGreenEvidenceOk',
+    'needsTest',
+    'findings',
+    'diagnosis',
+  ]);
+});
+
+test('every template the example writes names only declared inputs at every Vertex that uses it', () => {
+  const { errors, warnings } = exampleLayer.check(
+    exampleLayer.config(),
+    exampleLayer.schemas(),
+    exampleLayer.exampleTemplates(),
+  );
+  assert.deepEqual(errors, []);
+  assert.deepEqual(
+    warnings.map((warning) => `${warning.at} ${warning.code}`),
+    ['procedures.review.passed overlapping-rows', 'procedures.review.passed overlapping-rows'],
+  );
 });
 
 const AWAIT_LABEL = 'gg:await:approve';

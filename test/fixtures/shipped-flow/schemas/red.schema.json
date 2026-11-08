@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "properties": {
+    "claim": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "blocked",
+        "misscoped"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "string"
+    },
+    "diagnosis": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim",
+    "summary",
+    "tests",
+    "notes",
+    "diagnosis"
+  ],
+  "additionalProperties": false
+}

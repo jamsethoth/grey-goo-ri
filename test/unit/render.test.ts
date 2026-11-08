@@ -4,12 +4,12 @@ import { readFileSync } from 'node:fs';
 import * as publicText from '../../lib/public-text.ts';
 import * as render from '../../lib/render.ts';
 import * as marker from '../../lib/marker.ts';
-import * as config from '../../lib/config.ts';
 import type * as record from '../../lib/record.ts';
 import * as actionMarkerParts from '../support/action-marker-parts.ts';
+import * as exampleLayer from '../support/example-layer.ts';
 
-// A shipped template, as the defaults Layer loads it.
-const shipped = (name: string) => config.loadDefaults().files[`templates/${name}`].bytes;
+// A template of the example `gg init` writes.
+const shipped = (name: string) => exampleLayer.fixtureText(name);
 
 const { asText } = actionMarkerParts;
 const parts = { ...actionMarkerParts.parts, visit: 1, action: 'commit', recovery: 0 };
@@ -112,7 +112,7 @@ const stopComment = (
   { end, outcome, response, reason }: StopFields,
   actionMarker: string,
   redact?: publicText.Redact,
-) => render.publicBody(shipped('stop.md'), { end, outcome, response, reason: reason?.text }, actionMarker, redact);
+) => render.publicBody(shipped('blocked.md'), { end, outcome, response, reason: reason?.text }, actionMarker, redact);
 const provenance = [
   {
     vertex: 'implement',
@@ -356,6 +356,38 @@ test(`the PR body template matches its builder's output`, async () => {
   assert.equal(body, fixture('pr-body.txt'));
 });
 
+// After a retest the red input still holds an earlier Visit's Red Evidence (S4), so only red's latest report says that
+// no test failed (N6, N10).
+test("the rendered PR body shows red's no-test notes, also after a retest", async () => {
+  const redReport = {
+    claim: 'blocked',
+    reason: 'no-test-needed',
+    summary: 'No test is needed.',
+    tests: [],
+    notes: 'The change only renames a constant.',
+    diagnosis: 'Nothing observable changes.',
+  };
+  const body = (red: unknown) =>
+    render.publicBody(
+      shipped('pr-body.md'),
+      {
+        ticket: { number: 7 },
+        report: implementationReport,
+        red,
+        green: implementationReport.green,
+        redReport,
+        provenance,
+      },
+      fixtureMarker,
+    );
+  const first = await body(undefined);
+  assert.ok(first.includes('The change only renames a constant.'), first);
+  assert.match(first, /no failing test/i, first);
+  const retest = await body(implementationReport.red);
+  assert.ok(retest.includes('The change only renames a constant.'), retest);
+  assert.ok(retest.includes('no-test-needed'), retest);
+});
+
 test(`the review comment template matches its builder's output`, async () => {
   assert.equal(await reviewComment(shapes.review, shapes.provenance[1], fixtureMarker), fixture('review-comment.txt'));
   assert.equal(
@@ -461,7 +493,7 @@ test('a review comment fences each finding past its own backticks and carries th
   );
   assert.match(review, /reviewer@def456/);
   assert.match(review, /\*\*changes\*\*/);
-  assert.match(review, /VERDICT: changes/);
+  assert.match(review, /Verdict: changes/);
   assert.doesNotMatch(review, /undefined/);
   assert.ok(
     review.includes('````\noff by one\n```\n## Injected heading\n````'),
@@ -603,7 +635,7 @@ test('direct public context redacts once and preserves the Action Marker', async
     redact,
   );
   const stop = await render.publicBody(
-    shipped('stop.md'),
+    shipped('blocked.md'),
     { response: { ...tokenResponse, diagnosis: fake }, outcome: 'TOKEN blocked', reason: 'TOKEN reason' },
     actionMarker,
     redact,

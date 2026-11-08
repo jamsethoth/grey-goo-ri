@@ -1,8 +1,8 @@
-## The command Check test
-The orchestrator ran `npm test` after your work and it FAILED:
+## The {{kind}} Check {{id}}
+The orchestrator ran `{{command}}` after your work and it FAILED:
 
 ```
-not ok 2 - widgets total
+{{output}}
 ```
 
 Make it pass. Committed tests must not be changed. If one is genuinely wrong, claim ok only if the implementation
