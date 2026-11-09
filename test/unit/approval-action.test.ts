@@ -125,6 +125,67 @@ test('a stale approval is re-requested', async (t) => {
   assert.deepEqual(approvalFlow.approveTrace(fixture), [...requestTrace(1), ...requestTrace(2)]);
 });
 
+// The consumption intent's Decision in the record as saved now.
+const consumedDecision = (fixture: golden.GoldenFixture) => {
+  const saved = loadTicket(fixture);
+  const actionMarker = golden.markerOf(saved, 'approve', 1, 'ask.consume.1');
+  const intent = writeAhead.findEntry(saved, actionMarker, 'intent');
+  return (intent?.payload as { decision?: Record<string, unknown> } | undefined)?.decision;
+};
+
+test('a consumed Decision saves its reply in the consumption intent', async (t) => {
+  const fixture = await approvalFixture(t);
+  fixture.gh.humanComments('A comment before the request.', OWNER);
+  await interpreter.runExecution(fixture.options);
+  fixture.gh.humanComments('1. A', OWNER);
+  fixture.gh.humanComments('Not the approver.', 'someone-else');
+  fixture.gh.humanComments('2. C', OWNER);
+
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+  assert.equal(consumedDecision(fixture)?.reply, '1. A\n\n2. C');
+  const decided = fixture.readEvents().findLast((event) => event.type === 'action' && event.action === 'ask');
+  assert.equal((decided as unknown as { decision: { reply: string } }).decision.reply, '1. A\n\n2. C');
+  const output = loadTicket(fixture).outputs.find((each) => each.vertex === 'approve' && each.action === 'ask');
+  assert.deepEqual(output?.value, { decision: { outcome: 'approved', actor: OWNER, reply: '1. A\n\n2. C' } });
+});
+
+test('a resumed consumption keeps the recorded reply and reads no comments', async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  fixture.gh.humanComments('The first answer.', OWNER);
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+  const actionMarker = golden.markerOf(fixture.executionRecord, 'approve', 1, 'ask.consume.1');
+  await assert.rejects(
+    laterRun(fixture, { crashAt: { marker: actionMarker, point: 'before-effect' } }),
+    (err) => err instanceof interpreter.CrashError,
+  );
+  assert.equal(fixture.gh.labels.has(APPROVED_LABEL), true, 'the Decide Label is not yet removed');
+  const reads = approvalFlow.commentReads(fixture);
+
+  fixture.gh.comments.at(-1)!.body = 'The first answer, edited.';
+  fixture.gh.humanComments('A second answer.', OWNER);
+  assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+  assert.equal(approvalFlow.commentReads(fixture), reads, 'the resume reads no comments');
+  assert.equal(consumedDecision(fixture)?.reply, 'The first answer.');
+  const output = loadTicket(fixture).outputs.find((each) => each.vertex === 'approve' && each.action === 'ask');
+  assert.equal((output?.value.decision as { reply: string }).reply, 'The first answer.');
+});
+
+test('a body edit after the request still re-requests', async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  fixture.gh.humanComments('The answers, in a comment.', OWNER);
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+
+  const result = await laterRun(fixture, { ticket: { ...fixture.options.ticket, body: 'The answers, in the body.' } });
+  assert.equal(result.outcome, 'pending', 'a reply does not cover a body edit');
+  const saved = loadTicket(fixture);
+  assert.equal(saved.approvalRequest!.id, `${saved.execution}:approve:1:2`);
+  assert.equal(consumedDecision(fixture), undefined, 'nothing is consumed');
+  assert.equal(fixture.gh.labels.has(APPROVED_LABEL), false, 'the stale Decision is retired');
+});
+
 test('a changed Config Hash makes an approval stale', async (t) => {
   const fixture = await approvalFixture(t);
   await interpreter.runExecution(fixture.options);

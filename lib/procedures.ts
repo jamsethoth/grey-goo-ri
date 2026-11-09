@@ -123,5 +123,8 @@ export function outputs(action: Action, schema: referencePaths.SchemaNode) {
   if (action.do === 'agent') return object({ response: schema, cleanup: CLEANUP });
   if (action.do === 'check') return object(CHECK_OUTPUTS[action.kind as CheckKind] ?? {});
   if (action.do === 'commit') return object({ files: STRING_LIST });
+  // A Decision's reply is null when its actor wrote no comment after the request.
+  if (action.do === 'await-approval')
+    return object({ decision: object({ outcome: STRING, actor: STRING, reply: STRING }) });
   return object({});
 }

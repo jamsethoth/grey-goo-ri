@@ -193,6 +193,39 @@ test('a Decide Label for an Outcome the request does not declare is not a Decisi
   assert.deepEqual(result, { kind: 'waiting' });
 });
 
+// The Ticket's comments around a request, comment 20, as gh.comments lists them: in ascending id order.
+const REQUEST_COMMENT = 20;
+const MARKED = '\n\n<!-- gg-action gg:7.a1b2c3:green:1:green:0:1:1 -->';
+const comment = (id: number, author: string | undefined, body: string) => ({ id, author, body, createdAt: '' });
+const replyOf = (comments: ReturnType<typeof comment>[], actor: string | undefined = 'owner') =>
+  approval.reply({ comments, actor, requestComment: REQUEST_COMMENT });
+
+test("a Decision's reply is its actor's comments after the request, oldest first", () => {
+  const comments = [comment(20, 'owner', 'the request'), comment(31, 'owner', '1. A'), comment(42, 'Owner', '2. C')];
+  assert.equal(replyOf(comments.toReversed()), '1. A\n\n2. C');
+});
+
+test('comments by another login or with an Action Marker are not in the reply', () => {
+  // Each comment that is not part of the reply, by the reason it is left out.
+  const excluded = {
+    'another login': comment(31, 'someone-else', 'my answer'),
+    'no login': comment(32, undefined, 'a ghost answer'),
+    'before the request': comment(19, 'owner', 'an earlier thought'),
+    'the request itself': comment(20, 'owner', 'the request'),
+    'an Action Marker comment': comment(33, 'owner', `gg's own report${MARKED}`),
+    'an Action Marker trailer': comment(34, 'owner', 'a commit body\n\nGg-Action: gg:7.a1b2c3:green:1:green:0:1:1'),
+  };
+  const kept = comment(40, 'owner', 'the answer');
+  for (const [why, left] of Object.entries(excluded))
+    assert.equal(replyOf([left, kept]), 'the answer', `${why} is left out`);
+});
+
+test('no comment gives a null reply', () => {
+  assert.equal(replyOf([]), null);
+  assert.equal(replyOf([comment(20, 'owner', 'the request'), comment(31, 'someone-else', 'an answer')]), null);
+  assert.equal(replyOf([comment(31, 'owner', 'an answer')], undefined), null, 'a Decision with no actor has none');
+});
+
 test('the actors a read needs permissions for are those of Decide Labels for its Vertex', () => {
   assert.deepEqual(approval.decidingActors({ vertex: 'qa-approval', timeline: timeline('one-decision') }), ['owner']);
   assert.deepEqual(approval.decidingActors({ vertex: 'another', timeline: timeline('one-decision') }), []);

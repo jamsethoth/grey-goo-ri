@@ -26,6 +26,7 @@ export interface FakeComment {
   id: number;
   body: string;
   created_at: string;
+  user: { login: string };
   target: 'pr' | 'issue';
   number: number;
 }
@@ -122,10 +123,10 @@ function ghState(branch: string, repoLabels: string[]) {
   // Pull requests by head branch, so each Ticket of an epic gets its own.
   const prs = new Map<string, FakePullRequest>();
   const prOf = (number: number) => [...prs.values()].find((pr) => pr.number === number) ?? null;
-  const post = (issue: number, body: string) => {
+  const post = (issue: number, body: string, login = GG_LOGIN) => {
     const id = 1000 + comments.length;
     const target = prOf(issue) ? 'pr' : 'issue';
-    comments.push({ id, body, created_at: '2026-10-15T00:00:00Z', target, number: issue });
+    comments.push({ id, body, created_at: '2026-10-15T00:00:00Z', user: { login }, target, number: issue });
     return id;
   };
   return {
@@ -289,6 +290,7 @@ export function fakeGh({
       state.labelsOf(issue).delete(label);
       state.recordEvent(issue, 'unlabeled', label, login);
     },
+    humanComments: (body: string, login: string, issue = ticket) => state.post(issue, body, login),
   };
 }
 

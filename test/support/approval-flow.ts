@@ -51,6 +51,10 @@ export const requestComments = (fixture: Pick<golden.GoldenFixture, 'gh'>) =>
 export const timelineReads = (fixture: Pick<golden.GoldenFixture, 'gh'>) =>
   fixture.gh.calls.filter(({ args }) => args.some((arg) => arg.endsWith(`/issues/${golden.TICKET}/events`))).length;
 
+// How many times gg has read the Ticket's comments.
+export const commentReads = (fixture: Pick<golden.GoldenFixture, 'gh'>) =>
+  fixture.gh.calls.filter(({ args }) => fakeGh.isCommentRead(args, golden.TICKET)).length;
+
 // The Action Events of the approve Vertex, as a golden trace asserts them.
 export const approveTrace = (fixture: Pick<golden.GoldenFixture, 'readEvents'>) =>
   golden.trace(fixture.readEvents()).filter((event) => event.vertex === 'approve');

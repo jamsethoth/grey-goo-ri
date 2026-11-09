@@ -74,6 +74,8 @@ export interface PullRequestView extends PullRequest {
 }
 export interface IssueComment {
   id: number;
+  // The login of the comment's author; GitHub gives none for a deleted account.
+  author: string | undefined;
   body: string;
   createdAt: string;
 }
@@ -247,7 +249,7 @@ function issueVerbs({ gh, ghJson }: Client) {
       )
     )
       .flat()
-      .map((posted) => ({ id: posted.id, body: posted.body, createdAt: posted.created_at }));
+      .map((posted) => ({ id: posted.id, author: undefined, body: posted.body, createdAt: posted.created_at }));
 
   // A PR conversation comment is an issue comment, so one POST serves an issue and a PR.
   async function comment(issue: number, body: string, cwd?: string): Promise<{ id: number; url: string }> {

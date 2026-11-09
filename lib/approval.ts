@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import * as config from './config.ts';
+import type * as github from './github.ts';
 import * as labels from './labels.ts';
 
 // The fingerprint of what a Decision covers; when it changes the Decision is stale.
@@ -170,4 +171,13 @@ export function decidingActors({
     return parsed?.family === 'decide' && labels.hasLabel([parsed.vertex], vertex) && actor ? [actor] : [];
   });
   return [...new Set(actors)];
+}
+
+// A Decision's reply: its actor's comments after the request's comment, oldest first; null when there are none.
+export function reply(_given: {
+  comments: Pick<github.IssueComment, 'id' | 'author' | 'body'>[];
+  actor: string | undefined;
+  requestComment: number;
+}): string | null {
+  return '';
 }
