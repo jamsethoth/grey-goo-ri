@@ -4,6 +4,7 @@
 import { defineConfig } from 'eslint/config';
 import stylistic from '@stylistic/eslint-plugin';
 import tseslint from 'typescript-eslint';
+import ts from 'typescript';
 
 // Abbreviations a name may use: id, url, sha, err, gh, pr, json, ms. Every other short form is spelled out, a domain
 // concept with its full GLOSSARY.md term in camelCase; the denylist names the common offenders.
@@ -148,8 +149,17 @@ function aliasedCollection(checker, program, type) {
     inDefaultLib(program, declaration),
   );
   const [source] = type.aliasTypeArguments ?? [];
-  const made = fromLibAlias && source ? collectionOf(checker, program, source) : null;
+  const made = fromLibAlias && source ? collectionIn(checker, program, source) : null;
   return made ? { name: made.name, whole: false } : null;
+}
+// A collection a type is, or one of its alternatives is (Pick<Map | null, never>, a parameter bound by a Map).
+function collectionIn(checker, program, type) {
+  const alternatives = alternativesOf(checker, type) ?? [];
+  return (
+    collectionOf(checker, program, type) ??
+    alternatives.map((member) => collectionIn(checker, program, member)).find(Boolean) ??
+    null
+  );
 }
 // A mapped type (Record, Partial, Omit, Readonly) is anonymous, `__type`, and is walked even though lib declares it.
 const isLibNamed = (program, symbol) => symbol?.getName() !== '__type' && fromLibOrPackage(program, symbol);
@@ -159,8 +169,11 @@ const alternativesOf = (checker, type) => {
   if (type.isTypeParameter()) return [checker.getBaseConstraintOfType(type)].filter((constraint) => constraint);
   return null;
 };
-// JSON writes string keys only, so a symbol-keyed property (named `__@iterator@14`) or a private one is not written.
-const isWritten = (key) => !/^__[@#]/.test(key.getName());
+// JSON writes string keys only. The compiler names a symbol-keyed property `__@iterator@14` and a private one
+// `__#1@#counts`, and escapes a string key that starts with two underscores to three, so the escaped name tells them
+// apart.
+const isWritten = (key) => !/^__[@#]/.test(key.escapedName);
+const isSymbolIndex = (info) => (info.keyType.flags & ts.TypeFlags.ESSymbolLike) !== 0;
 // The values a type holds: array and tuple elements, written properties and index signatures.
 const heldBy = (checker, program, type, path) => {
   if (checker.isArrayType(type) || checker.isTupleType(type))
@@ -171,7 +184,10 @@ const heldBy = (checker, program, type, path) => {
       .getPropertiesOfType(type)
       .filter(isWritten)
       .map((key) => [checker.getTypeOfSymbol(key), `${path}.${key.getName()}`]),
-    ...checker.getIndexInfosOfType(type).map((info) => [info.type, `${path}[key]`]),
+    ...checker
+      .getIndexInfosOfType(type)
+      .filter((info) => !isSymbolIndex(info))
+      .map((info) => [info.type, `${path}[key]`]),
   ];
 };
 // The shallowest Map or Set inside a type, whole or in part, with its path, or null; `unknown` and `any` hide theirs.
@@ -205,31 +221,40 @@ const isJsonStringify = (checker, services, { callee }) => {
     (declaration) => inDefaultLib(services.program, declaration) && declaration.parent?.name?.text === 'JSON',
   );
 };
-// The value and the replacer as JSON.stringify receives them, each with whether it is certainly passed. A spread
-// tuple gives its elements, certain up to its first optional or rest element (ElementFlags.Required is 1); a spread
-// array gives its element type to every later place, never certain, since it may be empty. An iterable's elements are
-// not read.
-const stringifyArguments = (checker, services, callArguments) => {
-  const passed = [];
-  let certain = true;
+// Each element a call passes, in order. A spread tuple's optional or rest element may be absent, and a rest element
+// or a spread array's element may come any number of times. An iterable's elements are not read, like `unknown`.
+const passedElements = (checker, services, callArguments) => {
+  const typeOf = (node) => checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node));
+  const elements = [];
   for (const argument of callArguments) {
-    const isSpread = argument.type === 'SpreadElement';
-    const type = checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(isSpread ? argument.argument : argument));
-    if (!isSpread) passed.push({ type, certain });
+    const type = argument.type === 'SpreadElement' ? typeOf(argument.argument) : null;
+    if (!type) elements.push({ type: typeOf(argument), optional: false, repeats: false });
     else if (checker.isTupleType(type))
       for (const [i, element] of checker.getTypeArguments(type).entries()) {
-        certain &&= (type.target.elementFlags[i] & 1) !== 0;
-        passed.push({ type: element, certain });
+        const flags = type.target.elementFlags[i];
+        elements.push({
+          type: element,
+          optional: (flags & ts.ElementFlags.Required) === 0,
+          repeats: (flags & ts.ElementFlags.Variable) !== 0,
+        });
       }
-    else if (!checker.isArrayType(type)) break;
-    else {
-      const [element] = checker.getTypeArguments(type);
-      certain = false;
-      passed.push({ type: element, certain }, { type: element, certain });
-    }
-    if (passed.length >= 2) break;
+    else if (checker.isArrayType(type))
+      elements.push({ type: checker.getTypeArguments(type)[0], optional: true, repeats: true });
+    else break;
   }
-  return passed;
+  return elements;
+};
+// Every [value, replacer] the elements can make: each optional element present or absent, each repeating one again.
+const stringifyLayouts = (elements) => {
+  const layouts = [];
+  const fill = (index, filled) => {
+    if (filled.length === 2 || index === elements.length) return void layouts.push(filled);
+    const element = elements[index];
+    if (element.optional) fill(index + 1, filled);
+    fill(element.repeats ? index : index + 1, [...filled, element.type]);
+  };
+  fill(0, []);
+  return layouts;
 };
 const NO_MAP_TO_JSON = {
   meta: {
@@ -252,11 +277,14 @@ const NO_MAP_TO_JSON = {
     return {
       CallExpression(node) {
         if (!isJsonStringify(checker, services, node)) return;
-        const [value, replacer] = stringifyArguments(checker, services, node.arguments);
         // A replacer function is its owner's conversion (lib/record.ts saveRecord); the rule does not judge it. An
-        // array of keys, null, undefined or a replacer that may not be passed converts nothing.
-        if (!value || (replacer?.certain && replacer.type.getCallSignatures().length > 0)) return;
-        const found = findLost(checker, services.program, value.type);
+        // array of keys, null or undefined converts nothing, and a replacer that may be absent does not guarantee it.
+        const unconverted = stringifyLayouts(passedElements(checker, services, node.arguments))
+          .filter(([value, replacer]) => value && !(replacer?.getCallSignatures().length > 0))
+          .map(([value]) => value);
+        const found = [...new Set(unconverted)]
+          .map((value) => findLost(checker, services.program, value))
+          .find(Boolean);
         if (found)
           context.report({
             node,

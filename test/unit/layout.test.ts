@@ -421,6 +421,13 @@ const TYPED_HEADER = [
   'declare const pickNone: Pick<Map<string, number>, never>;',
   'declare const omitAll: Omit<Map<string, number>, keyof Map<string, number>>;',
   "declare const rejoined: Omit<Map<string, number>, 'clear'> & Pick<Map<string, number>, 'clear'>;",
+  'declare const maybeMap: Pick<Map<string, number> | null, never>;',
+  'declare const leading: readonly [Map<string, number>?];',
+  'declare const bySymbol: Record<symbol, Map<string, number>>;',
+  'class Holder {',
+  '  #counts = new Map<string, number>();',
+  '  label = String(this.#counts.size);',
+  '}',
 ];
 // Each sample is linted as `export const sampleN = <sample>;`, with what the rules find on its line.
 const typedFindings = async (samples: string[]) => {
@@ -489,7 +496,6 @@ test('lint fails JSON.stringify of a value whose type holds a Map or Set', async
       'JSON.stringify([...executionRecord.visits.values()])',
       'local.stringify(executionRecord)',
       'JSON.stringify(Object.fromEntries(executionRecord.visits))',
-      'JSON.stringify({ [Symbol.iterator]: executionRecord.visits })',
     ],
   });
 });
@@ -510,11 +516,34 @@ test("lint fails JSON.stringify of a slice of a Map's type, and reads spread arg
       ['JSON.stringify(pickNone)', 'the value has a type made from part of a Map'],
       ['JSON.stringify(omitAll)', 'the value has a type made from part of a Map'],
       ['JSON.stringify(rejoined)', 'the value (Map)'],
+      ['JSON.stringify(maybeMap)', 'the value has a type made from part of a Map'],
+      [
+        '<Held extends Map<string, number> | null>(held: Pick<Held, never>) => JSON.stringify(held)',
+        'the value has a type made from part of a Map',
+      ],
+      ['JSON.stringify(...leading)', 'the value (Map)'],
       // A spread that may be empty may pass no replacer.
       ['JSON.stringify(executionRecord.visits, ...replacers)', 'the value (Map)'],
       ['JSON.stringify(...argumentsTuple)', 'the value (Map)'],
     ],
-    passed: ['JSON.stringify(...([executionRecord, converting] as const))'],
+    // Without its Map, leading leaves converting as the value; with it, converting is its replacer.
+    passed: ['JSON.stringify(...([executionRecord, converting] as const))', 'JSON.stringify(...leading, converting)'],
+  });
+});
+
+// JSON writes string keys only: not a symbol key, a symbol index signature or a private field.
+test('lint passes what JSON does not write, and fails a string key that only looks like a symbol', async (t) => {
+  await holdsMapBoundary(t, {
+    rule: 'gg/no-map-to-json',
+    flagged: [
+      ["JSON.stringify({ '__@counts': executionRecord.visits })", 'the value.__@counts (Map)'],
+      ["JSON.stringify({ '__#counts': executionRecord.visits })", 'the value.__#counts (Map)'],
+    ],
+    passed: [
+      'JSON.stringify({ [Symbol.iterator]: executionRecord.visits })',
+      'JSON.stringify(bySymbol)',
+      'JSON.stringify(new Holder())',
+    ],
   });
 });
 
