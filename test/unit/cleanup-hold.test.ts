@@ -46,7 +46,7 @@ test('an exit-0 Check with unconfirmed cleanup ends the Run Pending before the c
   const fixture = await heldCheck(t);
   const result = await interpreter.runExecution(fixture.options);
   assert.equal(result.outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active');
   assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED);
   assert.equal(saved.activity.busy, true, 'the worktree is not marked idle');
@@ -69,7 +69,7 @@ test('a successful agent response with unconfirmed cleanup ends the Run Pending 
   assert.equal(result.outcome, 'pending');
   assert.equal(actionEvent(fixture, 'green', 'test'), undefined, 'its Check never ran');
   assert.deepEqual(actionEvent(fixture, 'green', 'green')!.cleanup, UNCONFIRMED);
-  assert.deepEqual((await loadTicket(fixture)).visitState!.unconfirmedCleanup, UNCONFIRMED);
+  assert.deepEqual(loadTicket(fixture).visitState!.unconfirmedCleanup, UNCONFIRMED);
 });
 
 test('a Harness result that reports no cleanup ends the Run Pending with no containment to check', async (t) => {
@@ -90,7 +90,7 @@ test('a cleanup hold resumes when its survivors are gone and the tree is unchang
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'ready-for-qa');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.visitState!.unconfirmedCleanup, null);
   assert.equal(saved.activity.busy, false, 'the worktree is idle again');
   assert.equal(fixture.gh.labels.has(CLEANUP_LABEL), false, 'the Await Label is taken down');
@@ -147,7 +147,7 @@ test('a cleanup hold stays Pending while a survivor runs', async (t) => {
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED);
   assert.equal(fixture.gh.labels.has(CLEANUP_LABEL), true);
   assert.equal(holdComments(fixture).length, 1, 'it asks once');
@@ -193,7 +193,7 @@ test('a timed-out call held for cleanup retries once on resume, then ends harnes
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
   assert.equal(fixture.harness.calls.length, 3, 'one retry');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.terminalReason!.outcome, 'harness-timeout');
   assert.equal(saved.retries[keys.retryKey({ vertex: 'green', visit: 1, action: 'green', recovery: 0 })]!.timeout, 1);
 });
@@ -233,13 +233,13 @@ test('a crash during a resumed completion spends its retry once', async (t) => {
     laterRun(fixture, { crashAt: { marker: actionMarker, point: 'after-completion' } }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const crashed = await loadTicket(fixture);
+  const crashed = loadTicket(fixture);
   const key = keys.retryKey({ vertex: 'green', visit: 1, action: 'green', recovery: 0 });
   assert.equal(crashed.retries[key]!.timeout, 1, 'the retry was spent with the completion');
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'ready-for-qa');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.retries[key]!.timeout, 1, 'and only once');
   assert.equal(fixture.harness.calls.length, 3, 'red, the held green and its one retry');
 });
@@ -259,7 +259,7 @@ test('a commit made while a cleanup hold waits holds the Ticket and nothing is r
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
   assert.equal(result.held, true);
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.match(saved.terminalReason!.text, /head and index changed while the Ticket waited/);
   assert.deepEqual(intents(saved, 'reset'), []);
 });
@@ -276,7 +276,7 @@ test('a committed test changed while the Ticket waited fails Test Immutability o
 
   const result = await laterRun(fixture);
   assert.equal(result.held, true);
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.match(saved.terminalReason!.text, /committed tests changed while the Ticket waited/);
   assert.deepEqual(intents(saved, 'reset'), []);
   assert.equal(readFileSync(join(fixture.worktree, 'test', 'add.test.mjs'), 'utf8'), 'export {};\n');
@@ -320,12 +320,12 @@ test('a Check with no agent Action, held for cleanup, stands on its unchanged tr
 test('a Check with no agent Action, held for cleanup, holds the Ticket if its tree changed', async (t) => {
   const fixture = await heldGate(t);
   assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.ok(saved.visitState!.firstAttemptBaseline, 'it kept what the Assertions compare with');
   fixture.fakeIntegrity!.write(fixture.worktree, 'notes.txt');
 
   assert.equal((await laterRun(fixture)).held, true);
-  const ended = await loadTicket(fixture);
+  const ended = loadTicket(fixture);
   assert.match(ended.terminalReason!.text, /tree changed while the Ticket waited/);
   assert.deepEqual(intents(ended, 'reset'), []);
 });
@@ -343,7 +343,7 @@ test('re-running the Checks of a held Visit counts toward the Action Cap', async
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
   assert.equal(fixture.shells.length, checks, 'no Check ran past the cap');
-  assert.match((await loadTicket(fixture)).terminalReason!.text, /Action Cap of 5/);
+  assert.match(loadTicket(fixture).terminalReason!.text, /Action Cap of 5/);
 });
 
 for (const point of ['before-effect', 'after-effect', 'after-completion'] as const) {
@@ -368,7 +368,7 @@ test('an issue that cannot be read leaves a cleanup hold Pending', async (t) => 
   fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view', status: 502 });
 
   assert.equal((await laterRun(fixture)).outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active');
   assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED);
   assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa', 'the next Run goes on');
@@ -381,7 +381,7 @@ test('an issue unread at Reconciliation, once a hold is confirmed, leaves it to 
   fixture.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view' && ++views === 2, status: 502 });
 
   assert.equal((await laterRun(fixture)).outcome, 'pending');
-  assert.equal((await loadTicket(fixture)).state, 'active');
+  assert.equal(loadTicket(fixture).state, 'active');
   assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
 });
 
@@ -413,7 +413,7 @@ test('a run stop met while a hold finishes its report leaves the hold Pending', 
   const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
 
   assert.equal((await laterRun(fixture, { runState })).outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active');
   assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED);
 });
@@ -425,7 +425,7 @@ test('a stopped Run confirms no hold, and the next Run goes on', async (t) => {
   const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
 
   assert.equal((await laterRun(fixture, { runState })).outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active');
   assert.deepEqual(saved.visitState!.unconfirmedCleanup, UNCONFIRMED, 'not confirmed by the stopped Run');
   assert.equal(attemptsOf(fixture, 'green', 'commit').length, 0);

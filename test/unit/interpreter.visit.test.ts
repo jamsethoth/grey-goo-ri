@@ -52,7 +52,7 @@ async function assertCallIntents(fixture: GoldenRun) {
     calls.map((call) => call.actionMarker),
     [actionMarker(fixture, 'red', 'red'), actionMarker(fixture, 'green', 'green')],
   );
-  const saved = intents(await loadTicket(fixture), 'call') as Intent<{ baseline: { head: string } }>[];
+  const saved = intents(loadTicket(fixture), 'call') as Intent<{ baseline: { head: string } }>[];
   assert.deepEqual(
     saved.map((call) => call.payload.baseline),
     calls.map((call) => call.payload.baseline),

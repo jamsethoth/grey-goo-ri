@@ -570,7 +570,7 @@ async function heldWithRescue(t: TestContext, makeRef: (head: string) => string 
   const held = makeRef(head);
   if (held) await git.createRef(fixture.worktree, ref, held);
   const left = { head: 'a'.repeat(40), index: 'b'.repeat(40), tree: 'c'.repeat(40) };
-  await database!.intent(seededRecord!, 'gg:rescue', 'rescue', {
+  database!.intent(seededRecord!, 'gg:rescue', 'rescue', {
     ref,
     commit: head,
     tree: left.tree,

@@ -474,12 +474,13 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
   });
 });
 
+// The id is the API's, never read back from the URL, so the two differ here.
 test('comment returns the comment id and url', async (t) => {
   const url = 'https://github.com/o/r/issues/7#issuecomment-5';
   const { gh } = scriptedGh(() =>
-    fakeGhModule.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }),
+    fakeGhModule.included(201, { 'Content-Type': 'application/json' }, { id: 6, html_url: url }),
   );
-  assert.deepEqual(await github.createGh(gh).comment(7, 'body', '/repo'), { id: 5, url });
+  assert.deepEqual(await github.createGh(gh).comment(7, 'body', '/repo'), { id: 6, url });
 });
 
 // #85: a rate limit whose response gives no wait is read from GitHub's own quota, once.

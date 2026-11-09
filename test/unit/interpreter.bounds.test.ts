@@ -191,7 +191,7 @@ test('a restart at a bound routes the same way', async (t) => {
   );
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof record.RecordSaveError);
   restore();
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.deepEqual(saved.cursor, { vertex: 'reviewer', visit: 2, action: 'pr', recovery: 0, attempt: 1 });
 
   const calls = fixture.harness.calls.length;
@@ -277,7 +277,7 @@ test('a stop a Visit decides saves a Terminal stop and Check runs that declare e
   const result = await interpreter.runExecution(fixture.options);
   assert.equal(result.outcome, 'needs-human');
 
-  const { terminalStop } = await loadTicket(fixture);
+  const { terminalStop } = loadTicket(fixture);
   assert.deepEqual(Object.keys(terminalStop!), [
     'outcome',
     'response',
@@ -357,7 +357,7 @@ test('a crash during that report resumes only the report', async (t) => {
   const calls = fixture.harness.calls.length;
   const shells = fixture.shells.length;
 
-  const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+  const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
   assert.equal(result.outcome, 'needs-human');
   assert.equal(fixture.harness.calls.length, calls, 'no agent runs again');
   assert.equal(fixture.shells.length, shells, 'no Check runs');
@@ -375,7 +375,7 @@ test('a crash during that report resumes only the report', async (t) => {
     1,
     'the comment is not posted twice',
   );
-  assert.equal((await loadTicket(fixture)).state, 'needs-human');
+  assert.equal(loadTicket(fixture).state, 'needs-human');
 });
 
 test('a route passes through a chain of spent Vertices to the last exhausted target', async (t) => {
@@ -439,7 +439,7 @@ test('a restart does not count the resumed Attempt again toward the Action Cap',
     (err) => err instanceof interpreter.CrashError,
   );
 
-  fixture.executionRecord = await loadTicket(fixture);
+  fixture.executionRecord = loadTicket(fixture);
   const result = await interpreter.runExecution({ ...fixture.options, record: fixture.executionRecord });
   assert.equal(result.outcome, 'needs-human');
   assert.equal(fixture.harness.calls.length, 1, 'only red called the agent');
@@ -526,7 +526,7 @@ test(
     'which wins over a spent Bound across a restart',
   async (t) => {
     const fixture = await workedExampleCrash(t);
-    fixture.executionRecord = await loadTicket(fixture);
+    fixture.executionRecord = loadTicket(fixture);
     assert.deepEqual(
       fixture.executionRecord.cursor,
       { vertex: 'reviewer', visit: 2, action: 'pr', recovery: 0, attempt: 1 },

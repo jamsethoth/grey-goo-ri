@@ -123,7 +123,7 @@ test('a push that landed before a crash is found by its remote sha', async (t) =
 
 test('an unknown intent effect holds', async (t) => {
   const fixture = await golden.fixture(t);
-  await fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:someone-elses', 'teleport', {});
+  fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:someone-elses', 'teleport', {});
   const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, fixture.executionRecord));
   assert.equal(decided.next, 'hold');
   assert.match(decided.reason as string, /teleport/);
@@ -131,7 +131,7 @@ test('an unknown intent effect holds', async (t) => {
 
 test('a finder-less replay-safe action replays', async (t) => {
   const fixture = await golden.fixture(t);
-  await fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:pr-ready', 'pr-ready', {});
+  fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:pr-ready', 'pr-ready', {});
   const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, fixture.executionRecord));
   assert.equal(decided.next, 'continue');
   assert.deepEqual(executionReads.writeAheadSteps(fixture.executionRecord, 'gg:pr-ready'), ['intent']);

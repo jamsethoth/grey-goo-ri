@@ -46,7 +46,7 @@ test('a transient comment failure is retried once and posts one comment', async 
   assert.equal(more.length, 0, 'exactly one review comment');
   assert.ok(posted.body.includes(marker.markerComment(actionMarker)), 'it carries the original Action Marker');
   assert.deepEqual(fixture.sleeps, [60_000], 'with no Retry-After the retry waits the 60 s fallback');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.deepEqual(writeAheadSteps(final, actionMarker), ['intent', 'evidence', 'complete']);
   assert.equal(final.retries[REVIEW_COMMENT].remote!.count, 1);
   assert.equal(
@@ -70,7 +70,7 @@ test('retry-after is honoured on the fake clock', async (t) => {
     seen ??= {
       now: fixture.clock.now(),
       calls: fixture.gh.calls.length,
-      saved: (await loadTicket(fixture)).retries[REVIEW_COMMENT]?.remote,
+      saved: loadTicket(fixture).retries[REVIEW_COMMENT]?.remote,
     };
   };
   const result = await interpreter.runExecution(fixture.options);
@@ -101,7 +101,7 @@ test('an accepted write whose call errored is found by marker, not reposted', as
   const [posted, ...more] = prReviewComments(fixture);
   assert.equal(more.length, 0);
   const actionMarker = attemptMarker(fixture, 'reviewer', 1, 'comment', 0);
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.deepEqual(writeAheadSteps(final, actionMarker), ['intent', 'evidence', 'complete']);
   assert.equal(
     final.writeAheadLog.find((event) => event.actionMarker === actionMarker && event.step === 'evidence')!.evidence!.id,
@@ -118,7 +118,7 @@ test('the retry budget survives a crash', async (t) => {
     interpreter.runExecution({ ...fixture.options, crashAt: { marker: actionMarker, point: 'after-retry-saved' } }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const mid = await loadTicket(fixture);
+  const mid = loadTicket(fixture);
   assert.equal(mid.retries[REVIEW_COMMENT]?.remote?.count, 1, 'the first retry was saved before the crash');
   assert.deepEqual(fixture.sleeps, [], 'the crash came before the sleep');
   await fixture.clock.sleep(20_000);
@@ -135,7 +135,7 @@ test('the retry budget survives a crash', async (t) => {
   );
   assert.equal(commentPosts(fixture).length, 3, 'the first try and two retries, across the crash');
   assert.equal(prReviewComments(fixture).length, 0);
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.retries[REVIEW_COMMENT].remote!.count, 2);
   assert.equal(final.state, 'fault');
   assert.deepEqual([...fixture.gh.labels], ['gg:state:needs-human']);
@@ -200,7 +200,7 @@ test('a human needs-human label during backoff abandons before the retry', async
     'the retry never ran and nothing else was posted',
   );
   assert.equal(prReviewComments(fixture).length, 0);
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'abandoned');
   assert.ok(
     !fixture.gh.calls.some((call) => call.args[0] === 'issue' && call.args[1] === 'edit'),
@@ -215,21 +215,13 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
     fixture.gh.fail(onPr({ status: 502 }));
     const posts = crashPost(fixture, 2);
     await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
-    assert.deepEqual(
-      (await loadTicket(fixture)).retries[REVIEW_COMMENT].remote!.started,
-      true,
-      'the first retry launched',
-    );
+    assert.deepEqual(loadTicket(fixture).retries[REVIEW_COMMENT].remote!.started, true, 'the first retry launched');
 
-    const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+    const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
     assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
     assert.equal(posts(), 3);
     assert.equal(prReviewComments(fixture).length, 1);
-    assert.equal(
-      (await loadTicket(fixture)).retries[REVIEW_COMMENT].remote!.count,
-      2,
-      'the relaunch spent the second retry',
-    );
+    assert.equal(loadTicket(fixture).retries[REVIEW_COMMENT].remote!.count, 2, 'the relaunch spent the second retry');
   });
   await t.test('with the budget spent', async (t) => {
     const fixture = await reviewFixture(t, okReview);
@@ -237,13 +229,13 @@ test('a retry that crashed as it launched needs a new retry to launch again', as
     fixture.gh.fail(onPr({ status: 502 }));
     const posts = crashPost(fixture, 3);
     await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
-    assert.equal((await loadTicket(fixture)).retries[REVIEW_COMMENT].remote!.count, 2);
+    assert.equal(loadTicket(fixture).retries[REVIEW_COMMENT].remote!.count, 2);
 
-    const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+    const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.equal(posts(), 3, 'no fourth write');
     assert.equal(prReviewComments(fixture).length, 0);
-    assert.equal((await loadTicket(fixture)).retries[REVIEW_COMMENT].remote!.count, 2);
+    assert.equal(loadTicket(fixture).retries[REVIEW_COMMENT].remote!.count, 2);
     assert.deepEqual([...fixture.gh.labels], ['gg:state:needs-human']);
     // Its failure Event names the class its retries were spent on, as its Terminal Reason does (#251).
     assert.equal(actionEvent(fixture, 'reviewer', 'comment')?.failureClass, 'transient');
@@ -296,7 +288,7 @@ test('a human needs-human label during a fault report backoff abandons the Execu
     !fixture.gh.calls.some((call) => call.args[0] === 'issue' && call.args[1] === 'edit'),
     'no label written: in-progress was not there to remove',
   );
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'abandoned');
   const ends = fixture.readEvents().filter((event) => event.type === 'ticket_end');
   assert.equal(ends.length, 1);
@@ -314,19 +306,19 @@ test('a first launch that crashed spends the budget when launched again', async 
   const crashed = (err: unknown) => err instanceof interpreter.CrashError;
   await assert.rejects(interpreter.runExecution(fixture.options), crashed, 'the first launch');
   await assert.rejects(
-    interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) }),
+    interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) }),
     crashed,
     'the first relaunch',
   );
   await assert.rejects(
-    interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) }),
+    interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) }),
     crashed,
     'the second relaunch',
   );
-  const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+  const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
   assert.equal(result.fault, true, `then none: ${JSON.stringify(result)}`);
   assert.equal(posts, 3);
-  assert.equal((await loadTicket(fixture)).retries[REVIEW_COMMENT].remote!.count, 2);
+  assert.equal(loadTicket(fixture).retries[REVIEW_COMMENT].remote!.count, 2);
 });
 
 test('a pending report waiting out a sibling cooldown checks the human override again before posting', async (t) => {
@@ -345,7 +337,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
     },
   });
   assert.equal(first.fault, true, JSON.stringify(first));
-  const mid = await loadTicket(fixture);
+  const mid = loadTicket(fixture);
   assert.ok(interpreter.pendingReport(mid));
   const posted = fixture.gh.calls.filter((call) => fakeGhModule.isCommentPost(call.args)).length;
 
@@ -364,7 +356,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
     posted,
     'the report is not posted',
   );
-  assert.equal((await loadTicket(fixture)).state, 'abandoned');
+  assert.equal(loadTicket(fixture).state, 'abandoned');
   assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 1);
 });
 
@@ -432,6 +424,6 @@ for (const [name, matches] of [
       'the failed POST and one retry, launched only after a read that worked',
     );
     assert.equal(prReviewComments(fixture).length, 1);
-    assert.equal((await loadTicket(fixture)).retries[REVIEW_COMMENT].remote!.count, 2);
+    assert.equal(loadTicket(fixture).retries[REVIEW_COMMENT].remote!.count, 2);
   });
 }

@@ -13,8 +13,8 @@ test('the line cutter falls back as configured when no line fits', () => {
   assert.equal(publicText.lastLines('x'.repeat(12), 9, omitted), '[12 omitted]');
   assert.equal(publicText.lastLines('x'.repeat(12) + '\n', 9, omitted), '[13 omitted]');
   assert.equal(
-    publicText.lastLines('x'.repeat(12), 9, (text) => text.slice(-9)),
-    'x'.repeat(9),
+    publicText.lastLines('abcdefghijkl', 9, (text) => text.slice(-9)),
+    'defghijkl',
   );
 });
 

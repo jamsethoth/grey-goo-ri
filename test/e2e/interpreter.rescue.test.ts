@@ -162,7 +162,7 @@ for (const [place, crashAt] of Object.entries(RESCUE_CRASHES)) {
       interpreter.runExecution({ ...fixture.options, crashAt: crashAt(fixture) }),
       (err) => err instanceof interpreter.CrashError,
     );
-    const loaded = await loadTicket(fixture);
+    const loaded = loadTicket(fixture);
     const dirty = await reconcile.dirtyState(loaded, {
       git: fixture.options.deps.git,
       worktree: fixture.worktree,
@@ -172,7 +172,7 @@ for (const [place, crashAt] of Object.entries(RESCUE_CRASHES)) {
     assert.equal(outcome, 'ready-for-qa');
     assert.deepEqual(rescueFlow.rescueRefs(fixture), [greenRescueRef(fixture)], 'no second ref');
     assert.equal(counted.resets, 1, 'no repeated reset');
-    const saved = await loadTicket(fixture);
+    const saved = loadTicket(fixture);
     assert.equal(saved.history.filter((item) => item.kind === 'rescued').length, 1, 'one History item');
     assert.equal(inWorktree(fixture, 'notes.txt'), false);
   });
@@ -364,7 +364,7 @@ test('a crash between the hard reset and the clean resumes by finishing the clea
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
   assert.equal(inWorktree(fixture, 'notes.txt'), true, 'the crash came before the clean');
   fixture.options.deps.git = git;
-  const loaded = await loadTicket(fixture);
+  const loaded = loadTicket(fixture);
   assert.equal(await reconcile.dirtyState(loaded, { git, worktree: fixture.worktree }), null);
   const { outcome } = await interpreter.runExecution({ ...fixture.options, record: loaded });
   assert.equal(outcome, 'ready-for-qa');
@@ -386,7 +386,7 @@ test('after a crash between the hard reset and the clean, a file the agent did n
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
   fixture.options.deps.git = git;
   writeFileSync(join(fixture.worktree, 'by-hand.txt'), 'a human wrote this\n');
-  const loaded = await loadTicket(fixture);
+  const loaded = loadTicket(fixture);
   const result = await interpreter.runExecution({ ...fixture.options, record: loaded });
   assert.equal(result.held, true);
   assert.equal(inWorktree(fixture, 'by-hand.txt'), true, 'nothing was discarded');
@@ -400,7 +400,7 @@ test("dirtyState finds the Rescue Ref a crash left before saving the ref's evide
     (err) => err instanceof interpreter.CrashError,
   );
   writeFileSync(join(fixture.worktree, 'by-hand.txt'), 'a human wrote this\n');
-  const dirty = await reconcile.dirtyState(await loadTicket(fixture), {
+  const dirty = await reconcile.dirtyState(loadTicket(fixture), {
     git: fixture.options.deps.git,
     worktree: fixture.worktree,
   });

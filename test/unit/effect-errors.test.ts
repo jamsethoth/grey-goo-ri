@@ -9,6 +9,14 @@ test('a crash or a failed save is fatal, and any other error is not', () => {
   assert.equal(effectErrors.fatal(new Error('gh failed')), false);
 });
 
+test("an error's text is its message, or the error itself when the message is empty or it is no Error", () => {
+  assert.equal(effectErrors.errorText(new Error('disk full')), 'disk full');
+  assert.equal(effectErrors.errorText(new Error('')), 'Error');
+  assert.equal(effectErrors.errorText(null), 'null');
+  assert.equal(effectErrors.errorText(undefined), 'undefined');
+  assert.equal(effectErrors.errorText('gh exited 1'), 'gh exited 1');
+});
+
 test('a crash point throws a CrashError only at its own point of its own marker', () => {
   const context = { crashAt: { marker: 'gg:m', point: 'after-effect' as const } };
   assert.throws(() => effectErrors.crashPoint(context, 'gg:m', 'after-effect'), effectErrors.CrashError);
