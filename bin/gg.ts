@@ -37,6 +37,7 @@ async function runCommand(parsed: options.ParsedOptions) {
   const results = await run.runTarget({
     deps,
     target,
+    flow: parsed.flow as string | undefined,
     config: config.loadLayers(mainRoot),
     harnesses,
     protectedPaths: interpreter.protectedFiles(harnesses),
@@ -72,7 +73,11 @@ const COMMANDS: Record<string, Command> = {
     flags: { bools: ['bg'], values: ['name', 'session', 'replan', 'finish'] },
   },
   publish: { summary: 'publish Tickets from a Plan' },
-  run: { summary: 'carry Tickets through their Flow', run: runCommand },
+  run: {
+    summary: 'carry Tickets through the default Flow, or the one --flow <name> names',
+    flags: { values: ['flow'] },
+    run: runCommand,
+  },
   work: { summary: 'list, resume, abandon, reset, approve' },
   trace: { summary: 'export a Trajectory' },
   stats: {
