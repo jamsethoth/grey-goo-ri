@@ -524,8 +524,8 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
 Human recovery, `gg work`: list across every repo in the user-dir registry, resume (with `--at <vertex>` to hand a
 `needs-human` Ticket back to gg), done (a person finished it: the human end `done`, decision L12), abandon (keep the
 worktree, forget the position), reset (as above), approve. `gg work abandon <n>` deletes the Ticket's Execution Record row, keeping its Events,
-worktree and branch, and removes its in-progress label, so the next `gg run <n> --flow <name>` starts a new Execution on
-that branch; it refuses while the ticket lock is held. Doctor validates records and reports disagreement with GitHub,
+worktree and branch, and first removes every State Label the Ticket carries, since readiness refuses any, so the next
+`gg run <n> --flow <name>` starts a new Execution on that branch; it refuses while the ticket lock is held. Doctor validates records and reports disagreement with GitHub,
 and lists as an error every record a Run would resume whose Flow is no longer declared (a Run keeps such a record,
 logs an error naming both remedies, declaring the Flow again or `gg work abandon`, and exits 2). Single machine; the
 user's directory, `GG_HOME` (default `~/.agents/gg/`), holds the user's Flows and machine settings and a registry of
