@@ -53,7 +53,9 @@ test("an input from an await-approval Action's decision.reply is accepted", () =
     );
   }
   const unknown = askedBeforeRed('owner-questions.ask.decision.replies').errors;
-  assert.deepEqual(exampleLayer.firedRules(unknown), [{ at: `${VERTICES}.red.inputs.answers`, code: 'unknown-field' }]);
+  assert.deepEqual(exampleLayer.firedRules(unknown), [
+    { at: `${VERTICES}.red.inputs.answers`, code: 'undefined-reference' },
+  ]);
 });
 
 test('the example Flow resolves with no errors', () => {

@@ -58,6 +58,7 @@ test('golden: an approval request ends the run and a later approval routes on', 
   assert.ok(comment!.includes(instance.digest), comment);
   assert.ok(comment!.includes(APPROVED_LABEL), comment);
   assert.ok(comment!.includes(REJECTED_LABEL), comment);
+  assert.ok(comment!.includes('reply in one or more comments on this Ticket'), 'it asks for answers in a comment');
   assert.deepEqual(approvalFlow.approveTrace(fixture), requestTrace(1));
   assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 0, 'the Execution goes on');
 

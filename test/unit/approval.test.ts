@@ -197,8 +197,8 @@ test('a Decide Label for an Outcome the request does not declare is not a Decisi
 const REQUEST_COMMENT = 20;
 const MARKED = '\n\n<!-- gg-action gg:7.a1b2c3:green:1:green:0:1:1 -->';
 const comment = (id: number, author: string | undefined, body: string) => ({ id, author, body, createdAt: '' });
-const replyOf = (comments: ReturnType<typeof comment>[], actor: string | undefined = 'owner') =>
-  approval.reply({ comments, actor, requestComment: REQUEST_COMMENT });
+const replyOf = (comments: ReturnType<typeof comment>[]) =>
+  approval.reply({ comments, actor: 'owner', requestComment: REQUEST_COMMENT });
 
 test("a Decision's reply is its actor's comments after the request, oldest first", () => {
   const comments = [comment(20, 'owner', 'the request'), comment(31, 'owner', '1. A'), comment(42, 'Owner', '2. C')];
@@ -223,7 +223,12 @@ test('comments by another login or with an Action Marker are not in the reply', 
 test('no comment gives a null reply', () => {
   assert.equal(replyOf([]), null);
   assert.equal(replyOf([comment(20, 'owner', 'the request'), comment(31, 'someone-else', 'an answer')]), null);
-  assert.equal(replyOf([comment(31, 'owner', 'an answer')], undefined), null, 'a Decision with no actor has none');
+  const noActor = approval.reply({
+    comments: [comment(31, 'owner', 'an answer')],
+    actor: undefined,
+    requestComment: REQUEST_COMMENT,
+  });
+  assert.equal(noActor, null, 'a Decision with no actor has none');
 });
 
 test('the actors a read needs permissions for are those of Decide Labels for its Vertex', () => {

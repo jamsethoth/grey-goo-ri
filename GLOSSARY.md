@@ -446,6 +446,8 @@ _Avoid_: approval label, outcome label
 
 **Decision**:
 A human's answer to an Approval Request, read from the issue's event timeline; its value becomes the Vertex's Outcome.
+It carries its actor and a reply: the actor's comments on the Ticket after the request's comment, which a later
+Vertex reads as an input.
 _Avoid_: sign-off
 
 **Approval Request**:

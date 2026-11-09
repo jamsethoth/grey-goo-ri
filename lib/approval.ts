@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as config from './config.ts';
 import type * as github from './github.ts';
 import * as labels from './labels.ts';
+import * as marker from './marker.ts';
 
 // The fingerprint of what a Decision covers; when it changes the Decision is stale.
 export type ApprovalDigest = string;
@@ -173,11 +174,27 @@ export function decidingActors({
   return [...new Set(actors)];
 }
 
-// A Decision's reply: its actor's comments after the request's comment, oldest first; null when there are none.
-export function reply(_given: {
+// A Decision's reply (request 3.5): its actor's comments after the request's comment, oldest first, each separated by a
+// blank line; null when there are none. gg posts under the owner's login, so its Action Marker tells its own comments
+// apart. GitHub lists an issue's comments in ascending id order, so a later comment has a higher id.
+export function reply({
+  comments,
+  actor,
+  requestComment,
+}: {
   comments: Pick<github.IssueComment, 'id' | 'author' | 'body'>[];
   actor: string | undefined;
   requestComment: number;
 }): string | null {
-  return '';
+  const bodies = comments
+    .filter(
+      (comment) =>
+        comment.id > requestComment &&
+        actor !== undefined &&
+        comment.author?.toLowerCase() === actor.toLowerCase() &&
+        !marker.parseMarker(comment.body),
+    )
+    .toSorted((left, right) => left.id - right.id)
+    .map((comment) => comment.body);
+  return bodies.length ? bodies.join('\n\n') : null;
 }
