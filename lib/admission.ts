@@ -348,7 +348,7 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
 async function runAdmitted(admitting: Admitting, decided: Decided): Promise<TicketResult> {
   const { context, issue, ticket } = admitting;
   const executionRecord = admitting.executionRecord!;
-  const { flow, hash } = runFlows.pinnedFlow(context.flows, executionRecord.flow, context.hash);
+  const { flow, hash } = runFlows.pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash);
   const result = await interpreter.runExecution({
     deps: context.deps,
     flow,

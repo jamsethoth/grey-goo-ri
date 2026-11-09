@@ -129,7 +129,8 @@ export async function admitConfiguration(
 }
 
 // The Flow an Execution runs: the one its record pins, whatever `--flow` says (X2). Admission runs a record whose Flow
-// is no longer declared only to finish a decided report, which runs no Vertex: under an empty Flow of its name.
+// is no longer declared only to finish a decided report, which runs no Vertex, so it runs under an empty Flow of that
+// name and the Config Hash the caller gives, the record's own.
 export function pinnedFlow(flows: ReadonlyMap<string, PinnedFlow>, name: string, hash: string): PinnedFlow {
   const ticket = { entry: null, vertices: new Map<string, model.Vertex>() };
   return flows.get(name) ?? { flow: { name, actionCap: 0, procedures: new Map(), ticket }, pinned: null, hash };
