@@ -224,8 +224,6 @@ const isJsonStringify = (checker, services, { callee }) => {
     (declaration) => inDefaultLib(services.program, declaration) && declaration.parent?.name?.text === 'JSON',
   );
 };
-// Each element a call passes, in order. A spread tuple's optional or rest element may be absent, and a rest element
-// or a spread array's element may come any number of times. An iterable's elements are not read, like `unknown`.
 // The elements a spread passes: a tuple's, each optional or repeating by its flags, a variadic one read through its
 // constraint (<Rest extends [Replacer]> passes one); an array's element any number of times; null for an iterable.
 function spreadElements(checker, type) {
@@ -242,6 +240,7 @@ function spreadElements(checker, type) {
     );
   });
 }
+// Each element a call passes, in order, with a spread read by spreadElements; reading stops at an iterable's.
 const passedElements = (checker, services, callArguments) => {
   const typeOf = (node) => checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node));
   const elements = [];
