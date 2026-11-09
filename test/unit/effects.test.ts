@@ -46,8 +46,8 @@ test('a side effect is logged as intent, evidence and completion, and returns it
 
 test('a proven side effect is not made again: its saved evidence is returned and the Action completed', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
-  await record.intent(executionRecord, 'gg:m', 'reset', { baseline: 'abc' });
-  await record.evidence(executionRecord, 'gg:m', { head: 'saved' });
+  record.intent(executionRecord, 'gg:m', 'reset', { baseline: 'abc' });
+  record.evidence(executionRecord, 'gg:m', { head: 'saved' });
   const evidence = await effects.sideEffect(context, {
     actionMarker: 'gg:m',
     effect: 'reset',
@@ -74,7 +74,7 @@ test('a deferred side effect is left for saveResolution to complete', async (t) 
 
 test('an open intent is redone with its intended payload, not the one given now', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
-  await record.intent(executionRecord, 'gg:m', 'reset', { baseline: 'intended' });
+  record.intent(executionRecord, 'gg:m', 'reset', { baseline: 'intended' });
   const evidence = await effects.sideEffect(context, {
     actionMarker: 'gg:m',
     effect: 'reset',
@@ -128,14 +128,14 @@ test("saveResolution saves a Flow Action's settled resolution with its Action Ev
       check: 'test',
     },
   ]);
-  const saved = await record.load(executionRecord.commonDir, 'ticket', support.TICKET);
+  const saved = record.load(executionRecord.commonDir, 'ticket', support.TICKET);
   assert.deepEqual(saved?.visitState?.settled, { action: 'test', recovery: 0, resolution });
 });
 
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('saveResolution completes a marked Action with its evidence once, and returns a completed one unsaved', async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
-  await record.intent(executionRecord, 'gg:m', 'push', {});
+  record.intent(executionRecord, 'gg:m', 'push', {});
   const resolution: visit.TableResolution = {
     outcome: 'ok',
     direction: 'retry',
@@ -198,7 +198,7 @@ test("a Flow Action's retry is not settled, so a resumed Visit runs the Action a
 
 test('a completed side effect finishes as effect-completed', async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
-  await record.intent(executionRecord, 'gg:m', 'push', {});
+  record.intent(executionRecord, 'gg:m', 'push', {});
   const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, procedure: null };
   assert.deepEqual(await effects.completeEffect(context, actionIdentity, 5, 'gg:m'), {
     outcome: 'ok',

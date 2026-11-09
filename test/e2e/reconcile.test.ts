@@ -6,15 +6,13 @@ import * as interpreter from '../../lib/interpreter.ts';
 import type * as integrity from '../../lib/integrity.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as afterPhase from '../support/after-phase.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as gitShell from '../support/git-shell.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
-
-const loadTicket = async (fixture: golden.GoldenFixture) =>
-  (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
 
 // red's Attempt writes a Protected File, an Integrity Violation whose reset is interrupted by a crash at `when`: before
 // the reset, or after it.
@@ -25,7 +23,7 @@ async function crashedViolation(t: TestContext, when: 'before reset' | 'after re
   const git = fixture.options.deps.git;
   fixture.options.deps.git = resetInterruption.crashingReset(git, { after: when === 'after reset' });
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
-  return { ...fixture, loaded: await loadTicket(fixture), uncrashedGit: git };
+  return { ...fixture, loaded: executionReads.loadTicket(fixture), uncrashedGit: git };
 }
 
 test('a crash after the reset of an Integrity Violation keeps its History item exactly once', async (t) => {
@@ -42,7 +40,7 @@ test('a crash after the reset of an Integrity Violation keeps its History item e
   assert.deepEqual(crashResume.resetEntries(crashed.loaded), ['intent', 'evidence', 'complete']);
   assert.deepEqual(writeAhead.openIntents(crashed.loaded), []);
 
-  const saved = await loadTicket(crashed);
+  const saved = executionReads.loadTicket(crashed);
   assert.deepEqual(saved.history, crashed.loaded.history, 'the History item is persisted');
   assert.equal(await reconcile.resets(saved, { git: crashed.options.deps.git }), 'continue');
   assert.equal(saved.history.length, 1, 'a second Reconciliation adds nothing');
@@ -125,7 +123,7 @@ test('a crash between the reset and the Protected File restore of an integrity v
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
   assert.equal(readFileSync(local, 'utf8'), '{"agent":true}\n', 'the crash came before the restore');
 
-  const loaded = await loadTicket(fixture);
+  const loaded = executionReads.loadTicket(fixture);
   assert.equal(await reconcile.resets(loaded, { git }), 'continue');
   assert.equal(readFileSync(local, 'utf8'), '{"owner":true}\n', "the owner's bytes come back from the saved intent");
   assert.equal(loaded.history[0]?.kind, 'integrity violation');

@@ -32,7 +32,6 @@ class RunStoppedError extends effectErrors.EarlyTerminalError {
   }
 }
 
-const errorText = (err: unknown) => (err as Error | null | undefined)?.message || String(err);
 // A run stop ends an Execution at a Vertex or at ready-for-qa; at needs-human or needs-replan, the Terminal a stop
 // leads to, the report goes on.
 const stopApplies = (vertex: string) => !flow.isEnd(vertex) || vertex === 'ready-for-qa';
@@ -107,10 +106,10 @@ function failedEvent(
         rule: { table: 'fixed', row: consequence },
         signals: {},
         failureClass,
-        error: errorText(err),
+        error: effectErrors.errorText(err),
       },
     );
-  return context.database.save(context.record, event);
+  context.database.save(context.record, event);
 }
 
 // A final remote failure names its Action and class in the Terminal Reason. One whose class reaches the whole Run
@@ -127,13 +126,13 @@ async function finalFailure(context: effects.EffectContext, failed: FailedLaunch
   // A relaunch refused with its budget spent is unknown to the classifier; its Event names the class its retries were
   // spent on.
   const eventClass = err instanceof effectErrors.RetriesExhaustedError ? err.spent.failureClass : failureClass;
-  await failedEvent(context, failed, { failureClass: eventClass, consequence: stops ? 'run-stop' : 'fault' });
+  failedEvent(context, failed, { failureClass: eventClass, consequence: stops ? 'run-stop' : 'fault' });
   if (stops)
     return new effectErrors.EarlyTerminalError({
       next: 'run-stop',
       failureClass,
       source,
-      detail: errorText(err),
+      detail: effectErrors.errorText(err),
       reason: `The ${source} failed with class ${failureClass}.`,
     });
   // An unknown failure stays an unexpected fault.
@@ -156,7 +155,7 @@ async function reserveRetry(context: effects.EffectContext, failed: FailedLaunch
   const spent = remoteRetry(executionRecord, actionMarker)?.count ?? 0;
   if (!failure.retryable) throw await finalFailure(context, failed, failure);
   if (spent >= REMOTE_RETRIES) {
-    await failedEvent(context, failed, { failureClass: failure.failureClass, consequence: 'fault' });
+    failedEvent(context, failed, { failureClass: failure.failureClass, consequence: 'fault' });
     context.log(
       `#${executionRecord.ticket} ${actionKey(actionMarker)}: ${failure.failureClass} failure, retries exhausted ` +
         `after ${spent} of ${REMOTE_RETRIES}`,
@@ -164,7 +163,7 @@ async function reserveRetry(context: effects.EffectContext, failed: FailedLaunch
     // The fault's Terminal Reason says the budget ran out, not that the fault was unexpected.
     if (err && typeof err === 'object')
       throw new effectErrors.RetriesExhaustedError(
-        errorText(err),
+        effectErrors.errorText(err),
         {
           failureClass: failure.failureClass,
           status: failure.status,
@@ -188,7 +187,7 @@ async function reserveRetry(context: effects.EffectContext, failed: FailedLaunch
     `#${executionRecord.ticket} ${actionKey(actionMarker)}: ${failure.failureClass} failure, retry ${retry.count} of ` +
       `${REMOTE_RETRIES} at ${new Date(retry.nextEligibleAt).toISOString()}`,
   );
-  await context.database.save(executionRecord);
+  context.database.save(executionRecord);
   effectErrors.crashPoint(context, actionMarker, 'after-retry-saved');
 }
 
@@ -243,7 +242,7 @@ async function relaunch(context: effects.EffectContext, actionMarker: string, re
     });
   }
   Object.assign(retry, { count: retry.count + 1, nextEligibleAt: context.clock.now(), started: false });
-  await context.database.save(context.record);
+  context.database.save(context.record);
 }
 
 // Looks for a remote Action's effect by its marker. A failed lookup proves nothing, so it is retried on the Action's
@@ -274,8 +273,7 @@ async function recheck(
   const { record: executionRecord, gh, cwd } = context;
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   context.labelsStale = false;
-  const labelPrefix = context.labelPrefix ?? labels.DEFAULT_PREFIX;
-  const overridden = await reconcile.humanOverride(executionRecord, issueLabels, labelPrefix);
+  const overridden = reconcile.humanOverride(executionRecord, issueLabels, context.labelPrefix);
   if (overridden) throw new effectErrors.EarlyTerminalError(overridden);
   // A finder reads only the entry's marker, effect and payload.
   const found = await effectEvidence.findEffect(entry as writeAhead.WriteAheadEntry, {
@@ -301,7 +299,7 @@ async function markStarted(
 ) {
   if (retry && !retry.started) {
     retry.started = true;
-    await context.database.save(context.record);
+    context.database.save(context.record);
   } else if (!retry) {
     (context.record.retries[actionKey(actionMarker)] ??= {}).remote = {
       count: 0,
@@ -309,7 +307,7 @@ async function markStarted(
       nextEligibleAt: 0,
       started: true,
     };
-    await context.database.save(context.record);
+    context.database.save(context.record);
   }
 }
 
@@ -357,10 +355,10 @@ export async function lockGuard(
 ): Promise<{ skip: boolean } | undefined> {
   const { record: executionRecord, gh, cwd } = context;
   checkStop(context, { retrying: false });
-  const overridden = await reconcile.humanOverride(
+  const overridden = reconcile.humanOverride(
     executionRecord,
     gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd)),
-    context.labelPrefix ?? labels.DEFAULT_PREFIX,
+    context.labelPrefix,
   );
   if (overridden) throw new effectErrors.EarlyTerminalError(overridden);
   if (verb !== 'push') return undefined;

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
 import * as record from '../../lib/record.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
 import * as admissionHoldEvents from '../support/admission-hold-events.ts';
@@ -18,8 +19,6 @@ const { BRANCH, TICKET } = runFixture;
 const { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } = executionContext;
 type RunFixture = runFixture.RunFixture;
 
-const loadTicket = async (fixture: RunFixture) =>
-  (await record.load(fixture.commonDir, 'ticket', TICKET)) as record.ExecutionRecord;
 const addWorktree = (fixture: RunFixture) =>
   fixture.options.deps.git.ensureWorktree({
     mainRoot: fixture.mainRoot,
@@ -51,7 +50,7 @@ test('agent-made dirty state proven by the record is discarded', async (t) => {
   await run.runTarget(fixture.options);
   assert.equal(gitShell.sh(fixture.worktree, 'status', '--porcelain'), '', "the agent's changes are discarded");
   assert.equal(fixture.harness.calls.length, 1, 'no agent call is repeated');
-  const final = await loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture, TICKET);
   assert.notEqual(final.state, 'held', 'the Ticket is not held for its own agent changes');
   assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its Integrity Violation');
   assert.deepEqual(
@@ -119,7 +118,7 @@ test('a human change staged after an interrupted reset is held, not discarded', 
 test('an interrupted reset whose intent predates the index fingerprint is held', async (t) => {
   const { fixture, seeded } = await interruptedReset(t);
   delete (writeAhead.openIntents(seeded)[0]?.payload as { left: { index?: string } }).left.index;
-  await record.save(seeded);
+  record.save(seeded);
 
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 2);
@@ -157,7 +156,7 @@ test('a Run resumes a partial restore without repeating the agent call', async (
   assert.equal(fixture.harness.calls.length, 1, 'no agent call is repeated');
   assert.equal(readFileSync(join(fixture.worktree, '.claude', 'settings.local.json'), 'utf8'), '{"owner":true}\n');
   assert.ok(!existsSync(join(fixture.worktree, '.claude', 'agent.json')), 'the extra stays removed');
-  const final = await loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture, TICKET);
   assert.equal(final.state, 'needs-human', 'the Ticket runs on to the Terminal of its Integrity Violation');
   assert.deepEqual(
     final.history.map((item) => item.kind),

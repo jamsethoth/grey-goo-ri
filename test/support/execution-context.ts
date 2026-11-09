@@ -76,7 +76,7 @@ export async function executionContext(t: TestContext) {
     enter: async (actionIdentity: marker.ActionIdentity) => {
       const { vertex, visit, action, recovery } = actionIdentity;
       executionRecord.cursor = { vertex, visit, action, recovery, attempt: 1 };
-      await record.save(executionRecord);
+      record.save(executionRecord);
     },
   };
   return { context, executionRecord, fakeGh, sleeps, logs, emitted, commonDir };
@@ -103,7 +103,7 @@ function commentEffect(context: ExecutionContext) {
       bodyHash: 'hash',
     },
     perform: async (payload: { target: { number: number }; body: string }) => ({
-      id: github.commentId(await context.gh.comment(payload.target.number, payload.body, context.cwd)),
+      id: (await context.gh.comment(payload.target.number, payload.body, context.cwd)).id,
     }),
   };
 }
@@ -115,7 +115,7 @@ export const remoteComment = (context: ExecutionContext) => effects.sideEffect(c
 // budget's effect are read from that intent.
 export async function remoteCommentLaunch(context: ExecutionContext) {
   const { perform, ...entry } = commentEffect(context);
-  await context.database.intent(context.record, entry.actionMarker, entry.effect, entry.payload);
+  context.database.intent(context.record, entry.actionMarker, entry.effect, entry.payload);
   return remoteEffects.remoteEffect(context, entry, perform);
 }
 

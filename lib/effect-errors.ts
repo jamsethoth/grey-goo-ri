@@ -12,6 +12,9 @@ export class CrashError extends Error {
   name = 'CrashError';
 }
 
+// An error's message, or the error itself as text when its message is empty or it is not an Error.
+export const errorText = (err: unknown): string => (err as Error | null | undefined)?.message || String(err);
+
 // A crash, or a record save that failed: either way nothing more of the record is saved.
 export const fatal = (err: unknown): boolean => err instanceof CrashError || err instanceof record.RecordSaveError;
 

@@ -193,19 +193,19 @@ export function layerFile(files: unknown, name: unknown): string {
 
 // Sorted keys at every depth, so the hash ignores key order. A Map has no keys here and would hash as {} in silence,
 // so it is refused: the model's toJson gives the JSON to hash (#174).
-function canonical(value: unknown): unknown {
+function sortedKeys(value: unknown): unknown {
   if (value instanceof Map) throw new Error('a Map cannot be hashed; convert it to an object first (model.toJson)');
-  if (Array.isArray(value)) return value.map(canonical);
+  if (Array.isArray(value)) return value.map(sortedKeys);
   if (!value || typeof value !== 'object') return value;
   const object = value as Record<string, unknown>;
   return Object.fromEntries(
     Object.keys(object)
       .sort()
-      .map((key) => [key, canonical(object[key])]),
+      .map((key) => [key, sortedKeys(object[key])]),
   );
 }
 
-export const hashOf = (value: unknown): string => sha256(JSON.stringify(canonical(value)));
+export const hashOf = (value: unknown): string => sha256(JSON.stringify(sortedKeys(value)));
 
 // What a Pinned Configuration holds.
 export interface PinnedConfiguration {

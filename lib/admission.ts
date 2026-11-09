@@ -3,6 +3,7 @@
 import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import * as config from './config.ts';
+import * as effectErrors from './effect-errors.ts';
 import * as effectEvidence from './effect-evidence.ts';
 import type * as effects from './effects.ts';
 import type * as events from './events.ts';
@@ -107,12 +108,12 @@ const setLabels = (admitting: Admitting, change: github.LabelChange) =>
     ev: admitting.events,
   });
 
-function skip(admitting: Admitting, reason: string): TicketResult {
-  admitting.context.log(`#${admitting.ticket} skipped: ${reason}`);
-  const needsHuman = labels.hasLabel(admitting.issueLabels, admitting.state(labels.NEEDS_HUMAN));
-  return { ticket: admitting.ticket, outcome: 'skipped', ...(needsHuman && { state: labels.NEEDS_HUMAN }) };
+export function skip({ context, issue }: Pick<Admitting, 'context' | 'issue'>, reason: string): TicketResult {
+  context.log(`#${issue.number} skipped: ${reason}`);
+  const needsHuman = labels.labelsFor(context.config.labelPrefix).state(labels.NEEDS_HUMAN);
+  const held = labels.hasLabel(context.deps.gh.labelNames(issue), needsHuman);
+  return { ticket: issue.number, outcome: 'skipped', ...(held && { state: labels.NEEDS_HUMAN }) };
 }
-
 // The Ticket's row, its labels and the worktree and branch it runs in. A landed fresh hold restarts as a new Execution;
 // readiness then judges whether a human has cleared it.
 async function openAdmission(issue: github.Issue, context: AdmissionContext) {
@@ -133,7 +134,7 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
     const logged = type as Parameters<AdmissionContext['events']>[0];
     context.events(logged, type === 'label_failed' ? { run: runId, ...data } : data);
   };
-  const loaded = await reconcile.loadExecutionRecord(repo.gitCommonDir, ticket);
+  const loaded = reconcile.loadExecutionRecord(repo.gitCommonDir, ticket);
   const { corrupt } = loaded;
   let executionRecord = loaded.executionRecord;
   const pending = executionRecord && interpreter.pendingReport(executionRecord);
@@ -232,7 +233,7 @@ async function startTicket(
   });
   const executionRecord = admitting.executionRecord;
   if (decision) executionRecord.admissionStop = declaredAdmissionStop(decision);
-  await context.deps.database.save(executionRecord, () =>
+  context.deps.database.save(executionRecord, () =>
     admitting.events('ticket_start', { run: context.runId, execution: executionRecord.execution, ticket }),
   );
   admitting.started = true;
@@ -310,12 +311,11 @@ async function admitReadyTicket(admitting: Admitting, fresh: boolean, decided: D
 // A human's needs-human label is honoured before anything is discarded or labelled (request 3.5). Returns the skip
 // result when the Ticket is not ready, or null once admission has decided and started the Ticket.
 async function decide(admitting: Admitting, decided: Decided): Promise<TicketResult | null> {
-  const { context } = admitting;
-  const fresh = !admitting.executionRecord;
+  const { context, executionRecord } = admitting;
+  const fresh = !executionRecord;
   try {
     const overridden =
-      admitting.executionRecord &&
-      (await reconcile.humanOverride(admitting.executionRecord, admitting.issueLabels, context.config.labelPrefix));
+      executionRecord && reconcile.humanOverride(executionRecord, admitting.issueLabels, context.config.labelPrefix);
     let worktree;
     if (overridden) {
       context.log(`#${admitting.ticket} abandon: ${overridden.reason}`);
@@ -336,7 +336,7 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
     if (err instanceof record.RecordSaveError) throw err;
     // An Execution that cannot be admitted is an unexpected fault: reported and marked, so it is never retried
     // automatically (request 3.4).
-    const error = (err as Error).message ?? String(err);
+    const error = effectErrors.errorText(err);
     context.log(`#${admitting.ticket} ERROR ${error}`);
     decided.fault = err;
     await startTicket(admitting, undefined, { kind: 'fault', error });

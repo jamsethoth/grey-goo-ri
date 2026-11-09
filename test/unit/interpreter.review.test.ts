@@ -178,7 +178,7 @@ test('a restart at the review-to-fix boundary runs the pending fix with the save
     interpreter.runExecution({ ...fixture.options, crashAt: { marker: fix, point: 'before-intent' } }),
     (err: unknown) => err instanceof interpreter.CrashError,
   );
-  const saved = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
+  const saved = record.load(fixture.commonDir, 'ticket', golden.TICKET)!;
   assert.equal(saved.traversals.get('reviewer->implementer-fix:changes'), 1);
   assert.equal(saved.cursor.vertex, 'implementer-fix');
 

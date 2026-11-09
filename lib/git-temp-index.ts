@@ -1,6 +1,6 @@
 // What lib/git.ts reads through a copy of the index, so the real one stays as it is: a worktree's fingerprint, and a
 // rescue's tree. Each writes objects, so callers hold the repo lock.
-import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type * as git from './git.ts';
@@ -17,10 +17,20 @@ async function inTempIndex<Result>(
   try {
     const env = { GIT_INDEX_FILE: join(tempDir, 'index') };
     const index = await git(['rev-parse', '--git-path', 'index'], worktree);
-    // Seeded from the real index so tracked files that now match an ignore rule still count.
-    await copyFile(resolve(worktree, index), env.GIT_INDEX_FILE).catch((err: NodeJS.ErrnoException) => {
-      if (err.code !== 'ENOENT') throw err;
-    });
+    // Seeded from the real index so tracked files that now match an ignore rule still count. git rereads an entry
+    // modified in the index's own second (racy git); a copy stamped in a later second, as Linux stamps one and as
+    // fs.cp's rounded preserveTimestamps can, would trust its stat data and miss a same-size rewrite in that second
+    // (#317). So the copy's mtime is the index's, read before the copy, cut to its whole second.
+    const source = resolve(worktree, index);
+    await stat(source, { bigint: true })
+      .then(async ({ mtimeNs }) => {
+        await copyFile(source, env.GIT_INDEX_FILE);
+        const second = Number(mtimeNs / 1_000_000_000n);
+        await utimes(env.GIT_INDEX_FILE, second, second);
+      })
+      .catch((err: NodeJS.ErrnoException) => {
+        if (err.code !== 'ENOENT') throw err;
+      });
     // ls-files -v tags assume-unchanged entries in lowercase and skip-worktree entries 'S'; both would hide edits
     // from add.
     const entries = (await runGit(['ls-files', '-v', '-z'], { cwd: worktree, env })).stdout.split('\0');
@@ -33,7 +43,7 @@ async function inTempIndex<Result>(
       if (flagged.length)
         await runGit(['update-index', flag, '-z', '--stdin'], { cwd: worktree, env, input: flagged.join('\0') });
     }
-    await git(['add', '-A'], worktree, env);
+    await git(['add', '-A'], worktree, { env });
     return await read(env);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -45,7 +55,7 @@ export const fingerprint = (gitRunner: git.Runner, worktree: string): Promise<in
   inTempIndex(gitRunner, worktree, async (env) => ({
     head: await gitRunner.git(['rev-parse', 'HEAD'], worktree),
     index: await gitRunner.git(['write-tree'], worktree),
-    tree: await gitRunner.git(['write-tree'], worktree, env),
+    tree: await gitRunner.git(['write-tree'], worktree, { env }),
   }));
 
 // The tree of everything a rescue keeps (ADR 0011): what `add -A` stages, and the ignored files within `pathspecs`,
@@ -54,8 +64,8 @@ export const fingerprint = (gitRunner: git.Runner, worktree: string): Promise<in
 export const rescueTree = (gitRunner: git.Runner, cwd: string, pathspecs: string[] | null): Promise<string> =>
   inTempIndex(gitRunner, cwd, async (env) => {
     const listing = ['ls-files', '--others', '--ignored', '--exclude-standard', '-z', ...(pathspecs ?? [])];
-    const ignored = pathspecs ? await gitRunner.listPaths(listing, cwd, env) : [];
+    const ignored = pathspecs ? await gitRunner.listPaths(listing, cwd, { env }) : [];
     if (ignored.length)
       await gitRunner.runGit(['update-index', '--add', '-z', '--stdin'], { cwd, env, input: ignored.join('\0') });
-    return gitRunner.git(['write-tree'], cwd, env);
+    return gitRunner.git(['write-tree'], cwd, { env });
   });

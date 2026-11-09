@@ -90,7 +90,7 @@ async function flip(
   database: Pick<record.StateDatabase, 'save'> = record,
 ): Promise<void> {
   executionRecord.activity = { busy, generation: executionRecord.activity.generation + 1 };
-  await database.save(executionRecord);
+  database.save(executionRecord);
 }
 
 // Clean at HEAD: neither the index nor the flag-aware tree differs from it. Unlike git status this sees edits that
@@ -116,9 +116,9 @@ export async function readActivity(
   commonDir: string,
   worktreePath: string,
 ): Promise<record.ExecutionRecord['activity']> {
-  const owner = (await record.loadAll(commonDir, 'ticket')).find(
-    (executionRecord) => paths.pathKey(executionRecord.worktree) === paths.pathKey(worktreePath),
-  );
+  const owner = record
+    .loadAll(commonDir, 'ticket')
+    .find((executionRecord) => paths.pathKey(executionRecord.worktree) === paths.pathKey(worktreePath));
   return owner?.activity ?? { busy: false, generation: 0 };
 }
 

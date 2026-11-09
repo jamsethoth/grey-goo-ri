@@ -297,7 +297,7 @@ test(
       posted.body.includes(terminalMarker(fixture, 'fault-comment')),
       'the fault report has its own Action Marker',
     );
-    const executionRecord = await loadTicket(fixture);
+    const executionRecord = loadTicket(fixture);
     assert.deepEqual(
       writeAhead.openIntents(executionRecord).map((event) => event.actionMarker),
       [terminalMarker(fixture, 'end-comment')],
@@ -330,7 +330,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
 
   const result = await interpreter.runExecution({
     ...fixture.options,
-    record: await loadTicket(fixture),
+    record: loadTicket(fixture),
     admission: {
       kind: 'hold',
       name: 'dirty-worktree',
@@ -349,7 +349,7 @@ test('a hold over an interrupted blocked terminal posts its own comment', async 
   assert.match(posted.body, /human\.txt \(untracked\)/);
   assert.doesNotMatch(posted.body, /### gg: blocked|contradicts/, 'the interrupted blocked comment is not replayed');
   assert.ok(fixture.gh.labels.has('gg:state:needs-human'));
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   assert.equal(executionRecord.state, 'held');
   assert.deepEqual(
     writeAhead.openIntents(executionRecord).map((event) => event.actionMarker),
@@ -369,7 +369,7 @@ test('a crash inside the fault report replays its comment once on resume', async
     interpreter.runExecution({ ...fixture.options, crashAt: { marker: actionMarker, point: 'after-effect' } }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const mid = await loadTicket(fixture);
+  const mid = loadTicket(fixture);
   const result = await interpreter.runExecution({ ...fixture.options, record: mid });
 
   assert.equal(result.fault, true);
@@ -383,7 +383,7 @@ test('a crash inside the fault report replays its comment once on resume', async
   );
   // The faulted Attempt never completed, so its intent stays open on the finished record.
   assert.deepEqual(
-    writeAhead.openIntents(await loadTicket(fixture)).map((event) => event.effect),
+    writeAhead.openIntents(loadTicket(fixture)).map((event) => event.effect),
     ['call'],
   );
 });
@@ -422,7 +422,7 @@ test('a pending fault report keeps its run stop when its comment lookup fails on
   const result = await interpreter.runExecution({
     ...fixture.options,
     deps: { ...fixture.options.deps, gh: lookupDown },
-    record: await loadTicket(fixture),
+    record: loadTicket(fixture),
   });
   assert.equal(result.fault, true);
   assert.equal(
@@ -465,7 +465,7 @@ test('a rejecting harness is an unexpected fault', async (t) => {
   assert.equal(result.fault, true);
   assert.equal(fixture.harness.calls.length, 1, 'never retried');
   assert.equal(fixture.executionRecord.state, 'fault');
-  assert.equal((await loadTicket(fixture)).state, 'fault', 'the record is marked on disk');
+  assert.equal(loadTicket(fixture).state, 'fault', 'the record is marked on disk');
   const end = fixture.readEvents().at(-1) as events.TicketEndEvent;
   assert.equal(end.type, 'ticket_end');
   assert.equal(end.outcome, 'needs-human');
@@ -486,7 +486,7 @@ test('a fault whose terminal comment also fails is still recorded as a fault', a
   const result = await interpreter.runExecution(fixture.options);
 
   assert.equal(result.fault, true);
-  assert.equal((await loadTicket(fixture)).state, 'fault');
+  assert.equal(loadTicket(fixture).state, 'fault');
   const end = fixture.readEvents().at(-1) as events.TicketEndEvent;
   assert.equal(end.type, 'ticket_end');
   assert.match(end.error!, /harness exploded/);
@@ -500,7 +500,7 @@ test('a harness rejecting with an empty error is still a fault', async (t) => {
   const result = await interpreter.runExecution(fixture.options);
 
   assert.equal(result.fault, true);
-  assert.equal((await loadTicket(fixture)).state, 'fault');
+  assert.equal(loadTicket(fixture).state, 'fault');
   const end = fixture.readEvents().at(-1) as events.TicketEndEvent;
   assert.equal(end.type, 'ticket_end');
   assert.ok(end.error, 'ticket_end carries a non-empty error');
@@ -511,7 +511,7 @@ test('a CrashError propagates untouched', async (t) => {
   const fixture = await golden.fixture(t, { responses: { [keys.responseKey('red', 1, 'red', 1)]: { throw: crash } } });
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err === crash);
 
-  assert.equal((await loadTicket(fixture)).state, 'active');
+  assert.equal(loadTicket(fixture).state, 'active');
   assert.ok(!fixture.gh.calls.some((call) => call.args[0] === 'issue'), 'no label change and no comment');
   assert.ok(!fixture.readEvents().some((event) => event.type === 'ticket_end'));
 });

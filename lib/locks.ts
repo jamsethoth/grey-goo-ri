@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
+import * as clockModule from './clock.ts';
 
 export class LockTimeoutError extends Error {
   constructor(name: string, timeoutMs: number) {
@@ -69,7 +69,7 @@ export const REPO_LOCK_TIMEOUT_MS = 600_000;
 // point passes neither, so the wall clock times the waits and every attempt runs as it is; a test passes either to
 // time, see or contend a lock.
 export function createLocks({
-  clock = { now: Date.now, sleep },
+  clock = clockModule.WALL_CLOCK,
   wrapAttempt = (_lock, attempt) => attempt(),
 }: {
   clock?: LockClock;

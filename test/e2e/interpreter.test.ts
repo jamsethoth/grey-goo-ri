@@ -277,7 +277,7 @@ test('a run stop during a repo-lock wait skips the queued effect and only needs-
   assert.equal(counts.push ?? 0, 0, 'nothing was pushed');
   assert.deepEqual(counts, written, 'no git write follows the stop');
   assert.equal(gitShell.sh(fixture.mainRoot, 'ls-remote', 'origin', `refs/heads/${golden.BRANCH}`), '');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason!.rule, { table: 'fixed', row: 'run-stopped' });
   assert.equal(
@@ -322,7 +322,7 @@ test('a workflow file a survivor changed is an integrity violation on resume', a
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
   assert.equal(result.held, true);
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.match(saved.terminalReason!.text, /protected changed while the Ticket waited/);
   assert.deepEqual(intents(saved, 'reset'), [], 'nothing tells a survivor from a human, so nothing is reset');
   assert.equal(readFileSync(join(fixture.worktree, '.github', 'workflows', 'ci.yml'), 'utf8'), 'name: changed\n');
@@ -340,7 +340,7 @@ test('an ignored Protected File a survivor changed is an integrity violation on 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'needs-human');
   assert.equal(result.held, true);
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.match(saved.terminalReason!.text, /protected changed while the Ticket waited/);
   assert.deepEqual(intents(saved, 'reset'), []);
   assert.equal(readFileSync(local, 'utf8'), '{"survivor":true}\n', 'it is kept for a human to judge');
@@ -381,7 +381,7 @@ test('an edit made while a gate waits for its cleanup holds the Ticket and survi
 
   const result = await laterRun(fixture);
   assert.equal(result.held, true);
-  assert.deepEqual(intents(await loadTicket(fixture), 'reset'), []);
+  assert.deepEqual(intents(loadTicket(fixture), 'reset'), []);
   assert.equal(readFileSync(join(fixture.worktree, 'package.json'), 'utf8'), '{"edited":"by a human"}\n');
 });
 

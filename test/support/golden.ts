@@ -238,7 +238,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
     base: 'main',
   });
   const database = caseDatabase.caseDatabase(t);
-  await database.save(executionRecord);
+  database.save(executionRecord);
   const repos = { root, mainRoot, worktree, commonDir, base, git, fakeGit, fakeIntegrity };
   return observedExecution(repos, { responses, configured, flow, executionRecord, database });
 }

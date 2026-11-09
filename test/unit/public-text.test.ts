@@ -6,6 +6,18 @@ import { join, parse, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as publicText from '../../lib/public-text.ts';
 
+test('the line cutter falls back as configured when no line fits', () => {
+  const omitted = (text: string) => `[${text.length} omitted]`;
+  assert.equal(publicText.lastLines('one\ntwo\nthree', 9, omitted), 'two\nthree');
+  assert.equal(publicText.lastLines('short', 9, omitted), 'short');
+  assert.equal(publicText.lastLines('x'.repeat(12), 9, omitted), '[12 omitted]');
+  assert.equal(publicText.lastLines('x'.repeat(12) + '\n', 9, omitted), '[13 omitted]');
+  assert.equal(
+    publicText.lastLines('abcdefghijkl', 9, (text) => text.slice(-9)),
+    'defghijkl',
+  );
+});
+
 test('publicTail falls back to a character tail when the only later newline ends the text', () => {
   assert.equal(publicText.publicTail('x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');
   assert.equal(publicText.publicTail('a\n' + 'x'.repeat(3100) + '\n', String), 'x'.repeat(2999) + '\n');

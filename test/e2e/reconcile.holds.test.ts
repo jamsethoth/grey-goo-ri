@@ -30,18 +30,12 @@ test('a needs-human label overrides a mid-action record', async (t) => {
   const head = gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD');
   const status = gitShell.sh(fixture.worktree, 'status', '--porcelain');
 
-  const decided = await reconcile.reconcile(
-    crashResume.reconcileOptions(fixture, await executionReads.loadTicket(fixture)),
-  );
+  const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, executionReads.loadTicket(fixture)));
   assert.equal(decided.next, 'abandon');
-  assert.equal(
-    (await executionReads.loadTicket(fixture)).state,
-    'active',
-    'Reconciliation only decides the abandonment',
-  );
+  assert.equal(executionReads.loadTicket(fixture).state, 'active', 'Reconciliation only decides the abandonment');
 
-  await interpreter.runExecution({ ...fixture.options, record: await executionReads.loadTicket(fixture) });
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'abandoned');
+  await interpreter.runExecution({ ...fixture.options, record: executionReads.loadTicket(fixture) });
+  assert.equal(executionReads.loadTicket(fixture).state, 'abandoned');
   assert.equal(fixture.harness.calls.length, 2, 'the Execution is not resumed');
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), head, 'the intended commit is not made');
   assert.equal(gitShell.sh(fixture.worktree, 'status', '--porcelain'), status, 'nothing is discarded');
@@ -70,12 +64,12 @@ for (const point of Object.keys(crashResume.POINTS) as (keyof typeof crashResume
     await assert.rejects(
       interpreter.runExecution({
         ...fixture.options,
-        record: await executionReads.loadTicket(fixture),
+        record: executionReads.loadTicket(fixture),
         crashAt: { marker: hold, point },
       }),
       (err) => err instanceof interpreter.CrashError,
     );
-    const mid = await executionReads.loadTicket(fixture);
+    const mid = executionReads.loadTicket(fixture);
     const older = writeAhead.openIntents(mid).filter((entry) => entry.effect === 'commit');
     assert.equal(older.length, 1);
     const git = new Proxy(
@@ -94,7 +88,7 @@ for (const point of Object.keys(crashResume.POINTS) as (keyof typeof crashResume
     });
     assert.equal(result.outcome, 'needs-human');
     assert.equal(result.held, true, JSON.stringify(result));
-    const final = await executionReads.loadTicket(fixture);
+    const final = executionReads.loadTicket(fixture);
     assert.equal(final.state, 'held');
     assert.deepEqual(writeAhead.openIntents(final), older, 'only the older commit intent stays open, untouched');
     assert.equal(holdComments(fixture, hold).length, 1, 'the hold comment is posted once');
@@ -110,7 +104,7 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'before-effect');
   // An earlier review comment on the PR crashed before its completion.
   const older = golden.markerOf(fixture.executionRecord, 'reviewer', 1, 'pr', 0);
-  await record.intent(await executionReads.loadTicket(fixture), older, 'comment', {
+  record.intent(executionReads.loadTicket(fixture), older, 'comment', {
     target: { kind: 'pr', number: 7 },
     body: 'x',
     bodyHash: 'h',
@@ -120,7 +114,7 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   await assert.rejects(
     interpreter.runExecution({
       ...fixture.options,
-      record: await executionReads.loadTicket(fixture),
+      record: executionReads.loadTicket(fixture),
       crashAt: { marker: hold, point: 'before-effect' },
     }),
     (err) => err instanceof interpreter.CrashError,
@@ -139,11 +133,11 @@ test('a hold report never looks up an older open PR-comment intent', async (t) =
   const result = await interpreter.runExecution({
     ...fixture.options,
     deps: { ...fixture.options.deps, gh },
-    record: await executionReads.loadTicket(fixture),
+    record: executionReads.loadTicket(fixture),
   });
   assert.equal(looked.count, 0, "the older PR's comments are never read");
   assert.equal(result.held, true, JSON.stringify(result));
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.equal(final.state, 'held');
   assert.ok(
     writeAhead.openIntents(final).some((entry) => entry.actionMarker === older),

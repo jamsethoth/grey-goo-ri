@@ -65,7 +65,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution |
 | `lib/ticket-worktree.ts` | the worktree admission runs a Ticket in: the branch checks that hold it, and the other ticket worktrees |
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |
-| `lib/run-context.ts` | the Run context every step reads (`RunContext`), the deps a test replaces (`Deps`), the wall clock, and how each Action is entered, marked and recorded |
+| `lib/run-context.ts` | the Run context every step reads (`RunContext`), the deps a test replaces (`Deps`), and how each Action is entered, marked and recorded |
+| `lib/clock.ts` | the `Clock` a Run and the locks read, and the wall clock they default to |
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
 | `lib/rescue.ts` | the Rescue Ref and the write-ahead reset, one mechanism for a failure routed to another Vertex and for an Interrupted Attempt (#68) |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
@@ -112,7 +113,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
-| `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
+| `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
 | `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
 | `defaults/` | the defaults Layer: `gg.json`, the Run's settings only; it declares no Agents, Flows or Procedures and names no file (ADR 0014) |

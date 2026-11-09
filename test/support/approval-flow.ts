@@ -40,7 +40,7 @@ export const laterRun = async (
   interpreter.runExecution({
     ...fixture.options,
     ...changes,
-    record: await executionReads.loadTicket(fixture),
+    record: executionReads.loadTicket(fixture),
   });
 
 // The Approval Request comments on the Ticket.

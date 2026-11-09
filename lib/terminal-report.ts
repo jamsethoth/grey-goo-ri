@@ -121,7 +121,7 @@ async function savedStop(context: TerminalContext, given: StopDeclaration | unde
   const stop = declaredStop(given);
   executionRecord.terminalStop = stop;
   executionRecord.admissionStop = null;
-  await context.database.save(executionRecord);
+  context.database.save(executionRecord);
   return stop;
 }
 
@@ -192,7 +192,7 @@ async function postComment(
       effect: 'comment',
       payload: { target: { kind: 'issue', number }, body, bodyHash: config.sha256(body) },
       perform: async (payload) => ({
-        id: github.commentId(await context.gh.comment(payload.target.number, payload.body, context.cwd)),
+        id: (await context.gh.comment(payload.target.number, payload.body, context.cwd)).id,
       }),
     }),
   );
@@ -201,7 +201,7 @@ async function postComment(
 // An Execution that ends waits for nothing, so the Await Labels it may have on the issue come down: an epic Run reads
 // one as Pending.
 function asked({ record: executionRecord, labelPrefix }: TerminalContext): string[] {
-  const names = labels.labelsFor(labelPrefix ?? labels.DEFAULT_PREFIX);
+  const names = labels.labelsFor(labelPrefix);
   const { approvalRequest, visitState } = executionRecord;
   return [
     ...(approvalRequest ? [names.await(approvalRequest.vertex)] : []),
@@ -211,7 +211,7 @@ function asked({ record: executionRecord, labelPrefix }: TerminalContext): strin
 
 // The end's State Label replaces in-progress; an abandonment, under the human's label, only takes labels down.
 function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
-  const { record: executionRecord, labelPrefix = labels.DEFAULT_PREFIX } = context;
+  const { record: executionRecord, labelPrefix } = context;
   const state = labels.labelsFor(labelPrefix).state;
   const change = { add: stop?.abandoned ? [] : [state(name)], remove: [state('in-progress'), ...asked(context)] };
   return tolerated(
@@ -273,7 +273,7 @@ export async function report(
   if (!stop?.abandoned || stop.inProgress || asked(context).length) await setStateLabel(context, reporting);
   executionRecord.state = landedState(name, stop);
   // The final state and ticket_end commit together: a Terminal has landed in both or in neither.
-  await context.database.save(executionRecord, () =>
+  context.database.save(executionRecord, () =>
     context.events('ticket_end', {
       run: context.run,
       execution: executionRecord.execution,

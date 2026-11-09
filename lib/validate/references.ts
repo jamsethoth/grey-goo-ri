@@ -198,7 +198,7 @@ function tableFields(found: Found[], proc: checked.CheckedProcedure, table: chec
 }
 
 // Every typed reference of a Procedure, given a scope for `inputs`, and each table whose fields all type.
-export function typeReferences(proc: checked.CheckedProcedure, typing: Typing) {
+function typeReferences(proc: checked.CheckedProcedure, typing: Typing) {
   const found: Found[] = [];
   actionReferences(found, proc, procedures.object(visitScopeSchema(proc, 'passed', typing.inputs)));
   const falls: Partial<Record<checked.TableName, Typed>> = {};

@@ -9,9 +9,9 @@ import * as golden from './golden.ts';
 type GoldenFixture = golden.GoldenFixture;
 type Readable = Pick<GoldenFixture, 'readEvents'>;
 
-// The saved record of the fixture's Ticket, freshly loaded.
-export const loadTicket = (fixture: { commonDir: string }): Promise<record.ExecutionRecord> =>
-  record.load(fixture.commonDir, 'ticket', golden.TICKET) as Promise<record.ExecutionRecord>;
+// The saved record of a Ticket, the golden fixture's by default, freshly loaded.
+export const loadTicket = (fixture: { commonDir: string }, ticket = golden.TICKET): record.ExecutionRecord =>
+  record.load(fixture.commonDir, 'ticket', ticket) as record.ExecutionRecord;
 
 // The saved row read without awaiting, for a getter that cannot await.
 export const ticketRow = (fixture: { commonDir: string }): record.ExecutionRecord =>

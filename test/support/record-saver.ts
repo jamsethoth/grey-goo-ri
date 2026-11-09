@@ -18,7 +18,7 @@ if (commonDir) {
   });
   for (let i = 1; i <= Number(count); i++) {
     executionRecord.activity = { busy: i % 2 === 1, generation: i };
-    await record.save(executionRecord);
+    record.save(executionRecord);
   }
   stateDatabase.close(commonDir);
 }

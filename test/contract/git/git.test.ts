@@ -2,7 +2,7 @@
 // verb whose fake drifts from git fails here. Cases the fake cannot model run on real git alone, at the end.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as gitModule from '../../../lib/git.ts';
@@ -659,6 +659,25 @@ test('a push writes no upstream into .git/config', async (t) => {
   assert.equal(spawnSync('git', ['config', '--get', 'branch.ticket/9-thing.remote'], { cwd: directory }).status, 1);
 });
 
+// git trusts an entry's cached stat data only when the file is older than the index file itself; one modified in the
+// index's own second it reads again (racy git). The rewrite here is a second visit's same-size test, in the second the
+// index was written, with the fingerprint taken in a later second (#317). The index is written at the end of that
+// second, so a copy whose mtime is rounded up lands in the next one. The times are set so the case does not wait for
+// the clock, and ctime, which cannot be set, is left out.
+test('fingerprint sees a same-size rewrite made in the second the index was written', async (t) => {
+  const { mainRoot: directory, commit } = realRepo(t);
+  gitShell.sh(directory, 'config', 'core.trustctime', 'false');
+  const file = join(directory, 'adds.test.mjs');
+  const second = Math.floor(Date.now() / 1000) - 10;
+  writeFileSync(file, 'a - b\n');
+  utimesSync(file, second, second);
+  const head = commit(directory, 'subtract');
+  writeFileSync(file, 'a + b\n');
+  utimesSync(file, second, second);
+  utimesSync(join(directory, '.git', 'index'), second + 0.9996, second + 0.9996);
+  assert.notEqual((await gitModule.fingerprint(directory)).tree, await gitModule.treeOf(directory, head));
+});
+
 // A git whose index.lock waits are recorded and run `during` in place of the wait.
 function recordWaits(during = () => {}) {
   const waits: number[] = [];
@@ -695,6 +714,23 @@ test('a git write surfaces the error when index.lock never clears', async (t) =>
   assert.deepEqual(waits, [100, 200, 400, 800], 'retried with backoff before giving up');
   assert.equal(gitShell.sh(directory, 'rev-parse', 'HEAD'), before);
 });
+
+// Off Windows a path differing only in case is another directory, so another repository's worktree there is not ours.
+test(
+  'ensureWorktree treats paths differing only in case as different off Windows',
+  { skip: process.platform === 'win32' && 'not on Windows' },
+  async (t) => {
+    const { root, mainRoot } = realRepo(t);
+    const other = join(root, 'MAIN');
+    gitShell.sh(root, 'clone', '-q', mainRoot, other);
+    const path = join(root, 'wt', 'ticket-4');
+    gitShell.sh(other, 'worktree', 'add', '-q', '-b', 'ticket/4-x', path);
+    await assert.rejects(
+      gitModule.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' }),
+      (err: Error) => err.message.includes(`${path} exists but is not a git worktree of this repo`),
+    );
+  },
+);
 
 test('conflictedPaths names each path of a merge conflict once', async (t) => {
   const { mainRoot: directory, branch, commit } = realRepo(t);

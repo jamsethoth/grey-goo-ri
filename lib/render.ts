@@ -179,8 +179,6 @@ export async function renderTemplate(
   return walk(nodes, []);
 }
 
-export const list = (items: unknown[] | null | undefined, prefix = '- '): string =>
-  items?.length ? items.map((item) => `${prefix}${item}`).join('\n') : '_none_';
 // `held` is what the fence holds, its info string first. The fence outruns any run of its character in it so agent text
 // cannot close it early; an info string that came to hold a backtick takes a tilde fence, which Markdown allows it.
 function fenceOf(held: string, { char, ticks }: FenceOpening): string {
@@ -191,43 +189,6 @@ function fenceOf(held: string, { char, ticks }: FenceOpening): string {
 }
 export const fence = (given: unknown, redact: publicText.Redact = publicText.publicText): string =>
   fenceOf(`\n${publicText.publicTail(String(given ?? '').trim(), redact)}\n`, { char: '`', ticks: 3 });
-
-// A Ticket a Plan publishes.
-export interface PlannedTicket {
-  goal: string;
-  inScope?: unknown[];
-  outOfScope?: unknown[];
-  dod?: unknown[];
-  tests?: unknown[];
-  qaHints?: unknown[];
-}
-
-export function ticketBody(ticket: PlannedTicket, epic: number): string {
-  return `Part of #${epic}.
-
-## Goal
-${ticket.goal}
-
-## In scope
-${list(ticket.inScope)}
-
-## Out of scope
-${list(ticket.outOfScope)}
-
-## Definition of done
-${list(ticket.dod, '- [ ] ')}
-
-## Tests to write first
-${list(ticket.tests)}
-
-## QA hints
-${list(ticket.qaHints)}
-`;
-}
-
-export function epicBody(plan: { summary: string }): string {
-  return `${plan.summary}\n\nTickets are sub-issues of this epic. Run with \`gg run <this issue number>\`.\n`;
-}
 
 // What a commit message names: the Action's kind, the Ticket, the agent's summary, and the Vertex and Agent that made
 // it.

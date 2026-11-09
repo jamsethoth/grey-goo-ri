@@ -176,7 +176,7 @@ test(
     const { outcome } = await interpreter.runExecution(fixture.options);
 
     assert.equal(outcome, 'ready-for-qa');
-    const executionRecord = await loadTicket(fixture);
+    const executionRecord = loadTicket(fixture);
     assert.deepEqual(
       sent.map((actionMarker) =>
         executionRecord.writeAheadLog.filter((entry) => entry.actionMarker === actionMarker).map((entry) => entry.step),

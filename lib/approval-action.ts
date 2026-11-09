@@ -23,7 +23,7 @@ export interface Consumption extends pendingReport.LabelPayload {
   decision: { instance: string; event: number; actor: string | undefined; time: string; outcome: string; next: string };
 }
 
-const namesOf = (runContext: RunContext) => labels.labelsFor(runContext.labelPrefix ?? labels.DEFAULT_PREFIX);
+const namesOf = (runContext: RunContext) => labels.labelsFor(runContext.labelPrefix);
 
 // One of a request's own Actions, outside the Procedure: `<action>.<part>.<request number>`, which no
 // declared Action id can name, since an id holds no "." (3.3). The number is in the name, not the Attempt: an Action's
@@ -108,7 +108,7 @@ async function request(runContext: RunContext, running: Running, previous: Pendi
     ...(await digestInput(runContext)),
   });
   executionRecord.approvalRequest = instance;
-  await runContext.database.save(executionRecord);
+  runContext.database.save(executionRecord);
   return finishRequest(runContext, running, instance);
 }
 
@@ -178,7 +178,7 @@ function consumptionOf(
 // What the issue shows now. A login GitHub does not know has no permission (github.collaboratorPermission).
 async function readDecision(runContext: RunContext, running: Running, instance: PendingInstance) {
   const { gh, record: executionRecord, cwd } = runContext;
-  const prefix = runContext.labelPrefix ?? labels.DEFAULT_PREFIX;
+  const prefix = runContext.labelPrefix;
   const timeline = await gh.issueEvents(executionRecord.ticket, cwd);
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
   const permissions: Record<string, string> = {};

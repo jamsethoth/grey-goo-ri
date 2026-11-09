@@ -221,7 +221,7 @@ test('a stray write into an idle worktree is attributed to the running action', 
   epicRun.ticketHarnesses(fixture, [21, 22], {
     before: async (ticket, call) => {
       if (ticket !== 21 || call.phase !== 'red') return;
-      seen.bActivity = (await record.load(fixture.commonDir, 'ticket', 22))?.activity;
+      seen.bActivity = record.load(fixture.commonDir, 'ticket', 22)?.activity;
       writeFileSync(join(epicRun.worktreeOf(fixture, 22), 'package.json'), '{ "stray": true }\n');
     },
   });
@@ -261,7 +261,7 @@ test("a busy worktree is never attributed to another ticket's action", { timeout
         return;
       }
       // B's own Action changes its worktree during A's.
-      seen.bActivity = (await record.load(fixture.commonDir, 'ticket', 22))?.activity;
+      seen.bActivity = record.load(fixture.commonDir, 'ticket', 22)?.activity;
       writeFileSync(join(epicRun.worktreeOf(fixture, 22), 'b-at-work.txt'), 'B at work\n');
     },
   });

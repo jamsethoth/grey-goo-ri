@@ -190,7 +190,7 @@ export async function rescueAndReset(
     effectErrors.crashPoint(runContext, resetMarker, 'before-intent');
   }
   await resetRescued(runContext, rescuing, payload, untracked);
-  await runContext.database.complete(executionRecord, actionMarker, {
+  runContext.database.complete(executionRecord, actionMarker, {
     event: () =>
       runContext.emit({ ...actionIdentity, action: 'rescue' }, startedAt, {
         outcome: 'ok',

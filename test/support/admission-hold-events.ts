@@ -13,7 +13,7 @@ export async function assertAdmissionHoldEvents(
   hold: string,
 ): Promise<void> {
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-  const executionRecord = await executionReads.loadTicket(fixture);
+  const executionRecord = executionReads.loadTicket(fixture);
   assert.equal(executionRecord?.terminalReason?.decidedBy.hold, hold);
   assert.equal(executionRecord.state, 'held');
   const ticketEvents = fixture.readEvents().filter((event) => 'ticket' in event && event.ticket === golden.TICKET);

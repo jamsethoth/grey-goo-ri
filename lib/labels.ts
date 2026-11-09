@@ -13,7 +13,7 @@ export const hasLabel = (names: Iterable<string>, wanted: string): boolean =>
   [...names].some((name) => key(name) === key(wanted));
 
 // The label prefix when the configuration names none.
-export const DEFAULT_PREFIX = 'gg';
+const DEFAULT_PREFIX = 'gg';
 
 // A label gg reads back: a State Label's name (an unknown one as written), or the Vertex of an Await Label, or the
 // Vertex and Outcome of a Decide Label.

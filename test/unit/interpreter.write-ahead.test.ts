@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,7 +36,7 @@ test('a completed call is not rerun after a crash before the next action', async
       }),
       isCrash,
     );
-    const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+    const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
 
     assert.equal(result.outcome, 'ready-for-qa');
     assert.equal(fixture.harness.calls.length, 2, 'red and green run once each');
@@ -55,7 +55,7 @@ test('a completed call is not rerun after a crash before the next action', async
       interpreter.runExecution({ ...fixture.options, crashAt: { marker: call, point: 'after-completion' } }),
       isCrash,
     );
-    const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+    const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
 
     assert.equal(result.outcome, 'ready-for-qa');
     assert.equal(
@@ -73,7 +73,7 @@ test('a completed call is not rerun after a crash before the next action', async
       reviews.map((event) => event.outcome),
       ['changes'],
     );
-    const final = await loadTicket(fixture);
+    const final = loadTicket(fixture);
     const routed = 'the saved changes result routed to the fix';
     assert.equal(final.traversals.get('reviewer->implementer-fix:changes'), 1, routed);
     const visits = { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1, publish: 1 };
@@ -102,12 +102,12 @@ for (const [name, agentWrites] of agentEdits) {
     };
     await assert.rejects(interpreter.runExecution(fixture.options), isCrash);
     const left = readFileSync(local, 'utf8');
-    const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+    const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
 
     assert.equal(result.held, true, JSON.stringify(result));
     assert.equal(fixture.harness.calls.length, 0, 'no agent runs again over the interrupted Attempt');
     assert.equal(readFileSync(local, 'utf8'), left, 'nothing is restored or discarded');
-    const final = await loadTicket(fixture);
+    const final = loadTicket(fixture);
     assert.equal(final.state, 'held');
     const red = actionMarker(fixture, 'red', 'red');
     assert.deepEqual(
@@ -153,11 +153,11 @@ test('the repeat Check appends once per visit across a crash', async (t) => {
   const result = await interpreter.runExecution({
     ...fixture.options,
     events: crashingEvents,
-    record: await loadTicket(fixture),
+    record: loadTicket(fixture),
   });
 
   assert.equal(result.outcome, 'ready-for-qa');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.deepEqual(
     final.outputs.filter((output) => output.action === 'repeat').map((output) => [output.vertex, output.visit]),
     [
@@ -192,7 +192,7 @@ test('the terminal stop survives a crash before the first terminal action', asyn
   );
   restore();
   assert.equal(ticketComments(fixture).length, 0);
-  const result = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+  const result = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
 
   assert.equal(result.outcome, 'needs-human');
   const posted = ticketComments(fixture);
@@ -218,7 +218,7 @@ test('attempt numbering continues after resume', async (t) => {
     return [];
   };
   await assert.rejects(interpreter.runExecution({ ...fixture.options, others }), isCrash);
-  const result = await interpreter.runExecution({ ...fixture.options, others, record: await loadTicket(fixture) });
+  const result = await interpreter.runExecution({ ...fixture.options, others, record: loadTicket(fixture) });
 
   assert.equal(result.outcome, 'ready-for-qa');
   assert.deepEqual(
@@ -233,7 +233,7 @@ test('attempt numbering continues after resume', async (t) => {
     'the resume runs Attempt 2',
   );
   assert.equal(fixture.harness.calls[1].resume, 'fake-session-1', 'Attempt 2 resumes the session Attempt 1 saved');
-  assert.deepEqual((await loadTicket(fixture)).retries[RED_RETRIES], { timeout: 1 }, 'one retry consumed');
+  assert.deepEqual(loadTicket(fixture).retries[RED_RETRIES], { timeout: 1 }, 'one retry consumed');
 });
 
 test('a failed Event insert at an Action completion saves nothing more of that record', async (t) => {
@@ -242,7 +242,7 @@ test('a failed Event insert at an Action completion saves nothing more of that r
   const err = await rejectionOf(interpreter.runExecution(fixture.options));
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active', 'no fault is saved over the failed transition');
   assert.deepEqual(saved.sessions, {}, 'the call result rolled back with its Event');
   assert.deepEqual(writeAheadSteps(saved, actionMarker(fixture, 'red', 'red')), ['intent']);
@@ -272,7 +272,7 @@ test('a label update whose failure was saved before its completion is retried on
     (err: unknown) => err instanceof record.RecordSaveError && err.cause instanceof interpreter.CrashError,
   );
   const label = attemptMarker(fixture, 'ready-for-qa', 1, 'end-label', 0);
-  const mid = await loadTicket(fixture);
+  const mid = loadTicket(fixture);
   assert.deepEqual(
     mid.writeAheadLog.filter((entry) => entry.actionMarker === label).map((entry) => [entry.step, entry.evidence]),
     [
@@ -285,7 +285,7 @@ test('a label update whose failure was saved before its completion is retried on
   const result = await interpreter.runExecution({ ...fixture.options, events: crashingEvents, record: mid });
   assert.equal(result.outcome, 'ready-for-qa');
   assert.ok(fixture.gh.labels.has('gg:state:ready-for-qa'), 'the failed label update is made on resume');
-  assert.equal(writeAheadSteps(await loadTicket(fixture), label).at(-1), 'complete');
+  assert.equal(writeAheadSteps(loadTicket(fixture), label).at(-1), 'complete');
   assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 1);
 });
 
@@ -313,22 +313,22 @@ for (const [name, dropTranscript, resume] of transcripts) {
       };
       await assert.rejects(interpreter.runExecution({ ...fixture.options, others }), isCrash);
       // Reshaped as an earlier gg saved it: no call intents, evidence or settled results, and no heartbeat.
-      const legacy = await loadTicket(fixture);
+      const legacy = loadTicket(fixture);
       legacy.writeAheadLog = legacy.writeAheadLog.filter((entry) => entry.effect !== 'call');
       legacy.visitState!.settled = null;
       legacy.heartbeat = null;
       assert.equal(legacy.cursor.attempt, 2);
       assert.deepEqual(legacy.retries[RED_RETRIES], { timeout: 1 });
-      await record.save(legacy);
+      record.save(legacy);
       dropTranscript(legacy.sessions[keys.sessionKey({ vertex: 'red', visit: 1, action: 'red' })].transcriptPath!);
 
-      const result = await interpreter.runExecution({ ...fixture.options, others, record: await loadTicket(fixture) });
+      const result = await interpreter.runExecution({ ...fixture.options, others, record: loadTicket(fixture) });
       assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
       const call = fixture.harness.calls[1];
       assert.equal(call.marker, attemptMarker(fixture, 'red', 1, 'red', 0, 2), 'the resume runs Attempt 2');
       assert.equal(call.resume, resume, 'from the session the record saved, when it can be resumed');
       assert.ok(call.brief!.startsWith('RED PHASE'), 'with the full Brief');
-      assert.deepEqual((await loadTicket(fixture)).retries[RED_RETRIES], { timeout: 1 }, 'the spent budget is kept');
+      assert.deepEqual(loadTicket(fixture).retries[RED_RETRIES], { timeout: 1 }, 'the spent budget is kept');
     },
   );
 }
@@ -347,18 +347,19 @@ for (const [kind, stopOptions, state] of stops) {
     const restore = caseDatabase.failAppends(t, (event) => event.type === 'ticket_end');
     const err = await rejectionOf(interpreter.runExecution({ ...fixture.options, ...stopOptions }));
     assert.equal(err?.name, 'RecordSaveError', String(err));
-    const mid = await loadTicket(fixture);
+    const mid = loadTicket(fixture);
     assert.equal(mid.state, 'active', 'no finished state without its ticket_end');
     assert.ok(interpreter.pendingReport(mid), 'the decided report waits for the next Run');
 
     restore();
     await interpreter.runExecution({ ...fixture.options, record: mid });
-    assert.equal((await loadTicket(fixture)).state, state);
+    assert.equal(loadTicket(fixture).state, state);
     assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 1);
   });
 }
 
-test('the record carries the last heartbeat of a running call', async (t) => {
+// A fixture whose red call hangs until cancelled, and a promise that settles once that call has started.
+async function hangingRed(t: TestContext) {
   const red = golden.firstVisitResponses[RED_CALL];
   const fixture = await golden.fixture(t, {
     responses: firstVisit.firstVisitWith({
@@ -376,14 +377,19 @@ test('the record carries the last heartbeat of a running call', async (t) => {
     if (call.attempt === 1) started();
     return result;
   };
+  return { fixture, running };
+}
+
+test('the record carries the last heartbeat of a running call', async (t) => {
+  const { fixture, running } = await hangingRed(t);
   const execution = interpreter.runExecution(fixture.options);
   try {
     await running;
-    const first = (await loadTicket(fixture)).heartbeat;
+    const first = loadTicket(fixture).heartbeat;
     assert.match(String(first), /^2026-10-15T/, 'the heartbeat is saved with the Attempt intent');
     await fixture.clock.sleep(60_000);
     fixture.clock.beat();
-    const beating = await loadTicket(fixture);
+    const beating = loadTicket(fixture);
     assert.ok(Date.parse(beating.heartbeat!) > Date.parse(first!), 'updated while the call runs');
     assert.equal(beating.activity.busy, true, 'a heartbeat leaves the activity as it is');
   } finally {
@@ -392,5 +398,23 @@ test('the record carries the last heartbeat of a running call', async (t) => {
     await execution.catch(() => {});
   }
   assert.equal((await execution).outcome, 'ready-for-qa');
-  assert.equal((await loadTicket(fixture)).heartbeat, null, 'cleared once the call ends');
+  assert.equal(loadTicket(fixture).heartbeat, null, 'cleared once the call ends');
+});
+
+// A heartbeat fires on a timer, where a throw would end the process, so its failed save fails the call instead.
+test('a heartbeat that cannot be saved fails the call, not the timer', async (t) => {
+  const { fixture, running } = await hangingRed(t);
+  const execution = interpreter.runExecution(fixture.options);
+  try {
+    await running;
+    await fixture.clock.sleep(60_000);
+    const undo = caseDatabase.failSaves(t, () => true);
+    assert.doesNotThrow(() => fixture.clock.beat(), 'the timer sees no throw');
+    undo();
+  } finally {
+    // Settled before the case ends either way, so no Execution outlives its temp repo.
+    fixture.harness.cancel();
+    await execution.catch(() => {});
+  }
+  await assert.rejects(execution, (err: unknown) => err instanceof record.RecordSaveError);
 });

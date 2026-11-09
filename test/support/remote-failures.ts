@@ -66,7 +66,7 @@ export async function retriedOnce(
 ) {
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.deepEqual(fixture.sleeps, [60_000]);
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.deepEqual(executionReads.writeAheadSteps(final, marker), ['intent', 'evidence', 'complete']);
   assert.equal(final.retries[key]!.remote!.count, 1);
   return final;

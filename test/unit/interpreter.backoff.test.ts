@@ -59,7 +59,7 @@ test('a transient pr-upsert failure is retried and opens one PR', async (t) => {
   fixture.gh.fail({ matches: isPr('create'), status: 502 });
   let during;
   fixture.clock.onSleep = async () => {
-    during = (await loadTicket(fixture)).pr;
+    during = loadTicket(fixture).pr;
   };
   const result = await interpreter.runExecution(fixture.options);
 
@@ -192,7 +192,7 @@ for (const [name, key, inject, text] of [
       fixture.logs.some((line) => line.includes(`${key}: transient failure, retries exhausted after 2 of 2`)),
       fixture.logs.join('\n'),
     );
-    const final = await loadTicket(fixture);
+    const final = loadTicket(fixture);
     assert.equal(final.retries[key]!.remote!.count, 2);
     assert.equal(final.state, 'fault');
     assert.deepEqual([...fixture.gh.labels], ['gg:state:needs-human']);
@@ -228,14 +228,14 @@ for (const [name, key, inject, text] of [
     const launches = inject(fixture);
     // Two transient failures spend the budget; the second retry crashes as it launches.
     await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
-    const mid = await loadTicket(fixture);
+    const mid = loadTicket(fixture);
     assert.equal(mid.retries[key]!.remote!.count, 2);
     assert.equal(mid.retries[key]!.remote!.started, true, 'the last retry launched');
 
     const result = await interpreter.runExecution({ ...fixture.options, record: mid });
     assert.equal(result.fault, true, JSON.stringify(result));
     assert.equal(launches(), 3, 'no fourth launch');
-    const final = await loadTicket(fixture);
+    const final = loadTicket(fixture);
     assert.equal(final.retries[key]!.remote!.count, 2, 'the budget is not refilled');
     assert.equal(final.terminalReason!.text, text);
     assert.ok(
@@ -273,7 +273,7 @@ test('a backoff keeps one idle generation across timer chunks', async (t) => {
   fixture.gh.fail(rateLimitedFor(2 * HOUR));
   const seen: record.ExecutionRecord['activity'][] = [];
   fixture.clock.onSleep = async () => {
-    seen.push((await loadTicket(fixture)).activity);
+    seen.push(loadTicket(fixture).activity);
   };
   const result = await interpreter.runExecution(fixture.options);
 
@@ -297,7 +297,7 @@ for (const [name, deadline, shown] of [
       interpreter.runExecution({ ...fixture.options, crashAt: { marker, point: 'after-retry-saved' } }),
       (err) => err instanceof interpreter.CrashError,
     );
-    const mid = await loadTicket(fixture);
+    const mid = loadTicket(fixture);
     mid.retries[REVIEW_COMMENT]!.remote!.nextEligibleAt = deadline(fixture.clock.now()) as number;
     const saved = structuredClone(mid.retries[REVIEW_COMMENT]!.remote);
     const result = await interpreter.runExecution({ ...fixture.options, record: mid });
@@ -311,7 +311,7 @@ for (const [name, deadline, shown] of [
       ),
       fixture.logs.join('\n'),
     );
-    const final = await loadTicket(fixture);
+    const final = loadTicket(fixture);
     assert.equal(final.state, 'held');
     assert.deepEqual(final.retries[REVIEW_COMMENT]!.remote, saved, 'the saved retry is kept');
   });
@@ -332,7 +332,7 @@ test('a wait over 31 days from GitHub is held without reserving a retry', async 
     ),
     fixture.logs.join('\n'),
   );
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'held');
   assert.equal(final.retries[REVIEW_COMMENT]!.remote!.count, 0, 'no retry is spent');
 });
@@ -346,7 +346,7 @@ test('a run stop during a backoff ends the Execution at needs-human', async (t) 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   assert.deepEqual(fixture.sleeps, [60_000]);
   assert.equal(commentPosts(fixture).length, 1, 'no retry launched');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason!.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[REVIEW_COMMENT]!.remote, saved, 'the retry stays as saved');
@@ -367,7 +367,7 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
   fixture.gh.fail(onPr({ status: 502 }));
   const posts = crashPost(fixture, 2);
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
-  const mid = await loadTicket(fixture);
+  const mid = loadTicket(fixture);
   const saved = structuredClone(mid.retries[REVIEW_COMMENT]!.remote);
   assert.equal(saved!.started, true, 'the first retry launched');
   // Another Ticket stops the run once this Action is under way, after the Visit's own check.
@@ -382,7 +382,7 @@ test('a latched run stop does not consume a relaunch retry', async (t) => {
 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   assert.equal(posts(), 2, 'not launched again');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.deepEqual(final.retries[REVIEW_COMMENT]!.remote, saved, 'the retry is not spent');
   assert.deepEqual(final.terminalReason!.rule, { table: 'fixed', row: 'run-stopped' });
 });
@@ -413,7 +413,7 @@ test('a run stop during a pr-ready backoff ends at needs-human without marking r
   assert.deepEqual(fixture.sleeps, [60_000]);
   assert.equal(prCalls(fixture, 'ready').length, 1, 'no retry launched');
   assert.equal(fixture.gh.pr()!.isDraft, true, 'the PR is not marked ready');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason!.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[PR_READY]!.remote, saved, 'the retry stays as saved');
@@ -438,7 +438,7 @@ test('a run stop during the ready-for-qa comment backoff ends at needs-human aft
   assert.deepEqual(fixture.sleeps, [60_000]);
   assert.equal(prCalls(fixture, 'ready').length, 1);
   assert.equal(fixture.gh.pr()!.isDraft, false, 'pr-ready had landed');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason!.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[doneComment]!.remote, saved, 'the retry stays as saved');
@@ -461,7 +461,7 @@ test('a run stop during a resume lookup backoff ends at needs-human', async (t) 
     interpreter.runExecution({ ...fixture.options, crashAt: { marker, point: 'after-retry-saved' } }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const mid = await loadTicket(fixture);
+  const mid = loadTicket(fixture);
   const saved = structuredClone(mid.retries[REVIEW_COMMENT]!.remote);
   // Reconciliation's lookup waits out the saved retry; another Ticket stops the run meanwhile.
   const { result } = await backoffRunStop.runStoppedInBackoff(fixture, { executionRecord: mid });
@@ -469,7 +469,7 @@ test('a run stop during a resume lookup backoff ends at needs-human', async (t) 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   assert.deepEqual(fixture.sleeps, [60_000]);
   assert.equal(commentPosts(fixture).length, 1, 'no retry launched');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason!.rule, { table: 'fixed', row: 'run-stopped' });
   assert.deepEqual(final.retries[REVIEW_COMMENT]!.remote, saved, 'the retry stays as saved');
@@ -499,7 +499,7 @@ test('a failed idle save before a backoff allows no later save or effect', async
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
   assert.deepEqual(fixture.sleeps, [], 'never waited');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active', 'no fault is saved');
   assert.equal(saved.terminalStop, null, 'nor its Terminal');
   assert.equal(saved.cursor.vertex, 'reviewer');
@@ -523,7 +523,7 @@ test('a failed busy save after a backoff allows no later save or effect', async 
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
   assert.deepEqual(fixture.sleeps, [60_000]);
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active', 'no fault is saved');
   assert.equal(saved.terminalStop, null, 'nor its Terminal');
   assert.equal(saved.cursor.vertex, 'reviewer');
@@ -574,7 +574,7 @@ test('a remote auth failure stops the run and the next Execution stops before it
   assert.equal(result.fault, undefined, 'a run stop, not a fault');
   assert.equal((runStopEvent(fixture) as events.ActionEvent | null)?.failureClass, 'auth');
   assert.deepEqual(fixture.sleeps, [], 'never retried');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'needs-human');
   assert.deepEqual(final.terminalReason!.rule, { table: 'fixed', row: 'run-stop' });
   assert.equal(final.terminalReason!.text, 'The push at push failed with class auth, which stops the whole run.');
@@ -585,7 +585,7 @@ test('a remote auth failure stops the run and the next Execution stops before it
 
   assert.equal(stopped.outcome, 'needs-human', JSON.stringify(stopped));
   assert.equal(next.harness.calls.length, 0, 'no Action ran');
-  const reason = (await loadTicket(next)).terminalReason!;
+  const reason = loadTicket(next).terminalReason!;
   assert.deepEqual(reason.rule, { table: 'fixed', row: 'run-stopped' });
   assert.equal(
     reason.text,
@@ -608,7 +608,7 @@ test('a remote permission failure faults only its Ticket', async (t) => {
   assert.equal(runStopEvent(fixture), null, 'the run goes on');
   assert.equal(runState.stop, null);
   assert.deepEqual(fixture.sleeps, [], 'never retried');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'fault');
   assert.equal(
     final.terminalReason!.text,
@@ -635,7 +635,7 @@ test("a remote auth failure in a Terminal's report latches the run stop and faul
   assert.equal((runStopEvent(fixture) as events.ActionEvent | null)?.failureClass, 'auth');
   assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
   assert.equal(
-    (await loadTicket(fixture)).terminalReason!.text,
+    loadTicket(fixture).terminalReason!.text,
     'The comment at end-comment failed with class auth (HTTP 401), which stops the whole run; the error is in this ' +
       'comment and on ticket_end.',
   );
@@ -656,7 +656,7 @@ test('a remote run stop whose own report fails becomes a fault that keeps the ru
 
   assert.equal(result.fault, true, JSON.stringify(result));
   assert.equal((runStopEvent(fixture) as events.ActionEvent | null)?.failureClass, 'auth');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'fault');
   assert.ok(
     fixture.readEvents().some((event) => event.type === 'ticket_end'),
@@ -683,7 +683,7 @@ test("a remote auth failure first met in a fault's report keeps the run stop on 
   assert.equal(result.fault, true, JSON.stringify(result));
   assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'comment' });
   assert.equal((runStopEvent(fixture) as events.ActionEvent | null)?.failureClass, 'auth');
-  const final = await loadTicket(fixture);
+  const final = loadTicket(fixture);
   assert.equal(final.state, 'fault');
   assert.equal(
     (runStopEvent(fixture) as events.ActionEvent | null)?.action,
@@ -741,7 +741,7 @@ test('a run stop survives a human abandonment of its Terminal', async (t) => {
   const result = await interpreter.runExecution({ ...fixture.options, runState });
 
   assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
-  assert.equal((await loadTicket(fixture)).state, 'abandoned');
+  assert.equal(loadTicket(fixture).state, 'abandoned');
   assert.equal(runState.stop?.ticket, golden.TICKET);
   assert.equal(result.runStop?.failureClass, 'auth', 'the result reads the run stop from the Action Events');
   assert.deepEqual(
@@ -793,6 +793,6 @@ test("a failed Action's Event that cannot be saved still stops the run and saves
 
   assert.equal(err?.name, 'RecordSaveError', String(err));
   assert.deepEqual(runState.stop, { failureClass: 'auth', ticket: golden.TICKET, source: 'push' });
-  assert.equal((await loadTicket(fixture)).state, 'active', 'no fault is saved');
+  assert.equal(loadTicket(fixture).state, 'active', 'no fault is saved');
   assert.ok(!fixture.readEvents().some((event) => event.type === 'ticket_end'));
 });

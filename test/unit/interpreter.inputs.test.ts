@@ -160,7 +160,7 @@ test('a held Execution saves a Terminal stop that declares every field', async (
     },
   });
   assert.equal(result.held, true, JSON.stringify(result));
-  const { terminalStop } = await loadTicket(fixture);
+  const { terminalStop } = loadTicket(fixture);
   const expected = {
     outcome: 'needs-human',
     response: null,

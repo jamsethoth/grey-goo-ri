@@ -29,7 +29,7 @@ test('an admission failure on an active execution is reported as a fault', async
   assert.equal(run.runExitCode(results), 1, 'a fault exits 1');
   assert.match(runFixture.ticketResult(results)?.error as string, /disk full/);
   assert.equal(fixture.harness.calls.length, 2, 'no agent call beyond the seeded 2');
-  const final = (await record.load(fixture.commonDir, 'ticket', TICKET)) as record.ExecutionRecord;
+  const final = record.load(fixture.commonDir, 'ticket', TICKET) as record.ExecutionRecord;
   assert.equal(final.state, 'fault', 'the record is marked, so it is not retried');
   assert.equal(final.execution, seeded.execution);
   assert.deepEqual(
@@ -70,7 +70,7 @@ async function pendingHoldComment(fixture: RunFixture, openEffects: string[], me
   const first = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
   assert.match(runFixture.ticketResult(first)?.error as string, /HTTP 502/);
-  const mid = await executionReads.loadTicket(fixture);
+  const mid = executionReads.loadTicket(fixture);
   assert.equal(mid?.terminalReason?.decidedBy.hold, 'dirty-worktree', 'the hold is decided durably');
   assert.equal(mid.cursor.vertex, 'needs-human');
   assert.equal(mid.terminalStop?.held, true);
@@ -87,7 +87,7 @@ async function pendingHoldComment(fixture: RunFixture, openEffects: string[], me
 async function landedHoldComment(fixture: RunFixture, mid: record.ExecutionRecord) {
   const second = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   const [open] = writeAhead.openIntents(mid).filter((entry) => entry.effect === 'comment');
   assert.equal(final.execution, mid.execution);
   assert.equal(final.state, 'held');
@@ -194,7 +194,7 @@ test('a resumed pending report emits no second ticket_start', async (t) => {
 
   const second = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(second), 2, JSON.stringify(second));
-  const { execution } = await executionReads.loadTicket(fixture);
+  const { execution } = executionReads.loadTicket(fixture);
   assert.equal(
     fixture.readEvents().filter((event) => event.type === 'ticket_start' && event.execution === execution).length,
     1,
@@ -206,12 +206,12 @@ test('a resumed pending report emits no second ticket_start', async (t) => {
 async function fixedWhileHoldPending(fixture: RunFixture, agentCalls: number, message: string) {
   const failing = runFixture.failComment(fixture);
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
-  const mid = await executionReads.loadTicket(fixture);
+  const mid = executionReads.loadTicket(fixture);
   failing.on = false;
   rmSync(join(fixture.worktree, 'human.txt'));
 
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2, 'the pending hold finishes, not the Ticket');
-  const held = await executionReads.loadTicket(fixture);
+  const held = executionReads.loadTicket(fixture);
   assert.equal(held.execution, mid?.execution);
   assert.equal(held.state, 'held');
   assert.equal(fixture.comments().length, 1);
@@ -229,7 +229,7 @@ test('fixing the worktree while a hold comment is pending still finishes the hol
   const third = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(third), 0, JSON.stringify(third));
   assert.notEqual(
-    (await executionReads.loadTicket(fixture)).execution,
+    executionReads.loadTicket(fixture).execution,
     mid.execution,
     'a fresh hold restarts as a new Execution',
   );
@@ -258,7 +258,7 @@ test('a landed hold comment with a lost response is not posted twice', async (t)
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2);
   assert.equal(fixture.comments().length, 1, 'the marker found it, so it was not posted again');
   assert.equal(fixture.gh.calls.filter((call) => fakeGh.isCommentPost(call.args)).length, 1);
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   const comment = final.writeAheadLog.find((entry) => entry.step === 'intent' && entry.effect === 'comment');
   const ofComment = final.writeAheadLog.filter((entry) => entry.actionMarker === comment?.actionMarker);
   assert.deepEqual(
@@ -277,7 +277,7 @@ test('an ensureWorktree failure without a record is marked and never retried', a
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 1);
   assert.match(runFixture.ticketResult(results)?.error as string, /disk full/);
-  const executionRecord = await executionReads.loadTicket(fixture);
+  const executionRecord = executionReads.loadTicket(fixture);
   assert.equal(executionRecord?.state, 'fault', 'the fault is marked on a record created for it');
   assert.equal(executionRecord.branch, BRANCH);
   assert.equal(executionRecord.worktree, fixture.worktree);
@@ -305,7 +305,7 @@ test('an ensureWorktree failure without a record is marked and never retried', a
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('admission holds emit ticket lifecycle events with their Terminal Reason: a record on another branch', async (t) => {
   const fixture = runFixture.fixture(t);
-  await record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed', branch: 'ticket/99-other' }));
+  record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed', branch: 'ticket/99-other' }));
 
   await admissionHoldEvents.assertAdmissionHoldEvents(fixture, await run.runTarget(fixture.options), 'branch-mismatch');
 });

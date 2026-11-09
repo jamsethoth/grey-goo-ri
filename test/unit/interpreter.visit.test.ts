@@ -52,7 +52,7 @@ async function assertCallIntents(fixture: GoldenRun) {
     calls.map((call) => call.actionMarker),
     [actionMarker(fixture, 'red', 'red'), actionMarker(fixture, 'green', 'green')],
   );
-  const saved = intents(await loadTicket(fixture), 'call') as Intent<{ baseline: { head: string } }>[];
+  const saved = intents(loadTicket(fixture), 'call') as Intent<{ baseline: { head: string } }>[];
   assert.deepEqual(
     saved.map((call) => call.payload.baseline),
     calls.map((call) => call.payload.baseline),
@@ -329,7 +329,7 @@ test(
       (err: unknown) => err instanceof interpreter.CrashError,
     );
 
-    const saved = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
+    const saved = record.load(fixture.commonDir, 'ticket', golden.TICKET)!;
     assert.equal(saved.cursor.vertex, 'ready-for-qa');
     assert.equal(saved.terminalReason?.outcome, 'ok');
     assert.match(saved.terminalReason!.text, new RegExp(`PR #${saved.pr} is ready for review\\.$`));

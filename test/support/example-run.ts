@@ -191,7 +191,7 @@ export async function nextTicket(fixture: golden.GoldenFixture, onRun?: () => vo
     branch,
     base: 'main',
   });
-  await fixture.options.deps.database!.save(next);
+  fixture.options.deps.database!.save(next);
   return {
     record: next,
     options: {

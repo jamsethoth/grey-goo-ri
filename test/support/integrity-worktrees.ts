@@ -10,7 +10,8 @@ export const PROTECTED = ['.agents/', '.claude/', '.codex/', '.mcp.json', 'AGENT
 
 const sh = gitShell.sh;
 
-function newExecution(commonDir: string, ticket: number, worktree: string) {
+// A fresh Execution Record of Ticket `ticket` that owns `worktree`.
+export function worktreeRecord(commonDir: string, ticket: number, worktree: string) {
   return record.createExecutionRecord({
     commonDir,
     ticket,
@@ -47,8 +48,8 @@ export async function twoWorktrees(t: TestContext) {
   sh(own, 'commit', '-q', '-m', 'init');
   sh(own, 'worktree', 'add', '-q', '-b', 'ticket/2', other);
   const commonDir = join(own, '.git');
-  const ownRecord = newExecution(commonDir, 1, own);
-  await record.save(ownRecord);
-  await record.save(newExecution(commonDir, 2, other));
+  const ownRecord = worktreeRecord(commonDir, 1, own);
+  record.save(ownRecord);
+  record.save(worktreeRecord(commonDir, 2, other));
   return { root, own, other, commonDir, ownRecord };
 }
