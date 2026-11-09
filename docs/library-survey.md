@@ -43,7 +43,7 @@ ESLint and tsc run in every suite stage.
 | `typescript` | `~6.0.3` | `tsc --noEmit` checks the `.ts` modules Node runs by stripping types | **Adopted**; held below 6.1, the newest typescript-eslint 8.72 supports, and TypeScript 7's native compiler waits for it |
 | `@types/node` | `^26.6.6` | without it tsc resolves no `node:` module; major 26 matches the Node floor (ADR 0020) | **Adopted**, named in `types` since TypeScript 6 loads no `@types` package unlisted |
 | `eslint` | `^10.14.0` | the epic's rules (names, lengths, nesting, imports, module state), each failure at its line | **Adopted**; a hand-rolled checker would be an AST walker gg would own |
-| `typescript-eslint` | `^8.72.1` | the parser ESLint needs to read `.ts`; no type-aware rules | **Adopted**, parser only |
+| `typescript-eslint` | `^8.72.1` | the parser ESLint needs to read `.ts`, and the type information `no-misused-spread` and `gg/no-map-to-json` read (#327) | **Adopted**: the parser, typed linting through `projectService`, and `no-misused-spread` |
 | `@stylistic/eslint-plugin` | `^5.10.0` | `max-len` and `max-statements-per-line`, which left ESLint core | **Adopted** |
 | `prettier` | `^3.9.10` | one formatting, so diffs and reviews carry no style noise | **Adopted**; configured here, run and checked from grey-goo-ri issue #196 |
 

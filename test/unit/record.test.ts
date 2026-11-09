@@ -179,8 +179,8 @@ test('save writes a records row and never a records directory', async (t) => {
       .map((row) => ({ ...row }));
     /* eslint-disable id-length -- n is the records table's column */
     assert.deepEqual(rows, [
-      { kind: 'epic', n: 1, json: JSON.stringify(withoutCommonDir(epic), null, 2) + '\n' },
-      { kind: 'ticket', n: 8, json: JSON.stringify(withoutCommonDir(executionRecord), null, 2) + '\n' },
+      { kind: 'epic', n: 1, json: recordRow.json(withoutCommonDir(epic)) },
+      { kind: 'ticket', n: 8, json: recordRow.json(withoutCommonDir(executionRecord)) },
     ]);
     /* eslint-enable id-length */
   });
@@ -196,7 +196,7 @@ test('load returns null for a missing row and the record for a saved one', async
   // Changed behind the module's back, so the load must come from the row.
   withDb(commonDir, (db) => {
     db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8").run(
-      JSON.stringify({ ...withoutCommonDir(executionRecord), state: 'ready-for-qa' }),
+      recordRow.json({ ...withoutCommonDir(executionRecord), state: 'ready-for-qa' }),
     );
   });
   const loaded = record.load(commonDir, 'ticket', 8);
@@ -406,7 +406,7 @@ test('a record written before Action ids is corrupt, not misread', async (t) => 
   };
   delete (old as { commonDir?: string }).commonDir;
   withDb(commonDir, (db) =>
-    db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run('ticket', 11, JSON.stringify(old)),
+    db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run('ticket', 11, recordRow.json(old)),
   );
   assert.throws(
     () => record.load(commonDir, 'ticket', 11),

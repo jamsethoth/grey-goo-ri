@@ -113,10 +113,74 @@ const THROWN_CLASS = {
   },
 };
 
+// JSON.stringify writes a Map or a Set as {} and raises nothing (ECMA-262 SerializeJSONObject), so the types it is
+// given must hold none. A lib or package type is not gg's data, and a type with toJSON chooses its own form.
+const LOST_BY_JSON = new Set(['Map', 'ReadonlyMap', 'WeakMap', 'Set', 'ReadonlySet', 'WeakSet']);
+const fromLib = (program, symbol) =>
+  (symbol?.getDeclarations() ?? []).some(
+    (declaration) =>
+      program.isSourceFileDefaultLibrary(declaration.getSourceFile()) ||
+      program.isSourceFileFromExternalLibrary(declaration.getSourceFile()),
+  );
+// A mapped type (Record, Partial, Omit, Readonly) is anonymous, `__type`, and is walked even though lib declares it.
+const isLibNamed = (program, symbol) => symbol?.getName() !== '__type' && fromLib(program, symbol);
+const memberTypes = (checker, program, type, path) => {
+  if (type.isUnionOrIntersection()) return type.types.map((member) => [member, path]);
+  if (type.isTypeParameter()) return [[checker.getBaseConstraintOfType(type), path]].filter(([member]) => member);
+  if (checker.isArrayType(type) || checker.isTupleType(type))
+    return checker.getTypeArguments(type).map((element) => [element, `${path}[]`]);
+  if (checker.getPropertyOfType(type, 'toJSON') || isLibNamed(program, type.getSymbol())) return [];
+  return [
+    ...checker.getPropertiesOfType(type).map((key) => [checker.getTypeOfSymbol(key), `${path}.${key.getName()}`]),
+    ...checker.getIndexInfosOfType(type).map((info) => [info.type, `${path}[key]`]),
+  ];
+};
+// The path to the shallowest Map or Set inside a type, or null; `unknown` and `any` hide theirs.
+function findLost(checker, program, rootType) {
+  const seen = new Set();
+  const pending = [[rootType, 'the value']];
+  while (pending.length) {
+    const [type, path] = pending.shift();
+    if (seen.has(type)) continue;
+    seen.add(type);
+    const symbol = type.getSymbol();
+    const name = symbol?.getName() ?? '';
+    if (LOST_BY_JSON.has(name) && fromLib(program, symbol)) return `${path} (${name})`;
+    pending.push(...memberTypes(checker, program, type, path));
+  }
+  return null;
+}
+const isJsonStringify = ({ callee }) =>
+  callee.type === 'MemberExpression' &&
+  !callee.computed &&
+  callee.object.type === 'Identifier' &&
+  callee.object.name === 'JSON' &&
+  callee.property.name === 'stringify';
 const NO_MAP_TO_JSON = {
-  meta: { type: 'problem', schema: [], messages: { lost: '{{where}}' } },
-  create() {
-    return {};
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      lost:
+        'JSON.stringify writes a Map or Set as {}: {{where}}. Convert it first, with Object.fromEntries or the ' +
+        "owner's toJson, or pass a replacer that converts it.",
+    },
+  },
+  create(context) {
+    const services = context.sourceCode.parserServices;
+    if (!services?.program) throw new Error('gg/no-map-to-json needs type information (parserOptions.projectService)');
+    const checker = services.program.getTypeChecker();
+    return {
+      CallExpression(node) {
+        if (!isJsonStringify(node) || node.arguments.length === 0) return;
+        // A replacer is its owner's conversion (lib/record.ts saveRecord); the rule does not judge it.
+        const replacer = node.arguments[1];
+        if (replacer && !(replacer.type === 'Literal' && replacer.value === null)) return;
+        const type = checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node.arguments[0]));
+        const where = findLost(checker, services.program, type);
+        if (where) context.report({ node, messageId: 'lost', data: { where } });
+      },
+    };
   },
 };
 
@@ -171,6 +235,10 @@ export default defineConfig([
     // The directories tsconfig.json includes: the typed rules read its program. eslint.config.mjs is outside it.
     files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts', 'test/**/*.ts'],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
-    rules: { 'gg/no-map-to-json': 'error' },
+    rules: {
+      // An object spread of a Map gives {}. `[...text]` iterates code points on purpose (lib/public-text.ts).
+      '@typescript-eslint/no-misused-spread': ['error', { allow: [{ from: 'lib', name: 'string' }] }],
+      'gg/no-map-to-json': 'error',
+    },
   },
 ]);
