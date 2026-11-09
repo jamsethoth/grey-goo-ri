@@ -10,7 +10,7 @@ export const PROTECTED = ['.agents/', '.claude/', '.codex/', '.mcp.json', 'AGENT
 
 const sh = gitShell.sh;
 
-// A fresh Execution Record of 	icket that owns worktree.
+// A fresh Execution Record of Ticket `ticket` that owns `worktree`.
 export function worktreeRecord(commonDir: string, ticket: number, worktree: string) {
   return record.createExecutionRecord({
     commonDir,
