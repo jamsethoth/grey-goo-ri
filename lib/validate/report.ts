@@ -105,10 +105,12 @@ export const PROBLEM_CODES = [
   // What gg doctor reads from GitHub beside the configuration.
   'repository-labels-missing',
   'repository-labels-unread',
-  // The repository Layer's commands and testPaths, and each Vertex's Harness, which gg run preflight checks.
+  // The repository Layer's commands and testPaths, each Vertex's Harness and the Flow gg run runs, which its preflight
+  // checks.
   'harness-preflight-failed',
   'invalid-command-line',
   'invalid-glob',
+  'unknown-flow',
 ] as const;
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
@@ -196,6 +198,7 @@ interface ProblemParams {
   'invalid-command-line': { command: string; file: string };
   'invalid-glob': { glob: unknown; file: string };
   'harness-preflight-failed': { vertex: string; harness: string; reason: string };
+  'unknown-flow': { name: string; declared: string[] };
   'table-never-applies': { table: string };
   'optional-input-unsure': { input: string; vertex: string };
   'required-input-unsure': { input: string; vertex: string };

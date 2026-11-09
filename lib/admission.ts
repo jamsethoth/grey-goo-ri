@@ -12,6 +12,7 @@ import * as labels from './labels.ts';
 import * as marker from './marker.ts';
 import type * as model from './model.ts';
 import * as reconcile from './reconcile.ts';
+import * as runFlows from './run-flows.ts';
 import * as record from './record.ts';
 import * as publicText from './public-text.ts';
 import type * as runContext from './run-context.ts';
@@ -24,12 +25,13 @@ export interface Repo {
   name: string;
 }
 
-// What every Ticket of a Run reads: the Run's configuration and Pinned Configuration, its deps with gh and git as the
-// Run shares them (labels ensured once, writes under the repo lock), its log and Events, and its run stop.
+// What every Ticket of a Run reads: the Run's configuration and the Flow a new Execution pins, every declared Flow, the
+// deps with gh and git as the Run shares them (labels ensured once, writes under the repo lock), Events and run stop.
 export interface AdmissionContext {
   config: config.Config;
   flow: model.ResolvedFlow;
   hash: string;
+  flows: ReadonlyMap<string, runFlows.PinnedFlow>;
   runId: string;
   repo: Repo;
   harnesses: Record<string, unknown>;
@@ -199,6 +201,9 @@ function notResumedSkip(admitting: Admitting): TicketResult | null {
     );
   if (executionRecord && executionRecord.state !== 'active')
     return skip(admitting, `its Execution Record is finished (${executionRecord.state}); it is not resumed`);
+  // A resumed Execution runs the Flow its record pins (X2); one no longer declared waits, kept, until it is again.
+  if (executionRecord && !admitting.context.flows.has(executionRecord.flow))
+    return skip(admitting, `its Execution Record runs Flow ${executionRecord.flow}, which is no longer declared`);
   if (!executionRecord && labels.hasLabel(admitting.issueLabels, state('in-progress')))
     return skip(admitting, `it is labelled ${state('in-progress')} with no Execution Record behind it`);
   return null;
@@ -343,9 +348,10 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
 async function runAdmitted(admitting: Admitting, decided: Decided): Promise<TicketResult> {
   const { context, issue, ticket } = admitting;
   const executionRecord = admitting.executionRecord!;
+  const { flow, hash } = runFlows.pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash);
   const result = await interpreter.runExecution({
     deps: context.deps,
-    flow: context.flow,
+    flow,
     record: executionRecord,
     harnesses: context.harnesses as Record<string, runContext.Harness>,
     protectedPaths: context.protectedPaths,
@@ -361,7 +367,7 @@ async function runAdmitted(admitting: Admitting, decided: Decided): Promise<Tick
     base: context.config.baseBranch,
     labelPrefix: context.config.labelPrefix,
     approvers: context.config.approvers as string[] | undefined,
-    configHash: context.hash,
+    configHash: hash,
     others: decided.others,
     fault: decided.fault,
     admission: decided.admission,

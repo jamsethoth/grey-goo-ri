@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { appendFileSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as admission from './admission.ts';
 import * as cleanupHold from './cleanup-hold.ts';
@@ -8,16 +7,15 @@ import * as config from './config.ts';
 import * as events from './events.ts';
 import * as flowModule from './flow.ts';
 import type * as github from './github.ts';
-import * as contract from './harnesses/contract.ts';
 import * as interpreter from './interpreter.ts';
 import * as labels from './labels.ts';
 import * as locksModule from './locks.ts';
 import * as model from './model.ts';
 import * as record from './record.ts';
+import * as runFlows from './run-flows.ts';
 import type * as runContext from './run-context.ts';
 import * as report from './validate/report.ts';
 import * as stateDatabase from './state-database.ts';
-import * as validator from './validate/index.ts';
 
 type TicketResult = admission.TicketResult;
 
@@ -91,71 +89,12 @@ export const lockedGit = (
   ),
 });
 
-const withExitCode = (message: string, exitCode: number) => Object.assign(new Error(message), { exitCode });
-
-// A Harness module as preflight checks it: the shipped modules declare only their paths until slices 2 and 3.
-interface PreflightHarness {
-  run?: unknown;
-  validate(agent: unknown): Promise<{ ok: boolean; errors: string[] }>;
-  resolveTools(agent: unknown): Promise<unknown>;
-}
-
-// Each active Vertex's registered Harness, checked by name before any GitHub access.
-async function harnessProblems(flow: model.ResolvedFlow | undefined, harnesses: Record<string, unknown>) {
-  const failed = report.newReport();
-  for (const [id, { agent }] of flow?.ticket.vertices ?? []) {
-    const harness =
-      agent && typeof agent.harness === 'string' && Object.hasOwn(harnesses, agent.harness)
-        ? (harnesses[agent.harness] as PreflightHarness)
-        : null;
-    // A Vertex without an Agent (publish) runs on no Harness; an unset or unregistered one is the validator's error.
-    if (!harness) continue;
-    try {
-      // shortcut: the shipped Harness modules declare only their paths until slices 2 and 3; drop this when each
-      // implements the contract.
-      if (!harness.run) throw new Error('not implemented');
-      contract.assertHarness(harness);
-      const { ok, errors } = await harness.validate(agent);
-      if (!ok) throw new Error(errors.join(', '));
-      await harness.resolveTools(agent);
-    } catch (err) {
-      const reason = (err as Error).message.split('\n')[0];
-      const harnessName = agent!.harness as string;
-      const location = `flows.${flow!.name}.ticket.vertices.${id}`;
-      const message = `vertex ${id}: harness ${harnessName}: ${reason}`;
-      report.error(failed, location, 'harness-preflight-failed', message, { vertex: id, harness: harnessName, reason });
-    }
-  }
-  return failed.errors;
-}
-
-// The configuration's errors, as gg doctor prints them (V1), and every active Vertex's registered Harness, all failures
-// in one error. An unset Harness is a configuration gap, so any one makes the error exit 2.
-async function preflight(
-  flow: model.ResolvedFlow | undefined,
-  errors: report.Problem[],
-  layers: config.Config,
-  { harnesses, repoRoot }: { harnesses: Record<string, unknown>; repoRoot: string },
-) {
-  const problems = [...config.repositoryLayerProblems(layers, config.layerPath(repoRoot)), ...errors];
-  const unset = errors.some((error) => error.code === 'harness-unset');
-  problems.push(...(await harnessProblems(flow, harnesses)));
-  const failed = problems.map((problem) => report.line('error', problem));
-  if (unset) {
-    const examples = readdirSync(config.EXAMPLES_DIRECTORY)
-      .filter((file) => file.endsWith('.json'))
-      .sort()
-      .map((file) => join(config.EXAMPLES_DIRECTORY, file));
-    failed.push(`Merge one of ${examples.join(', ')} into the user Layer at ${config.layerPath(homedir())}.`);
-  }
-  if (failed.length) throw withExitCode(`preflight failed:\n${failed.join('\n')}`, unset ? 2 : 1);
-}
-
 // What gg run takes: the Ticket or Epic, the merged Layers, the registered Harnesses, the deps it reaches outside its
 // process (ADR 0019), and where it runs and logs.
 export interface RunOptions {
   deps: runContext.Deps;
   target: number;
+  flow?: string;
   config: config.Config;
   harnesses: Record<string, unknown>;
   protectedPaths: string[];
@@ -175,31 +114,6 @@ export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
     if (err instanceof Error) err.message = named(err.message);
     throw err;
   }
-}
-
-// Admission runs the validator gg doctor runs, so gg run rejects exactly what gg doctor rejects (V1, ADR 0014). The
-// Pinned Configuration is the Flow it gives with the files, Harnesses and commands it ran under.
-async function admitConfiguration(layers: config.Config, harnesses: Record<string, unknown>, repo: admission.Repo) {
-  const { flows, errors, warnings } = validator.validate(layers, {
-    harnesses,
-    readSchema: (name) => JSON.parse(config.layerFile(layers.files, name)),
-    readTemplate: (name) => config.layerFile(layers.files, name),
-  });
-  // shortcut: gg run runs the Flow named default until --flow selects one (#122).
-  const json = (flows as Record<string, unknown>).default;
-  const flow = json === undefined ? undefined : model.fromJson(json);
-  await preflight(flow, errors, layers, { harnesses, repoRoot: repo.mainRoot });
-  const commands = (layers.commands ?? {}) as Record<string, unknown>;
-  const pinned = {
-    flow: json,
-    files: layers.files,
-    harnesses: layers.harnesses ?? {},
-    launchProfile: null,
-    commands,
-    testPaths: layers.testPaths,
-    approvers: layers.approvers,
-  };
-  return { flow: flow as model.ResolvedFlow, warnings, commands, pinned, hash: config.configHash(pinned) };
 }
 
 // The Ticket, or an Epic's ready sub-issues. Every sub-issue is read before the Run's first effect, so an epic with
@@ -222,16 +136,17 @@ async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, 
 }
 
 // The gh a Run's Tickets share: a label update that adds a label first creates gg's State Labels, and the Await and
-// Decide Labels the Flow and a cleanup hold can write, once per Run, and again after a failed attempt.
+// Decide Labels a cleanup hold and any declared Flow can write, since a resumed Execution runs the Flow its record
+// pins, once per Run, and again after a failed attempt.
 function labelEnsuringGh(
   gh: github.Gh,
   repo: admission.Repo,
   layers: config.Config,
-  flow: model.ResolvedFlow,
+  flows: runFlows.PinnedFlow[],
 ): github.Gh {
   const flowLabels = [
     labels.labelsFor(layers.labelPrefix).await(cleanupHold.AWAIT_VERTEX),
-    ...flowModule.approvalLabels(flow),
+    ...new Set(flows.flatMap(({ flow }) => flowModule.approvalLabels(flow))),
   ];
   let ensuredLabels: Promise<void> | undefined;
   return {
@@ -252,16 +167,18 @@ function labelEnsuringGh(
   };
 }
 
-// The Run's directory, Pinned Configuration and log: each line goes to the run log and the caller's log, named.
+// The Run's directory with the Flow it runs, the Pinned Configuration of every declared Flow, which a resumed Execution
+// may run under, and the Run's log: each line goes to the run log and the caller's log, named.
 function startRun(
   repo: admission.Repo,
-  { flow, hash, pinned, clock }: { flow: model.ResolvedFlow; hash: string; pinned: unknown; clock: runContext.Clock },
+  { flows, selected, clock }: { flows: runFlows.PinnedFlow[]; selected: runFlows.PinnedFlow; clock: runContext.Clock },
   { named, log }: { named: (message: string) => string; log: (line: string) => void },
 ) {
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
   const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
-  flowModule.writeResolved(runDir, model.toJson(flow), hash);
-  stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, JSON.stringify(pinned));
+  flowModule.writeResolved(runDir, model.toJson(selected.flow), selected.hash);
+  for (const { hash, pinned } of flows)
+    stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, JSON.stringify(pinned));
   const runLog = (message: string) => {
     const line = named(message);
     appendFileSync(join(runDir, 'run.log'), `${new Date().toISOString()} ${line}\n`);
@@ -273,9 +190,11 @@ function startRun(
 async function runRepo(repo: admission.Repo, named: (message: string) => string, options: RunOptions) {
   const { target, config: layers, harnesses, protectedPaths, testImmutability, deps, log } = options;
   const { gh, git, exec, integrity, locks = locksModule, database = record, clock = interpreter.WALL_CLOCK } = deps;
-  const { flow, warnings, commands, pinned, hash } = await admitConfiguration(layers, harnesses, repo);
+  const { flows, selected, warnings, commands } = await runFlows.admitConfiguration(options, repo.mainRoot);
+  const { flow, hash } = selected;
+  const declared = [...flows.values()];
   const { issue, subIssues, tickets } = await readTickets(gh, target, repo, layers);
-  const { runId, runLog } = startRun(repo, { flow, hash, pinned, clock }, { named, log });
+  const { runId, runLog } = startRun(repo, { flows: declared, selected, clock }, { named, log });
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
   runLog(`run ${runId} started for #${target} under Flow ${flow.name} (config ${hash.slice(0, 12)})`);
@@ -290,12 +209,13 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
     config: layers,
     flow,
     hash,
+    flows,
     runId,
     repo,
     harnesses,
     protectedPaths,
     deps: {
-      gh: labelEnsuringGh(gh, repo, layers, flow),
+      gh: labelEnsuringGh(gh, repo, layers, declared),
       git: lockedGit(git, repo.gitCommonDir, { locks }),
       exec,
       locks,

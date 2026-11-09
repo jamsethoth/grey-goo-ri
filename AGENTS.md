@@ -60,7 +60,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/validate/` | the Flow validator, which `gg doctor` and `gg run` admission share: `index.ts` (`validate()`, the Agents), `procedures.ts`, `actions.ts` and `conditions.ts` (a Procedure on its own), `references.ts` and `templates.ts` (what it reads, typed alone and at each Vertex), `flows.ts` and `inputs.ts` (Flows, Vertices, Agents and inputs), `graph.ts` (the graph checks) and `report.ts` (the errors and warnings, each with a code from its closed list); it gives each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/model.ts` | the Resolved Flow in memory: its Procedures, Vertices and Claim tokens as Maps keyed by configured name, read from and written back to the validator's JSON |
 | `lib/reference-paths.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
-| `lib/run.ts` | `gg run`: preflight, the Run's Tickets mapped concurrently, run directory, Lifecycle Events, exit codes |
+| `lib/run.ts` | `gg run`: the Run's Tickets mapped concurrently, run directory, Lifecycle Events, exit codes |
+| `lib/run-flows.ts` | the Flows a Run admits: each declared Flow's Pinned Configuration, the one `--flow` names, preflight over every Flow's Harnesses, and the Flow an Execution's record pins |
 | `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution |
 | `lib/ticket-worktree.ts` | the worktree admission runs a Ticket in: the branch checks that hold it, and the other ticket worktrees |
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |

@@ -447,3 +447,14 @@ test('gg doctor prints a Flow named entirely with Object.prototype names like on
   );
   assert.deepEqual(await print(namedFlow.PROTOTYPE), namedFlow.renamed(ordinary));
 });
+
+// The example's one Flow is printed again under its second name, after the first, and its findings once.
+test('gg doctor prints each declared Flow, in the order the Layer declares them', async () => {
+  const config = example();
+  config.flows.light = structuredClone(config.flows.default);
+  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
+  const one = exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n');
+  const flowSection = one.slice(0, one.indexOf('\nwarning: ') + 1);
+  assert.equal(text, one.replace(flowSection, flowSection + flowSection.replace('flow default\n', 'flow light\n')));
+  assert.equal(exitCode, 0);
+});

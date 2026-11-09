@@ -218,3 +218,48 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
   );
   assert.equal(fixture.loadRow(), CORRUPT, 'the corrupt record is kept');
 });
+
+// An Execution of the fixture Ticket that an earlier Run admitted under `flow`, before its first Visit, in a repository
+// whose default is the full Flow and whose light Flow has no reviewer.
+async function pinnedTo(t: TestContext, flow: string) {
+  const fixture = runFixture.fixture(t, { fullFlow: true, labels: [IN_PROGRESS_LABEL] });
+  fixture.options.config.flows.light = runFixture.testConfig(fixture.root).flows.default!;
+  const { mainRoot, worktree } = fixture;
+  await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
+  const executionRecord = unvisitedExecution.unvisitedExecution(fixture);
+  executionRecord.flow = flow;
+  await record.save(executionRecord);
+  return fixture;
+}
+
+test('a resumed Execution keeps its pinned Flow', async (t) => {
+  const fixture = await pinnedTo(t, 'light');
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const vertexOf = (call: { marker?: string }) => marker.parseMarker(marker.markerTrailer(call.marker!))?.vertex;
+  assert.deepEqual(fixture.harness.calls.map(vertexOf), ['red', 'green'], 'no reviewer, which only default has');
+  const actionFlows = fixture.readEvents().flatMap((event) => (event.type === 'action' ? [event.flow] : []));
+  assert.deepEqual([...new Set(actionFlows)], ['light']);
+});
+
+// It waits, kept and resumable, for the Flow to be declared again: nothing on GitHub changes.
+test('a resumed Execution whose Flow the repository Layer no longer declares is skipped and kept', async (t) => {
+  const fixture = await pinnedTo(t, 'gone');
+  const row = fixture.loadRow();
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'skipped', JSON.stringify(results));
+  assert.equal(run.runExitCode(results), 0);
+  assert.equal(fixture.harness.calls.length, 0, 'no agent started');
+  assert.ok(
+    fixture.logs.some((line) =>
+      line.endsWith(`#${TICKET} skipped: its Execution Record runs Flow gone, which is no longer declared`),
+    ),
+    JSON.stringify(fixture.logs),
+  );
+  assert.equal(fixture.loadRow(), row, 'the record is kept as it was');
+  assert.deepEqual(
+    fixture.gh.calls.map((call) => call.args.slice(0, 2)),
+    [['issue', 'view']],
+    'gh made only the discovery read',
+  );
+});
