@@ -290,13 +290,16 @@ for (const [name, form] of BLANK_BREAKS) {
   });
 }
 
-test("a configuration without a Flow names the request's key tables, not gg init", () => {
+// Without a Flow, the validator gg doctor and gg run share names gg init (P1a).
+test('a configuration without a Flow names gg init', () => {
   const config = exampleLayer.config();
   delete config.flows;
   const { errors } = exampleLayer.check(config);
   assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'flows', code: 'no-flow-declared' }]);
-  assert.match(errors[0].message, /docs\/requests\/node-harness-dag\.md tables the keys of a Flow/);
-  assert.doesNotMatch(errors[0].message, /gg init/);
+  assert.equal(
+    errors[0].message,
+    'no Flow is declared; run gg init to write the example Flow into the repository Layer',
+  );
 });
 
 test('a repeated Action id is an error', () => {

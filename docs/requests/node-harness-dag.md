@@ -633,7 +633,7 @@ blocking issues as today.
 
 ### 3.9 Config and migration
 
-Three layers, defaults < user < repo, same merge rules as flows, under `.agents/gg/`. The shipped defaults declare
+Three layers, defaults < user < repo, merged as 3.3 says, under `.agents/gg/`. The shipped defaults declare
 no agents, flows, Procedures or Personas (ADR 0014): `gg init` writes an example into the repo Layer, whose agents
 have empty `skills`, `mcp` and `plugins`, no hooks and no injection. They name no harness, model or effort; a user or
 repo Layer supplies them, and `examples/` holds a Claude and a Codex Layer to copy. Until Layers land, only
@@ -648,9 +648,8 @@ Layer file with a duplicate key, and preflight checks each name and command line
 repo-Layer-only too, and `testPaths` is required (ADR 0014). `approvers` is repo-Layer-only as well: an optional list of GitHub logins whose
 Decision counts below write permission (3.5), pinned in the Config Hash; preflight checks it (#119). Each file a Layer names (a Persona, Brief, template or
 schema) resolves beside that Layer's `gg.json`, and one name names one file across the Layers: a Layer that reuses a
-name another Layer declares for a different file fails to load. Until #121 the defaults Layer declares its own
-(`personas/implementer.md`, `schemas/implement.schema.json` and the rest), so a user or repository Layer gives its
-files other names.
+name another Layer declares for a different file fails to load. Without a Flow, preflight and `gg doctor` fail naming
+`gg init` (P1a).
 
 ## 4. Behaviours to port, and deliberate changes
 

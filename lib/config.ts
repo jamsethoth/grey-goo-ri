@@ -85,10 +85,10 @@ function readLayer(file: string): Layer {
   return layer;
 }
 
-// A repository's unsandboxed commands, its test paths and who decides its approvals arrive whole from its own Layer: no
-// other Layer may extend or narrow them (ADR 0013, ADR 0014).
+// A repository's unsandboxed commands, its test paths, who decides its approvals, and its Flows and Procedures arrive
+// whole from its own Layer: no other Layer may extend or narrow them (ADR 0013, ADR 0014, P2).
 function rejectRepoOnly(layer: Layer, file: string): void {
-  const key = ['commands', 'testPaths', 'approvers'].find((name) => Object.hasOwn(layer, name));
+  const key = ['commands', 'testPaths', 'approvers', 'flows', 'procedures'].find((name) => Object.hasOwn(layer, name));
   if (key) throw new Error(`${file}: ${key} may be set only in a repository Layer`);
 }
 
@@ -166,19 +166,6 @@ const merge = (base: unknown, layer: unknown): unknown =>
         ]),
       )
     : layer;
-// P2: a Flow or Procedure arrives whole, so a later Layer's replaces the earlier one of its name rather than merging
-// into it. Until #121 the defaults declare both, and a repository Layer's own would otherwise gain the defaults' Claim
-// tokens.
-const WHOLE = ['flows', 'procedures'];
-const mergeLayer = (base: Layer, layer: Layer): Layer => ({
-  ...(merge(base, layer) as Layer),
-  ...Object.fromEntries(
-    WHOLE.filter((key) => referencePaths.isRecord(base[key]) && referencePaths.isRecord(layer[key])).map((key) => [
-      key,
-      { ...(base[key] as Layer), ...(layer[key] as Layer) },
-    ]),
-  ),
-});
 
 // defaults < user < repo, with the files each Layer names. `files` is gg's own: no Layer sets it.
 // shortcut: a plain deep merge; slice 5 brings the migration table.
@@ -192,7 +179,7 @@ export function loadLayers(repoRoot: string, home = homedir()): Config {
     const layer = readLayer(path);
     if (directory === home) rejectRepoOnly(layer, path);
     loadFiles(layer, path, files, from);
-    config = mergeLayer(config, layer);
+    config = merge(config, layer) as Layer;
   }
   return { ...config, files: Object.fromEntries(files) } as Config;
 }

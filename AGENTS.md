@@ -114,7 +114,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance, ticket and epic bodies |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
 | `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
-| `defaults/` | the defaults Layer: `gg.json` (today it ships Agents `implementer` and `reviewer`, five Procedures and the `default` Flow; ADR 0014's "no shipped Flow" lands with #121) and the files it names, under `personas/`, `templates/` and `schemas/` |
+| `defaults/` | the defaults Layer: `gg.json`, the Run's settings only; it declares no Agents, Flows or Procedures and names no file (ADR 0014) |
 | `lib/work.ts` | **stub** (`export {}`): `gg work` and the Registry |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
@@ -122,14 +122,14 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
-| `examples/` | user Layers to copy: a Claude and a Codex harness choice for the example's Agents |
+| `examples/` | user Layers to copy: a Claude and a Codex harness, model and effort for the Agents `gg init` writes |
 
 ## Misleading areas
 
 - The stubs marked in Layout: `plan`, `publish`, `work`, `trace` and `stats` print "not implemented".
 - `gg init` writes `test/fixtures/example/`, the example the tests run, so the fixture is shipped content: a change to it
-  changes what a new repository gets. `test/fixtures/shipped-flow/` keeps the defaults' Flow for the golden traces.
-- The defaults Layer ships a Flow, its Agents, Procedures, Personas and schemas until #121 (ADR 0014: gg ships none).
+  changes what a new repository gets. `test/fixtures/shipped-flow/` keeps the Flow the defaults shipped until #121 for
+  the golden traces; gg ships no Flow now.
 - `.agents/feature-flow/` belongs to feature-flow until #97; it is not gg's configuration.
 - `git.ts`, `locks.ts` and `record.ts` also export the functions of their real instance, for callers that take no
   seam (`gg doctor`, contract suites, helper processes); code on a Run's path uses the deps it was passed instead.

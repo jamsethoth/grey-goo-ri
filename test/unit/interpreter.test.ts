@@ -65,10 +65,10 @@ test('a Persona from the repository Layer is pinned with its hash', async (t) =>
   const layered = config.loadLayers(repo, join(directory, 'home'));
   const fixture = await golden.fixture(t);
   golden.configure(fixture, (configured) => {
-    configured.files = layered.files;
+    configured.files = { ...configured.files, ...layered.files };
     configured.agents.implementer!.persona = (layered.agents as GoldenConfig['agents']).implementer!.persona;
   });
-  fixture.options.files = layered.files;
+  fixture.options.files = fixture.config.files;
   await interpreter.runExecution(fixture.options);
   const [red, green] = fixture.harness.calls;
   assert.equal(red.personaBytes, '# repo implementer\n');
@@ -528,6 +528,31 @@ test('a routed harness-timeout takes its route', async (t) => {
 
   assert.equal(result.outcome, 'needs-replan', JSON.stringify(result));
   assert.ok(fixture.gh.labels.has('gg:state:needs-replan'));
+});
+
+// The Terminal Reason comment is gg's own template, so an end needs no Layer file for its comment (#121).
+test('an end without a stop token still posts its Terminal Reason comment', async (t) => {
+  const fixture = await golden.fixture(t, { responses: firstVisitWith(timedOut) });
+  golden.configure(fixture, (configured) => {
+    // Every Claim token that names templates/stop.md, so the Layer can do without it.
+    const tokens = (procedure: string) => (configured.procedures[procedure] as ConfiguredProcedure).claimTokens;
+    delete tokens('tests-fail').blocked!.comment;
+    delete tokens('tests-fail').misscoped!.comment;
+    delete tokens('implement').blocked!.comment;
+    delete tokens('implement').misscoped!.comment;
+    delete tokens('fix').blocked!.comment;
+    delete tokens('fix').misscoped!.comment;
+    delete tokens('review').misscoped!.comment;
+    delete configured.files['templates/stop.md'];
+  });
+  const result = await interpreter.runExecution(fixture.options);
+
+  assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
+  const executionRecord = await loadTicket(fixture);
+  const [terminal] = fixture.gh.comments.filter((comment) => comment.number === golden.TICKET);
+  assert.ok(terminal, 'a comment on the Ticket');
+  assert.ok(terminal.body.startsWith('### gg: needs-human\n\n**Terminal Reason:** '), terminal.body);
+  assert.ok(terminal.body.includes(executionRecord.terminalReason!.text), terminal.body);
 });
 
 test('a stop comment replaces the end comment and reaches the Epic at needs-replan', async (t) => {
