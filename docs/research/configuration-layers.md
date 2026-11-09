@@ -85,8 +85,12 @@ out of a grilling session; the numbers are its question numbers.
   declared by other Procedures or Agents would hash differently.
 
 **Left out**: a trust record that holds a repository's unsandboxed `commands` until the user approves them once
-(Q29), a `gg flow copy` command (Q27), and moving an Execution to another Flow while keeping its position (Q32), all
-to the backlog.
+(Q29, #322), a `gg flow copy` command (Q27, #323), and moving an Execution to another Flow while keeping its position
+(Q32, #324), all to the backlog.
+
+**Follow-up tickets**: #320 carries out the sources, the repository contract, the settings checks, the missing-Flow
+error and `gg work abandon`; #321, after it, the repository's `owner/name`, `--repo`, the record's new fields and the
+worktree path. Both land before #23.
 
 **What it changes that is frozen or recorded elsewhere**
 
