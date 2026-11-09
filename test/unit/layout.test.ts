@@ -1,9 +1,10 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ESLint } from 'eslint';
+import tseslint from 'typescript-eslint';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -183,43 +184,6 @@ test('no module outside lib/git.ts passes git a command line', async () => {
   }
 });
 
-// The shapes that hold a Map (the Execution Record, its Visit state and the Resolved Flow) are stringified only where
-// their Maps are converted first: lib/record.ts's replacer and lib/model.ts's toJson. Anywhere else JSON.stringify
-// would write {} for each Map in silence (#174).
-// A holder may be reached through its context (runContext.record, running.state), and so may one of its Map fields
-// (state.checks, flow.procedures); a scalar field of one (flow.name) is neither. shortcut: a tripwire on names, not
-// types: a holder under another name or reached by computed access passes, and a scalar or plain JSON collection
-// named like one is refused (rename it, or list its owner); the safety is the two owners' conversions, which
-// test/unit/record.test.ts and test/unit/model.test.ts hold. Replace with a type-aware lint if one appears.
-const HOLDER_NAMES = 'executionRecord|record|visitState|state|flow|runFlow';
-const MAP_FIELDS = 'checks|runs|visits|traversals|procedures|vertices|claimTokens';
-const MAP_HOLDERS = new RegExp(
-  `JSON\\.stringify\\(\\s*(?:[A-Za-z_$][\\w$]*\\.)*(?:${HOLDER_NAMES}|${MAP_FIELDS})(?![\\w$.[])`,
-);
-const JSON_OWNERS = new Set(['lib/record.ts']);
-
-test('no module outside the JSON owners stringifies a record, Visit state or Resolved Flow', () => {
-  for (const sample of [
-    'JSON.stringify(executionRecord, null, 2)',
-    'JSON.stringify(runContext.record)',
-    'JSON.stringify(running.state)',
-    'JSON.stringify(state.checks)',
-    'JSON.stringify(executionRecord.visits)',
-    'JSON.stringify(flow.procedures, null, 2)',
-  ])
-    assert.match(sample, MAP_HOLDERS, `the pattern finds the sample violation ${sample}`);
-  for (const sample of ['JSON.stringify(flow.name)', 'JSON.stringify(state.recovery)', 'JSON.stringify(flows)'])
-    assert.doesNotMatch(sample, MAP_HOLDERS, `the pattern passes a field or another name: ${sample}`);
-  const found = modules
-    .filter((path) => !JSON_OWNERS.has(path))
-    .flatMap((path) =>
-      readFileSync(root + path, 'utf8')
-        .split('\n')
-        .flatMap((line, i) => (MAP_HOLDERS.test(line) ? [`${path}:${i + 1}: ${line.trim()}`] : [])),
-    );
-  assert.deepEqual(found, []);
-});
-
 // Every file gg runs from, except lib/harnesses/, the one place a Harness is named.
 const filesOutsideHarnesses = [...repoFiles('lib/'), ...repoFiles('bin/')].filter(
   (path) => !path.startsWith('lib/harnesses/'),
@@ -288,7 +252,15 @@ test('the scans skip tool output at the root only, and .git and node_modules any
   assert.deepEqual(paths.filter(isSkipped), ['.claude', 'coverage', '.git', 'node_modules', 'test/node_modules']);
 });
 
-const eslint = new ESLint({ cwd: root });
+// A sample path such as lib/sample.ts is outside tsconfig.json's program, so these cases lint without types; the typed
+// rules' cases below lint as a real program file.
+const eslint = new ESLint({
+  cwd: root,
+  overrideConfig: [
+    { files: ['**/*.ts'], ...tseslint.configs.disableTypeChecked },
+    { rules: { 'gg/no-map-to-json': 'off' } },
+  ],
+});
 const lintFindings = async (filePath: string, text: string) => {
   const [result] = await eslint.lintText(text, { filePath });
   return result.messages.map((message) => message.ruleId);
@@ -408,6 +380,195 @@ test('lint fails a type imported by name from lib in a test file, and allows it 
   assert.deepEqual(await lintFindings(sample, "import { type Deps } from '../../lib/run-context.ts';\n"), restricted);
   assert.deepEqual(await lintFindings(sample, "import type * as runContext from '../../lib/run-context.ts';\n"), []);
   assert.deepEqual(await lintFindings('lib/sample.ts', "import type { Deps } from './run-context.ts';\n"), []);
+});
+
+// JSON.stringify and an object spread write a Map as {} in silence (#174, #327). The typed rules need a file of
+// tsconfig.json's program, so the samples lint as this file, which nothing imports.
+const typedEslint = new ESLint({ cwd: root });
+const TYPED_HEADER = [
+  "import type * as model from '../../lib/model.ts';",
+  "import type * as record from '../../lib/record.ts';",
+  "import type * as visit from '../../lib/visit.ts';",
+  'declare const executionRecord: record.ExecutionRecord;',
+  'declare const runContext: { record: record.ExecutionRecord };',
+  'declare const running: { state: visit.VisitState };',
+  'declare const state: visit.VisitState;',
+  'declare const flow: model.ResolvedFlow;',
+  "declare const renamed: { history: record.ExecutionRecord['visits'] };",
+  'declare const byName: Record<string, Map<string, number>>;',
+  'declare const partial: Partial<record.ExecutionRecord>;',
+  'declare const seen: Set<string>;',
+  'declare const text: string;',
+  'declare const readonlyMap: Readonly<Map<string, number>>;',
+  'declare const readonlySet: Readonly<Set<string>>;',
+  'class VisitCounts extends Map<string, number> {}',
+  'declare const serialised: { counts: Map<string, number> } & { toJSON(): string };',
+  'declare const nested: { deeper: { counts: Map<string, number> }; shallow: Map<string, number> | null };',
+  'declare const flows: Record<string, model.ResolvedFlowJson>;',
+  'declare const maybeReplacer: ((key: string, value: unknown) => unknown) | undefined;',
+  'const local = { stringify: (value: unknown) => String(value) };',
+  'class TrackedCounts extends Map<string, number> {',
+  '  override has(key: string) {',
+  '    return super.has(key);',
+  '  }',
+  '}',
+  'declare const either: Map<string, number> | Set<string>;',
+  "declare const hasOnly: Pick<Map<string, number>, 'has'>;",
+  "declare const getOnly: Pick<Map<string, number>, 'get'>;",
+  "declare const withoutClear: Omit<Map<string, number>, 'clear'>;",
+  "declare const withoutHas: Omit<Map<string, number>, 'has'>;",
+  'declare const converting: (key: string, value: unknown) => unknown;',
+  'declare const replacers: (typeof converting)[];',
+  'declare const argumentsTuple: [Map<string, number>, ...typeof replacers];',
+  'declare const pickNone: Pick<Map<string, number>, never>;',
+  'declare const omitAll: Omit<Map<string, number>, keyof Map<string, number>>;',
+  "declare const rejoined: Omit<Map<string, number>, 'clear'> & Pick<Map<string, number>, 'clear'>;",
+  'declare const maybeMap: Pick<Map<string, number> | null, never>;',
+  'declare const leading: readonly [Map<string, number>?];',
+  'type Visits = Map<string, number>;',
+  'declare const bySymbol: Record<symbol, Map<string, number>>;',
+  'class Holder {',
+  '  #counts = new Map<string, number>();',
+  '  label = String(this.#counts.size);',
+  '}',
+];
+// Each sample is linted as `export const sampleN = <sample>;`, with what the rules find on its line.
+const typedFindings = async (samples: string[]) => {
+  const lines = [...TYPED_HEADER, ...samples.map((sample, i) => `export const sample${i} = ${sample};`)];
+  const [result] = await typedEslint.lintText(`${lines.join('\n')}\n`, { filePath: 'test/unit/layout.test.ts' });
+  return samples.map((_sample, i) => result.messages.filter((message) => message.line === TYPED_HEADER.length + i + 1));
+};
+const holdsMapBoundary = async (
+  t: TestContext,
+  { rule, flagged, passed }: { rule: string; flagged: [string, string][]; passed: string[] },
+) => {
+  const found = await typedFindings([...flagged.map(([sample]) => sample), ...passed]);
+  for (const [i, [sample, where]] of flagged.entries())
+    await t.test(`fails ${sample}`, () => {
+      assert.deepEqual(
+        found[i].map((message) => message.ruleId),
+        [rule],
+      );
+      assert.ok(found[i][0].message.includes(where), found[i][0].message);
+    });
+  for (const [i, sample] of passed.entries())
+    await t.test(`passes ${sample}`, () => {
+      assert.deepEqual(found[flagged.length + i], []);
+    });
+};
+
+test('lint fails JSON.stringify of a value whose type holds a Map or Set', async (t) => {
+  await holdsMapBoundary(t, {
+    rule: 'gg/no-map-to-json',
+    flagged: [
+      ['JSON.stringify(executionRecord, null, 2)', 'the value.visits (Map)'],
+      ['JSON.stringify(runContext.record)', 'the value.visits (Map)'],
+      ['JSON.stringify(running.state)', 'the value.runs (Map)'],
+      ['JSON.stringify(state.checks)', 'the value (Map)'],
+      ['JSON.stringify(executionRecord.visits)', 'the value (Map)'],
+      ['JSON.stringify(flow.procedures, null, 2)', 'the value (ReadonlyMap)'],
+      ['JSON.stringify(renamed.history)', 'the value (Map)'],
+      ['JSON.stringify({ wrapped: executionRecord.visits })', 'the value.wrapped (Map)'],
+      ['JSON.stringify(byName)', 'the value[key] (Map)'],
+      ['JSON.stringify(partial)', 'the value.visits (Map)'],
+      ['JSON.stringify([executionRecord])', 'the value[].visits (Map)'],
+      ['JSON.stringify(seen)', 'the value (Set)'],
+      [
+        '<Counts extends ReadonlyMap<string, number>>(counts: Counts) => JSON.stringify(counts)',
+        'the value (ReadonlyMap)',
+      ],
+      ['JSON.stringify(readonlyMap)', 'the value (Map)'],
+      ['JSON.stringify(readonlySet)', 'the value (Set)'],
+      ['JSON.stringify(new VisitCounts())', 'the value (Map)'],
+      ['JSON.stringify(nested)', 'the value.shallow (Map)'],
+      ['JSON.stringify(executionRecord, undefined, 2)', 'the value.visits (Map)'],
+      ["JSON.stringify(executionRecord, ['visits'])", 'the value.visits (Map)'],
+      ['JSON.stringify(executionRecord, maybeReplacer)', 'the value.visits (Map)'],
+      ['globalThis.JSON.stringify(executionRecord)', 'the value.visits (Map)'],
+      ["JSON['stringify'](executionRecord)", 'the value.visits (Map)'],
+      ['JSON.stringify(new TrackedCounts())', 'the value (Map)'],
+      ['JSON.stringify(either)', 'the value (Map)'],
+    ],
+    passed: [
+      'JSON.stringify(flow.name)',
+      'JSON.stringify(state.recovery)',
+      'JSON.stringify(flows)',
+      'JSON.stringify({ startedAt: new Date() })',
+      'JSON.stringify(serialised)',
+      'JSON.stringify(executionRecord, (_key, value: unknown) => value)',
+      'JSON.stringify([...executionRecord.visits.values()])',
+      'local.stringify(executionRecord)',
+      'JSON.stringify(Object.fromEntries(executionRecord.visits))',
+    ],
+  });
+});
+
+test("lint fails JSON.stringify of a slice of a Map's type, and reads spread arguments", async (t) => {
+  await holdsMapBoundary(t, {
+    rule: 'gg/no-map-to-json',
+    flagged: [
+      ['JSON.stringify(...([executionRecord.visits] as const))', 'the value (Map)'],
+      ['JSON.stringify(...([executionRecord.visits, null, 2] as const))', 'the value (Map)'],
+      ['JSON.stringify(...[executionRecord.visits])', 'the value (Map)'],
+      // A slice of a Map's type may be a real Map or a plain object; lint cannot tell, so it asks for the whole type.
+      ['JSON.stringify(hasOnly)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(getOnly)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(withoutClear)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(withoutHas)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify({ lookup: hasOnly })', 'the value.lookup has a type made from part of a Map'],
+      ['JSON.stringify(pickNone)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(omitAll)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(rejoined)', 'the value (Map)'],
+      ['JSON.stringify(maybeMap)', 'the value has a type made from part of a Map'],
+      [
+        '<Held extends Map<string, number> | null>(held: Pick<Held, never>) => JSON.stringify(held)',
+        'the value has a type made from part of a Map',
+      ],
+      ['JSON.stringify(...leading)', 'the value (Map)'],
+      [
+        '<Rest extends (typeof converting)[]>(passed: [Visits, ...Rest]) => JSON.stringify(...passed)',
+        'the value (Map)',
+      ],
+      // A spread that may be empty may pass no replacer.
+      ['JSON.stringify(executionRecord.visits, ...replacers)', 'the value (Map)'],
+      ['JSON.stringify(...argumentsTuple)', 'the value (Map)'],
+    ],
+    // Without its Map, leading leaves converting as the value; with it, converting is its replacer.
+    passed: [
+      'JSON.stringify(...([executionRecord, converting] as const))',
+      'JSON.stringify(...leading, converting)',
+      '<Rest extends [typeof converting]>(passed: [Visits, ...Rest]) => JSON.stringify(...passed)',
+      // A constraint that names itself ends, rather than overflowing the stack.
+      '<Held extends Pick<Held, never>>(held: Pick<Held, never>) => JSON.stringify(held)',
+    ],
+  });
+});
+
+// JSON writes string keys only: not a symbol key, a symbol index signature or a private field.
+test('lint passes what JSON does not write, and fails a string key that only looks like a symbol', async (t) => {
+  await holdsMapBoundary(t, {
+    rule: 'gg/no-map-to-json',
+    flagged: [
+      ["JSON.stringify({ '__@counts': executionRecord.visits })", 'the value.__@counts (Map)'],
+      ["JSON.stringify({ '__#counts': executionRecord.visits })", 'the value.__#counts (Map)'],
+    ],
+    passed: [
+      'JSON.stringify({ [Symbol.iterator]: executionRecord.visits })',
+      'JSON.stringify(bySymbol)',
+      'JSON.stringify(new Holder())',
+    ],
+  });
+});
+
+test('lint fails an object spread of a Map, and allows a record spread and a string spread', async (t) => {
+  await holdsMapBoundary(t, {
+    rule: '@typescript-eslint/no-misused-spread',
+    flagged: [
+      ['{ ...executionRecord.visits }', 'Object.fromEntries'],
+      ['{ ...flow.ticket.vertices }', 'Object.fromEntries'],
+    ],
+    passed: ['{ ...executionRecord }', '[...text]'],
+  });
 });
 
 // Documents agents read for today's paths. An ADR or a docs/research record is dated: it names paths as they were.

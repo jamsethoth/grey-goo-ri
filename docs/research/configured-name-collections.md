@@ -198,7 +198,8 @@ a `Map` subclass (`structuredClone` deserialises it as a plain Map and `deepStri
    Reason lists); the JSON form keeps the language's order, and nothing compares the two.
 2. Is there a lint that flags a Map reaching `JSON.stringify` or an object spread? typescript-eslint's
    `no-misused-spread` may cover the spread case; it was not verified here. Otherwise the boundary is held by the tests
-   above and by `test/unit/layout.test.ts`'s grep.
+   above and by `test/unit/layout.test.ts`'s grep. Answered 2026-11-09 (#327): `no-misused-spread` covers the spread,
+   no shipped rule covers `JSON.stringify`, so gg's own type-aware `gg/no-map-to-json` does, and the grep is gone.
 3. Should `visitState.runs` and `checks`, keyed by Action id, move beside `model.ts`'s accessors or keep their type in
    `lib/visit.ts` with the accessor in `lib/visit-scope.ts`, its reader? AGENTS.md's "a type lives in the module that
    owns its concept" argues for the latter.

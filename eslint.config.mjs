@@ -4,6 +4,7 @@
 import { defineConfig } from 'eslint/config';
 import stylistic from '@stylistic/eslint-plugin';
 import tseslint from 'typescript-eslint';
+import ts from 'typescript';
 
 // Abbreviations a name may use: id, url, sha, err, gh, pr, json, ms. Every other short form is spelled out, a domain
 // concept with its full GLOSSARY.md term in camelCase; the denylist names the common offenders.
@@ -113,6 +114,195 @@ const THROWN_CLASS = {
   },
 };
 
+// JSON.stringify writes a Map or a Set as {} and raises nothing (ECMA-262 SerializeJSONObject), so the types it is
+// given must hold none. A lib or package type is not gg's data, and a type with toJSON chooses its own form.
+const LOST_BY_JSON = new Set(['Map', 'ReadonlyMap', 'WeakMap', 'Set', 'ReadonlySet', 'WeakSet']);
+const inDefaultLib = (program, node) => program.isSourceFileDefaultLibrary(node.getSourceFile());
+const fromLibOrPackage = (program, symbol) =>
+  (symbol?.getDeclarations() ?? []).some(
+    (declaration) =>
+      inDefaultLib(program, declaration) || program.isSourceFileFromExternalLibrary(declaration.getSourceFile()),
+  );
+// Which of the six a type is made from, read from the members lib declares for it, and whether it has all of them.
+// Readonly<Map>, a subclass (even one that overrides has) and an intersection have all; a slice such as
+// Pick<Map, 'has'> has some, and lint cannot tell a Map typed that way from a plain object; a package's own class named
+// Map has none of lib's.
+const collectionOf = (checker, program, type, seen = new Set()) => {
+  const properties = checker.getPropertiesOfType(type);
+  const names = new Set(properties.map((property) => property.getName()));
+  const owners = properties
+    .flatMap((property) => property.getDeclarations() ?? [])
+    .map((declaration) => declaration.parent)
+    .filter((owner) => owner != null && inDefaultLib(program, owner) && LOST_BY_JSON.has(owner.name?.text));
+  if (owners.length === 0) return aliasedCollection(checker, program, type, seen);
+  const whole = owners.find((owner) =>
+    checker
+      .getPropertiesOfType(checker.getDeclaredTypeOfSymbol(checker.getSymbolAtLocation(owner.name)))
+      .every((member) => names.has(member.getName())),
+  );
+  return { name: (whole ?? owners[0]).name.text, whole: whole != null };
+};
+// A lib alias over a Map that keeps none of its members, such as Pick<Map, never> or Omit<Map, keyof Map>, is still
+// made from one. Its source is its first argument: Record's second is the type of its values, read as they are held.
+function aliasedCollection(checker, program, type, seen) {
+  const fromLibAlias = (type.aliasSymbol?.getDeclarations() ?? []).some((declaration) =>
+    inDefaultLib(program, declaration),
+  );
+  const [source] = type.aliasTypeArguments ?? [];
+  const made = fromLibAlias && source ? collectionIn(checker, program, source, seen) : null;
+  return made ? { name: made.name, whole: false } : null;
+}
+// A collection a type is, or one of its alternatives is (Pick<Map | null, never>, a parameter bound by a Map).
+// `seen` ends a constraint that names itself: <Held extends Pick<Held, never>>.
+function collectionIn(checker, program, type, seen) {
+  if (seen.has(type)) return null;
+  seen.add(type);
+  const alternatives = alternativesOf(checker, type) ?? [];
+  return (
+    collectionOf(checker, program, type, seen) ??
+    alternatives.map((member) => collectionIn(checker, program, member, seen)).find(Boolean) ??
+    null
+  );
+}
+// A mapped type (Record, Partial, Omit, Readonly) is anonymous, `__type`, and is walked even though lib declares it.
+const isLibNamed = (program, symbol) => symbol?.getName() !== '__type' && fromLibOrPackage(program, symbol);
+// The same value's alternatives: a union's or intersection's members, or a type parameter's constraint.
+const alternativesOf = (checker, type) => {
+  if (type.isUnionOrIntersection()) return type.types;
+  if (type.isTypeParameter()) return [checker.getBaseConstraintOfType(type)].filter((constraint) => constraint);
+  return null;
+};
+// JSON writes string keys only. The compiler names a symbol-keyed property `__@iterator@14` and a private one
+// `__#1@#counts`, and escapes a string key that starts with two underscores to three, so the escaped name tells them
+// apart.
+const isWritten = (key) => !/^__[@#]/.test(key.escapedName);
+const isSymbolIndex = (info) => (info.keyType.flags & ts.TypeFlags.ESSymbolLike) !== 0;
+// The values a type holds: array and tuple elements, written properties and index signatures.
+const heldBy = (checker, program, type, path) => {
+  if (checker.isArrayType(type) || checker.isTupleType(type))
+    return checker.getTypeArguments(type).map((element) => [element, `${path}[]`]);
+  if (isLibNamed(program, type.getSymbol())) return [];
+  return [
+    ...checker
+      .getPropertiesOfType(type)
+      .filter(isWritten)
+      .map((key) => [checker.getTypeOfSymbol(key), `${path}.${key.getName()}`]),
+    ...checker
+      .getIndexInfosOfType(type)
+      .filter((info) => !isSymbolIndex(info))
+      .map((info) => [info.type, `${path}[key]`]),
+  ];
+};
+// The shallowest Map or Set inside a type, whole or in part, with its path, or null; `unknown` and `any` hide theirs.
+// Alternatives are the same value, so they go to the front of the queue and add no depth.
+function findLost(checker, program, rootType) {
+  const seen = new Set();
+  const pending = [[rootType, 'the value']];
+  while (pending.length) {
+    const [type, path] = pending.shift();
+    if (seen.has(type) || checker.getPropertyOfType(type, 'toJSON')) continue;
+    seen.add(type);
+    const alternatives = alternativesOf(checker, type);
+    // An intersection is read whole first: two slices may make a whole Map.
+    const collection = type.isUnion() || type.isTypeParameter() ? null : collectionOf(checker, program, type);
+    if (collection && (collection.whole || !alternatives)) return { path, ...collection };
+    if (alternatives) pending.unshift(...alternatives.map((member) => [member, path]));
+    else pending.push(...heldBy(checker, program, type, path));
+  }
+  return null;
+}
+// lib's JSON.stringify by any path to it (globalThis.JSON, JSON['stringify']); a local object named JSON is not it.
+const isJsonStringify = (checker, services, { callee }) => {
+  if (callee.type !== 'MemberExpression') return false;
+  const { property } = callee;
+  const named = callee.computed
+    ? property.type === 'Literal' && property.value === 'stringify'
+    : property.name === 'stringify';
+  if (!named) return false;
+  const symbol = checker.getSymbolAtLocation(services.esTreeNodeToTSNodeMap.get(property));
+  return (symbol?.getDeclarations() ?? []).some(
+    (declaration) => inDefaultLib(services.program, declaration) && declaration.parent?.name?.text === 'JSON',
+  );
+};
+// The elements a spread passes: a tuple's, each optional or repeating by its flags, a variadic one read through its
+// constraint (<Rest extends [Replacer]> passes one); an array's element any number of times; null for an iterable.
+function spreadElements(checker, type) {
+  if (checker.isArrayType(type)) return [{ type: checker.getTypeArguments(type)[0], optional: true, repeats: true }];
+  if (!checker.isTupleType(type)) return null;
+  return checker.getTypeArguments(type).flatMap((element, i) => {
+    const flags = type.target.elementFlags[i];
+    const constraint = flags & ts.ElementFlags.Variadic ? checker.getBaseConstraintOfType(element) : null;
+    const optional = (flags & ts.ElementFlags.Required) === 0;
+    return (
+      (constraint && spreadElements(checker, constraint)) ?? [
+        { type: element, optional, repeats: (flags & ts.ElementFlags.Variable) !== 0 },
+      ]
+    );
+  });
+}
+// Each element a call passes, in order, with a spread read by spreadElements; reading stops at an iterable's.
+const passedElements = (checker, services, callArguments) => {
+  const typeOf = (node) => checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node));
+  const elements = [];
+  for (const argument of callArguments) {
+    const spread = argument.type === 'SpreadElement' ? spreadElements(checker, typeOf(argument.argument)) : undefined;
+    if (spread === null) break;
+    elements.push(...(spread ?? [{ type: typeOf(argument), optional: false, repeats: false }]));
+  }
+  return elements;
+};
+// Every [value, replacer] the elements can make: each optional element present or absent, each repeating one again.
+const stringifyLayouts = (elements) => {
+  const layouts = [];
+  const fill = (index, filled) => {
+    if (filled.length === 2 || index === elements.length) return void layouts.push(filled);
+    const element = elements[index];
+    if (element.optional) fill(index + 1, filled);
+    fill(element.repeats ? index : index + 1, [...filled, element.type]);
+  };
+  fill(0, []);
+  return layouts;
+};
+const NO_MAP_TO_JSON = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      lost:
+        'JSON.stringify writes a Map or Set as {}: {{where}} ({{name}}). Convert it first, with ' +
+        "Object.fromEntries or the owner's toJson, or pass a replacer that converts it.",
+      part:
+        '{{where}} has a type made from part of a {{name}}, so lint cannot tell whether it is one, and ' +
+        'JSON.stringify writes a {{name}} as {}. Type it as the whole {{name}} if it is one, or as a plain object ' +
+        'type if it is not.',
+    },
+  },
+  create(context) {
+    const services = context.sourceCode.parserServices;
+    if (!services?.program) throw new Error('gg/no-map-to-json needs type information (parserOptions.projectService)');
+    const checker = services.program.getTypeChecker();
+    return {
+      CallExpression(node) {
+        if (!isJsonStringify(checker, services, node)) return;
+        // A replacer function is its owner's conversion (lib/record.ts saveRecord); the rule does not judge it. An
+        // array of keys, null or undefined converts nothing, and a replacer that may be absent does not guarantee it.
+        const unconverted = stringifyLayouts(passedElements(checker, services, node.arguments))
+          .filter(([value, replacer]) => value && !(replacer?.getCallSignatures().length > 0))
+          .map(([value]) => value);
+        const found = [...new Set(unconverted)]
+          .map((value) => findLost(checker, services.program, value))
+          .find(Boolean);
+        if (found)
+          context.report({
+            node,
+            messageId: found.whole ? 'lost' : 'part',
+            data: { where: found.path, name: found.name },
+          });
+      },
+    };
+  },
+};
+
 // eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {
@@ -121,7 +311,7 @@ export default defineConfig([
     plugins: {
       '@stylistic': stylistic,
       '@typescript-eslint': tseslint.plugin,
-      gg: { rules: { 'thrown-class': THROWN_CLASS } },
+      gg: { rules: { 'thrown-class': THROWN_CLASS, 'no-map-to-json': NO_MAP_TO_JSON } },
     },
     rules: {
       '@typescript-eslint/naming-convention': ['error', ...NAMING],
@@ -159,5 +349,15 @@ export default defineConfig([
   {
     files: ['test/**/*.test.ts'],
     rules: { 'max-lines': ['error', 800] },
+  },
+  {
+    // The directories tsconfig.json includes: the typed rules read its program. eslint.config.mjs is outside it.
+    files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts', 'test/**/*.ts'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: {
+      // An object spread of a Map gives {}. `[...text]` iterates code points on purpose (lib/public-text.ts).
+      '@typescript-eslint/no-misused-spread': ['error', { allow: [{ from: 'lib', name: 'string' }] }],
+      'gg/no-map-to-json': 'error',
+    },
   },
 ]);

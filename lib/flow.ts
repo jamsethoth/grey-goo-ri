@@ -4,6 +4,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as labels from './labels.ts';
+import type * as model from './model.ts';
 import * as outcome from './outcome.ts';
 import * as referencePaths from './reference-paths.ts';
 
@@ -49,7 +50,7 @@ export const approvalLabels = (resolved: {
   );
 
 // The Resolved Flow the validator gave admission, and its Config Hash, in the Run's directory.
-export function writeResolved(runDir: string, resolved: unknown, hash: string) {
+export function writeResolved(runDir: string, resolved: model.ResolvedFlowJson, hash: string) {
   mkdirSync(runDir, { recursive: true });
   writeFileSync(join(runDir, 'flow.json'), `${JSON.stringify(resolved, null, 2)}\n`);
   writeFileSync(join(runDir, 'config-hash.txt'), `${hash}\n`);
