@@ -124,7 +124,7 @@ export interface GoldenConfig {
   agents: Record<string, ReturnType<typeof implementerAgent>>;
   procedures: Record<string, { actions: { id: string; [key: string]: unknown }[]; [key: string]: unknown }>;
   flows: Record<string, ConfiguredFlow>;
-  files: config.LayerFiles;
+  files: config.SourceFiles;
 }
 
 // The golden configuration: gg's Procedures until #120 and their files, the implementer on the fake Harness with the
@@ -145,8 +145,8 @@ export function goldenConfig(): GoldenConfig {
 export function resolve(goldenConfiguration: GoldenConfig): model.ResolvedFlow {
   const { flows, errors } = validate.validate(goldenConfiguration, {
     harnesses: { fake: {} },
-    readSchema: (name: string) => JSON.parse(config.layerFile(goldenConfiguration.files, name)),
-    readTemplate: (name: string) => config.layerFile(goldenConfiguration.files, name),
+    readSchema: (name: string) => JSON.parse(config.namedFile(goldenConfiguration.files, name)),
+    readTemplate: (name: string) => config.namedFile(goldenConfiguration.files, name),
   });
   if (errors.length) {
     const listed = errors.map((problem) => `${problem.at}: ${problem.message}`).join('\n');

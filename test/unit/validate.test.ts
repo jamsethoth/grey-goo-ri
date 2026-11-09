@@ -298,7 +298,7 @@ test('a configuration without a Flow names gg init', () => {
   assert.deepEqual(exampleLayer.firedRules(errors), [{ at: 'flows', code: 'no-flow-declared' }]);
   assert.equal(
     errors[0].message,
-    'no Flow is declared; run gg init to write the example Flow into the repository Layer',
+    "no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/",
   );
 });
 

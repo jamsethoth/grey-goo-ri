@@ -12,6 +12,7 @@ export const PROBLEM_CODES = [
   'not-a-boolean',
   'not-a-list',
   'not-a-positive-integer',
+  'not-a-string',
   'not-an-object',
   'null-value',
   'required-key-missing',
@@ -105,7 +106,7 @@ export const PROBLEM_CODES = [
   // What gg doctor reads from GitHub beside the configuration.
   'repository-labels-missing',
   'repository-labels-unread',
-  // The repository Layer's commands and testPaths, each Vertex's Harness and the Flow gg run runs, which its preflight
+  // The repository's commands and testPaths, each Vertex's Harness and the Flow gg run runs, which its preflight
   // checks.
   'harness-preflight-failed',
   'invalid-command-line',
@@ -122,8 +123,8 @@ interface AtVertex {
 // A reference path that does not type, and the template that names it, if one does.
 type Reference = { path: unknown; template?: string } & AtVertex;
 type RuleField = { field: string } & AtVertex;
-// A repository Layer problem's sentence names the Layer file, the one place its keys may be declared (ADR 0013).
-interface InLayerFile {
+// A setting's problem names the gg.json it is declared in, the one place it may be (ADR 0013, ADR 0022).
+interface InSourceFile {
   file?: string;
 }
 // A harness's owner: a declared Agent, or the Vertex whose own Agent keys set it.
@@ -148,11 +149,13 @@ type RuleRow = RuleTable & { row: number; outcome: string };
 // `where "f":`, `agent X's harness`) is not repeated here, except a bad item's index in a repeat Check's fields (owner,
 // #301).
 interface ProblemParams {
-  'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] } & InLayerFile;
-  'empty-list': InLayerFile;
-  'unknown-key': { key: string };
-  'invalid-name': { name?: unknown; index?: number } & InLayerFile;
-  'reserved-name': { name: string };
+  'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] } & InSourceFile;
+  'empty-list': InSourceFile;
+  'unknown-key': { key: string } & InSourceFile;
+  'not-a-positive-integer': InSourceFile;
+  'not-a-string': InSourceFile;
+  'invalid-name': { name?: unknown; index?: number } & InSourceFile;
+  'reserved-name': { name: string } & InSourceFile;
   'unknown-vertex': { vertex: unknown };
   'unknown-end': { end: unknown };
   'undeclared-procedure': { procedure: unknown };
@@ -193,12 +196,12 @@ interface ProblemParams {
   'undeclared-rule-field': RuleTable & { fields: string[] };
   'unreachable-row': RuleRow;
   'commit-without-check': { vertex: string; token: string };
-  'not-a-list': { table?: string; value?: unknown } & InLayerFile;
-  'not-an-object': { value?: unknown } & InLayerFile;
+  'not-a-list': { table?: string; value?: unknown } & InSourceFile;
+  'not-an-object': { value?: unknown } & InSourceFile;
   'invalid-command-line': { command: string; file: string };
   'invalid-glob': { glob: unknown; file: string };
   'harness-preflight-failed': { vertex: string; harness: string; reason: string };
-  'unknown-flow': { name: string; declared: string[] };
+  'unknown-flow': { name: string; declared: string[]; ticket?: number };
   'table-never-applies': { table: string };
   'optional-input-unsure': { input: string; vertex: string };
   'required-input-unsure': { input: string; vertex: string };

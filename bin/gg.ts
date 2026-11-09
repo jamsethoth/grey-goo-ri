@@ -11,6 +11,9 @@ import * as locks from '../lib/locks.ts';
 import * as options from '../lib/options.ts';
 import * as record from '../lib/record.ts';
 import * as run from '../lib/run.ts';
+import * as settingsModule from '../lib/settings.ts';
+import * as report from '../lib/validate/report.ts';
+import * as work from '../lib/work.ts';
 
 // A command: its usage line, the flags it takes, and what runs it; one with no `run` is not implemented.
 interface Command {
@@ -39,7 +42,7 @@ async function runCommand(parsed: options.ParsedOptions) {
     deps,
     target,
     flow: parsed.flow as string | undefined,
-    config: config.loadLayers(mainRoot),
+    config: config.loadSources(mainRoot),
     harnesses,
     protectedPaths: interpreter.protectedFiles(harnesses),
     cwd: mainRoot,
@@ -48,26 +51,60 @@ async function runCommand(parsed: options.ParsedOptions) {
   process.exitCode = run.runExitCode(results);
 }
 
-async function initCommand() {
+async function initCommand(parsed: options.ParsedOptions) {
   const { mainRoot } = await git.repoInfo(process.cwd());
-  process.stdout.write(doctor.init(mainRoot));
+  const baseBranch = await git.defaultBranch(mainRoot);
+  process.stdout.write(doctor.init(mainRoot, { baseBranch, harness: parsed.harness as string | undefined }));
 }
 
 async function doctorCommand() {
-  const { mainRoot } = await git.repoInfo(process.cwd());
+  const { mainRoot, gitCommonDir } = await git.repoInfo(process.cwd());
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
   const { text, exitCode } = await doctor.doctor({
-    config: config.loadLayers(mainRoot),
+    config: config.loadSources(mainRoot),
     harnesses,
     gh: github.createGh(),
     cwd: mainRoot,
+    commonDir: gitCommonDir,
   });
   process.stdout.write(text);
   process.exitCode = exitCode;
 }
 
+// gg work's verbs: abandon forgets a Ticket's position and keeps its worktree (request 3.5); the rest wait for gg work.
+const WORK_VERBS = ['list', 'resume', 'done', 'abandon', 'reset', 'approve'];
+
+async function workCommand(parsed: options.ParsedOptions) {
+  const [verb, ticket] = parsed._;
+  if (!WORK_VERBS.includes(verb as string))
+    throw new options.UsageError(`work takes a verb, one of ${WORK_VERBS.join(', ')}`);
+  if (verb !== 'abandon') {
+    process.stderr.write(`gg work ${verb}: not implemented\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const target = options.positiveInteger(ticket, 'ticket');
+  const { mainRoot, gitCommonDir } = await git.repoInfo(process.cwd());
+  const { repository, repositoryFile } = config.loadSources(mainRoot);
+  const problems = settingsModule.labelPrefixProblems(repository.labelPrefix, repositoryFile);
+  if (problems.length) throw new Error(problems.map((problem) => report.line('error', problem)).join('\n'));
+  const text = await work.abandon({
+    ticket: target,
+    commonDir: gitCommonDir,
+    cwd: mainRoot,
+    labelPrefix: repository.labelPrefix as string,
+    gh: github.createGh(),
+    locks: locks.createLocks(),
+  });
+  process.stdout.write(text);
+}
+
 const COMMANDS: Record<string, Command> = {
-  init: { summary: 'write the example Layer into the repository', run: initCommand },
+  init: {
+    summary: "write the example into the repository and the user's gg.json; --harness <name> names each Agent's",
+    flags: { values: ['harness'] },
+    run: initCommand,
+  },
   doctor: { summary: 'validate the configuration and print each Resolved Flow', run: doctorCommand },
   plan: {
     summary: 'produce the Plan for an Epic; plan --finish <planId> finishes one',
@@ -79,7 +116,7 @@ const COMMANDS: Record<string, Command> = {
     flags: { values: ['flow'] },
     run: runCommand,
   },
-  work: { summary: 'list, resume, abandon, reset, approve' },
+  work: { summary: 'abandon <ticket> forgets its Execution Record; list, resume, reset, approve', run: workCommand },
   trace: { summary: 'export a Trajectory' },
   stats: {
     summary: 'show usage and outcome statistics',

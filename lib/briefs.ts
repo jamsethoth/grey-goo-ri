@@ -1,5 +1,5 @@
-// Briefs, and the checks on a Structured Response schema and a response. A schema is a Layer file, and stays inside the
-// strict subset below, which every Harness accepts (docs/interfaces/harness.md, `run(call)`).
+// Briefs, and the checks on a Structured Response schema and a response. A schema is a file its Source names, and stays
+// inside the strict subset below, which every Harness accepts (docs/interfaces/harness.md, `run(call)`).
 
 import * as referencePaths from './reference-paths.ts';
 import * as publicText from './public-text.ts';
@@ -177,7 +177,7 @@ function printed(value: unknown, ref: string, item: unknown) {
 // test files as functions, since they read git. `first` lets a template separate History entries as a join would.
 // A recovery Brief section reads its Check's `id`, `kind`, `command` line, `output` and `failure` (`failure.missing`
 // when the kind recorded that failure).
-// `text` is the template a Layer declares.
+// `text` is the template a Source declares.
 export function brief(text: string, { commands = {}, history = [], failure, ...context }: BriefContext) {
   const emit = (value: unknown, { name: ref }: { name: string }, _fenced: boolean, item: unknown) =>
     printed(value, ref, item);

@@ -4,8 +4,8 @@ import * as publicText from './public-text.ts';
 import type * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
 
-// gg's own templates, which no Layer declares: the Terminal Reason comment (R11a), the parse-retry nudge and a recovery
-// section for a Check with no recoverBrief (T4b). Every other template is a Layer file.
+// gg's own templates, which no Source declares: the Terminal Reason comment (R11a), the parse-retry nudge and a
+// recovery section for a Check with no recoverBrief (T4b). Every other template is a file a Source names.
 const ENGINE = new URL('./templates/', import.meta.url);
 export const engineTemplate = (name: string): string => readFileSync(new URL(name, ENGINE), 'utf8');
 

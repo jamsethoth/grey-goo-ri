@@ -30,23 +30,28 @@ import * as tempDirectory from './temp-directory.ts';
 export { BRANCH, TICKET } from './golden.ts';
 const { BRANCH, TICKET } = golden;
 
-type Configuration = config.Config & {
+type Repository = config.Source & {
   agents: Record<string, Record<string, unknown>>;
   flows: Record<string, golden.ConfiguredFlow>;
   procedures: Record<string, { actions: { id: string; [key: string]: unknown }[] }>;
 };
+// The fixture's two sources: the repository's, and the user's with its machine settings.
+interface Configuration extends config.Configuration {
+  repository: Repository;
+  user: config.Source & { maxParallel: number; worktreeRoot: string };
+}
 
-// The Layer gg shipped until #120 with every Agent on `harness`, the repository Layer's test command and, unless
-// `fullFlow`, a red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
-export function testConfig(root: string, { harness = 'fake', fullFlow = false } = {}): Configuration {
-  const configured = shippedFlow.shippedLayer() as Configuration;
-  configured.commands = { test: 'npm test' };
-  configured.testPaths = [...exampleLayer.TEST_GLOBS];
-  for (const agent of Object.values(configured.agents))
+// The repository source gg shipped until #120 with every Agent on `harness`, its test command and, unless `fullFlow`,
+// a red, green and publish Flow to ready-for-qa, whose publish reads green's report and evidence.
+export function testConfig(_root: string, { harness = 'fake', fullFlow = false } = {}): Repository {
+  const { maxParallel: _maxParallel, worktreeRoot: _worktreeRoot, ...configured } = shippedFlow.shippedLayer();
+  const repository = configured as unknown as Repository;
+  repository.commands = { test: 'npm test' };
+  repository.testPaths = [...exampleLayer.TEST_GLOBS];
+  for (const agent of Object.values(repository.agents))
     Object.assign(agent, { harness, model: 'model-x', effort: 'high' });
-  configured.worktreeRoot = join(root, 'wt');
   if (!fullFlow) {
-    const shipped = configured.flows.default as golden.ConfiguredFlow;
+    const shipped = repository.flows.default as golden.ConfiguredFlow;
     const { routes, vertices } = shipped.ticket;
     shipped.ticket = {
       entry: 'red',
@@ -62,7 +67,7 @@ export function testConfig(root: string, { harness = 'fake', fullFlow = false } 
       },
     };
   }
-  return configured;
+  return repository;
 }
 
 export interface RunFixtureOptions {
@@ -152,6 +157,18 @@ function fixtureRoot(t: TestContext, { rootName = 'gg-run-', linked = false }: R
   return { real, root };
 }
 
+// The repository's source testConfig gives, and a user source with the machine settings and no Flow.
+const fixtureSources = (
+  root: string,
+  mainRoot: string,
+  options: { harness?: string; fullFlow?: boolean },
+): Configuration => ({
+  repository: testConfig(root, options),
+  user: { maxParallel: 2, worktreeRoot: join(root, 'wt'), files: {} },
+  repositoryFile: join(mainRoot, '.agents', 'gg', 'gg.json'),
+  userFile: join(root, 'home', 'gg.json'),
+});
+
 // git is the fake unless the case asks for real git by name.
 export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) {
   const { responses = golden.firstVisitResponses, harness: harnessName, fullFlow } = fixtureOptions;
@@ -165,8 +182,8 @@ export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) 
   const harness = golden.goldenHarness(join(root, 'transcripts'), responses);
   const logs: string[] = [];
   const clock = runClock();
-  const configured = testConfig(root, { harness: harnessName, fullFlow });
-  const worktree = gitModule.worktreePath(configured.worktreeRoot, 'main', TICKET);
+  const configured = fixtureSources(root, mainRoot, { harness: harnessName, fullFlow });
+  const worktree = gitModule.worktreePath(configured.user.worktreeRoot, 'main', TICKET);
   const exec = addSuite.addSuite({ worktree });
   const options = {
     target: TICKET,
@@ -234,11 +251,11 @@ export async function seedExecution(
 ) {
   const { mainRoot, worktree, commonDir, options } = runFixture;
   await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
-  const configured = options.config;
+  const configured = options.config.repository;
   const flows = validate.validate(configured, {
     harnesses: options.harnesses,
-    readSchema: (name: string) => JSON.parse(config.layerFile(configured.files, name)),
-    readTemplate: (name: string) => config.layerFile(configured.files, name),
+    readSchema: (name: string) => JSON.parse(config.namedFile(configured.files, name)),
+    readTemplate: (name: string) => config.namedFile(configured.files, name),
   }).flows as Record<string, unknown>;
   const flow = model.fromJson(flows.default);
   const executionRecord = record.createExecutionRecord({
@@ -272,7 +289,7 @@ export async function seedExecution(
       crashAt: crashAt?.(executionRecord),
       testImmutability: options.testImmutability,
       protectedPaths: options.protectedPaths,
-      files: options.config.files,
+      files: options.config.repository.files,
     }),
     (err) => err instanceof interpreter.CrashError,
   );

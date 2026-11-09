@@ -103,7 +103,7 @@ _Avoid_: fallback, hand-off
 ### Procedure
 
 **Procedure**:
-A named sequence of Actions a Vertex runs, declared in a Layer: its agent Action, Checks, effects, Claim tokens, tables and
+A named sequence of Actions a Vertex runs, declared in a Source: its agent Action, Checks, effects, Claim tokens, tables and
 recovery. The interpreter runs each Action by its kind and names no Procedure; a Visit pins the Procedure's name and
 its hash, the sha256 of its canonical JSON as declared.
 _Avoid_: recipe, script, playbook
@@ -185,8 +185,8 @@ The account of earlier failed Attempts on a Ticket that is fed back into a Brief
 _Avoid_: memory
 
 **Declared Command**:
-A named command a repository publishes in its repository Layer, such as test or lint, that Checks run and agents
-may run. No other Layer may set one. Agents may also use gg's built-in read-only allowlist, such as read-only git and
+A named command a repository publishes in its own Source's `gg.json`, such as test or lint, that Checks run and
+agents may run. The user's Source may not set one. Agents may also use gg's built-in read-only allowlist, such as read-only git and
 file reads, which is not a Declared Command.
 _Avoid_: script, task, allowed command
 
@@ -471,14 +471,16 @@ _Avoid_: reviewer (reserved for the review Agent), owner
 The shared set of named Agents that Vertices use or override.
 _Avoid_: node library, agent registry, catalog
 
-**Layer**:
-One of the three configuration sources, defaults, user and repository, merged in that order. The defaults Layer holds
-only the Run's settings; Flows and Procedures are declared in the repository Layer alone, and an Agent's Harness, model
-and effort come from the user or repository Layer.
-_Avoid_: tier, override file
+**Source**:
+One of the two places gg reads configuration from, each a `gg.json` with the files it names beside it: the
+repository's `.agents/gg/` and the user's `GG_HOME` (default `~/.agents/gg/`). Each is read whole and nothing merges
+between them. Either declares Flows, Procedures and Agents, and a Flow resolves them only in its own Source; a user
+Flow is named `user:<name>`. The repository contract (Declared Commands, test paths, approvers, label prefix and base
+branch) is the repository's alone, and the machine settings (`maxParallel`, `worktreeRoot`) the user's.
+_Avoid_: Layer, tier, override file
 
 **Resolved Flow**:
-A Flow after layering, Agent expansion and validation, as a Run actually uses it: each Vertex's Agent, effective
+A Flow after Agent expansion and validation, as a Run actually uses it: each Vertex's Agent, effective
 Procedure, access, `tests`, Outcomes and inputs.
 _Avoid_: compiled flow, effective flow
 
@@ -498,9 +500,9 @@ against a schema-shaped scope and gg reads at run time. Each kind starts from it
 _Avoid_: ref (a git ref)
 
 **Pinned Configuration**:
-The resolved configuration a Config Hash fingerprints: Resolved Flow, the bytes and hash of every Layer file it names
-(Personas, Briefs, templates and schemas, by the name the declaring Layer gives each), harness settings, Launch Profile,
-Declared Commands and test paths, stored by hash in the State Database so two hashes can be diffed.
+The resolved configuration a Config Hash fingerprints: Resolved Flow, the bytes and hash of every file it uses
+(Personas, Briefs, templates and schemas, by the name its Source gives each, never its Source), harness settings, Launch
+Profile, Declared Commands, test paths and approvers, stored by hash in the State Database so two hashes can be diffed.
 _Avoid_: config snapshot (reserved for a Visit), config blob
 
 **Repository Content Digest**:

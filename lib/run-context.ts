@@ -123,7 +123,7 @@ export interface ExecutionOptions {
   runState?: effects.RunState;
   testImmutability?: TestImmutability;
   publicText?: (text: string) => string;
-  // The Approvers the repository Layer lists, and the Config Hash this Run admitted under, perhaps not the record's.
+  // The Approvers the repository lists, and the Config Hash this Run admitted under, perhaps not the record's.
   approvers?: string[];
   configHash?: string;
   crashAt?: effects.EffectContext['crashAt'];

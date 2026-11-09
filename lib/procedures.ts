@@ -1,5 +1,5 @@
 // The Action and Check kinds a Procedure may declare (#106): each kind's own keys, and what each Action kind produces
-// as `<action id>.<output>` (W2). The Procedures themselves are configuration, declared in a Layer; the interpreter
+// as `<action id>.<output>` (W2). The Procedures themselves are configuration, declared in a Source; the interpreter
 // runs each kind.
 
 import type * as referencePaths from './reference-paths.ts';

@@ -16,7 +16,7 @@ import * as visitScope from './visit-scope.ts';
 type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 
 // What a Terminal reads beside the effects' context, which runExecution builds (lib/run-context.ts): the Event log and
-// Run its ticket_end goes to, the Layer files a stop token's comment renders, and how each Terminal Action is entered
+// Run its ticket_end goes to, the Source files a stop token's comment renders, and how each Terminal Action is entered
 // and marked.
 export interface TerminalContext extends effects.EffectContext {
   gh: github.Gh;
@@ -147,7 +147,7 @@ function commentBody(
   // validation.
   if (stop?.stopped && stop.response && stop.commentTemplate)
     return render.publicBody(
-      config.layerFile(context.files, stop.commentTemplate),
+      config.namedFile(context.files, stop.commentTemplate),
       {
         ...visitScope.visitScope(executionRecord, stop.actionRef!),
         response: stop.response,

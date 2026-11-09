@@ -326,7 +326,7 @@ const LEFT_OUT_KEYS: [string, (config: exampleLayer.Layer) => void, report.Probl
       {
         at: 'procedures.base-check.actions[0]',
         code: 'undeclared-command',
-        message: 'Check with no id names command "lint", which the repository Layer does not declare',
+        message: 'Check with no id names command "lint", which the repository does not declare',
         params: { command: 'lint' },
       },
     ],
@@ -483,13 +483,13 @@ test('an unset harness names its Agent in params, or the Vertex whose own Agent 
     {
       at: 'agents.reviewer',
       code: 'harness-unset',
-      message: 'agent reviewer names no harness; set one in a user or repository Layer',
+      message: 'agent reviewer names no harness; set one in the gg.json that declares it',
       params: { agent: 'reviewer' },
     },
     {
       at: `${VERTICES}.red`,
       code: 'harness-unset',
-      message: 'the agent of Vertex red names no harness; set one in a user or repository Layer',
+      message: 'the agent of Vertex red names no harness; set one in the gg.json that declares it',
       params: { vertex: 'red' },
     },
   ]);

@@ -30,9 +30,16 @@ const LCOV = 'coverage/lcov.info';
 const BASELINE = 'coverage-baseline.json';
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.ts), so their lines are not unit-testable;
 // lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts and this launcher's census, and
-// lib/git-temp-index.ts only through lib/git.ts. Their contract suites cover them; the decisions are in
-// lib/command-cleanup.ts, which is measured.
-const NOT_UNIT = ['lib/exec.ts', 'lib/git.ts', 'lib/git-temp-index.ts', 'lib/process-tree.ts', 'lib/containment.ts'];
+// lib/git-temp-index.ts and lib/git-default-branch.ts only through lib/git.ts. Their contract suites cover them; the
+// decisions are in lib/command-cleanup.ts, which is measured.
+const NOT_UNIT = [
+  'lib/exec.ts',
+  'lib/git.ts',
+  'lib/git-temp-index.ts',
+  'lib/git-default-branch.ts',
+  'lib/process-tree.ts',
+  'lib/containment.ts',
+];
 // A test's git reads no global or system config, so the developer's own cannot change what it does: a global
 // commit.gpgsign=true failed each commit a test made, and core.fsmonitor=true starts a daemon in each repository
 // (grey-goo-ri issue #300). Git for Windows reads /dev/null as its null device and refuses node's os.devNull.

@@ -6,12 +6,15 @@ with deterministic gates, full tracing and usage metrics. Successor to feature-f
 
 Status: under construction, and not yet usable on a real ticket.
 
-- `gg init` writes an example Layer, a Flow with its Agents, Procedures, Briefs and Personas, into
-  `.agents/gg/` of the repository, and keeps one that is already there.
+- `gg init` writes an example, a Flow with its Agents, Procedures, Briefs and Personas, into `.agents/gg/` of the
+  repository, and keeps one that is already there. It also creates your own `gg.json`, with the machine settings
+  `maxParallel` and `worktreeRoot`, in `GG_HOME` (default `~/.agents/gg/`), where your own Flows go too, named
+  `user:<name>` when you run them. `gg init --harness <name>` names each Agent's harness, model and effort.
 - `gg doctor` validates the configuration and prints each Resolved Flow.
 - `gg run <ticket>` would carry a Ticket through its Flow, but the Claude Code and Codex Harnesses are stubs, so its
   preflight fails with "not implemented" for every Vertex that has an Agent, before any Ticket is admitted.
-- `plan`, `publish`, `work`, `trace` and `stats` are not implemented.
+- `gg work abandon <ticket>` forgets a Ticket's Execution Record and keeps its worktree and branch.
+- `plan`, `publish`, `trace` and `stats`, and `gg work`'s other verbs, are not implemented.
 
 ## Install
 
