@@ -39,13 +39,13 @@ test('preflight lists every malformed Declared Command and a missing test, namin
       `error: commands: ${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it ` +
         '[required-key-missing]',
       'error: procedures.tests-fail.actions[1]: Check red-check names command "test", ' +
-        'which the repository Layer does not declare [undeclared-command]',
+        'which the repository does not declare [undeclared-command]',
       'error: procedures.implement.actions[1]: Check test names command "test", ' +
-        'which the repository Layer does not declare [undeclared-command]',
+        'which the repository does not declare [undeclared-command]',
       'error: procedures.fix.actions[1]: Check test names command "test", ' +
-        'which the repository Layer does not declare [undeclared-command]',
+        'which the repository does not declare [undeclared-command]',
       'error: procedures.publish.actions[0]: Check test names command "test", ' +
-        'which the repository Layer does not declare [undeclared-command]',
+        'which the repository does not declare [undeclared-command]',
     ]);
     assert.equal(err.exitCode, 1);
     return true;

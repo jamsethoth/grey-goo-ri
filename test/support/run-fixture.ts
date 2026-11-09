@@ -254,8 +254,8 @@ export async function seedExecution(
   const configured = options.config.repository;
   const flows = validate.validate(configured, {
     harnesses: options.harnesses,
-    readSchema: (name: string) => JSON.parse(config.layerFile(configured.files, name)),
-    readTemplate: (name: string) => config.layerFile(configured.files, name),
+    readSchema: (name: string) => JSON.parse(config.namedFile(configured.files, name)),
+    readTemplate: (name: string) => config.namedFile(configured.files, name),
   }).flows as Record<string, unknown>;
   const flow = model.fromJson(flows.default);
   const executionRecord = record.createExecutionRecord({

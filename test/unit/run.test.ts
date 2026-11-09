@@ -208,7 +208,7 @@ test('an error line ends in its code', async (t) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
       'error: procedures.implement.actions[1]: Check test names command "lint", ' +
-        'which the repository Layer does not declare [undeclared-command]',
+        'which the repository does not declare [undeclared-command]',
     ]);
     return true;
   });
@@ -279,10 +279,10 @@ test('preflight names every failing vertex in one error, before any gh call, wor
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
 });
 
-test('preflight rejects a repository Layer without testPaths', async (t) => {
+test('preflight rejects a repository without testPaths', async (t) => {
   const fixture = runFixture.fixture(t);
   delete fixture.options.config.repository.testPaths;
-  const file = config.layerPath(fixture.mainRoot);
+  const file = fixture.options.config.repositoryFile;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
@@ -295,20 +295,20 @@ test('preflight rejects a repository Layer without testPaths', async (t) => {
   assert.equal(fixture.worktrees(), 1, 'no worktree');
 });
 
-// gg ships no Flow, so a repository Layer that declares none fails preflight naming gg init (P1a).
+// gg ships no Flow, so a repository that declares none, beside a user's directory that declares none, fails preflight
+// naming gg init (P1a).
 test('preflight without a Flow names gg init', async (t) => {
   const fixture = runFixture.fixture(t);
   const bare = join(fixture.root, 'bare');
-  mkdirSync(dirname(config.layerPath(bare)), { recursive: true });
-  writeFileSync(config.layerPath(bare), JSON.stringify({ commands: { test: 'npm test' }, testPaths: ['test/**'] }));
-  fixture.options.config.repository = config.loadLayers(
-    bare,
-    join(fixture.root, 'no-home'),
-  ) as unknown as typeof fixture.options.config.repository;
+  mkdirSync(config.repositoryDirectory(bare), { recursive: true });
+  const contract = { commands: { test: 'npm test' }, testPaths: ['test/**'], labelPrefix: 'gg', baseBranch: 'main' };
+  writeFileSync(config.configFile(config.repositoryDirectory(bare)), JSON.stringify(contract));
+  fixture.options.config.repository = config.loadSources(bare, join(fixture.root, 'no-user'))
+    .repository as unknown as typeof fixture.options.config.repository;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: flows: no Flow is declared; run gg init to write the example Flow into the repository Layer ' +
+      "error: flows: no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/ " +
         '[no-flow-declared]',
     ]);
     assert.equal(err.exitCode, 1);
@@ -342,7 +342,7 @@ test('an unknown --flow fails preflight listing the declared Flows', async (t) =
   await assert.rejects(run.runTarget({ ...fixture.options, flow: 'nope' }), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: flows: no Flow named nope is declared; the repository Layer declares default, light [unknown-flow]',
+      'error: flows: no Flow named nope is declared; the declared Flows are default, light [unknown-flow]',
     ]);
     assert.equal(err.exitCode, 1);
     return true;
@@ -359,7 +359,7 @@ test('without --flow, a repository Layer declaring no default Flow fails preflig
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: flows: no Flow named default is declared; the repository Layer declares light [unknown-flow]',
+      'error: flows: no Flow named default is declared; the declared Flows are light [unknown-flow]',
     ]);
     return true;
   });
@@ -368,11 +368,11 @@ test('without --flow, a repository Layer declaring no default Flow fails preflig
 
 // The advice a preflight that found an Agent with no harness ends with.
 const examples = fileURLToPath(new URL('../../examples/', import.meta.url));
-const MERGE_ADVICE =
-  `Merge one of ${join(examples, 'claude.json')}, ${join(examples, 'codex.json')} into the user Layer at ` +
-  `${config.layerPath(homedir())}.`;
+const HARNESS_ADVICE =
+  "Set each Agent's harness, model and effort in the gg.json that declares it; gg init --harness claude or codex " +
+  `writes them into the example, from ${examples}.`;
 
-test('preflight lists every unset Vertex and Agent before one merge advice line', async (t) => {
+test('preflight lists every unset Vertex and Agent before one harness advice line', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
   delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
   delete (fixture.options.config.repository.agents.reviewer as { harness?: unknown }).harness;
@@ -380,10 +380,11 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
     assert.equal(err.exitCode, 2);
     assert.deepEqual(err.message.split('\n'), [
       '[main] preflight failed:',
-      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer ' +
+      'error: agents.implementer: agent implementer names no harness; set one in the gg.json that declares it ' +
         '[harness-unset]',
-      'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer [harness-unset]',
-      MERGE_ADVICE,
+      'error: agents.reviewer: agent reviewer names no harness; set one in the gg.json that declares it ' +
+        '[harness-unset]',
+      HARNESS_ADVICE,
     ]);
     return true;
   });
@@ -428,7 +429,7 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
   fixture.options.config.repository.procedures.implement.actions[1].command = 'lint';
   const line =
     'error: procedures.implement.actions[1]: Check test names command "lint", ' +
-    'which the repository Layer does not declare [undeclared-command]';
+    'which the repository does not declare [undeclared-command]';
   const { text } = await doctor.doctor({
     config: fixture.options.config,
     harnesses: fixture.options.harnesses,
@@ -485,9 +486,9 @@ test('an Agent naming no harness still exits 2 naming the example Layers', async
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer ' +
+      'error: agents.implementer: agent implementer names no harness; set one in the gg.json that declares it ' +
         '[harness-unset]',
-      MERGE_ADVICE,
+      HARNESS_ADVICE,
     ]);
     assert.equal(err.exitCode, 2);
     return true;

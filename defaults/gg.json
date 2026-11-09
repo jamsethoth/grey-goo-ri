@@ -1,6 +1,0 @@
-{
-  "maxParallel": 2,
-  "baseBranch": "main",
-  "worktreeRoot": "~/worktrees",
-  "labelPrefix": "gg"
-}

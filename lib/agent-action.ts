@@ -99,7 +99,7 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
     .filter((action) => action.do === 'check' && state.checks.get(action.id)?.state === 'failed')
     .map((action) => ({
       text: action.recoverBrief
-        ? config.layerFile(runContext.files, action.recoverBrief)
+        ? config.namedFile(runContext.files, action.recoverBrief)
         : render.engineTemplate('recover-section.md'),
       id: action.id,
       kind: action.kind,
@@ -115,7 +115,7 @@ async function briefOf(runContext: RunContext, attempt: Attempt, commands: Recor
   const sections = recovering ? sectionsOf(runContext, state) : undefined;
   const name = (recovering ? state.proc.recover!.brief : action.brief) as string;
   const renderBrief = (recovering ? briefs.recoveryBrief : briefs.brief) as typeof briefs.recoveryBrief;
-  return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.layerFile(runContext.files, name), {
+  return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(runContext.files, name), {
     ...visitScope.scopeOf(executionRecord, actionIdentity, state),
     ticket,
     baseBranch: base,
@@ -166,7 +166,7 @@ function callOf(
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
-  const schema = JSON.parse(config.layerFile(runContext.files, action.schema)) as referencePaths.SchemaNode;
+  const schema = JSON.parse(config.namedFile(runContext.files, action.schema)) as referencePaths.SchemaNode;
   return {
     marker: actionMarker,
     vertex: actionIdentity.vertex,

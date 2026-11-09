@@ -320,8 +320,13 @@ export function load<Kind extends RecordKind>(commonDir: string, kind: Kind, rec
   return row ? parseRow<Saved<Kind>>(commonDir, row) : null;
 }
 
-export function removeRecord(_commonDir: string, _kind: RecordKind, _recordNumber: number): boolean {
-  return false;
+// A record's row deleted, as gg work abandon forgets a Ticket's position; its Events stay. Says whether one was.
+export function removeRecord(commonDir: string, kind: RecordKind, recordNumber: number): boolean {
+  const deleted = stateDatabase
+    .open(commonDir)
+    .prepare('DELETE FROM records WHERE kind = ? AND n = ?')
+    .run(kind, recordNumber);
+  return Number(deleted.changes) > 0;
 }
 
 // One corrupt record must not hide every other worktree's activity: it is reported, not fatal.

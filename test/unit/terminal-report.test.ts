@@ -111,7 +111,7 @@ test('a fault report whose comment cannot be rendered fails, rather than landing
     commentTemplate: 'stopped.md',
     actionRef: { vertex: 'green', visit: 1, action: 'green', recovery: 0 },
   };
-  await assert.rejects(terminalReport.report(context, 'needs-human', stop), /no Layer names file "stopped\.md"/);
+  await assert.rejects(terminalReport.report(context, 'needs-human', stop), /no source names file "stopped\.md"/);
   assert.deepEqual(fakeGh.comments, []);
   assert.equal(executionRecord.state, 'active', 'the fault has not landed');
   assert.deepEqual(ticketEnds(commonDir, executionRecord.execution), []);

@@ -61,10 +61,15 @@ test('gg work abandon deletes the Execution Record row and keeps its Events and 
 test('gg work abandon refuses while the ticket lock is held', async (t) => {
   const { commonDir, fake, options } = abandoning(t);
   const held = await locks.tryAcquire(commonDir, `ticket-${TICKET}`);
-  t.after(() => held && locks.release(held));
-  await assert.rejects(work.abandon(options), {
-    message: 'another process holds the ticket-7 lock, so Ticket 7 may be running; abandon it once that process ends',
-  });
+  assert.ok(held, 'the case holds the ticket lock');
+  try {
+    await assert.rejects(work.abandon(options), {
+      message: 'another process holds the ticket-7 lock, so Ticket 7 may be running; abandon it once that process ends',
+    });
+  } finally {
+    // Before the temp directory goes: Windows will not remove an open lock file.
+    await locks.release(held);
+  }
   assert.ok(record.load(commonDir, 'ticket', TICKET), 'the record is kept');
   assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
 });
@@ -73,5 +78,14 @@ test('gg work abandon of a Ticket with no Execution Record says so and changes n
   const { commonDir, fake, options } = abandoning(t);
   assert.ok(record.removeRecord(commonDir, 'ticket', TICKET), 'removeRecord says it deleted a row');
   await assert.rejects(work.abandon(options), { message: 'Ticket 7 has no Execution Record to abandon' });
+  assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
+});
+
+// A record deleted while the label stays would read as stuck, so a failed label update keeps the record.
+test('gg work abandon keeps the record when its in-progress label cannot be removed', async (t) => {
+  const { commonDir, fake, options } = abandoning(t);
+  fake.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'edit', status: 502 });
+  await assert.rejects(work.abandon(options), /label update .* failed: .*; Execution Record ticket-7 is kept$/);
+  assert.ok(record.load(commonDir, 'ticket', TICKET), 'the record is kept');
   assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
 });

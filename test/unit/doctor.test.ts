@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.ts';
@@ -310,6 +310,16 @@ for (const harness of ['claude', 'codex']) {
   });
 }
 
+// --harness takes a name, never a path, and writes nothing when it names no Harness examples/ holds.
+test('gg init --harness with a name examples/ does not hold fails, writing nothing', (t) => {
+  const { repo, user } = initRoots(t);
+  assert.throws(() => doctor.init(repo, { baseBranch: 'main', userDirectory: user, harness: '../package' }), {
+    message: 'no Harness named ../package has example settings; gg init --harness takes claude or codex',
+  });
+  assert.equal(existsSync(repo), false, 'no repository file');
+  assert.equal(existsSync(user), false, "no user's gg.json");
+});
+
 test('gg init keeps an existing repository configuration, says so and exits successfully', (t) => {
   // It returns what it says, and throws only on a failed write, so gg exits 0 (test/e2e/gg.test.ts).
   const { repo, user } = initRoots(t);
@@ -320,7 +330,7 @@ test('gg init keeps an existing repository configuration, says so and exits succ
   assert.ok(
     doctor
       .init(repo, { baseBranch: 'main', userDirectory: user })
-      .startsWith(`gg init kept the existing configuration and wrote nothing: ${file} exists.\n`),
+      .startsWith(`gg init kept the existing configuration and wrote none of the example: ${file} exists.\n`),
   );
   assert.deepEqual(readdirSync(repositoryDirectory(repo)), ['gg.json']);
   assert.equal(readFileSync(file, 'utf8'), kept);
@@ -334,7 +344,7 @@ test('gg init writes nothing over any file it would write', (t) => {
   assert.ok(
     doctor
       .init(repo, { baseBranch: 'main', userDirectory: user })
-      .startsWith(`gg init kept the existing configuration and wrote nothing: ${red} exists.\n`),
+      .startsWith(`gg init kept the existing configuration and wrote none of the example: ${red} exists.\n`),
   );
   assert.deepEqual(readdirSync(repositoryDirectory(repo)), ['red.md']);
 });
@@ -390,7 +400,7 @@ test('gg doctor warns of a user Flow that names a command the repository does no
   user.procedures['base-check'].actions[0].command = 'lint';
   const { text, exitCode } = await doctor.doctor({ config: sources(repository, user), ...DEPS });
   assert.equal(exitCode, 0, text);
-  assert.ok(text.includes('\nflow default\n  source: repository\n'), text);
+  assert.ok(text.startsWith('flow default\n  source: repository\n'), text);
   assert.ok(text.includes('\nflow user:strict\n  source: user\n'), text);
   assert.ok(
     text.includes(
@@ -564,7 +574,10 @@ test('gg doctor reads no labels for a Flow that asks nobody', async () => {
 
 test('gg doctor prints a Flow named entirely with Object.prototype names like one with ordinary names', async () => {
   const print = (names: namedFlow.Names) =>
-    doctor.doctor({ config: sources(namedFlow.namedConfig(names) as unknown as config.Source), ...DEPS });
+    doctor.doctor({
+      config: sources({ ...namedFlow.namedConfig(names), labelPrefix: 'gg', baseBranch: 'main' } as config.Source),
+      ...DEPS,
+    });
   const ordinary = await print(namedFlow.ORDINARY);
   // Its one command is named for the comparison, which the repository Layer's command rule refuses, as gg run
   // preflight does (#301); the Flow itself is clean.

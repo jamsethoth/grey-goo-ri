@@ -53,7 +53,7 @@ test('usage marks each unimplemented command', () => {
   const marked = commandLines
     .filter((line) => line.endsWith(' (not implemented)'))
     .map((line) => line.trim().split(' ')[0]);
-  assert.deepEqual(marked, ['plan', 'publish', 'work', 'trace', 'stats']);
+  assert.deepEqual(marked, ['plan', 'publish', 'trace', 'stats']);
   assert.match(gg('--help').stdout, /^ {2}doctor {4}validate the configuration and print each Resolved Flow$/m);
 });
 
@@ -67,7 +67,6 @@ test('gg with an unknown command prints usage to stderr and exits 1', () => {
 for (const [name, message] of [
   ['plan', 'gg plan: not implemented'],
   ['publish', 'gg publish: not implemented'],
-  ['work', 'gg work: not implemented'],
   ['trace', 'gg trace: not implemented'],
   ['stats', 'gg stats: not implemented'],
 ]) {
@@ -81,7 +80,14 @@ for (const [name, message] of [
 test('gg work list exits 1 with a not-implemented message', () => {
   const result = gg('work', 'list');
   assert.equal(result.status, 1);
-  assert.equal(result.stderr.trim(), 'gg work: not implemented');
+  assert.equal(result.stderr.trim(), 'gg work list: not implemented');
+});
+
+test('gg work without a verb prints usage', () => {
+  const result = gg('work', '1');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^gg work: work takes a verb, one of list, resume, done, abandon, reset, approve\n/);
+  assertUsage(result.stderr);
 });
 
 test('gg run rejects an unknown option with a usage error', () => {
@@ -105,17 +111,18 @@ for (const [name, flag, error] of [
   });
 }
 
-// A temp repo and a temp home, so gg reads no real user Layer; `layer` becomes the user Layer when given.
-function tempRepo(t: TestContext, layer?: string) {
+// A temp repo, a temp home and a temp GG_HOME, so gg reads no real user's gg.json; `user` becomes the user's gg.json
+// when given.
+function tempRepo(t: TestContext, user?: object) {
   const directory = tempDirectory.tempDirectory(t, 'gg-cli-');
   const repo = join(directory, 'repo');
   const home = join(directory, 'home');
   const userDirectory = join(directory, 'gg-home');
   mkdirSync(home);
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
-  if (layer) {
-    mkdirSync(join(home, '.agents', 'gg'), { recursive: true });
-    writeFileSync(join(home, '.agents', 'gg', 'gg.json'), layer);
+  if (user) {
+    mkdirSync(userDirectory, { recursive: true });
+    writeFileSync(join(userDirectory, 'gg.json'), JSON.stringify(user));
   }
   const ggIn = (...args: string[]) =>
     spawnSync(process.execPath, [bin, ...args], {
@@ -126,14 +133,17 @@ function tempRepo(t: TestContext, layer?: string) {
   return { repo, userDirectory, ggIn };
 }
 
+// The machine settings gg init writes into the user's gg.json.
+const MACHINE_SETTINGS = { maxParallel: 2, worktreeRoot: '~/worktrees' };
+
 // gg ships no Flow (P1a), so a repository that declares none is told to run gg init.
 test('gg run in a repository without a Flow fails preflight naming gg init', (t) => {
-  const { repo, ggIn } = tempRepo(t);
+  const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   const result = ggIn('run', '1');
   assert.equal(result.status, 1, result.stderr);
   assert.ok(
     result.stderr.includes(
-      'error: flows: no Flow is declared; run gg init to write the example Flow into the repository Layer ' +
+      "error: flows: no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/ " +
         '[no-flow-declared]\n',
     ),
     result.stderr,
@@ -142,7 +152,7 @@ test('gg run in a repository without a Flow fails preflight naming gg init', (t)
 });
 
 test('gg run fails preflight naming the unimplemented harness', (t) => {
-  const { repo, ggIn } = tempRepo(t, readFileSync(new URL('../../examples/claude.json', import.meta.url), 'utf8'));
+  const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleLayer(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1');
   assert.equal(result.status, 1, result.stderr);
@@ -151,42 +161,43 @@ test('gg run fails preflight naming the unimplemented harness', (t) => {
 });
 
 test('gg run without a harness fails admission naming the vertex and agent', (t) => {
-  const { repo, ggIn } = tempRepo(t);
+  const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleLayer(join(repo, '.agents', 'gg'));
+  const file = join(repo, '.agents', 'gg', 'gg.json');
+  const example = JSON.parse(readFileSync(file, 'utf8'));
+  for (const agent of Object.values<Record<string, unknown>>(example.agents)) delete agent.harness;
+  writeFileSync(file, JSON.stringify(example));
   const result = ggIn('run', '1');
   assert.equal(result.status, 2, result.stderr);
   assert.ok(
     result.stderr.includes(
-      'error: agents.implementer: agent implementer names no harness; set one in a user or repository Layer ' +
+      'error: agents.implementer: agent implementer names no harness; set one in the gg.json that declares it ' +
         '[harness-unset]\n',
     ),
     result.stderr,
   );
   assert.ok(
     result.stderr.includes(
-      'error: agents.reviewer: agent reviewer names no harness; set one in a user or repository Layer ' +
+      'error: agents.reviewer: agent reviewer names no harness; set one in the gg.json that declares it ' +
         '[harness-unset]\n',
     ),
     result.stderr,
   );
-  assert.ok(
-    result.stderr.includes(fileURLToPath(new URL('../../examples/claude.json', import.meta.url))),
-    result.stderr,
-  );
-  assert.ok(result.stderr.includes('into the user Layer at '), result.stderr);
-  assert.equal((result.stderr.match(/Merge /g) ?? []).length, 1);
+  assert.ok(result.stderr.includes(fileURLToPath(new URL('../../examples/', import.meta.url))), result.stderr);
+  assert.ok(result.stderr.includes('gg init --harness claude or codex'), result.stderr);
+  assert.equal((result.stderr.match(/Set each Agent's harness/g) ?? []).length, 1);
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
 // The flag reaches admission, which looks its value up among the declared Flows.
 test('gg run accepts --flow with a value', (t) => {
-  const { repo, ggIn } = tempRepo(t, readFileSync(new URL('../../examples/claude.json', import.meta.url), 'utf8'));
+  const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleLayer(join(repo, '.agents', 'gg'));
   const result = ggIn('run', '1', '--flow', 'light');
   assert.equal(result.status, 1, result.stderr);
   assert.ok(
     result.stderr.includes(
-      'error: flows: no Flow named light is declared; the repository Layer declares default [unknown-flow]\n',
+      'error: flows: no Flow named light is declared; the declared Flows are default [unknown-flow]\n',
     ),
     result.stderr,
   );
@@ -197,13 +208,13 @@ test('gg run accepts --flow with a value', (t) => {
   assertUsage(missing.stderr);
 });
 
-// The example fixture as a repository Layer at `layer`: its gg.json and every file it names.
-function writeExampleLayer(layer: string) {
-  mkdirSync(layer, { recursive: true });
-  for (const name of exampleLayer.WRITTEN_NAMES) writeFileSync(join(layer, name), exampleLayer.fixtureText(name));
+// The example fixture as the repository's configuration in `directory`: its gg.json and every file it names.
+function writeExampleLayer(directory: string) {
+  mkdirSync(directory, { recursive: true });
+  for (const name of exampleLayer.WRITTEN_NAMES) writeFileSync(join(directory, name), exampleLayer.fixtureText(name));
 }
 
-test('gg init writes the example Layer at the repository root, and a second gg init keeps it', (t) => {
+test('gg init writes the example at the repository root, and a second gg init keeps it', (t) => {
   const { repo, ggIn } = tempRepo(t);
   const first = ggIn('init');
   assert.equal(first.status, 0, first.stderr);
@@ -211,7 +222,7 @@ test('gg init writes the example Layer at the repository root, and a second gg i
   assert.deepEqual(readdirSync(layer).sort(), [...exampleLayer.WRITTEN_NAMES].sort());
   const second = ggIn('init');
   assert.equal(second.status, 0, second.stderr);
-  assert.match(second.stdout, /^gg init kept the existing Layer and wrote nothing: /);
+  assert.match(second.stdout, /^gg init kept the existing configuration and wrote none of the example: /);
 });
 
 // The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command.
@@ -230,9 +241,8 @@ test('gg init --harness claude then gg doctor passes in a temp repository with a
   assert.match(doctor.stdout, /\n0 errors, 2 warnings\n$/);
 });
 
-test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {
-  const agents = { implementer: { harness: 'claude' }, reviewer: { harness: 'claude' }, senior: { harness: 'claude' } };
-  const { repo, ggIn } = tempRepo(t, JSON.stringify({ agents }));
+test("gg doctor reads the repository's configuration and its schemas and prints the Resolved Flow", (t) => {
+  const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleLayer(join(repo, '.agents', 'gg'));
   const result = ggIn('doctor');
   assert.ok(
@@ -245,7 +255,7 @@ test('gg doctor reads the repository Layer and its schemas and prints the Resolv
 });
 
 for (const args of [['doctor'], ['run', '1']]) {
-  test(`gg ${args[0]} names a malformed Layer file without a stack trace`, (t) => {
+  test(`gg ${args[0]} names a malformed gg.json without a stack trace`, (t) => {
     const { repo, ggIn } = tempRepo(t);
     const file = join(repo, '.agents', 'gg', 'gg.json');
     mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });

@@ -282,7 +282,7 @@ test('after gg work abandon, gg run --flow starts a new Execution under that Flo
     gh: fixture.options.deps.gh,
     locks,
   });
-  assert.match(text, /deleted Execution Record ticket-7/);
+  assert.ok(text.includes(`deleted Execution Record ticket-${TICKET} `), text);
   assert.equal(fixture.loadRow(), undefined, 'the record is gone');
 
   const results = await run.runTarget({ ...fixture.options, flow: 'light' });

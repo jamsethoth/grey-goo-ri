@@ -15,14 +15,16 @@ import * as model from './model.ts';
 import * as record from './record.ts';
 import * as runFlows from './run-flows.ts';
 import type * as runContext from './run-context.ts';
+import * as settingsModule from './settings.ts';
 import * as report from './validate/report.ts';
 import * as stateDatabase from './state-database.ts';
 
 type TicketResult = admission.TicketResult;
 
+// A Ticket left needing a human, or a record whose Flow is gone, is a gap a person closes: exit 2.
 export const runExitCode = (results: TicketResult[]): number => {
   if (results.some((result) => result.labelFailed || result.fault || result.unread)) return 1;
-  return results.some((result) => result.state === labels.NEEDS_HUMAN) ? 2 : 0;
+  return results.some((result) => result.state === labels.NEEDS_HUMAN || result.flowMissing) ? 2 : 0;
 };
 
 export function epicProblem(tickets: unknown[], ready: unknown[]): string | null {
@@ -90,8 +92,8 @@ export const lockedGit = (
   ),
 });
 
-// What gg run takes: the Ticket or Epic, the merged Layers, the registered Harnesses, the deps it reaches outside its
-// process (ADR 0019), and where it runs and logs.
+// What gg run takes: the Ticket or Epic, the two configuration sources, the registered Harnesses, the deps it reaches
+// outside its process (ADR 0019), and where it runs and logs.
 export interface RunOptions {
   deps: runContext.Deps;
   target: number;
@@ -119,16 +121,16 @@ export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
 
 // The Ticket, or an Epic's ready sub-issues. Every sub-issue is read before the Run's first effect, so an epic with
 // nothing ready leaves no trace.
-async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, layers: config.Config) {
+async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, settings: config.Settings) {
   const issue = await gh.viewIssue(target, repo.mainRoot);
   const subIssues = github.linkedIssues(issue.subIssues);
   if (!subIssues.length) return { issue, subIssues, tickets: [issue] };
   const children = await Promise.all(subIssues.map((sub) => gh.viewIssue(sub.number, repo.mainRoot)));
   // A Pending Ticket reads as in progress, and its Await Label says it is waiting for this Run.
-  const names = labels.labelsFor(layers.labelPrefix);
+  const names = labels.labelsFor(settings.labelPrefix);
   const pending = (child: github.Issue) =>
     child.state === 'OPEN' && gh.labelNames(child).some((name) => names.parse(name)?.family === 'await');
-  const tickets = children.filter((child) => gh.isReady(child, { prefix: layers.labelPrefix }) || pending(child));
+  const tickets = children.filter((child) => gh.isReady(child, { prefix: settings.labelPrefix }) || pending(child));
   const problem = epicProblem(children, tickets);
   if (problem) throw new Error(`#${target}: ${problem}`);
   return { issue, subIssues, tickets };
@@ -140,11 +142,11 @@ async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, 
 function labelEnsuringGh(
   gh: github.Gh,
   repo: admission.Repo,
-  layers: config.Config,
+  settings: config.Settings,
   flows: runFlows.PinnedFlow[],
 ): github.Gh {
   const flowLabels = [
-    labels.labelsFor(layers.labelPrefix).await(cleanupHold.AWAIT_VERTEX),
+    labels.labelsFor(settings.labelPrefix).await(cleanupHold.AWAIT_VERTEX),
     ...new Set(flows.flatMap(({ flow }) => flowModule.approvalLabels(flow))),
   ];
   let ensuredLabels: Promise<void> | undefined;
@@ -156,7 +158,7 @@ function labelEnsuringGh(
         ...(change.add?.length && {
           ensureLabels: () =>
             (ensuredLabels ??= gh
-              .ensureLabels(repo.mainRoot, { prefix: layers.labelPrefix, flowLabels })
+              .ensureLabels(repo.mainRoot, { prefix: settings.labelPrefix, flowLabels })
               .catch((err) => {
                 ensuredLabels = undefined;
                 throw err;
@@ -188,16 +190,18 @@ function startRun(
 
 async function runRepo(repo: admission.Repo, named: (message: string) => string, options: RunOptions) {
   const { target, harnesses, protectedPaths, testImmutability, deps, log } = options;
-  const layers = config.merged(options.config);
   const { gh, git, exec, integrity, locks = locksModule, database = record, clock = clockModule.WALL_CLOCK } = deps;
-  const { flows, selected, warnings, commands } = await runFlows.admitConfiguration(options, repo.mainRoot);
-  const { flow, hash } = selected;
+  const { flows, selected, warnings, settings } = await runFlows.admitConfiguration(options);
+  const { flow, hash, source } = selected;
   const declared = [...flows.values()];
-  const { issue, subIssues, tickets } = await readTickets(gh, target, repo, layers);
+  const { issue, subIssues, tickets } = await readTickets(gh, target, repo, settings);
   const { runId, runLog } = startRun(repo, { flows: declared, selected, clock }, { named, log });
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
-  runLog(`run ${runId} started for #${target} under Flow ${flow.name} (config ${hash.slice(0, 12)})`);
+  runLog(
+    `run ${runId} started for #${target} under Flow ${flow.name} from ${runFlows.sourceText(source)} ` +
+      `(config ${hash.slice(0, 12)})`,
+  );
   for (const warning of warnings) runLog(report.line('warning', warning));
   const results: TicketResult[] = [];
   // The first run stop of any Execution, which ends every other one before its next Action, and the cooldown every
@@ -206,7 +210,7 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
     stop: { failureClass: string } | null;
   };
   const context: admission.AdmissionContext = {
-    config: layers,
+    config: settings,
     flow,
     hash,
     flows,
@@ -215,7 +219,7 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
     harnesses,
     protectedPaths,
     deps: {
-      gh: labelEnsuringGh(gh, repo, layers, declared),
+      gh: labelEnsuringGh(gh, repo, settings, declared),
       git: lockedGit(git, repo.gitCommonDir, { locks }),
       exec,
       locks,
@@ -224,15 +228,15 @@ async function runRepo(repo: admission.Repo, named: (message: string) => string,
       integrity,
     },
     testImmutability,
-    commands,
-    testPaths: layers.testPaths as string[] | undefined,
+    commands: settings.commands,
+    testPaths: settings.testPaths,
     log: runLog,
     events: eventLog,
     runState,
     epic: subIssues.length ? issue.number : null,
   };
   try {
-    results.push(...(await mapConcurrently(tickets, layers.maxParallel, (ticket) => runTicket(ticket, context))));
+    results.push(...(await mapConcurrently(tickets, settings.maxParallel, (ticket) => runTicket(ticket, context))));
   } finally {
     eventLog('run_end', {
       run: runId,

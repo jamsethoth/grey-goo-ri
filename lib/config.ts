@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,30 +7,14 @@ import * as jsonc from 'jsonc-parser';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
 
-export const DEFAULTS_DIRECTORY = fileURLToPath(new URL('../defaults/', import.meta.url));
+// Each Harness's settings for the example's Agents, which gg init --harness writes.
 export const EXAMPLES_DIRECTORY = fileURLToPath(new URL('../examples/', import.meta.url));
-export const layerPath = (directory: string): string => join(directory, '.agents', 'gg', 'gg.json');
-
-type Layer = Record<string, unknown>;
-// Each file a Layer named, by that name: its text and the hash the Config Hash takes of it.
-export type LayerFiles = Record<string, { bytes: string; hash: string }>;
-// Where each name's file was read from, and the Layer file that named it.
-type FileSources = Map<string, { path: string; file: string }>;
-// The files read so far by name: a Map, so a file such as __proto__ loads like any other (#174).
-type FilesRead = Map<string, LayerFiles[string]>;
-// The merged Layers as gg reads them. The defaults Layer sets every field typed here; the validator checks the rest.
-export interface Config {
-  files: LayerFiles;
-  labelPrefix: string;
-  baseBranch: string;
-  worktreeRoot: string;
-  maxParallel: number;
-  commands?: unknown;
-  testPaths?: unknown;
-  approvers?: unknown;
-  harnesses?: unknown;
-  [key: string]: unknown;
-}
+// The Harnesses gg init --harness takes: one for each file in examples/.
+export const exampleHarnesses = (): string[] =>
+  readdirSync(EXAMPLES_DIRECTORY)
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => name.slice(0, -'.json'.length))
+    .sort();
 
 // Each file a source's gg.json names, by that name: its text and the hash the Config Hash takes of it.
 export type SourceFiles = Record<string, { bytes: string; hash: string }>;
@@ -39,7 +23,8 @@ export interface Source {
   files: SourceFiles;
   [key: string]: unknown;
 }
-// The two sources gg reads, the repository's .agents/gg/ and the user's GG_HOME, and where each gg.json is.
+// The two sources gg reads, the repository's .agents/gg/ and the user's GG_HOME, and where each gg.json is. Nothing
+// merges between them (ADR 0022).
 export interface Configuration {
   repository: Source;
   user: Source;
@@ -58,31 +43,15 @@ export interface Settings {
 }
 
 export const repositoryDirectory = (repoRoot: string): string => join(repoRoot, '.agents', 'gg');
-export const userDirectory = (_environment: NodeJS.ProcessEnv = process.env, home = homedir()): string =>
-  join(home, '.agents', 'gg');
+// One variable moves a person's whole setup, as the agent CLIs' own home variables do (Q19).
+export const userDirectory = (environment: NodeJS.ProcessEnv = process.env, home = homedir()): string =>
+  environment.GG_HOME || join(home, '.agents', 'gg');
 export const configFile = (directory: string): string => join(directory, 'gg.json');
-
-export function loadSources(repoRoot: string, directory = userDirectory()): Configuration {
-  return {
-    repository: loadLayers(repoRoot, directory),
-    user: { files: {} },
-    repositoryFile: layerPath(repoRoot),
-    userFile: configFile(directory),
-  };
-}
-
-export const sourceProblems = (_configuration: Configuration): report.Problem[] => [];
-
-export const usedFiles = (_flow: unknown, files: SourceFiles): SourceFiles => files;
-
-// Until the two sources land, the Run and gg doctor read them as one merged configuration.
-export const merged = (configuration: Configuration): Config =>
-  ({ ...configuration.user, ...configuration.repository, files: configuration.repository.files }) as Config;
 
 // The one hash gg takes of bytes or text: file hashes, the Config Hash, body hashes and digests.
 export const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
-// JSON.parse keeps the last of two equal keys, so a Layer is scanned for them once it parses (ADR 0013).
+// JSON.parse keeps the last of two equal keys, so a gg.json is scanned for them once it parses (ADR 0013).
 function duplicateKey(text: string): string | null {
   const tokens = text.match(/"(?:[^"\\]|\\.)*"|[{}[\]:]/g) ?? [];
   const open: (Set<string> | null)[] = [];
@@ -102,9 +71,9 @@ function duplicateKey(text: string): string | null {
 }
 
 // The first error in `text` as `line:column: invalid JSON, <what was expected>`, or null if jsonc-parser finds none.
-// V8's own message names no position for an early end or a trailing comma, and quotes the Layer's text, line breaks
+// V8's own message names no position for an early end or a trailing comma, and quotes the gg.json's text, line breaks
 // and all. jsonc-parser only locates the error: it never throws, and it sets a prototype from a "__proto__" key, so
-// JSON.parse alone decides what a Layer holds.
+// JSON.parse alone decides what a gg.json holds.
 function jsonError(text: string): string | null {
   let found: string | null = null;
   // jsonc-parser gives an error's code, offset and length, then its line and column.
@@ -118,124 +87,95 @@ function jsonError(text: string): string | null {
   return found;
 }
 
-function readLayer(file: string): Layer {
+// Syntax errors and duplicate keys are load errors, since nothing can be read past them (D7).
+function readConfigFile(file: string): Record<string, unknown> {
   const text = readFileSync(file, 'utf8');
-  let layer: Layer;
+  let json: unknown;
   try {
-    layer = JSON.parse(text);
+    json = JSON.parse(text);
   } catch (err) {
     const where = jsonError(text);
     throw new Error(where ? `${file}:${where}` : `${file}: ${(err as Error).message}`);
   }
   const key = duplicateKey(text);
   if (key !== null) throw new Error(`${file}: key "${key}" appears twice in one object`);
-  return layer;
-}
-
-// A repository's unsandboxed commands, its test paths, who decides its approvals, and its Flows and Procedures arrive
-// whole from its own Layer: no other Layer may extend or narrow them (ADR 0013, ADR 0014, P2).
-function rejectRepoOnly(layer: Layer, file: string): void {
-  const key = ['commands', 'testPaths', 'approvers', 'flows', 'procedures'].find((name) => Object.hasOwn(layer, name));
-  if (key) throw new Error(`${file}: ${key} may be set only in a repository Layer`);
+  if (!referencePaths.isRecord(json)) throw new Error(`${file}: a gg.json must be a JSON object`);
+  return json;
 }
 
 const values = (value: unknown): unknown[] => (referencePaths.isRecord(value) ? Object.values(value) : []);
 const field = (value: unknown, key: string): unknown => (referencePaths.isRecord(value) ? value[key] : undefined);
 
-// The file names a Layer's own JSON declares, at the keys that name a file: an Agent's or inline Vertex's `persona`, an
-// Action's `brief`, `schema`, `body` and `recoverBrief`, a Procedure's `recover.brief` and a Claim token's `comment`.
-function declaredFiles(layer: Layer): string[] {
-  const names: string[] = [];
-  const add = (value: unknown) => {
-    if (typeof value === 'string' && value) names.push(value);
-  };
-  for (const agent of values(layer.agents)) add(field(agent, 'persona'));
-  for (const flow of values(layer.flows))
-    for (const vertex of values(field(field(flow, 'ticket'), 'vertices'))) add(field(vertex, 'persona'));
-  for (const procedure of values(layer.procedures)) {
-    const actions = field(procedure, 'actions');
-    for (const action of Array.isArray(actions) ? actions : [])
-      for (const key of ['brief', 'schema', 'body', 'recoverBrief']) add(field(action, key));
-    add(field(field(procedure, 'recover'), 'brief'));
-    for (const token of values(field(procedure, 'claimTokens'))) add(field(token, 'comment'));
-  }
-  return names;
+// The file names a Procedure declares: an Action's `brief`, `schema`, `body` and `recoverBrief`, its `recover.brief`
+// and a Claim token's `comment`.
+function procedureFiles(procedure: unknown, add: (name: unknown) => void) {
+  const actions = field(procedure, 'actions');
+  for (const action of Array.isArray(actions) ? actions : [])
+    for (const key of ['brief', 'schema', 'body', 'recoverBrief']) add(field(action, key));
+  add(field(field(procedure, 'recover'), 'brief'));
+  for (const token of values(field(procedure, 'claimTokens'))) add(field(token, 'comment'));
 }
 
-// Each file `layer` (read from `file`) declares, read beside `file` into `files` as { bytes, hash }. The Layer whose
-// own JSON holds a name owns its file, so a later Layer that only sets an Agent's harness does not move its Persona.
-// `from` records each name's path and Layer file: one name naming two files is a load error.
-function loadFiles(layer: Layer, file: string, files: FilesRead, from: FileSources): void {
-  for (const name of declaredFiles(layer)) {
-    const path = resolve(dirname(file), name);
-    const declared = from.get(name);
-    if (declared) {
-      if (declared.path !== path)
-        throw new Error(
-          `file ${JSON.stringify(name)} is declared by ${declared.file} and by ${file}, each beside its own ` +
-            'Layer; give one of them another name',
-        );
-      continue;
-    }
+// The names `collect` finds, each once.
+function namesOf(collect: (add: (name: unknown) => void) => void): string[] {
+  const names = new Set<string>();
+  collect((value) => {
+    if (typeof value === 'string' && value) names.add(value);
+  });
+  return [...names];
+}
+
+// The file names a gg.json declares: an Agent's or inline Vertex's `persona`, and each Procedure's files.
+const declaredFiles = (json: Record<string, unknown>): string[] =>
+  namesOf((add) => {
+    for (const agent of values(json.agents)) add(field(agent, 'persona'));
+    for (const flow of values(json.flows))
+      for (const vertex of values(field(field(flow, 'ticket'), 'vertices'))) add(field(vertex, 'persona'));
+    for (const procedure of values(json.procedures)) procedureFiles(procedure, add);
+  });
+
+// The files a Resolved Flow uses: each Vertex's Persona and each Procedure's files. Only these enter its Pinned
+// Configuration, so a file another Flow or Agent of the same source names never moves its Config Hash (Q25).
+export function usedFiles(flow: unknown, files: SourceFiles): SourceFiles {
+  const names = namesOf((add) => {
+    for (const vertex of values(field(field(flow, 'ticket'), 'vertices')))
+      add(field(field(vertex, 'agent'), 'persona'));
+    for (const procedure of values(field(flow, 'procedures'))) procedureFiles(procedure, add);
+  });
+  return Object.fromEntries(names.filter((name) => Object.hasOwn(files, name)).map((name) => [name, files[name]!]));
+}
+
+// A source's gg.json and each file it names, read beside it; a source with no gg.json is empty, and its required
+// settings are Problems, not a load error.
+function readSource(file: string): Source {
+  if (!existsSync(file)) return { files: {} };
+  const json = readConfigFile(file);
+  // Built from entries, so a file such as __proto__ loads like any other (#174).
+  const files = declaredFiles(json).map((name) => {
     let bytes;
     try {
-      bytes = readFileSync(path, 'utf8');
+      bytes = readFileSync(resolve(dirname(file), name), 'utf8');
     } catch (err) {
       const { code, message } = err as NodeJS.ErrnoException;
       throw new Error(`${file} names file ${JSON.stringify(name)}, which cannot be read (${code ?? message})`);
     }
-    from.set(name, { path, file });
-    files.set(name, { bytes, hash: sha256(bytes) });
-  }
+    return [name, { bytes, hash: sha256(bytes) }];
+  });
+  return { ...json, files: Object.fromEntries(files) };
 }
 
-function readDefaults(files: FilesRead, from: FileSources): Layer {
-  const file = join(DEFAULTS_DIRECTORY, 'gg.json');
-  const config = readLayer(file);
-  rejectRepoOnly(config, file);
-  loadFiles(config, file, files, from);
-  return config;
+// The repository's .agents/gg/ and the user's directory, each whole: nothing merges (ADR 0022).
+export function loadSources(repoRoot: string, directory = userDirectory()): Configuration {
+  const repositoryFile = configFile(repositoryDirectory(repoRoot));
+  const userFile = configFile(directory);
+  return { repository: readSource(repositoryFile), user: readSource(userFile), repositoryFile, userFile };
 }
 
-// The shipped Layer: defaults/gg.json plus the bytes and hash of every file it names (`files`).
-export function loadDefaults(): Config {
-  const files: FilesRead = new Map();
-  return { ...readDefaults(files, new Map()), files: Object.fromEntries(files) } as Config;
-}
-
-// Objects merge key by key at every depth; anything else in the later Layer replaces the earlier value.
-const merge = (base: unknown, layer: unknown): unknown =>
-  referencePaths.isRecord(base) && referencePaths.isRecord(layer)
-    ? Object.fromEntries(
-        [...new Set([...Object.keys(base), ...Object.keys(layer)])].map((key) => [
-          key,
-          Object.hasOwn(layer, key) ? merge(base[key], layer[key]) : base[key],
-        ]),
-      )
-    : layer;
-
-// defaults < user < repo, with the files each Layer names. `files` is gg's own: no Layer sets it.
-// shortcut: a plain deep merge; slice 5 brings the migration table.
-export function loadLayers(repoRoot: string, home = homedir()): Config {
-  const files: FilesRead = new Map();
-  const from: FileSources = new Map();
-  let config = readDefaults(files, from);
-  for (const directory of [home, repoRoot]) {
-    const path = layerPath(directory);
-    if (!existsSync(path)) continue;
-    const layer = readLayer(path);
-    if (directory === home) rejectRepoOnly(layer, path);
-    loadFiles(layer, path, files, from);
-    config = merge(config, layer) as Layer;
-  }
-  return { ...config, files: Object.fromEntries(files) } as Config;
-}
-
-// A file a Layer named, by that name (loadLayers's `files`).
-export function layerFile(files: unknown, name: unknown): string {
+// A file a source named, by that name (loadSources's `files`).
+export function namedFile(files: unknown, name: unknown): string {
   if (!referencePaths.isRecord(files) || !Object.hasOwn(files, name as string))
-    throw new Error(`no Layer names file ${JSON.stringify(name)}`);
-  return (files as LayerFiles)[name as string].bytes;
+    throw new Error(`no source names file ${JSON.stringify(name)}`);
+  return (files as SourceFiles)[name as string]!.bytes;
 }
 
 // Sorted keys at every depth, so the hash ignores key order. A Map has no keys here and would hash as {} in silence,
@@ -265,7 +205,7 @@ export interface PinnedConfiguration {
   approvers?: unknown;
 }
 
-// The Pinned Configuration's hash: the Resolved Flow and every Layer file by name, never by path (no install path
+// The Pinned Configuration's hash: the Resolved Flow and every file it uses by name, never by path (no install path
 // enters it).
 export function configHash({
   flow,
@@ -278,87 +218,3 @@ export function configHash({
 }: PinnedConfiguration): string {
   return hashOf({ flow, files, harnesses, launchProfile, commands, testPaths, approvers });
 }
-
-// Only globs that git's pathspecs (rollback) and checks.testPathMatcher (Test Immutability) read alike, and that git
-// accepts inside the repository: git's `?` takes one byte of a UTF-8 name, and its brackets and backslash are syntax.
-const badGlob = (glob: unknown): boolean =>
-  typeof glob !== 'string' ||
-  !glob.trim() ||
-  /[[\]?\\:\x00-\x1f]/.test(glob) ||
-  glob
-    .split('/')
-    .some((segment) => !segment || segment === '.' || segment === '..' || (segment.includes('**') && segment !== '**'));
-
-// The repository Layer's testPaths as Problems, each sentence naming `file`; none for a non-empty list of globs.
-export function testPathsProblems(testPaths: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
-  if (testPaths === undefined) {
-    const message = `${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it`;
-    report.error(found, 'testPaths', 'required-key-missing', message, { key: 'testPaths', file });
-  } else if (!Array.isArray(testPaths) || !testPaths.length) {
-    const code = Array.isArray(testPaths) ? 'empty-list' : 'not-a-list';
-    report.error(found, 'testPaths', code, `${file}: testPaths must be a non-empty list of glob strings`, { file });
-  } else {
-    testPaths.forEach((glob, index) => {
-      if (!badGlob(glob)) return;
-      const message =
-        `${file}: testPaths entry ${JSON.stringify(glob)} must be a glob relative to the repository root: ` +
-        'non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, ' +
-        'and no [ ] ? \\ : or control character';
-      report.error(found, `testPaths[${index}]`, 'invalid-glob', message, { glob, file });
-    });
-  }
-  return found.errors;
-}
-
-// The repository Layer's approvers as Problems, naming `file`; none for no list or a list of logins.
-export function approversProblems(approvers: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
-  if (approvers === undefined) return found.errors;
-  // A login with space around it never matches the actor GitHub names.
-  const logins = Array.isArray(approvers) ? approvers : null;
-  const valid = logins?.every((login) => typeof login === 'string' && login.trim() && login === login.trim());
-  const message = `${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
-  if (!valid) report.error(found, 'approvers', logins ? 'invalid-name' : 'not-a-list', message, { file });
-  return found.errors;
-}
-
-// The repository Layer's Declared Commands as Problems, each sentence naming `file`; none for a valid set with a test.
-export function commandProblems(declared: unknown, file: string): report.Problem[] {
-  const found = report.newReport();
-  const commands = declared === undefined ? {} : declared;
-  if (!referencePaths.isRecord(commands)) {
-    report.error(found, 'commands', 'not-an-object', `${file}: commands must be an object from name to command line`, {
-      file,
-    });
-    return found.errors;
-  }
-  for (const [name, line] of Object.entries(commands)) {
-    // A name that breaks the rule may hold any character, so it is located at commands, not in a path of its own.
-    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
-      const message = `${file}: command name "${name}" must match [a-z][a-z0-9-]*`;
-      report.error(found, 'commands', 'invalid-name', message, { name, file });
-    } else if (typeof line !== 'string' || !line.trim() || /[\r\n]/.test(line)) {
-      const message = `${file}: command ${name} must be a non-empty single-line string`;
-      report.error(found, `commands.${name}`, 'invalid-command-line', message, { command: name, file });
-    }
-  }
-  if (!Object.hasOwn(commands, 'test')) {
-    const message = `${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
-    report.error(found, 'commands', 'required-key-missing', message, { key: 'test', file });
-  }
-  return found.errors;
-}
-
-export const contractProblems = (repository: Record<string, unknown>, file: string): report.Problem[] =>
-  repositoryLayerProblems(repository, file);
-
-// What gg run preflight and gg doctor both check of the keys only the repository Layer at `file` declares.
-export const repositoryLayerProblems = (
-  layer: { commands?: unknown; testPaths?: unknown; approvers?: unknown },
-  file: string,
-): report.Problem[] => [
-  ...commandProblems(layer.commands, file),
-  ...testPathsProblems(layer.testPaths, file),
-  ...approversProblems(layer.approvers, file),
-];

@@ -152,10 +152,10 @@ test("a user Flow's Config Hash equals the same Flow's declared in the repositor
   const user = withUserFlows(fixture, { default: runFixture.testConfig(fixture.root).flows.default! });
   user.agents.spare = { ...user.agents.implementer, persona: 'spare.md' };
   user.files['spare.md'] = { bytes: '# spare\n', hash: config.sha256('# spare\n') };
-  const { flows } = await runFlows.admitConfiguration(
-    { config: fixture.options.config, harnesses: fixture.options.harnesses },
-    fixture.mainRoot,
-  );
+  const { flows } = await runFlows.admitConfiguration({
+    config: fixture.options.config,
+    harnesses: fixture.options.harnesses,
+  });
   assert.ok(flows.get('user:default'), 'the user Flow is admitted');
   assert.equal(flows.get('user:default')?.hash, flows.get('default')?.hash);
 });

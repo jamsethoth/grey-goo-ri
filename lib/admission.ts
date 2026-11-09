@@ -26,10 +26,10 @@ export interface Repo {
   name: string;
 }
 
-// What every Ticket of a Run reads: the Run's configuration and the Flow a new Execution pins, every declared Flow, the
-// deps with gh and git as the Run shares them (labels ensured once, writes under the repo lock), Events and run stop.
+// What every Ticket of a Run reads: the Run's settings and the Flow a new Execution pins, every admitted Flow, the deps
+// with gh and git as the Run shares them (labels ensured once, writes under the repo lock), Events and run stop.
 export interface AdmissionContext {
-  config: config.Config;
+  config: config.Settings;
   flow: model.ResolvedFlow;
   hash: string;
   flows: ReadonlyMap<string, runFlows.PinnedFlow>;
@@ -57,6 +57,7 @@ export interface TicketResult {
   fault?: boolean;
   error?: unknown;
   unread?: string;
+  flowMissing?: boolean;
 }
 
 // One Ticket's admission as it goes: what it read before deciding, the record it decided on, and whether a label
@@ -117,11 +118,11 @@ export function skip({ context, issue }: Pick<Admitting, 'context' | 'issue'>, r
 // The Ticket's row, its labels and the worktree and branch it runs in. A landed fresh hold restarts as a new Execution;
 // readiness then judges whether a human has cleared it.
 async function openAdmission(issue: github.Issue, context: AdmissionContext) {
-  const { config: layers, repo, deps, runId } = context;
+  const { config: settings, repo, deps, runId } = context;
   const ticket = issue.number;
   const cwd = repo.mainRoot;
   const recordLocation = relative(cwd, join(repo.gitCommonDir, 'gg', 'gg.db')).replaceAll('\\', '/');
-  const state = labels.labelsFor(layers.labelPrefix).state;
+  const state = labels.labelsFor(settings.labelPrefix).state;
   const recovery =
     `Inspect the row first in the State Database at ${recordLocation} (relative to the main checkout) using a SQLite ` +
     'client. After preserving your changes, delete it with ' +
@@ -139,7 +140,7 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
   let executionRecord = loaded.executionRecord;
   const pending = executionRecord && interpreter.pendingReport(executionRecord);
   if (executionRecord?.state === 'held' && executionRecord.terminalStop?.fresh && !pending) executionRecord = null;
-  const worktreeRoot = layers.worktreeRoot.replace(/^~(?=$|[\\/])/, homedir());
+  const worktreeRoot = settings.worktreeRoot.replace(/^~(?=$|[\\/])/, homedir());
   admitting.executionRecord = executionRecord;
   admitting.path = executionRecord?.worktree ?? deps.git.worktreePath(worktreeRoot, repo.name, ticket);
   admitting.redact = publicText.publicTextFor({ worktree: admitting.path, commonDir: repo.gitCommonDir, cwd });
@@ -202,9 +203,8 @@ function notResumedSkip(admitting: Admitting): TicketResult | null {
     );
   if (executionRecord && executionRecord.state !== 'active')
     return skip(admitting, `its Execution Record is finished (${executionRecord.state}); it is not resumed`);
-  // A resumed Execution runs the Flow its record pins (X2); one no longer declared waits, kept, until it is again.
-  if (executionRecord && !admitting.context.flows.has(executionRecord.flow))
-    return skip(admitting, `its Execution Record runs Flow ${executionRecord.flow}, which is no longer declared`);
+  const missing = executionRecord && runFlows.missingFlow(admitting.context, executionRecord);
+  if (missing) return missing;
   if (!executionRecord && labels.hasLabel(admitting.issueLabels, state('in-progress')))
     return skip(admitting, `it is labelled ${state('in-progress')} with no Execution Record behind it`);
   return null;
@@ -348,7 +348,7 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
 async function runAdmitted(admitting: Admitting, decided: Decided): Promise<TicketResult> {
   const { context, issue, ticket } = admitting;
   const executionRecord = admitting.executionRecord!;
-  const { flow, hash } = runFlows.pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash);
+  const { flow, hash, files } = runFlows.pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash);
   const result = await interpreter.runExecution({
     deps: context.deps,
     flow,
@@ -362,11 +362,11 @@ async function runAdmitted(admitting: Admitting, decided: Decided): Promise<Tick
     cwd: admitting.cwd,
     commands: context.commands,
     testPaths: context.testPaths,
-    files: context.config.files,
+    files,
     ticket: { number: ticket, title: issue.title, body: issue.body, branch: executionRecord.branch },
     base: context.config.baseBranch,
     labelPrefix: context.config.labelPrefix,
-    approvers: context.config.approvers as string[] | undefined,
+    approvers: context.config.approvers,
     configHash: hash,
     others: decided.others,
     fault: decided.fault,
