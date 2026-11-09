@@ -15,11 +15,13 @@ export { CLAIM_TOKEN_FORMS, PROCEDURE_KEYS } from './procedures.ts';
 type Value = Record<string, unknown>;
 // What the validator reads beside the configuration: the registered harnesses, and each schema and template a
 // Procedure names. `readTemplate`, when given, gives a template's text, so the names each template reads are checked
-// (Y20).
+// (Y20). `contract` is the repository's commands and labelPrefix, which a Flow from the user's directory runs under;
+// the configuration's own when not given.
 export interface Sources {
   harnesses: unknown;
   readSchema: (name: string) => unknown;
   readTemplate?: (name: string) => string;
+  contract?: { commands?: unknown; labelPrefix?: unknown };
 }
 
 const field = (value: unknown, key: string) => (referencePaths.isRecord(value) ? value[key] : undefined);
@@ -52,8 +54,14 @@ function checkAgents(problems: report.Report, config: Value, harnesses: unknown)
   return failedAgents;
 }
 
-function checkProcedures(problems: report.Report, config: Value, readSchema: Sources['readSchema']) {
-  const declaring = { report: problems, readSchema, schemas: new Map(), commands: config.commands };
+// What a Procedure is checked against: its schemas, and the commands the repository declares.
+interface ProcedureSources {
+  readSchema: Sources['readSchema'];
+  commands: unknown;
+}
+
+function checkProcedures(problems: report.Report, config: Value, { readSchema, commands }: ProcedureSources) {
+  const declaring = { report: problems, readSchema, schemas: new Map(), commands };
   const checkedProcedures = new Map<string, procedures.CheckedProcedure | undefined>();
   for (const [name, declaration] of report.entries(config.procedures))
     checkedProcedures.set(name, procedures.checkProcedure(declaring, name, declaration));
@@ -89,7 +97,7 @@ function reportNulls(problems: report.Report, value: unknown, location: string) 
   }
 }
 
-export function validate(config: unknown, { harnesses, readSchema, readTemplate }: Sources) {
+export function validate(config: unknown, { harnesses, readSchema, readTemplate, contract }: Sources) {
   const problems = report.newReport();
   if (!referencePaths.isRecord(config)) {
     report.error(problems, '', 'not-an-object', 'the configuration must be an object');
@@ -102,7 +110,8 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
     report.error(problems, 'procedures', 'not-an-object', 'procedures must be an object from name to Procedure');
   if (config.agents !== undefined && !referencePaths.isRecord(config.agents))
     report.error(problems, 'agents', 'not-an-object', 'agents must be an object from name to Agent');
-  const { checkedProcedures, procedureFalls } = checkProcedures(problems, config, readSchema);
+  const { commands, labelPrefix } = contract ?? config;
+  const { checkedProcedures, procedureFalls } = checkProcedures(problems, config, { readSchema, commands });
   const sharedErrors = problems.errors.length;
   const failedAgents = checkAgents(problems, config, harnesses);
   if (config.flows !== undefined && !referencePaths.isRecord(config.flows))
@@ -112,13 +121,14 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate 
       problems,
       'flows',
       'no-flow-declared',
-      'no Flow is declared; run gg init to write the example Flow into the repository Layer',
+      "no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/",
     );
   }
   const reader = templates.templateReader(readTemplate);
   const checking = {
     report: problems,
     config,
+    labelPrefix,
     procedures: checkedProcedures,
     procedureFalls,
     failedAgents,

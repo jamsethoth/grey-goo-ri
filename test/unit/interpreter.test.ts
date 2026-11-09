@@ -55,14 +55,15 @@ test('the green call is a fresh session with the full brief', async (t) => {
   );
 });
 
-test('a Persona from the repository Layer is pinned with its hash', async (t) => {
+test("a Persona from the repository's gg.json is pinned with its hash", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'gg-persona-layer-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const repo = join(directory, 'repo');
   mkdirSync(join(repo, '.agents', 'gg'), { recursive: true });
-  writeFileSync(config.layerPath(repo), '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}');
+  const file = config.configFile(config.repositoryDirectory(repo));
+  writeFileSync(file, '{"agents":{"implementer":{"persona":"repo-implementer.md"}}}');
   writeFileSync(join(repo, '.agents', 'gg', 'repo-implementer.md'), '# repo implementer\n');
-  const layered = config.loadLayers(repo, join(directory, 'home'));
+  const layered = config.loadSources(repo, join(directory, 'user')).repository;
   const fixture = await golden.fixture(t);
   golden.configure(fixture, (configured) => {
     configured.files = { ...configured.files, ...layered.files };

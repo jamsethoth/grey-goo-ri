@@ -155,7 +155,7 @@ const namedFlowDeclaration = (names: Names) =>
   ]) as golden.GoldenConfig['flows'];
 
 // The Persona, Brief, PR body and response schema the Flow names, beside the shipped files.
-function namedFiles(names: Names): config.LayerFiles {
+function namedFiles(names: Names): config.SourceFiles {
   const schema = {
     type: 'object',
     properties: { claim: { type: 'string', enum: ['ok', names.halt] }, summary: { type: 'string' } },
@@ -170,7 +170,7 @@ function namedFiles(names: Names): config.LayerFiles {
       [names.body, golden.layerFile('The change.\n{{#provenance}}| {{vertex}} | {{calls}} |\n{{/provenance}}')],
       [names.schema, golden.layerFile(`${JSON.stringify(schema)}\n`)],
     ),
-  } as config.LayerFiles;
+  } as config.SourceFiles;
 }
 
 // The golden configuration's commands and test paths, with the Flow named with `names`.
@@ -188,8 +188,8 @@ export function validated(names: Names) {
   const configured = namedConfig(names);
   return validate.validate(configured, {
     harnesses: { fake: {} },
-    readSchema: (name) => JSON.parse(config.layerFile(configured.files, name)),
-    readTemplate: (name) => config.layerFile(configured.files, name),
+    readSchema: (name) => JSON.parse(config.namedFile(configured.files, name)),
+    readTemplate: (name) => config.namedFile(configured.files, name),
   });
 }
 

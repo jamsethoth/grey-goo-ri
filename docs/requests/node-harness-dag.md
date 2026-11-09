@@ -54,7 +54,7 @@ An Agent is a named, declarative unit of work for one Agent CLI. Fields, all wit
 |---|---|
 | `harness` | `claude` or `codex` |
 | `model`, `effort` | harness-native strings; shape validated at load, value validated by the CLI; effective value recorded per action |
-| `persona` | markdown file name, resolved through the user and repo Layers; the defaults ship none (ADR 0014); hashed |
+| `persona` | markdown file name, resolved beside the `gg.json` that declares the Agent, the repository's or the user's (ADR 0022); gg ships none (ADR 0014); hashed |
 | `skills`, `mcp`, `plugins` | lists applied generically by the harness; no plugin name appears in code; default empty |
 | `mode` | `headless` (default) or `interactive` (the planner) |
 | `access`, `network` | permission intents: `read-only` or `workspace-write`; network boolean. Harness translates per surface |
@@ -62,7 +62,7 @@ An Agent is a named, declarative unit of work for one Agent CLI. Fields, all wit
 | `contextBudget` | optional; translated to the harness compaction threshold; compaction count logged |
 | `timeouts` | optional stall and wall-clock overrides (3.5) |
 
-Agents live in a shared `agents` library in the layered config. A vertex in a flow either inlines a definition or
+Agents live in a shared `agents` library in each source's `gg.json`, and a Flow uses only its own source's. A vertex in a flow either inlines a definition or
 `use`s a library agent with field overrides. Provenance, stats, session state and the trace key on the vertex id and
 visit number.
 
@@ -139,7 +139,7 @@ Claude launch profile, validated on 2026-10-15 against claude 2.1.300 on this ma
   the reviewer needs no shell. Verified: `--restricted -p` authenticates with the subscription.
 - Explicit `--permission-mode` and `--permission-prompts none`. `--system-prompt-snapshot off` on every call, with
   the persona supplied from the visit's pinned snapshot (3.5), written to a file in the run directory, never from
-  the live layer directories. A resumed call therefore sees exactly the persona the visit entered with, the hash
+  the live configuration directories. A resumed call therefore sees exactly the persona the visit entered with, the hash
   recorded per action is the one the model ran, and a persona edit takes effect at the next vertex entry.
 - `--output-format stream-json --verbose`. The init event (first line) supplies `plugins`, `plugin_errors`,
   `mcp_servers`, `mcp_server_errors` and `capabilities`; a non-empty error array or a listed server not connected
@@ -180,7 +180,7 @@ reads the plugin's hook manifest, runs its session-start command through the she
 A flow is a graph of Vertices, each running one Procedure (3.4). A Vertex routes to another Vertex or to an end
 (ADR 0014).
 
-A Layer declares Flows under `flows`, by name. Each object below takes only the keys listed; any other key fails
+A source's `gg.json` declares Flows under `flows`, by name. Each object below takes only the keys listed; any other key fails
 admission (`lib/validate/` holds the lists):
 
 | Flow object | Keys | What each key takes |
@@ -191,7 +191,7 @@ admission (`lib/validate/` holds the lists):
 | `route.<outcome>` | `to`, `max`, `exhausted` | a target is a Vertex id, `{ end: <end> }`, or this edge: the Vertex to go to; optional, the Bound on its traversals and the target when that Bound is exhausted, required with it |
 | `inputs.<name>` | `from`, `optional`, `pick` | a reference path `<vertex>.<action id>.<output>`, such as `reviewer.review.response.findings`, or `<vertex>.rescue`, or a list of them where the latest Visit that produced any wins; optional, `true` when no route need produce one; optional, a field to project a list of objects onto |
 
-The name a Layer gives a Flow, Vertex, Agent, Procedure, Claim token, input or Action is a string with a character
+The name a `gg.json` gives a Flow, Vertex, Agent, Procedure, Claim token, input or Action is a string with a character
 other than whitespace. A Vertex id, an Action id and an input name are non-empty with no `:`, `.`, `/`, `--` or
 whitespace: the Action Marker (3.5) and the Await and Decide Labels split on `:`, a reference path on `.`, the key an
 Action's retries are saved under joins its parts with `/`, the HTML comment that carries a marker in a PR body or
@@ -249,12 +249,13 @@ senior-dev(fix, max 1, exhausted end: needs-human) -> reviewer
 publish(no agent: test Check, pr-ready) -> end: ready-for-qa
 ```
 
-Flows and Procedures live in the repo Layer only, as `flows` and `procedures` maps; either key in the defaults or
-user Layer is a load error naming the file (ADR 0014). A flow is selected by `--flow <name>`, else `default`. Layering
-of the other keys: maps merge key by key, arrays replace whole, a Layer cannot delete an inherited key, and `null` is
-never a value (the validator reports it, `null-value`; grey-goo-ri issue #298); validation
-runs after the merge and names the layer file that broke it. Every run writes the fully resolved flow (after layering
-and `use` expansion) to the run directory and hashes that file.
+Flows and Procedures are declared in either of two sources, the repository's `.agents/gg/gg.json` and the user's
+`GG_HOME/gg.json` (default `~/.agents/gg/`), as `flows` and `procedures` maps (ADR 0022). Each source is read whole and
+nothing merges: a Flow resolves its Procedures, Agents, Briefs, Personas and schemas only in its own source. A flow is
+selected by `--flow <name>`, else `default`; an unqualified name is the repository's and `user:<name>` the user's, so no
+Flow shadows another. A key left out is optional or required, never inherited, and `null` is never a value (the
+validator reports it, `null-value`; grey-goo-ri issue #298); each Problem names the `gg.json` it is in. Every run
+writes the fully resolved flow (after `use` expansion) to the run directory and hashes that file.
 
 Validation before any ticket starts: unknown agents or harnesses; unreachable vertices; back edges without bounds;
 route keys that are not Outcomes the Procedure can produce; Outcomes with no route on the Vertex or in the Flow's
@@ -267,7 +268,7 @@ repo; `end: ready-for-qa` reachable without `pr-ready`; a warning when reviewer 
 
 ### 3.4 Procedures, outcomes and resolution
 
-Procedures are data (ADR 0014), declared in the repo Layer and built only from gg's Actions (agent, check, commit,
+Procedures are data (ADR 0014), declared in either source (ADR 0022) and built only from gg's Actions (agent, check, commit,
 push, pr-upsert, pr-ready, comment, await-approval) and Check kinds (`command`, `tests-fail`, `response`, `repeat`; `changes`
 is named but built after option 1). A
 Procedure has at most one agent Action. It declares its Claim tokens, each `{ requires: [<check ids>] }` or
@@ -289,7 +290,7 @@ Sessions never cross Vertices. gg ships no Procedure; the example `gg init` writ
 - `publish`: no agent; the `test` Check, PR body re-render, and `pr-ready` on the tree that Check passed.
 - `plan`: interactive launch; exit is `gg publish`.
 
-A Layer declares Procedures under `procedures`, by name, each taking only these keys (`lib/validate/` holds the
+A source's `gg.json` declares Procedures under `procedures`, by name, each taking only these keys (`lib/validate/` holds the
 lists):
 
 | Procedure object | Keys | What each key takes |
@@ -476,7 +477,7 @@ repository, so a deadline kept in one repository's State Database would hold bac
 the same account's writes from any other repository. Each Run reads GitHub's own wait instead: Retry-After, the reset
 time of an exhausted quota, or a read of `gh api rate_limit` when the failure gave neither (#85).
 
-Labels are namespaced; the prefix is config, default `gg`:
+Labels are namespaced; the prefix is the repository's required `labelPrefix`, which `gg init` writes as `gg`:
 
 | Family | Pattern | Written by | Examples |
 |---|---|---|---|
@@ -522,9 +523,13 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
 
 Human recovery, `gg work`: list across every repo in the user-dir registry, resume (with `--at <vertex>` to hand a
 `needs-human` Ticket back to gg), done (a person finished it: the human end `done`, decision L12), abandon (keep the
-worktree, forget the position), reset (as above), approve. Doctor validates records and reports disagreement with
-GitHub. Single machine; the user dir `~/.agents/gg/` holds config and a registry of repo paths appended on each run;
-repo config is `.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open
+worktree, forget the position), reset (as above), approve. `gg work abandon <n>` deletes the Ticket's Execution Record row, keeping its Events,
+worktree and branch, and first removes every State Label the Ticket carries, since readiness refuses any, so the next
+`gg run <n> --flow <name>` starts a new Execution on that branch; it refuses while the ticket lock is held. Doctor validates records and reports disagreement with GitHub,
+and lists as an error every record a Run would resume whose Flow is no longer declared (a Run keeps such a record,
+logs an error naming both remedies, declaring the Flow again or `gg work abandon`, and exits 2). Single machine; the
+user's directory, `GG_HOME` (default `~/.agents/gg/`), holds the user's Flows and machine settings and a registry of
+repo paths appended on each run; repo config is `.agents/gg/`; state is under the repo's git common dir. gg never reads ff's config or state; ff's open
 branches and PRs finish under ff; cutover (section 6) archives ff after a real-harness acceptance run.
 
 ### 3.6 Checks and evidence
@@ -538,7 +543,7 @@ branches and PRs finish under ff; cutover (section 6) archives ff after a real-h
 - Quality gates are `command` Checks a Procedure declares, naming Declared Commands (ADR 0014). Pass or fail by exit
   code in v1; thresholds come from the tool's own flags. Output captured, fed back in the recovery brief, recorded
   with the Check signal. Results reach the reviewer's brief through `inputs`.
-- Test Immutability: test paths are the repo Layer's required `testPaths` (ADR 0014; `gg init` writes today's globs)
+- Test Immutability: test paths are the repository's required `testPaths` (ADR 0014; `gg init` writes today's globs)
   and include additions, renames and shared fixtures. It runs after every agent Attempt, as an integrity assertion.
   Its baseline is the last commit gg made in the Execution, or the Execution's base before any; every gg commit either
   passed it or came from a Procedure allowed to change tests (`tests: named` or `write`). A violation is an integrity
@@ -633,23 +638,28 @@ blocking issues as today.
 
 ### 3.9 Config and migration
 
-Three layers, defaults < user < repo, merged as 3.3 says, under `.agents/gg/`. The shipped defaults declare
-no agents, flows, Procedures or Personas (ADR 0014): `gg init` writes an example into the repo Layer, whose agents
-have empty `skills`, `mcp` and `plugins`, no hooks and no injection. They name no harness, model or effort; a user or
-repo Layer supplies them, and `examples/` holds a Claude and a Codex Layer to copy. Until Layers land, only
-the fake harness runs. The owner's user config adds ponytail or
-anything else. The four stage keys, `stageTools`, `toolkit`, `escalationEnabled`, `maxReviewRounds` and
-`contextBudget.<stage>` do not exist in gg; a gg config file using one gets a loud load error with a migration table
-naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry over by name: `planApproval`,
-`maxParallel`, `stuckAfterHours`, `baseBranch`, `worktreeRoot`, `allowNetwork`, `style`, `apiPrices`,
-`contextBudget.byModel`. Eval variants are config layers and may change flow structure. Declared Commands are a
-`commands` object in the repo Layer only: a `commands` key in the defaults or user Layer is a load error, as is a
-Layer file with a duplicate key, and preflight checks each name and command line (ADR 0013). `flows`, `procedures` and `testPaths` are
-repo-Layer-only too, and `testPaths` is required (ADR 0014). `approvers` is repo-Layer-only as well: an optional list of GitHub logins whose
-Decision counts below write permission (3.5), pinned in the Config Hash; preflight checks it (#119). Each file a Layer names (a Persona, Brief, template or
-schema) resolves beside that Layer's `gg.json`, and one name names one file across the Layers: a Layer that reuses a
-name another Layer declares for a different file fails to load. Without a Flow, preflight and `gg doctor` fail naming
-`gg init` (P1a).
+Two sources, the repository's `.agents/gg/` and the user's `GG_HOME` (default `~/.agents/gg/`), each read whole;
+nothing merges (ADR 0022). Each `gg.json` declares `flows`, `procedures` and `agents`, and each file it names (a
+Persona, Brief, template or schema) resolves beside it. gg ships no defaults (ADR 0014): `gg init` writes an example
+into the repository, whose agents have empty `skills`, `mcp` and `plugins`, no hooks and no injection, and each name a
+harness, and creates the user's `gg.json` with the machine settings when there is none; `gg init --harness <name>`
+writes the harness, model and effort `examples/<name>.json` holds into the example's Agents. The owner's user config
+adds ponytail or anything else. The repository contract is the repository's alone, whichever Flow runs: Declared
+Commands (`commands`; preflight checks each name and command line, ADR 0013), `testPaths` (required, ADR 0014),
+`approvers` (an optional list of GitHub logins whose Decision counts below write permission, 3.5, pinned in the Config
+Hash, #119), `labelPrefix` (required, with no `:` or whitespace) and `baseBranch` (required). A Flow reaches commands
+only by name: a repository Flow that names one the repository does not declare is an error, and a user Flow that does
+is a warning in `gg doctor` and an error in preflight when selected. The user's `gg.json` holds the machine settings
+`maxParallel` (a positive integer) and `worktreeRoot`, both required. Each `gg.json` takes only its own keys: any other
+is an `unknown-key` Problem naming the file, as is a contract key in the user's or a machine setting in the
+repository's, and a missing or malformed setting is a Problem too; `gg doctor` and preflight list them alike. The four
+stage keys, `stageTools`, `toolkit`, `escalationEnabled`, `maxReviewRounds` and `contextBudget.<stage>` do not exist in
+gg; a `gg.json` using one gets that Problem naming the replacement (`agents`, `harnesses`, `flows`). Keys that carry
+over by name when they land: `planApproval`, `stuckAfterHours`, `allowNetwork` and `style` in the repository, and
+`apiPrices` and `contextBudget.byModel` in the user's `gg.json`. A `gg.json` that is not JSON, or has a duplicate key,
+is a load error. An eval variant is a named Flow in either source, picked with `--flow` (#122). The Config Hash
+fingerprints a Flow's content, not its source: the Pinned Configuration takes only the files the selected Flow uses.
+Without a Flow in either source, preflight and `gg doctor` fail naming `gg init` (P1a).
 
 ## 4. Behaviours to port, and deliberate changes
 
@@ -740,7 +750,7 @@ hang, and a capability matrix the validator reads.
   interpreter with `tdd`, `fix` and `review` on ported git, gh and exec verbs, label namespace, slice-1 golden
   traces. (2) Claude harness with the launch profile and launcher acceptance. (3) Codex harness with sandbox and
   resume quirks. (4) Bounds and escalation, resolution policy, quality gates, approval vertex, slice-4 golden
-  traces. (5) Flows in config, `--flow`, layering, migration errors. (6) Trace, stats, ATIF export, `gg work`,
+  traces. (5) Flows in config, `--flow`, configuration sources, migration errors. (6) Trace, stats, ATIF export, `gg work`,
   registry. (7) Planning, publish, replan.
 - Interface freeze: the fake harness, the execution record schema and the event schema are frozen at the end of
   slice 1 before any parallel ticket starts. Parallel-safe after that: the two harness modules, flow loader and

@@ -2,11 +2,13 @@ import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import * as locks from '../../lib/locks.ts';
 import * as marker from '../../lib/marker.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
+import * as work from '../../lib/work.ts';
 import * as golden from '../support/golden.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as executionContext from '../support/execution-context.ts';
@@ -41,7 +43,7 @@ test('a flow mixing harnesses runs each vertex on its own harness', async (t) =>
     responses,
     capabilities: { costReporting: false, reasoningTokenReporting: false },
   });
-  fixture.options.config.agents.reviewer.harness = 'other';
+  fixture.options.config.repository.agents.reviewer.harness = 'other';
   fixture.options.harnesses.other = other;
 
   const results = await run.runTarget(fixture.options);
@@ -223,7 +225,7 @@ test('a corrupt record found at admission is held through reconcile', async (t) 
 // whose default is the full Flow and whose light Flow has no reviewer.
 async function pinnedTo(t: TestContext, flow: string) {
   const fixture = runFixture.fixture(t, { fullFlow: true, labels: [IN_PROGRESS_LABEL] });
-  fixture.options.config.flows.light = runFixture.testConfig(fixture.root).flows.default!;
+  fixture.options.config.repository.flows.light = runFixture.testConfig(fixture.root).flows.default!;
   const { mainRoot, worktree } = fixture;
   await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const executionRecord = unvisitedExecution.unvisitedExecution(fixture);
@@ -242,17 +244,21 @@ test('a resumed Execution keeps its pinned Flow', async (t) => {
   assert.deepEqual([...new Set(actionFlows)], ['light']);
 });
 
-// It waits, kept and resumable, for the Flow to be declared again: nothing on GitHub changes.
-test('a resumed Execution whose Flow the repository Layer no longer declares is skipped and kept', async (t) => {
+// It waits, kept and resumable, for the Flow to be declared again, but loudly (A2): the Run exits 2 with an error that
+// names both remedies, and nothing on GitHub changes.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a resumed Execution whose Flow is no longer declared is an error naming its remedies, and its record is kept', async (t) => {
   const fixture = await pinnedTo(t, 'gone');
   const row = fixture.loadRow();
   const results = await run.runTarget(fixture.options);
-  assert.equal(runFixture.ticketResult(results)?.outcome, 'skipped', JSON.stringify(results));
-  assert.equal(run.runExitCode(results), 0);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
   assert.ok(
     fixture.logs.some((line) =>
-      line.endsWith(`#${TICKET} skipped: its Execution Record runs Flow gone, which is no longer declared`),
+      line.endsWith(
+        `#${TICKET} ERROR its Execution Record runs Flow gone, which is no longer declared; declare it again to ` +
+          `resume it, or run gg work abandon ${TICKET} to start over`,
+      ),
     ),
     JSON.stringify(fixture.logs),
   );
@@ -262,4 +268,28 @@ test('a resumed Execution whose Flow the repository Layer no longer declares is 
     [['issue', 'view']],
     'gh made only the discovery read',
   );
+});
+
+// Request 3.5's abandon: keep the worktree, forget the position, so the Ticket starts over under another Flow.
+test('after gg work abandon, gg run --flow starts a new Execution under that Flow on the same branch', async (t) => {
+  const fixture = await pinnedTo(t, 'gone');
+  assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2);
+  const text = await work.abandon({
+    ticket: TICKET,
+    commonDir: fixture.commonDir,
+    cwd: fixture.mainRoot,
+    labelPrefix: 'gg',
+    gh: fixture.options.deps.gh,
+    locks,
+  });
+  assert.ok(text.includes(`deleted Execution Record ticket-${TICKET} `), text);
+  assert.equal(fixture.loadRow(), undefined, 'the record is gone');
+
+  const results = await run.runTarget({ ...fixture.options, flow: 'light' });
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const executionRecord = JSON.parse(fixture.loadRow()!) as { flow: string; branch: string; worktree: string };
+  assert.equal(executionRecord.flow, 'light');
+  assert.equal(executionRecord.branch, BRANCH, 'the same branch');
+  assert.equal(paths.pathKey(executionRecord.worktree), paths.pathKey(fixture.worktree), 'the same worktree');
+  assert.equal(fixture.readEvents().filter((event) => event.type === 'run_start').length, 2, 'the Events are kept');
 });

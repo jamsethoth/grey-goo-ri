@@ -197,7 +197,7 @@ function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
         problems,
         location,
         'undeclared-command',
-        `Check ${actionLabel(check.id)} names command ${command}, which the repository Layer does not declare`,
+        `Check ${actionLabel(check.id)} names command ${command}, which the repository does not declare`,
         { ...idOf(check.id), command: check.command },
       );
   }

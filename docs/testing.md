@@ -174,7 +174,7 @@ failure message prints the other platform's figures to paste. Each PR's figures 
 ruleset requires a branch to be up to date with `main` before it merges: #310 and #311 each recorded a rise from 98.28
 to 98.29, merged cleanly, and their combined tree measured 98.3, which failed `main`'s coverage jobs (2026-11-08). The
 measured set is what a small test can reach: `lib/`
-without `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
+without `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/git-default-branch.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
 them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command
 left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
 `lib/containment.ts`. A module no unit test loads still counts, at zero. The spec reporter prints each file's lines,

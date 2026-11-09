@@ -167,7 +167,7 @@ async function comment(runContext: RunContext, { actionIdentity, action, state }
   const startedAt = runContext.clock.now();
   const actionMarker = runContext.markerOf(actionIdentity);
   const body = await render.publicBody(
-    config.layerFile(runContext.files, action.body),
+    config.namedFile(runContext.files, action.body),
     {
       ...visitScope.scopeOf(executionRecord, actionIdentity, state),
       ...(agent && {
@@ -209,7 +209,7 @@ async function prUpsert(runContext: RunContext, running: Running) {
   const startedAt = runContext.clock.now();
   const actionMarker = runContext.markerOf(actionIdentity);
   const body = await render.publicBody(
-    config.layerFile(runContext.files, action.body),
+    config.namedFile(runContext.files, action.body),
     {
       ...visitScope.scopeOf(executionRecord, actionIdentity, state),
       ...visitScope.bind(executionRecord, running),

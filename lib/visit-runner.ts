@@ -104,8 +104,8 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
   executionRecord.visits.set(vertexId, visitNumber);
   if (resuming) return true;
   const { agent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
-  // The Persona's bytes from the Layer that names it; a Vertex without an Agent (publish) pins none.
-  const bytes = agent && config.layerFile(runContext.files, agent.persona);
+  // The Persona's bytes from the Source that names it; a Vertex without an Agent (publish) pins none.
+  const bytes = agent && config.namedFile(runContext.files, agent.persona);
   executionRecord.configurationSnapshot = structuredClone({
     vertex: vertexId,
     visit: visitNumber,

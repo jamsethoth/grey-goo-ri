@@ -43,7 +43,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   checks both.
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either. In a configuration file, `null` is never a value: the validator reports it (`null-value`). A missing
-  key is inherited from an earlier Layer, optional, or `required-key-missing`.
+  key is optional or `required-key-missing`: each source is read whole, and nothing is inherited (ADR 0022).
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
   built once in `bin/gg.ts` and passed down as one `deps` key typed `Deps` (ADR 0019): `run.runTarget` takes it and
   passes it on to `interpreter.runExecution`. New code takes what it needs from its caller as a parameter; ESLint fails
@@ -55,13 +55,14 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | --- | --- |
 | `bin/gg.ts` | `gg` entry point: one command table gives the usage, each command's flags and its dispatch |
 | `lib/options.ts` | option parsing and its `UsageError` |
-| `lib/config.ts` | Layers, merge, Config Hash, the Layer files each Layer names, Declared Command loading |
+| `lib/config.ts` | the two sources (the repository's `.agents/gg/` and the user's `GG_HOME`), each `gg.json` read whole with the files it names, the files a Flow uses, the Config Hash |
+| `lib/settings.ts` | the settings both `gg.json` files hold beside their Flows: the repository contract (Declared Commands, `testPaths`, `approvers`, `labelPrefix`, `baseBranch`), the user's machine settings, and the keys each file may hold, as Problems |
 | `lib/flow.ts` | the Flow rules the interpreter and the validator share: where an Outcome routes (H7), and the Resolved Flow and Config Hash written to a Run's directory |
 | `lib/validate/` | the Flow validator, which `gg doctor` and `gg run` admission share: `index.ts` (`validate()`, the Agents), `procedures.ts`, `actions.ts` and `conditions.ts` (a Procedure on its own), `references.ts` and `templates.ts` (what it reads, typed alone and at each Vertex), `flows.ts` and `inputs.ts` (Flows, Vertices, Agents and inputs), `graph.ts` (the graph checks) and `report.ts` (the errors and warnings, each with a code from its closed list); it gives each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/model.ts` | the Resolved Flow in memory: its Procedures, Vertices and Claim tokens as Maps keyed by configured name, read from and written back to the validator's JSON |
 | `lib/reference-paths.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.ts` | `gg run`: the Run's Tickets mapped concurrently, run directory, Lifecycle Events, exit codes |
-| `lib/run-flows.ts` | the Flows a Run admits: each declared Flow's Pinned Configuration, the one `--flow` names, preflight over every Flow's Harnesses, and the Flow an Execution's record pins |
+| `lib/run-flows.ts` | the Flows of both sources, each checked against the repository contract and named `user:<name>` when it is the user's; the Flows a Run admits with their Pinned Configurations, the one `--flow` names, preflight over every Flow's Harnesses, the Flow an Execution's record pins, and the error for one no longer declared |
 | `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution |
 | `lib/ticket-worktree.ts` | the worktree admission runs a Ticket in: the branch checks that hold it, and the other ticket worktrees |
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |
@@ -110,25 +111,26 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/process-tree.ts` | the processes a shell command leaves, on either platform: listing, watching and killing them as Command Cleanup decides, the Windows job's termination, and the helper processes that do so (ported) |
 | `lib/containment.ts` | the Windows job object a shell command, or the suite launcher's stage, runs in, through `node:ffi`: start, list, name, terminate, confirm empty (ADR 0021) |
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
+| `lib/git-default-branch.ts` | the branch a repository's Tickets start from by default, which `gg init` writes as `baseBranch`: origin's HEAD, else the checked-out branch |
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
-| `lib/templates/` | gg's own templates, which no Layer declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
-| `defaults/` | the defaults Layer: `gg.json`, the Run's settings only; it declares no Agents, Flows or Procedures and names no file (ADR 0014) |
-| `lib/work.ts` | **stub** (`export {}`): `gg work` and the Registry |
+| `lib/templates/` | gg's own templates, which no source declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
+| `lib/work.ts` | `gg work abandon`: a Ticket's Execution Record forgotten, its worktree and branch kept; the rest of `gg work` and the Registry are to come |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
-| `lib/doctor.ts` | `gg doctor`: the validator's Resolved Flows, warnings and errors, per Vertex, and the labels they can request that the repository lacks; `gg init`: the example Layer, `test/fixtures/example/`, written into a repository |
+| `lib/doctor.ts` | `gg doctor`: both sources' Resolved Flows, each with its source, their warnings and errors per Vertex, the labels they can request that the repository lacks, and the Execution Records whose Flow is gone; `gg init`: the example, `test/fixtures/example/`, written into a repository, and the user's `gg.json` with the machine settings |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |
-| `examples/` | user Layers to copy: a Claude and a Codex harness, model and effort for the Agents `gg init` writes |
+| `examples/` | each Harness's harness, model and effort for the Agents of the example, which `gg init --harness <name>` writes |
 
 ## Misleading areas
 
-- The stubs marked in Layout: `plan`, `publish`, `work`, `trace` and `stats` print "not implemented".
+- The stubs marked in Layout: `plan`, `publish`, `trace` and `stats` print "not implemented", as do the `gg work` verbs
+  other than `abandon`.
 - `gg init` writes `test/fixtures/example/`, the example the tests run, so the fixture is shipped content: a change to it
   changes what a new repository gets. `test/fixtures/shipped-flow/` keeps the Flow the defaults shipped until #121 for
   the golden traces; gg ships no Flow now.

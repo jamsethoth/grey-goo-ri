@@ -1,10 +1,12 @@
 {
   "testPaths": ["**/test/**", "**/tests/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/fixtures/**"],
   "commands": { "test": "npm test" },
+  "labelPrefix": "gg",
+  "baseBranch": "main",
   "agents": {
-    "implementer": { "persona": "implementer.md", "access": "workspace-write" },
-    "reviewer": { "persona": "reviewer.md", "access": "read-only" },
-    "senior": { "persona": "implementer.md", "access": "workspace-write" }
+    "implementer": { "persona": "implementer.md", "access": "workspace-write", "harness": "claude" },
+    "reviewer": { "persona": "reviewer.md", "access": "read-only", "harness": "claude" },
+    "senior": { "persona": "implementer.md", "access": "workspace-write", "harness": "claude" }
   },
   "procedures": {
     "base-check": {

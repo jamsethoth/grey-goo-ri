@@ -14,7 +14,7 @@ import * as references from './references.ts';
 import * as report from './report.ts';
 import * as templates from './templates.ts';
 
-// The keys each object of a Layer may declare; any other is an unknown key (the request tables them).
+// The keys each object of a gg.json may declare; any other is an unknown key (the request tables them).
 export const AGENT_KEYS = [
   'harness',
   'model',
@@ -48,6 +48,8 @@ type FallThroughs = checked.FallThroughs;
 export interface FlowContext {
   report: report.Report;
   config: Value;
+  // The repository's label prefix, which an approval Vertex's Await and Decide Labels carry.
+  labelPrefix: unknown;
   procedures: Map<string, checked.CheckedProcedure | undefined>;
   procedureFalls: Map<string, FallThroughs>;
   failedAgents: Set<unknown>;
@@ -102,7 +104,7 @@ export function checkHarness(
       problems,
       location,
       'harness-unset',
-      `${label} names no harness; set one in a user or repository Layer`,
+      `${label} names no harness; set one in the gg.json that declares it`,
       owner,
     );
   else if (!report.checkName(problems, location, harness, { what: `${label}'s harness`, carried: false })) return;
@@ -337,11 +339,7 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   checkVertexRoutes(problems, location, vertex, state.vertices);
   const falls = proc ? vertexFalls(checking, { flow: state.name, id }, typed, proc) : {};
-  const approvalLabels = actionChecks.approvalLabelsOf(
-    proc?.actions,
-    id,
-    checking.config.labelPrefix as string | undefined,
-  );
+  const approvalLabels = actionChecks.approvalLabelsOf(proc?.actions, id, checking.labelPrefix as string | undefined);
   state.resolved.set(id, resolveVertex(vertex, { agent, inputs: typed.inputs, falls, approvalLabels }, proc));
   state.procs.set(id, proc);
   state.fallsOf.set(id, falls);
