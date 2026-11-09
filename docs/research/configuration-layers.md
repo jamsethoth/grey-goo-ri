@@ -1,10 +1,82 @@
-# Configuration Layers: what each one brings, and how many gg needs
+# Configuration: from three Layers to two sources
 
-Research note, 2026-11-08, for issue #314, against main at 0f74178. Every `file:line` is main's. #122 (in flight)
-changes `bin/gg.ts`, `lib/run.ts` (`admitConfiguration`) and `lib/admission.ts`, so its merge may move the lines cited
-in those three files. The probes ran on Node 26.13.0 in temp directories with a temp home; none read or wrote the owner's
-`~/.agents/gg/`. Their script and full output are in the appendix; each answer names the probe line it rests on (`P-A`
-and so on).
+Research note for issue #314, 2026-11-08 to 2026-11-09, against main at 0f74178. Every `file:line` is main's. #122
+(PR #316) changes `bin/gg.ts`, `lib/run.ts` (`admitConfiguration`) and `lib/admission.ts`, so its merge may move the
+lines cited in those three files. The probes ran on Node 26.13.0 in temp directories with a temp home; none read or
+wrote the owner's `~/.agents/gg/`. Their scripts and output are in the appendix, and each finding names the probe line it
+rests on (`P-A` and so on).
+
+The note first records the owner's decision, then the evidence: how the Layers work today (the issue's questions 1 to
+6), a survey of how other tools split shared and personal configuration, and the designs considered on the way.
+
+## Decision (owner, 2026-11-09)
+
+The owner set the purpose: configuration exists so that reusable Flows can be defined at the repository level or at the
+user level. Layering is not needed, since a user can copy a Flow into their own directory. The decisions below came
+out of a grilling session; the numbers are its question numbers.
+
+**Two sources, no merge** (Q16, Q19, Q28, D5)
+
+- gg reads two sources: the repository's `.agents/gg/` and the user's directory, `GG_HOME` (default `~/.agents/gg/`).
+  Nothing merges between them. `GG_HOME` also holds, later, `gg work`'s registry of repositories, so one variable moves
+  a person's whole setup, as `CLAUDE_CONFIG_DIR` and `CODEX_HOME` do.
+- Each source is self-contained: its `gg.json` declares `flows`, `procedures` and `agents`, and the files they name sit
+  beside it. A Flow resolves Procedures, Agents, Briefs, Personas and schemas only in its own source. A user adapts a
+  repository Flow by copying it, with what it uses, into their directory, by hand for now (Q27).
+- `defaults/gg.json` goes, and no default replaces it in code: every setting is required, and its absence fails loudly.
+
+**The repository contract** (Q17, Q30)
+
+- A Run always takes `commands`, `testPaths`, `approvers`, `labelPrefix` and `baseBranch` from the target repository,
+  whichever Flow runs, and no Flow can set them. Commands run unsandboxed (ADR 0013), test paths decide Test
+  Immutability, approvers decide whose Decision counts, and the labels and the branch are state on the repository's
+  GitHub.
+- A Flow reaches commands only by name; admission refuses a Flow that names a command the repository does not declare
+  (`undeclared-command`).
+- `gg init` writes `labelPrefix: "gg"` and `baseBranch`, taken from the repository's default branch; both are required.
+
+**The user's directory** (Q19, Q23)
+
+- Its `gg.json` holds the user's Flows, Procedures and Agents, and the machine settings `maxParallel` and
+  `worktreeRoot`, both required; `gg init` creates the file with them when it is missing.
+- An Agent's harness, model and effort are declared in the Flow's own source. A user picks their own by copying the
+  Flow, or the repository commits them; `gg init --harness claude|codex` writes them into the example.
+
+**Naming and targeting** (Q18, Q20, Q26)
+
+- An unqualified Flow name is the repository's; a user Flow is always `user:<name>`. No name can shadow another.
+- gg targets the repository holding the current directory, or the one `--repo <path>` names. `--repo <owner/name>`,
+  looked up in the registry, arrives with `gg work`.
+- A repository is identified by its GitHub `owner/name`, read once per Run with `gh repo view --json nameWithOwner`.
+
+**Checks** (D7, Q21)
+
+- Unknown keys, keys outside what a source may hold, and missing or bad values are Problems that `gg doctor` and `gg
+  run` preflight both list. JSON syntax errors and duplicate keys stay load errors, since nothing can be read past them.
+- In `gg doctor`, a user Flow that does not fit the repository's contract is a warning; it is an error in preflight
+  when selected. A repository Flow's problems are errors.
+
+**What a Run records and pins** (Q22, Q24, Q25, Q31)
+
+- The Execution Record gains `repository` (`owner/name`) and stores the Flow with its source (`default`,
+  `user:strict`). A resume whose Flow no longer exists holds the Ticket at `needs-human`, naming the Flow.
+- A ticket worktree's path is `worktreeRoot/<owner>/<name>/ticket-<n>`.
+- The Config Hash fingerprints a Flow's content, not its source; the record, the run log and `gg doctor` name the
+  source. Models stay in the hash, so a model change still changes it.
+- A Flow change while a Ticket waits for approval asks the approver again, as today.
+
+**Left out**: a trust record that holds a repository's unsandboxed `commands` until the user approves them once
+(Q29), and a `gg flow copy` command (Q27), both to the backlog.
+
+**What it changes that is frozen or recorded elsewhere**
+
+- The Execution Record schema gains `repository` and the Flow's source, and a non-string setting may need one new
+  Problem code, so the follow-up lands before #23 freezes them.
+- ADR 0022 records the decision. It supersedes in part ADR 0014 ("the repository owns its Flow": a user source may now
+  hold Flows and Procedures) and decision P2 in `docs/research/user-defined-procedures-decisions.md`. ADR 0013 stands:
+  commands stay repository-only.
+- The request (3.1's Persona line, 3.3's layering paragraph, 3.5's user directory, 3.9), GLOSSARY **Layer**, AGENTS.md
+  and README change in the follow-up.
 
 ## How the Layers load today
 
@@ -14,7 +86,8 @@ them in that order: objects key by key at every depth, anything else replaced wh
 and user Layers are refused when they hold `commands`, `testPaths`, `approvers`, `flows` or `procedures`
 (`rejectRepoOnly`, `:90-93`, a thrown load error with no Problem code; P-J). Each file name a Layer's own JSON declares
 is read beside that Layer and hashed (`loadFiles`, `:121-143`); one name naming two paths is a load error (P-K).
-`bin/gg.ts:40` and `:58` call it for `gg run` and `gg doctor` with the main checkout's root.
+`bin/gg.ts:40` and `:58` call it for `gg run` and `gg doctor` with the main checkout of the current directory's
+repository (`bin/gg.ts:35`, `:55`).
 
 On this machine the owner has no user Layer: `ls ~/.agents/gg/` reports "No such file or directory" (2026-11-08). So
 today the user Layer is used only by tests (each with a temp home) and by the advice gg prints.
@@ -23,107 +96,85 @@ today the user Layer is used only by tests (each with a temp home) and by the ad
 
 | Key | Set in practice by | Read at | Validated | Belongs to |
 | --- | --- | --- | --- | --- |
-| `maxParallel` | defaults (`defaults/gg.json:2`, 2) | `lib/run.ts:315` (`mapConcurrently`, `:37-49`) | no (P-G, P-H) | the machine: how many Tickets it runs at once |
+| `maxParallel` | defaults (`defaults/gg.json:2`, 2) | `lib/run.ts:315` (`mapConcurrently`, `:37-49`) | no (P-G, P-H) | the machine |
 | `baseBranch` | defaults (`:3`, `main`) | `lib/admission.ts:226` (the record's `base`), `:285` (worktree admission), `:361` (the Run context's `base`: a Brief's `baseBranch` and diff, `lib/agent-action.ts:121-130`; the PR's base, `lib/effect-actions.ts:225`) | no (P-H2) | the repository |
 | `worktreeRoot` | defaults (`:4`, `~/worktrees`) | `lib/admission.ts:139` (a new Execution's path only; a resumed one keeps its record's, `:141`) | no | the machine |
 | `labelPrefix` | defaults (`:5`, `gg`) | `lib/admission.ts:121`, `:160`, `:277`, `:313`, `:362`; `lib/run.ts:215`, `:218`, `:233`, `:245`, `:347`; `lib/validate/flows.ts:340-344` (the Await and Decide Labels in the Resolved Flow) | no (P-H2: `a:b` passes) | the repository: its labels are on the repository's issues |
-| `agents` | repository (`persona`, `access`); user (`harness`, `model`, `effort`, `examples/*.json`) | `lib/validate/index.ts:37-49`, `lib/validate/flows.ts:201`, `:228-252` | yes | split: see 3 |
+| `agents` | repository (`persona`, `access`); user (`harness`, `model`, `effort`, `examples/*.json`) | `lib/validate/index.ts:37-49`, `lib/validate/flows.ts:201`, `:228-245` | yes | split: see 3 |
 | `flows`, `procedures` | repository only (P2) | `lib/validate/index.ts:32`, `:58`, `:101-131`; `lib/validate/flows.ts:326`, `:352` | yes | the repository |
 | `commands` | repository only (ADR 0013) | `lib/run.ts:192`, `lib/validate/index.ts:56`; preflight `lib/config.ts:280-304` | yes | the repository |
 | `testPaths` | repository only (P4) | `lib/run.ts:199`, `:308`; preflight `lib/config.ts:246-265` | yes | the repository |
 | `approvers` | repository only (#119) | `lib/run.ts:200`, `lib/admission.ts:363`; preflight `lib/config.ts:268-277` | yes | the repository |
-| `harnesses` | nobody: no Layer, example or test sets it | `lib/run.ts:196` (pinned as `{}`) | no | not yet designed (request 3.2's `harnesses.codex.injectHooks`) |
+| `harnesses` | no Layer, example or fixture configuration; the hash test passes it directly (`test/unit/config.test.ts:67`) | `lib/run.ts:196` (pinned as `{}`) | no | not yet designed (request 3.2's `harnesses.codex.injectHooks`) |
 | `files` | gg itself, from `loadFiles` | `lib/admission.ts:359`, `lib/run.ts:185-186`, `lib/doctor.ts:200-201` | n/a | gg |
 
 Findings this table rests on:
 
-- No Run setting is validated. The validator checks `procedures`, `agents` and `flows` and every `null`
-  (`lib/validate/index.ts:92-131`), and preflight the three repository-only keys (`lib/config.ts:307-314`). A
+- No Run setting is validated. The validator checks `procedures`, `agents`, `flows` and every `null` that survives the
+  merge (`lib/validate/index.ts:92-131`), and preflight the three repository-only keys (`lib/config.ts:307-314`). A
   `maxParallel` of `"two"`, `0` or `-1` makes `mapConcurrently` start no worker, so `gg run` of an Epic runs no Ticket
   and reports nothing (P-H: `Tickets run: []`); `1.5` runs them (P-H). A misspelt key such as `maxParalel` is ignored
-  in silence (P-G). A `labelPrefix` holding `:` passes (P-H2) though every label splits on `:` (`lib/labels.ts:58`).
-- `labels.DEFAULT_PREFIX` (`lib/labels.ts:36`) repeats the defaults Layer's `"gg"`, and 9 other modules use it as a default or fallback
-  (`lib/approval-action.ts:26`, `lib/github.ts:86`, `lib/interpreter.ts:100`, `lib/reconcile.ts:201`, ...),
-  because the Run context's `labelPrefix` is optional (`lib/run-context.ts:134`).
+  in silence (P-G). A `labelPrefix` holding `:` passes (P-H2) though every label splits on `:` (`lib/labels.ts:38`).
+- `labels.DEFAULT_PREFIX` (`lib/labels.ts:16`) repeats the defaults Layer's `"gg"`, and 9 other modules use it as a
+  default or fallback (`lib/approval-action.ts:26`, `lib/github.ts:86`, `lib/interpreter.ts:100`,
+  `lib/reconcile.ts:201`, ...), because the Run context's `labelPrefix` is optional (`lib/run-context.ts:134`).
 - On resume, `baseBranch` comes from two places: the PR and the Brief's diff read the current configuration
   (`lib/admission.ts:361`), the Terminal report's diff stats read the record's `base` (`lib/terminal-report.ts:269`).
-  A `baseBranch` changed between Runs splits them. Read from the code; not probed.
+  A `baseBranch` changed between Runs splits them. Read from the code; not probed. Under the decision `baseBranch`
+  belongs to the repository contract, so only a commit to the repository's `gg.json` can change it.
 
-## 2. The defaults Layer as constants in code
+## 2. The defaults Layer
 
-The defaults Layer holds four values that never vary by machine or repository (`defaults/gg.json:1-6`). Turning them
-into one constant in `lib/config.ts`, under the user and repository Layers, removes:
+The defaults Layer holds four values that never vary by machine or repository (`defaults/gg.json:1-6`). Removing it
+removes `DEFAULTS_DIRECTORY` (`lib/config.ts:10`), `readDefaults` and `loadDefaults` (`:145-157`), the `defaults/`
+directory, and in `test/unit/config.test.ts` the cases `loadDefaults reads defaults/gg.json` (`:28-30`), `the shipped
+defaults declare no agents, flows or procedures` (`:256-264`), the defaults assertion of the case at `:276-285`, and the
+three copied-install cases `a <key> key in the defaults Layer is a load error naming the file` (`:317-332`).
+`copyInstall` (`:97-103`) stops copying `defaults`; the install-path case that also uses it (`:122`) keeps working.
 
-- `DEFAULTS_DIRECTORY` (`lib/config.ts:10`), `readDefaults` and `loadDefaults` (`:145-157`), and the `defaults/`
-  directory; `rejectRepoOnly`'s defaults call (`:148`).
-- In `test/unit/config.test.ts`: `loadDefaults reads defaults/gg.json` (`:28-30`), `the shipped defaults declare no
-  agents, flows or procedures` (`:256-264`), the `commands` assertion at `:284`, and the three copied-install cases `a
-  <key> key in the defaults Layer is a load error naming the file` (`:317-332`). `copyInstall` (`:97-103`) stops
-  copying `defaults`; the install-path case that also uses it (`:122`) keeps working.
-- Docs: the AGENTS.md Layout row for `defaults/` (`AGENTS.md:117`), GLOSSARY **Layer** (`GLOSSARY.md:474-478`), request
-  3.9's "Three layers, defaults < user < repo" (`docs/requests/node-harness-dag.md:636-639`), `lib/config.ts:21`'s and
-  `:170`'s comments, and `test/support/shipped-flow.ts:10`'s.
+It changes neither the Config Hash nor the Pinned Configuration. Their inputs are the Resolved Flow, the Layer files,
+`harnesses`, `launchProfile`, `commands`, `testPaths` and `approvers` (`lib/config.ts:211-233`, built at
+`lib/run.ts:193-201`). The defaults Layer holds none of them and names no file. `labelPrefix` reaches the hash only
+through an approval Vertex's labels (P-F), and `gg init` writes the same `gg`. No Problem code names the defaults load
+error, which is a thrown `Error`, and `gg doctor` prints none of the four settings (`lib/doctor.ts:194-219`).
 
-What it does not change:
-
-- The Config Hash and the Pinned Configuration. Their inputs are the Resolved Flow, the Layer files, `harnesses`,
-  `launchProfile`, `commands`, `testPaths` and `approvers` (`lib/config.ts:211-233`, built at `lib/run.ts:193-201`).
-  The defaults Layer holds none of them and names no file, so the same four values from code give the same hashes.
-  `labelPrefix` reaches the hash only through an approval Vertex's labels (P-F), and keeps its value.
-- Problem codes: the defaults load error is a thrown `Error`, not a Problem.
-- `gg doctor` output: `lib/doctor.ts:194-219` prints none of the four settings, so `test/fixtures/example/doctor.txt`
-  is unchanged.
-- `labels.DEFAULT_PREFIX` stays the one place the prefix's default is spelt; the constant takes it from there.
+The owner chose to make all four required rather than move their defaults into code (D5): a setting gg cannot run
+without is stated where it belongs, as `commands.test` and `testPaths` already are (P4), and its absence is a
+`required-key-missing` Problem in doctor and preflight. Today a missing `worktreeRoot` would throw at
+`lib/admission.ts:139`, and a missing `maxParallel` would run no Ticket (P-H's path), so the check must run in both
+before anything reads them.
 
 ## 3. The user Layer's reach
 
 A home-directory Layer applies to every repository the person runs gg in, and it may set any key outside the
-repository-only list. What the probes show:
+repository-only list. The probes show:
 
-- **Harness, model and effort.** Choosing a subscription's CLI and model is the person's, and is the same in every
-  repository they own, so a home Layer suits it. The risk is the key: settings are keyed by Agent name, and a name means
-  what each repository's Flow makes it mean. The repository Layer also wins field by field (`merge` order, P-M): a
-  repository that sets the reviewer's `harness` and `model` but not `effort` runs with the person's `effort`, written
-  for another harness (P-M: `codex` with `gpt-6.1-sol` and the Claude example's `"effort": "high"`). An effort the other
-  CLI rejects would fail only when its Harness validates it.
-- **Files.** A user Layer may declare a Persona, so it may replace the repository's Persona when the repository names
-  none, and it fails to load in every repository that declares a different file under the same name (P-K: "file
-  "reviewer.md" is declared by <home> and by <repo>"). A file the user Layer declares is loaded and hashed even when the
-  repository's own name wins the merge (P-K2: the merged Persona is `reviewer.md`, `my-reviewer.md` is still in
-  `files`, and the hash moves from `e5e742878bf9` to `addb7302d813`).
-- **`labelPrefix` and `baseBranch`.** Both describe the repository: the labels live on its issues and gg reads them
-  back on the next Run. A person's `labelPrefix` change strands every Ticket gg labelled before it: `labelsFor('me')`
-  parses none of `gg:await:approve`, `gg:state:in-progress`, `gg:decide:approve:approved` (P-prefix), so a Pending
-  Ticket's Await Label is no longer seen. A repository that sets them wins over the person (P-N); one that relies on the
-  default inherits whatever the person set (P-E).
-- **`worktreeRoot`, `maxParallel`.** Both describe the machine, so a home Layer suits them. A resumed Execution keeps
-  its recorded worktree (`lib/admission.ts:141`), so changing `worktreeRoot` is safe between Runs.
+- **Harness, model and effort** merge field by field, and the repository wins (P-M): a repository that sets the
+  reviewer's `harness` and `model` but not `effort` runs it with the person's `effort`, written for another harness
+  (`codex` with `gpt-6.1-sol` and the Claude example's `"effort": "high"`).
+- **Files.** A user Layer may declare a Persona, and it fails to load in every repository that declares a different
+  file under the same name (P-K). A file it declares is loaded and hashed even when the repository's own name wins the
+  merge (P-K2: the merged Persona is `reviewer.md`, `my-reviewer.md` is still in `files`, and the hash moves from
+  `e5e742878bf9` to `addb7302d813`).
+- **`labelPrefix` and `baseBranch`** describe the repository. A person's `labelPrefix` change strands every Ticket gg
+  labelled before it: `labelsFor('me')` parses none of `gg:await:approve`, `gg:state:in-progress`,
+  `gg:decide:approve:approved` (P-prefix). A repository that sets them wins (P-N); one that relies on the default
+  inherits the person's (P-E).
+- **`worktreeRoot`, `maxParallel`** describe the machine. A resumed Execution keeps its recorded worktree
+  (`lib/admission.ts:141`), so changing `worktreeRoot` is safe between Runs.
 
-The alternatives the issue names:
+Under the decision none of this reach remains: nothing merges, the user's directory declares whole Flows that run only
+when selected by `user:<name>`, and the repository contract is read from the repository alone.
 
-- **A per-repository personal Layer**, an untracked `.agents/gg/local.json` beside the repository Layer. It reaches one
-  repository, its files resolve in the same directory (one name is then one file by construction), and gg init can
-  write its `.gitignore` line. It costs a copy in each repository, and the person's settings no longer follow them.
-- **User settings keyed by repository**, `repositories.<owner/name>` in the home Layer. Same reach as a local Layer,
-  but gg must name a repository the same way on every machine (remote URL, path or GitHub slug), and a renamed
-  repository silently loses its settings. Not carried into the candidates.
-- **An allow-list** of what a user Layer may set, in place of today's growing deny list (`lib/config.ts:91`, five keys
-  since ADR 0013, P2, P4 and #119). Every key added to gg would default to repository-only, so a new key cannot reach
-  every repository by accident. It also gives the closed key list that catches P-G's typo.
+## 4. Merge rules
 
-## 4. Merge rules with fewer Layers
-
-| Rule | Where | With two Layers (user < repository) | With one Layer |
-| --- | --- | --- | --- |
-| Objects merge key by key | `lib/config.ts:160-168` | still needed for `agents.<name>` | gone |
-| Arrays replace whole | `:168` | no array is user-settable under an allow-list, so moot | gone |
-| No deletion | request 3.3 (`node-harness-dag.md:254`) | still true; a person cannot unset a repository key | gone |
-| `null` is never a value | `lib/validate/index.ts:76-90`, #298 | still needed: a `null` in any Layer reaches the validator (P-I: `null-value@labelPrefix`) | still needed |
-| One name names one file | `lib/config.ts:121-143` | gone if the user Layer may not name files; stays (trivially) for a local Layer in the same directory | gone |
-| Repository-only keys | `lib/config.ts:90-93` | replaced by the allow-list | gone |
-
-The rule that earns the most code is "one name names one file" (`FileSources`, `loadFiles`'s cross-Layer branch and
-three cases in `test/unit/config.test.ts`, at `:152`, `:185` and `:225`). It exists only because a non-repository Layer may name files.
+| Rule | Where | Under the decision |
+| --- | --- | --- |
+| Objects merge key by key, arrays replace whole | `lib/config.ts:160-168` | gone: nothing merges |
+| No deletion | request 3.3 (`node-harness-dag.md:254`) | gone with the merge |
+| `null` is never a value | `lib/validate/index.ts:76-90`, #298 | stays. Today only a `null` that survives the merge is reported: a user `labelPrefix: null` under a repository `"gg"` merges to `"gg"` with no error (P-null). With no merge, every `null` in either source is seen |
+| One name names one file | `lib/config.ts:121-143` | gone: each source's files resolve beside its own `gg.json`, and names never cross sources |
+| Repository-only keys | `lib/config.ts:90-93` | replaced by the repository contract and a closed key list per source |
 
 ## 5. What a Run pins
 
@@ -132,150 +183,125 @@ the Claude Harness lands, `lib/run.ts:197`), `commands`, `testPaths` and `approv
 Resolved Flow carries each Vertex's merged Agent, harness, model and effort included (`lib/validate/flows.ts:245`), and
 an approval Vertex's labels with their prefix (`:340-344`). So:
 
-- A person's harness or model change changes a repository's Config Hash (P-B `e5e742878bf9`, P-C `ee68cc5a0a35`, P-D
-  `1914dc565c57`). That is the hash's job: request 3.7 (`node-harness-dag.md:602`) and ADR 0002 make it what tells two
-  configurations apart in stats and evaluations, so Runs on different models must differ.
-- A person's unused file changes it too (P-K2), which serves nothing.
+- A harness or model change changes the Config Hash (P-B `e5e742878bf9`, P-C `ee68cc5a0a35`, P-D `1914dc565c57`).
+  That is the hash's job: request 3.7 (`node-harness-dag.md:602`) and ADR 0002 make it what tells two configurations
+  apart in stats and evaluations. Kept (Q25).
+- A person's unused file changes it too (P-K2), which serves nothing; it cannot happen once a Flow's files come from
+  its own source alone.
 - `labelPrefix` changes it only when the Flow has an approval Vertex (P-F: `7af32a3fcde0` and `f87f739a53fb`); the
   other three Run settings never do (P-E: the hash stays `e5e742878bf9`).
 - The record keeps the hash of the Run that created it (`lib/admission.ts:222`), but an Approval Request's digest takes
   the current Run's (`lib/admission.ts:364`, `lib/approval-action.ts:43`). A model change between the Run that asked
-  and the Run that reads the Decision makes the digest differ (P-L: `a60117c18fa0` and `e4acc0832294`), so the
-  Decision reads `stale` (`lib/approval.ts:148`) and gg retires the request and asks again (`lib/approval-action.ts:213`).
-  This is loud and loses nothing; whether a person's model is part of what an approver approves is a question for the
-  owner (decision 3).
+  and the Run that reads the Decision makes the digest differ (P-L: `f48fbad35c92` and `33c0554beeaf`, digests of the
+  full hashes), so the Decision reads `stale` (`lib/approval.ts:148`) and gg retires the request and asks again
+  (`lib/approval-action.ts:211-214`). Kept (Q31).
+
+The Pinned Configuration's shape does not change under the decision: its `files` become the selected Flow's source's
+files, and the source itself stays out of the hash (Q25).
 
 ## 6. Open requests that assume Layers
 
 - **"Eval variants are config layers and may change flow structure"** (request 3.9, `node-harness-dag.md:645`). P2
-  forbids any Layer but the repository's to hold `flows` or `procedures`, so a variant cannot be a Layer that changes a
-  Flow. A variant fits as a second named Flow in the repository Layer, picked with `--flow` (#122), whose Resolved Flow
-  and hash already differ. No code implements variants. The sentence should be rewritten whatever the design.
+  already forbade it. Decided: a variant is a named Flow, picked with `--flow` (#122), in either source (D6).
 - **The migration table** (`lib/config.ts:171`, "slice 5 brings the migration table"; request 3.9,
-  `node-harness-dag.md:641-645`). ff's stage keys in a gg Layer should be a loud load error naming the replacement.
-  Today any unknown top-level key is ignored (P-G). A closed list of top-level keys per Layer gives the error, and the
-  migration table is then the message for ff's known keys. It is independent of the number of Layers.
+  `node-harness-dag.md:641-645`). Today any unknown top-level key is ignored (P-G). The closed key list per source (D7)
+  gives the load-time Problem, and the migration table becomes the message for ff's known keys.
 - **gg init's and preflight's advice** to merge an example into the user Layer (`lib/doctor.ts:230-231`,
-  `lib/run.ts:144-150`, asserted at `test/unit/run.test.ts:319` and `test/e2e/gg.test.ts:175`). It stays under any
-  design that keeps a home Layer, and names the new place otherwise.
+  `lib/run.ts:144-150`, asserted at `test/unit/run.test.ts:319` and `test/e2e/gg.test.ts:175`). It is replaced: `gg init
+  --harness` writes the harness into the example, and creates the user's `gg.json` with the machine settings.
 - **Keys request 3.9 carries over by name** (`node-harness-dag.md:643-645`): `planApproval`, `stuckAfterHours`,
-  `allowNetwork` and `style` describe the repository's process; `apiPrices` and `contextBudget.byModel` describe the
-  person's subscription. An allow-list sorts each as it lands.
-- **The registry** that `gg work` reads lives in the home directory too (`node-harness-dag.md:526`), so `~/.agents/gg/`
-  stays meaningful under every design.
+  `allowNetwork` and `style` describe the repository's process, so each lands in the repository contract or a Flow;
+  `apiPrices` and `contextBudget.byModel` describe the person, so they land in the user's `gg.json`.
+- **The registry** that `gg work` reads lives in the user's directory (`node-harness-dag.md:526`), so `GG_HOME` moves it
+  with the Flows.
 
-## Candidate designs
+## Multiple repositories
 
-Each design keeps `flows`, `procedures`, `commands`, `testPaths` and `approvers` in the repository Layer alone (ADR
-0013, ADR 0014), and each can take the Run-setting validation in decision 2.
+- gg targets the repository holding the current directory (`bin/gg.ts:35`, `:50`, `:55`); there is no flag to point it
+  elsewhere.
+- A ticket worktree's path is `worktreeRoot/<main checkout's folder name>/ticket-<n>` (`lib/git.ts:16-17`, the name
+  from `lib/git.ts:93`). Two repositories whose checkouts share a folder name would put Ticket 5 in the same directory.
+- Each repository's Execution Records live in its own State Database, `<git common dir>/gg/gg.db`
+  (`lib/admission.ts:120`), so two repositories' Flows of one name never share a table. A record names only its
+  `commonDir`, a local path, and its Flow's name (`lib/record.ts:95-125`): once it leaves that database, nothing in it
+  says which repository it belongs to. gg does not read the GitHub `owner/name` today; `lib/github.ts` never asks for
+  it, and `gh` infers the repository from the current directory.
 
-### A. Three Layers, tightened
+## How other tools split shared and personal configuration
 
-Keep `defaults/gg.json`. Replace the deny list with an allow-list: a user Layer may set `agents.<name>.harness`,
-`model` and `effort`, `worktreeRoot` and `maxParallel`; anything else is a load error naming the file and key.
+A survey of primary documentation on 2026-11-09. The pages were read through a fetch tool that summarises, so the
+statements below are paraphrases, not quotes; recheck the wording at the URL before quoting any of them.
 
-- Cost: `rejectRepoOnly` becomes an allow-list check (about 15 lines); the five user-Layer load-error cases in
-  `test/unit/config.test.ts` (`:247-254`, `:293-315`, `:496-504`) become allow-list cases; the cross-Layer file rule and
-  its cases stay for the defaults Layer, which names none. Docs: request 3.9, GLOSSARY **Layer**.
-- Gives up nothing it has today; keeps a configuration file for four constants, and the file machinery for a Layer
-  that names no file.
-- Config Hash: unchanged for every valid configuration; a user Layer that names a file stops loading (it was P-K2's
-  case). Pinned Configuration and Problem codes unchanged.
+- **git** (https://git-scm.com/docs/git-config): system < global < local < worktree, last value wins. The local file is
+  inside `.git`, never tracked. Some keys, `safe.directory` among them, count only in protected configuration (system,
+  global, command line), so a repository cannot set them. `GIT_CONFIG_GLOBAL` relocates the global file alone.
+- **Claude Code** (https://code.claude.com/docs/en/settings, https://code.claude.com/docs/en/env-vars): user < shared
+  project < local project (`.claude/settings.local.json`, untracked, added to git's global excludes) < command line <
+  managed. Some permission modes do not apply from project or local settings, and project allow rules wait for the
+  workspace trust dialog, whose answer is kept in the home directory keyed by the main checkout's root.
+  `CLAUDE_CONFIG_DIR` moves settings, history and plugins together, documented for running several accounts side by
+  side.
+- **Codex CLI** (https://learn.chatgpt.com/docs/config-file/config-basic): user < profile < project
+  `.codex/config.toml` (trusted projects only) < command line. A project file cannot set keys that redirect
+  credentials, select profiles or run machine-local commands. `CODEX_HOME` holds config, auth, history and logs.
+- **VS Code** (https://code.visualstudio.com/docs/configure/settings): workspace settings override user settings, but
+  some settings (for example `git.path`) may be set only in user settings, and Restricted Mode limits an untrusted
+  workspace.
+- **npm** (https://docs.npmjs.com/cli/v11/configuring-npm/npmrc) and **Cargo**
+  (https://doc.rust-lang.org/cargo/reference/config.html): the project file overrides the user's; neither restricts
+  keys by layer. `CARGO_HOME` moves config, credentials and caches.
+- **mise** (https://mise.jdx.dev/configuration.html): `mise.local.toml` beside `mise.toml` for personal overrides, kept
+  out of version control by the user; config that runs code needs `mise trust`, kept in a state directory.
+- **direnv** (https://direnv.net/man/direnv.1.html): `.envrc` loads only after `direnv allow`.
 
-### B. Two Layers, user < repository, over settings in code (recommended)
+No tool supports several people sharing one checkout: each assumes one OS user per home directory, and runs a second
+identity by moving that directory. Most let the repository override the person. Several give a key to one layer only.
+Five keep a trust record in the home directory before running code from a repository's configuration. gg's decision
+takes the per-directory identity (`GG_HOME`) and a key list per source, refuses merging altogether, and leaves the trust
+record to the backlog.
 
-The four Run settings become one constant in `lib/config.ts`. The user Layer takes the allow-list of A and names no
-file. The repository Layer may set every key; `labelPrefix` and `baseBranch` are repository-only.
+## Designs considered before the decision
 
-- Cost: section 2's removals; the allow-list of A; `loadFiles` reads one Layer, so `FileSources`, the "declared by ...
-  and by ..." error and the three cross-Layer cases (`test/unit/config.test.ts:152`, `:185`, `:225`) go. Docs: request 3.1
-  (`node-harness-dag.md:57`, "resolved through the user and repo Layers"), 3.3 (`:252-256`), 3.9; GLOSSARY **Layer**;
-  AGENTS.md Layout; a new ADR. Advice texts unchanged.
-- Gives up a Persona or other file from the home directory, and a person's own `labelPrefix` or `baseBranch`. Neither is
-  used today.
-- Config Hash: inputs unchanged; same values for every configuration that loads today except one whose user Layer
-  names a file, which stops loading. Pinned Configuration unchanged. Problem codes: none new unless decision 2 adds
-  one.
-- Migration: none on this machine (no user Layer); a user Layer copied from `examples/` already fits the allow-list.
+Before the owner reframed the question, the note set out four designs over the Layers, each keeping `flows`,
+`procedures`, `commands`, `testPaths` and `approvers` repository-only:
 
-### C. Repository Layer plus an untracked per-repository Layer
+- **A. Three Layers, tightened**: keep `defaults/gg.json`; an allow-list for the user Layer (an Agent's harness,
+  model and effort, `worktreeRoot`, `maxParallel`).
+- **B. Two Layers over settings in code**: as A without `defaults/gg.json`; `labelPrefix` and `baseBranch`
+  repository-only. Recommended then.
+- **C. A repository Layer plus an untracked `.agents/gg/local.json`** with A's allow-list, overriding the repository.
+- **D. The repository Layer alone**, the Agents' harness, model and effort committed.
 
-Settings in code < `.agents/gg/gg.json` < `.agents/gg/local.json` (untracked, the allow-list of A). No home Layer.
-
-- Cost: B's removals, plus `loadLayers` loses its `home` parameter, so every test that passes a temp home changes
-  (`test/unit/interpreter.test.ts:65`, `test/unit/run.test.ts:303`, `test/unit/doctor.test.ts:250` and `:300`, the e2e
-  temp home at `test/e2e/gg.test.ts:108`); gg init writes the `.gitignore` line; both advice texts and their assertions
-  change; `examples/` are copied per repository.
-- Gives up settings that follow the person; each repository needs its own copy, and a fresh clone has none until the
-  person copies one.
-- Config Hash: as B. Note the local Layer overrides the repository, so it reverses today's precedence for those keys:
-  the person's harness wins over the repository's.
-
-### D. One Layer: the repository's, over settings in code
-
-The Agents' harness, model and effort are committed in the repository Layer; there is no personal Layer.
-
-- Cost: the least code: `merge`, `rejectRepoOnly`, `FileSources` and the home read go; `loadLayers` reads one file.
-  gg init must write a harness, model and effort (a `--harness` flag, or the advice to edit gg.json), and `examples/`
-  become what it writes. Tests as C, and every case that builds a user Layer.
-- Gives up per-person choices: a collaborator on another subscription must edit a tracked file, and every model change
-  is a commit, which also moves the Config Hash in the repository's history rather than per Run.
-- Config Hash: as B; the hash's inputs then come from one tracked file and gg's own templates.
-
-### Costs side by side
-
-| | A | B | C | D |
-| --- | --- | --- | --- | --- |
-| Layers | 3 | 2 | 2 | 1 |
-| `defaults/`, `loadDefaults` | kept | removed | removed | removed |
-| Cross-Layer file rule | kept | removed | trivial | removed |
-| Settings follow the person | yes | yes | no | no |
-| A person can override the repository | no | no | yes | n/a |
-| Tests that change | the 5 user-Layer load-error cases | A's, the 5 defaults cases and the 3 cross-Layer file cases | B's, and every caller that passes a temp home (5 files) | C's, and every case that builds a user Layer |
-| Advice texts change | no | no | yes | yes |
-| Config Hash inputs, Pinned Configuration, Problem codes | unchanged | unchanged | unchanged | unchanged |
-
-## Recommendation
-
-B. It removes the Layer that holds only constants and the file rule that exists only for non-repository Layers, keeps
-what the user Layer is for (a person's harness, model and effort, and the machine's `worktreeRoot` and `maxParallel`),
-and makes every future key repository-only unless it is added to the allow-list. It changes no Config Hash input, no
-Pinned Configuration and no Problem code, so the follow-up can land before #23 without touching the freeze. C is the
-better choice only if settings that follow the person across repositories are judged a hazard rather than a
-convenience; the probes found no harm in them once the user Layer names no files and cannot set `labelPrefix`.
-
-## Decisions for the owner
-
-1. The Layer design: A, B, C or D (recommended: B).
-2. The Run settings' validation (section 1): today an invalid `maxParallel` runs no Ticket in silence and an unknown key
-   is ignored. (a) Fold into the follow-up a closed top-level key list and type checks on the four settings, with the
-   migration table's messages for ff's keys (recommended; may add one Problem code for a non-string setting, so it
-   lands before #23); (b) a separate bug ticket; (c) leave it.
-3. A person's model in the Approval Digest (section 5): (a) keep, a changed model re-asks the approver (recommended:
-   loud, nothing lost, no code); (b) the digest takes the Execution's own hash from its record, so a Decision outlives a
-   configuration change; (c) the digest drops the Agents' settings.
+The Codex review of that draft (PR #315, round 1) found that B also stops accepting a user Layer's `baseBranch` and
+`labelPrefix` (`test/unit/config.test.ts:276-283` sets one), that A, C and D's test and document costs were
+understated, and that under each allow-list P-M's mixed Agent remains. The decision goes past all four: it keeps D's
+single source per Flow and B's user directory, and drops the merge that every Layer design needed.
 
 ## Appendix: probes
 
-Run from the job's temp directory, outside the worktree, on 2026-11-08:
+Run from the job's temp directory, outside the worktree, on 2026-11-08 and 2026-11-09:
 
 ```
 node probe-layers.ts C:/dev/worktrees/grey-goo-ri/314-config-layers
 node probe-prefix.ts C:/dev/worktrees/grey-goo-ri/314-config-layers
+node probe-null.ts C:/dev/worktrees/grey-goo-ri/314-config-layers
 ```
 
 `probe-layers.ts` copies `test/fixtures/example/` into a temp repository's `.agents/gg/` with `commands.test` added,
 writes a user Layer into a temp home for each case, calls `config.loadLayers(repo, home)`, runs the validator with the
 shipped Harnesses as `lib/run.ts:183-187` does, and builds the Pinned Configuration and its hash as `lib/run.ts:193-202`
-does (first 12 hex digits shown). Cases: A no user Layer; B and C `examples/claude.json` and `examples/codex.json`; D
-B with the reviewer's model `opus`; E B plus the four Run settings; F an approval Vertex between `reviewer` and
-`publish`, under prefixes `gg` and `me`; G a misspelt `maxParalel`; H `run.mapConcurrently` over three Tickets with
-bad limits; H2 bad types for three settings; I a `null` prefix; J each repository-only key in the user Layer; K the user
+does (first 12 hex digits shown). It skips preflight (`lib/run.ts:191`), so no error means the validator passed, not
+that a Run would be admitted. Cases: A no user Layer; B and C `examples/claude.json` and `examples/codex.json`; D B
+with the reviewer's model `opus`; E B plus the four Run settings; F an approval Vertex between `reviewer` and
+`publish`, under prefixes `gg` and `me`; G a misspelt `maxParalel`; H `run.mapConcurrently` over three Tickets with bad
+limits; H2 bad types for three settings; I a `null` prefix; J each repository-only key in the user Layer; K the user
 Layer declaring `reviewer.md` beside itself; K2 the user Layer naming its own `my-reviewer.md`; L `approval.digest`
-over B's and D's hashes; M the repository setting the reviewer's harness and model; N both Layers setting `labelPrefix`
-and `baseBranch`. `probe-prefix.ts` parses three `gg:` labels with `labels.labelsFor('me')` and `labelsFor('gg')`.
+over B's and D's full hashes; M the repository setting the reviewer's harness and model; N both Layers setting
+`labelPrefix` and `baseBranch`. `probe-prefix.ts` parses three `gg:` labels with `labels.labelsFor('me')` and
+`labelsFor('gg')`. `probe-null.ts` loads a user Layer `{"labelPrefix":null}` under a repository Layer
+`{"labelPrefix":"gg"}`.
 
-Output (temp paths shown as `<tmp>`):
+Output, in the order printed (temp paths shown as `<tmp>`):
 
 ```
 A no user Layer: {"errors":["harness-unset@agents.implementer","harness-unset@agents.reviewer","harness-unset@agents.senior"],"run":{"maxParallel":2,"baseBranch":"main","worktreeRoot":"~/worktrees","labelPrefix":"gg"}}
@@ -299,16 +325,17 @@ J flows in user Layer: "THROWS <tmp>\\j-flows\\home\\.agents\\gg\\gg.json: flows
 J procedures in user Layer: "THROWS <tmp>\\j-procedures\\home\\.agents\\gg\\gg.json: procedures may be set only in a repository Layer"
 K user Layer re-declares persona reviewer.md beside itself: "THROWS file \"reviewer.md\" is declared by <tmp>\\k\\home\\.agents\\gg\\gg.json and by <tmp>\\plain\\repo\\.agents\\gg\\gg.json, each beside its own Layer; give one of them another name"
 K2 user Layer names its own persona file: {"errors":[],"hash":"addb7302d813","fileFromHome":true}
+L Approval Digest, same head and body, hash B vs D: ["f48fbad35c92","33c0554beeaf"]
 K2 merged reviewer persona, and files loaded: {"persona":"reviewer.md","files":["my-reviewer.md","reviewer.md","review.md","review-comment.md"]}
-L Approval Digest, same head and body, hash B vs D: ["a60117c18fa0","e4acc0832294"]
 M repo sets reviewer harness codex, user sets claude: merged: {"reviewer":{"harness":"codex","model":"gpt-6.1-sol","effort":"high","persona":"reviewer.md","access":"read-only"},"resolved":{"harness":"codex","model":"gpt-6.1-sol","effort":"high","persona":"reviewer.md","access":"read-only"}}
 N repo sets labelPrefix/baseBranch, user too: merged: {"maxParallel":2,"baseBranch":"trunk","worktreeRoot":"~/worktrees","labelPrefix":"repo"}
 prefix me reads gg:await:approve: null; prefix gg: {"family":"await","vertex":"approve"}
 prefix me reads gg:state:in-progress: null; prefix gg: {"family":"state","name":"in-progress"}
 prefix me reads gg:decide:approve:approved: null; prefix gg: {"family":"decide","vertex":"approve","outcome":"approved"}
+user null, repo "gg": merged labelPrefix = "gg"
 ```
 
-The two scripts, as run:
+The three scripts, as run:
 
 ```ts
 // Probes for #314: the configuration Layers as main 0f74178 loads them. Temp repo and temp home only.
@@ -368,7 +395,8 @@ function admit(repo: string, homeDirectory: string) {
     approvers: layers.approvers,
   };
   const run = { maxParallel: layers.maxParallel, baseBranch: layers.baseBranch, worktreeRoot: layers.worktreeRoot, labelPrefix: layers.labelPrefix };
-  return { layers, json, errors: errors.map((e: any) => `${e.code}@${e.at}`), hash: config.configHash(pinned).slice(0, 12), run };
+  const fullHash = config.configHash(pinned);
+  return { layers, json, errors: errors.map((e: any) => `${e.code}@${e.at}`), hash: fullHash.slice(0, 12), fullHash, run };
 }
 const show = (label: string, value: unknown) => console.log(`${label}: ${JSON.stringify(value)}`);
 const attempt = (label: string, body: () => unknown) => {
@@ -427,8 +455,9 @@ attempt('K2 user Layer names its own persona file', () => {
   const r = admit(plain, home('k2', ownPersona, { 'my-reviewer.md': '# mine\n' }));
   return { errors: r.errors, hash: r.hash, fileFromHome: Object.hasOwn(r.layers.files, 'my-reviewer.md') };
 });
+// The full hash, as lib/approval-action.ts:43 passes it; only the printed digest is cut.
 const digest = (hash: string) => approval.digest({ head: 'a'.repeat(40), body: 'ticket body', configHash: hash }).slice(0, 12);
-show('L Approval Digest, same head and body, hash B vs D', [digest(claude.hash), digest(opus.hash)]);
+show('L Approval Digest, same head and body, hash B vs D', [digest(claude.fullHash), digest(opus.fullHash)]);
 
 attempt('K2 merged reviewer persona, and files loaded', () => {
   const r = admit(plain, home('k3', ownPersona, { 'my-reviewer.md': '# mine\n' }));
@@ -448,4 +477,19 @@ import { pathToFileURL } from 'node:url';
 const labels = await import(pathToFileURL(process.argv[2] + '/lib/labels.ts').href);
 for (const label of ['gg:await:approve', 'gg:state:in-progress', 'gg:decide:approve:approved'])
   console.log(`prefix me reads ${label}: ${JSON.stringify(labels.labelsFor('me').parse(label))}; prefix gg: ${JSON.stringify(labels.labelsFor('gg').parse(label))}`);
+```
+
+```ts
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const config = await import(pathToFileURL(process.argv[2] + '/lib/config.ts').href);
+const scratch = mkdtempSync(join(tmpdir(), 'gg-314-null-'));
+for (const [name, text] of [['home', '{"labelPrefix":null}'], ['repo', '{"labelPrefix":"gg"}']]) {
+  mkdirSync(join(scratch, name, '.agents', 'gg'), { recursive: true });
+  writeFileSync(join(scratch, name, '.agents', 'gg', 'gg.json'), text);
+}
+const merged = config.loadLayers(join(scratch, 'repo'), join(scratch, 'home'));
+console.log('user null, repo "gg": merged labelPrefix =', JSON.stringify(merged.labelPrefix));
 ```
