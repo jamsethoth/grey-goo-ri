@@ -233,11 +233,7 @@ type WriteEvent = (() => void) | null;
 // With `writeEvent`, the row and the Event it inserts on the same connection commit together or not at all. It must be
 // synchronous: nothing awaited may run inside the transaction. Any failed save is a RecordSaveError, after which the
 // caller saves nothing more of the record.
-async function saveRecord(
-  record: AnyRecord,
-  writeEvent: WriteEvent,
-  beforeSave: (record: AnyRecord) => void,
-): Promise<void> {
+function saveRecord(record: AnyRecord, writeEvent: WriteEvent, beforeSave: (record: AnyRecord) => void): void {
   const { commonDir, ...data } = record;
   const kind: RecordKind = 'execution' in record ? 'ticket' : 'epic';
   const connection = stateDatabase.open(commonDir);
@@ -316,11 +312,7 @@ function parseRow<Saved extends AnyRecord>(commonDir: string, { kind, n: recordN
 
 type Saved<Kind extends RecordKind> = Kind extends 'ticket' ? ExecutionRecord : EpicRecord;
 
-export async function load<Kind extends RecordKind>(
-  commonDir: string,
-  kind: Kind,
-  recordNumber: number,
-): Promise<Saved<Kind> | null> {
+export function load<Kind extends RecordKind>(commonDir: string, kind: Kind, recordNumber: number): Saved<Kind> | null {
   const row = stateDatabase
     .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? AND n = ?')
@@ -329,11 +321,11 @@ export async function load<Kind extends RecordKind>(
 }
 
 // One corrupt record must not hide every other worktree's activity: it is reported, not fatal.
-export async function loadAll<Kind extends RecordKind>(
+export function loadAll<Kind extends RecordKind>(
   commonDir: string,
   kind: Kind,
   { onCorrupt = () => {} }: { onCorrupt?: (err: RecordCorruptError) => void } = {},
-): Promise<Saved<Kind>[]> {
+): Saved<Kind>[] {
   const rows = stateDatabase
     .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? ORDER BY n')

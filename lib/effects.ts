@@ -93,20 +93,20 @@ export async function sideEffect<Payload>(
   const found = writeAhead.evidenceOf(executionRecord, actionMarker);
   if (found) {
     if (!deferred && !writeAhead.findEntry(executionRecord, actionMarker, 'complete'))
-      await context.database.complete(executionRecord, actionMarker);
+      context.database.complete(executionRecord, actionMarker);
     return found.evidence as Evidence;
   }
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Payload | undefined;
-  if (!intended) await context.database.intent(executionRecord, actionMarker, effect, payload);
+  if (!intended) context.database.intent(executionRecord, actionMarker, effect, payload);
   effectErrors.crashPoint(context, actionMarker, 'before-effect');
   const launched = intended ?? payload;
   const evidence = remoteEffects.REMOTE_ACTIONS.includes(effect)
     ? await remoteEffects.remoteEffect(context, { actionMarker, effect, payload: launched }, perform)
     : await perform(launched);
   effectErrors.crashPoint(context, actionMarker, 'after-effect');
-  await context.database.evidence(executionRecord, actionMarker, evidence);
+  context.database.evidence(executionRecord, actionMarker, evidence);
   if (deferred) return evidence;
-  await context.database.complete(executionRecord, actionMarker);
+  context.database.complete(executionRecord, actionMarker);
   effectErrors.crashPoint(context, actionMarker, 'after-completion');
   return evidence;
 }
@@ -152,9 +152,8 @@ export async function saveResolution<Settled extends visit.Resolution>(
       signals: {},
       ...fields,
     });
-  await (actionMarker
-    ? context.database.complete(executionRecord, actionMarker, { evidence, event })
-    : context.database.save(executionRecord, event));
+  if (actionMarker) context.database.complete(executionRecord, actionMarker, { evidence, event });
+  else context.database.save(executionRecord, event);
   if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
   return resolution;
 }
@@ -173,7 +172,7 @@ export async function replaceResolution<Settled extends visit.Resolution>(
       : { action: actionIdentity.action, recovery: actionIdentity.recovery, resolution };
   const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
   if (saved) saved.evidence = { ...saved.evidence, ...resolution };
-  await context.database.save(executionRecord, () =>
+  context.database.save(executionRecord, () =>
     context.emit(actionIdentity, startedAt, {
       outcome: resolution.outcome,
       direction: resolution.direction,

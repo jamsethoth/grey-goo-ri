@@ -84,13 +84,13 @@ for (const state of ['ready-for-qa', 'fault', 'abandoned'] as const) {
     ]);
     executionRecord.cursor = { vertex: 'needs-human', visit: null, action: null, recovery: 0, attempt: 1 };
     const actionMarker = golden.markerOf(executionRecord, 'ready-for-qa', 1, 'end-comment', 0);
-    await record.intent(executionRecord, actionMarker, 'comment', {
+    record.intent(executionRecord, actionMarker, 'comment', {
       target: { kind: 'issue', number: TICKET },
       body: 'x',
       bodyHash: 'h',
     });
     executionRecord.state = state;
-    await record.save(executionRecord);
+    record.save(executionRecord);
     const row = fixture.loadRow();
 
     assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0);
@@ -113,7 +113,7 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
   const fixture = runFixture.fixture(t);
   const executionRecord = unvisitedExecution.unvisitedExecution(fixture, { run: 'seed' });
   executionRecord.state = 'held';
-  await record.save(executionRecord);
+  record.save(executionRecord);
   const row = fixture.loadRow();
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 0);
@@ -228,7 +228,7 @@ async function pinnedTo(t: TestContext, flow: string) {
   await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const executionRecord = unvisitedExecution.unvisitedExecution(fixture);
   executionRecord.flow = flow;
-  await record.save(executionRecord);
+  record.save(executionRecord);
   return fixture;
 }
 

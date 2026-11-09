@@ -84,7 +84,7 @@ test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
   const path = join(fixture.worktree, 'test', 'add.test.mjs');
   editRuns(fixture, (result) => ({ ...result, output: `${result.output}\n    at (${path}:1:1)` }));
   await interpreter.runExecution(fixture.options);
-  const executionRecord = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
+  const executionRecord = record.load(fixture.commonDir, 'ticket', golden.TICKET)!;
   const redCheck = executionRecord.outputs.find((output) => output.vertex === 'red' && output.action === 'red-check');
   const { output } = (redCheck!.value as { evidence: { output: string } }).evidence;
   assert.ok(output.includes(path), output);
@@ -130,7 +130,7 @@ async function tokenRun(t: TestContext) {
 test('each public field is redacted once and sent exactly as its intent saved it', async (t) => {
   const fixture = await tokenRun(t);
 
-  const executionRecord = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
+  const executionRecord = record.load(fixture.commonDir, 'ticket', golden.TICKET)!;
   const messages = await branchMessages(fixture);
   const sent = [...fixture.gh.calls.flatMap((call) => [...call.args, call.input ?? '']), ...messages];
   assert.deepEqual(
@@ -221,7 +221,7 @@ for (const [name, from, to, generation, activity] of [
     );
 
     assert.equal(err?.name, 'RecordSaveError', String(err));
-    const saved = await loadTicket(fixture);
+    const saved = loadTicket(fixture);
     assert.equal(saved.state, 'active', 'no fault is saved');
     assert.equal(saved.terminalStop, null, 'nor its Terminal');
     assert.deepEqual(saved.activity, activity, 'the failed flip is not saved by a cleanup');
@@ -361,7 +361,7 @@ test("a hold's label is set after its comment, each under its own marker", async
   });
 
   assert.equal(result.held, true, JSON.stringify(result));
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   const [comment, label] = ['hold-comment', 'hold-label'].map((action) => reportMarker(fixture, 'needs-human', action));
   assert.deepEqual(
     executionRecord.writeAheadLog
@@ -397,7 +397,7 @@ test("a fault during an end does not replay the end's open reporting Action", as
   const result = await interpreter.runExecution(fixture.options);
 
   assert.equal(result.fault, true, JSON.stringify(result));
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   const ended = reportMarker(fixture, 'ready-for-qa', 'end-comment');
   assert.deepEqual(
     writeAhead.openIntents(executionRecord).map((entry) => entry.actionMarker),
@@ -476,7 +476,7 @@ test('pr-ready holds when the worktree changed after its Check passed', async (t
   assert.equal(result.held, true);
   assert.equal(markedReady(fixture), false, 'gh pr ready never runs');
   assert.equal(fixture.gh.pr()!.isDraft, true, 'the PR stays a draft');
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   assert.deepEqual(executionRecord.terminalReason!.decidedBy, { hold: 'unchecked-publish' });
   assert.match(executionRecord.terminalReason!.text, /the worktree is not clean at commit \w+/);
   assert.ok(fixture.gh.labels.has('gg:state:needs-human'));
@@ -492,7 +492,7 @@ test('pr-ready holds when only the remote PR head moved after the push', async (
   assert.equal(fixture.result.held, true);
   assert.equal(markedReady(fixture), false, 'gh pr ready never runs');
   assert.equal(fixture.gh.pr()!.isDraft, true, 'the PR stays a draft');
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   assert.deepEqual(executionRecord.terminalReason!.decidedBy, { hold: 'unchecked-publish' });
   assert.ok(executionRecord.terminalReason!.text.includes(moved), executionRecord.terminalReason!.text);
   assert.equal(
@@ -513,7 +513,7 @@ test('an unrouted harness-timeout ends at needs-human', async (t) => {
 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
   assert.equal(attemptsOf(fixture, 'green', 'green').at(-1)!.outcome, 'harness-timeout');
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   assert.equal(executionRecord.terminalReason!.outcome, 'harness-timeout');
   assert.deepEqual(executionRecord.terminalReason!.rule, { table: 'fixed', row: 'timeout-exhausted' });
   assert.ok(fixture.gh.labels.has('gg:state:needs-human'));
@@ -548,7 +548,7 @@ test('an end without a stop token still posts its Terminal Reason comment', asyn
   const result = await interpreter.runExecution(fixture.options);
 
   assert.equal(result.outcome, 'needs-human', JSON.stringify(result));
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   const [terminal] = fixture.gh.comments.filter((comment) => comment.number === golden.TICKET);
   assert.ok(terminal, 'a comment on the Ticket');
   assert.ok(terminal.body.startsWith('### gg: needs-human\n\n**Terminal Reason:** '), terminal.body);
@@ -564,7 +564,7 @@ test('a stop comment replaces the end comment and reaches the Epic at needs-repl
   const result = await interpreter.runExecution(fixture.options);
 
   assert.equal(result.outcome, 'needs-replan', JSON.stringify(result));
-  const executionRecord = await loadTicket(fixture);
+  const executionRecord = loadTicket(fixture);
   assert.equal(executionRecord.state, 'needs-replan');
   assert.deepEqual([...fixture.gh.labels], ['gg:state:needs-replan']);
   const onTicket = fixture.gh.comments.filter((comment) => comment.number === golden.TICKET);
@@ -631,7 +631,7 @@ test("the Vertex's route for an Outcome beats the Flow's route for it (H7)", asy
     (configured.flows.golden!.ticket.vertices.green!.route as Routes).misscoped = { end: 'needs-human' };
   });
   assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'needs-human');
-  assert.equal((await loadTicket(fixture)).terminalReason!.outcome, 'misscoped');
+  assert.equal(loadTicket(fixture).terminalReason!.outcome, 'misscoped');
 });
 
 test('no "*" catches an unroutable Outcome', async (t) => {

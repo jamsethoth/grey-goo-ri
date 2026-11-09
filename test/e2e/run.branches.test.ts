@@ -7,6 +7,7 @@ import type * as events from '../../lib/events.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
 import * as golden from '../support/golden.ts';
@@ -20,8 +21,6 @@ const { BRANCH, TICKET } = runFixture;
 const { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } = executionContext;
 type RunFixture = runFixture.RunFixture;
 
-const loadTicket = async (fixture: RunFixture) =>
-  (await record.load(fixture.commonDir, 'ticket', TICKET)) as record.ExecutionRecord;
 const ensureWorktree = (fixture: RunFixture, branch: string) =>
   fixture.options.deps.git.ensureWorktree({ mainRoot: fixture.mainRoot, path: fixture.worktree, branch, base: 'main' });
 const snapshot = (fixture: RunFixture) => integrity.snapshot(fixture.worktree, fixture.options.deps.git);
@@ -74,7 +73,7 @@ for (const branch of ['ticket/99-another-ticket', `ticket/${TICKET}-another-atte
       'the implementation is kept',
     );
     assert.equal(prTouched(fixture), false, 'no PR was read or published');
-    const final = await loadTicket(fixture);
+    const final = executionReads.loadTicket(fixture, TICKET);
     assert.equal(final.state, 'held');
     assert.equal(final.branch, BRANCH);
     assert.deepEqual(writeAhead.openIntents(final), writeAhead.openIntents(seeded), 'the intended commit is kept');
@@ -118,7 +117,7 @@ for (const { branch, checkout, current } of REFUSED) {
       fixture.comments().every((body) => !body.includes('`detached HEAD`')),
       'a detached HEAD is not shown as a branch name',
     );
-    const held = await loadTicket(fixture);
+    const held = executionReads.loadTicket(fixture, TICKET);
     assert.equal(held?.state, 'held', 'the hold is recorded');
     assert.equal(held.branch, BRANCH, 'the record names the intended branch, never the one found');
     assert.equal(held.worktree, fixture.worktree);
@@ -142,7 +141,7 @@ test('fresh admission reuses its Ticket branch after a title change', async (t) 
 
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
-  assert.equal((await loadTicket(fixture)).branch, branch);
+  assert.equal(executionReads.loadTicket(fixture, TICKET).branch, branch);
   assert.equal(
     gitShell.sh(fixture.mainRoot, 'ls-remote', 'origin', `refs/heads/${branch}`).split('\t')[0],
     gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'),
@@ -157,7 +156,7 @@ test('fresh admission reuses its Ticket branch after a title change', async (t) 
 // An Execution of this Ticket recorded on another Ticket's branch, with one outstanding intent.
 async function foreignBranchRecord(fixture: RunFixture, branch: string) {
   const executionRecord = unvisitedExecution.unvisitedExecution(fixture, { branch });
-  await record.intent(executionRecord, 'seed-intent', 'commit', { message: 'red' });
+  record.intent(executionRecord, 'seed-intent', 'commit', { message: 'red' });
   assert.equal(writeAhead.openIntents(executionRecord).length, 1);
   return executionRecord;
 }
@@ -177,7 +176,7 @@ async function assertForeignBranchHeld(fixture: RunFixture, branch: string, seed
   );
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
   assert.equal(prTouched(fixture), false, 'no PR was read or published');
-  const final = await loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture, TICKET);
   assert.equal(final.state, 'held');
   assert.equal(final.branch, branch);
   assert.deepEqual(writeAhead.openIntents(final), writeAhead.openIntents(seeded), 'the outstanding intent is kept');
@@ -226,11 +225,11 @@ async function siblingOverwrite(t: TestContext, { seeded, siblingRecord, sibling
   gitShell.sh(fixture.mainRoot, 'worktree', 'add', '-q', '-b', siblingBranch, sibling, 'main');
   if (siblingRecord) {
     const options = { ticket: 99, worktree: sibling, branch: 'ticket/99-other' };
-    await record.save(unvisitedExecution.unvisitedExecution(fixture, options));
+    record.save(unvisitedExecution.unvisitedExecution(fixture, options));
   }
   if (seeded) {
     await ensureWorktree(fixture, BRANCH);
-    await record.save(unvisitedExecution.unvisitedExecution(fixture));
+    record.save(unvisitedExecution.unvisitedExecution(fixture));
   }
   const files = responses['red/1/red/1']?.files as Record<string, string>;
   files[relative(fixture.worktree, join(sibling, 'package.json'))] = '{ "overwritten": true }\n';
@@ -358,7 +357,7 @@ test('a resumed execution detached at the recorded SHA is held before recovery',
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', BRANCH), head, 'the recorded branch is untouched');
   assert.deepEqual(await snapshot(fixture), before, 'the index and files are untouched');
   assert.equal(prTouched(fixture), false, 'no PR was read or published');
-  const final = await loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture, TICKET);
   assert.equal(final.state, 'held');
   assert.deepEqual(writeAhead.openIntents(final), writeAhead.openIntents(seeded));
 });
@@ -381,12 +380,12 @@ test('a resumed execution stopped mid-rebase is held without changing the rebase
 
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
-  assert.equal((await loadTicket(fixture)).state, 'held');
+  assert.equal(executionReads.loadTicket(fixture, TICKET).state, 'held');
   assert.equal(fixture.harness.calls.length, 1, 'no agent call beyond the seeded 1');
   assert.deepEqual(await snapshot(fixture), before);
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', BRANCH), head);
   assert.equal(readFileSync(join(rebasePath, 'git-rebase-todo'), 'utf8'), todo, 'the rebase is untouched');
-  assert.deepEqual(writeAhead.openIntents(await loadTicket(fixture)), writeAhead.openIntents(seeded));
+  assert.deepEqual(writeAhead.openIntents(executionReads.loadTicket(fixture, TICKET)), writeAhead.openIntents(seeded));
 });
 
 test('an unexpected branch query failure faults before recovery', async (t) => {
@@ -400,7 +399,7 @@ test('an unexpected branch query failure faults before recovery', async (t) => {
   assert.match(runFixture.ticketResult(results)?.error as string, /cannot read HEAD/);
   assert.equal(fixture.harness.calls.length, 2, 'no agent call beyond the seeded 2');
   assert.deepEqual(await snapshot(fixture), before, 'nothing was replayed or discarded');
-  const final = await loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture, TICKET);
   assert.equal(final.state, 'fault');
   assert.deepEqual(
     writeAhead.openIntents(final).filter((entry) => entry.effect === 'commit'),

@@ -46,7 +46,7 @@ test('golden: an approval request ends the run and a later approval routes on', 
 
   const first = await interpreter.runExecution(fixture.options);
   assert.equal(first.outcome, 'pending');
-  const pending = await loadTicket(fixture);
+  const pending = loadTicket(fixture);
   assert.equal(pending.state, 'active');
   assert.deepEqual(pending.cursor, { vertex: 'approve', visit: 1, action: 'ask', recovery: 0, attempt: 1 });
   const instance = pending.approvalRequest!;
@@ -68,7 +68,7 @@ test('golden: an approval request ends the run and a later approval routes on', 
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
   const approved = await laterRun(fixture);
   assert.equal(approved.outcome, 'ready-for-qa');
-  const ended = await loadTicket(fixture);
+  const ended = loadTicket(fixture);
   assert.equal(ended.approvalRequest, null);
   assert.equal(fixture.gh.labels.has(APPROVED_LABEL), false, 'the Decide Label is consumed');
   assert.equal(fixture.gh.labels.has(AWAIT_LABEL), false, 'the Await Label is taken down');
@@ -96,7 +96,7 @@ test('a rejected decision routes back', async (t) => {
   fixture.gh.humanAddsLabel(REJECTED_LABEL, OWNER);
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'pending', 'green ran again and the next Visit asks again');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.visits.get('green'), 2);
   assert.equal(saved.visits.get('approve'), 2);
   assert.equal(saved.traversals.get('approve->green:rejected'), 1);
@@ -109,13 +109,13 @@ test('a rejected decision routes back', async (t) => {
 test('a stale approval is re-requested', async (t) => {
   const fixture = await approvalFixture(t);
   await interpreter.runExecution(fixture.options);
-  const digest = (await loadTicket(fixture)).approvalRequest?.digest;
+  const digest = loadTicket(fixture).approvalRequest?.digest;
   assert.ok(digest, 'the request was made');
 
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
   const result = await laterRun(fixture, { ticket: { ...fixture.options.ticket, body: 'The body, edited.' } });
   assert.equal(result.outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.approvalRequest!.id, `${saved.execution}:approve:1:2`);
   assert.notEqual(saved.approvalRequest!.digest, digest);
   assert.equal(fixture.gh.labels.has(APPROVED_LABEL), false, 'the stale Decision is retired');
@@ -131,7 +131,7 @@ test('a changed Config Hash makes an approval stale', async (t) => {
 
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
   assert.equal((await laterRun(fixture, { configHash: 'another-hash' })).outcome, 'pending');
-  assert.equal((await loadTicket(fixture)).approvalRequest!.id.endsWith(':2'), true);
+  assert.equal(loadTicket(fixture).approvalRequest!.id.endsWith(':2'), true);
 });
 
 test('two surviving Decisions are retired and re-requested', async (t) => {
@@ -256,11 +256,11 @@ for (const step of ['retire', 'await', 'comment']) {
         interpreter.runExecution({ ...fixture.options, crashAt: { marker: actionMarker, point } }),
         (err) => err instanceof interpreter.CrashError,
       );
-      const { approvalRequest } = await loadTicket(fixture);
+      const { approvalRequest } = loadTicket(fixture);
       assert.ok(approvalRequest, 'the Pending Instance is saved before any label moves');
 
       assert.equal((await laterRun(fixture)).outcome, 'pending');
-      const saved = await loadTicket(fixture);
+      const saved = loadTicket(fixture);
       assert.deepEqual(saved.approvalRequest, approvalRequest, 'the same request goes on');
       assert.equal(requestComments(fixture).length, 1);
       assert.equal(fixture.gh.labels.has(AWAIT_LABEL), true);
@@ -289,7 +289,7 @@ test('a timeline that cannot be read leaves the Ticket Pending', async (t) => {
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'pending');
-  assert.equal((await loadTicket(fixture)).state, 'active');
+  assert.equal(loadTicket(fixture).state, 'active');
   assert.equal(requestComments(fixture).length, 1);
   assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa', 'the next Run reads it');
 });
@@ -368,7 +368,7 @@ test('an issue that cannot be read at Reconciliation leaves a Pending request as
   failIssueView(fixture, 1);
 
   assert.equal((await laterRun(fixture)).outcome, 'pending');
-  assert.equal((await loadTicket(fixture)).state, 'active');
+  assert.equal(loadTicket(fixture).state, 'active');
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
   assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa', 'the next Run goes on');
 });
@@ -381,7 +381,7 @@ test("an issue that cannot be read for a re-request's labels leaves the Ticket P
   failIssueView(fixture, 3);
 
   assert.equal((await laterRun(fixture)).outcome, 'pending');
-  assert.equal((await loadTicket(fixture)).state, 'active');
+  assert.equal(loadTicket(fixture).state, 'active');
   assert.equal((await laterRun(fixture)).outcome, 'pending');
   assert.equal(fixture.gh.labels.has(AWAIT_LABEL), true);
   assert.equal(requestComments(fixture).length, 2);
@@ -407,7 +407,7 @@ test("a gh that cannot start at a Pending Ticket's Reconciliation is a fault", a
   });
   const result = await laterRun(fixture, { deps: { ...fixture.options.deps, gh: github.createGh(transport) } });
   assert.equal(result.fault, true);
-  assert.equal((await loadTicket(fixture)).state, 'fault');
+  assert.equal(loadTicket(fixture).state, 'fault');
 });
 
 // Only a Pending Ticket waits out a failed read: another Execution's Reconciliation faults on it, as before.
@@ -442,12 +442,12 @@ test("a run stop met in Reconciliation's cooldown leaves a Pending request as it
     interpreter.runExecution({ ...fixture.options, crashAt: { marker: comment, point: 'after-retry-saved' } }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const crashed = await loadTicket(fixture);
+  const crashed = loadTicket(fixture);
   const runState = { stop: { failureClass: 'auth', ticket: 99 }, remoteNotBefore: 0 };
 
   const result = await laterRun(fixture, { runState });
   assert.equal(result.outcome, 'pending');
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal(saved.state, 'active');
   assert.deepEqual(saved.approvalRequest, crashed.approvalRequest);
   assert.deepEqual(saved.retries, crashed.retries, 'its retry budget and deadline stand');

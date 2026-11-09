@@ -43,7 +43,7 @@ async function inTempIndex<Result>(
       if (flagged.length)
         await runGit(['update-index', flag, '-z', '--stdin'], { cwd: worktree, env, input: flagged.join('\0') });
     }
-    await git(['add', '-A'], worktree, env);
+    await git(['add', '-A'], worktree, { env });
     return await read(env);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -55,7 +55,7 @@ export const fingerprint = (gitRunner: git.Runner, worktree: string): Promise<in
   inTempIndex(gitRunner, worktree, async (env) => ({
     head: await gitRunner.git(['rev-parse', 'HEAD'], worktree),
     index: await gitRunner.git(['write-tree'], worktree),
-    tree: await gitRunner.git(['write-tree'], worktree, env),
+    tree: await gitRunner.git(['write-tree'], worktree, { env }),
   }));
 
 // The tree of everything a rescue keeps (ADR 0011): what `add -A` stages, and the ignored files within `pathspecs`,
@@ -64,8 +64,8 @@ export const fingerprint = (gitRunner: git.Runner, worktree: string): Promise<in
 export const rescueTree = (gitRunner: git.Runner, cwd: string, pathspecs: string[] | null): Promise<string> =>
   inTempIndex(gitRunner, cwd, async (env) => {
     const listing = ['ls-files', '--others', '--ignored', '--exclude-standard', '-z', ...(pathspecs ?? [])];
-    const ignored = pathspecs ? await gitRunner.listPaths(listing, cwd, env) : [];
+    const ignored = pathspecs ? await gitRunner.listPaths(listing, cwd, { env }) : [];
     if (ignored.length)
       await gitRunner.runGit(['update-index', '--add', '-z', '--stdin'], { cwd, env, input: ignored.join('\0') });
-    return gitRunner.git(['write-tree'], cwd, env);
+    return gitRunner.git(['write-tree'], cwd, { env });
   });

@@ -171,7 +171,7 @@ for (const [issue, reason] of NOT_READY) {
 test('every line a Run prints names its repository, in the terminal and in run.log', async (t) => {
   // A fault whose report gets HTTP 502 and whose label edit fails logs from run, the interpreter and github.
   const fixture = runFixture.fixture(t, { labels: [executionContext.IN_PROGRESS_LABEL], failEdit: true });
-  await record.save(unvisitedExecution.unvisitedExecution(fixture));
+  record.save(unvisitedExecution.unvisitedExecution(fixture));
   failingGit.failGitVerb(fixture, 'ensureWorktree', 'worktree add failed');
   runFixture.failComment(fixture);
 
@@ -494,7 +494,7 @@ test('an Agent naming no harness still exits 2 naming the example Layers', async
 
 test('an admission hold saves an admission stop that declares every field', async (t) => {
   const fixture = runFixture.fixture(t);
-  await record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed', branch: 'ticket/99-other' }));
+  record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed', branch: 'ticket/99-other' }));
   const saved: record.ExecutionRecord[] = [];
   caseDatabase.onSave(t, (next) => saved.push(structuredClone(next as record.ExecutionRecord)));
 
@@ -516,7 +516,7 @@ test('an admission hold saves an admission stop that declares every field', asyn
   assert.deepEqual(Object.keys(admissionStop), Object.keys(expected));
   assert.equal(typeof admissionStop.terminalReasonText, 'string');
   assert.equal(typeof admissionStop.advice, 'string');
-  assert.equal((await executionReads.loadTicket(fixture)).admissionStop, null, 'its Terminal retires it');
+  assert.equal(executionReads.loadTicket(fixture).admissionStop, null, 'its Terminal retires it');
 });
 
 // A Run's Ticket whose green Check holds for cleanup, its first run only; its job's handle is this report's to close.
@@ -714,7 +714,7 @@ test("another Ticket's run stop leaves a Pending request as it was", async (t) =
       [TICKET + 1, 'pending'],
     ],
   );
-  const sibling = await record.load(fixture.commonDir, 'ticket', TICKET + 1);
+  const sibling = record.load(fixture.commonDir, 'ticket', TICKET + 1);
   assert.equal(sibling!.state, 'active');
   assert.ok(sibling!.approvalRequest, 'its request stands');
 });

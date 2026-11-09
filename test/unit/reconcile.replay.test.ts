@@ -57,7 +57,7 @@ for (const point of Object.keys(crashResume.POINTS) as (keyof typeof crashResume
 
     const result = await interpreter.runExecution({
       ...fixture.options,
-      record: await executionReads.loadTicket(fixture),
+      record: executionReads.loadTicket(fixture),
     });
     assert.equal(result.outcome, 'needs-replan');
     const onEpic = fixture.gh.comments.filter(
@@ -71,7 +71,7 @@ for (const point of Object.keys(crashResume.POINTS) as (keyof typeof crashResume
     assert.equal(onTicket.length, 1);
     assert.ok(onTicket[0]?.body.includes(DIAGNOSIS));
     assert.ok(fixture.gh.labels.has('gg:state:needs-replan'), 'the label Action keeps its own payload');
-    const final = await executionReads.loadTicket(fixture);
+    const final = executionReads.loadTicket(fixture);
     assert.equal(final.state, 'needs-replan');
     assert.deepEqual(
       final.writeAheadLog.map((entry) => `${actionOf(entry.actionMarker)} ${entry.effect} ${entry.step}`),
@@ -99,10 +99,10 @@ for (const point of LANDED_POINTS) {
 
     const result = await interpreter.runExecution({
       ...fixture.options,
-      record: await executionReads.loadTicket(fixture),
+      record: executionReads.loadTicket(fixture),
     });
     assert.equal(result.outcome, 'needs-human');
-    const final = await executionReads.loadTicket(fixture);
+    const final = executionReads.loadTicket(fixture);
     assert.equal(final.state, 'needs-human', 'not mistaken for a human override');
     assert.deepEqual(writeAhead.openIntents(final), []);
     assert.equal(ticketEnds(fixture).length, 1);
@@ -126,10 +126,10 @@ for (const point of LANDED_POINTS) {
     const result = await interpreter.runExecution({
       ...fixture.options,
       labelPrefix: 'Gg',
-      record: await executionReads.loadTicket(fixture),
+      record: executionReads.loadTicket(fixture),
     });
     assert.equal(result.outcome, 'needs-human');
-    const final = await executionReads.loadTicket(fixture);
+    const final = executionReads.loadTicket(fixture);
     assert.equal(final.state, 'needs-human', 'not mistaken for a human override');
     assert.deepEqual(writeAhead.openIntents(final), []);
     assert.equal(labelEdits(fixture), 1, 'the label is not applied again');
@@ -148,12 +148,12 @@ async function crashedLabel(t: TestContext) {
 
 // A found effect has its evidence saved; the interpreter completes it with its Event.
 const evidenced = async (fixture: GoldenFixture, actionMarker: string) =>
-  (await executionReads.loadTicket(fixture)).writeAheadLog.some(
-    (entry) => entry.actionMarker === actionMarker && entry.step === 'evidence',
-  );
+  executionReads
+    .loadTicket(fixture)
+    .writeAheadLog.some((entry) => entry.actionMarker === actionMarker && entry.step === 'evidence');
 const terminalEffects = async (fixture: GoldenFixture, actionMarker: string) =>
   (
-    await reconcile.terminalEffects(await executionReads.loadTicket(fixture), {
+    await reconcile.terminalEffects(executionReads.loadTicket(fixture), {
       gh: fixture.options.deps.gh,
       labelPrefix: 'gg',
       cwd: fixture.mainRoot,

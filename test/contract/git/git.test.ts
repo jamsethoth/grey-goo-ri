@@ -715,6 +715,23 @@ test('a git write surfaces the error when index.lock never clears', async (t) =>
   assert.equal(gitShell.sh(directory, 'rev-parse', 'HEAD'), before);
 });
 
+// Off Windows a path differing only in case is another directory, so another repository's worktree there is not ours.
+test(
+  'ensureWorktree treats paths differing only in case as different off Windows',
+  { skip: process.platform === 'win32' && 'not on Windows' },
+  async (t) => {
+    const { root, mainRoot } = realRepo(t);
+    const other = join(root, 'MAIN');
+    gitShell.sh(root, 'clone', '-q', mainRoot, other);
+    const path = join(root, 'wt', 'ticket-4');
+    gitShell.sh(other, 'worktree', 'add', '-q', '-b', 'ticket/4-x', path);
+    await assert.rejects(
+      gitModule.ensureWorktree({ mainRoot, path, branch: 'ticket/4-x', base: 'main' }),
+      (err: Error) => err.message.includes(`${path} exists but is not a git worktree of this repo`),
+    );
+  },
+);
+
 test('conflictedPaths names each path of a merge conflict once', async (t) => {
   const { mainRoot: directory, branch, commit } = realRepo(t);
   writeFileSync(join(directory, 'a.txt'), 'base\n');

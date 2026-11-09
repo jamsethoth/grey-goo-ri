@@ -21,7 +21,7 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
     assert.equal(counts.push ?? 0, 0, 'nothing was pushed');
     assert.equal(await originSha(fixture), null);
-    assert.equal((await loadTicket(fixture)).state, 'abandoned');
+    assert.equal(loadTicket(fixture).state, 'abandoned');
   });
   await t.test('a queued push whose commit origin already has', async (t) => {
     const fixture = await golden.fixture(t, { integrity: 'real', git: 'fake' });
@@ -55,6 +55,6 @@ test('a git write queued behind another holder of the repo lock checks the human
     assert.equal(result.outcome, 'abandoned', JSON.stringify(result));
     assert.equal(counts.commitStaged, 1, 'only the red commit was made');
     assert.deepEqual((await subjects(fixture)).length, 1);
-    assert.equal((await loadTicket(fixture)).state, 'abandoned');
+    assert.equal(loadTicket(fixture).state, 'abandoned');
   });
 });

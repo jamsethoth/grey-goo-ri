@@ -1,6 +1,7 @@
 import * as config from './config.ts';
 import type * as exec from './exec.ts';
 import * as procedures from './procedures.ts';
+import * as publicText from './public-text.ts';
 import * as referencePaths from './reference-paths.ts';
 
 // A test's status in a runner's output: failed, passed, or the TODO or SKIP directive that excuses it.
@@ -127,16 +128,15 @@ export async function greenCheck(
   };
 }
 
-// Evidence stays raw for agent Briefs and is redacted where it is published. Its storage cut keeps whole lines only: a
-// partial first line could start inside a local path, where redaction no longer recognises it.
+// Evidence stays raw for agent Briefs and is redacted where it is published, so its storage cut keeps whole lines.
 const EVIDENCE_LIMIT = 65_536;
 export function checkEvidence(command: string, result: { output?: unknown }) {
-  const output = String(result.output ?? '');
-  const cut = output.length - EVIDENCE_LIMIT;
-  if (cut <= 0) return { command, output };
-  const newline = output.indexOf('\n', cut - 1);
-  const kept = newline >= 0 ? output.slice(newline + 1) : '';
-  return { command, output: kept || `[${output.length} characters of output omitted]` };
+  const output = publicText.lastLines(
+    String(result.output ?? ''),
+    EVIDENCE_LIMIT,
+    (text) => `[${text.length} characters of output omitted]`,
+  );
+  return { command, output };
 }
 
 function globPart(part: string) {

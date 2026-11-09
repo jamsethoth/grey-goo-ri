@@ -70,6 +70,6 @@ export const commentAction = (runContext: RunContext, actionIdentity: marker.Act
       bodyHash: config.sha256(body),
     },
     perform: async (payload) => ({
-      id: github.commentId(await runContext.gh.comment(payload.target.number, payload.body, runContext.cwd)),
+      id: (await runContext.gh.comment(payload.target.number, payload.body, runContext.cwd)).id,
     }),
   });

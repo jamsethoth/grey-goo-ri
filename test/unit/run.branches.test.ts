@@ -19,26 +19,26 @@ test('sibling discovery failure prevents agent execution: a fresh Ticket', async
   assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
   assert.match(runFixture.ticketResult(results)?.error as string, /cannot list worktrees/);
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
-  assert.equal((await record.load(fixture.commonDir, 'ticket', TICKET))?.state, 'fault');
+  assert.equal(record.load(fixture.commonDir, 'ticket', TICKET)?.state, 'fault');
 });
 
 test('sibling discovery failure prevents agent execution: an active Execution', async (t) => {
   const fixture = runFixture.fixture(t, { labels: [executionContext.IN_PROGRESS_LABEL] });
   const { mainRoot, worktree } = fixture;
   await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
-  await record.save(unvisitedExecution.unvisitedExecution(fixture));
+  record.save(unvisitedExecution.unvisitedExecution(fixture));
   failingGit.failGitVerb(fixture, 'listWorktrees', 'fatal: cannot list worktrees');
 
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 1, JSON.stringify(results));
   assert.match(runFixture.ticketResult(results)?.error as string, /cannot list worktrees/);
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
-  assert.equal((await record.load(fixture.commonDir, 'ticket', TICKET))?.state, 'fault');
+  assert.equal(record.load(fixture.commonDir, 'ticket', TICKET)?.state, 'fault');
 });
 
 test('a fault before the first visit still records its action events', async (t) => {
   const fixture = runFixture.fixture(t, { labels: [executionContext.IN_PROGRESS_LABEL] });
-  await record.save(unvisitedExecution.unvisitedExecution(fixture));
+  record.save(unvisitedExecution.unvisitedExecution(fixture));
   failingGit.failGitVerb(fixture, 'ensureWorktree', 'worktree add failed\nfatal: disk full');
 
   const results = await run.runTarget(fixture.options);

@@ -212,7 +212,7 @@ export async function namedFixture(t: TestContext, names: Names, claim = 'ok') {
 // What a run of the fixture left: its result, every Action Event, the record's counts and ending, and the PR's body,
 // with the Execution's id, which differs per run, left out of its Action Markers.
 async function left(fixture: golden.GoldenFixture, result: Awaited<ReturnType<typeof interpreter.runExecution>>) {
-  const { visits, traversals, cursor, terminalReason, state, execution } = await executionReads.loadTicket(fixture);
+  const { visits, traversals, cursor, terminalReason, state, execution } = executionReads.loadTicket(fixture);
   const body = (fixture.gh.pr()?.body as string | undefined)?.replaceAll(execution, '<execution>') ?? null;
   return { result, trace: golden.trace(fixture.readEvents()), visits, traversals, cursor, terminalReason, state, body };
 }
@@ -228,7 +228,7 @@ export async function runNamed(t: TestContext, names: Names, claim = 'ok') {
 export async function restartNamed(t: TestContext, names: Names) {
   const fixture = await namedFixture(t, names);
   await crashResume.crashed(fixture, [names.first, 1, names.commit, 0], 'after-completion');
-  const record = await executionReads.loadTicket(fixture);
+  const record = executionReads.loadTicket(fixture);
   return left(fixture, await interpreter.runExecution({ ...fixture.options, record }));
 }
 

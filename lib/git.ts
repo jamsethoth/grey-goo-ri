@@ -70,10 +70,11 @@ function runner(sleep: (ms: number) => Promise<unknown>) {
       }
     }
   }
-  type Env = Record<string, string>;
-  const git = async (args: string[], cwd: string, env?: Env) => (await runGit(args, { cwd, env })).stdout.trim();
-  const listPaths = async (args: string[], cwd: string, env?: Env) =>
-    (await runGit(args, { cwd, env })).stdout.split('\0').filter(Boolean);
+  type Options = Pick<exec.RunOptions, 'env' | 'allowFail'>;
+  const git = async (args: string[], cwd: string, options: Options = {}) =>
+    (await runGit(args, { ...options, cwd })).stdout.trim();
+  const listPaths = async (args: string[], cwd: string, options: Options = {}) =>
+    (await runGit(args, { ...options, cwd })).stdout.split('\0').filter(Boolean);
   return { runGit, git, listPaths };
 }
 
@@ -97,9 +98,7 @@ async function readRepoInfo({ git }: Runner, cwd: string) {
 async function existingWorktree(gitRunner: Runner, { mainRoot, path }: WorktreeRequest) {
   // The title may have changed since creation, so trust the worktree's branch, not the derived one.
   // Ask the directory itself: a stale registry entry can outlive a folder that was replaced by a plain one.
-  const comparable = (location: string) => paths.canonical(location).toLowerCase();
-  const query = async (...args: string[]) =>
-    (await gitRunner.runGit(args, { cwd: path, allowFail: true })).stdout.trim();
+  const query = (...args: string[]) => gitRunner.git(args, path, { allowFail: true });
   const [top, common, branch] = [
     await query('rev-parse', '--show-toplevel'),
     await query('rev-parse', '--git-common-dir'),
@@ -108,8 +107,8 @@ async function existingWorktree(gitRunner: Runner, { mainRoot, path }: WorktreeR
   const ours =
     top &&
     common &&
-    comparable(top) === comparable(path) &&
-    comparable(resolve(path, common)) === comparable((await readRepoInfo(gitRunner, mainRoot)).gitCommonDir);
+    paths.pathKey(top) === paths.pathKey(path) &&
+    paths.pathKey(resolve(path, common)) === paths.pathKey((await readRepoInfo(gitRunner, mainRoot)).gitCommonDir);
   if (!ours || !branch.startsWith('ticket/'))
     throw new Error(
       `${path} exists but is not a git worktree of this repo on a ticket/ branch; remove or move it and re-run`,

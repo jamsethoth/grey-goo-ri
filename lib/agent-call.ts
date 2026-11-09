@@ -40,10 +40,12 @@ async function withHeartbeat<Result>(runContext: RunContext, run: () => Promise<
   let failed: unknown = null;
   const stop = runContext.clock.every(60_000, () => {
     executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
-    runContext.database.save(executionRecord).catch((err: unknown) => {
+    try {
+      runContext.database.save(executionRecord);
+    } catch (err) {
       failed ??= err;
       stop();
-    });
+    }
   });
   try {
     const result = await run();
@@ -100,7 +102,7 @@ export async function guardedCall(
   attempt.state.firstAttemptBaseline ??= baseline;
   effectErrors.crashPoint(runContext, call.marker as string, 'before-intent');
   executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
-  await runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
+  runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
   const called = await withHeartbeat(runContext, () => harness.run(call));
   called.result.cleanup ??= UNREPORTED;
   // Its writers may still run, so what a snapshot read now would prove nothing, and the call's validation waits (L15).

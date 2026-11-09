@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type * as admission from '../../lib/admission.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as run from '../../lib/run.ts';
@@ -17,8 +18,6 @@ const { BRANCH, TICKET } = runFixture;
 const { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } = executionContext;
 type RunFixture = runFixture.RunFixture;
 
-const loadTicket = async (fixture: RunFixture) =>
-  (await record.load(fixture.commonDir, 'ticket', TICKET)) as record.ExecutionRecord;
 const addWorktree = (fixture: RunFixture) =>
   fixture.options.deps.git.ensureWorktree({
     mainRoot: fixture.mainRoot,
@@ -55,7 +54,7 @@ test('unknown dirty state is held with the diff stat', async (t) => {
     'the untracked file is untouched',
   );
   assert.equal(gitShell.sh(fixture.worktree, 'status', '--porcelain'), status);
-  const held = await loadTicket(fixture);
+  const held = executionReads.loadTicket(fixture, TICKET);
   assert.equal(held?.state, 'held', 'the hold is recorded');
   assert.equal(runFixture.endsOf(fixture, held.execution).length, 1, 'the hold landed');
   gitShell.sh(fixture.worktree, 'restore', 'package.json');
@@ -126,7 +125,7 @@ async function assertHeldRecordAdvice(fixture: RunFixture) {
     'the linked worktree uses the main checkout State Database',
   );
   assert.ok(existsSync(join(fixture.mainRoot, '.git', 'gg', 'gg.db')));
-  const held = await loadTicket(fixture);
+  const held = executionReads.loadTicket(fixture, TICKET);
   assert.equal(held.state, 'held');
   assert.doesNotMatch(
     held.terminalReason?.text as string,
@@ -139,7 +138,7 @@ test('dirty hold advice explains how a held Execution Record can be inspected an
   const fixture = runFixture.fixture(t, { integrity: 'real', git: 'real' });
   await addWorktree(fixture);
   fixture.options.cwd = fixture.worktree;
-  await record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed' }));
+  record.save(unvisitedExecution.unvisitedExecution(fixture, { run: 'seed' }));
   writeFileSync(join(fixture.worktree, 'human.txt'), 'mine\n');
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2);
   await assertHeldRecordAdvice(fixture);
@@ -169,7 +168,7 @@ test('a merge conflict in the worktree of a resumed execution is held, not fault
 
   assertConflictHeld(fixture, await run.runTarget(fixture.options), before);
   assert.equal(fixture.harness.calls.length, 2, 'no agent call beyond the seeded 2');
-  assert.equal((await loadTicket(fixture)).state, 'held');
+  assert.equal(executionReads.loadTicket(fixture, TICKET).state, 'held');
 });
 
 test('a commit interrupted before it landed is admitted and replayed', async (t) => {
@@ -189,7 +188,7 @@ test('a commit interrupted before it landed is admitted and replayed', async (t)
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
   assert.equal(fixture.harness.calls.length, 2, 'no agent call is repeated');
-  assert.equal((await loadTicket(fixture)).state, 'ready-for-qa');
+  assert.equal(executionReads.loadTicket(fixture, TICKET).state, 'ready-for-qa');
   assert.equal(
     gitShell.sh(fixture.worktree, 'status', '--porcelain'),
     '',
@@ -218,5 +217,5 @@ test('a commit interrupted before it landed is held once a human changed the wor
     staged,
     'the staged changes are untouched',
   );
-  assert.equal((await loadTicket(fixture)).state, 'held');
+  assert.equal(executionReads.loadTicket(fixture, TICKET).state, 'held');
 });

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import * as clock from '../lib/clock.ts';
 import * as config from '../lib/config.ts';
 import * as containment from '../lib/containment.ts';
 import * as doctor from '../lib/doctor.ts';
@@ -26,7 +27,7 @@ const realDeps = (): interpreter.Deps => ({
   exec: exec.createExec({ kernel32: containment.openKernel32() }),
   locks: locks.createLocks(),
   database: record.createStateDatabase(),
-  clock: interpreter.WALL_CLOCK,
+  clock: clock.WALL_CLOCK,
 });
 
 async function runCommand(parsed: options.ParsedOptions) {

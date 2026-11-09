@@ -52,9 +52,13 @@ export interface Issue {
   body: string;
   state: string;
   labels: IssueLabel[];
-  blockedBy?: IssueRef[] | { nodes?: IssueRef[] };
-  subIssues?: unknown;
+  blockedBy?: Linked<IssueRef>;
+  subIssues?: Linked<Pick<IssueRef, 'number'>>;
 }
+// gh gives an issue's linked issues as a list, or as a connection with its list under `nodes`.
+type Linked<Item> = Item[] | { nodes?: Item[] };
+export const linkedIssues = <Item>(given: Linked<Item> | undefined): Item[] =>
+  ((given as { nodes?: Item[] } | undefined)?.nodes ?? given ?? []) as Item[];
 export interface PullRequest {
   number: number;
   state: string;
@@ -81,15 +85,10 @@ interface PrefixOption {
 export const labelNames = (issue: Pick<Issue, 'labels'>) => issue.labels.map((label) => label.name);
 
 // A ticket is ready when it is open, idle, and every blocker is closed.
-export function readinessReason(
-  issue: Pick<Issue, 'state' | 'labels' | 'blockedBy'>,
-  { prefix = labels.DEFAULT_PREFIX }: PrefixOption = {},
-) {
+export function readinessReason(issue: Pick<Issue, 'state' | 'labels' | 'blockedBy'>, { prefix }: PrefixOption = {}) {
   // Admission treats in-progress specially (stuck detection); every State Label still means the ticket is not idle.
   const busy = labels.STATE_NAMES.map(labels.labelsFor(prefix).state);
-  const blockers = ((issue.blockedBy as { nodes?: IssueRef[] } | undefined)?.nodes ??
-    issue.blockedBy ??
-    []) as IssueRef[];
+  const blockers = linkedIssues(issue.blockedBy);
   if (issue.state !== 'OPEN') return 'closed';
   const open = blockers.filter((blocker) => blocker.state !== 'CLOSED');
   if (open.length) return `blocked by ${open.map((blocker) => `#${blocker.number}`).join(', ')}`;
@@ -112,9 +111,6 @@ function included(text: string) {
   );
   return { status: Number(statusLine.match(/^HTTP\/\S+ (\d{3})/)?.[1]) || null, headers, body };
 }
-
-// The id of the comment a comment URL names, or null.
-export const commentId = (url: string) => Number(String(url).match(/issuecomment-(\d+)/)?.[1]) || null;
 
 // gh and git put the useful reason on the lines after "exited N", so keep a few, bounded.
 export const errorExcerpt = (err: Error) =>
@@ -175,7 +171,7 @@ function labelVerbs({ gh, ghJson }: Client) {
   // Decide Labels a Run can write, beside the State Labels.
   async function ensureLabels(
     cwd?: string,
-    { prefix = labels.DEFAULT_PREFIX, flowLabels = [] }: PrefixOption & { flowLabels?: string[] } = {},
+    { prefix, flowLabels = [] }: PrefixOption & { flowLabels?: string[] } = {},
   ) {
     let existing = await repositoryLabels(cwd);
     const wanted = [
@@ -235,38 +231,12 @@ async function setLabels(
   }
 }
 
-export interface NewIssue {
-  title: string;
-  body: string;
-  labels?: string[];
-  parent?: number;
-  blockedBy?: number[];
-}
-
 function issueVerbs({ gh, ghJson }: Client) {
   const viewIssue = (issue: number, cwd?: string) =>
     ghJson<Issue>(
       ['issue', 'view', String(issue), '--json', 'number,title,body,state,labels,blockedBy,subIssues'],
       cwd,
     );
-
-  async function createIssue({ title, body, labels: names = [], parent, blockedBy = [] }: NewIssue, cwd?: string) {
-    const args = [
-      'issue',
-      'create',
-      '--title',
-      title,
-      '--body-file',
-      '-',
-      ...names.flatMap((label) => ['--label', label]),
-      ...(parent ? ['--parent', String(parent)] : []),
-      ...(blockedBy.length ? ['--blocked-by', blockedBy.join(',')] : []),
-    ];
-    const created = (await gh(args, cwd, body)).trim();
-    const match = created.match(/^https?:\/\/\S+\/issues\/(\d+)$/);
-    if (!match) throw new Error(`gh issue create did not return an issue URL: ${created}`);
-    return Number(match[1]);
-  }
 
   // PR conversation comments live on the issues endpoint, so one read serves an issue and a PR.
   const comments = async (issue: number, cwd?: string): Promise<IssueComment[]> =>
@@ -279,8 +249,8 @@ function issueVerbs({ gh, ghJson }: Client) {
       .flat()
       .map((posted) => ({ id: posted.id, body: posted.body, createdAt: posted.created_at }));
 
-  // A PR conversation comment is an issue comment, so one POST serves an issue and a PR. Returns the comment's URL.
-  async function comment(issue: number, body: string, cwd?: string): Promise<string> {
+  // A PR conversation comment is an issue comment, so one POST serves an issue and a PR.
+  async function comment(issue: number, body: string, cwd?: string): Promise<{ id: number; url: string }> {
     const args = [
       'api',
       '--include',
@@ -290,10 +260,11 @@ function issueVerbs({ gh, ghJson }: Client) {
       '--input',
       '-',
     ];
-    return JSON.parse(included(await gh(args, cwd, JSON.stringify({ body }))).body).html_url;
+    const { id, html_url: url } = JSON.parse(included(await gh(args, cwd, JSON.stringify({ body }))).body);
+    return { id, url };
   }
 
-  return { viewIssue, createIssue, comments, comment };
+  return { viewIssue, comments, comment };
 }
 
 // An issue's events, which GitHub gives no way to edit or delete, so a Decision is read from them (ADR 0003).
@@ -316,29 +287,11 @@ async function collaboratorPermission({ ghJson }: Client, login: string, cwd?: s
   }
 }
 
-// When the in-progress State Label was last added; null if the issue's events have no such entry.
-async function inProgressSince(
-  ghClient: Client,
-  [issue, cwd]: [issue: number, cwd: string | undefined],
-  { prefix = labels.DEFAULT_PREFIX }: PrefixOption = {},
-): Promise<string | null> {
-  const name = labels.labelsFor(prefix).state('in-progress');
-  return (
-    (await issueEvents(ghClient, issue, cwd))
-      .filter((event) => event.event === 'labeled' && labels.hasLabel([event.label?.name ?? ''], name))
-      .at(-1)?.created_at ?? null
-  );
-}
-
 const PR_FIELDS = 'number,state,isDraft,url';
 
 function prVerbs({ gh, ghJson }: Client) {
   const findPr = async (branch: string, cwd?: string) =>
     (await ghJson<PullRequest[]>(['pr', 'list', '--head', branch, '--state', 'all', '--json', PR_FIELDS], cwd))[0];
-
-  // Every open PR for a branch: several can share a head across bases, so the first one proves nothing.
-  const openPrs = (branch: string, cwd?: string) =>
-    ghJson<PullRequest[]>(['pr', 'list', '--head', branch, '--state', 'open', '--json', PR_FIELDS], cwd);
 
   async function upsertPr(
     { branch, base, title, body }: { branch: string; base: string; title: string; body: string },
@@ -364,9 +317,8 @@ function prVerbs({ gh, ghJson }: Client) {
     );
 
   const markReady = (pr: number, cwd?: string) => gh(['pr', 'ready', String(pr)], cwd);
-  const closePr = (pr: number, cwd?: string) => gh(['pr', 'close', String(pr)], cwd);
 
-  return { findPr, openPrs, upsertPr, viewPr, markReady, closePr };
+  return { findPr, upsertPr, viewPr, markReady };
 }
 
 // The gh verbs over `transport`, which runs gh with argv, a working directory and stdin and returns its stdout. The
@@ -382,14 +334,11 @@ export function createGh(transport: Transport = defaultTransport) {
     ...prVerbs(ghClient),
     issueEvents: (issue: number, cwd?: string) => issueEvents(ghClient, issue, cwd),
     collaboratorPermission: (login: string, cwd?: string) => collaboratorPermission(ghClient, login, cwd),
-    inProgressSince: (issue: number, cwd?: string, options?: PrefixOption) =>
-      inProgressSince(ghClient, [issue, cwd], options),
     setLabels: (issue: number, change: LabelChange, cwd: string | undefined, report: LabelReport) =>
       setLabels(editLabels, [issue, change, cwd], report),
     labelNames,
     readinessReason,
     isReady,
-    commentId,
     errorExcerpt,
   };
 }

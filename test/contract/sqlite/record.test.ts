@@ -117,7 +117,7 @@ test('two processes save different records concurrently without loss', async (t)
       { kind: 'ticket', n: 2 },
     ]);
   });
-  const all = (await record.loadAll(commonDir, 'ticket')).sort((left, right) => left.ticket - right.ticket);
+  const all = record.loadAll(commonDir, 'ticket').sort((left, right) => left.ticket - right.ticket);
   assert.deepEqual(
     all.map((executionRecord) => [executionRecord.ticket, executionRecord.activity]),
     [
@@ -150,10 +150,10 @@ test('a save waits out another process that holds the write lock for longer than
     base: 'main',
   });
   const started = Date.now();
-  await record.save(executionRecord);
+  record.save(executionRecord);
   assert.ok(Date.now() - started > 5000, `the save did not wait past 5 s: ${Date.now() - started} ms`);
   assert.deepEqual(
-    (await record.loadAll(commonDir, 'ticket')).map((saved) => saved.ticket),
+    record.loadAll(commonDir, 'ticket').map((saved) => saved.ticket),
     [1],
   );
 });

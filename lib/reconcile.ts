@@ -153,9 +153,9 @@ export async function resets(
       if (payload.untracked) await integrity.restoreUntracked(executionRecord.worktree, payload.untracked);
       const head = await git.headSha(executionRecord.worktree);
       executionRecord.history.push(payload.history);
-      await database.evidence(executionRecord, entry.actionMarker, { head });
+      database.evidence(executionRecord, entry.actionMarker, { head });
     }
-    await database.complete(executionRecord, entry.actionMarker);
+    database.complete(executionRecord, entry.actionMarker);
   }
   return 'continue';
 }
@@ -195,11 +195,11 @@ export async function dirtyState(
 
 // A needs-human label a human set overrides the Execution Record, which the abandonment Terminal keeps but marks
 // abandoned.
-export async function humanOverride(
+export function humanOverride(
   executionRecord: record.ExecutionRecord,
   issueLabels: string[],
-  labelPrefix: string = labels.DEFAULT_PREFIX,
-): Promise<HumanOverride | null> {
+  labelPrefix: string | undefined,
+): HumanOverride | null {
   const state = labels.labelsFor(labelPrefix).state;
   const needsHuman = state(labels.NEEDS_HUMAN);
   // A needs-human Terminal that crashed after its label Action shows gg's own label, not a human's.
@@ -237,7 +237,7 @@ async function findEffects(
     if (result.status === 'unknown') throw result.error;
     if (result.status === 'conflicting') return result.reason;
     if (result.status === 'found')
-      await context.database.evidence(context.executionRecord, entry.actionMarker, result.evidence);
+      context.database.evidence(context.executionRecord, entry.actionMarker, result.evidence);
   }
   return null;
 }
@@ -248,7 +248,7 @@ export async function terminalEffects(
   executionRecord: record.ExecutionRecord,
   {
     gh,
-    labelPrefix = labels.DEFAULT_PREFIX,
+    labelPrefix,
     cwd,
     markers,
     find,
@@ -263,7 +263,7 @@ export async function terminalEffects(
   },
 ): Promise<ReconcileResult> {
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
-  const overridden = await humanOverride(executionRecord, issueLabels, labelPrefix);
+  const overridden = humanOverride(executionRecord, issueLabels, labelPrefix);
   if (overridden) return overridden;
   // Its comment and label finders cannot conflict; were one to, the report would stay pending for a human.
   const conflict = await findEffects(
@@ -287,9 +287,9 @@ export type LoadedRecord =
   | { executionRecord: record.ExecutionRecord | null; corrupt: null }
   | { executionRecord: null; corrupt: record.RecordCorruptError };
 
-export async function loadExecutionRecord(commonDir: string, ticket: number): Promise<LoadedRecord> {
+export function loadExecutionRecord(commonDir: string, ticket: number): LoadedRecord {
   try {
-    return { executionRecord: await record.load(commonDir, 'ticket', ticket), corrupt: null };
+    return { executionRecord: record.load(commonDir, 'ticket', ticket), corrupt: null };
   } catch (err) {
     if (err instanceof record.RecordCorruptError) return { executionRecord: null, corrupt: err };
     throw err;
@@ -311,19 +311,9 @@ export type ReconcileOptions = ({ record: record.ExecutionRecord } | { corrupt: 
 export async function reconcile(options: ReconcileOptions): Promise<ReconcileResult> {
   if ('corrupt' in options)
     return { next: 'hold', cursor: null, reason: `${options.corrupt.message}; it is kept for a human.` };
-  const {
-    record: executionRecord,
-    flow,
-    git,
-    integrity,
-    gh,
-    labelPrefix = labels.DEFAULT_PREFIX,
-    cwd,
-    find,
-    database = record,
-  } = options;
+  const { record: executionRecord, flow, git, integrity, gh, labelPrefix, cwd, find, database = record } = options;
   const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
-  const overridden = await humanOverride(executionRecord, issueLabels, labelPrefix);
+  const overridden = humanOverride(executionRecord, issueLabels, labelPrefix);
   if (overridden) return overridden;
   const held = configurationHold(executionRecord, flow);
   if (held) return held;

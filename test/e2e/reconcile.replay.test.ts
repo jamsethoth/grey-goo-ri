@@ -21,14 +21,12 @@ function amendCommit(fixture: GoldenFixture) {
 }
 // Reconciliation of the crashed record holds it, naming the Action Marker it could not reconcile.
 async function assertHoldNames(fixture: GoldenFixture, actionMarker: string) {
-  const decided = await reconcile.reconcile(
-    crashResume.reconcileOptions(fixture, await executionReads.loadTicket(fixture)),
-  );
+  const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, executionReads.loadTicket(fixture)));
   assert.equal(decided.next, 'hold');
   assert.ok(decided.reason?.includes(actionMarker), `the reason names the marker: ${decided.reason}`);
 }
 const resumed = async (fixture: GoldenFixture) =>
-  interpreter.runExecution({ ...fixture.options, record: await executionReads.loadTicket(fixture) });
+  interpreter.runExecution({ ...fixture.options, record: executionReads.loadTicket(fixture) });
 
 test('an amended commit with the marker holds the ticket', async (t) => {
   const fixture = await golden.fixture(t, { git: 'real' });
@@ -42,7 +40,7 @@ test('an amended commit with the marker holds the ticket', async (t) => {
   await assertHoldNames(fixture, actionMarker);
 
   await resumed(fixture);
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.equal(final.state, 'held');
   assert.ok(fixture.gh.labels.has(executionContext.NEEDS_HUMAN_LABEL), 'the ticket is labelled needs-human');
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
@@ -62,7 +60,7 @@ test('a commit amended after its completion was saved holds the ticket', async (
   await assertHoldNames(fixture, actionMarker);
 
   await resumed(fixture);
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'held');
+  assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
   assert.equal(await executionReads.originSha(fixture), null, 'the amended commit is not published');
   assert.equal(fixture.harness.calls.length, 2);
@@ -77,7 +75,7 @@ test('a crash before the commit replays the intended tree, not a human edit', as
   // The replayed commit is pushed, but pr-ready never publishes beside the human's file (T1a), so nothing is marked
   // ready.
   assert.equal(result.outcome, 'needs-human');
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.deepEqual(final.terminalReason?.decidedBy, { hold: 'unchecked-publish' });
   assert.match(
     final.terminalReason?.text as string,
@@ -107,7 +105,7 @@ test('a branch moved before the commit replay holds the ticket', async (t) => {
   await assertHoldNames(fixture, actionMarker);
 
   await resumed(fixture);
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'held');
+  assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', 'HEAD'), head, 'nothing is committed');
   assert.equal(await executionReads.originSha(fixture), null, 'nothing is pushed');
 });
@@ -120,7 +118,7 @@ test('a branch moved before the push replay holds the ticket', async (t) => {
   await assertHoldNames(fixture, actionMarker);
 
   await resumed(fixture);
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'held');
+  assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.equal(await executionReads.originSha(fixture), null, 'the moved branch is not published');
 });
 
@@ -138,7 +136,7 @@ for (const point of ['before-effect', 'after-effect', 'after-completion'] as con
     const result = await resumed(fixture);
     assert.equal(result.outcome, 'needs-human');
     assert.equal(fixture.harness.calls.length, 1, 'the violating call is not dispatched again');
-    const final = await executionReads.loadTicket(fixture);
+    const final = executionReads.loadTicket(fixture);
     assert.equal(final.state, 'needs-human');
     assert.deepEqual(final.terminalReason?.rule, { table: 'fixed', row: 'integrity-violation' });
     assert.equal(final.history.filter((item) => item.kind === 'integrity violation').length, 1);

@@ -26,8 +26,8 @@ const CHECKS = [
   ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
 ];
 const UNIT = 'test/unit/**/*.test.{mjs,ts}';
-export const LCOV = 'coverage/lcov.info';
-export const BASELINE = 'coverage-baseline.json';
+const LCOV = 'coverage/lcov.info';
+const BASELINE = 'coverage-baseline.json';
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.ts), so their lines are not unit-testable;
 // lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts and this launcher's census, and
 // lib/git-temp-index.ts only through lib/git.ts. Their contract suites cover them; the decisions are in

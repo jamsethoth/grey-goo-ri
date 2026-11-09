@@ -325,7 +325,7 @@ export const isCount = (value: unknown): value is number => Number.isInteger(val
 export const entries = (value: unknown) => (referencePaths.isRecord(value) ? Object.entries(value) : []);
 export const unique = <T>(list: T[]) => [...new Set(list)];
 // What a Procedure's Outcomes and Claim tokens may not be named.
-export const isReserved = (name: string) =>
+const isReserved = (name: string) =>
   name === 'failed' || (labels.END_STATES as string[]).includes(name) || name.startsWith('harness-');
 const RESERVED = 'is reserved for the engine: failed, an end name or harness-*';
 export function checkReserved(report: Report, location: string, what: string, name: string) {

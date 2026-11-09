@@ -6,6 +6,7 @@ import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as afterPhase from '../support/after-phase.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
@@ -15,9 +16,6 @@ import * as resetInterruption from '../support/reset-interruption.ts';
 
 type GoldenFixture = golden.GoldenFixture;
 type Crash = Parameters<typeof crashFs.crashFs>[2];
-
-const loadTicket = async (fixture: GoldenFixture) =>
-  (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
 
 // The baseline an Integrity Violation's rollback restores: ignored Protected Files, an untracked test git clean
 // removes, and an ignored file outside the rollback, which the agent changes and the restore must leave alone.
@@ -59,7 +57,7 @@ async function crashedRestore(t: TestContext, crash: Crash) {
     crashFs.crashFs(fixture.worktree, noted.reset, crash),
   );
   await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof interpreter.CrashError);
-  return { ...fixture, uncrashedGit: git, loaded: await loadTicket(fixture) };
+  return { ...fixture, uncrashedGit: git, loaded: executionReads.loadTicket(fixture) };
 }
 
 const read = (fixture: GoldenFixture, path: string) =>
@@ -112,7 +110,7 @@ test('a second crash during restore replay remains resumable', async (t) => {
     reconcile.resets(crashed.loaded, { git: crashed.uncrashedGit, integrity: crashing }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const loaded = await loadTicket(crashed);
+  const loaded = executionReads.loadTicket(crashed);
   assert.deepEqual(crashResume.resetEntries(loaded), ['intent']);
   assert.equal(await reconcile.resets(loaded, { git: crashed.uncrashedGit }), 'continue');
   assertRestored(crashed, loaded);

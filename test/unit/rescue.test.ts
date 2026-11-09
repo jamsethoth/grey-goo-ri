@@ -152,9 +152,9 @@ for (const [place, crashAt] of Object.entries(CRASHES)) {
       interpreter.runExecution({ ...fixture.options, crashAt: crashAt(fixture) }),
       (err) => err instanceof interpreter.CrashError,
     );
-    const { outcome } = await interpreter.runExecution({ ...fixture.options, record: await loadTicket(fixture) });
+    const { outcome } = await interpreter.runExecution({ ...fixture.options, record: loadTicket(fixture) });
     assert.equal(outcome, 'needs-human', 'senior-red stopped');
-    const saved = await loadTicket(fixture);
+    const saved = loadTicket(fixture);
     assert.equal(saved.history.filter((item) => item.kind === 'rescued').length, 1);
     assert.equal(saved.visits.get('senior-red'), 1);
     assert.equal(saved.outputs.filter((output) => output.action === 'rescue').length, 1);
@@ -170,7 +170,7 @@ test("a rescue's intent is saved before its ref is made", async (t) => {
     }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const saved = await loadTicket(fixture);
+  const saved = loadTicket(fixture);
   assert.equal((intents(saved, 'rescue')[0]!.payload as rescue.RescuePayload).ref, refOf(fixture));
   assert.equal(await fixture.options.deps.git.refTarget(fixture.worktree, refOf(fixture)), null);
 });
