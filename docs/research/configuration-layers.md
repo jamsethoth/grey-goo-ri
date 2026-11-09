@@ -60,11 +60,19 @@ out of a grilling session; the numbers are its question numbers.
 **What a Run records and pins** (Q22, Q24, Q25, Q31)
 
 - The Execution Record gains `repository` (`owner/name`) and stores the Flow with its source (`default`,
-  `user:strict`). A resume whose Flow is no longer declared follows #122's rule (X2, `lib/admission.ts` on main): the
-  Ticket is skipped and its record kept until the Flow is declared again, except that a report already decided still
-  finishes without running a Vertex (`lib/run-flows.ts:131-136` on main, `test/unit/run.flows.test.ts:68-98`). Q24 was
-  put as "holds the Ticket at
-  `needs-human`", which #122 had already decided otherwise; this note follows #122.
+  `user:strict`). A resume whose Flow is no longer declared keeps its record, as #122's
+  rule does (X2, `lib/admission.ts` on main), but loudly (A2): the run reports it as an error naming the Ticket, the
+  Flow and both remedies, exits 2, and `gg doctor` lists every such record as an error. #122 skips it with a log line
+  and exit 0 (`test/unit/run.resume.test.ts:245-266` on main), so the user learns nothing is wrong only from the log. A
+  report already decided still finishes without running a Vertex (`lib/run-flows.ts:131-136` on main,
+  `test/unit/run.flows.test.ts:68-98`). Q24 was first put as "holds the Ticket at `needs-human`"; the owner chose to
+  keep the record instead, since a hold ends the Execution and a Flow can go missing harmlessly (another `GG_HOME`, a
+  rename).
+- The remedies (Q32): declare the Flow again, and the next Run resumes; or `gg work abandon <n>` (request 3.5: keep
+  the worktree, forget the position), after which `gg run <n> --flow <new>` starts a new Execution at the new Flow's
+  entry on the same `ticket/<n>-…` branch, its commits kept (`lib/ticket-worktree.ts:27-60`). Moving an Execution to
+  another Flow while keeping its position (`gg work resume <n> --flow <new> --at <vertex>`) goes to the backlog: the
+  record's visits, Bounds, Sessions and outputs are keyed by the old Flow's Vertex ids.
 - A ticket worktree's path is `worktreeRoot/<owner>/<name>/ticket-<n>`.
 - The Config Hash fingerprints a Flow's content, not its source; the record, the run log and `gg doctor` name the
   source. Models stay in the hash, so a model change still changes it.
@@ -77,7 +85,8 @@ out of a grilling session; the numbers are its question numbers.
   declared by other Procedures or Agents would hash differently.
 
 **Left out**: a trust record that holds a repository's unsandboxed `commands` until the user approves them once
-(Q29), and a `gg flow copy` command (Q27), both to the backlog.
+(Q29), a `gg flow copy` command (Q27), and moving an Execution to another Flow while keeping its position (Q32), all
+to the backlog.
 
 **What it changes that is frozen or recorded elsewhere**
 

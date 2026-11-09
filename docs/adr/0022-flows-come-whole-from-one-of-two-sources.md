@@ -53,7 +53,9 @@ gg therefore reads two sources and merges neither into the other:
 - gg targets the repository holding the current directory or the one `--repo <path>` names. Ticket worktrees move to
   `worktreeRoot/<owner>/<name>/ticket-<n>`; a resumed Execution keeps the path its record holds.
 - The Execution Record schema gains `repository` and the Flow's source; a resume whose Flow is no longer declared in
-  that source waits, its record kept, as #122 decided for repository Flows; a report already decided still finishes. These, and any new Problem code, land
-  before grey-goo-ri issue #23 freezes them.
-- A trust record for a repository's unsandboxed commands, and a command that copies a Flow with what it uses, are left
-  for later.
+  that source keeps its record, as #122 decided, but is reported as an error that names its remedies, exits 2 and is
+  listed by `gg doctor`. The remedies are to declare the Flow again, which resumes it, or `gg work abandon <n>`, after
+  which the Ticket starts over under another Flow on the same branch. A report already decided still finishes. These,
+  and any new Problem code, land before grey-goo-ri issue #23 freezes them.
+- A trust record for a repository's unsandboxed commands, a command that copies a Flow with what it uses, and moving
+  an Execution to another Flow while keeping its position are left for later.
