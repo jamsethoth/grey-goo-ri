@@ -405,11 +405,16 @@ test('the record carries the last heartbeat of a running call', async (t) => {
 test('a heartbeat that cannot be saved fails the call, not the timer', async (t) => {
   const { fixture, running } = await hangingRed(t);
   const execution = interpreter.runExecution(fixture.options);
-  await running;
-  await fixture.clock.sleep(60_000);
-  const undo = caseDatabase.failSaves(t, () => true);
-  assert.doesNotThrow(() => fixture.clock.beat(), 'the timer sees no throw');
-  undo();
-  fixture.harness.cancel();
+  try {
+    await running;
+    await fixture.clock.sleep(60_000);
+    const undo = caseDatabase.failSaves(t, () => true);
+    assert.doesNotThrow(() => fixture.clock.beat(), 'the timer sees no throw');
+    undo();
+  } finally {
+    // Settled before the case ends either way, so no Execution outlives its temp repo.
+    fixture.harness.cancel();
+    await execution.catch(() => {});
+  }
   await assert.rejects(execution, (err: unknown) => err instanceof record.RecordSaveError);
 });
