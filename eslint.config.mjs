@@ -133,7 +133,7 @@ const collectionOf = (checker, program, type) => {
     .flatMap((property) => property.getDeclarations() ?? [])
     .map((declaration) => declaration.parent)
     .filter((owner) => owner != null && inDefaultLib(program, owner) && LOST_BY_JSON.has(owner.name?.text));
-  if (owners.length === 0) return null;
+  if (owners.length === 0) return aliasedCollection(checker, program, type);
   const whole = owners.find((owner) =>
     checker
       .getPropertiesOfType(checker.getDeclaredTypeOfSymbol(checker.getSymbolAtLocation(owner.name)))
@@ -141,6 +141,16 @@ const collectionOf = (checker, program, type) => {
   );
   return { name: (whole ?? owners[0]).name.text, whole: whole != null };
 };
+// A lib alias over a Map that keeps none of its members, such as Pick<Map, never> or Omit<Map, keyof Map>, is still
+// made from one. Its source is its first argument: Record's second is the type of its values, read as they are held.
+function aliasedCollection(checker, program, type) {
+  const fromLibAlias = (type.aliasSymbol?.getDeclarations() ?? []).some((declaration) =>
+    inDefaultLib(program, declaration),
+  );
+  const [source] = type.aliasTypeArguments ?? [];
+  const made = fromLibAlias && source ? collectionOf(checker, program, source) : null;
+  return made ? { name: made.name, whole: false } : null;
+}
 // A mapped type (Record, Partial, Omit, Readonly) is anonymous, `__type`, and is walked even though lib declares it.
 const isLibNamed = (program, symbol) => symbol?.getName() !== '__type' && fromLibOrPackage(program, symbol);
 // The same value's alternatives: a union's or intersection's members, or a type parameter's constraint.
@@ -149,13 +159,18 @@ const alternativesOf = (checker, type) => {
   if (type.isTypeParameter()) return [checker.getBaseConstraintOfType(type)].filter((constraint) => constraint);
   return null;
 };
-// The values a type holds: array and tuple elements, properties and index signatures.
+// JSON writes string keys only, so a symbol-keyed property (named `__@iterator@14`) or a private one is not written.
+const isWritten = (key) => !/^__[@#]/.test(key.getName());
+// The values a type holds: array and tuple elements, written properties and index signatures.
 const heldBy = (checker, program, type, path) => {
   if (checker.isArrayType(type) || checker.isTupleType(type))
     return checker.getTypeArguments(type).map((element) => [element, `${path}[]`]);
   if (isLibNamed(program, type.getSymbol())) return [];
   return [
-    ...checker.getPropertiesOfType(type).map((key) => [checker.getTypeOfSymbol(key), `${path}.${key.getName()}`]),
+    ...checker
+      .getPropertiesOfType(type)
+      .filter(isWritten)
+      .map((key) => [checker.getTypeOfSymbol(key), `${path}.${key.getName()}`]),
     ...checker.getIndexInfosOfType(type).map((info) => [info.type, `${path}[key]`]),
   ];
 };
@@ -169,12 +184,11 @@ function findLost(checker, program, rootType) {
     if (seen.has(type) || checker.getPropertyOfType(type, 'toJSON')) continue;
     seen.add(type);
     const alternatives = alternativesOf(checker, type);
+    // An intersection is read whole first: two slices may make a whole Map.
+    const collection = type.isUnion() || type.isTypeParameter() ? null : collectionOf(checker, program, type);
+    if (collection && (collection.whole || !alternatives)) return { path, ...collection };
     if (alternatives) pending.unshift(...alternatives.map((member) => [member, path]));
-    else {
-      const collection = collectionOf(checker, program, type);
-      if (collection) return { path, ...collection };
-      pending.push(...heldBy(checker, program, type, path));
-    }
+    else pending.push(...heldBy(checker, program, type, path));
   }
   return null;
 }
@@ -191,23 +205,31 @@ const isJsonStringify = (checker, services, { callee }) => {
     (declaration) => inDefaultLib(services.program, declaration) && declaration.parent?.name?.text === 'JSON',
   );
 };
-// The types of the value and the replacer as JSON.stringify receives them: a spread tuple gives its elements, and a
-// spread array its element type to every later place. An iterable's elements are not read.
+// The value and the replacer as JSON.stringify receives them, each with whether it is certainly passed. A spread
+// tuple gives its elements, certain up to its first optional or rest element (ElementFlags.Required is 1); a spread
+// array gives its element type to every later place, never certain, since it may be empty. An iterable's elements are
+// not read.
 const stringifyArguments = (checker, services, callArguments) => {
-  const types = [];
+  const passed = [];
+  let certain = true;
   for (const argument of callArguments) {
     const isSpread = argument.type === 'SpreadElement';
     const type = checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(isSpread ? argument.argument : argument));
-    if (!isSpread) types.push(type);
-    else if (checker.isTupleType(type)) types.push(...checker.getTypeArguments(type));
+    if (!isSpread) passed.push({ type, certain });
+    else if (checker.isTupleType(type))
+      for (const [i, element] of checker.getTypeArguments(type).entries()) {
+        certain &&= (type.target.elementFlags[i] & 1) !== 0;
+        passed.push({ type: element, certain });
+      }
     else if (!checker.isArrayType(type)) break;
     else {
       const [element] = checker.getTypeArguments(type);
-      types.push(element, element);
+      certain = false;
+      passed.push({ type: element, certain }, { type: element, certain });
     }
-    if (types.length >= 2) break;
+    if (passed.length >= 2) break;
   }
-  return types;
+  return passed;
 };
 const NO_MAP_TO_JSON = {
   meta: {
@@ -230,11 +252,11 @@ const NO_MAP_TO_JSON = {
     return {
       CallExpression(node) {
         if (!isJsonStringify(checker, services, node)) return;
-        const [valueType, replacerType] = stringifyArguments(checker, services, node.arguments);
+        const [value, replacer] = stringifyArguments(checker, services, node.arguments);
         // A replacer function is its owner's conversion (lib/record.ts saveRecord); the rule does not judge it. An
-        // array of keys, null or undefined converts nothing.
-        if (!valueType || replacerType?.getCallSignatures().length > 0) return;
-        const found = findLost(checker, services.program, valueType);
+        // array of keys, null, undefined or a replacer that may not be passed converts nothing.
+        if (!value || (replacer?.certain && replacer.type.getCallSignatures().length > 0)) return;
+        const found = findLost(checker, services.program, value.type);
         if (found)
           context.report({
             node,

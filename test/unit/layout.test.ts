@@ -416,6 +416,11 @@ const TYPED_HEADER = [
   "declare const withoutClear: Omit<Map<string, number>, 'clear'>;",
   "declare const withoutHas: Omit<Map<string, number>, 'has'>;",
   'declare const converting: (key: string, value: unknown) => unknown;',
+  'declare const replacers: (typeof converting)[];',
+  'declare const argumentsTuple: [Map<string, number>, ...typeof replacers];',
+  'declare const pickNone: Pick<Map<string, number>, never>;',
+  'declare const omitAll: Omit<Map<string, number>, keyof Map<string, number>>;',
+  "declare const rejoined: Omit<Map<string, number>, 'clear'> & Pick<Map<string, number>, 'clear'>;",
 ];
 // Each sample is linted as `export const sampleN = <sample>;`, with what the rules find on its line.
 const typedFindings = async (samples: string[]) => {
@@ -473,15 +478,6 @@ test('lint fails JSON.stringify of a value whose type holds a Map or Set', async
       ["JSON['stringify'](executionRecord)", 'the value.visits (Map)'],
       ['JSON.stringify(new TrackedCounts())', 'the value (Map)'],
       ['JSON.stringify(either)', 'the value (Map)'],
-      ['JSON.stringify(...([executionRecord.visits] as const))', 'the value (Map)'],
-      ['JSON.stringify(...([executionRecord.visits, null, 2] as const))', 'the value (Map)'],
-      ['JSON.stringify(...[executionRecord.visits])', 'the value (Map)'],
-      // A slice of a Map's type may be a real Map or a plain object; lint cannot tell, so it asks for the whole type.
-      ['JSON.stringify(hasOnly)', 'the value has a type made from part of a Map'],
-      ['JSON.stringify(getOnly)', 'the value has a type made from part of a Map'],
-      ['JSON.stringify(withoutClear)', 'the value has a type made from part of a Map'],
-      ['JSON.stringify(withoutHas)', 'the value has a type made from part of a Map'],
-      ['JSON.stringify({ lookup: hasOnly })', 'the value.lookup has a type made from part of a Map'],
     ],
     passed: [
       'JSON.stringify(flow.name)',
@@ -492,9 +488,33 @@ test('lint fails JSON.stringify of a value whose type holds a Map or Set', async
       'JSON.stringify(executionRecord, (_key, value: unknown) => value)',
       'JSON.stringify([...executionRecord.visits.values()])',
       'local.stringify(executionRecord)',
-      'JSON.stringify(...([executionRecord, converting] as const))',
       'JSON.stringify(Object.fromEntries(executionRecord.visits))',
+      'JSON.stringify({ [Symbol.iterator]: executionRecord.visits })',
     ],
+  });
+});
+
+test("lint fails JSON.stringify of a slice of a Map's type, and reads spread arguments", async (t) => {
+  await holdsMapBoundary(t, {
+    rule: 'gg/no-map-to-json',
+    flagged: [
+      ['JSON.stringify(...([executionRecord.visits] as const))', 'the value (Map)'],
+      ['JSON.stringify(...([executionRecord.visits, null, 2] as const))', 'the value (Map)'],
+      ['JSON.stringify(...[executionRecord.visits])', 'the value (Map)'],
+      // A slice of a Map's type may be a real Map or a plain object; lint cannot tell, so it asks for the whole type.
+      ['JSON.stringify(hasOnly)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(getOnly)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(withoutClear)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(withoutHas)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify({ lookup: hasOnly })', 'the value.lookup has a type made from part of a Map'],
+      ['JSON.stringify(pickNone)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(omitAll)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(rejoined)', 'the value (Map)'],
+      // A spread that may be empty may pass no replacer.
+      ['JSON.stringify(executionRecord.visits, ...replacers)', 'the value (Map)'],
+      ['JSON.stringify(...argumentsTuple)', 'the value (Map)'],
+    ],
+    passed: ['JSON.stringify(...([executionRecord, converting] as const))'],
   });
 });
 
