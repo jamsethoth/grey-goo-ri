@@ -1,8 +1,9 @@
 # Configuration: from three Layers to two sources
 
-Research note for issue #314, 2026-11-08 to 2026-11-09, against main at 0f74178. Every `file:line` is main's. #122
-(PR #316) changes `bin/gg.ts`, `lib/run.ts` (`admitConfiguration`) and `lib/admission.ts`, so its merge may move the
-lines cited in those three files. The probes ran on Node 26.13.0 in temp directories with a temp home; none read or
+Research note for issue #314, 2026-11-08 to 2026-11-09, against main at 0f74178. Every `file:line` is 0f74178's. #122
+merged after the evidence was gathered (3b458d9, PR #316): it moved `admitConfiguration` and preflight from
+`lib/run.ts` into `lib/run-flows.ts` and changed `bin/gg.ts` and `lib/admission.ts`, so lines cited in those files
+have moved on main; the follow-up cites main's lines as they then stand. The probes ran on Node 26.13.0 in temp directories with a temp home; none read or
 wrote the owner's `~/.agents/gg/`. Their scripts and output are in the appendix, and each finding names the probe line it
 rests on (`P-A` and so on).
 
@@ -59,7 +60,9 @@ out of a grilling session; the numbers are its question numbers.
 **What a Run records and pins** (Q22, Q24, Q25, Q31)
 
 - The Execution Record gains `repository` (`owner/name`) and stores the Flow with its source (`default`,
-  `user:strict`). A resume whose Flow no longer exists holds the Ticket at `needs-human`, naming the Flow.
+  `user:strict`). A resume whose Flow is no longer declared follows #122's rule (X2, `lib/admission.ts` on main): the
+  Ticket is skipped and its record kept until the Flow is declared again. Q24 was put as "holds the Ticket at
+  `needs-human`", which #122 had already decided otherwise; this note follows #122.
 - A ticket worktree's path is `worktreeRoot/<owner>/<name>/ticket-<n>`.
 - The Config Hash fingerprints a Flow's content, not its source; the record, the run log and `gg doctor` name the
   source. Models stay in the hash, so a model change still changes it.

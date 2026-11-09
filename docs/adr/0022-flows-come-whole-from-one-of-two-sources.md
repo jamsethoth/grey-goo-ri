@@ -52,7 +52,8 @@ gg therefore reads two sources and merges neither into the other:
 - An eval variant is a named Flow, in either source, picked with `--flow` (#122).
 - gg targets the repository holding the current directory or the one `--repo <path>` names. Ticket worktrees move to
   `worktreeRoot/<owner>/<name>/ticket-<n>`; a resumed Execution keeps the path its record holds.
-- The Execution Record schema gains `repository` and the Flow's source, and a resume whose Flow no longer exists holds
-  the Ticket at `needs-human`. These, and any new Problem code, land before grey-goo-ri issue #23 freezes them.
+- The Execution Record schema gains `repository` and the Flow's source; a resume whose Flow is no longer declared in
+  that source waits, its record kept, as #122 decided for repository Flows. These, and any new Problem code, land
+  before grey-goo-ri issue #23 freezes them.
 - A trust record for a repository's unsandboxed commands, and a command that copies a Flow with what it uses, are left
   for later.
