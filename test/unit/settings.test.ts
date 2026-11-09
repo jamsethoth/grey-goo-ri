@@ -30,34 +30,36 @@ test('settings that pass every check give no Problem', () => {
   assert.deepEqual(firedSettings({}), []);
 });
 
-for (const [key, value, code] of [
-  ['labelPrefix', undefined, 'required-key-missing'],
-  ['labelPrefix', 1, 'not-a-string'],
-  ['labelPrefix', null, 'not-a-string'],
-  ['labelPrefix', 'a:b', 'invalid-name'],
-  ['labelPrefix', 'a b', 'invalid-name'],
-  ['labelPrefix', '', 'invalid-name'],
-  ['baseBranch', undefined, 'required-key-missing'],
-  ['baseBranch', ['main'], 'not-a-string'],
-  ['baseBranch', 'a b', 'invalid-name'],
-  ['baseBranch', 'a..b', 'invalid-name'],
-  ['baseBranch', '-main', 'invalid-name'],
-  ['baseBranch', '', 'invalid-name'],
-  ['baseBranch', 'release.lock', 'invalid-name'],
-  ['baseBranch', 'release/', 'invalid-name'],
-  ['baseBranch', 'release.', 'invalid-name'],
-  ['baseBranch', 'release@{1}', 'invalid-name'],
-  ['baseBranch', 'a//b', 'invalid-name'],
-  ['baseBranch', 'a/.b', 'invalid-name'],
-  ['baseBranch', '.main', 'invalid-name'],
-  ['baseBranch', '@', 'invalid-name'],
-  ['baseBranch', 'HEAD', 'invalid-name'],
-  ['baseBranch', 'foo.lock/bar', 'invalid-name'],
-  ['baseBranch', 'release/2026.11', undefined],
-  ['baseBranch', 'feature/a-b_c@1', undefined],
+for (const [key, value, fired] of [
+  ['labelPrefix', undefined, ['labelPrefix required-key-missing']],
+  ['labelPrefix', 1, ['labelPrefix not-a-string']],
+  ['labelPrefix', null, ['labelPrefix not-a-string']],
+  ['labelPrefix', 'a:b', ['labelPrefix invalid-name']],
+  ['labelPrefix', 'a b', ['labelPrefix invalid-name']],
+  ['labelPrefix', '', ['labelPrefix invalid-name']],
+  ['baseBranch', undefined, ['baseBranch required-key-missing']],
+  ['baseBranch', ['main'], ['baseBranch not-a-string']],
+  ['baseBranch', 'a b', ['baseBranch invalid-name']],
+  ['baseBranch', 'a..b', ['baseBranch invalid-name']],
+  ['baseBranch', '-main', ['baseBranch invalid-name']],
+  ['baseBranch', '', ['baseBranch invalid-name']],
+  ['baseBranch', 'release.lock', ['baseBranch invalid-name']],
+  ['baseBranch', 'release/', ['baseBranch invalid-name']],
+  ['baseBranch', 'release.', ['baseBranch invalid-name']],
+  ['baseBranch', 'release@{1}', ['baseBranch invalid-name']],
+  ['baseBranch', 'a//b', ['baseBranch invalid-name']],
+  ['baseBranch', 'a/.b', ['baseBranch invalid-name']],
+  ['baseBranch', '.main', ['baseBranch invalid-name']],
+  ['baseBranch', '@', ['baseBranch invalid-name']],
+  ['baseBranch', 'HEAD', ['baseBranch invalid-name']],
+  ['baseBranch', 'foo.lock/bar', ['baseBranch invalid-name']],
+  ['baseBranch', 'release/2026.11', []],
+  ['baseBranch', 'feature/a-b_c@1', []],
+  ['baseBranch', 'main\u0001', ['baseBranch invalid-name']],
+  ['baseBranch', 'main\u007f', ['baseBranch invalid-name']],
 ] as const) {
-  test(`a repository ${key} of ${JSON.stringify(value)} is ${code ?? 'valid'}`, () => {
-    assert.deepEqual(firedSettings({ repository: { [key]: value } }), code ? [`${key} ${code}`] : []);
+  test(`a repository ${key} of ${JSON.stringify(value)} fires ${JSON.stringify(fired)}`, () => {
+    assert.deepEqual(firedSettings({ repository: { [key]: value } }), fired);
   });
 }
 
@@ -100,7 +102,7 @@ test('each setting Problem names its file and key', () => {
       message:
         `${REPOSITORY_FILE}: baseBranch "a b" must be a branch name: not "@" or HEAD, not starting with "-", "." ` +
         'or "/", not ending with "/" or ".", with no part ending ".lock", and with no "..", "//", "/.", "@{", ' +
-        'whitespace or any of ~ ^ : ? * [ \\',
+        'whitespace, control character or any of ~ ^ : ? * [ \\',
       params: { name: 'a b', file: REPOSITORY_FILE },
     },
     {

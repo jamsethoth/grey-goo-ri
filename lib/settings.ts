@@ -48,7 +48,8 @@ function keyProblems(
 // A labelPrefix holding ":" or whitespace splits every label gg reads back (lib/labels.ts).
 const LABEL_PREFIX = /^[^\s:]+$/;
 // git's branch-name rules (git check-ref-format), so a typo fails here and not at the first fetch.
-const BRANCH = /^(?![-./])(?!.*(?:\.\.|\/\/|\/\.|@\{|\.lock\/))(?!.*(?:[/.]|\.lock)$)(?!(?:@|HEAD)$)[^\s~^:?*[\\]+$/;
+const BRANCH =
+  /^(?![-./])(?!.*(?:\.\.|\/\/|\/\.|@\{|\.lock\/))(?!.*(?:[/.]|\.lock)$)(?!(?:@|HEAD)$)[^\s\x00-\x1f\x7f~^:?*[\\]+$/;
 
 // The repository's labelPrefix or baseBranch as Problems, naming `file`.
 function nameProblems(
@@ -87,7 +88,7 @@ export function baseBranchProblems(baseBranch: unknown, file: string): report.Pr
     form: BRANCH,
     rule:
       'be a branch name: not "@" or HEAD, not starting with "-", "." or "/", not ending with "/" or ".", with no ' +
-      'part ending ".lock", and with no "..", "//", "/.", "@{", whitespace or any of ~ ^ : ? * [ \\',
+      'part ending ".lock", and with no "..", "//", "/.", "@{", whitespace, control character or any of ~ ^ : ? * [ \\',
   });
   return found.errors;
 }
