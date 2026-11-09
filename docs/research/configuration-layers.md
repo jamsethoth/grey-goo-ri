@@ -73,8 +73,8 @@ out of a grilling session; the numbers are its question numbers.
   Procedure holds the Ticket before the digest is read (`lib/reconcile.ts:328-329`, `:376-388`).
 - To make the hash depend on the Flow's content alone, the Pinned Configuration takes only the files the selected Flow
   uses. Today it takes every file its Layers declare, used or not (`lib/config.ts:100-114`, `:141`), and #122 pins
-  them for each Flow (`lib/run-flows.ts:116` on main), so two sources holding the same Flow but different other
-  Procedures would hash differently.
+  them for each Flow (`lib/run-flows.ts:116` on main), so two sources holding the same Flow but different files
+  declared by other Procedures or Agents would hash differently.
 
 **Left out**: a trust record that holds a repository's unsandboxed `commands` until the user approves them once
 (Q29), and a `gg flow copy` command (Q27), both to the backlog.
