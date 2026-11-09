@@ -80,7 +80,7 @@ async function preflight(
 
 // What gg run admits: the merged Layers, the registered Harnesses and the Flow `--flow` names.
 interface Admitted {
-  config: config.Config;
+  config: config.Configuration;
   harnesses: Record<string, unknown>;
   flow?: string;
 }
@@ -88,9 +88,10 @@ interface Admitted {
 // Admission runs the validator gg doctor runs, so gg run rejects exactly what gg doctor rejects (V1, ADR 0014). A new
 // Execution runs the Flow `--flow` names, else default (X2), which must be declared.
 export async function admitConfiguration(
-  { config: layers, harnesses, flow: flowName = 'default' }: Admitted,
+  { config: configuration, harnesses, flow: flowName = 'default' }: Admitted,
   repoRoot: string,
 ) {
+  const layers = config.merged(configuration);
   const validated = validator.validate(layers, {
     harnesses,
     readSchema: (name) => JSON.parse(config.layerFile(layers.files, name)),

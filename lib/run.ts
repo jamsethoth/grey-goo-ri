@@ -96,7 +96,7 @@ export interface RunOptions {
   deps: runContext.Deps;
   target: number;
   flow?: string;
-  config: config.Config;
+  config: config.Configuration;
   harnesses: Record<string, unknown>;
   protectedPaths: string[];
   cwd: string;
@@ -187,7 +187,8 @@ function startRun(
 }
 
 async function runRepo(repo: admission.Repo, named: (message: string) => string, options: RunOptions) {
-  const { target, config: layers, harnesses, protectedPaths, testImmutability, deps, log } = options;
+  const { target, harnesses, protectedPaths, testImmutability, deps, log } = options;
+  const layers = config.merged(options.config);
   const { gh, git, exec, integrity, locks = locksModule, database = record, clock = clockModule.WALL_CLOCK } = deps;
   const { flows, selected, warnings, commands } = await runFlows.admitConfiguration(options, repo.mainRoot);
   const { flow, hash } = selected;

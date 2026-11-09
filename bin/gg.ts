@@ -30,6 +30,14 @@ const realDeps = (): interpreter.Deps => ({
   clock: clock.WALL_CLOCK,
 });
 
+// Until the two sources land, the merged Layers stand as the repository source.
+const layered = (mainRoot: string): config.Configuration => ({
+  repository: config.loadLayers(mainRoot),
+  user: { files: {} },
+  repositoryFile: config.layerPath(mainRoot),
+  userFile: '',
+});
+
 async function runCommand(parsed: options.ParsedOptions) {
   const target = options.positiveInteger(parsed._[0], 'ticket');
   const deps = realDeps();
@@ -39,7 +47,7 @@ async function runCommand(parsed: options.ParsedOptions) {
     deps,
     target,
     flow: parsed.flow as string | undefined,
-    config: config.loadLayers(mainRoot),
+    config: layered(mainRoot),
     harnesses,
     protectedPaths: interpreter.protectedFiles(harnesses),
     cwd: mainRoot,
@@ -57,7 +65,7 @@ async function doctorCommand() {
   const { mainRoot } = await git.repoInfo(process.cwd());
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
   const { text, exitCode } = await doctor.doctor({
-    config: config.loadLayers(mainRoot),
+    config: layered(mainRoot),
     harnesses,
     gh: github.createGh(),
     cwd: mainRoot,

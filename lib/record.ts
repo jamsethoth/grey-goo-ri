@@ -320,6 +320,10 @@ export function load<Kind extends RecordKind>(commonDir: string, kind: Kind, rec
   return row ? parseRow<Saved<Kind>>(commonDir, row) : null;
 }
 
+export function removeRecord(_commonDir: string, _kind: RecordKind, _recordNumber: number): boolean {
+  return false;
+}
+
 // One corrupt record must not hide every other worktree's activity: it is reported, not fatal.
 export function loadAll<Kind extends RecordKind>(
   commonDir: string,

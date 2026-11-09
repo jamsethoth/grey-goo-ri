@@ -11,8 +11,8 @@ import * as exampleLayer from '../support/example-layer.ts';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const sha256 = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
-// A Layer file as loadLayers gives it: its text and the hash of its bytes.
-const layerFile = (bytes: string) => ({ bytes, hash: sha256(bytes) });
+// A file as loadSources gives it: its text and the hash of its bytes.
+const sourceFile = (bytes: string) => ({ bytes, hash: sha256(bytes) });
 
 // Rebuilds an object with every key in reverse order, so only key order differs.
 function reversed<Value>(value: Value): Value {
@@ -25,32 +25,6 @@ function reversed<Value>(value: Value): Value {
   ) as Value;
 }
 
-test('loadDefaults reads defaults/gg.json', () => {
-  assert.equal(config.loadDefaults().labelPrefix, 'gg');
-});
-
-for (const name of ['implementer.md', 'reviewer.md']) {
-  test(`loadLayers reads the example Persona ${name} that gg init wrote, with its hash`, (t) => {
-    const { repo, home } = layers(t);
-    doctor.init(repo);
-    const file = readFileSync(join(repo, '.agents', 'gg', name));
-    const persona = config.loadLayers(repo, home).files[name];
-    assert.ok(persona, `${name} is loaded`);
-    assert.equal(String(persona.bytes), file.toString('utf8'));
-    assert.equal(persona.hash, sha256(file));
-  });
-}
-
-test('loadLayers reads the Layer identified by layerPath', (t) => {
-  const directory = mkdtempSync(join(tmpdir(), 'gg-layer-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const file = config.layerPath(directory);
-  assert.equal(file, join(directory, '.agents', 'gg', 'gg.json'));
-  mkdirSync(join(directory, '.agents', 'gg'), { recursive: true });
-  writeFileSync(file, JSON.stringify({ baseBranch: 'layer-base' }));
-  assert.equal(config.loadLayers(directory, join(directory, 'no-user-layer')).baseBranch, 'layer-base');
-});
-
 // JSON.stringify and the hash's key sort see no entry of a Map, so a Map reaching the hash would hash as {} in silence;
 // the model's toJson converts first (#174).
 test('hashOf refuses a Map, which it would otherwise hash as an empty object', () => {
@@ -62,7 +36,7 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   const base = {
     flow: example.flows.default,
     files: Object.fromEntries(
-      exampleLayer.PERSONA_NAMES.map((name) => [name, layerFile(exampleLayer.fixtureText(name))]),
+      exampleLayer.PERSONA_NAMES.map((name) => [name, sourceFile(exampleLayer.fixtureText(name))]),
     ),
     harnesses: { claude: {} },
     launchProfile: null,
@@ -92,10 +66,10 @@ test('configHash changes with persona, vertex, command and testPaths changes and
   assert.notEqual(config.configHash(testPaths), hash, 'a test path changes the hash');
 });
 
-// gg's lib, defaults, the example gg init writes and runtime dependencies copied under `root`, laid out as an install
+// gg's lib, examples, the example gg init writes and runtime dependencies copied under `root`, laid out as an install
 // lays them out.
 function copyInstall(root: string) {
-  for (const directory of ['lib', 'defaults', 'test/fixtures/example'])
+  for (const directory of ['lib', 'examples', 'test/fixtures/example'])
     cpSync(join(repoRoot, directory), join(root, directory), { recursive: true });
   const { dependencies = {} } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
   for (const name of Object.keys(dependencies))
@@ -113,8 +87,8 @@ async function installed(t: TestContext, install: string, edit = (_root: string)
   const copied = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
   const copiedDoctor = await import(pathToFileURL(join(root, 'lib', 'doctor.ts')).href);
   const repo = join(root, '..', 'repo');
-  copiedDoctor.init(repo);
-  const loaded = copied.loadLayers(repo, join(root, '..', 'home'));
+  copiedDoctor.init(repo, { baseBranch: 'main', userDirectory: join(root, '..', 'user') });
+  const loaded = copied.loadSources(repo, join(root, '..', 'user')).repository;
   const input = { flow: loaded.flows.default, files: loaded.files, harnesses: {}, commands: {} };
   return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: copied.configHash(input) };
 }
@@ -132,26 +106,92 @@ test('asset bytes change the Config Hash but installation paths do not', async (
   assert.notEqual(edited.hash, one.hash, 'a byte of a Persona gg init writes changes the hash');
 });
 
-// A repository root and a home directory, each with the Layer text given (or none).
-function layers(t: TestContext, { repo, home }: { repo?: string; home?: string } = {}) {
+// A repository root and a user directory, each with the gg.json text given (or none).
+function sources(t: TestContext, { repo, user }: { repo?: string; user?: string } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'gg-config-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const roots = { repo: join(directory, 'repo'), home: join(directory, 'home') };
-  for (const [name, text] of Object.entries({ repo, home }) as ['repo' | 'home', string | undefined][]) {
-    mkdirSync(join(roots[name], '.agents', 'gg'), { recursive: true });
-    if (text !== undefined) writeFileSync(config.layerPath(roots[name]), text);
+  const roots = { repo: join(directory, 'repo'), user: join(directory, 'user') };
+  const directories = { repo: config.repositoryDirectory(roots.repo), user: roots.user };
+  for (const [name, text] of Object.entries({ repo, user }) as ['repo' | 'user', string | undefined][]) {
+    mkdirSync(directories[name], { recursive: true });
+    if (text !== undefined) writeFileSync(config.configFile(directories[name]), text);
   }
-  return roots;
+  return { ...roots, files: { repo: config.configFile(directories.repo), user: config.configFile(directories.user) } };
 }
 
-// Writes `files` (name to text) beside the Layer of `root`.
-function beside(root: string, files: Record<string, string>) {
-  for (const [name, text] of Object.entries(files)) writeFileSync(join(root, '.agents', 'gg', name), text);
+// Writes `files` (name to text) beside the gg.json in `directory`.
+function beside(directory: string, files: Record<string, string>) {
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(directory, name), text);
+}
+const repositoryFiles = (repo: string, files: Record<string, string>) =>
+  beside(config.repositoryDirectory(repo), files);
+
+// The user's directory is GG_HOME, else ~/.agents/gg.
+test("each source's gg.json sits in its directory, and GG_HOME moves the user's", () => {
+  assert.equal(config.repositoryDirectory('/repo'), join('/repo', '.agents', 'gg'));
+  assert.equal(config.configFile('/somewhere'), join('/somewhere', 'gg.json'));
+  assert.equal(config.userDirectory({}, '/home/me'), join('/home/me', '.agents', 'gg'));
+  assert.equal(config.userDirectory({ GG_HOME: '/elsewhere/gg' }, '/home/me'), '/elsewhere/gg');
+});
+
+test('loadSources reads each source whole, from its own gg.json', (t) => {
+  const roots = sources(t, {
+    repo: JSON.stringify({ baseBranch: 'trunk' }),
+    user: JSON.stringify({ maxParallel: 3 }),
+  });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(loaded.repository, { baseBranch: 'trunk', files: {} });
+  assert.deepEqual(loaded.user, { maxParallel: 3, files: {} });
+  assert.equal(loaded.repositoryFile, roots.files.repo);
+  assert.equal(loaded.userFile, roots.files.user);
+});
+
+test('a source with no gg.json loads empty, and its required settings are Problems', (t) => {
+  const roots = sources(t);
+  const loaded = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(loaded.repository, { files: {} });
+  assert.deepEqual(loaded.user, { files: {} });
+  assert.deepEqual(
+    config.sourceProblems(loaded).map((problem) => `${problem.at} ${problem.code}`),
+    [
+      'commands required-key-missing',
+      'testPaths required-key-missing',
+      'labelPrefix required-key-missing',
+      'baseBranch required-key-missing',
+      'user:maxParallel required-key-missing',
+      'user:worktreeRoot required-key-missing',
+    ],
+  );
+});
+
+for (const name of ['implementer.md', 'reviewer.md']) {
+  test(`loadSources reads the example Persona ${name} that gg init wrote, with its hash`, (t) => {
+    const roots = sources(t);
+    doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user });
+    const file = readFileSync(join(config.repositoryDirectory(roots.repo), name));
+    const persona = config.loadSources(roots.repo, roots.user).repository.files[name];
+    assert.ok(persona, `${name} is loaded`);
+    assert.equal(String(persona.bytes), file.toString('utf8'));
+    assert.equal(persona.hash, sha256(file));
+  });
 }
 
-test('loadLayers reads each file from the Layer that declares its name', (t) => {
-  const { repo, home } = layers(t, {
-    home: JSON.stringify({ agents: { implementer: { persona: 'home-implementer.md' } } }),
+// Nothing merges (ADR 0022): each source declares its own Flows, and a Flow's files resolve beside its own gg.json.
+test('two sources with a same-named Flow load both, each with the files its own gg.json names', (t) => {
+  const flow = { default: { ticket: { vertices: { red: { persona: 'red.md' } } } } };
+  const roots = sources(t, { repo: JSON.stringify({ flows: flow }), user: JSON.stringify({ flows: flow }) });
+  repositoryFiles(roots.repo, { 'red.md': '# the repository red\n' });
+  beside(roots.user, { 'red.md': '# my red\n' });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(loaded.repository.flows, flow);
+  assert.deepEqual(loaded.user.flows, flow);
+  assert.deepEqual(loaded.repository.files['red.md'], sourceFile('# the repository red\n'));
+  assert.deepEqual(loaded.user.files['red.md'], sourceFile('# my red\n'));
+});
+
+test('loadSources reads each file a source names beside that source', (t) => {
+  const roots = sources(t, {
+    user: JSON.stringify({ agents: { implementer: { persona: 'my-implementer.md' } } }),
     repo: JSON.stringify({
       procedures: {
         probe: {
@@ -165,189 +205,88 @@ test('loadLayers reads each file from the Layer that declares its name', (t) => 
       },
     }),
   });
-  beside(home, { 'home-implementer.md': '# home implementer\n' });
-  beside(repo, {
+  beside(roots.user, { 'my-implementer.md': '# my implementer\n' });
+  repositoryFiles(roots.repo, {
     'ask.md': 'ask',
     'ask.schema.json': '{}',
     'body.md': 'body',
     'again.md': 'again',
     'stopped.md': 'stopped',
   });
-  const { files } = config.loadLayers(repo, home);
-  assert.deepEqual(files['home-implementer.md'], layerFile('# home implementer\n'));
-  assert.deepEqual(files['ask.md'], layerFile('ask'));
-  assert.deepEqual(files['ask.schema.json'], layerFile('{}'));
-  assert.deepEqual(files['body.md'], layerFile('body'));
-  assert.deepEqual(files['again.md'], layerFile('again'));
-  assert.deepEqual(files['stopped.md'], layerFile('stopped'));
-});
-
-test('an inherited file reference keeps its declaring Layer', (t) => {
-  const { repo, home } = layers(t, {
-    home: JSON.stringify({ agents: { implementer: { persona: 'shared.md' } } }),
-    repo: JSON.stringify({
-      agents: { implementer: { harness: 'claude' } },
-      procedures: {
-        probe: {
-          actions: [{ id: 'check', do: 'check', kind: 'command', command: 'test', recoverBrief: 'fix-it.md' }],
-        },
-      },
-    }),
+  const { repository, user } = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(user.files, { 'my-implementer.md': sourceFile('# my implementer\n') });
+  assert.deepEqual(repository.files, {
+    'ask.md': sourceFile('ask'),
+    'ask.schema.json': sourceFile('{}'),
+    'body.md': sourceFile('body'),
+    'again.md': sourceFile('again'),
+    'stopped.md': sourceFile('stopped'),
   });
-  beside(home, { 'shared.md': '# from the user Layer\n' });
-  beside(repo, { 'shared.md': '# a repository file no Layer names\n', 'fix-it.md': 'fix it' });
-  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
-  assert.equal(loaded.agents.implementer.persona, 'shared.md');
-  assert.equal(loaded.files['shared.md'].bytes, '# from the user Layer\n');
-  assert.equal(loaded.files['fix-it.md'].bytes, 'fix it');
 });
 
-// A file name is a key of the Layer file map, so one named after an Object.prototype property must load as data (#174).
-test('a Layer file named __proto__ loads like any other', (t) => {
+// A file name is a key of the source's file map, so one named after an Object.prototype property must load as data
+// (#174).
+test('a file named __proto__ loads like any other', (t) => {
   const name = '__proto__';
-  const { repo, home } = layers(t, { repo: JSON.stringify({ agents: { implementer: { persona: name } } }) });
+  const roots = sources(t, { repo: JSON.stringify({ agents: { implementer: { persona: name } } }) });
   // A computed key, which an object literal makes an own key; a literal __proto__: would set the prototype.
-  beside(repo, { [name]: '# a persona named __proto__\n' });
-  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
-  assert.equal(config.layerFile(loaded.files, name), '# a persona named __proto__\n');
+  repositoryFiles(roots.repo, { [name]: '# a persona named __proto__\n' });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  assert.equal(config.layerFile(loaded.repository.files, name), '# a persona named __proto__\n');
 });
 
-test('an inline Vertex persona loads from its declaring Layer', (t) => {
-  const { repo, home } = layers(t, {
-    repo: JSON.stringify({ flows: { default: { ticket: { vertices: { red: { persona: 'red-persona.md' } } } } } }),
+test('an inline Vertex persona loads from its own source', (t) => {
+  const roots = sources(t, {
+    user: JSON.stringify({ flows: { default: { ticket: { vertices: { red: { persona: 'red-persona.md' } } } } } }),
   });
-  beside(repo, { 'red-persona.md': '# red only\n' });
-  const loaded: exampleLayer.Layer = config.loadLayers(repo, home);
-  assert.equal(loaded.flows.default.ticket.vertices.red.persona, 'red-persona.md');
-  assert.deepEqual(loaded.files['red-persona.md'], layerFile('# red only\n'));
+  beside(roots.user, { 'red-persona.md': '# red only\n' });
+  const loaded = config.loadSources(roots.repo, roots.user);
+  assert.deepEqual(loaded.user.files['red-persona.md'], sourceFile('# red only\n'));
+  assert.deepEqual(loaded.repository.files, {});
 });
 
-test('a name two Layers declare for different files is a load error naming both', (t) => {
-  const { repo, home } = layers(t, {
-    home: JSON.stringify({ agents: { implementer: { persona: 'same.md' } } }),
-    repo: JSON.stringify({ agents: { reviewer: { persona: 'same.md' } } }),
-  });
-  beside(home, { 'same.md': '# home\n' });
-  beside(repo, { 'same.md': '# repo\n' });
-  assert.throws(() => config.loadLayers(repo, home), {
-    message:
-      `file "same.md" is declared by ${config.layerPath(home)} and by ${config.layerPath(repo)}, ` +
-      'each beside its own Layer; give one of them another name',
+test('a declared file that does not exist is a load error naming the gg.json and the name', (t) => {
+  const roots = sources(t, { user: JSON.stringify({ agents: { implementer: { persona: 'missing.md' } } }) });
+  assert.throws(() => config.loadSources(roots.repo, roots.user), {
+    message: `${roots.files.user} names file "missing.md", which cannot be read (ENOENT)`,
   });
 });
 
-test('a declared file that does not exist is a load error naming the Layer file and the name', (t) => {
-  const { repo, home } = layers(t, { repo: JSON.stringify({ agents: { implementer: { persona: 'missing.md' } } }) });
-  assert.throws(() => config.loadLayers(repo, home), {
-    message: `${config.layerPath(repo)} names file "missing.md", which cannot be read (ENOENT)`,
+// In a configuration file null is never a value (#298). Nothing merges, so every null stays where it is written, for
+// the validator to report.
+test('a null in either source stays as written', (t) => {
+  const roots = sources(t, {
+    user: JSON.stringify({ agents: { reviewer: null } }),
+    repo: JSON.stringify({ agents: { implementer: { effort: null } } }),
   });
+  const loaded = config.loadSources(roots.repo, roots.user) as unknown as Record<string, { agents: object }>;
+  assert.deepEqual(loaded.user!.agents, { reviewer: null });
+  assert.deepEqual(loaded.repository!.agents, { implementer: { effort: null } });
 });
 
-// A Flow arrives whole from the repository Layer, so no other Layer declares a Flow or a Procedure (P2).
-for (const key of ['flows', 'procedures']) {
-  test(`a ${key} key in the user Layer is a load error naming the file`, (t) => {
-    const { repo, home } = layers(t, { home: JSON.stringify({ [key]: {} }) });
-    assert.throws(() => config.loadLayers(repo, home), {
-      message: `${config.layerPath(home)}: ${key} may be set only in a repository Layer`,
-    });
-  });
-}
-
-test('the shipped defaults declare no agents, flows or procedures', () => {
-  const defaults = config.loadDefaults();
-  assert.equal(Object.hasOwn(defaults, 'agents'), false, 'no agents');
-  assert.equal(Object.hasOwn(defaults, 'flows'), false, 'no flows');
-  assert.equal(Object.hasOwn(defaults, 'procedures'), false, 'no procedures');
-  assert.deepEqual(defaults.files, {}, 'and name no file');
+test('loadSources reads no Declared Commands from AGENTS.md', (t) => {
+  const roots = sources(t);
+  writeFileSync(join(roots.repo, 'AGENTS.md'), '# r\n\n## Commands\n\n- test: `npm test`\n');
+  assert.equal(config.loadSources(roots.repo, roots.user).repository.commands, undefined);
 });
 
-// In a configuration file null is never a value and a Layer cannot delete an inherited key (#298): the merge keeps a
-// later Layer's null where the earlier value was, for the validator to report.
-test("a later Layer's null stays in the merged configuration in place of the earlier value", (t) => {
-  const { repo, home } = layers(t, {
-    home: JSON.stringify({ agents: { reviewer: { effort: 'high' } } }),
-    repo: JSON.stringify({ agents: { reviewer: null, implementer: { effort: null } } }),
+test('a gg.json with a duplicate key in one object is a load error naming the file and key', (t) => {
+  const repoDuplicate = sources(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
+  assert.throws(() => config.loadSources(repoDuplicate.repo, repoDuplicate.user), {
+    message: `${repoDuplicate.files.repo}: key "test" appears twice in one object`,
   });
-  const loaded = config.loadLayers(repo, home) as unknown as { agents: Record<string, unknown> };
-  assert.equal(loaded.agents.reviewer, null, 'the Agent is not deleted');
-  assert.equal((loaded.agents.implementer as { effort?: unknown }).effort, null, 'the key is not deleted');
-});
-
-test('loadLayers takes Declared Commands whole from the repository Layer', (t) => {
-  const { repo, home } = layers(t, {
-    repo: JSON.stringify({ commands: { test: 'npm test', 'lint-js': 'npm run lint' } }),
-    home: JSON.stringify({ baseBranch: 'dev' }),
-  });
-  const loaded = config.loadLayers(repo, home);
-  assert.deepEqual(loaded.commands, { test: 'npm test', 'lint-js': 'npm run lint' });
-  assert.equal(loaded.baseBranch, 'dev');
-  assert.equal(Object.hasOwn(config.loadDefaults(), 'commands'), false, 'the shipped defaults declare no commands');
-});
-
-test('loadLayers reads no Declared Commands from AGENTS.md', (t) => {
-  const { repo, home } = layers(t);
-  writeFileSync(join(repo, 'AGENTS.md'), '# r\n\n## Commands\n\n- test: `npm test`\n');
-  assert.equal(config.loadLayers(repo, home).commands, undefined);
-});
-
-test('a commands key in the user Layer is a load error naming the file', (t) => {
-  const { repo, home } = layers(t, {
-    repo: JSON.stringify({ commands: { test: 'npm test' } }),
-    home: JSON.stringify({ commands: { test: 'npm test' } }),
-  });
-  assert.throws(
-    () => config.loadLayers(repo, home),
-    (err: unknown) => {
-      assert.equal((err as Error).message, `${config.layerPath(home)}: commands may be set only in a repository Layer`);
-      return true;
-    },
-  );
-});
-
-test('a testPaths key in the user Layer is a load error naming the file', (t) => {
-  const { repo, home } = layers(t, {
-    repo: JSON.stringify({ testPaths: ['test/**'] }),
-    home: JSON.stringify({ testPaths: ['spec/**'] }),
-  });
-  assert.throws(() => config.loadLayers(repo, home), {
-    message: `${config.layerPath(home)}: testPaths may be set only in a repository Layer`,
-  });
-});
-
-for (const [key, value] of [
-  ['testPaths', ['test/**']],
-  ['flows', {}],
-  ['procedures', {}],
-] as const) {
-  test(`a ${key} key in the defaults Layer is a load error naming the file`, async (t) => {
-    const root = mkdtempSync(join(tmpdir(), 'gg-install-defaults-'));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
-    copyInstall(root);
-    const file = join(root, 'defaults', 'gg.json');
-    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), [key]: value }));
-    // The copy's own module, so it reads the copy's defaults.
-    const copied = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
-    assert.throws(() => copied.loadDefaults(), { message: `${file}: ${key} may be set only in a repository Layer` });
-  });
-}
-
-test('a Layer with a duplicate key in one object is a load error naming the file and key', (t) => {
-  const repoDup = layers(t, { repo: '{"commands":{"test":"a","test":"b"}}' });
-  assert.throws(() => config.loadLayers(repoDup.repo, repoDup.home), {
-    message: `${config.layerPath(repoDup.repo)}: key "test" appears twice in one object`,
-  });
-  const userDup = layers(t, { home: '{"agents":{"implementer":{"model":"a","model":"b"}}}' });
-  assert.throws(() => config.loadLayers(userDup.repo, userDup.home), {
-    message: `${config.layerPath(userDup.home)}: key "model" appears twice in one object`,
+  const userDuplicate = sources(t, { user: '{"agents":{"implementer":{"model":"a","model":"b"}}}' });
+  assert.throws(() => config.loadSources(userDuplicate.repo, userDuplicate.user), {
+    message: `${userDuplicate.files.user}: key "model" appears twice in one object`,
   });
   // Equal keys in sibling objects, in array elements and inside a string value are not duplicates.
-  const fine = layers(t, { repo: '{"a":{"k":1},"b":{"k":"\\"k\\": 2"},"c":[{"k":1},{"k":2}],"d":{"k\\"":1,"k":2}}' });
-  // eslint-disable-next-line id-length -- the key the Layer's text declares
-  assert.deepEqual(config.loadLayers(fine.repo, fine.home).b, { k: '"k": 2' });
+  const fine = sources(t, { repo: '{"a":{"k":1},"b":{"k":"\\"k\\": 2"},"c":[{"k":1},{"k":2}],"d":{"k\\"":1,"k":2}}' });
+  // eslint-disable-next-line id-length -- the key the gg.json's text declares
+  assert.deepEqual(config.loadSources(fine.repo, fine.user).repository.b, { k: '"k": 2' });
 });
 
-// V8's own message names no position for an early end or a trailing comma, and quotes the Layer's text.
-test('a Layer that is not JSON is a load error naming the file, line and column of its first error', (t) => {
+// V8's own message names no position for an early end or a trailing comma, and quotes the gg.json's text.
+test('a gg.json that is not JSON is a load error naming the file, line and column of its first error', (t) => {
   for (const [text, where] of [
     ['{"agents": {}\n "flows": {}}\n', '2:2: invalid JSON, comma expected'],
     ['{\n  "testPaths": [\n    "test/**",\n  ]\n}\n', '4:3: invalid JSON, value expected'],
@@ -360,12 +299,222 @@ test('a Layer that is not JSON is a load error naming the file, line and column 
     ['[\u000b]', '1:2: invalid JSON, invalid symbol'],
     ['{ // note\n "a": 1}', '1:3: invalid JSON, invalid comment token'],
   ]) {
-    const { repo, home } = layers(t, { repo: text });
-    assert.throws(() => config.loadLayers(repo, home), { message: `${config.layerPath(repo)}:${where}` });
+    const roots = sources(t, { user: text });
+    assert.throws(() => config.loadSources(roots.repo, roots.user), { message: `${roots.files.user}:${where}` });
   }
 });
 
-const layerPath = config.layerPath('repo');
+const REPOSITORY_FILE = '/repo/.agents/gg/gg.json';
+const USER_FILE = '/home/.agents/gg/gg.json';
+// Settings that pass every check, which a case breaks one at a time.
+const SETTINGS = {
+  repository: { commands: { test: 'npm test' }, testPaths: ['test/**'], labelPrefix: 'gg', baseBranch: 'main' },
+  user: { maxParallel: 2, worktreeRoot: '~/worktrees' },
+};
+// The Problems the two sources give with `repository` and `user` set over the settings above (undefined leaves a
+// key out).
+function settingsProblems({ repository = {}, user = {} }: { repository?: object; user?: object }) {
+  const without = (value: object) => ({
+    ...Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)),
+    files: {},
+  });
+  return config.sourceProblems({
+    repository: without({ ...SETTINGS.repository, ...repository }),
+    user: without({ ...SETTINGS.user, ...user }),
+    repositoryFile: REPOSITORY_FILE,
+    userFile: USER_FILE,
+  });
+}
+const firedSettings = (changes: { repository?: object; user?: object }) =>
+  settingsProblems(changes).map((problem) => `${problem.at} ${problem.code}`);
+
+test('settings that pass every check give no Problem', () => {
+  assert.deepEqual(firedSettings({}), []);
+});
+
+for (const [key, value, code] of [
+  ['labelPrefix', undefined, 'required-key-missing'],
+  ['labelPrefix', 1, 'not-a-string'],
+  ['labelPrefix', null, 'not-a-string'],
+  ['labelPrefix', 'a:b', 'invalid-name'],
+  ['labelPrefix', 'a b', 'invalid-name'],
+  ['labelPrefix', '', 'invalid-name'],
+  ['baseBranch', undefined, 'required-key-missing'],
+  ['baseBranch', ['main'], 'not-a-string'],
+  ['baseBranch', 'a b', 'invalid-name'],
+  ['baseBranch', 'a..b', 'invalid-name'],
+  ['baseBranch', '-main', 'invalid-name'],
+  ['baseBranch', '', 'invalid-name'],
+] as const) {
+  test(`a repository ${key} of ${JSON.stringify(value)} is ${code}`, () => {
+    assert.deepEqual(firedSettings({ repository: { [key]: value } }), [`${key} ${code}`]);
+  });
+}
+
+for (const [key, value, code] of [
+  ['maxParallel', undefined, 'required-key-missing'],
+  ['maxParallel', 'two', 'not-a-positive-integer'],
+  ['maxParallel', 0, 'not-a-positive-integer'],
+  ['maxParallel', -1, 'not-a-positive-integer'],
+  ['maxParallel', 1.5, 'not-a-positive-integer'],
+  ['worktreeRoot', undefined, 'required-key-missing'],
+  ['worktreeRoot', 1, 'not-a-string'],
+  ['worktreeRoot', '', 'not-a-string'],
+  ['worktreeRoot', '  ', 'not-a-string'],
+] as const) {
+  test(`a user ${key} of ${JSON.stringify(value)} is ${code}`, () => {
+    assert.deepEqual(firedSettings({ user: { [key]: value } }), [`user:${key} ${code}`]);
+  });
+}
+
+/* eslint-disable id-denylist -- a Problem's key is at */
+test('each setting Problem names its file and key', () => {
+  assert.deepEqual(settingsProblems({ repository: { labelPrefix: undefined }, user: { maxParallel: 0 } }), [
+    {
+      at: 'labelPrefix',
+      code: 'required-key-missing',
+      message: `${REPOSITORY_FILE} declares no labelPrefix; set "labelPrefix": "gg" in it`,
+      params: { key: 'labelPrefix', file: REPOSITORY_FILE },
+    },
+    {
+      at: 'user:maxParallel',
+      code: 'not-a-positive-integer',
+      message: `${USER_FILE}: maxParallel must be a positive integer, the most Tickets a Run carries at once`,
+      params: { file: USER_FILE },
+    },
+  ]);
+  assert.deepEqual(settingsProblems({ repository: { baseBranch: 'a b' }, user: { worktreeRoot: undefined } }), [
+    {
+      at: 'baseBranch',
+      code: 'invalid-name',
+      message:
+        `${REPOSITORY_FILE}: baseBranch "a b" must be a branch name: non-empty, not starting with "-", ` +
+        'with no "..", whitespace or any of ~ ^ : ? * [ \\',
+      params: { name: 'a b', file: REPOSITORY_FILE },
+    },
+    {
+      at: 'user:worktreeRoot',
+      code: 'required-key-missing',
+      message: `${USER_FILE} declares no worktreeRoot; set it to the directory ticket worktrees go under`,
+      params: { key: 'worktreeRoot', file: USER_FILE },
+    },
+  ]);
+  assert.deepEqual(settingsProblems({ repository: { labelPrefix: 'a:b' }, user: { worktreeRoot: 3 } }), [
+    {
+      at: 'labelPrefix',
+      code: 'invalid-name',
+      message: `${REPOSITORY_FILE}: labelPrefix "a:b" must be non-empty with no ":" or whitespace`,
+      params: { name: 'a:b', file: REPOSITORY_FILE },
+    },
+    {
+      at: 'user:worktreeRoot',
+      code: 'not-a-string',
+      message: `${USER_FILE}: worktreeRoot must be a non-empty string`,
+      params: { file: USER_FILE },
+    },
+  ]);
+});
+
+test('an unknown key in either gg.json is a Problem naming the file and key', () => {
+  assert.deepEqual(settingsProblems({ repository: { maxParalel: 2 }, user: { labelprefix: 'gg' } }), [
+    {
+      at: 'maxParalel',
+      code: 'unknown-key',
+      message: `${REPOSITORY_FILE}: unknown key "maxParalel"`,
+      params: { key: 'maxParalel', file: REPOSITORY_FILE },
+    },
+    {
+      at: 'user:labelprefix',
+      code: 'unknown-key',
+      message: `${USER_FILE}: unknown key "labelprefix"`,
+      params: { key: 'labelprefix', file: USER_FILE },
+    },
+  ]);
+});
+
+// The repository contract is the repository's alone (ADR 0022): no Flow, and no user, sets it.
+for (const key of ['commands', 'testPaths', 'approvers', 'labelPrefix', 'baseBranch']) {
+  test(`a ${key} key in the user's gg.json is a Problem naming the file`, () => {
+    assert.deepEqual(
+      settingsProblems({ user: { [key]: (SETTINGS.repository as Record<string, unknown>)[key] ?? [] } }),
+      [
+        {
+          at: `user:${key}`,
+          code: 'unknown-key',
+          message:
+            `${USER_FILE}: ${key} belongs to the repository contract, which only the repository's gg.json declares, ` +
+            `at ${REPOSITORY_FILE}`,
+          params: { key, file: USER_FILE },
+        },
+      ],
+    );
+  });
+}
+
+// The machine settings follow the person, not the repository.
+for (const key of ['maxParallel', 'worktreeRoot']) {
+  test(`a ${key} key in the repository's gg.json is a Problem naming the file`, () => {
+    assert.deepEqual(firedSettings({ repository: { [key]: (SETTINGS.user as Record<string, unknown>)[key] } }), [
+      `${key} unknown-key`,
+    ]);
+    assert.match(
+      settingsProblems({ repository: { [key]: (SETTINGS.user as Record<string, unknown>)[key] } })[0]!.message,
+      new RegExp(`is a machine setting, which only the user's gg\\.json declares`),
+    );
+  });
+}
+
+// Request 3.9's migration table: feature-flow's keys name what replaces them.
+for (const [key, replacement] of [
+  ['stageTools', 'agents'],
+  ['toolkit', 'harnesses'],
+  ['escalationEnabled', 'flows'],
+  ['maxReviewRounds', 'flows'],
+  ['contextBudget', 'agents'],
+] as const) {
+  test(`feature-flow's ${key} key is an unknown key naming ${replacement}`, () => {
+    const [problem] = settingsProblems({ repository: { [key]: true } });
+    assert.equal(problem?.code, 'unknown-key');
+    assert.equal(
+      problem?.message,
+      `${REPOSITORY_FILE}: unknown key "${key}", which feature-flow read; gg declares it under ${replacement}`,
+    );
+  });
+}
+
+// An unqualified Flow name is the repository's and user:<name> the user's, so no repository Flow takes that form.
+test('a repository Flow named user:<name> is a reserved name', () => {
+  assert.deepEqual(firedSettings({ repository: { flows: { 'user:strict': {} } } }), [
+    'flows.user:strict reserved-name',
+  ]);
+});
+/* eslint-enable id-denylist */
+
+// The Config Hash fingerprints a Flow's content, not its source (Q25): a file the Flow does not use stays out of it.
+test('usedFiles keeps only the files a Resolved Flow names', () => {
+  const files = Object.fromEntries(
+    ['persona.md', 'brief.md', 'a.schema.json', 'body.md', 'fix.md', 'again.md', 'stopped.md', 'unused.md'].map(
+      (name) => [name, sourceFile(name)],
+    ),
+  );
+  const flow = {
+    procedures: {
+      probe: {
+        actions: [
+          { id: 'ask', do: 'agent', brief: 'brief.md', schema: 'a.schema.json' },
+          { id: 'test', do: 'check', recoverBrief: 'fix.md' },
+          { id: 'pr', do: 'pr-upsert', body: 'body.md' },
+        ],
+        recover: { max: 1, brief: 'again.md' },
+        claimTokens: { halt: { stop: true, comment: 'stopped.md' }, ok: { requires: [] } },
+      },
+    },
+    ticket: { vertices: { red: { agent: { persona: 'persona.md' } }, publish: { agent: null } } },
+  };
+  const { 'unused.md': _unused, ...used } = files;
+  assert.deepEqual(config.usedFiles(flow, files), used);
+});
+
 // The sentences a repository Layer check gives, for the cases about its wording.
 const commandMessages = (declared: unknown, file: string) =>
   config.commandProblems(declared, file).map((problem) => problem.message);
@@ -375,45 +524,45 @@ const approversMessages = (approvers: unknown, file: string) =>
   config.approversProblems(approvers, file).map((problem) => problem.message);
 // The message for a testPaths entry that is not a glob relative to the repository root.
 const notAGlob = (shown: string) =>
-  `${layerPath}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments split ` +
-  'by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] ? \\ : or control character';
+  `${REPOSITORY_FILE}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments ` +
+  'split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] ? \\ : or control character';
 
 test('commandProblems accepts a valid set and names each malformed entry', () => {
-  const missing = `${layerPath} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
-  assert.deepEqual(commandMessages({ test: 'npm test', 'lint-js': 'x' }, layerPath), []);
-  assert.deepEqual(commandMessages(undefined, layerPath), [missing]);
-  assert.deepEqual(commandMessages({ Test: 'npm test' }, layerPath), [
-    `${layerPath}: command name "Test" must match [a-z][a-z0-9-]*`,
+  const missing = `${REPOSITORY_FILE} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
+  assert.deepEqual(commandMessages({ test: 'npm test', 'lint-js': 'x' }, REPOSITORY_FILE), []);
+  assert.deepEqual(commandMessages(undefined, REPOSITORY_FILE), [missing]);
+  assert.deepEqual(commandMessages({ Test: 'npm test' }, REPOSITORY_FILE), [
+    `${REPOSITORY_FILE}: command name "Test" must match [a-z][a-z0-9-]*`,
     missing,
   ]);
 });
 
 for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) {
   test(`commandProblems names a test command of ${JSON.stringify(bad)} as malformed`, () => {
-    assert.deepEqual(commandMessages({ test: bad }, layerPath), [
-      `${layerPath}: command test must be a non-empty single-line string`,
+    assert.deepEqual(commandMessages({ test: bad }, REPOSITORY_FILE), [
+      `${REPOSITORY_FILE}: command test must be a non-empty single-line string`,
     ]);
   });
 }
 
 for (const bad of [['npm test'], 'npm test', null]) {
   test(`commandProblems names commands of ${JSON.stringify(bad)} as not an object`, () => {
-    assert.deepEqual(commandMessages(bad, layerPath), [
-      `${layerPath}: commands must be an object from name to command line`,
+    assert.deepEqual(commandMessages(bad, REPOSITORY_FILE), [
+      `${REPOSITORY_FILE}: commands must be an object from name to command line`,
     ]);
   });
 }
 
 test('testPathsProblems names a missing, empty or malformed testPaths', () => {
-  const notAList = `${layerPath}: testPaths must be a non-empty list of glob strings`;
-  assert.deepEqual(testPathsMessages(['test/**', '**/*.spec.*'], layerPath), []);
-  assert.deepEqual(testPathsMessages(undefined, layerPath), [
-    `${layerPath} declares no testPaths; merge {"testPaths":["<glob>"]} into it`,
+  const notAList = `${REPOSITORY_FILE}: testPaths must be a non-empty list of glob strings`;
+  assert.deepEqual(testPathsMessages(['test/**', '**/*.spec.*'], REPOSITORY_FILE), []);
+  assert.deepEqual(testPathsMessages(undefined, REPOSITORY_FILE), [
+    `${REPOSITORY_FILE} declares no testPaths; merge {"testPaths":["<glob>"]} into it`,
   ]);
-  assert.deepEqual(testPathsMessages([], layerPath), [notAList]);
-  assert.deepEqual(testPathsMessages('test/**', layerPath), [notAList]);
-  assert.deepEqual(testPathsMessages({ globs: ['test/**'] }, layerPath), [notAList]);
-  assert.deepEqual(testPathsMessages(['test/**', 1, '', ' ', 'a\nb', null], layerPath), [
+  assert.deepEqual(testPathsMessages([], REPOSITORY_FILE), [notAList]);
+  assert.deepEqual(testPathsMessages('test/**', REPOSITORY_FILE), [notAList]);
+  assert.deepEqual(testPathsMessages({ globs: ['test/**'] }, REPOSITORY_FILE), [notAList]);
+  assert.deepEqual(testPathsMessages(['test/**', 1, '', ' ', 'a\nb', null], REPOSITORY_FILE), [
     notAGlob('1'),
     notAGlob('""'),
     notAGlob('" "'),
@@ -429,11 +578,14 @@ test(
   'testPathsProblems names a testPaths entry git would reject ' + 'or read differently from Test Immutability',
   () => {
     assert.deepEqual(
-      testPathsMessages(['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs'], layerPath),
+      testPathsMessages(
+        ['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs'],
+        REPOSITORY_FILE,
+      ),
       [],
     );
     assert.deepEqual(
-      testPathsMessages(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], layerPath),
+      testPathsMessages(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], REPOSITORY_FILE),
       [
         notAGlob('"../tests/**"'),
         notAGlob('"/abs/**"'),
@@ -446,7 +598,7 @@ test(
     assert.deepEqual(
       testPathsMessages(
         ['spec/[ab].mjs', 'spec\\a.mjs', '**.test.mjs', 'deep**', 'a/***/b', 'a\u0000b', 'spec/a?.mjs'],
-        layerPath,
+        REPOSITORY_FILE,
       ),
       [
         notAGlob('"spec/[ab].mjs"'),
@@ -462,13 +614,16 @@ test(
 );
 
 // U15, #96: the repository adds its test launcher, so Test Immutability freezes what `test` runs.
-test("this repository Layer declares the example's test globs and its suite launcher as its testPaths", (t) => {
-  const { home } = layers(t);
-  assert.deepEqual(config.loadLayers(repoRoot, home).testPaths, [...exampleLayer.TEST_GLOBS, 'scripts/run-suite.ts']);
+test("this repository declares the example's test globs and its suite launcher as its testPaths", (t) => {
+  const { user } = sources(t);
+  assert.deepEqual(config.loadSources(repoRoot, user).repository.testPaths, [
+    ...exampleLayer.TEST_GLOBS,
+    'scripts/run-suite.ts',
+  ]);
 });
 
 // Until the cutover (grey-goo-ri issue #97): feature-flow builds this repository and reads its AGENTS.md line.
-test('this repository AGENTS.md Commands line matches its repository Layer', (t) => {
+test("this repository AGENTS.md Commands line matches the repository's gg.json", (t) => {
   const md = readFileSync(join(repoRoot, 'AGENTS.md'), 'utf8');
   const [, list] = md.match(/^## Commands\n\n((?:- .+\n)+)/m) as RegExpMatchArray;
   // A bullet whose name is a valid command name declares that command; `fast stage` is a usage note.
@@ -476,31 +631,21 @@ test('this repository AGENTS.md Commands line matches its repository Layer', (t)
     [...list.matchAll(/^- ([a-z][a-z0-9-]*): `([^`]+)`/gm)].map(([, name, line]) => [name, line]),
   );
   assert.equal(listed.test, 'node scripts/run-suite.ts');
-  const { home } = layers(t);
-  assert.deepEqual(config.loadLayers(repoRoot, home).commands, listed);
+  const { user } = sources(t);
+  assert.deepEqual(config.loadSources(repoRoot, user).repository.commands, listed);
 });
 
 test('a malformed approvers list fails admission', () => {
-  const layerFile = '/repo/.agents/gg/gg.json';
-  const notAList = `${layerFile}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
-  assert.deepEqual(approversMessages(undefined, layerFile), []);
-  assert.deepEqual(approversMessages([], layerFile), []);
-  assert.deepEqual(approversMessages(['some-login'], layerFile), []);
-  assert.deepEqual(approversMessages('some-login', layerFile), [notAList]);
-  assert.deepEqual(approversMessages([''], layerFile), [notAList]);
-  assert.deepEqual(approversMessages([' '], layerFile), [notAList]);
-  assert.deepEqual(approversMessages([' some-login '], layerFile), [notAList], 'it could never match a login');
-  assert.deepEqual(approversMessages(['some-login', 3], layerFile), [notAList]);
-});
-
-test('an approvers key in the user Layer is a load error naming the file', (t) => {
-  const { repo, home } = layers(t, {
-    repo: JSON.stringify({ approvers: ['some-login'] }),
-    home: JSON.stringify({ approvers: ['another-login'] }),
-  });
-  assert.throws(() => config.loadLayers(repo, home), {
-    message: `${config.layerPath(home)}: approvers may be set only in a repository Layer`,
-  });
+  const file = '/repo/.agents/gg/gg.json';
+  const notAList = `${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
+  assert.deepEqual(approversMessages(undefined, file), []);
+  assert.deepEqual(approversMessages([], file), []);
+  assert.deepEqual(approversMessages(['some-login'], file), []);
+  assert.deepEqual(approversMessages('some-login', file), [notAList]);
+  assert.deepEqual(approversMessages([''], file), [notAList]);
+  assert.deepEqual(approversMessages([' '], file), [notAList]);
+  assert.deepEqual(approversMessages([' some-login '], file), [notAList], 'it could never match a login');
+  assert.deepEqual(approversMessages(['some-login', 3], file), [notAList]);
 });
 
 test('approvers change the Config Hash, and none leaves it as it was', () => {
@@ -511,10 +656,10 @@ test('approvers change the Config Hash, and none leaves it as it was', () => {
 });
 
 /* eslint-disable id-denylist -- a Problem's key is at */
-// Each repository Layer problem is a Problem like the validator's (#301): located at its key, coded by the rule it
-// breaks, and carrying the values its sentence names, the Layer file among them.
-test('each repository Layer problem carries its location, code and params', () => {
-  const file = layerPath;
+// Each repository contract problem is a Problem like the validator's (#301): located at its key, coded by the rule it
+// breaks, and carrying the values its sentence names, the gg.json among them.
+test('each repository contract problem carries its location, code and params', () => {
+  const file = REPOSITORY_FILE;
   assert.deepEqual(config.commandProblems({ Test: 'npm test', lint: '' }, file), [
     {
       at: 'commands',
@@ -560,10 +705,23 @@ test('each repository Layer problem carries its location, code and params', () =
   ]);
 });
 
-test('the repository Layer problems are its commands, testPaths and approvers problems, in that order', () => {
-  const layer = { commands: { Test: 'x', test: 'x' }, testPaths: [], approvers: 3 };
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('the repository contract problems are its commands, testPaths, approvers, labelPrefix and baseBranch problems, in that order', () => {
+  const repository = {
+    commands: { Test: 'x', test: 'x' },
+    testPaths: [],
+    approvers: 3,
+    labelPrefix: 'a:b',
+    baseBranch: 1,
+  };
   assert.deepEqual(
-    config.repositoryLayerProblems(layer, layerPath).map(({ at, code }) => `${at} ${code}`),
-    ['commands invalid-name', 'testPaths empty-list', 'approvers not-a-list'],
+    config.contractProblems(repository, REPOSITORY_FILE).map(({ at, code }) => `${at} ${code}`),
+    [
+      'commands invalid-name',
+      'testPaths empty-list',
+      'approvers not-a-list',
+      'labelPrefix invalid-name',
+      'baseBranch not-a-string',
+    ],
   );
 });

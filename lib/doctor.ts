@@ -184,17 +184,19 @@ async function labelWarnings(
 
 // What gg doctor reads: the merged Layers and the registered Harnesses, and GitHub for the labels a Flow can request.
 export interface DoctorOptions {
-  config: config.Config;
+  config: config.Configuration;
+  commonDir?: string;
   harnesses: unknown;
   gh: github.Gh;
   cwd: string;
 }
 
 // Schemas and templates are read through the loader, from the Layer files loadLayers loaded (`config.files`).
-export async function doctor({ config: layers, harnesses, gh, cwd }: DoctorOptions): Promise<{
+export async function doctor({ config: configuration, harnesses, gh, cwd }: DoctorOptions): Promise<{
   text: string;
   exitCode: number;
 }> {
+  const layers = config.merged(configuration);
   const validated = validator.validate(layers, {
     harnesses,
     readSchema: (name) => JSON.parse(config.layerFile(layers.files, name)),
@@ -239,7 +241,10 @@ read-only default workflow permissions (Settings > Actions > General > Workflow 
 // Writes the example Layer into `repoRoot`'s .agents/gg/, unless a file it would write exists: then it writes nothing,
 // so gg init is safe to repeat (owner, 2026-11-06). The example's gg.json leaves out commands.test, which only the
 // repository can say.
-export function init(repoRoot: string): string {
+export function init(
+  repoRoot: string,
+  _options: { baseBranch?: string; userDirectory?: string; harness?: string } = {},
+): string {
   const directory = dirname(config.layerPath(repoRoot));
   const names = [
     'gg.json',

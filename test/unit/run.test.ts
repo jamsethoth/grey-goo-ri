@@ -203,7 +203,7 @@ test('every line a Run prints names its repository, in the terminal and in run.l
 
 test('an error line ends in its code', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.procedures.implement.actions[1].command = 'lint';
+  fixture.options.config.repository.procedures.implement.actions[1].command = 'lint';
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
@@ -216,7 +216,7 @@ test('an error line ends in its code', async (t) => {
 
 test('a warning line ends in its code, in run.log', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.agents.spare = { harness: 'fake' };
+  fixture.options.config.repository.agents.spare = { harness: 'fake' };
   await run.runTarget(fixture.options);
   const runLog = readFileSync(
     join(fixture.commonDir, 'gg', 'runs', runFixture.lastRun(fixture) as string, 'run.log'),
@@ -227,7 +227,7 @@ test('a warning line ends in its code, in run.log', async (t) => {
 
 test('every error a Run throws names its repository', async (t) => {
   const preflight = runFixture.fixture(t);
-  preflight.options.config.agents.implementer.harness = 'nope';
+  preflight.options.config.repository.agents.implementer.harness = 'nope';
   await assert.rejects(run.runTarget(preflight.options), (err: Error) => {
     assert.ok(err?.message.startsWith('[main] preflight failed:'), err?.message);
     return true;
@@ -255,8 +255,8 @@ type PreflightError = Error & { exitCode?: number };
 
 test('preflight names every failing vertex in one error, before any gh call, worktree or run directory', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
-  fixture.options.config.agents.implementer.harness = 'nope';
-  fixture.options.config.agents.reviewer.harness = 'claude';
+  fixture.options.config.repository.agents.implementer.harness = 'nope';
+  fixture.options.config.repository.agents.reviewer.harness = 'claude';
   fixture.options.harnesses.claude = await import('../../lib/harnesses/claude.ts');
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.match(
@@ -281,7 +281,7 @@ test('preflight names every failing vertex in one error, before any gh call, wor
 
 test('preflight rejects a repository Layer without testPaths', async (t) => {
   const fixture = runFixture.fixture(t);
-  delete fixture.options.config.testPaths;
+  delete fixture.options.config.repository.testPaths;
   const file = config.layerPath(fixture.mainRoot);
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
@@ -301,7 +301,10 @@ test('preflight without a Flow names gg init', async (t) => {
   const bare = join(fixture.root, 'bare');
   mkdirSync(dirname(config.layerPath(bare)), { recursive: true });
   writeFileSync(config.layerPath(bare), JSON.stringify({ commands: { test: 'npm test' }, testPaths: ['test/**'] }));
-  fixture.options.config = config.loadLayers(bare, join(fixture.root, 'no-home')) as typeof fixture.options.config;
+  fixture.options.config.repository = config.loadLayers(
+    bare,
+    join(fixture.root, 'no-home'),
+  ) as unknown as typeof fixture.options.config.repository;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
@@ -317,7 +320,7 @@ test('preflight without a Flow names gg init', async (t) => {
 // The fixture's full Flow as default, and as light its red, green and publish Flow, which has no reviewer.
 function twoFlows(t: TestContext) {
   const fixture = runFixture.fixture(t, { fullFlow: true });
-  fixture.options.config.flows.light = runFixture.testConfig(fixture.root).flows.default!;
+  fixture.options.config.repository.flows.light = runFixture.testConfig(fixture.root).flows.default!;
   return fixture;
 }
 const vertexOf = (call: { marker?: string }) => marker.parseMarker(marker.markerTrailer(call.marker!))?.vertex;
@@ -352,7 +355,7 @@ test('an unknown --flow fails preflight listing the declared Flows', async (t) =
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('without --flow, a repository Layer declaring no default Flow fails preflight listing the declared Flows', async (t) => {
   const fixture = twoFlows(t);
-  delete fixture.options.config.flows.default;
+  delete fixture.options.config.repository.flows.default;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
@@ -371,8 +374,8 @@ const MERGE_ADVICE =
 
 test('preflight lists every unset Vertex and Agent before one merge advice line', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
-  delete (fixture.options.config.agents.implementer as { harness?: unknown }).harness;
-  delete (fixture.options.config.agents.reviewer as { harness?: unknown }).harness;
+  delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
+  delete (fixture.options.config.repository.agents.reviewer as { harness?: unknown }).harness;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.equal(err.exitCode, 2);
     assert.deepEqual(err.message.split('\n'), [
@@ -391,7 +394,7 @@ test('preflight lists every unset Vertex and Agent before one merge advice line'
 
 test('an error quoting the unset-harness sentence is no configuration gap: exit 1, no merge advice', async (t) => {
   const fixture = runFixture.fixture(t);
-  (fixture.options.config.agents.implementer as Record<string, unknown>)['x names no harness; y'] = true;
+  (fixture.options.config.repository.agents.implementer as Record<string, unknown>)['x names no harness; y'] = true;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
@@ -404,8 +407,8 @@ test('an error quoting the unset-harness sentence is no configuration gap: exit 
 
 test('preflight names an unset harness and an unknown harness in one error', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
-  delete (fixture.options.config.agents.implementer as { harness?: unknown }).harness;
-  fixture.options.config.agents.reviewer.harness = 'nope';
+  delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
+  fixture.options.config.repository.agents.reviewer.harness = 'nope';
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.match(err.message, /agent implementer names no harness/);
     assert.match(
@@ -422,7 +425,7 @@ test('preflight names an unset harness and an unknown harness in one error', asy
 // #116: admission runs the validator gg doctor runs, before any GitHub access.
 test('gg run rejects a Flow gg doctor rejects, with the same message', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.procedures.implement.actions[1].command = 'lint';
+  fixture.options.config.repository.procedures.implement.actions[1].command = 'lint';
   const line =
     'error: procedures.implement.actions[1]: Check test names command "lint", ' +
     'which the repository Layer does not declare [undeclared-command]';
@@ -443,7 +446,7 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
 
 // The fixture Flow's green Vertex, whose inputs a case adds to.
 const greenInputs = (fixture: runFixture.RunFixture) =>
-  fixture.options.config.flows.default.ticket.vertices.green.inputs as Record<string, unknown>;
+  fixture.options.config.repository.flows.default.ticket.vertices.green.inputs as Record<string, unknown>;
 
 test('gg run rejects a required input that a route may not produce', async (t) => {
   const fixture = runFixture.fixture(t);
@@ -478,7 +481,7 @@ test('gg run rejects pick over a value that is not a list of objects', async (t)
 
 test('an Agent naming no harness still exits 2 naming the example Layers', async (t) => {
   const fixture = runFixture.fixture(t);
-  delete (fixture.options.config.agents.implementer as { harness?: unknown }).harness;
+  delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
@@ -564,10 +567,10 @@ test('a Pending Ticket ends its Run with exit 0', async (t) => {
 
 test("a Run creates the Flow's await and decide labels before it asks", async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.procedures.approval = {
+  fixture.options.config.repository.procedures.approval = {
     actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
   };
-  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  const shipped = fixture.options.config.repository.flows.default as golden.ConfiguredFlow;
   shipped.ticket.vertices.green!.route = { ok: 'approve' };
   shipped.ticket.vertices.approve = {
     procedure: 'approval',
@@ -583,7 +586,7 @@ test("a Run creates the Flow's await and decide labels before it asks", async (t
 
 test('approvers reach the reader, and a malformed list fails preflight', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.approvers = 'some-login';
+  fixture.options.config.repository.approvers = 'some-login';
   await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
     assert.match(err.message, /approvers must be a list of GitHub logins/);
     return true;
@@ -596,10 +599,10 @@ test('an epic Run resumes a Pending sub-issue', async (t) => {
     labels: ['gg:state:in-progress', 'gg:await:approve'],
   });
   fixture.options.target = epicRun.EPIC;
-  fixture.options.config.procedures.approval = {
+  fixture.options.config.repository.procedures.approval = {
     actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
   };
-  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  const shipped = fixture.options.config.repository.flows.default as golden.ConfiguredFlow;
   shipped.ticket.vertices.green!.route = { ok: 'approve' };
   shipped.ticket.vertices.approve = {
     procedure: 'approval',
@@ -616,11 +619,11 @@ test('an epic Run resumes a Pending sub-issue', async (t) => {
 
 test('approvers in the repository Layer reach the reader through gg run', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.approvers = ['a-triager'];
-  fixture.options.config.procedures.approval = {
+  fixture.options.config.repository.approvers = ['a-triager'];
+  fixture.options.config.repository.procedures.approval = {
     actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
   };
-  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  const shipped = fixture.options.config.repository.flows.default as golden.ConfiguredFlow;
   shipped.ticket.vertices.green!.route = { ok: 'approve' };
   shipped.ticket.vertices.approve = {
     procedure: 'approval',
@@ -636,10 +639,10 @@ test('approvers in the repository Layer reach the reader through gg run', async 
 // The golden Flow, asking at approve, Pending after one Run.
 async function pendingApproval(t: TestContext, options: runFixture.RunFixtureOptions = {}) {
   const fixture = runFixture.fixture(t, options);
-  fixture.options.config.procedures.approval = {
+  fixture.options.config.repository.procedures.approval = {
     actions: [{ id: 'ask', do: 'await-approval', decisions: ['approved', 'rejected'] }],
   };
-  const shipped = fixture.options.config.flows.default as golden.ConfiguredFlow;
+  const shipped = fixture.options.config.repository.flows.default as golden.ConfiguredFlow;
   shipped.ticket.vertices.green!.route = { ok: 'approve' };
   shipped.ticket.vertices.approve = {
     procedure: 'approval',

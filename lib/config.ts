@@ -32,6 +32,53 @@ export interface Config {
   [key: string]: unknown;
 }
 
+// Each file a source's gg.json names, by that name: its text and the hash the Config Hash takes of it.
+export type SourceFiles = Record<string, { bytes: string; hash: string }>;
+// One source's gg.json as read, and the files it names, read beside it.
+export interface Source {
+  files: SourceFiles;
+  [key: string]: unknown;
+}
+// The two sources gg reads, the repository's .agents/gg/ and the user's GG_HOME, and where each gg.json is.
+export interface Configuration {
+  repository: Source;
+  user: Source;
+  repositoryFile: string;
+  userFile: string;
+}
+// The settings a Run reads, from the repository contract and the user's machine settings, once both are checked.
+export interface Settings {
+  labelPrefix: string;
+  baseBranch: string;
+  worktreeRoot: string;
+  maxParallel: number;
+  commands: Record<string, unknown>;
+  testPaths: string[];
+  approvers?: string[];
+}
+
+export const repositoryDirectory = (repoRoot: string): string => join(repoRoot, '.agents', 'gg');
+export const userDirectory = (_environment: NodeJS.ProcessEnv = process.env, home = homedir()): string =>
+  join(home, '.agents', 'gg');
+export const configFile = (directory: string): string => join(directory, 'gg.json');
+
+export function loadSources(repoRoot: string, directory = userDirectory()): Configuration {
+  return {
+    repository: loadLayers(repoRoot, directory),
+    user: { files: {} },
+    repositoryFile: layerPath(repoRoot),
+    userFile: configFile(directory),
+  };
+}
+
+export const sourceProblems = (_configuration: Configuration): report.Problem[] => [];
+
+export const usedFiles = (_flow: unknown, files: SourceFiles): SourceFiles => files;
+
+// Until the two sources land, the Run and gg doctor read them as one merged configuration.
+export const merged = (configuration: Configuration): Config =>
+  ({ ...configuration.user, ...configuration.repository, files: configuration.repository.files }) as Config;
+
 // The one hash gg takes of bytes or text: file hashes, the Config Hash, body hashes and digests.
 export const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
@@ -302,6 +349,9 @@ export function commandProblems(declared: unknown, file: string): report.Problem
   }
   return found.errors;
 }
+
+export const contractProblems = (repository: Record<string, unknown>, file: string): report.Problem[] =>
+  repositoryLayerProblems(repository, file);
 
 // What gg run preflight and gg doctor both check of the keys only the repository Layer at `file` declares.
 export const repositoryLayerProblems = (

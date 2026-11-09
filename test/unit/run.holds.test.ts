@@ -490,7 +490,7 @@ test('mixed-case needs-human skips with a held ticket lock', async (t) => {
 
 test('admission does not re-add differently cased in-progress', async (t) => {
   const fixture = runFixture.fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
-  fixture.options.config.labelPrefix = 'Gg';
+  fixture.options.config.repository.labelPrefix = 'Gg';
   await runFixture.crashBeforePush(fixture);
 
   const results = await run.runTarget(fixture.options);
@@ -506,7 +506,7 @@ test('admission does not re-add differently cased in-progress', async (t) => {
 
 test('a differently cased in-progress without a record is left for Stuck handling', async (t) => {
   const fixture = runFixture.fixture(t, { labels: [SHOUTED_IN_PROGRESS] });
-  fixture.options.config.labelPrefix = 'Gg';
+  fixture.options.config.repository.labelPrefix = 'Gg';
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0);
   assert.ok(
     fixture.logs.some((line) => line.includes('with no Execution Record behind it')),

@@ -110,6 +110,7 @@ function tempRepo(t: TestContext, layer?: string) {
   const directory = tempDirectory.tempDirectory(t, 'gg-cli-');
   const repo = join(directory, 'repo');
   const home = join(directory, 'home');
+  const userDirectory = join(directory, 'gg-home');
   mkdirSync(home);
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
   if (layer) {
@@ -120,9 +121,9 @@ function tempRepo(t: TestContext, layer?: string) {
     spawnSync(process.execPath, [bin, ...args], {
       cwd: repo,
       encoding: 'utf8',
-      env: { ...process.env, HOME: home, USERPROFILE: home },
+      env: { ...process.env, HOME: home, USERPROFILE: home, GG_HOME: userDirectory },
     });
-  return { repo, ggIn };
+  return { repo, userDirectory, ggIn };
 }
 
 // gg ships no Flow (P1a), so a repository that declares none is told to run gg init.
@@ -211,6 +212,22 @@ test('gg init writes the example Layer at the repository root, and a second gg i
   const second = ggIn('init');
   assert.equal(second.status, 0, second.stderr);
   assert.match(second.stdout, /^gg init kept the existing Layer and wrote nothing: /);
+});
+
+// The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command.
+test('gg init --harness claude then gg doctor passes in a temp repository with a temp GG_HOME', (t) => {
+  const { repo, userDirectory, ggIn } = tempRepo(t);
+  const init = ggIn('init', '--harness', 'claude');
+  assert.equal(init.status, 0, init.stderr);
+  assert.ok(existsSync(join(userDirectory, 'gg.json')), "gg init creates the user's gg.json in GG_HOME");
+  const file = join(repo, '.agents', 'gg', 'gg.json');
+  const written = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(written.baseBranch, 'main', "the repository's default branch");
+  written.commands.test = 'npm test';
+  writeFileSync(file, JSON.stringify(written));
+  const doctor = ggIn('doctor');
+  assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr);
+  assert.match(doctor.stdout, /\n0 errors, 2 warnings\n$/);
 });
 
 test('gg doctor reads the repository Layer and its schemas and prints the Resolved Flow', (t) => {

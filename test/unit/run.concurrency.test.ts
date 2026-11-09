@@ -149,7 +149,7 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
   });
 
   const results = await run.runTarget(fixture.options);
-  assert.equal(fixture.options.config.maxParallel, 2);
+  assert.equal(fixture.options.config.user.maxParallel, 2);
   assert.deepEqual(
     outcomes(results),
     [
@@ -319,7 +319,7 @@ test(
 test('a run stop skips queued tickets without admitting them', { timeout: 120_000 }, async (t) => {
   const fixture = runFixture.fixture(t, { issues: epicRun.epicOf([21, 22]) });
   fixture.options.target = EPIC;
-  fixture.options.config.maxParallel = 1;
+  fixture.options.config.user.maxParallel = 1;
   const fakes = epicRun.ticketHarnesses(fixture, [21, 22], {
     responses: { 21: { 'red/1/red/1': { failure: { failureClass: 'auth', message: 'Not logged in' } } } },
   });

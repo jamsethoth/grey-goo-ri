@@ -1,11 +1,12 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
+import * as record from '../../lib/record.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
@@ -19,6 +20,14 @@ const DEPS = {
   cwd: '/repo',
 };
 const file = (bytes: string) => ({ bytes, hash: config.sha256(bytes) });
+const REPOSITORY_FILE = '/repo/.agents/gg/gg.json';
+const USER_FILE = '/home/.agents/gg/gg.json';
+
+// `repository` as the repository's source, beside a user source that holds only the machine settings, or `user`.
+const sources = (
+  repository: config.Source,
+  user: config.Source = { maxParallel: 2, worktreeRoot: '~/worktrees', files: {} },
+): config.Configuration => ({ repository, user, repositoryFile: REPOSITORY_FILE, userFile: USER_FILE });
 
 // The example Layer as loadLayers gives it: every file it names loaded beside it.
 function example() {
@@ -33,7 +42,7 @@ function example() {
 }
 
 test("gg doctor prints each Vertex's Procedure, Checks, tables and Outcomes", async () => {
-  const { text, exitCode } = await doctor.doctor({ config: example(), ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(example()), ...DEPS });
   assert.equal(text, exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n'));
   assert.equal(exitCode, 0);
 });
@@ -41,7 +50,7 @@ test("gg doctor prints each Vertex's Procedure, Checks, tables and Outcomes", as
 test('gg doctor reports a malformed table row rather than throwing', async () => {
   const config = example();
   config.procedures.review.passed[0] = null;
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(text.includes('\n  passed:\n    1. no conditions -> no outcome\n'), text);
   assert.ok(
@@ -57,7 +66,7 @@ test('gg doctor reports a malformed table row rather than throwing', async () =>
 test('an error line ends in its code', async () => {
   const config = example();
   config.flows.default.ticket.vertices.red.procedure = 'red';
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(
     text.includes(
       '\nerror: flows.default.ticket.vertices.red: procedure "red" is not declared [undeclared-procedure]\n',
@@ -69,29 +78,30 @@ test('an error line ends in its code', async () => {
 test('a warning line ends in its code', async () => {
   const config = example();
   config.agents.spare = { harness: 'fake' };
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\nwarning: agents.spare: agent spare is used by no Vertex [unused-agent]\n'), text);
 });
 
-// gg doctor and gg run preflight check the same repository Layer, so doctor never passes what run refuses (#301).
-test('gg doctor reports the repository Layer problems gg run preflight refuses', async () => {
+// gg doctor and gg run preflight check the same repository contract, so doctor never passes what run refuses (#301).
+test('gg doctor reports the repository contract problems gg run preflight refuses', async () => {
   const layer = example();
   layer.commands = { ...layer.commands, Test: 'npm test' };
-  const { text, exitCode } = await doctor.doctor({ config: layer, ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(layer), ...DEPS });
   assert.equal(exitCode, 1);
-  const file = config.layerPath(DEPS.cwd);
   assert.ok(
-    text.includes(`\nerror: commands: ${file}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]\n`),
+    text.includes(
+      `\nerror: commands: ${REPOSITORY_FILE}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]\n`,
+    ),
     text,
   );
 });
 
-// Doctor lists the repository Layer's problems first, as gg run preflight does, so the two read the same (#301).
-test("gg doctor prints the repository Layer's errors before the Flows', as preflight does", async () => {
+// Doctor lists the settings' problems first, as gg run preflight does, so the two read the same (#301).
+test("gg doctor prints the repository contract's errors before the Flows', as preflight does", async () => {
   const layer = example();
   layer.commands = { ...layer.commands, Test: 'npm test' };
   layer.flows.default.ticket.vertices.red.procedure = 'red';
-  const { text } = await doctor.doctor({ config: layer, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
   assert.deepEqual(
     text
       .split('\n')
@@ -104,42 +114,42 @@ test("gg doctor prints the repository Layer's errors before the Flows', as prefl
 test("gg doctor says a row's outcome is missing when the row leaves it out", async () => {
   const config = example();
   delete config.procedures['tests-fail'].stopped[0].outcome;
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\n  stopped:\n    1. response.reason = misscoped -> no outcome\n'), text);
 });
 
 test('gg doctor says tests name nothing when tests leaves out named', async () => {
   const config = example();
   config.procedures.fix.tests = {};
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\n  tests: named nothing\n'), text);
 });
 
 test("gg doctor says a Vertex's procedure is none when the Vertex leaves it out", async () => {
   const config = example();
   delete config.flows.default.ticket.vertices.baseline.procedure;
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\nvertex baseline\n  procedure: none\n'), text);
 });
 
 test("gg doctor says a Check's kind is missing when the Check leaves it out", async () => {
   const config = example();
   delete config.procedures['base-check'].actions[0].kind;
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\n  checks: test (no kind test)\n'), text);
 });
 
 test("gg doctor says a Check's id is missing when the Check leaves it out", async () => {
   const config = example();
   delete config.procedures['base-check'].actions[0].id;
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\n  checks: no id (command test)\n'), text);
 });
 
 test("gg doctor says an Edge's target is missing when the Edge leaves out to", async () => {
   const config = example();
   delete config.flows.default.ticket.vertices.reviewer.route.retest.to;
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\n    retest -> no target (max 2, exhausted senior-red)\n'), text);
 });
 
@@ -147,21 +157,21 @@ test("gg doctor says an Edge's target is missing when the Edge leaves out to", a
 test('gg doctor lists a Check with no id, which no Claim token requires', async () => {
   const config = example();
   delete config.procedures['base-check'].actions[0].id;
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\n  checks: no id (command test)\n  claimTokens: ok requires none\n'), text);
 });
 
 test('gg doctor says an input has no source when it leaves out from', async () => {
   const config = example();
   delete config.flows.default.ticket.vertices.red.inputs.findings.from;
-  const { text } = await doctor.doctor({ config, ...DEPS });
+  const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\n    findings <- no source (optional)\n'), text);
 });
 
 test('gg doctor exits non-zero on an error', async () => {
   const config = example();
   config.flows.default.ticket.vertices.red.procedure = 'red';
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.endsWith(
@@ -177,7 +187,7 @@ test('gg doctor reports a Procedure name with a colon at its location', async ()
   config.procedures['base:check'] = config.procedures['base-check'];
   delete config.procedures['base-check'];
   config.flows.default.ticket.vertices.baseline.procedure = 'base:check';
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
@@ -191,7 +201,7 @@ test('gg doctor reports a Procedure name with a colon at its location', async ()
 test("gg doctor reports an Agent's access outside the Permission Intents at agents.<name>.access", async () => {
   const config = example();
   config.agents.implementer.access = 'read-write';
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.endsWith(
@@ -207,7 +217,7 @@ test('gg doctor reads schemas from the loaded Layer files', async () => {
   const schema = JSON.parse(config.files['review.schema.json'].bytes);
   schema.properties.claim.enum = ['ok', 'changes'];
   config.files['review.schema.json'] = file(JSON.stringify(schema));
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.equal(exitCode, 1);
   assert.ok(
     text.includes(
@@ -218,103 +228,205 @@ test('gg doctor reads schemas from the loaded Layer files', async () => {
   );
 });
 
-// A repository and a home directory for `gg init`, neither holding a Layer yet.
+// A repository and a user directory for `gg init`, neither holding a gg.json yet.
 function initRoots(t: TestContext) {
   const directory = tempDirectory.tempDirectory(t, 'gg-init-');
-  return { repo: join(directory, 'repo'), home: join(directory, 'home') };
+  return { repo: join(directory, 'repo'), user: join(directory, 'user') };
 }
-const layerDirectory = (root: string) => join(root, '.agents', 'gg');
+const repositoryDirectory = (root: string) => join(root, '.agents', 'gg');
+const MACHINE_SETTINGS = { maxParallel: 2, worktreeRoot: '~/worktrees' };
 
-test('gg init writes the example and gg doctor accepts it', async (t) => {
-  const { repo, home } = initRoots(t);
-  const text = doctor.init(repo);
-  const written = layerDirectory(repo);
+// gg doctor over a repository and user directory as gg reads them, with the Harnesses gg ships.
+async function doctorOver(repo: string, user: string) {
+  return doctor.doctor({
+    config: config.loadSources(repo, user),
+    harnesses: shipped.HARNESSES,
+    gh: DEPS.gh,
+    cwd: repo,
+  });
+}
+
+// Adds the test command the example leaves out, which only the repository can say.
+function declareTest(repo: string) {
+  const file = join(repositoryDirectory(repo), 'gg.json');
+  const written = JSON.parse(readFileSync(file, 'utf8'));
+  written.commands.test = 'npm test';
+  writeFileSync(file, JSON.stringify(written));
+}
+
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("gg init writes the example with the repository's keys, creates the user's gg.json, and gg doctor accepts both", async (t) => {
+  const { repo, user } = initRoots(t);
+  const text = doctor.init(repo, { baseBranch: 'trunk', userDirectory: user });
+  const written = repositoryDirectory(repo);
   assert.deepEqual(readdirSync(written).sort(), [...exampleLayer.WRITTEN_NAMES].sort(), 'every file but doctor.txt');
   for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
     assert.equal(readFileSync(join(written, name), 'utf8'), exampleLayer.fixtureText(name), name);
-  const layer = JSON.parse(readFileSync(join(written, 'gg.json'), 'utf8'));
   const expected = JSON.parse(exampleLayer.fixtureText('gg.json'));
   delete expected.commands.test;
-  assert.deepEqual(layer, expected, "the fixture's gg.json with commands.test removed");
+  expected.baseBranch = 'trunk';
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(written, 'gg.json'), 'utf8')),
+    expected,
+    "the fixture's gg.json with commands.test removed and the repository's default branch",
+  );
+  assert.deepEqual(JSON.parse(readFileSync(join(user, 'gg.json'), 'utf8')), MACHINE_SETTINGS);
   // The advice gg init gives the person who runs it (L9, J11).
   assert.match(text, /read-only default workflow permissions/);
   assert.match(text, /assumes the test command is deterministic/);
 
-  // A test command added, and each example user Layer, which names the Harnesses.
-  layer.commands.test = 'npm test';
-  writeFileSync(join(written, 'gg.json'), JSON.stringify(layer));
-  mkdirSync(layerDirectory(home), { recursive: true });
-  for (const example of ['claude.json', 'codex.json']) {
-    copyFileSync(join(config.EXAMPLES_DIRECTORY, example), config.layerPath(home));
-    const accepted = await doctor.doctor({
-      config: config.loadLayers(repo, home),
-      harnesses: shipped.HARNESSES,
-      gh: DEPS.gh,
-      cwd: repo,
-    });
-    assert.equal(accepted.exitCode, 0, `${example}\n${accepted.text}`);
-    assert.match(accepted.text, /\n0 errors, 2 warnings\n$/, example);
-  }
+  declareTest(repo);
+  const accepted = await doctorOver(repo, user);
+  assert.equal(accepted.exitCode, 0, accepted.text);
+  assert.match(accepted.text, /\n0 errors, 2 warnings\n$/);
 });
 
-test('gg init keeps an existing Layer, says so and exits successfully', (t) => {
+test('gg init keeps an existing user gg.json', (t) => {
+  const { repo, user } = initRoots(t);
+  mkdirSync(user, { recursive: true });
+  const kept = '{ "maxParallel": 5, "worktreeRoot": "D:/wt" }\n';
+  writeFileSync(join(user, 'gg.json'), kept);
+  doctor.init(repo, { baseBranch: 'main', userDirectory: user });
+  assert.equal(readFileSync(join(user, 'gg.json'), 'utf8'), kept);
+});
+
+for (const harness of ['claude', 'codex']) {
+  // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+  test(`gg init --harness ${harness} writes each Agent's harness, model and effort, and gg doctor accepts them`, async (t) => {
+    const { repo, user } = initRoots(t);
+    doctor.init(repo, { baseBranch: 'main', userDirectory: user, harness });
+    const { agents } = JSON.parse(readFileSync(join(repositoryDirectory(repo), 'gg.json'), 'utf8'));
+    const example = JSON.parse(exampleLayer.fixtureText('gg.json')).agents;
+    const settings = JSON.parse(readFileSync(join(config.EXAMPLES_DIRECTORY, `${harness}.json`), 'utf8')).agents;
+    assert.deepEqual(
+      agents,
+      Object.fromEntries(
+        Object.entries(example).map(([name, agent]) => [name, { ...(agent as object), ...settings[name] }]),
+      ),
+    );
+    declareTest(repo);
+    const accepted = await doctorOver(repo, user);
+    assert.equal(accepted.exitCode, 0, accepted.text);
+  });
+}
+
+test('gg init keeps an existing repository configuration, says so and exits successfully', (t) => {
   // It returns what it says, and throws only on a failed write, so gg exits 0 (test/e2e/gg.test.ts).
-  const { repo } = initRoots(t);
-  mkdirSync(layerDirectory(repo), { recursive: true });
+  const { repo, user } = initRoots(t);
+  mkdirSync(repositoryDirectory(repo), { recursive: true });
+  const file = join(repositoryDirectory(repo), 'gg.json');
   const kept = '{ "commands": { "test": "make test" } }\n';
-  writeFileSync(config.layerPath(repo), kept);
-  assert.equal(
-    doctor.init(repo),
-    `gg init kept the existing Layer and wrote nothing: ${config.layerPath(repo)} exists.\n`,
+  writeFileSync(file, kept);
+  assert.ok(
+    doctor
+      .init(repo, { baseBranch: 'main', userDirectory: user })
+      .startsWith(`gg init kept the existing configuration and wrote nothing: ${file} exists.\n`),
   );
-  assert.deepEqual(readdirSync(layerDirectory(repo)), ['gg.json']);
-  assert.equal(readFileSync(config.layerPath(repo), 'utf8'), kept);
+  assert.deepEqual(readdirSync(repositoryDirectory(repo)), ['gg.json']);
+  assert.equal(readFileSync(file, 'utf8'), kept);
 });
 
 test('gg init writes nothing over any file it would write', (t) => {
-  const { repo } = initRoots(t);
-  mkdirSync(layerDirectory(repo), { recursive: true });
-  const red = join(layerDirectory(repo), 'red.md');
+  const { repo, user } = initRoots(t);
+  mkdirSync(repositoryDirectory(repo), { recursive: true });
+  const red = join(repositoryDirectory(repo), 'red.md');
   writeFileSync(red, '# our own red Brief\n');
-  assert.equal(doctor.init(repo), `gg init kept the existing Layer and wrote nothing: ${red} exists.\n`);
-  assert.deepEqual(readdirSync(layerDirectory(repo)), ['red.md']);
+  assert.ok(
+    doctor
+      .init(repo, { baseBranch: 'main', userDirectory: user })
+      .startsWith(`gg init kept the existing configuration and wrote nothing: ${red} exists.\n`),
+  );
+  assert.deepEqual(readdirSync(repositoryDirectory(repo)), ['red.md']);
 });
 
-// This repository's Layer was merged by hand from gg init's output (#120), so it runs on the example's own Flow.
+// This repository's configuration was merged by hand from gg init's output (#120), so it runs on the example's own
+// Flow.
 test(
-  "this repository's Layer is the example with its own commands and testPaths, " + 'and gg doctor accepts it',
+  "this repository's configuration is the example with its own commands and testPaths, " + 'and gg doctor accepts it',
   async (t) => {
     const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-    const own = JSON.parse(readFileSync(config.layerPath(repoRoot), 'utf8'));
+    const own = JSON.parse(readFileSync(join(repositoryDirectory(repoRoot), 'gg.json'), 'utf8'));
     const example = JSON.parse(exampleLayer.fixtureText('gg.json'));
     assert.deepEqual(
       { ...own, commands: undefined, testPaths: undefined },
       { ...example, commands: undefined, testPaths: undefined },
     );
     for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
-      assert.equal(readFileSync(join(layerDirectory(repoRoot), name), 'utf8'), exampleLayer.fixtureText(name), name);
-    const { home } = initRoots(t);
-    mkdirSync(layerDirectory(home), { recursive: true });
-    copyFileSync(join(config.EXAMPLES_DIRECTORY, 'claude.json'), config.layerPath(home));
-    const { text, exitCode } = await doctor.doctor({
-      config: config.loadLayers(repoRoot, home),
-      harnesses: shipped.HARNESSES,
-      gh: DEPS.gh,
-      cwd: repoRoot,
-    });
+      assert.equal(
+        readFileSync(join(repositoryDirectory(repoRoot), name), 'utf8'),
+        exampleLayer.fixtureText(name),
+        name,
+      );
+    const { user } = initRoots(t);
+    mkdirSync(user, { recursive: true });
+    writeFileSync(join(user, 'gg.json'), JSON.stringify(MACHINE_SETTINGS));
+    const { text, exitCode } = await doctorOver(repoRoot, user);
     assert.equal(exitCode, 0, text);
     assert.match(text, /\n0 errors, 2 warnings\n$/);
   },
 );
 
-// The harness, model and effort come from the user Layer (P2).
-test("the example's Agents name no harness, model or effort", () => {
+// The repository commits each Agent's harness, so gg init alone gives a Flow gg doctor accepts (ADR 0022).
+test("the example's Agents name a harness", () => {
   const { agents } = JSON.parse(exampleLayer.fixtureText('gg.json'));
   assert.deepEqual(agents, {
-    implementer: { persona: 'implementer.md', access: 'workspace-write' },
-    reviewer: { persona: 'reviewer.md', access: 'read-only' },
-    senior: { persona: 'implementer.md', access: 'workspace-write' },
+    implementer: { persona: 'implementer.md', access: 'workspace-write', harness: 'claude' },
+    reviewer: { persona: 'reviewer.md', access: 'read-only', harness: 'claude' },
+    senior: { persona: 'implementer.md', access: 'workspace-write', harness: 'claude' },
   });
+});
+
+// A user Flow that names a command the repository does not declare is only a warning in gg doctor: the user's
+// directory serves every repository, and gg run refuses the Flow only when it is selected (Q21).
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('gg doctor warns of a user Flow that names a command the repository does not declare, and names its source', async () => {
+  const repository = example();
+  const user = { ...example(), ...MACHINE_SETTINGS };
+  delete user.commands;
+  delete user.testPaths;
+  delete user.labelPrefix;
+  delete user.baseBranch;
+  user.flows = { strict: user.flows.default };
+  user.procedures['base-check'].actions[0].command = 'lint';
+  const { text, exitCode } = await doctor.doctor({ config: sources(repository, user), ...DEPS });
+  assert.equal(exitCode, 0, text);
+  assert.ok(text.includes('\nflow default\n  source: repository\n'), text);
+  assert.ok(text.includes('\nflow user:strict\n  source: user\n'), text);
+  assert.ok(
+    text.includes(
+      `\nwarning: user:flows.strict: Flow user:strict names command "lint", which ${REPOSITORY_FILE} does not ` +
+        'declare, so it cannot run in this repository [undeclared-command]\n',
+    ),
+    text,
+  );
+});
+
+// A record whose Flow is gone is kept for a human, so gg doctor says so before gg run does (A2).
+test('gg doctor lists an Execution Record whose Flow is no longer declared as an error', async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-doctor-records-');
+  const gone = record.createExecutionRecord({
+    commonDir,
+    ticket: 7,
+    epic: null,
+    flow: { name: 'gone', entry: 'red' },
+    configHash: 'x',
+    run: '20261016T000000Z-seed00',
+    worktree: join(commonDir, 'wt'),
+    branch: 'ticket/7-gone',
+    base: 'main',
+  });
+  record.save(gone);
+  record.save({ ...gone, ticket: 8, execution: 'ticket-8', flow: 'default' });
+  const { text, exitCode } = await doctor.doctor({ config: sources(example()), ...DEPS, commonDir });
+  assert.equal(exitCode, 1, text);
+  assert.ok(
+    text.includes(
+      '\nerror: records.ticket-7: Execution Record ticket-7 runs Flow gone, which is no longer declared; declare it ' +
+        'again to resume it, or run gg work abandon 7 to start over [unknown-flow]\n',
+    ),
+    text,
+  );
+  assert.ok(!text.includes('ticket-8'), text);
 });
 
 test("the example declares its Procedures in the validator's shape", () => {
@@ -395,7 +507,12 @@ const repository = (...labels: string[]) =>
 
 test('gg doctor prints the Await and Decide Labels of a Vertex that asks, and each Decision routes', async () => {
   const gh = repository(AWAIT_LABEL, APPROVED_LABEL, REJECTED_LABEL);
-  const { text, exitCode } = await doctor.doctor({ config: asking(), harnesses: { fake: {} }, gh, cwd: '/repo' });
+  const { text, exitCode } = await doctor.doctor({
+    config: sources(asking()),
+    harnesses: { fake: {} },
+    gh,
+    cwd: '/repo',
+  });
   assert.equal(exitCode, 0, text);
   assert.ok(text.includes(`\n  approval labels: ${AWAIT_LABEL}, ${APPROVED_LABEL}, ${REJECTED_LABEL}\n`), text);
   assert.ok(text.includes('\n    approved -> end needs-human\n'), text);
@@ -405,7 +522,12 @@ test('gg doctor prints the Await and Decide Labels of a Vertex that asks, and ea
 
 test('gg doctor reports the labels a Flow can request that the repository lacks', async () => {
   const gh = repository(AWAIT_LABEL);
-  const { text, exitCode } = await doctor.doctor({ config: asking(), harnesses: { fake: {} }, gh, cwd: '/repo' });
+  const { text, exitCode } = await doctor.doctor({
+    config: sources(asking()),
+    harnesses: { fake: {} },
+    gh,
+    cwd: '/repo',
+  });
   assert.equal(exitCode, 0, 'gg run creates them');
   assert.ok(
     text.includes(
@@ -420,7 +542,7 @@ test("gg doctor says when it cannot read the repository's labels", async () => {
   const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
   fake.fail({ matches: () => true, status: 502 });
   const { text, exitCode } = await doctor.doctor({
-    config: asking(),
+    config: sources(asking()),
     harnesses: { fake: {} },
     gh: github.createGh(fake.gh),
     cwd: '/repo',
@@ -431,13 +553,18 @@ test("gg doctor says when it cannot read the repository's labels", async () => {
 
 test('gg doctor reads no labels for a Flow that asks nobody', async () => {
   const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
-  await doctor.doctor({ config: example(), harnesses: { fake: {} }, gh: github.createGh(fake.gh), cwd: '/repo' });
+  await doctor.doctor({
+    config: sources(example()),
+    harnesses: { fake: {} },
+    gh: github.createGh(fake.gh),
+    cwd: '/repo',
+  });
   assert.deepEqual(fake.calls, []);
 });
 
 test('gg doctor prints a Flow named entirely with Object.prototype names like one with ordinary names', async () => {
   const print = (names: namedFlow.Names) =>
-    doctor.doctor({ config: namedFlow.namedConfig(names) as unknown as config.Config, ...DEPS });
+    doctor.doctor({ config: sources(namedFlow.namedConfig(names) as unknown as config.Source), ...DEPS });
   const ordinary = await print(namedFlow.ORDINARY);
   // Its one command is named for the comparison, which the repository Layer's command rule refuses, as gg run
   // preflight does (#301); the Flow itself is clean.
@@ -452,7 +579,7 @@ test('gg doctor prints a Flow named entirely with Object.prototype names like on
 test('gg doctor prints each declared Flow, in the order the Layer declares them', async () => {
   const config = example();
   config.flows.light = structuredClone(config.flows.default);
-  const { text, exitCode } = await doctor.doctor({ config, ...DEPS });
+  const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
   const one = exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n');
   const flowSection = one.slice(0, one.indexOf('\nwarning: ') + 1);
   assert.equal(text, one.replace(flowSection, flowSection + flowSection.replace('flow default\n', 'flow light\n')));

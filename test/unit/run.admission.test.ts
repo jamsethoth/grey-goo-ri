@@ -29,7 +29,7 @@ test('gg run runs the Declared Commands of its config, not those of AGENTS.md', 
 
 test('preflight lists every malformed Declared Command and a missing test, naming the repository Layer', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.commands = { Test: 'npm test', lint: '' };
+  fixture.options.config.repository.commands = { Test: 'npm test', lint: '' };
   const file = join(fixture.mainRoot, '.agents', 'gg', 'gg.json');
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
@@ -58,7 +58,7 @@ test('preflight lists every malformed Declared Command and a missing test, namin
 // rejects the key as gg doctor does.
 test('a Flow with a plan key fails admission before any effect', async (t) => {
   const fixture = runFixture.fixture(t);
-  (fixture.options.config.flows.default as { plan?: unknown }).plan = { entry: 'planner', vertices: {} };
+  (fixture.options.config.repository.flows.default as { plan?: unknown }).plan = { entry: 'planner', vertices: {} };
   await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
@@ -73,7 +73,7 @@ test('a Flow with a plan key fails admission before any effect', async (t) => {
 
 test("an Agent's access outside the Permission Intents fails admission before any effect", async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.agents.implementer.access = 'read-write';
+  fixture.options.config.repository.agents.implementer.access = 'read-write';
   await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
