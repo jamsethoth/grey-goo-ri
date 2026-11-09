@@ -661,19 +661,20 @@ test('a push writes no upstream into .git/config', async (t) => {
 
 // git trusts an entry's cached stat data only when the file is older than the index file itself; one modified in the
 // index's own second it reads again (racy git). The rewrite here is a second visit's same-size test, in the second the
-// index was written, with the fingerprint taken a second later (#317). The times are set so the case does not wait
-// for the clock, and ctime, which cannot be set, is left out.
+// index was written, with the fingerprint taken a second later (#317). The index is written at the end of that
+// second, so a copy whose mtime is rounded up lands in the next one. The times are set so the case does not wait for
+// the clock, and ctime, which cannot be set, is left out.
 test('fingerprint sees a same-size rewrite made in the second the index was written', async (t) => {
   const { mainRoot: directory, commit } = realRepo(t);
   gitShell.sh(directory, 'config', 'core.trustctime', 'false');
   const file = join(directory, 'adds.test.mjs');
-  const second = new Date(Math.floor(Date.now() / 1000) * 1000 - 10_000);
+  const second = Math.floor(Date.now() / 1000) - 10;
   writeFileSync(file, 'a - b\n');
   utimesSync(file, second, second);
   const head = commit(directory, 'subtract');
   writeFileSync(file, 'a + b\n');
   utimesSync(file, second, second);
-  utimesSync(join(directory, '.git', 'index'), second, second);
+  utimesSync(join(directory, '.git', 'index'), second + 0.9996, second + 0.9996);
   assert.notEqual((await gitModule.fingerprint(directory)).tree, await gitModule.treeOf(directory, head));
 });
 

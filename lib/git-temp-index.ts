@@ -1,6 +1,6 @@
 // What lib/git.ts reads through a copy of the index, so the real one stays as it is: a worktree's fingerprint, and a
 // rescue's tree. Each writes objects, so callers hold the repo lock.
-import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type * as git from './git.ts';
@@ -17,14 +17,20 @@ async function inTempIndex<Result>(
   try {
     const env = { GIT_INDEX_FILE: join(tempDir, 'index') };
     const index = await git(['rev-parse', '--git-path', 'index'], worktree);
-    // Seeded from the real index so tracked files that now match an ignore rule still count. The copy keeps the index's
-    // mtime: git rereads an entry modified in that second (racy git), and a copy stamped later, as Linux stamps one,
-    // would trust its stat data and miss a same-size rewrite in that second (#317).
-    await cp(resolve(worktree, index), env.GIT_INDEX_FILE, { preserveTimestamps: true }).catch(
-      (err: NodeJS.ErrnoException) => {
+    // Seeded from the real index so tracked files that now match an ignore rule still count. git rereads an entry
+    // modified in the index's own second (racy git); a copy stamped in a later second, as Linux stamps one and as
+    // fs.cp's rounded preserveTimestamps can, would trust its stat data and miss a same-size rewrite in that second
+    // (#317). So the copy's mtime is the index's, read before the copy, cut to its whole second.
+    const source = resolve(worktree, index);
+    await stat(source, { bigint: true })
+      .then(async ({ mtimeNs }) => {
+        await copyFile(source, env.GIT_INDEX_FILE);
+        const second = Number(mtimeNs / 1_000_000_000n);
+        await utimes(env.GIT_INDEX_FILE, second, second);
+      })
+      .catch((err: NodeJS.ErrnoException) => {
         if (err.code !== 'ENOENT') throw err;
-      },
-    );
+      });
     // ls-files -v tags assume-unchanged entries in lowercase and skip-worktree entries 'S'; both would hide edits
     // from add.
     const entries = (await runGit(['ls-files', '-v', '-z'], { cwd: worktree, env })).stdout.split('\0');
