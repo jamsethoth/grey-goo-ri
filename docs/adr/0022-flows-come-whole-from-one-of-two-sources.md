@@ -6,8 +6,8 @@ date: 2026-11-09
 # Flows come whole from one of two sources, and nothing merges
 
 gg read three configuration Layers, defaults < user < repository, merged key by key (request 3.9). After gg stopped
-shipping a Flow (#121), the defaults Layer held four constants and the user Layer only an Agent's harness, model and
-effort, yet the merge cost a rule for each key a Layer may not hold, a rule for file names declared by two Layers, and
+shipping a Flow (#121), the defaults Layer held four constants and the example user Layers only an Agent's harness,
+model and effort, yet the merge cost a rule for each key a Layer may not hold, a rule for file names declared by two Layers, and
 surprises: a repository's codex reviewer ran with a person's Claude effort, a person's unused file moved a repository's
 Config Hash, and a person's label prefix stranded every Ticket labelled before it (`docs/research/configuration-layers.md`,
 issue #314). Configuration exists so that reusable Flows can be defined by a repository or by a user, and a user who
@@ -26,7 +26,7 @@ gg therefore reads two sources and merges neither into the other:
   defaults: every setting is required, and its absence is a Problem in `gg doctor` and `gg run` preflight alike, as are
   an unknown key and a bad value.
 - **A Run records its repository** (`owner/name`) and its Flow with its source. The Config Hash fingerprints the Flow's
-  content, not its source.
+  content, not its source: the Pinned Configuration takes only the files the selected Flow uses.
 
 ## Considered options
 
@@ -53,7 +53,7 @@ gg therefore reads two sources and merges neither into the other:
 - gg targets the repository holding the current directory or the one `--repo <path>` names. Ticket worktrees move to
   `worktreeRoot/<owner>/<name>/ticket-<n>`; a resumed Execution keeps the path its record holds.
 - The Execution Record schema gains `repository` and the Flow's source; a resume whose Flow is no longer declared in
-  that source waits, its record kept, as #122 decided for repository Flows. These, and any new Problem code, land
+  that source waits, its record kept, as #122 decided for repository Flows; a report already decided still finishes. These, and any new Problem code, land
   before grey-goo-ri issue #23 freezes them.
 - A trust record for a repository's unsandboxed commands, and a command that copies a Flow with what it uses, are left
   for later.

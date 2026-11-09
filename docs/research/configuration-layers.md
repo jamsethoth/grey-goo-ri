@@ -61,12 +61,20 @@ out of a grilling session; the numbers are its question numbers.
 
 - The Execution Record gains `repository` (`owner/name`) and stores the Flow with its source (`default`,
   `user:strict`). A resume whose Flow is no longer declared follows #122's rule (X2, `lib/admission.ts` on main): the
-  Ticket is skipped and its record kept until the Flow is declared again. Q24 was put as "holds the Ticket at
+  Ticket is skipped and its record kept until the Flow is declared again, except that a report already decided still
+  finishes without running a Vertex (`lib/run-flows.ts:131-136` on main, `test/unit/run.flows.test.ts:68-98`). Q24 was
+  put as "holds the Ticket at
   `needs-human`", which #122 had already decided otherwise; this note follows #122.
 - A ticket worktree's path is `worktreeRoot/<owner>/<name>/ticket-<n>`.
 - The Config Hash fingerprints a Flow's content, not its source; the record, the run log and `gg doctor` name the
   source. Models stay in the hash, so a model change still changes it.
-- A Flow change while a Ticket waits for approval asks the approver again, as today.
+- A Flow change while a Ticket waits for approval asks the approver again, when Reconciliation lets the Execution
+  resume, as today: a changed hash makes the Decision stale. A change that removes the waiting Vertex or changes its
+  Procedure holds the Ticket before the digest is read (`lib/reconcile.ts:328-329`, `:376-388`).
+- To make the hash depend on the Flow's content alone, the Pinned Configuration takes only the files the selected Flow
+  uses. Today it takes every file its Layers declare, used or not (`lib/config.ts:100-114`, `:141`), and #122 pins
+  them for each Flow (`lib/run-flows.ts:116` on main), so two sources holding the same Flow but different other
+  Procedures would hash differently.
 
 **Left out**: a trust record that holds a repository's unsandboxed `commands` until the user approves them once
 (Q29), and a `gg flow copy` command (Q27), both to the backlog.
@@ -124,7 +132,8 @@ Findings this table rests on:
 - On resume, `baseBranch` comes from two places: the PR and the Brief's diff read the current configuration
   (`lib/admission.ts:361`), the Terminal report's diff stats read the record's `base` (`lib/terminal-report.ts:269`).
   A `baseBranch` changed between Runs splits them. Read from the code; not probed. Under the decision `baseBranch`
-  belongs to the repository contract, so only a commit to the repository's `gg.json` can change it.
+  belongs to the repository contract, so only an edit to the repository's `gg.json`, committed or not, can change it
+  (the repository Layer is read from the main checkout's working tree, ADR 0013).
 
 ## 2. The defaults Layer
 
@@ -166,8 +175,10 @@ repository-only list. The probes show:
 - **`worktreeRoot`, `maxParallel`** describe the machine. A resumed Execution keeps its recorded worktree
   (`lib/admission.ts:141`), so changing `worktreeRoot` is safe between Runs.
 
-Under the decision none of this reach remains: nothing merges, the user's directory declares whole Flows that run only
-when selected by `user:<name>`, and the repository contract is read from the repository alone.
+Under the decision the cross-source reach goes: nothing merges, a user's file cannot collide with a repository's, the
+user's directory declares whole Flows that run only when selected by `user:<name>`, and the repository contract is
+read from the repository alone. The machine settings still reach every repository by design: the user's
+`maxParallel` and `worktreeRoot` apply to every Run on the machine, whichever Flow runs.
 
 ## 4. Merge rules
 
@@ -189,8 +200,9 @@ an approval Vertex's labels with their prefix (`:340-344`). So:
 - A harness or model change changes the Config Hash (P-B `e5e742878bf9`, P-C `ee68cc5a0a35`, P-D `1914dc565c57`).
   That is the hash's job: request 3.7 (`node-harness-dag.md:602`) and ADR 0002 make it what tells two configurations
   apart in stats and evaluations. Kept (Q25).
-- A person's unused file changes it too (P-K2), which serves nothing; it cannot happen once a Flow's files come from
-  its own source alone.
+- A person's unused file changes it too (P-K2), which serves nothing. Under the decision a file from the other source
+  can no longer do so, but a file the selected Flow's own source declares for another Flow still would, unless only the
+  selected Flow's files are pinned (see the decision's last bullet on pinning).
 - `labelPrefix` changes it only when the Flow has an approval Vertex (P-F: `7af32a3fcde0` and `f87f739a53fb`); the
   other three Run settings never do (P-E: the hash stays `e5e742878bf9`).
 - The record keeps the hash of the Run that created it (`lib/admission.ts:222`), but an Approval Request's digest takes
@@ -199,8 +211,8 @@ an approval Vertex's labels with their prefix (`:340-344`). So:
   full hashes), so the Decision reads `stale` (`lib/approval.ts:148`) and gg retires the request and asks again
   (`lib/approval-action.ts:211-214`). Kept (Q31).
 
-The Pinned Configuration's shape does not change under the decision: its `files` become the selected Flow's source's
-files, and the source itself stays out of the hash (Q25).
+The Pinned Configuration's shape does not change under the decision: its `files` become the files the selected Flow
+uses, from its own source, and the source itself stays out of the hash (Q25).
 
 ## 6. Open requests that assume Layers
 
@@ -239,27 +251,36 @@ statements below are paraphrases, not quotes; recheck the wording at the URL bef
   inside `.git`, never tracked. Some keys, `safe.directory` among them, count only in protected configuration (system,
   global, command line), so a repository cannot set them. `GIT_CONFIG_GLOBAL` relocates the global file alone.
 - **Claude Code** (https://code.claude.com/docs/en/settings, https://code.claude.com/docs/en/env-vars): user < shared
-  project < local project (`.claude/settings.local.json`, untracked, added to git's global excludes) < command line <
+  project < local project (`.claude/settings.local.json`, untracked; Claude Code adds it to git's global excludes when
+  it first writes the file, and one created by hand needs ignoring separately) < command line <
   managed. Some permission modes do not apply from project or local settings, and project allow rules wait for the
   workspace trust dialog, whose answer is kept in the home directory keyed by the main checkout's root.
   `CLAUDE_CONFIG_DIR` moves settings, history and plugins together, documented for running several accounts side by
   side.
-- **Codex CLI** (https://learn.chatgpt.com/docs/config-file/config-basic): user < profile < project
-  `.codex/config.toml` (trusted projects only) < command line. A project file cannot set keys that redirect
-  credentials, select profiles or run machine-local commands. `CODEX_HOME` holds config, auth, history and logs.
+- **Codex CLI** (https://learn.chatgpt.com/docs/config-file/config-basic,
+  https://learn.chatgpt.com/docs/config-file/config-advanced): user < profile < project `.codex/config.toml` (trusted
+  projects only) < command line. A project file cannot set a listed set of keys, those that redirect credentials,
+  select profiles, or run notification and telemetry commands, though a trusted project may still define hooks.
+  `CODEX_HOME` holds config, auth, history and logs.
 - **VS Code** (https://code.visualstudio.com/docs/configure/settings): workspace settings override user settings, but
   some settings (for example `git.path`) may be set only in user settings, and Restricted Mode limits an untrusted
   workspace.
 - **npm** (https://docs.npmjs.com/cli/v11/configuring-npm/npmrc) and **Cargo**
-  (https://doc.rust-lang.org/cargo/reference/config.html): the project file overrides the user's; neither restricts
-  keys by layer. `CARGO_HOME` moves config, credentials and caches.
+  (https://doc.rust-lang.org/cargo/reference/config.html): the project file overrides the user's. Neither reserves
+  keys to a layer for security, though npm's `userconfig` cannot be set from the global config
+  (https://docs.npmjs.com/cli/v11/using-npm/config/). `CARGO_HOME` moves config, credentials and caches.
 - **mise** (https://mise.jdx.dev/configuration.html): `mise.local.toml` beside `mise.toml` for personal overrides, kept
-  out of version control by the user; config that runs code needs `mise trust`, kept in a state directory.
-- **direnv** (https://direnv.net/man/direnv.1.html): `.envrc` loads only after `direnv allow`.
+  out of version control by the user; config that runs code is gated by `mise trust`, kept in a state directory,
+  though some commands can grant it automatically (https://mise.jdx.dev/cli/trust.html).
+- **direnv** (https://direnv.net/man/direnv.1.html): `.envrc` loads after `direnv allow`, or by a whitelist in its
+  own config (https://direnv.net/man/direnv.toml.1.html).
 
-No tool supports several people sharing one checkout: each assumes one OS user per home directory, and runs a second
-identity by moving that directory. Most let the repository override the person. Several give a key to one layer only.
-Five keep a trust record in the home directory before running code from a repository's configuration. gg's decision
+None of the surveyed tools documents several people sharing one checkout; each assumes one OS user per home directory.
+Claude Code and Codex run a second identity by moving that directory; VS Code can also switch settings profiles for one
+folder with `--profile` (https://code.visualstudio.com/docs/configure/profiles). Most let the repository override the
+person. Several give a key to one layer only. Five have a trust mechanism for a repository's code-running
+configuration, though not every path through each is gated: mise and direnv can grant trust implicitly, and Claude
+Code's headless sessions are not held by the interactive trust dialog. gg's decision
 takes the per-directory identity (`GG_HOME`) and a key list per source, refuses merging altogether, and leaves the trust
 record to the backlog.
 
