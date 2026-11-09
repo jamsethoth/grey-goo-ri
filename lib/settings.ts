@@ -9,8 +9,13 @@ import * as report from './validate/report.ts';
 const FLOW_KEYS = ['flows', 'procedures', 'agents'];
 const CONTRACT_KEYS = ['commands', 'testPaths', 'approvers', 'labelPrefix', 'baseBranch'];
 const MACHINE_KEYS = ['maxParallel', 'worktreeRoot'];
-// Request 3.9's migration table: a key feature-flow read, and where gg declares what it did.
+// Request 3.9's migration table: a key feature-flow read, and where gg declares what it did. Its four stages became a
+// Flow's Vertices.
 const FEATURE_FLOW_KEYS = new Map([
+  ['plan', 'flows'],
+  ['implement', 'flows'],
+  ['review', 'flows'],
+  ['escalate', 'flows'],
   ['stageTools', 'agents'],
   ['toolkit', 'harnesses'],
   ['escalationEnabled', 'flows'],
@@ -42,8 +47,8 @@ function keyProblems(
 
 // A labelPrefix holding ":" or whitespace splits every label gg reads back (lib/labels.ts).
 const LABEL_PREFIX = /^[^\s:]+$/;
-// Enough of git's ref-name rules to catch a typo before a fetch does: no whitespace, "..", or ~ ^ : ? * [ \.
-const BRANCH = /^(?!-)(?!.*\.\.)[^\s~^:?*[\\]+$/;
+// git's branch-name rules (git check-ref-format), so a typo fails here and not at the first fetch.
+const BRANCH = /^(?![-./])(?!.*(?:\.\.|\/\/|\/\.|@\{|\.lock\/))(?!.*(?:[/.]|\.lock)$)(?!(?:@|HEAD)$)[^\s~^:?*[\\]+$/;
 
 // The repository's labelPrefix or baseBranch as Problems, naming `file`.
 function nameProblems(
@@ -80,7 +85,9 @@ export function baseBranchProblems(baseBranch: unknown, file: string): report.Pr
     file,
     missing: `${file} declares no baseBranch; set it to the branch each Ticket's branch starts from`,
     form: BRANCH,
-    rule: 'be a branch name: non-empty, not starting with "-", with no "..", whitespace or any of ~ ^ : ? * [ \\',
+    rule:
+      'be a branch name: not "@" or HEAD, not starting with "-", "." or "/", not ending with "/" or ".", with no ' +
+      'part ending ".lock", and with no "..", "//", "/.", "@{", whitespace or any of ~ ^ : ? * [ \\',
   });
   return found.errors;
 }

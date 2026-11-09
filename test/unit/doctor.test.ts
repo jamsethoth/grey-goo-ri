@@ -290,20 +290,45 @@ test('gg init keeps an existing user gg.json', (t) => {
   assert.equal(readFileSync(join(user, 'gg.json'), 'utf8'), kept);
 });
 
-for (const harness of ['claude', 'codex']) {
+// Each Agent of the example, its Persona and access, with the harness, model and effort examples/<harness>.json names.
+const HARNESS_AGENTS = {
+  claude: {
+    implementer: {
+      persona: 'implementer.md',
+      access: 'workspace-write',
+      harness: 'claude',
+      model: 'opus',
+      effort: 'high',
+    },
+    reviewer: { persona: 'reviewer.md', access: 'read-only', harness: 'claude', model: 'sonnet', effort: 'high' },
+    senior: { persona: 'implementer.md', access: 'workspace-write', harness: 'claude', model: 'opus', effort: 'max' },
+  },
+  codex: {
+    implementer: {
+      persona: 'implementer.md',
+      access: 'workspace-write',
+      harness: 'codex',
+      model: 'gpt-6.1-sol',
+      effort: 'high',
+    },
+    reviewer: { persona: 'reviewer.md', access: 'read-only', harness: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    senior: {
+      persona: 'implementer.md',
+      access: 'workspace-write',
+      harness: 'codex',
+      model: 'gpt-6.1-sol',
+      effort: 'xhigh',
+    },
+  },
+};
+
+for (const [harness, expected] of Object.entries(HARNESS_AGENTS)) {
   // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
   test(`gg init --harness ${harness} writes each Agent's harness, model and effort, and gg doctor accepts them`, async (t) => {
     const { repo, user } = initRoots(t);
     doctor.init(repo, { baseBranch: 'main', userDirectory: user, harness });
     const { agents } = JSON.parse(readFileSync(join(repositoryDirectory(repo), 'gg.json'), 'utf8'));
-    const example = JSON.parse(exampleLayer.fixtureText('gg.json')).agents;
-    const settings = JSON.parse(readFileSync(join(config.EXAMPLES_DIRECTORY, `${harness}.json`), 'utf8')).agents;
-    assert.deepEqual(
-      agents,
-      Object.fromEntries(
-        Object.entries(example).map(([name, agent]) => [name, { ...(agent as object), ...settings[name] }]),
-      ),
-    );
+    assert.deepEqual(agents, expected);
     declareTest(repo);
     const accepted = await doctorOver(repo, user);
     assert.equal(accepted.exitCode, 0, accepted.text);
@@ -406,6 +431,26 @@ test('gg doctor warns of a user Flow that names a command the repository does no
     text.includes(
       `\nwarning: user:flows.strict: Flow user:strict names command "lint", which ${REPOSITORY_FILE} does not ` +
         'declare, so it cannot run in this repository [undeclared-command]\n',
+    ),
+    text,
+  );
+});
+
+// Only a command named by a string fits one repository and not another: a malformed one is an error everywhere.
+test("gg doctor reports a user Check whose command is not a name as an error, not as the Flow's fit", async () => {
+  const user = { ...example(), ...MACHINE_SETTINGS };
+  delete user.commands;
+  delete user.testPaths;
+  delete user.labelPrefix;
+  delete user.baseBranch;
+  user.flows = { strict: user.flows.default };
+  user.procedures['base-check'].actions[0].command = ['test'];
+  const { text, exitCode } = await doctor.doctor({ config: sources(example(), user), ...DEPS });
+  assert.equal(exitCode, 1, text);
+  assert.ok(
+    text.includes(
+      '\nerror: user:procedures.base-check.actions[0]: Check test names command ["test"], which the repository ' +
+        'does not declare [undeclared-command]\n',
     ),
     text,
   );

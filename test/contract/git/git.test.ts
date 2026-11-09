@@ -376,6 +376,25 @@ for (const [name, repo] of sides) {
     },
   );
 
+  contract(
+    "defaultBranch names origin's default branch, whichever branch the main checkout is on",
+    async ({ git, mainRoot: directory, branch }) => {
+      branch(directory, 'feature/setup');
+      assert.equal(await git.defaultBranch(directory), 'main');
+    },
+  );
+
+  contract(
+    'defaultBranch falls back to the checked-out branch when origin cannot say, and refuses a detached HEAD',
+    async ({ git, mainRoot: directory, branch, breakOrigin, detach }) => {
+      breakOrigin(directory);
+      branch(directory, 'trunk');
+      assert.equal(await git.defaultBranch(directory), 'trunk');
+      detach(directory);
+      await assert.rejects(git.defaultBranch(directory), /cannot tell the default branch/);
+    },
+  );
+
   contract('branchHead reads a local branch and rejects an unknown one', async ({ git, mainRoot: directory }) => {
     assert.equal(await git.branchHead(directory, 'main'), await git.headSha(directory));
     await assert.rejects(git.branchHead(directory, 'ticket/9-unknown'), /unknown revision/);

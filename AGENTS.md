@@ -111,6 +111,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/process-tree.ts` | the processes a shell command leaves, on either platform: listing, watching and killing them as Command Cleanup decides, the Windows job's termination, and the helper processes that do so (ported) |
 | `lib/containment.ts` | the Windows job object a shell command, or the suite launcher's stage, runs in, through `node:ffi`: start, list, name, terminate, confirm empty (ADR 0021) |
 | `lib/git.ts` | the one git interface: named verbs over the git CLI returning parsed values, worktrees (ported) |
+| `lib/git-default-branch.ts` | the branch a repository's Tickets start from by default, which `gg init` writes as `baseBranch`: origin's HEAD, else the checked-out branch |
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.ts` | gh verbs and label writes that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |

@@ -4,6 +4,7 @@
 // there. Owned beside lib/git.ts: a verb added there is added here.
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import * as gitDefaultBranch from '../../lib/git-default-branch.ts';
 import * as gitModule from '../../lib/git.ts';
 import type * as integrity from '../../lib/integrity.ts';
 import * as paths from '../../lib/paths.ts';
@@ -358,6 +359,13 @@ export function fakeGit() {
     ...refVerbs(parts),
     ...treeDiffVerbs(parts),
     ...worktreeDiffVerbs(parts),
+    // The fake's origin names main its HEAD, as the template origin does.
+    async defaultBranch(cwd: string) {
+      const { repo, worktree } = parts.placeAt(cwd);
+      const branch = repo.reachable ? 'main' : worktree.branch;
+      if (!branch) throw new Error(gitDefaultBranch.DEFAULT_BRANCH_UNKNOWN);
+      return branch;
+    },
   } satisfies GitVerbs;
   return { git, ...humanSteps(parts) };
 }

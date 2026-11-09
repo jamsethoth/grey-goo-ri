@@ -51,11 +51,9 @@ async function runCommand(parsed: options.ParsedOptions) {
   process.exitCode = run.runExitCode(results);
 }
 
-// shortcut: the main checkout's branch stands for the repository's default branch; read origin's HEAD when gg init
-// runs where the two differ.
 async function initCommand(parsed: options.ParsedOptions) {
   const { mainRoot } = await git.repoInfo(process.cwd());
-  const baseBranch = (await git.currentBranch(mainRoot)) ?? 'main';
+  const baseBranch = await git.defaultBranch(mainRoot);
   process.stdout.write(doctor.init(mainRoot, { baseBranch, harness: parsed.harness as string | undefined }));
 }
 

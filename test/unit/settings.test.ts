@@ -43,9 +43,21 @@ for (const [key, value, code] of [
   ['baseBranch', 'a..b', 'invalid-name'],
   ['baseBranch', '-main', 'invalid-name'],
   ['baseBranch', '', 'invalid-name'],
+  ['baseBranch', 'release.lock', 'invalid-name'],
+  ['baseBranch', 'release/', 'invalid-name'],
+  ['baseBranch', 'release.', 'invalid-name'],
+  ['baseBranch', 'release@{1}', 'invalid-name'],
+  ['baseBranch', 'a//b', 'invalid-name'],
+  ['baseBranch', 'a/.b', 'invalid-name'],
+  ['baseBranch', '.main', 'invalid-name'],
+  ['baseBranch', '@', 'invalid-name'],
+  ['baseBranch', 'HEAD', 'invalid-name'],
+  ['baseBranch', 'foo.lock/bar', 'invalid-name'],
+  ['baseBranch', 'release/2026.11', undefined],
+  ['baseBranch', 'feature/a-b_c@1', undefined],
 ] as const) {
-  test(`a repository ${key} of ${JSON.stringify(value)} is ${code}`, () => {
-    assert.deepEqual(firedSettings({ repository: { [key]: value } }), [`${key} ${code}`]);
+  test(`a repository ${key} of ${JSON.stringify(value)} is ${code ?? 'valid'}`, () => {
+    assert.deepEqual(firedSettings({ repository: { [key]: value } }), code ? [`${key} ${code}`] : []);
   });
 }
 
@@ -86,8 +98,9 @@ test('each setting Problem names its file and key', () => {
       at: 'baseBranch',
       code: 'invalid-name',
       message:
-        `${REPOSITORY_FILE}: baseBranch "a b" must be a branch name: non-empty, not starting with "-", ` +
-        'with no "..", whitespace or any of ~ ^ : ? * [ \\',
+        `${REPOSITORY_FILE}: baseBranch "a b" must be a branch name: not "@" or HEAD, not starting with "-", "." ` +
+        'or "/", not ending with "/" or ".", with no part ending ".lock", and with no "..", "//", "/.", "@{", ' +
+        'whitespace or any of ~ ^ : ? * [ \\',
       params: { name: 'a b', file: REPOSITORY_FILE },
     },
     {
@@ -131,39 +144,51 @@ test('an unknown key in either gg.json is a Problem naming the file and key', ()
 });
 
 // The repository contract is the repository's alone (ADR 0022): no Flow, and no user, sets it.
-for (const key of ['commands', 'testPaths', 'approvers', 'labelPrefix', 'baseBranch']) {
+for (const [key, value] of [
+  ['commands', { test: 'npm test' }],
+  ['testPaths', ['test/**']],
+  ['approvers', ['some-login']],
+  ['labelPrefix', 'gg'],
+  ['baseBranch', 'main'],
+] as const) {
   test(`a ${key} key in the user's gg.json is a Problem naming the file`, () => {
-    assert.deepEqual(
-      settingsProblems({ user: { [key]: (SETTINGS.repository as Record<string, unknown>)[key] ?? [] } }),
-      [
-        {
-          at: `user:${key}`,
-          code: 'unknown-key',
-          message:
-            `${USER_FILE}: ${key} belongs to the repository contract, which only the repository's gg.json declares, ` +
-            `at ${REPOSITORY_FILE}`,
-          params: { key, file: USER_FILE },
-        },
-      ],
-    );
+    assert.deepEqual(settingsProblems({ user: { [key]: value } }), [
+      {
+        at: `user:${key}`,
+        code: 'unknown-key',
+        message:
+          `${USER_FILE}: ${key} belongs to the repository contract, which only the repository's gg.json declares, ` +
+          `at ${REPOSITORY_FILE}`,
+        params: { key, file: USER_FILE },
+      },
+    ]);
   });
 }
 
 // The machine settings follow the person, not the repository.
-for (const key of ['maxParallel', 'worktreeRoot']) {
+for (const [key, value] of [
+  ['maxParallel', 2],
+  ['worktreeRoot', '~/worktrees'],
+] as const) {
   test(`a ${key} key in the repository's gg.json is a Problem naming the file`, () => {
-    assert.deepEqual(firedSettings({ repository: { [key]: (SETTINGS.user as Record<string, unknown>)[key] } }), [
-      `${key} unknown-key`,
+    assert.deepEqual(settingsProblems({ repository: { [key]: value } }), [
+      {
+        at: key,
+        code: 'unknown-key',
+        message:
+          `${REPOSITORY_FILE}: ${key} is a machine setting, which only the user's gg.json declares, at ` + USER_FILE,
+        params: { key, file: REPOSITORY_FILE },
+      },
     ]);
-    assert.match(
-      settingsProblems({ repository: { [key]: (SETTINGS.user as Record<string, unknown>)[key] } })[0]!.message,
-      new RegExp(`is a machine setting, which only the user's gg\\.json declares`),
-    );
   });
 }
 
 // Request 3.9's migration table: feature-flow's keys name what replaces them.
 for (const [key, replacement] of [
+  ['plan', 'flows'],
+  ['implement', 'flows'],
+  ['review', 'flows'],
+  ['escalate', 'flows'],
   ['stageTools', 'agents'],
   ['toolkit', 'harnesses'],
   ['escalationEnabled', 'flows'],

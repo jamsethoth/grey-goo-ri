@@ -477,7 +477,7 @@ repository, so a deadline kept in one repository's State Database would hold bac
 the same account's writes from any other repository. Each Run reads GitHub's own wait instead: Retry-After, the reset
 time of an exhausted quota, or a read of `gh api rate_limit` when the failure gave neither (#85).
 
-Labels are namespaced; the prefix is config, default `gg`:
+Labels are namespaced; the prefix is the repository's required `labelPrefix`, which `gg init` writes as `gg`:
 
 | Family | Pattern | Written by | Examples |
 |---|---|---|---|

@@ -58,6 +58,17 @@ test('gg work abandon deletes the Execution Record row and keeps its Events and 
   );
 });
 
+// Readiness refuses a Ticket with any State Label, so abandoning a held Ticket clears its needs-human too.
+test('gg work abandon removes every State Label the Ticket carries, so the next Run can admit it', async (t) => {
+  const { commonDir, fake, options } = abandoning(t);
+  fake.labels.add('gg:state:needs-human');
+  fake.labels.add('gg:await:approve');
+  const text = await work.abandon(options);
+  assert.equal(record.load(commonDir, 'ticket', TICKET), null, 'the row is deleted');
+  assert.deepEqual([...fake.labels].sort(), ['gg:await:approve'], 'only the State Labels go');
+  assert.match(text, / and removed the gg:state:in-progress, gg:state:needs-human labels; /);
+});
+
 test('gg work abandon refuses while the ticket lock is held', async (t) => {
   const { commonDir, fake, options } = abandoning(t);
   const held = await locks.tryAcquire(commonDir, `ticket-${TICKET}`);

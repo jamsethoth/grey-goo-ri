@@ -165,7 +165,11 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   writeExampleLayer(join(repo, '.agents', 'gg'));
   const file = join(repo, '.agents', 'gg', 'gg.json');
   const example = JSON.parse(readFileSync(file, 'utf8'));
-  for (const agent of Object.values<Record<string, unknown>>(example.agents)) delete agent.harness;
+  example.agents = {
+    implementer: { persona: 'implementer.md', access: 'workspace-write' },
+    reviewer: { persona: 'reviewer.md', access: 'read-only' },
+    senior: { persona: 'implementer.md', access: 'workspace-write' },
+  };
   writeFileSync(file, JSON.stringify(example));
   const result = ggIn('run', '1');
   assert.equal(result.status, 2, result.stderr);

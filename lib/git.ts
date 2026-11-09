@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import * as exec from './exec.ts';
+import * as gitDefaultBranch from './git-default-branch.ts';
 import * as gitTempIndex from './git-temp-index.ts';
 import type * as integrity from './integrity.ts';
 import * as paths from './paths.ts';
@@ -354,6 +355,7 @@ export function createGit({ sleep = wait }: { sleep?: (ms: number) => Promise<un
     ...refs,
     ...diffVerbs(gitRunner),
     fingerprint: (worktree: string) => gitTempIndex.fingerprint(gitRunner, worktree),
+    defaultBranch: (cwd: string) => gitDefaultBranch.defaultBranch(gitRunner, cwd),
     slugify,
     worktreePath,
   };
@@ -369,6 +371,7 @@ export const {
   ensureWorktree,
   listWorktrees,
   currentBranch,
+  defaultBranch,
   stageAll,
   writeTree,
   commitStaged,

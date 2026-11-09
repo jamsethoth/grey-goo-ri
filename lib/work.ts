@@ -16,8 +16,9 @@ export interface AbandonOptions {
 
 // Request 3.5's abandon: keep the worktree, forget the position. The record's row goes, as the recovery advice tells a
 // person to do by hand, since admission skips a record that is merely marked finished; its Events, worktree and branch
-// stay, so the next gg run starts a new Execution on that branch. An in-progress label with no record behind it reads
-// as stuck, so it goes first, and the row only once it has.
+// stay, so the next gg run starts a new Execution on that branch. Readiness refuses a Ticket with any State Label, and
+// an in-progress one with no record behind it reads as stuck, so every State Label goes first, and the row only once
+// they have.
 export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }: AbandonOptions): Promise<string> {
   const lock = await locks.tryAcquire(commonDir, `ticket-${ticket}`);
   if (!lock)
@@ -28,14 +29,17 @@ export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }
   try {
     const executionRecord = record.load(commonDir, 'ticket', ticket);
     if (!executionRecord) throw new Error(`Ticket ${ticket} has no Execution Record to abandon`);
-    const inProgress = labels.labelsFor(labelPrefix).state('in-progress');
-    const labelled = labels.hasLabel(gh.labelNames(await gh.viewIssue(ticket, cwd)), inProgress);
+    const names = labels.labelsFor(labelPrefix);
+    const stateLabels = gh
+      .labelNames(await gh.viewIssue(ticket, cwd))
+      .filter((name) => names.parse(name)?.family === 'state');
     const failures: string[] = [];
     const report = { log: (line: string) => failures.push(line), ev: () => {} };
-    if (labelled && !(await gh.setLabels(ticket, { remove: [inProgress] }, cwd, report)))
+    if (stateLabels.length && !(await gh.setLabels(ticket, { remove: stateLabels }, cwd, report)))
       throw new Error(`${failures.join('; ')}; Execution Record ticket-${ticket} is kept`);
     record.removeRecord(commonDir, 'ticket', ticket);
-    const removed = labelled ? ` and removed the ${inProgress} label` : '';
+    const plural = stateLabels.length > 1 ? 's' : '';
+    const removed = stateLabels.length ? ` and removed the ${stateLabels.join(', ')} label${plural}` : '';
     return (
       `gg work abandon deleted Execution Record ticket-${ticket} of Flow ${executionRecord.flow}${removed}; its ` +
       `Events, its worktree ${executionRecord.worktree} and its branch ${executionRecord.branch} are kept. ` +

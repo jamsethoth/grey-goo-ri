@@ -69,7 +69,10 @@ function userFlows(configuration: config.Configuration, harnesses: unknown) {
   // A Problem's location names the user's source, as its Flows' names do.
   // eslint-disable-next-line id-denylist -- a Problem's location is at
   const located = (problem: report.Problem) => ({ ...problem, at: `${USER_PREFIX}${problem.at || 'gg.json'}` });
-  const fits = (problem: report.Problem) => !['undeclared-command', 'no-flow-declared'].includes(problem.code);
+  // Only a command named by a string fits one repository and not another; a malformed one is an error anywhere.
+  const fits = (problem: report.Problem) =>
+    problem.code !== 'no-flow-declared' &&
+    !(problem.code === 'undeclared-command' && typeof problem.params?.command === 'string');
   for (const [declaredName, json] of Object.entries(validated.flows)) {
     if (json === undefined) continue;
     const name = `${USER_PREFIX}${declaredName}`;
