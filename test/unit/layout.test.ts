@@ -423,6 +423,7 @@ const TYPED_HEADER = [
   "declare const rejoined: Omit<Map<string, number>, 'clear'> & Pick<Map<string, number>, 'clear'>;",
   'declare const maybeMap: Pick<Map<string, number> | null, never>;',
   'declare const leading: readonly [Map<string, number>?];',
+  'type Visits = Map<string, number>;',
   'declare const bySymbol: Record<symbol, Map<string, number>>;',
   'class Holder {',
   '  #counts = new Map<string, number>();',
@@ -522,12 +523,22 @@ test("lint fails JSON.stringify of a slice of a Map's type, and reads spread arg
         'the value has a type made from part of a Map',
       ],
       ['JSON.stringify(...leading)', 'the value (Map)'],
+      [
+        '<Rest extends (typeof converting)[]>(passed: [Visits, ...Rest]) => JSON.stringify(...passed)',
+        'the value (Map)',
+      ],
       // A spread that may be empty may pass no replacer.
       ['JSON.stringify(executionRecord.visits, ...replacers)', 'the value (Map)'],
       ['JSON.stringify(...argumentsTuple)', 'the value (Map)'],
     ],
     // Without its Map, leading leaves converting as the value; with it, converting is its replacer.
-    passed: ['JSON.stringify(...([executionRecord, converting] as const))', 'JSON.stringify(...leading, converting)'],
+    passed: [
+      'JSON.stringify(...([executionRecord, converting] as const))',
+      'JSON.stringify(...leading, converting)',
+      '<Rest extends [typeof converting]>(passed: [Visits, ...Rest]) => JSON.stringify(...passed)',
+      // A constraint that names itself ends, rather than overflowing the stack.
+      '<Held extends Pick<Held, never>>(held: Pick<Held, never>) => JSON.stringify(held)',
+    ],
   });
 });
 

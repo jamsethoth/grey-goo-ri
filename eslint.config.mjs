@@ -127,14 +127,14 @@ const fromLibOrPackage = (program, symbol) =>
 // Readonly<Map>, a subclass (even one that overrides has) and an intersection have all; a slice such as
 // Pick<Map, 'has'> has some, and lint cannot tell a Map typed that way from a plain object; a package's own class named
 // Map has none of lib's.
-const collectionOf = (checker, program, type) => {
+const collectionOf = (checker, program, type, seen = new Set()) => {
   const properties = checker.getPropertiesOfType(type);
   const names = new Set(properties.map((property) => property.getName()));
   const owners = properties
     .flatMap((property) => property.getDeclarations() ?? [])
     .map((declaration) => declaration.parent)
     .filter((owner) => owner != null && inDefaultLib(program, owner) && LOST_BY_JSON.has(owner.name?.text));
-  if (owners.length === 0) return aliasedCollection(checker, program, type);
+  if (owners.length === 0) return aliasedCollection(checker, program, type, seen);
   const whole = owners.find((owner) =>
     checker
       .getPropertiesOfType(checker.getDeclaredTypeOfSymbol(checker.getSymbolAtLocation(owner.name)))
@@ -144,20 +144,23 @@ const collectionOf = (checker, program, type) => {
 };
 // A lib alias over a Map that keeps none of its members, such as Pick<Map, never> or Omit<Map, keyof Map>, is still
 // made from one. Its source is its first argument: Record's second is the type of its values, read as they are held.
-function aliasedCollection(checker, program, type) {
+function aliasedCollection(checker, program, type, seen) {
   const fromLibAlias = (type.aliasSymbol?.getDeclarations() ?? []).some((declaration) =>
     inDefaultLib(program, declaration),
   );
   const [source] = type.aliasTypeArguments ?? [];
-  const made = fromLibAlias && source ? collectionIn(checker, program, source) : null;
+  const made = fromLibAlias && source ? collectionIn(checker, program, source, seen) : null;
   return made ? { name: made.name, whole: false } : null;
 }
 // A collection a type is, or one of its alternatives is (Pick<Map | null, never>, a parameter bound by a Map).
-function collectionIn(checker, program, type) {
+// `seen` ends a constraint that names itself: <Held extends Pick<Held, never>>.
+function collectionIn(checker, program, type, seen) {
+  if (seen.has(type)) return null;
+  seen.add(type);
   const alternatives = alternativesOf(checker, type) ?? [];
   return (
-    collectionOf(checker, program, type) ??
-    alternatives.map((member) => collectionIn(checker, program, member)).find(Boolean) ??
+    collectionOf(checker, program, type, seen) ??
+    alternatives.map((member) => collectionIn(checker, program, member, seen)).find(Boolean) ??
     null
   );
 }
@@ -223,24 +226,29 @@ const isJsonStringify = (checker, services, { callee }) => {
 };
 // Each element a call passes, in order. A spread tuple's optional or rest element may be absent, and a rest element
 // or a spread array's element may come any number of times. An iterable's elements are not read, like `unknown`.
+// The elements a spread passes: a tuple's, each optional or repeating by its flags, a variadic one read through its
+// constraint (<Rest extends [Replacer]> passes one); an array's element any number of times; null for an iterable.
+function spreadElements(checker, type) {
+  if (checker.isArrayType(type)) return [{ type: checker.getTypeArguments(type)[0], optional: true, repeats: true }];
+  if (!checker.isTupleType(type)) return null;
+  return checker.getTypeArguments(type).flatMap((element, i) => {
+    const flags = type.target.elementFlags[i];
+    const constraint = flags & ts.ElementFlags.Variadic ? checker.getBaseConstraintOfType(element) : null;
+    const optional = (flags & ts.ElementFlags.Required) === 0;
+    return (
+      (constraint && spreadElements(checker, constraint)) ?? [
+        { type: element, optional, repeats: (flags & ts.ElementFlags.Variable) !== 0 },
+      ]
+    );
+  });
+}
 const passedElements = (checker, services, callArguments) => {
   const typeOf = (node) => checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node));
   const elements = [];
   for (const argument of callArguments) {
-    const type = argument.type === 'SpreadElement' ? typeOf(argument.argument) : null;
-    if (!type) elements.push({ type: typeOf(argument), optional: false, repeats: false });
-    else if (checker.isTupleType(type))
-      for (const [i, element] of checker.getTypeArguments(type).entries()) {
-        const flags = type.target.elementFlags[i];
-        elements.push({
-          type: element,
-          optional: (flags & ts.ElementFlags.Required) === 0,
-          repeats: (flags & ts.ElementFlags.Variable) !== 0,
-        });
-      }
-    else if (checker.isArrayType(type))
-      elements.push({ type: checker.getTypeArguments(type)[0], optional: true, repeats: true });
-    else break;
+    const spread = argument.type === 'SpreadElement' ? spreadElements(checker, typeOf(argument.argument)) : undefined;
+    if (spread === null) break;
+    elements.push(...(spread ?? [{ type: typeOf(argument), optional: false, repeats: false }]));
   }
   return elements;
 };
