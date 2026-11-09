@@ -170,7 +170,10 @@ amended). Coverage only climbs. The
 coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
 below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
 recorded, so the next change cannot spend the gain. `node scripts/run-suite.ts coverage update` records a rise; CI's
-failure message prints the other platform's figures to paste. The measured set is what a small test can reach: `lib/`
+failure message prints the other platform's figures to paste. Each PR's figures hold only for its own tree, so the Main
+ruleset requires a branch to be up to date with `main` before it merges: #310 and #311 each recorded a rise from 98.28
+to 98.29, merged cleanly, and their combined tree measured 98.3, which failed `main`'s coverage jobs (2026-11-08). The
+measured set is what a small test can reach: `lib/`
 without `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
 them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command
 left and what is done with each, are measured: they live in `lib/command-cleanup.ts`, not in `lib/process-tree.ts` or
@@ -182,6 +185,23 @@ things outside the repository, such as the installed git, Node, Windows behaviou
 end-to-end tests check the wiring between real modules, which no single contract shows. grey-goo-ri issue #136
 (`database is locked` under load) was this kind of failure. When the environment changes (a new git, Node or
 runner image), run the full stage.
+
+### Git config
+
+The launcher runs every stage with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`, in place of any the caller
+set, so a test's real git reads no global or system config file (#300). Git still reads its default `ignore` and
+`attributes` files under `$XDG_CONFIG_HOME/git/` (`~/.config/git/`), which take no config to find. Before, a
+developer's global `commit.gpgsign=true` with no key to sign with failed 46 cases of `fast git`, each on a commit, and a
+global `core.fsmonitor=true` started git's daemon in each repository a test ran `git status` in. That daemon ends when
+its repository is removed, so only one that outlives its case reaches the census, as in #290's probe. Git for Windows'
+system config is no neutral default either: it sets `core.autocrlf=true`, so the same test would see CRLF on one machine
+and LF on another.
+With no global identity to fall back on, a helper that commits sets `user.name` and `user.email` in its own repository.
+`gg` itself still reads the user's config: the two variables are the launcher's alone. Git for Windows reads `/dev/null`
+as its null device and refuses node's `os.devNull`.
+
+A focused `node --test` run is not a stage, so its git reads the developer's config; set the two variables to run it as a
+stage does.
 
 ### The census
 
@@ -211,6 +231,9 @@ What it sees, on Windows (probes on #290):
   nests inside that one. A job `runShell` keeps for a refused termination ends the same way. While they run they can
   hold their file open: the file then ends only when they do, up to `LIVES_MS`, and shows only as a slow file.
 - **A child that asked to break away:** not seen, since it left the job. It stays the case's own to end.
+- **A process created through `Win32_Process.Create`, or started by a service on a test's behalf:** not seen, since
+  neither joins the job ([Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)). Nothing
+  in the suite was seen starting a process that way.
 - **A detached process holding the test file's stdout:** not seen, because the runner waits for the pipe, so it has ended
   by the time the census looks. It too shows only as a slow file.
 - **A console host:** never named, since it ends with the last process attached to it. It is in the job only sometimes
