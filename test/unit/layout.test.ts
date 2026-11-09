@@ -397,61 +397,92 @@ const TYPED_HEADER = [
   'declare const partial: Partial<record.ExecutionRecord>;',
   'declare const seen: Set<string>;',
   'declare const text: string;',
+  'declare const readonlyMap: Readonly<Map<string, number>>;',
+  'declare const readonlySet: Readonly<Set<string>>;',
+  'class VisitCounts extends Map<string, number> {}',
+  'declare const serialised: { counts: Map<string, number> } & { toJSON(): string };',
+  'declare const nested: { deeper: { counts: Map<string, number> }; shallow: Map<string, number> | null };',
+  'declare const flows: Record<string, model.ResolvedFlowJson>;',
+  'declare const maybeReplacer: ((key: string, value: unknown) => unknown) | undefined;',
+  'const local = { stringify: (value: unknown) => String(value) };',
 ];
-// Each sample is linted as `export const sampleN = <sample>;`, with what the rule finds on its line.
-const typedSamples = async (samples: (readonly [string, string | null])[]) => {
-  const lines = [...TYPED_HEADER, ...samples.map(([sample], i) => `export const sample${i} = ${sample};`)];
+// Each sample is linted as `export const sampleN = <sample>;`, with what the rules find on its line.
+const typedFindings = async (samples: string[]) => {
+  const lines = [...TYPED_HEADER, ...samples.map((sample, i) => `export const sample${i} = ${sample};`)];
   const [result] = await typedEslint.lintText(`${lines.join('\n')}\n`, { filePath: 'test/unit/layout.test.ts' });
-  const found = (i: number) =>
-    result.messages
-      .filter((message) => message.line === TYPED_HEADER.length + i + 1)
-      .map((message) => `${message.ruleId}: ${message.message}`);
-  return samples.map(([sample, expected], i) => ({ sample, expected, found: found(i) }));
+  return samples.map((_sample, i) => result.messages.filter((message) => message.line === TYPED_HEADER.length + i + 1));
 };
-const holdsMapBoundary = async (t: TestContext, rule: string, samples: (readonly [string, string | null])[]) => {
-  for (const { sample, expected, found } of await typedSamples(samples))
-    await t.test(`${expected == null ? 'passes' : 'fails'} ${sample}`, () => {
-      if (expected == null) assert.deepEqual(found, []);
-      else {
-        assert.equal(found.length, 1, found.join('\n'));
-        assert.ok(found[0].startsWith(`${rule}: `) && found[0].includes(expected), found[0]);
-      }
+const holdsMapBoundary = async (
+  t: TestContext,
+  { rule, flagged, passed }: { rule: string; flagged: [string, string][]; passed: string[] },
+) => {
+  const found = await typedFindings([...flagged.map(([sample]) => sample), ...passed]);
+  for (const [i, [sample, where]] of flagged.entries())
+    await t.test(`fails ${sample}`, () => {
+      assert.deepEqual(
+        found[i].map((message) => message.ruleId),
+        [rule],
+      );
+      assert.ok(found[i][0].message.includes(where), found[i][0].message);
+    });
+  for (const [i, sample] of passed.entries())
+    await t.test(`passes ${sample}`, () => {
+      assert.deepEqual(found[flagged.length + i], []);
     });
 };
 
 test('lint fails JSON.stringify of a value whose type holds a Map or Set', async (t) => {
-  await holdsMapBoundary(t, 'gg/no-map-to-json', [
-    ['JSON.stringify(executionRecord, null, 2)', 'the value.visits (Map)'],
-    ['JSON.stringify(runContext.record)', 'the value.visits (Map)'],
-    ['JSON.stringify(running.state)', 'the value.runs (Map)'],
-    ['JSON.stringify(state.checks)', 'the value (Map)'],
-    ['JSON.stringify(executionRecord.visits)', 'the value (Map)'],
-    ['JSON.stringify(flow.procedures, null, 2)', 'the value (ReadonlyMap)'],
-    ['JSON.stringify(renamed.history)', 'the value (Map)'],
-    ['JSON.stringify({ wrapped: executionRecord.visits })', 'the value.wrapped (Map)'],
-    ['JSON.stringify(byName)', 'the value[key] (Map)'],
-    ['JSON.stringify(partial)', 'the value.visits (Map)'],
-    ['JSON.stringify([executionRecord])', 'the value[].visits (Map)'],
-    ['JSON.stringify(seen)', 'the value (Set)'],
-    [
-      '<Counts extends ReadonlyMap<string, number>>(counts: Counts) => JSON.stringify(counts)',
-      'the value (ReadonlyMap)',
+  await holdsMapBoundary(t, {
+    rule: 'gg/no-map-to-json',
+    flagged: [
+      ['JSON.stringify(executionRecord, null, 2)', 'the value.visits (Map)'],
+      ['JSON.stringify(runContext.record)', 'the value.visits (Map)'],
+      ['JSON.stringify(running.state)', 'the value.runs (Map)'],
+      ['JSON.stringify(state.checks)', 'the value (Map)'],
+      ['JSON.stringify(executionRecord.visits)', 'the value (Map)'],
+      ['JSON.stringify(flow.procedures, null, 2)', 'the value (ReadonlyMap)'],
+      ['JSON.stringify(renamed.history)', 'the value (Map)'],
+      ['JSON.stringify({ wrapped: executionRecord.visits })', 'the value.wrapped (Map)'],
+      ['JSON.stringify(byName)', 'the value[key] (Map)'],
+      ['JSON.stringify(partial)', 'the value.visits (Map)'],
+      ['JSON.stringify([executionRecord])', 'the value[].visits (Map)'],
+      ['JSON.stringify(seen)', 'the value (Set)'],
+      [
+        '<Counts extends ReadonlyMap<string, number>>(counts: Counts) => JSON.stringify(counts)',
+        'the value (ReadonlyMap)',
+      ],
+      ['JSON.stringify(readonlyMap)', 'the value (Map)'],
+      ['JSON.stringify(readonlySet)', 'the value (Set)'],
+      ['JSON.stringify(new VisitCounts())', 'the value (Map)'],
+      ['JSON.stringify(nested)', 'the value.shallow (Map)'],
+      ['JSON.stringify(executionRecord, undefined, 2)', 'the value.visits (Map)'],
+      ["JSON.stringify(executionRecord, ['visits'])", 'the value.visits (Map)'],
+      ['JSON.stringify(executionRecord, maybeReplacer)', 'the value.visits (Map)'],
+      ['globalThis.JSON.stringify(executionRecord)', 'the value.visits (Map)'],
+      ["JSON['stringify'](executionRecord)", 'the value.visits (Map)'],
     ],
-    ['JSON.stringify(flow.name)', null],
-    ['JSON.stringify(state.recovery)', null],
-    ['JSON.stringify({ startedAt: new Date() })', null],
-    ['JSON.stringify(executionRecord, (_key, value: unknown) => value)', null],
-    ['JSON.stringify([...executionRecord.visits.values()])', null],
-  ]);
+    passed: [
+      'JSON.stringify(flow.name)',
+      'JSON.stringify(state.recovery)',
+      'JSON.stringify(flows)',
+      'JSON.stringify({ startedAt: new Date() })',
+      'JSON.stringify(serialised)',
+      'JSON.stringify(executionRecord, (_key, value: unknown) => value)',
+      'JSON.stringify([...executionRecord.visits.values()])',
+      'local.stringify(executionRecord)',
+    ],
+  });
 });
 
 test('lint fails an object spread of a Map, and allows a record spread and a string spread', async (t) => {
-  await holdsMapBoundary(t, '@typescript-eslint/no-misused-spread', [
-    ['{ ...executionRecord.visits }', 'Object.fromEntries'],
-    ['{ ...flow.ticket.vertices }', 'Object.fromEntries'],
-    ['{ ...executionRecord }', null],
-    ['[...text]', null],
-  ]);
+  await holdsMapBoundary(t, {
+    rule: '@typescript-eslint/no-misused-spread',
+    flagged: [
+      ['{ ...executionRecord.visits }', 'Object.fromEntries'],
+      ['{ ...flow.ticket.vertices }', 'Object.fromEntries'],
+    ],
+    passed: ['{ ...executionRecord }', '[...text]'],
+  });
 });
 
 // Documents agents read for today's paths. An ADR or a docs/research record is dated: it names paths as they were.

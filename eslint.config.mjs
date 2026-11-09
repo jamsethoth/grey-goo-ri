@@ -116,24 +116,40 @@ const THROWN_CLASS = {
 // JSON.stringify writes a Map or a Set as {} and raises nothing (ECMA-262 SerializeJSONObject), so the types it is
 // given must hold none. A lib or package type is not gg's data, and a type with toJSON chooses its own form.
 const LOST_BY_JSON = new Set(['Map', 'ReadonlyMap', 'WeakMap', 'Set', 'ReadonlySet', 'WeakSet']);
-const fromLib = (program, symbol) =>
+const inDefaultLib = (program, declaration) => program.isSourceFileDefaultLibrary(declaration.getSourceFile());
+const fromLibOrPackage = (program, symbol) =>
   (symbol?.getDeclarations() ?? []).some(
     (declaration) =>
-      program.isSourceFileDefaultLibrary(declaration.getSourceFile()) ||
-      program.isSourceFileFromExternalLibrary(declaration.getSourceFile()),
+      inDefaultLib(program, declaration) || program.isSourceFileFromExternalLibrary(declaration.getSourceFile()),
   );
+// Which of the six a type is, read from where lib declares its `has`, which all six have: so a subclass, an
+// intersection and Readonly<Map> are one too, and a package's own class named Map is not.
+const collectionName = (checker, program, type) =>
+  checker
+    .getPropertyOfType(type, 'has')
+    ?.getDeclarations()
+    ?.map((declaration) => (inDefaultLib(program, declaration) ? declaration.parent?.name?.text : null))
+    .find((name) => LOST_BY_JSON.has(name)) ?? null;
 // A mapped type (Record, Partial, Omit, Readonly) is anonymous, `__type`, and is walked even though lib declares it.
-const isLibNamed = (program, symbol) => symbol?.getName() !== '__type' && fromLib(program, symbol);
+const isLibNamed = (program, symbol) => symbol?.getName() !== '__type' && fromLibOrPackage(program, symbol);
+// The types inside a type: the same value's alternatives (`sameDepth`), or the values it holds.
 const memberTypes = (checker, program, type, path) => {
-  if (type.isUnionOrIntersection()) return type.types.map((member) => [member, path]);
-  if (type.isTypeParameter()) return [[checker.getBaseConstraintOfType(type), path]].filter(([member]) => member);
+  if (type.isUnionOrIntersection()) return { sameDepth: type.types.map((member) => [member, path]), held: [] };
+  if (type.isTypeParameter()) {
+    const constraint = checker.getBaseConstraintOfType(type);
+    return { sameDepth: constraint ? [[constraint, path]] : [], held: [] };
+  }
   if (checker.isArrayType(type) || checker.isTupleType(type))
-    return checker.getTypeArguments(type).map((element) => [element, `${path}[]`]);
-  if (checker.getPropertyOfType(type, 'toJSON') || isLibNamed(program, type.getSymbol())) return [];
-  return [
-    ...checker.getPropertiesOfType(type).map((key) => [checker.getTypeOfSymbol(key), `${path}.${key.getName()}`]),
-    ...checker.getIndexInfosOfType(type).map((info) => [info.type, `${path}[key]`]),
-  ];
+    return { sameDepth: [], held: checker.getTypeArguments(type).map((element) => [element, `${path}[]`]) };
+  if (isLibNamed(program, type.getSymbol())) return { sameDepth: [], held: [] };
+  const properties = checker.getPropertiesOfType(type);
+  return {
+    sameDepth: [],
+    held: [
+      ...properties.map((key) => [checker.getTypeOfSymbol(key), `${path}.${key.getName()}`]),
+      ...checker.getIndexInfosOfType(type).map((info) => [info.type, `${path}[key]`]),
+    ],
+  };
 };
 // The path to the shallowest Map or Set inside a type, or null; `unknown` and `any` hide theirs.
 function findLost(checker, program, rootType) {
@@ -141,21 +157,34 @@ function findLost(checker, program, rootType) {
   const pending = [[rootType, 'the value']];
   while (pending.length) {
     const [type, path] = pending.shift();
-    if (seen.has(type)) continue;
+    if (seen.has(type) || checker.getPropertyOfType(type, 'toJSON')) continue;
     seen.add(type);
-    const symbol = type.getSymbol();
-    const name = symbol?.getName() ?? '';
-    if (LOST_BY_JSON.has(name) && fromLib(program, symbol)) return `${path} (${name})`;
-    pending.push(...memberTypes(checker, program, type, path));
+    const name = collectionName(checker, program, type);
+    if (name) return `${path} (${name})`;
+    const { sameDepth, held } = memberTypes(checker, program, type, path);
+    pending.unshift(...sameDepth);
+    pending.push(...held);
   }
   return null;
 }
-const isJsonStringify = ({ callee }) =>
-  callee.type === 'MemberExpression' &&
-  !callee.computed &&
-  callee.object.type === 'Identifier' &&
-  callee.object.name === 'JSON' &&
-  callee.property.name === 'stringify';
+// lib's JSON.stringify by any path to it (globalThis.JSON, JSON['stringify']); a local object named JSON is not it.
+const isJsonStringify = (checker, services, { callee }) => {
+  if (callee.type !== 'MemberExpression') return false;
+  const { property } = callee;
+  const named = callee.computed
+    ? property.type === 'Literal' && property.value === 'stringify'
+    : property.name === 'stringify';
+  if (!named) return false;
+  const symbol = checker.getSymbolAtLocation(services.esTreeNodeToTSNodeMap.get(property));
+  return (symbol?.getDeclarations() ?? []).some(
+    (declaration) => inDefaultLib(services.program, declaration) && declaration.parent?.name?.text === 'JSON',
+  );
+};
+// A replacer function is its owner's conversion (lib/record.ts saveRecord); the rule does not judge it. An array of
+// keys, null or undefined converts nothing.
+const isReplacerFunction = (checker, services, replacer) =>
+  replacer != null &&
+  checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(replacer)).getCallSignatures().length > 0;
 const NO_MAP_TO_JSON = {
   meta: {
     type: 'problem',
@@ -172,11 +201,10 @@ const NO_MAP_TO_JSON = {
     const checker = services.program.getTypeChecker();
     return {
       CallExpression(node) {
-        if (!isJsonStringify(node) || node.arguments.length === 0) return;
-        // A replacer is its owner's conversion (lib/record.ts saveRecord); the rule does not judge it.
-        const replacer = node.arguments[1];
-        if (replacer && !(replacer.type === 'Literal' && replacer.value === null)) return;
-        const type = checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node.arguments[0]));
+        const [value, replacer] = node.arguments;
+        if (!value || !isJsonStringify(checker, services, node) || isReplacerFunction(checker, services, replacer))
+          return;
+        const type = checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(value));
         const where = findLost(checker, services.program, type);
         if (where) context.report({ node, messageId: 'lost', data: { where } });
       },
