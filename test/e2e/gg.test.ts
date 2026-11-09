@@ -177,6 +177,25 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
 });
 
+// The flag reaches admission, which looks its value up among the declared Flows.
+test('gg run accepts --flow with a value', (t) => {
+  const { repo, ggIn } = tempRepo(t, readFileSync(new URL('../../examples/claude.json', import.meta.url), 'utf8'));
+  writeExampleLayer(join(repo, '.agents', 'gg'));
+  const result = ggIn('run', '1', '--flow', 'light');
+  assert.equal(result.status, 1, result.stderr);
+  assert.ok(
+    result.stderr.includes(
+      'error: flows: no Flow named light is declared; the repository Layer declares default [unknown-flow]\n',
+    ),
+    result.stderr,
+  );
+  assert.equal(existsSync(join(repo, '.git', 'gg')), false, 'no gg directory under .git');
+  const missing = ggIn('run', '1', '--flow');
+  assert.equal(missing.status, 1, missing.stderr);
+  assert.match(missing.stderr, /--flow/);
+  assertUsage(missing.stderr);
+});
+
 // The example fixture as a repository Layer at `layer`: its gg.json and every file it names.
 function writeExampleLayer(layer: string) {
   mkdirSync(layer, { recursive: true });

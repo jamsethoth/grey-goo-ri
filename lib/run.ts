@@ -156,6 +156,7 @@ async function preflight(
 export interface RunOptions {
   deps: runContext.Deps;
   target: number;
+  flow?: string;
   config: config.Config;
   harnesses: Record<string, unknown>;
   protectedPaths: string[];

@@ -10,6 +10,7 @@ import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as locks from '../../lib/locks.ts';
+import * as marker from '../../lib/marker.ts';
 import * as run from '../../lib/run.ts';
 import * as epicRun from '../support/epic-run.ts';
 import type * as golden from '../support/golden.ts';
@@ -308,6 +309,55 @@ test('preflight without a Flow names gg init', async (t) => {
         '[no-flow-declared]',
     ]);
     assert.equal(err.exitCode, 1);
+    return true;
+  });
+  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
+});
+
+// The fixture's full Flow as default, and as light its red, green and publish Flow, which has no reviewer.
+function twoFlows(t: TestContext) {
+  const fixture = runFixture.fixture(t, { fullFlow: true });
+  fixture.options.config.flows.light = runFixture.testConfig(fixture.root).flows.default!;
+  return fixture;
+}
+const vertexOf = (call: { marker?: string }) => marker.parseMarker(marker.markerTrailer(call.marker!))?.vertex;
+
+test('--flow runs the named Flow', async (t) => {
+  const fixture = twoFlows(t);
+  const results = await run.runTarget({ ...fixture.options, flow: 'light' });
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  assert.deepEqual(fixture.harness.calls.map(vertexOf), ['red', 'green'], 'no reviewer, which only default has');
+  assert.equal((JSON.parse(fixture.loadRow()!) as { flow: string }).flow, 'light', 'the record pins light');
+  assert.ok(
+    fixture.logs.some((line) => line.includes(' under Flow light ')),
+    JSON.stringify(fixture.logs),
+  );
+});
+
+test('an unknown --flow fails preflight listing the declared Flows', async (t) => {
+  const fixture = twoFlows(t);
+  await assert.rejects(run.runTarget({ ...fixture.options, flow: 'nope' }), (err: PreflightError) => {
+    assert.deepEqual(err?.message.split('\n'), [
+      '[main] preflight failed:',
+      'error: flows: no Flow named nope is declared; the repository Layer declares default, light [unknown-flow]',
+    ]);
+    assert.equal(err.exitCode, 1);
+    return true;
+  });
+  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
+  assert.equal(fixture.worktrees(), 1, 'no worktree');
+  assert.equal(existsSync(join(fixture.commonDir, 'gg', 'runs')), false, 'no run directory');
+});
+
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('without --flow, a repository Layer declaring no default Flow fails preflight listing the declared Flows', async (t) => {
+  const fixture = twoFlows(t);
+  delete fixture.options.config.flows.default;
+  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
+    assert.deepEqual(err?.message.split('\n'), [
+      '[main] preflight failed:',
+      'error: flows: no Flow named default is declared; the repository Layer declares light [unknown-flow]',
+    ]);
     return true;
   });
   assert.deepEqual(fixture.gh.calls, [], 'no gh call');
