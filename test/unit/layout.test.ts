@@ -405,6 +405,17 @@ const TYPED_HEADER = [
   'declare const flows: Record<string, model.ResolvedFlowJson>;',
   'declare const maybeReplacer: ((key: string, value: unknown) => unknown) | undefined;',
   'const local = { stringify: (value: unknown) => String(value) };',
+  'class TrackedCounts extends Map<string, number> {',
+  '  override has(key: string) {',
+  '    return super.has(key);',
+  '  }',
+  '}',
+  'declare const either: Map<string, number> | Set<string>;',
+  "declare const hasOnly: Pick<Map<string, number>, 'has'>;",
+  "declare const getOnly: Pick<Map<string, number>, 'get'>;",
+  "declare const withoutClear: Omit<Map<string, number>, 'clear'>;",
+  "declare const withoutHas: Omit<Map<string, number>, 'has'>;",
+  'declare const converting: (key: string, value: unknown) => unknown;',
 ];
 // Each sample is linted as `export const sampleN = <sample>;`, with what the rules find on its line.
 const typedFindings = async (samples: string[]) => {
@@ -460,6 +471,17 @@ test('lint fails JSON.stringify of a value whose type holds a Map or Set', async
       ['JSON.stringify(executionRecord, maybeReplacer)', 'the value.visits (Map)'],
       ['globalThis.JSON.stringify(executionRecord)', 'the value.visits (Map)'],
       ["JSON['stringify'](executionRecord)", 'the value.visits (Map)'],
+      ['JSON.stringify(new TrackedCounts())', 'the value (Map)'],
+      ['JSON.stringify(either)', 'the value (Map)'],
+      ['JSON.stringify(...([executionRecord.visits] as const))', 'the value (Map)'],
+      ['JSON.stringify(...([executionRecord.visits, null, 2] as const))', 'the value (Map)'],
+      ['JSON.stringify(...[executionRecord.visits])', 'the value (Map)'],
+      // A slice of a Map's type may be a real Map or a plain object; lint cannot tell, so it asks for the whole type.
+      ['JSON.stringify(hasOnly)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(getOnly)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(withoutClear)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify(withoutHas)', 'the value has a type made from part of a Map'],
+      ['JSON.stringify({ lookup: hasOnly })', 'the value.lookup has a type made from part of a Map'],
     ],
     passed: [
       'JSON.stringify(flow.name)',
@@ -470,6 +492,8 @@ test('lint fails JSON.stringify of a value whose type holds a Map or Set', async
       'JSON.stringify(executionRecord, (_key, value: unknown) => value)',
       'JSON.stringify([...executionRecord.visits.values()])',
       'local.stringify(executionRecord)',
+      'JSON.stringify(...([executionRecord, converting] as const))',
+      'JSON.stringify(Object.fromEntries(executionRecord.visits))',
     ],
   });
 });
