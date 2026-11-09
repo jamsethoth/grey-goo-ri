@@ -1,8 +1,8 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
@@ -292,6 +292,25 @@ test('preflight rejects a repository Layer without testPaths', async (t) => {
   });
   assert.deepEqual(fixture.gh.calls, [], 'no gh call');
   assert.equal(fixture.worktrees(), 1, 'no worktree');
+});
+
+// gg ships no Flow, so a repository Layer that declares none fails preflight naming gg init (P1a).
+test('preflight without a Flow names gg init', async (t) => {
+  const fixture = runFixture.fixture(t);
+  const bare = join(fixture.root, 'bare');
+  mkdirSync(dirname(config.layerPath(bare)), { recursive: true });
+  writeFileSync(config.layerPath(bare), JSON.stringify({ commands: { test: 'npm test' }, testPaths: ['test/**'] }));
+  fixture.options.config = config.loadLayers(bare, join(fixture.root, 'no-home')) as typeof fixture.options.config;
+  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
+    assert.deepEqual(err?.message.split('\n'), [
+      '[main] preflight failed:',
+      'error: flows: no Flow is declared; run gg init to write the example Flow into the repository Layer ' +
+        '[no-flow-declared]',
+    ]);
+    assert.equal(err.exitCode, 1);
+    return true;
+  });
+  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
 });
 
 // The advice a preflight that found an Agent with no harness ends with.

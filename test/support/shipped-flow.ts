@@ -1,5 +1,5 @@
-// The Layer gg shipped in defaults/ until #120: its Agents, Procedures, Flow and their files, kept under
-// test/fixtures/shipped-flow/ as the golden traces' Layer, so that #121 can take them out of defaults/.
+// The Layer gg shipped in defaults/ until #121: its Agents, Procedures, Flow and their files, kept under
+// test/fixtures/shipped-flow/ as the golden traces' Layer.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
