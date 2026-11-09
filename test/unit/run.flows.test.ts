@@ -11,7 +11,7 @@ import * as unvisitedExecution from '../support/unvisited-execution.ts';
 const { BRANCH, TICKET } = runFixture;
 const { IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL } = executionContext;
 
-// The fixture's red, green and publish Flow as default, and as asking the same Flow asking at approve after green.
+// The fixture's red, green and publish Flow as default, and as `asking` that Flow with an approve Vertex after green.
 function askingFlow(t: TestContext, options: runFixture.RunFixtureOptions = {}) {
   const fixture = runFixture.fixture(t, options);
   fixture.options.config.procedures.approval = {
