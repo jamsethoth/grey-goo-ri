@@ -661,7 +661,7 @@ test('a push writes no upstream into .git/config', async (t) => {
 
 // git trusts an entry's cached stat data only when the file is older than the index file itself; one modified in the
 // index's own second it reads again (racy git). The rewrite here is a second visit's same-size test, in the second the
-// index was written, with the fingerprint taken a second later (#317). The index is written at the end of that
+// index was written, with the fingerprint taken in a later second (#317). The index is written at the end of that
 // second, so a copy whose mtime is rounded up lands in the next one. The times are set so the case does not wait for
 // the clock, and ctime, which cannot be set, is left out.
 test('fingerprint sees a same-size rewrite made in the second the index was written', async (t) => {
