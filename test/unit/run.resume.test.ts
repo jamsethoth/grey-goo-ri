@@ -242,14 +242,24 @@ test('a resumed Execution keeps its pinned Flow', async (t) => {
   assert.deepEqual([...new Set(actionFlows)], ['light']);
 });
 
-test('a resumed Execution whose Flow the repository Layer no longer declares is held', async (t) => {
+// It waits, kept and resumable, for the Flow to be declared again: nothing on GitHub changes.
+test('a resumed Execution whose Flow the repository Layer no longer declares is skipped and kept', async (t) => {
   const fixture = await pinnedTo(t, 'gone');
+  const row = fixture.loadRow();
   const results = await run.runTarget(fixture.options);
-  assert.equal(runFixture.ticketResult(results)?.outcome, 'needs-human', JSON.stringify(results));
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'skipped', JSON.stringify(results));
+  assert.equal(run.runExitCode(results), 0);
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
-  assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL));
   assert.ok(
-    fixture.comments().some((body) => body.includes('runs Flow gone, which the repository Layer no longer declares')),
-    JSON.stringify(fixture.comments()),
+    fixture.logs.some((line) =>
+      line.endsWith(`#${TICKET} skipped: its Execution Record runs Flow gone, which is no longer declared`),
+    ),
+    JSON.stringify(fixture.logs),
+  );
+  assert.equal(fixture.loadRow(), row, 'the record is kept as it was');
+  assert.deepEqual(
+    fixture.gh.calls.map((call) => call.args.slice(0, 2)),
+    [['issue', 'view']],
+    'gh made only the discovery read',
   );
 });
