@@ -2,7 +2,7 @@
 // verb whose fake drifts from git fails here. Cases the fake cannot model run on real git alone, at the end.
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import * as gitModule from '../../../lib/git.ts';
@@ -657,6 +657,24 @@ test('a push writes no upstream into .git/config', async (t) => {
     gitShell.sh(directory, 'rev-parse', 'HEAD'),
   );
   assert.equal(spawnSync('git', ['config', '--get', 'branch.ticket/9-thing.remote'], { cwd: directory }).status, 1);
+});
+
+// git trusts an entry's cached stat data only when the file is older than the index file itself; one modified in the
+// index's own second it reads again (racy git). The rewrite here is a second visit's same-size test, in the second the
+// index was written, with the fingerprint taken a second later (#317). The times are set so the case does not wait
+// for the clock, and ctime, which cannot be set, is left out.
+test('fingerprint sees a same-size rewrite made in the second the index was written', async (t) => {
+  const { mainRoot: directory, commit } = realRepo(t);
+  gitShell.sh(directory, 'config', 'core.trustctime', 'false');
+  const file = join(directory, 'adds.test.mjs');
+  const second = new Date(Math.floor(Date.now() / 1000) * 1000 - 10_000);
+  writeFileSync(file, 'a - b\n');
+  utimesSync(file, second, second);
+  const head = commit(directory, 'subtract');
+  writeFileSync(file, 'a + b\n');
+  utimesSync(file, second, second);
+  utimesSync(join(directory, '.git', 'index'), second, second);
+  assert.notEqual((await gitModule.fingerprint(directory)).tree, await gitModule.treeOf(directory, head));
 });
 
 // A git whose index.lock waits are recorded and run `during` in place of the wait.
