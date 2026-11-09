@@ -34,7 +34,8 @@ The interpreter names no Procedure, Action or Check.
 - **The repository owns its Flow.** gg ships no default Flow and no library of Procedures, Briefs, Personas or
   schemas. `gg init` writes an example into the repository Layer, which then owns it; without a Flow, preflight and
   `gg doctor` fail naming `gg init`. `flows`, `procedures`, `commands` and `testPaths` may be set only in the
-  repository Layer; elsewhere they are a load error. `testPaths` is required, like `commands.test`.
+  repository Layer; elsewhere they are a load error. `testPaths` is required, like `commands.test`. Superseded in part
+  by ADR 0022: a user's directory may also declare Flows and Procedures, each Flow read whole from its own source.
 
 The design, its reasons and four review rounds are in `docs/research/user-defined-procedures-decisions.md`; the
 example `gg init` writes is `docs/research/user-defined-procedures-example-flow.md`.
