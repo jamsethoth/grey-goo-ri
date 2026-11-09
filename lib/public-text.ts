@@ -71,6 +71,10 @@ export const publicTextFor =
   (text: unknown): string =>
     publicText(text, [worktree, commonDir, cwd]);
 
+export function lastLines(text: string, limit: number, fallback: (text: string) => string): string {
+  return '';
+}
+
 export function publicTail(given: unknown, redact: Redact = publicText, limit = 3000): string {
   const text = redact(String(given ?? ''));
   const cut = text.length - limit;
