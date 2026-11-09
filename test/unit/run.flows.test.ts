@@ -83,7 +83,7 @@ test('a decided hold whose Flow is no longer declared finishes its report', asyn
     inProgress: false,
     error: null,
   };
-  await record.save(executionRecord);
+  record.save(executionRecord);
 
   const results = await run.runTarget(fixture.options);
   assert.equal(runFixture.ticketResult(results)?.outcome, 'needs-human', JSON.stringify(results));

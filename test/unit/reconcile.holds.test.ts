@@ -8,7 +8,6 @@ import * as interpreter from '../../lib/interpreter.ts';
 import type * as model from '../../lib/model.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
-import type * as runContext from '../../lib/run-context.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.ts';
@@ -39,17 +38,17 @@ for (const point of CRASH_POINTS) {
     // The completed commit's Vertex is gone from the Flow, so Reconciliation holds the Ticket.
     await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion');
     fixture.options.flow = withoutGreen(fixture);
-    fixture.options.record = await executionReads.loadTicket(fixture);
+    fixture.options.record = executionReads.loadTicket(fixture);
     await crashResume.crashed(fixture, ['needs-human', 1, 'hold-label', 0], point);
 
     const result = await interpreter.runExecution({
       ...fixture.options,
-      record: await executionReads.loadTicket(fixture),
+      record: executionReads.loadTicket(fixture),
     });
     assert.equal(result.outcome, 'needs-human');
     assert.equal(result.held, true);
     assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL));
-    assert.equal((await executionReads.loadTicket(fixture)).state, 'held');
+    assert.equal(executionReads.loadTicket(fixture).state, 'held');
     const ends = ticketEnds(fixture);
     assert.equal(ends.length, 1);
     assert.match(ends[0]?.terminalReason?.text as string, /Vertex green/);
@@ -68,12 +67,12 @@ for (const point of CRASH_POINTS) {
 
     const result = await interpreter.runExecution({
       ...fixture.options,
-      record: await executionReads.loadTicket(fixture),
+      record: executionReads.loadTicket(fixture),
     });
     assert.equal(result.outcome, 'needs-human');
     assert.equal(result.fault, true);
     assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL));
-    assert.equal((await executionReads.loadTicket(fixture)).state, 'fault');
+    assert.equal(executionReads.loadTicket(fixture).state, 'fault');
     const ends = ticketEnds(fixture);
     assert.equal(ends.length, 1);
     assert.equal(ends[0]?.error, 'the harness exploded');
@@ -89,12 +88,12 @@ for (const point of CRASH_POINTS) {
 
     const result = await interpreter.runExecution({
       ...fixture.options,
-      record: await executionReads.loadTicket(fixture),
+      record: executionReads.loadTicket(fixture),
     });
     assert.equal(result.outcome, 'needs-human');
     assert.equal((executionReads.runStopEvent(fixture) as { failureClass?: string } | undefined)?.failureClass, 'auth');
     assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL));
-    assert.equal((await executionReads.loadTicket(fixture)).state, 'needs-human');
+    assert.equal(executionReads.loadTicket(fixture).state, 'needs-human');
     assert.equal(ticketEnds(fixture).length, 1);
   });
 }
@@ -103,18 +102,18 @@ test('dirtyState and humanOverride return decisions without finalizing the recor
   const fixture = await golden.fixture(t);
   await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'before-effect');
   writeFileSync(join(fixture.worktree, 'human.txt'), 'mine\n');
-  const before = await executionReads.loadTicket(fixture);
-  const executionRecord = await executionReads.loadTicket(fixture);
+  const before = executionReads.loadTicket(fixture);
+  const executionRecord = executionReads.loadTicket(fixture);
 
   assert.ok(
     await reconcile.dirtyState(executionRecord, { git: fixture.options.deps.git, worktree: fixture.worktree }),
     'the human file is unknown dirty state',
   );
   assert.equal(executionRecord.state, 'active');
-  assert.deepEqual(await executionReads.loadTicket(fixture), before, 'the hold is only decided');
-  assert.equal((await reconcile.humanOverride(executionRecord, [NEEDS_HUMAN_LABEL], 'gg'))?.next, 'abandon');
+  assert.deepEqual(executionReads.loadTicket(fixture), before, 'the hold is only decided');
+  assert.equal(reconcile.humanOverride(executionRecord, [NEEDS_HUMAN_LABEL], 'gg')?.next, 'abandon');
   assert.equal(executionRecord.state, 'active');
-  assert.deepEqual(await executionReads.loadTicket(fixture), before, 'the abandonment is only decided');
+  assert.deepEqual(executionReads.loadTicket(fixture), before, 'the abandonment is only decided');
 });
 
 test('a vertex missing from the flow holds the ticket', async (t) => {
@@ -122,13 +121,13 @@ test('a vertex missing from the flow holds the ticket', async (t) => {
   await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion');
   const flow = withoutGreen(fixture);
 
-  const loaded = await executionReads.loadTicket(fixture);
+  const loaded = executionReads.loadTicket(fixture);
   const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, loaded, flow));
   assert.equal(decided.next, 'hold');
   assert.match(decided.reason as string, /Vertex green/);
 
-  await interpreter.runExecution({ ...fixture.options, flow, record: await executionReads.loadTicket(fixture) });
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'held');
+  await interpreter.runExecution({ ...fixture.options, flow, record: executionReads.loadTicket(fixture) });
+  assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL));
   assert.equal(fixture.harness.calls.length, 2);
 });
@@ -156,7 +155,7 @@ test('a resume after the commit of a recovery pass continues at its push', async
     }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const loaded = await executionReads.loadTicket(fixture);
+  const loaded = executionReads.loadTicket(fixture);
   assert.deepEqual(
     [loaded.cursor.action, loaded.cursor.recovery],
     ['commit', 1],
@@ -179,7 +178,7 @@ test('a missing transcript starts the phase fresh', async (t) => {
     }),
     (err) => err instanceof interpreter.CrashError,
   );
-  const loaded = await executionReads.loadTicket(fixture);
+  const loaded = executionReads.loadTicket(fixture);
   assert.deepEqual([loaded.cursor.action, loaded.cursor.recovery], ['green', 1], 'the recovery pass');
   rmSync(loaded.sessions['green/1/green']?.transcriptPath as string);
 
@@ -238,7 +237,7 @@ test('bounds survive a restart', async (t) => {
     !fixture.harness.calls.slice(before).some((call) => call.brief?.startsWith('FIX VISIT')),
     'no fix call after the restart',
   );
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.equal(final.traversals.get(key), 1);
   assert.deepEqual(Object.fromEntries(final.visits), { red: 1, green: 1, reviewer: 2, 'implementer-fix': 1 });
 });
@@ -248,7 +247,12 @@ test('a corrupt record holds the ticket', async (t) => {
   const corrupt = '{ "schemaVersion": 1, "log": [';
   const database = stateDatabase.open(fixture.commonDir);
   database.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = ?").run(corrupt, golden.TICKET);
-  const err = await executionReads.loadTicket(fixture).catch((thrown: unknown) => thrown);
+  let err: unknown;
+  try {
+    executionReads.loadTicket(fixture);
+  } catch (thrown) {
+    err = thrown;
+  }
   assert.ok(err instanceof record.RecordCorruptError, String(err));
 
   const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, err));
@@ -322,12 +326,12 @@ test('a failed lookup in a Run is retried on the Action budget and finds the lan
   const result = await interpreter.runExecution({
     ...fixture.options,
     deps: { ...fixture.options.deps, gh: once },
-    record: await executionReads.loadTicket(fixture),
+    record: executionReads.loadTicket(fixture),
   });
   assert.equal(result.outcome, 'ready-for-qa', JSON.stringify(result));
   assert.equal(withDoneMarker(fixture, actionMarker).length, 1, 'not posted again');
   assert.deepEqual(fixture.sleeps, [60_000]);
-  assert.deepEqual(executionReads.writeAheadSteps(await executionReads.loadTicket(fixture), actionMarker), [
+  assert.deepEqual(executionReads.writeAheadSteps(executionReads.loadTicket(fixture), actionMarker), [
     'intent',
     'evidence',
     'complete',
@@ -341,13 +345,11 @@ test('a resumed Visit whose Procedure changed is held', async (t) => {
     (configured.procedures.implement as unknown as { recover: { max: number } }).recover.max = 2;
   });
 
-  const decided = await reconcile.reconcile(
-    crashResume.reconcileOptions(fixture, await executionReads.loadTicket(fixture)),
-  );
+  const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, executionReads.loadTicket(fixture)));
   assert.equal(decided.next, 'hold');
   assert.match(decided.reason as string, /Procedure implement/);
 
-  await interpreter.runExecution({ ...fixture.options, record: await executionReads.loadTicket(fixture) });
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'held');
+  await interpreter.runExecution({ ...fixture.options, record: executionReads.loadTicket(fixture) });
+  assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.equal(fixture.harness.calls.length, 2, 'nothing ran after the hold');
 });

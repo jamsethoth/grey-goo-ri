@@ -18,7 +18,7 @@ export async function runStoppedInBackoff(
   };
   fixture.clock.onSleep = retryKey
     ? async () => {
-        saved = (await executionReads.loadTicket(fixture)).retries[retryKey]!.remote;
+        saved = executionReads.loadTicket(fixture).retries[retryKey]!.remote;
         stop();
       }
     : stop;

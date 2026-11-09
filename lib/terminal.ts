@@ -11,8 +11,6 @@ import type * as visit from './visit.ts';
 type TerminalContext = terminalReport.TerminalContext;
 type TerminalResult = terminalReport.TerminalResult;
 
-const errorText = (err: unknown) => (err as Error | null | undefined)?.message || String(err);
-
 // Reconciliation or admission could not proceed safely: the ticket goes to needs-human with the reason, and the record
 // is kept as Held. `advice` follows the reason in the comment only; `fresh` marks a hold decided before any Execution
 // ran, which may restart once it has landed.
@@ -45,7 +43,7 @@ export async function abandon(
   { terminalReasonText, inProgress }: { terminalReasonText: string; inProgress: boolean },
 ): Promise<TerminalResult> {
   context.record.terminalReason = {
-    decidedBy: { human: labels.labelsFor(context.labelPrefix ?? labels.DEFAULT_PREFIX).state(labels.NEEDS_HUMAN) },
+    decidedBy: { human: labels.labelsFor(context.labelPrefix).state(labels.NEEDS_HUMAN) },
     outcome: null,
     rule: null,
     text: terminalReasonText,
@@ -80,7 +78,7 @@ function faultText(err: unknown, where: string | null): string {
 // with its ticket_end.
 export async function fault(context: TerminalContext, err: unknown): Promise<TerminalResult> {
   const { record: executionRecord } = context;
-  const error = errorText(err) || 'unknown error';
+  const error = effectErrors.errorText(err) || 'unknown error';
   const { vertex, visit: visitNumber, action, recovery } = executionRecord.cursor;
   // The fault replaces the Terminal Reason, so the reason of a Terminal it interrupted travels in the fault comment.
   const interrupted =

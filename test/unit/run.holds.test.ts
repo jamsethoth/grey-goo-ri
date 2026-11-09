@@ -37,7 +37,7 @@ async function failedHoldLabel(fixture: RunFixture, openEffects: string[], messa
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
   assert.equal(fixture.comments().length, 1);
   assert.ok(labelFailed(fixture), 'the label failure is an Event');
-  const mid = await executionReads.loadTicket(fixture);
+  const mid = executionReads.loadTicket(fixture);
   assert.equal(mid?.terminalStop?.held, true, 'the hold is decided');
   assert.notEqual(mid.state, 'held', 'a hold whose label is pending is not held');
   assert.deepEqual(
@@ -54,7 +54,7 @@ async function landedHold(fixture: RunFixture, mid: record.ExecutionRecord) {
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2);
   assert.equal(fixture.comments().length, 1, 'the landed comment is reused');
   assert.ok(heldLabels(fixture), `the hold labels land: ${[...fixture.gh.labels]}`);
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.equal(final.execution, mid.execution);
   return final;
 }
@@ -98,7 +98,7 @@ async function overriddenPendingHold(t: TestContext) {
   const before = await integrity.snapshot(fixture.worktree, fixture.options.deps.git);
   const failing = runFixture.failComment(fixture);
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
-  const mid = await executionReads.loadTicket(fixture);
+  const mid = executionReads.loadTicket(fixture);
   const [holdComment] = writeAhead.openIntents(mid).filter((entry) => entry.effect === 'comment');
   failing.on = false;
   fixture.gh.labels.add(NEEDS_HUMAN_LABEL);
@@ -107,7 +107,7 @@ async function overriddenPendingHold(t: TestContext) {
   const transport = fakeGh.ghThrough(fixture.gh, async (call, next) => {
     const [noun, verb, number] = call.args;
     if (noun === 'issue' && verb === 'edit') {
-      states.push((await executionReads.loadTicket(fixture)).terminalStop?.abandoned);
+      states.push(executionReads.loadTicket(fixture).terminalStop?.abandoned);
       if (cleanup.fails) {
         fixture.gh.calls.push(call);
         throw new Error(`gh issue edit ${number} exited 1\nHTTP 502: Bad Gateway`);
@@ -125,7 +125,7 @@ async function assertOverrideLanded({ fixture, seededRecord, before, holdComment
   assert.deepEqual(fixture.comments(), [], 'the pending hold comment is not replayed');
   assert.deepEqual(fixture.labelAdds(), [], 'no label is added');
   assert.ok(heldLabels(fixture), `the human hold remains: ${[...fixture.gh.labels]}`);
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.equal(final.state, 'abandoned');
   assert.match(final.terminalReason?.text as string, /needs-human/);
   const ends = runFixture.endsOf(fixture, final.execution);
@@ -174,7 +174,7 @@ test('human override of a pending hold is decided durably when its label cleanup
 
   const failed = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(failed), 1, JSON.stringify(failed));
-  const pending = await executionReads.loadTicket(fixture);
+  const pending = executionReads.loadTicket(fixture);
   assert.equal(pending.terminalStop?.abandoned, true, 'the abandonment is decided durably');
   assert.equal(pending.state, 'active', 'its final state lands with ticket_end');
   assert.equal(runFixture.endsOf(fixture, mid.execution).length, 0, 'the abandonment has not landed');
@@ -209,7 +209,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   fixture.options.deps.gh = github.createGh(transport);
 
   assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
-  const mid = await executionReads.loadTicket(fixture);
+  const mid = executionReads.loadTicket(fixture);
   const [open] = writeAhead.openIntents(mid ?? { writeAheadLog: [] }).filter((entry) => entry.effect === 'comment');
   assert.ok(open, 'the landed fault comment waits for its completion');
   assert.equal(fixture.comments().length, 1);
@@ -219,7 +219,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   assert.equal(run.runExitCode(second), 1, JSON.stringify(second));
   assert.match(runFixture.ticketResult(second)?.error as string, /HTTP 502/);
   assert.equal(fixture.comments().length, 1, 'the stored payload is not posted again');
-  const still = await executionReads.loadTicket(fixture);
+  const still = executionReads.loadTicket(fixture);
   assert.deepEqual(still.terminalReason, mid.terminalReason, 'the fault keeps its Terminal Reason');
   assert.deepEqual(still.terminalStop, mid.terminalStop);
   assert.equal(runFixture.endsOf(fixture, mid.execution).length, 0, 'the fault stays pending');
@@ -228,7 +228,7 @@ test('a pending fault report whose comment lookup fails stays pending and posts 
   const third = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(third), 1, 'a fault exits 1');
   assert.equal(fixture.comments().length, 1, 'the marker found the landed comment');
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.deepEqual(
     final.writeAheadLog.filter((entry) => entry.actionMarker === open.actionMarker).map((entry) => entry.step),
     ['intent', 'evidence', 'complete'],
@@ -244,7 +244,7 @@ test('a Terminal saved before ticket_end resumes finalization exactly once', asy
   const restore = caseDatabase.failAppends(t, (event) => event.type === 'ticket_end');
   const first = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
-  const mid = await executionReads.loadTicket(fixture);
+  const mid = executionReads.loadTicket(fixture);
   assert.equal(mid?.state, 'active', 'the final state rolled back with its ticket_end');
   assert.equal(mid.terminalStop?.held, true, 'the decided hold waits for the next Run');
   assert.equal(runFixture.endsOf(fixture, mid.execution).length, 0);
@@ -273,7 +273,7 @@ test('a crash between admission and its hold keeps the decision and its one tick
   const first = await run.runTarget(fixture.options);
   restore();
   assert.equal(run.runExitCode(first), 1, JSON.stringify(first));
-  const mid = await executionReads.loadTicket(fixture);
+  const mid = executionReads.loadTicket(fixture);
   assert.ok(mid, 'admission saved the record');
   assert.equal(mid.terminalStop, null, 'the hold was never saved');
   assert.equal(fixture.comments().length, 0);
@@ -288,7 +288,7 @@ test('a crash between admission and its hold keeps the decision and its one tick
     [mid.execution],
     'one ticket_start for the Execution',
   );
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.equal(final.state, 'held');
   assert.equal(final.terminalStop?.fresh, true, 'the hold is still the fresh one admission decided');
   const [comment, ...more] = fixture.comments();
@@ -308,7 +308,7 @@ test('an Interrupted Attempt hold warns before its record is deleted, then and o
 
   const first = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(first), 2, JSON.stringify(first));
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'held');
+  assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.match(fixture.comments().at(-1) ?? '', warning, 'the hold comment warns');
 
   await run.runTarget(fixture.options);
@@ -325,7 +325,7 @@ async function overriddenBeforeFirstVisit(t: TestContext) {
   const fixture = runFixture.fixture(t, { labels: [IN_PROGRESS_LABEL, NEEDS_HUMAN_LABEL] });
   const { mainRoot, worktree } = fixture;
   await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
-  await record.save(unvisitedExecution.unvisitedExecution(fixture));
+  record.save(unvisitedExecution.unvisitedExecution(fixture));
   return fixture;
 }
 
@@ -349,7 +349,7 @@ async function assertAbandonedBeforeFirstVisit(fixture: RunFixture, before: inte
     before,
     'the worktree is untouched',
   );
-  const final = await executionReads.loadTicket(fixture);
+  const final = executionReads.loadTicket(fixture);
   assert.equal(final.state, 'abandoned', 'the label overrides the record before any Visit');
   assert.deepEqual(Object.fromEntries(final.visits), {});
   assert.deepEqual(
@@ -434,11 +434,11 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
     const fixture = runFixture.fixture(t, { labels });
     const { mainRoot, worktree } = fixture;
     await fixture.options.deps.git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
-    await record.save(unvisitedExecution.unvisitedExecution(fixture));
+    record.save(unvisitedExecution.unvisitedExecution(fixture));
     const states: (boolean | undefined)[] = [];
     runFixture.hookGh(fixture, async (args) => {
       if (args[0] === 'issue' && args[1] === 'edit')
-        states.push((await executionReads.loadTicket(fixture)).terminalStop?.abandoned);
+        states.push(executionReads.loadTicket(fixture).terminalStop?.abandoned);
     });
 
     const results = await run.runTarget(fixture.options);
@@ -455,7 +455,7 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
     assert.deepEqual(states, expectedStates, 'the record is abandoned before the label write');
     assert.deepEqual(fixture.comments(), [], 'no comment posted');
     assert.deepEqual([...fixture.gh.labels], [HUMAN_NEEDS_HUMAN], 'the human hold keeps its spelling');
-    assert.equal((await executionReads.loadTicket(fixture)).state, 'abandoned');
+    assert.equal(executionReads.loadTicket(fixture).state, 'abandoned');
   });
 }
 
@@ -496,7 +496,7 @@ test('admission does not re-add differently cased in-progress', async (t) => {
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 0, JSON.stringify(results));
   assert.equal(fixture.harness.calls.length, 2, 'the Execution resumes at its cursor');
-  assert.equal((await executionReads.loadTicket(fixture)).state, 'ready-for-qa');
+  assert.equal(executionReads.loadTicket(fixture).state, 'ready-for-qa');
   assert.deepEqual(fixture.labelAdds(), ['Gg:state:ready-for-qa'], 'in-progress is not added again');
   assert.ok(
     ![...fixture.gh.labels].some((label) => label.toLowerCase() === IN_PROGRESS_LABEL),
@@ -538,11 +538,7 @@ test('an interrupted reset under a human needs-human label is abandoned before a
 
   await run.runTarget(fixture.options);
   assert.ok(existsSync(join(fixture.worktree, 'test', 'add.test.mjs')), "the agent's changes are kept for the human");
-  assert.equal(
-    (await record.load(fixture.commonDir, 'ticket', TICKET))?.state,
-    'abandoned',
-    'the label overrides the record',
-  );
+  assert.equal(record.load(fixture.commonDir, 'ticket', TICKET)?.state, 'abandoned', 'the label overrides the record');
   assert.deepEqual(fixture.labelAdds(), [], 'no label written');
   assert.deepEqual(fixture.comments(), [], 'no comment posted');
   assert.equal(fixture.harness.calls.length, 1, 'no agent call beyond the seeded red');
@@ -582,7 +578,7 @@ async function heldWithRescue(t: TestContext, makeRef: (head: string) => string 
     left,
   });
   await run.runTarget(fixture.options);
-  const { terminalReason } = (await record.load(fixture.commonDir, 'ticket', runFixture.TICKET))!;
+  const { terminalReason } = record.load(fixture.commonDir, 'ticket', runFixture.TICKET)!;
   assert.deepEqual(terminalReason!.decidedBy, { hold: 'dirty-worktree' });
   return terminalReason!.text;
 }

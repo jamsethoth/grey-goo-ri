@@ -626,7 +626,7 @@ async function secondTicket(fixture: GoldenFixture) {
     branch,
     base: 'main',
   });
-  await record.save(next);
+  record.save(next);
   const harness = fakeHarness({
     transcriptDir: join(fixture.root, 'transcripts-16'),
     capabilities: { costReporting: false, reasoningTokenReporting: false },

@@ -147,7 +147,7 @@ for (const [action, effect] of Object.entries(crashResume.EFFECTS)) {
 
       const result = await interpreter.runExecution({ ...fixture.options, record: loaded });
       assert.equal(result.outcome, 'ready-for-qa');
-      const final = await executionReads.loadTicket(fixture);
+      const final = executionReads.loadTicket(fixture);
       assert.equal(final.state, 'ready-for-qa');
       assert.equal(fixture.harness.calls.length, 2, 'the resume continues at the cursor; no agent call is repeated');
       assert.deepEqual(

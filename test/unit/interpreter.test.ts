@@ -84,7 +84,7 @@ test('Red Evidence keeps raw local paths for the green Brief', async (t) => {
   const path = join(fixture.worktree, 'test', 'add.test.mjs');
   editRuns(fixture, (result) => ({ ...result, output: `${result.output}\n    at (${path}:1:1)` }));
   await interpreter.runExecution(fixture.options);
-  const executionRecord = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
+  const executionRecord = record.load(fixture.commonDir, 'ticket', golden.TICKET)!;
   const redCheck = executionRecord.outputs.find((output) => output.vertex === 'red' && output.action === 'red-check');
   const { output } = (redCheck!.value as { evidence: { output: string } }).evidence;
   assert.ok(output.includes(path), output);
@@ -130,7 +130,7 @@ async function tokenRun(t: TestContext) {
 test('each public field is redacted once and sent exactly as its intent saved it', async (t) => {
   const fixture = await tokenRun(t);
 
-  const executionRecord = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
+  const executionRecord = record.load(fixture.commonDir, 'ticket', golden.TICKET)!;
   const messages = await branchMessages(fixture);
   const sent = [...fixture.gh.calls.flatMap((call) => [...call.args, call.input ?? '']), ...messages];
   assert.deepEqual(

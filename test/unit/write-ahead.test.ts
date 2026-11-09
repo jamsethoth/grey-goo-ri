@@ -6,7 +6,7 @@ import * as support from '../support/execution-context.ts';
 
 test("findEntry finds a marker's write-ahead entry by its step", async (t) => {
   const { executionRecord } = await support.executionContext(t);
-  await record.intent(executionRecord, 'gg:m', 'push', { branch: 'b', sha: 'abc' });
+  record.intent(executionRecord, 'gg:m', 'push', { branch: 'b', sha: 'abc' });
   assert.deepEqual(writeAhead.findEntry(executionRecord, 'gg:m', 'intent')?.payload, { branch: 'b', sha: 'abc' });
   assert.equal(writeAhead.findEntry(executionRecord, 'gg:m', 'complete'), undefined);
   assert.equal(writeAhead.findEntry(executionRecord, 'gg:other', 'intent'), undefined);

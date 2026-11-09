@@ -1,6 +1,7 @@
 // The Run context an Execution's Visits, Actions, effects and Terminals read: the deps a test replaces, the
 // Execution's configuration, and how each Action is entered, marked and recorded. runExecution builds it here, once.
 import * as checks from './checks.ts';
+import * as clockModule from './clock.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as effects from './effects.ts';
 import * as events from './events.ts';
@@ -10,31 +11,12 @@ import * as integrity from './integrity.ts';
 import type * as locks from './locks.ts';
 import * as marker from './marker.ts';
 import type * as model from './model.ts';
-import type * as procedures from './procedures.ts';
 import type * as reconcile from './reconcile.ts';
 import * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
 import * as publicText from './public-text.ts';
 import type * as terminalReport from './terminal-report.ts';
-import type * as inputs from './validate/inputs.ts';
 import type * as visit from './visit.ts';
-
-// Time as the Run reads it. `every(ms, fn)` calls fn every ms until the stop function it returns is called.
-export interface Clock {
-  now(): number;
-  sleep(ms: number): Promise<void>;
-  every(ms: number, tick: () => void): () => void;
-}
-
-// The wall clock.
-export const WALL_CLOCK: Clock = {
-  now: Date.now,
-  sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
-  every: (ms, tick) => {
-    const timer = setInterval(tick, ms);
-    return () => clearInterval(timer);
-  },
-};
 
 // The git verbs a Run calls (lib/git.ts's, or the fake git's): Reconciliation's, the Integrity Assertions', Test
 // Immutability's, the Terminals' and the Actions' own. gg run's git adds the repo-lock guard (run.lockedGit), which
@@ -76,7 +58,7 @@ export interface Deps {
   exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed'>;
   locks?: locks.Locks;
   database?: record.StateDatabase;
-  clock?: Clock;
+  clock?: clockModule.Clock;
   integrity?: integrity.Integrity;
 }
 
@@ -157,7 +139,7 @@ export interface RunContext extends Omit<ExecutionOptions, 'deps'>, terminalRepo
   exec: Pick<exec.Exec, 'runShell' | 'cleanupConfirmed'>;
   locks: locks.Locks | undefined;
   database: record.StateDatabase;
-  clock: Clock;
+  clock: clockModule.Clock;
   integrity: integrity.Integrity;
   testImmutability: TestImmutability;
   run: string;
@@ -181,7 +163,7 @@ export const reportDecided = (executionRecord: record.ExecutionRecord): boolean 
 export function createRunContext(options: ExecutionOptions): RunContext {
   const { deps, ...given } = options;
   const { record: executionRecord } = options;
-  const { clock = WALL_CLOCK } = deps;
+  const { clock = clockModule.WALL_CLOCK } = deps;
   // A resumed record keeps the Run that wrote its markers, while its Events belong to the Run resuming it.
   const runContext = {
     ...given,
@@ -266,5 +248,5 @@ async function enter(runContext: RunContext, actionIdentity: marker.ActionIdenti
     recovery: actionIdentity.recovery,
     attempt,
   };
-  await runContext.database.save(executionRecord);
+  runContext.database.save(executionRecord);
 }

@@ -43,8 +43,8 @@ test('branchMessages throws when the base is not in the log', async () => {
 test('a record the State Database cannot open fails with its error, not as a corrupt record', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
   mkdirSync(join(commonDir, 'gg', 'gg.db'), { recursive: true });
-  await assert.rejects(
-    reconcile.loadExecutionRecord(commonDir, 1),
+  assert.throws(
+    () => reconcile.loadExecutionRecord(commonDir, 1),
     (err: Error) => !(err instanceof record.RecordCorruptError) && /unable to open database file/.test(err.message),
   );
 });
@@ -52,7 +52,7 @@ test('a record the State Database cannot open fails with its error, not as a cor
 test('a corrupt row loads as corrupt, not as an error', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
   stateDatabase.open(commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', 1, '{')").run();
-  const loaded = await reconcile.loadExecutionRecord(commonDir, 1);
+  const loaded = reconcile.loadExecutionRecord(commonDir, 1);
   assert.equal(loaded.executionRecord, null);
   assert.ok(loaded.corrupt instanceof record.RecordCorruptError);
   assert.equal(loaded.corrupt.raw, '{', 'the error keeps the row');
@@ -75,7 +75,7 @@ test('a reset whose evidence was saved but not its completion is completed witho
     ...fixture.options,
     deps: { ...fixture.options.deps, integrity: violating(fixture) },
   });
-  const executionRecord = (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
+  const executionRecord = record.load(fixture.commonDir, 'ticket', golden.TICKET) as record.ExecutionRecord;
   executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter(
     (entry) => !(entry.effect === 'reset' && entry.step === 'complete'),
   );
@@ -100,7 +100,7 @@ test('a failed HEAD read after the reset of an Integrity Violation leaves the Hi
   };
   await assert.rejects(interpreter.runExecution(fixture.options), /head read failed/);
 
-  const loaded = (await record.load(fixture.commonDir, 'ticket', golden.TICKET)) as record.ExecutionRecord;
+  const loaded = record.load(fixture.commonDir, 'ticket', golden.TICKET) as record.ExecutionRecord;
   assert.deepEqual(loaded.history, [], 'no History item is saved without the reset evidence');
   assert.equal(await reconcile.resets(loaded, { git }), 'continue');
   assert.equal(loaded.history.length, 1);
@@ -174,11 +174,11 @@ test('a record at a Vertex named constructor resumes, and one the Flow lacks hol
   const ended = await interpreter.runExecution({
     ...held.options,
     flow: lacking,
-    record: await executionReads.loadTicket(held),
+    record: executionReads.loadTicket(held),
   });
   assert.deepEqual([ended.outcome, ended.held], ['needs-human', true]);
   assert.match(
-    (await executionReads.loadTicket(held)).terminalReason!.text,
+    executionReads.loadTicket(held).terminalReason!.text,
     /The record continues at Vertex constructor, which the Flow no longer has\./,
   );
 });

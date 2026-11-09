@@ -23,7 +23,7 @@ const outcomes = (results: { ticket: number; outcome: string }[]) =>
   results.map((result) => [result.ticket, result.outcome]);
 // A sub-issue of the epic that the Run left alone: no record, worktree, label edit or Event.
 async function assertNotAdmitted(fixture: RunFixture, ticket: number, message: string) {
-  assert.equal(await record.load(fixture.commonDir, 'ticket', ticket), null, message);
+  assert.equal(record.load(fixture.commonDir, 'ticket', ticket), null, message);
   assert.equal(existsSync(epicRun.worktreeOf(fixture, ticket)), false, 'nor a worktree');
   assert.ok(
     !fixture.gh.calls.some(
@@ -170,7 +170,7 @@ test('runTarget admits only ready tickets of an epic', { timeout: 120_000 }, asy
     'the epic and each sub-issue are read',
   );
   assert.equal(views.filter((number) => number === 23).length, 1, 'the blocked sub-issue only by discovery');
-  const epicOfRecord = async (ticket: number) => (await record.load(fixture.commonDir, 'ticket', ticket))?.epic;
+  const epicOfRecord = async (ticket: number) => record.load(fixture.commonDir, 'ticket', ticket)?.epic;
   assert.equal(await epicOfRecord(21), EPIC, "#21's Execution references the epic");
   assert.equal(await epicOfRecord(22), EPIC, "#22's Execution references the epic");
   await assertNotAdmitted(fixture, 23, 'the blocked Ticket has no record');

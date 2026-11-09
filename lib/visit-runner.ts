@@ -122,7 +122,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
   });
   // shortcut: nothing reloads configuration mid-Execution yet, so a change is not detected or logged at Vertex entry;
   // log it against the Config Hash when gg run reloads between Vertices (#184).
-  await runContext.database.save(executionRecord);
+  runContext.database.save(executionRecord);
   return false;
 }
 
@@ -267,7 +267,7 @@ async function stopVisit(runContext: RunContext, state: RunningVisit, ran: Ran, 
       recovery: actionIdentity.recovery,
       resolution: resolution as visit.Resolution,
     };
-    await runContext.database.save(runContext.record);
+    runContext.database.save(runContext.record);
   }
   if (resolution.row === 'cleanup-unconfirmed') return cleanupHold.holdTicket(runContext, actionIdentity);
   // A prohibited change never survives into a retry or the next Action, whatever the Harness Result (request 3.4): an

@@ -329,7 +329,7 @@ test(
       (err: unknown) => err instanceof interpreter.CrashError,
     );
 
-    const saved = (await record.load(fixture.commonDir, 'ticket', golden.TICKET))!;
+    const saved = record.load(fixture.commonDir, 'ticket', golden.TICKET)!;
     assert.equal(saved.cursor.vertex, 'ready-for-qa');
     assert.equal(saved.terminalReason?.outcome, 'ok');
     assert.match(saved.terminalReason!.text, new RegExp(`PR #${saved.pr} is ready for review\\.$`));

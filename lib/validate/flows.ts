@@ -40,7 +40,7 @@ export const EDGE_KEYS = ['to', 'max', 'exhausted'];
 const RESERVED_VERTICES: string[] = [...labels.END_STATES, 'cleanup', 'done'];
 // What an Agent asks for (Permission Intents). Integrity treats any access but read-only as a write, so a typo such as
 // read-write would run as workspace-write.
-export const PERMISSION_INTENTS = ['read-only', 'workspace-write'];
+const PERMISSION_INTENTS = ['read-only', 'workspace-write'];
 
 type Value = Record<string, unknown>;
 type FallThroughs = checked.FallThroughs;

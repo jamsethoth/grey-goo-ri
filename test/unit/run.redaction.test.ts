@@ -56,7 +56,7 @@ async function assertBodiesMatchIntents(fixture: RunFixture, bodies: string[]) {
     [],
     'a truncated path exposed the temp directory name',
   );
-  const executionRecord = (await record.load(fixture.commonDir, 'ticket', TICKET)) as record.ExecutionRecord;
+  const executionRecord = record.load(fixture.commonDir, 'ticket', TICKET) as record.ExecutionRecord;
   const intents = executionRecord.writeAheadLog.filter(
     (entry) => entry.step === 'intent' && ['comment', 'pr-upsert'].includes(entry.effect as string),
   );

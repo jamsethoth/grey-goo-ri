@@ -3,11 +3,12 @@ import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as admission from './admission.ts';
 import * as cleanupHold from './cleanup-hold.ts';
+import * as clockModule from './clock.ts';
 import * as config from './config.ts';
+import * as effectErrors from './effect-errors.ts';
 import * as events from './events.ts';
 import * as flowModule from './flow.ts';
-import type * as github from './github.ts';
-import * as interpreter from './interpreter.ts';
+import * as github from './github.ts';
 import * as labels from './labels.ts';
 import * as locksModule from './locks.ts';
 import * as model from './model.ts';
@@ -120,9 +121,7 @@ export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
 // nothing ready leaves no trace.
 async function readTickets(gh: github.Gh, target: number, repo: admission.Repo, layers: config.Config) {
   const issue = await gh.viewIssue(target, repo.mainRoot);
-  // gh gives an issue's sub-issues as a list, or as a connection with its list under `nodes`.
-  const declared = issue.subIssues as ({ nodes?: { number: number }[] } & { number: number }[]) | undefined;
-  const subIssues = declared?.nodes ?? declared ?? [];
+  const subIssues = github.linkedIssues(issue.subIssues);
   if (!subIssues.length) return { issue, subIssues, tickets: [issue] };
   const children = await Promise.all(subIssues.map((sub) => gh.viewIssue(sub.number, repo.mainRoot)));
   // A Pending Ticket reads as in progress, and its Await Label says it is waiting for this Run.
@@ -171,7 +170,7 @@ function labelEnsuringGh(
 // may run under, and the Run's log: each line goes to the run log and the caller's log, named.
 function startRun(
   repo: admission.Repo,
-  { flows, selected, clock }: { flows: runFlows.PinnedFlow[]; selected: runFlows.PinnedFlow; clock: runContext.Clock },
+  { flows, selected, clock }: { flows: runFlows.PinnedFlow[]; selected: runFlows.PinnedFlow; clock: clockModule.Clock },
   { named, log }: { named: (message: string) => string; log: (line: string) => void },
 ) {
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
@@ -189,7 +188,7 @@ function startRun(
 
 async function runRepo(repo: admission.Repo, named: (message: string) => string, options: RunOptions) {
   const { target, config: layers, harnesses, protectedPaths, testImmutability, deps, log } = options;
-  const { gh, git, exec, integrity, locks = locksModule, database = record, clock = interpreter.WALL_CLOCK } = deps;
+  const { gh, git, exec, integrity, locks = locksModule, database = record, clock = clockModule.WALL_CLOCK } = deps;
   const { flows, selected, warnings, commands } = await runFlows.admitConfiguration(options, repo.mainRoot);
   const { flow, hash } = selected;
   const declared = [...flows.values()];
@@ -251,26 +250,18 @@ async function runTicket(issue: github.Issue, context: admission.AdmissionContex
     return { ticket, outcome: 'skipped' };
   }
   const fault = (err: unknown) => {
-    const error = (err as Error).message ?? String(err);
+    const error = effectErrors.errorText(err);
     context.log(`#${ticket} ERROR ${error}`);
     return { ticket, outcome: 'fault', fault: true, error };
   };
-  const { gh, locks } = context.deps;
+  const { locks } = context.deps;
   // Every failure, the lock's included, becomes this Ticket's result, so mapConcurrently settles every worker before
   // run_end.
   let lock = null;
   let result;
   try {
     lock = await locks.tryAcquire(context.repo.gitCommonDir, `ticket-${ticket}`);
-    if (!lock) {
-      context.log(`#${ticket} skipped: another process holds the ticket-${ticket} lock`);
-      const needsHuman = labels.labelsFor(context.config.labelPrefix).state(labels.NEEDS_HUMAN);
-      return {
-        ticket,
-        outcome: 'skipped',
-        ...(labels.hasLabel(gh.labelNames(issue), needsHuman) && { state: labels.NEEDS_HUMAN }),
-      };
-    }
+    if (!lock) return admission.skip({ context, issue }, `another process holds the ticket-${ticket} lock`);
     result = await admission.admit(issue, context);
   } catch (err) {
     result = fault(err);

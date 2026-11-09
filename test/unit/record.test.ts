@@ -23,7 +23,7 @@ function withDb<Result>(commonDir: string, query: (db: DatabaseSync) => Result) 
   }
 }
 
-function newExecution(commonDir: string, ticket = 8) {
+function knownRecord(commonDir: string, ticket = 8) {
   return record.createExecutionRecord({
     commonDir,
     ticket,
@@ -44,9 +44,9 @@ function withoutCommonDir<Saved extends { commonDir: string }>(savedRecord: Save
 
 test('a fresh Execution Record declares every field it can hold', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
+  const executionRecord = knownRecord(commonDir);
   assert.match(executionRecord.execution, /^8\.[0-9a-f]{6}$/);
-  assert.notEqual(newExecution(commonDir).execution, executionRecord.execution);
+  assert.notEqual(knownRecord(commonDir).execution, executionRecord.execution);
   assert.equal(executionRecord.commonDir, commonDir);
   const expected = {
     schemaVersion: 1,
@@ -101,27 +101,30 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
 
 test('saving a record never adds a field createExecutionRecord did not declare', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
+  const executionRecord = knownRecord(commonDir);
   Object.assign(executionRecord, { admission: { kind: 'hold' } });
-  await assert.rejects(record.save(executionRecord), (err: Error) => {
-    assert.ok(err instanceof record.RecordSaveError, String(err.stack));
-    assert.match(err.message, /\badmission\b/);
-    return true;
-  });
-  assert.equal(await record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
+  assert.throws(
+    () => record.save(executionRecord),
+    (err: Error) => {
+      assert.ok(err instanceof record.RecordSaveError, String(err.stack));
+      assert.match(err.message, /\badmission\b/);
+      return true;
+    },
+  );
+  assert.equal(record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
 
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
   Object.assign(epicRecord, { approval: null });
-  await assert.rejects(record.save(epicRecord), /\bapproval\b/);
-  assert.equal(await record.load(commonDir, 'epic', 1), null, 'nothing is saved');
+  assert.throws(() => record.save(epicRecord), /\bapproval\b/);
+  assert.equal(record.load(commonDir, 'epic', 1), null, 'nothing is saved');
 });
 
 test('saving a record never drops a field createExecutionRecord declared', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
+  const executionRecord = knownRecord(commonDir);
   delete (executionRecord as Partial<record.ExecutionRecord>).admissionStop;
-  await assert.rejects(record.save(executionRecord), /\badmissionStop\b/);
-  assert.equal(await record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
+  assert.throws(() => record.save(executionRecord), /\badmissionStop\b/);
+  assert.equal(record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
 });
 
 test('a fresh Epic Record declares every field it can hold', async (t) => {
@@ -134,10 +137,10 @@ test('a fresh Epic Record declares every field it can hold', async (t) => {
 
 test('a write-ahead entry carries every field, null where its step has none', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
-  await record.intent(executionRecord, 'm1', 'commit', { tree: 't1' });
-  await record.evidence(executionRecord, 'm1', { sha: 's1' });
-  await record.complete(executionRecord, 'm1');
+  const executionRecord = knownRecord(commonDir);
+  record.intent(executionRecord, 'm1', 'commit', { tree: 't1' });
+  record.evidence(executionRecord, 'm1', { sha: 's1' });
+  record.complete(executionRecord, 'm1');
   const entries = executionRecord.writeAheadLog;
   assert.ok(Array.isArray(entries), 'the record has a writeAheadLog');
   assert.deepEqual(
@@ -156,10 +159,10 @@ test('a write-ahead entry carries every field, null where its step has none', as
 
 test('save writes a records row and never a records directory', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
+  const executionRecord = knownRecord(commonDir);
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
-  await record.save(executionRecord);
-  await record.save(epic);
+  record.save(executionRecord);
+  record.save(epic);
   assert.ok(existsSync(dbPath(commonDir)), 'gg/gg.db exists');
   assert.ok(!existsSync(join(commonDir, 'gg', 'records')), 'no gg/records directory');
   withDb(commonDir, (db) => {
@@ -185,31 +188,31 @@ test('save writes a records row and never a records directory', async (t) => {
 
 test('load returns null for a missing row and the record for a saved one', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
-  await record.save(executionRecord);
-  assert.equal(await record.load(commonDir, 'ticket', 9), null);
-  assert.equal(await record.load(commonDir, 'epic', 8), null);
+  const executionRecord = knownRecord(commonDir);
+  record.save(executionRecord);
+  assert.equal(record.load(commonDir, 'ticket', 9), null);
+  assert.equal(record.load(commonDir, 'epic', 8), null);
   // Changed behind the module's back, so the load must come from the row.
   withDb(commonDir, (db) => {
     db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8").run(
       JSON.stringify({ ...withoutCommonDir(executionRecord), state: 'ready-for-qa' }),
     );
   });
-  const loaded = await record.load(commonDir, 'ticket', 8);
+  const loaded = record.load(commonDir, 'ticket', 8);
   assert.equal(loaded?.commonDir, commonDir);
   assert.deepEqual(loaded, { ...executionRecord, state: 'ready-for-qa' });
 
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
-  await record.save(epic);
-  assert.deepEqual(await record.load(commonDir, 'epic', 1), epic);
+  record.save(epic);
+  assert.deepEqual(record.load(commonDir, 'epic', 1), epic);
 });
 
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
-  await record.intent(executionRecord, 'm1', 'commit', { message: 'red' });
-  await record.evidence(executionRecord, 'm1', { sha: 'deadbeef' });
-  await record.complete(executionRecord, 'm1');
+  const executionRecord = knownRecord(commonDir);
+  record.intent(executionRecord, 'm1', 'commit', { message: 'red' });
+  record.evidence(executionRecord, 'm1', { sha: 'deadbeef' });
+  record.complete(executionRecord, 'm1');
   assert.deepEqual(
     executionRecord.writeAheadLog.map(({ time, ...entry }) => entry),
     [
@@ -222,7 +225,7 @@ test('the write-ahead log records intent, evidence and completion per marker', a
     executionRecord.writeAheadLog.map((entry) => typeof entry.time),
     ['string', 'string', 'string'],
   );
-  const loaded = await record.load(commonDir, 'ticket', 8);
+  const loaded = record.load(commonDir, 'ticket', 8);
   assert.deepEqual(loaded?.writeAheadLog, executionRecord.writeAheadLog, 'each step saves');
 });
 
@@ -236,70 +239,66 @@ test('a record transition and its event commit together', async (t) => {
     },
   });
   const eventLog = events.eventLog(commonDir, { run: 'run-1', ticket: 8 }, database);
-  const executionRecord = newExecution(commonDir);
+  const executionRecord = knownRecord(commonDir);
   const eventTypes = () => events.readEvents(commonDir).map((event) => event.type);
   const start = () => eventLog('ticket_start', { execution: executionRecord.execution });
 
-  await assert.rejects(
-    record.save(executionRecord, start),
+  assert.throws(
+    () => record.save(executionRecord, start),
     (err: Error) => err.name === 'RecordSaveError',
     'a failed Event fails the save',
   );
-  assert.equal(await record.load(commonDir, 'ticket', 8), null, 'no record is created without its Event');
+  assert.equal(record.load(commonDir, 'ticket', 8), null, 'no record is created without its Event');
   appends.failing = false;
-  await record.save(executionRecord, start);
-  assert.equal((await record.load(commonDir, 'ticket', 8))?.state, 'active');
+  record.save(executionRecord, start);
+  assert.equal(record.load(commonDir, 'ticket', 8)?.state, 'active');
   assert.deepEqual(eventTypes(), ['ticket_start']);
 
   appends.failing = true;
   executionRecord.state = 'held';
-  await assert.rejects(
-    record.save(executionRecord, () => eventLog('ticket_end', { execution: executionRecord.execution })),
+  assert.throws(
+    () => record.save(executionRecord, () => eventLog('ticket_end', { execution: executionRecord.execution })),
     (err: Error) => err.name === 'RecordSaveError',
   );
-  assert.equal((await record.load(commonDir, 'ticket', 8))?.state, 'active', 'the previous row stays');
+  assert.equal(record.load(commonDir, 'ticket', 8)?.state, 'active', 'the previous row stays');
   assert.deepEqual(eventTypes(), ['ticket_start'], 'and no Event lands');
   appends.failing = false;
-  await record.save(executionRecord, () => eventLog('ticket_end', { execution: executionRecord.execution }));
-  assert.equal((await record.load(commonDir, 'ticket', 8))?.state, 'held');
+  record.save(executionRecord, () => eventLog('ticket_end', { execution: executionRecord.execution }));
+  assert.equal(record.load(commonDir, 'ticket', 8)?.state, 'held');
   assert.deepEqual(eventTypes(), ['ticket_start', 'ticket_end']);
   executionRecord.state = 'ready-for-qa';
-  await record.save(executionRecord);
-  assert.equal(
-    (await record.load(commonDir, 'ticket', 8))?.state,
-    'ready-for-qa',
-    'a plain save still works after a rollback',
-  );
+  record.save(executionRecord);
+  assert.equal(record.load(commonDir, 'ticket', 8)?.state, 'ready-for-qa', 'a plain save still works after a rollback');
 });
 
 test('openIntents lists intents without completion oldest first', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  const executionRecord = newExecution(commonDir);
-  await record.intent(executionRecord, 'm1', 'commit', {});
+  const executionRecord = knownRecord(commonDir);
+  record.intent(executionRecord, 'm1', 'commit', {});
   assert.deepEqual(
     writeAhead.openIntents(executionRecord).map((entry) => entry.actionMarker ?? entry),
     ['m1'],
   );
-  await record.intent(executionRecord, 'm2', 'push', {});
-  await record.intent(executionRecord, 'm3', 'comment', {});
-  await record.evidence(executionRecord, 'm2', { ok: true });
-  await record.complete(executionRecord, 'm2');
+  record.intent(executionRecord, 'm2', 'push', {});
+  record.intent(executionRecord, 'm3', 'comment', {});
+  record.evidence(executionRecord, 'm2', { ok: true });
+  record.complete(executionRecord, 'm2');
   assert.deepEqual(
     writeAhead.openIntents(executionRecord).map((entry) => entry.actionMarker ?? entry),
     ['m1', 'm3'],
   );
-  await record.complete(executionRecord, 'm1');
-  await record.complete(executionRecord, 'm3');
+  record.complete(executionRecord, 'm1');
+  record.complete(executionRecord, 'm3');
   assert.deepEqual(writeAhead.openIntents(executionRecord), []);
 });
 
 test('loadAll lists every ticket record', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  assert.deepEqual(await record.loadAll(commonDir, 'ticket'), []);
-  await record.save(newExecution(commonDir, 8));
-  await record.save(newExecution(commonDir, 12));
-  await record.save(record.createEpicRecord({ commonDir, epic: 1 }));
-  const all = await record.loadAll(commonDir, 'ticket');
+  assert.deepEqual(record.loadAll(commonDir, 'ticket'), []);
+  record.save(knownRecord(commonDir, 8));
+  record.save(knownRecord(commonDir, 12));
+  record.save(record.createEpicRecord({ commonDir, epic: 1 }));
+  const all = record.loadAll(commonDir, 'ticket');
   assert.deepEqual(
     all.map((executionRecord) => executionRecord.ticket).sort((left, right) => left - right),
     [8, 12],
@@ -308,7 +307,7 @@ test('loadAll lists every ticket record', async (t) => {
 
 test('loadAll reports a corrupt row and an unknown schemaVersion and returns the rest', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  await record.save(newExecution(commonDir, 8));
+  record.save(knownRecord(commonDir, 8));
   const unknown = JSON.stringify({ schemaVersion: 99, ticket: 10 });
   withDb(commonDir, (db) => {
     const insert = db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)');
@@ -322,11 +321,11 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
     assert.ok(err.message.includes(err.file));
     return true;
   };
-  await assert.rejects(record.load(commonDir, 'ticket', 9), isCorrupt('ticket-9'));
-  await assert.rejects(record.load(commonDir, 'ticket', 10), isCorrupt('ticket-10'));
+  assert.throws(() => record.load(commonDir, 'ticket', 9), isCorrupt('ticket-9'));
+  assert.throws(() => record.load(commonDir, 'ticket', 10), isCorrupt('ticket-10'));
 
   const corrupt: record.RecordCorruptError[] = [];
-  const records = await record.loadAll(commonDir, 'ticket', { onCorrupt: (err) => corrupt.push(err) });
+  const records = record.loadAll(commonDir, 'ticket', { onCorrupt: (err) => corrupt.push(err) });
   assert.deepEqual(
     records.map((executionRecord) => executionRecord.ticket),
     [8],
@@ -348,7 +347,7 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
 // such row leaves every other row readable.
 test('a record whose visits, traversals or Check runs are not objects is corrupt; the rest load', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  await record.save(newExecution(commonDir, 8));
+  record.save(knownRecord(commonDir, 8));
   const saved = JSON.parse(
     withDb(commonDir, (db) => db.prepare('SELECT json FROM records WHERE n = 8').get()!.json as string),
   );
@@ -366,9 +365,12 @@ test('a record whose visits, traversals or Check runs are not objects is corrupt
       );
   });
   for (const [ticket] of broken)
-    await assert.rejects(record.load(commonDir, 'ticket', ticket), (err) => err instanceof record.RecordCorruptError);
+    assert.throws(
+      () => record.load(commonDir, 'ticket', ticket),
+      (err) => err instanceof record.RecordCorruptError,
+    );
   const corrupt: record.RecordCorruptError[] = [];
-  const records = await record.loadAll(commonDir, 'ticket', { onCorrupt: (err) => corrupt.push(err) });
+  const records = record.loadAll(commonDir, 'ticket', { onCorrupt: (err) => corrupt.push(err) });
   assert.deepEqual(
     records.map((executionRecord) => executionRecord.ticket),
     [8],
@@ -379,17 +381,17 @@ test('a record whose visits, traversals or Check runs are not objects is corrupt
 test('a record written before Action ids is corrupt, not misread', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   // Its cursor names a phase and ordinal, which a resume would read as an Action id and a Recovery Number.
-  await record.save(newExecution(commonDir, 8));
+  record.save(knownRecord(commonDir, 8));
   const old = {
-    ...newExecution(commonDir, 11),
+    ...knownRecord(commonDir, 11),
     cursor: { vertex: 'green', visit: 1, phase: 'green', ordinal: 3, attempt: 1 },
   };
   delete (old as { commonDir?: string }).commonDir;
   withDb(commonDir, (db) =>
     db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run('ticket', 11, JSON.stringify(old)),
   );
-  await assert.rejects(
-    record.load(commonDir, 'ticket', 11),
+  assert.throws(
+    () => record.load(commonDir, 'ticket', 11),
     (err: Error) => err instanceof record.RecordCorruptError && /Recovery Number/.test(err.message),
   );
 });
@@ -476,14 +478,14 @@ test('stateDatabase.open shares one connection between spellings of the same dir
 test('close releases the database so the directory can be removed', async (t) => {
   const commonDir = await mkdtemp(join(tmpdir(), 'gg-record-'));
   t.after(() => rm(commonDir, { recursive: true, force: true }));
-  await record.save(newExecution(commonDir));
+  record.save(knownRecord(commonDir));
   await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', '{}');
   assert.ok(existsSync(dbPath(commonDir)), 'gg/gg.db exists');
   await stateDatabase.close(commonDir);
   rmSync(commonDir, { recursive: true });
   assert.ok(!existsSync(commonDir));
   // A later call opens a fresh connection rather than reusing the closed one.
-  await record.save(newExecution(commonDir));
-  assert.equal((await record.load(commonDir, 'ticket', 8))?.ticket, 8);
+  record.save(knownRecord(commonDir));
+  assert.equal(record.load(commonDir, 'ticket', 8)?.ticket, 8);
   await stateDatabase.close(commonDir);
 });

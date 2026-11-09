@@ -253,7 +253,7 @@ export async function seedExecution(
     base: 'main',
   });
   const database = options.deps.database as record.StateDatabase;
-  await database.save(executionRecord);
+  database.save(executionRecord);
   await assert.rejects(
     interpreter.runExecution({
       deps: { gh: options.deps.gh, git, exec, database, clock: runFixture.clock, integrity },

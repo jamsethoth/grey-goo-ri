@@ -25,7 +25,7 @@ test('an in-progress ticket with a recoverable record is resumed', async (t) => 
   const results = await run.runTarget(fixture.options);
   assert.equal(run.runExitCode(results), 0);
   assert.equal(fixture.harness.calls.length, 2, 'the resume continues at the cursor; no agent call is repeated');
-  const final = (await record.load(fixture.commonDir, 'ticket', TICKET)) as record.ExecutionRecord;
+  const final = record.load(fixture.commonDir, 'ticket', TICKET) as record.ExecutionRecord;
   assert.equal(final.execution, seeded.execution, 'the same Execution is resumed');
   assert.equal(final.state, 'ready-for-qa');
   assert.equal(

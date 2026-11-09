@@ -80,7 +80,7 @@ export async function crashed(fixture: GoldenFixture, place: golden.MarkerPlace,
     interpreter.runExecution({ ...fixture.options, crashAt: { marker: actionMarker, point } }),
     (err) => err instanceof interpreter.CrashError,
   );
-  return { actionMarker, loaded: await executionReads.loadTicket(fixture) };
+  return { actionMarker, loaded: executionReads.loadTicket(fixture) };
 }
 
 // What Reconciliation reads a record with. A record that failed to load is passed as `corrupt`, as admission passes it.

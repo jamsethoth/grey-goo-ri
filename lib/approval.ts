@@ -119,7 +119,7 @@ export function read({
   digest: current,
   permissions,
   approvers = [],
-  prefix = labels.DEFAULT_PREFIX,
+  prefix,
   decisions,
 }: {
   approvalRequest: PendingInstance | null;
@@ -157,7 +157,7 @@ export function read({
 export function decidingActors({
   vertex,
   timeline,
-  prefix = labels.DEFAULT_PREFIX,
+  prefix,
 }: {
   vertex: string;
   timeline: IssueEvent[];

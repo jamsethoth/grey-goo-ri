@@ -44,15 +44,14 @@ function holdNumber(runContext: RunContext, held: HeldAction): number {
   return number;
 }
 
-const awaitLabel = (runContext: RunContext) =>
-  labels.labelsFor(runContext.labelPrefix ?? labels.DEFAULT_PREFIX).await(AWAIT_VERTEX);
+const awaitLabel = (runContext: RunContext) => labels.labelsFor(runContext.labelPrefix).await(AWAIT_VERTEX);
 
 const REASON_MISSING = 'no reason was reported';
 
 // What a human can do depends on what a later Run can check.
 function adviceOf(runContext: RunContext, report: commandCleanup.CleanupReport): string {
   const ticket = runContext.record.ticket;
-  const needsHuman = labels.labelsFor(runContext.labelPrefix ?? labels.DEFAULT_PREFIX).state(labels.NEEDS_HUMAN);
+  const needsHuman = labels.labelsFor(runContext.labelPrefix).state(labels.NEEDS_HUMAN);
   const stop = `Or add ${needsHuman} to abandon the Execution.`;
   const containment = report.containment?.kind ?? 'none';
   if (containment === 'job')
@@ -141,7 +140,7 @@ async function confirm(
   // A stopped Run starts no work, and a confirmed hold leads straight to some, so it waits for a Run with no stop.
   if (runContext.runState.stop || !runContext.exec.cleanupConfirmed(cleanup.containment)) throw pendingEnding(held);
   executionRecord.visitState!.unconfirmedCleanup = null;
-  await database.save(executionRecord);
+  database.save(executionRecord);
 }
 
 // A resumed record held for cleanup, confirmed once. The label comes down after that save, so a crash cannot make this

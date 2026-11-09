@@ -9,7 +9,7 @@ import * as gitShell from '../support/git-shell.ts';
 import * as worktrees from '../support/integrity-worktrees.ts';
 
 // The other ticket's process holds its own copy of the record, as a separate Execution would.
-const otherProcessRecord = async (commonDir: string) => (await record.load(commonDir, 'ticket', 2))!;
+const otherProcessRecord = async (commonDir: string) => record.load(commonDir, 'ticket', 2)!;
 
 const surfacesOf = (violations: integrity.IntegrityViolation[], worktree: string) =>
   violations

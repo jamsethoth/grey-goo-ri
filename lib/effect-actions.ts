@@ -4,7 +4,6 @@ import * as checks from './checks.ts';
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects.ts';
-import * as github from './github.ts';
 import * as integrity from './integrity.ts';
 import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
@@ -194,7 +193,7 @@ async function comment(runContext: RunContext, { actionIdentity, action, state }
       effect: 'comment',
       payload: { target, body, bodyHash: config.sha256(body) },
       perform: async (planned) => ({
-        id: github.commentId(await gh.comment(planned.target.number, planned.body, cwd)),
+        id: (await gh.comment(planned.target.number, planned.body, cwd)).id,
       }),
       deferred: true,
     }),

@@ -38,7 +38,7 @@ test('local paths in captured Check output and agent text do not reach PR bodies
     !gitShell.sh(join(fixture.root, 'origin.git'), 'log', '--format=%B', '--all').includes(fixture.root),
     'pushed commit messages contain no local root',
   );
-  const executionRecord = (await record.load(fixture.commonDir, 'ticket', runFixture.TICKET)) as record.ExecutionRecord;
+  const executionRecord = record.load(fixture.commonDir, 'ticket', runFixture.TICKET) as record.ExecutionRecord;
   const commits = executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent' && entry.effect === 'commit');
   assert.equal(commits.length, 2);
   assert.ok(

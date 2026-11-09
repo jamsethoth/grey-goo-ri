@@ -20,7 +20,6 @@ import * as visitRunner from './visit-runner.ts';
 import type * as writeAhead from './write-ahead.ts';
 
 export { CrashError } from './effect-errors.ts';
-export { WALL_CLOCK } from './run-context.ts';
 export type { Deps, ExecutionOptions, RunContext } from './run-context.ts';
 
 type RunContext = context.RunContext;
@@ -97,7 +96,7 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
   const decided = await reconcile.terminalEffects(executionRecord, {
     gh: runContext.gh,
     database: runContext.database,
-    labelPrefix: runContext.labelPrefix ?? labels.DEFAULT_PREFIX,
+    labelPrefix: runContext.labelPrefix,
     cwd: runContext.cwd,
     markers,
     find: findEffect(runContext),
@@ -120,7 +119,7 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
         integrity: runContext.integrity,
         gh: runContext.gh,
         database: runContext.database,
-        labelPrefix: runContext.labelPrefix ?? labels.DEFAULT_PREFIX,
+        labelPrefix: runContext.labelPrefix,
         cwd: runContext.cwd,
         find: findEffect(runContext),
       }),
@@ -156,7 +155,7 @@ async function runVertices(runContext: RunContext): Promise<TerminalResult> {
     if (flow.isEnd(ended.next)) break;
     const visitNumber = (executionRecord.visits.get(ended.next) ?? 0) + 1;
     executionRecord.cursor = { vertex: ended.next, visit: visitNumber, action: null, recovery: 0, attempt: 1 };
-    await runContext.database.save(executionRecord);
+    runContext.database.save(executionRecord);
   }
   const { next, stop, reason } = ended;
   if (reason) {
@@ -166,7 +165,7 @@ async function runVertices(runContext: RunContext): Promise<TerminalResult> {
         ? { ...reason, text: `${reason.text} PR #${executionRecord.pr} is ready for review.` }
         : reason;
     executionRecord.terminalStop = stop && terminalReport.declaredStop(stop);
-    await runContext.database.save(executionRecord);
+    runContext.database.save(executionRecord);
   }
   return await terminal.terminal(runContext, next);
 }
@@ -190,7 +189,7 @@ async function endCaught(runContext: RunContext, caught: unknown): Promise<Termi
     const result: TerminalResult & { error: string } = {
       outcome: executionRecord.terminalStop!.abandoned ? 'abandoned' : labels.NEEDS_HUMAN,
       fault: true,
-      error: (err as Error | null | undefined)?.message || String(err),
+      error: effectErrors.errorText(err),
     };
     const runStop = terminalReport.runStopOf(executionRecord);
     if (runStop) result.runStop = runStop;

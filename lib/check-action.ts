@@ -277,7 +277,7 @@ export async function completeHeld(
     executionRecord.cursor = { ...executionRecord.cursor, action: firstCheck.id, attempt: 1 };
     // Saved with the cursor, which then reads as this Attempt already entered, so the Action Cap counts it once.
     executionRecord.attempts += 1;
-    await runContext.database.save(executionRecord);
+    runContext.database.save(executionRecord);
     return 'rerun-checks';
   }
   const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;

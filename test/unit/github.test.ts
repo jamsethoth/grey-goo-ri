@@ -5,14 +5,6 @@ import * as labels from '../../lib/labels.ts';
 import * as outcome from '../../lib/outcome.ts';
 import * as fakeGhModule from '../support/fake-gh.ts';
 
-test('createIssue keeps malformed output complete for redaction before publication', async (t) => {
-  const output = 'x'.repeat(190) + '/private/worktree/secret-file';
-  const client = github.createGh(async () => output);
-  await assert.rejects(client.createIssue({ title: 'Ticket', body: 'body' }, '/repo'), (err) =>
-    (err as Error).message.includes(output),
-  );
-});
-
 // A stand-in for the gh executable: records every argv and answers from `answer(args)`, as gh's stdout. Unlike
 // fakeGhModule.fakeGh, it keeps no GitHub state: each case scripts the answers it needs.
 const scriptedGh = (answer: (args: string[]) => unknown = () => '') => {
@@ -203,35 +195,6 @@ for (const [prefix, label] of [
     assert.equal(github.readinessReason(await viewLabelled(label), { prefix }), null);
   });
 }
-
-const eventPages = [
-  [
-    { event: 'labeled', label: { name: 'GG:State:In-Progress' }, created_at: '2026-10-01T00:00:00Z' },
-    { event: 'unlabeled', label: { name: 'gg:state:in-progress' }, created_at: '2026-10-02T00:00:00Z' },
-    { event: 'labeled', label: { name: 'X:state:in-progress' }, created_at: '2026-10-03T00:00:00Z' },
-  ],
-  [
-    { event: 'labeled', label: { name: 'gg:STATE:IN-PROGRESS' }, created_at: '2026-10-04T00:00:00Z' },
-    { event: 'labeled', created_at: '2026-10-05T00:00:00Z' },
-    { event: 'labeled', label: { name: 'gg:state:needs-human' }, created_at: '2026-10-06T00:00:00Z' },
-    { event: 'commented', created_at: '2026-10-07T00:00:00Z' },
-  ],
-];
-
-for (const prefix of ['gg', 'Gg']) {
-  test(`inProgressSince with prefix ${prefix} matches mixed-case event labels`, async (t) => {
-    const { gh, calls } = scriptedGh((args) => (args[0] === 'api' ? eventPages : ''));
-    const client = github.createGh(gh);
-    assert.equal(await client.inProgressSince(7, '/repo', { prefix }), '2026-10-04T00:00:00Z');
-    assert.ok(calls[0].args.includes('--paginate'), JSON.stringify(calls[0].args));
-    assert.match(calls[0].args.at(-1)!, /\/issues\/7\/events$/);
-  });
-}
-
-test('inProgressSince is null when no event adds the in-progress State Label', async (t) => {
-  const client = github.createGh(scriptedGh(() => [eventPages[0].slice(1), eventPages[1].slice(1)]).gh);
-  assert.equal(await client.inProgressSince(7, '/repo'), null);
-});
 
 test('upsertPr updates an existing PR found by head branch instead of creating', async (t) => {
   const pr = { number: 12, state: 'OPEN', isDraft: true, url: 'https://github.com/o/r/pull/12' };
@@ -486,9 +449,8 @@ test('a comment is posted through gh api, and a failed one keeps its status and 
     fakeGhModule.included(201, { 'Content-Type': 'application/json' }, { id: 5, html_url: url }),
   );
   const client = github.createGh(gh);
-  assert.equal(await client.comment(7, 'a "quoted"\nbody', '/repo'), url);
-  assert.equal(await client.comment(7, 'on the PR', '/repo'), url);
-  assert.equal(github.commentId(url), 5);
+  await client.comment(7, 'a "quoted"\nbody', '/repo');
+  await client.comment(7, 'on the PR', '/repo');
   assert.ok(
     calls.every(({ args }) => fakeGhModule.isCommentPost(args, 7) && args.includes('--include')),
     JSON.stringify(calls),

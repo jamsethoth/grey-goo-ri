@@ -23,7 +23,7 @@ export type CommandLine = [command: string, args: string[]];
 // Result of a helper process: { code, stdout, stderr }. Never rejects; code is null if it failed to start, outlived ms
 // or was cancelled by signal. Without ms it is let finish, as taskkill /T must be: stopped partway on a loaded machine
 // it can kill the shell but not the children it then no longer finds.
-export function runHelper(
+function runHelper(
   [command, args]: CommandLine,
   ms?: number,
   env?: NodeJS.ProcessEnv,
@@ -101,9 +101,9 @@ export function watchDescendants(rootPid: number) {
 
 export type Watcher = ReturnType<typeof watchDescendants>;
 
-export const errorCode = (err: unknown) => (err as NodeJS.ErrnoException).code;
+const errorCode = (err: unknown) => (err as NodeJS.ErrnoException).code;
 
-export const isAlive = (pid: number) => {
+const isAlive = (pid: number) => {
   try {
     process.kill(pid, 0);
     return true;

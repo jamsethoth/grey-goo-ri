@@ -319,7 +319,7 @@ for (const [name, dropTranscript, resume] of transcripts) {
       legacy.heartbeat = null;
       assert.equal(legacy.cursor.attempt, 2);
       assert.deepEqual(legacy.retries[RED_RETRIES], { timeout: 1 });
-      await record.save(legacy);
+      record.save(legacy);
       dropTranscript(legacy.sessions[keys.sessionKey({ vertex: 'red', visit: 1, action: 'red' })].transcriptPath!);
 
       const result = await interpreter.runExecution({ ...fixture.options, others, record: await loadTicket(fixture) });

@@ -71,15 +71,15 @@ export const publicTextFor =
   (text: unknown): string =>
     publicText(text, [worktree, commonDir, cwd]);
 
+// The last whole lines of `text` that fit in `limit` characters, or `fallback(text)` when no line fits. A partial first
+// line could start inside a local path, where redaction no longer recognises it.
 export function lastLines(text: string, limit: number, fallback: (text: string) => string): string {
-  return '';
-}
-
-export function publicTail(given: unknown, redact: Redact = publicText, limit = 3000): string {
-  const text = redact(String(given ?? ''));
   const cut = text.length - limit;
   if (cut <= 0) return text;
-  // A newline that ends the text has no line after it to keep, so the tail falls back to characters.
+  // A newline that ends the text has no line after it to keep.
   const newline = text.indexOf('\n', cut - 1);
-  return newline >= 0 && newline < text.length - 1 ? text.slice(newline + 1) : text.slice(-limit);
+  return newline >= 0 && newline < text.length - 1 ? text.slice(newline + 1) : fallback(text);
 }
+
+export const publicTail = (given: unknown, redact: Redact = publicText, limit = 3000): string =>
+  lastLines(redact(String(given ?? '')), limit, (text) => text.slice(-limit));
