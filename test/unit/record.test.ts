@@ -9,6 +9,7 @@ import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
+import * as recordRow from '../support/record-row.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 const dbPath = (commonDir: string) => join(commonDir, 'gg', 'gg.db');
@@ -205,6 +206,23 @@ test('load returns null for a missing row and the record for a saved one', async
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
   record.save(epic);
   assert.deepEqual(record.load(commonDir, 'epic', 1), epic);
+});
+
+// An empty Map and {} write the same JSON, so only a record with entries shows a row built without its Maps (#327).
+test('a record with visits entries survives the golden-row comparison and a raw-row write', async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const executionRecord = knownRecord(commonDir);
+  executionRecord.visits.set('green', 2);
+  executionRecord.traversals.set('green->review:pass', 1);
+  record.save(executionRecord);
+  withDb(commonDir, (db) => {
+    const row = db.prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = 8").get();
+    assert.equal(row?.json, recordRow.json(withoutCommonDir(executionRecord)));
+    db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8").run(
+      recordRow.json({ ...withoutCommonDir(executionRecord), state: 'ready-for-qa' }),
+    );
+  });
+  assert.deepEqual(record.load(commonDir, 'ticket', 8), { ...executionRecord, state: 'ready-for-qa' });
 });
 
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {

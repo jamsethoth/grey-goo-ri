@@ -1,9 +1,10 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ESLint } from 'eslint';
+import tseslint from 'typescript-eslint';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -286,7 +287,15 @@ test('the scans skip tool output at the root only, and .git and node_modules any
   assert.deepEqual(paths.filter(isSkipped), ['.claude', 'coverage', '.git', 'node_modules', 'test/node_modules']);
 });
 
-const eslint = new ESLint({ cwd: root });
+// A sample path such as lib/sample.ts is outside tsconfig.json's program, so these cases lint without types; the typed
+// rules' cases below lint as a real program file.
+const eslint = new ESLint({
+  cwd: root,
+  overrideConfig: [
+    { files: ['**/*.ts'], ...tseslint.configs.disableTypeChecked },
+    { rules: { 'gg/no-map-to-json': 'off' } },
+  ],
+});
 const lintFindings = async (filePath: string, text: string) => {
   const [result] = await eslint.lintText(text, { filePath });
   return result.messages.map((message) => message.ruleId);
@@ -406,6 +415,79 @@ test('lint fails a type imported by name from lib in a test file, and allows it 
   assert.deepEqual(await lintFindings(sample, "import { type Deps } from '../../lib/run-context.ts';\n"), restricted);
   assert.deepEqual(await lintFindings(sample, "import type * as runContext from '../../lib/run-context.ts';\n"), []);
   assert.deepEqual(await lintFindings('lib/sample.ts', "import type { Deps } from './run-context.ts';\n"), []);
+});
+
+// JSON.stringify and an object spread write a Map as {} in silence (#174, #327). The typed rules need a file of
+// tsconfig.json's program, so the samples lint as this file, which nothing imports.
+const typedEslint = new ESLint({ cwd: root });
+const TYPED_HEADER = [
+  "import type * as model from '../../lib/model.ts';",
+  "import type * as record from '../../lib/record.ts';",
+  "import type * as visit from '../../lib/visit.ts';",
+  'declare const executionRecord: record.ExecutionRecord;',
+  'declare const runContext: { record: record.ExecutionRecord };',
+  'declare const running: { state: visit.VisitState };',
+  'declare const state: visit.VisitState;',
+  'declare const flow: model.ResolvedFlow;',
+  "declare const renamed: { history: record.ExecutionRecord['visits'] };",
+  'declare const byName: Record<string, Map<string, number>>;',
+  'declare const partial: Partial<record.ExecutionRecord>;',
+  'declare const seen: Set<string>;',
+];
+// Each sample is linted as `export const sampleN = <sample>;`, with what the rule finds on its line.
+const typedSamples = async (samples: (readonly [string, string | null])[]) => {
+  const lines = [...TYPED_HEADER, ...samples.map(([sample], i) => `export const sample${i} = ${sample};`)];
+  const [result] = await typedEslint.lintText(`${lines.join('\n')}\n`, { filePath: 'test/unit/layout.test.ts' });
+  const found = (i: number) =>
+    result.messages
+      .filter((message) => message.line === TYPED_HEADER.length + i + 1)
+      .map((message) => `${message.ruleId}: ${message.message}`);
+  return samples.map(([sample, expected], i) => ({ sample, expected, found: found(i) }));
+};
+const holdsMapBoundary = async (t: TestContext, rule: string, samples: (readonly [string, string | null])[]) => {
+  for (const { sample, expected, found } of await typedSamples(samples))
+    await t.test(`${expected == null ? 'passes' : 'fails'} ${sample}`, () => {
+      if (expected == null) assert.deepEqual(found, []);
+      else {
+        assert.equal(found.length, 1, found.join('\n'));
+        assert.ok(found[0].startsWith(`${rule}: `) && found[0].includes(expected), found[0]);
+      }
+    });
+};
+
+test('lint fails JSON.stringify of a value whose type holds a Map or Set', async (t) => {
+  await holdsMapBoundary(t, 'gg/no-map-to-json', [
+    ['JSON.stringify(executionRecord, null, 2)', 'the value.visits (Map)'],
+    ['JSON.stringify(runContext.record)', 'the value.visits (Map)'],
+    ['JSON.stringify(running.state)', 'the value.runs (Map)'],
+    ['JSON.stringify(state.checks)', 'the value (Map)'],
+    ['JSON.stringify(executionRecord.visits)', 'the value (Map)'],
+    ['JSON.stringify(flow.procedures, null, 2)', 'the value (ReadonlyMap)'],
+    ['JSON.stringify(renamed.history)', 'the value (Map)'],
+    ['JSON.stringify({ wrapped: executionRecord.visits })', 'the value.wrapped (Map)'],
+    ['JSON.stringify(byName)', 'the value[key] (Map)'],
+    ['JSON.stringify(partial)', 'the value.visits (Map)'],
+    ['JSON.stringify([executionRecord])', 'the value[].visits (Map)'],
+    ['JSON.stringify(seen)', 'the value (Set)'],
+    [
+      '<Counts extends ReadonlyMap<string, number>>(counts: Counts) => JSON.stringify(counts)',
+      'the value (ReadonlyMap)',
+    ],
+    ['JSON.stringify(flow.name)', null],
+    ['JSON.stringify(state.recovery)', null],
+    ['JSON.stringify({ startedAt: new Date() })', null],
+    ['JSON.stringify(executionRecord, (_key, value: unknown) => value)', null],
+    ['JSON.stringify([...executionRecord.visits.values()])', null],
+  ]);
+});
+
+test('lint fails an object spread of a Map, and allows a record spread and a string spread', async (t) => {
+  await holdsMapBoundary(t, '@typescript-eslint/no-misused-spread', [
+    ['{ ...executionRecord.visits }', 'Object.fromEntries'],
+    ['{ ...flow.ticket.vertices }', 'Object.fromEntries'],
+    ['{ ...executionRecord }', null],
+    ["[...'text']", null],
+  ]);
 });
 
 // Documents agents read for today's paths. An ADR or a docs/research record is dated: it names paths as they were.

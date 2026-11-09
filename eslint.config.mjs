@@ -113,6 +113,13 @@ const THROWN_CLASS = {
   },
 };
 
+const NO_MAP_TO_JSON = {
+  meta: { type: 'problem', schema: [], messages: { lost: '{{where}}' } },
+  create() {
+    return {};
+  },
+};
+
 // eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {
@@ -121,7 +128,7 @@ export default defineConfig([
     plugins: {
       '@stylistic': stylistic,
       '@typescript-eslint': tseslint.plugin,
-      gg: { rules: { 'thrown-class': THROWN_CLASS } },
+      gg: { rules: { 'thrown-class': THROWN_CLASS, 'no-map-to-json': NO_MAP_TO_JSON } },
     },
     rules: {
       '@typescript-eslint/naming-convention': ['error', ...NAMING],
@@ -159,5 +166,11 @@ export default defineConfig([
   {
     files: ['test/**/*.test.ts'],
     rules: { 'max-lines': ['error', 800] },
+  },
+  {
+    // The directories tsconfig.json includes: the typed rules read its program. eslint.config.mjs is outside it.
+    files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts', 'test/**/*.ts'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: { 'gg/no-map-to-json': 'error' },
   },
 ]);
