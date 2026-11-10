@@ -174,9 +174,9 @@ export function decidingActors({
   return [...new Set(actors)];
 }
 
-// A Decision's reply (request 3.5): its actor's comments after the request's comment, oldest first, each separated by a
-// blank line; null when there are none. gg posts under the owner's login, so its Action Marker tells its own comments
-// apart. GitHub lists an issue's comments in ascending id order, so a later comment has a higher id.
+// A Decision's reply (request 3.5): its actor's non-blank comments after the request's comment, oldest first, each
+// separated by a blank line; null when there are none. gg posts under the owner's login, so its Action Marker tells its
+// own comments apart. GitHub lists an issue's comments in ascending id order, so a later comment has a higher id.
 export function reply({
   comments,
   actor,
@@ -192,6 +192,7 @@ export function reply({
         comment.id > requestComment &&
         actor !== undefined &&
         comment.author?.toLowerCase() === actor.toLowerCase() &&
+        comment.body.trim() !== '' &&
         !marker.parseMarker(comment.body),
     )
     .toSorted((left, right) => left.id - right.id)

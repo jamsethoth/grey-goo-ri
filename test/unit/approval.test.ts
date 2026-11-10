@@ -214,6 +214,7 @@ test('comments by another login or with an Action Marker are not in the reply', 
     'the request itself': comment(20, 'owner', 'the request'),
     'an Action Marker comment': comment(33, 'owner', `gg's own report${MARKED}`),
     'an Action Marker trailer': comment(34, 'owner', 'a commit body\n\nGg-Action: gg:7.a1b2c3:green:1:green:0:1:1'),
+    'a blank comment': comment(35, 'owner', '  \n'),
   };
   const kept = comment(40, 'owner', 'the answer');
   for (const [why, left] of Object.entries(excluded))
@@ -222,6 +223,7 @@ test('comments by another login or with an Action Marker are not in the reply', 
 
 test('no comment gives a null reply', () => {
   assert.equal(replyOf([]), null);
+  assert.equal(replyOf([comment(31, 'owner', '')]), null, 'a blank comment is no answer');
   assert.equal(replyOf([comment(20, 'owner', 'the request'), comment(31, 'someone-else', 'an answer')]), null);
   const noActor = approval.reply({
     comments: [comment(31, 'owner', 'an answer')],

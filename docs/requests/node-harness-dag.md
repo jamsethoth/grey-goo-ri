@@ -511,7 +511,7 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
    the optional `approvers` list), recomputes the digest and compares it with the record. Exactly one authorised
    decision and a matching digest: consume it. Consumption is a write-ahead action like any other: gg first persists
    the pending instance id, the decision event id, actor and time, the outcome, the next graph position and the reply
-   to the record, then removes the decide label, then marks completion. The reply is the actor's comments on the
+   to the record, then removes the decide label, then marks completion. The reply is the actor's non-blank comments on the
    ticket after the request's comment that carry no action marker, oldest first and separated by a blank line, or
    `null` when there are none; gg reads them once, before that record write. A crash after the record write but before
    or after the removal resumes by completing the recorded consumption, never by re-reading the timeline or the
