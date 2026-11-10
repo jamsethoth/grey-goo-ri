@@ -416,10 +416,17 @@ signal received and the rule that decided (`{ table, row }`) are recorded on the
 
 One persisted record per work item (ticket), plus one per epic for plan approval and epic-level pending state,
 each a schema-versioned JSON document stored as one row of the state database `<git common dir>/gg/gg.db`
-(`node:sqlite`, ADR 0009), readable with any SQLite client and with `gg work show` (slice 6). Contents: flow name and config hash, run id, graph position, visit counts per vertex and traversal
+(`node:sqlite`, ADR 0009), readable with any SQLite client and with `gg work show` (slice 6). Contents: the repository's GitHub `owner/name`, the
+flow name with its source (`default` from the repository, `user:strict` from the user's directory, ADR 0022) and config
+hash, run id, graph position, visit counts per vertex and traversal
 counts per edge, session lineage per agent Action (session id, harness, persona hash, last cumulative usage), the outputs
 later briefs need (each Vertex's Action outputs and the inputs snapshot of each Visit, ADR 0014; history), worktree
-and branch identity, base revision, PR number, pending approval state, and the write-ahead log below.
+and branch identity, base revision, PR number, pending approval state, and the write-ahead log below. A Run reads the
+repository's `owner/name` once, with `gh repo view --json nameWithOwner`, after its preflight checks pass and before
+any other GitHub read, and a failed read fails preflight naming the checkout. A new ticket worktree goes at
+`worktreeRoot/<owner>/<name>/ticket-<n>`; a resumed Execution keeps the repository and worktree its record holds.
+`gg run`, `gg doctor` and `gg init` act on the repository holding the current directory, or the one `--repo <path>`
+names.
 
 An execution belongs to a ticket; an epic has an epic record but no execution. A run is one `gg run` invocation:
 one run may admit several tickets' executions, and a later run resumes them. An action's identity is `(execution,

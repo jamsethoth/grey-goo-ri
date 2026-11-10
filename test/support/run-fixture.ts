@@ -186,7 +186,7 @@ export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) 
   const logs: string[] = [];
   const clock = runClock();
   const configured = fixtureSources(root, mainRoot, { harness: harnessName, fullFlow });
-  const worktree = gitModule.worktreePath(configured.user.worktreeRoot, 'main', TICKET);
+  const worktree = gitModule.worktreePath(configured.user.worktreeRoot, fixtureOptions.repository ?? 'o/r', TICKET);
   const exec = addSuite.addSuite({ worktree });
   const options = {
     target: TICKET,

@@ -107,16 +107,31 @@ export interface RunOptions {
 }
 
 // Every line and error a Run prints names its repository on its first line, so two gg processes can share a terminal or
-// a log.
+// a log: by its checkout's folder until gh has given its owner/name, then by that (#321).
 export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
-  const repo = await options.deps.git.repoInfo(options.cwd);
-  const named = (message: string) => `[${repo.name}] ${message}`;
+  const checkout = await options.deps.git.repoInfo(options.cwd);
+  let label = checkout.folder;
+  const named = (message: string) => `[${label}] ${message}`;
   try {
-    return await runRepo(repo, named, options);
+    const admitted = await runFlows.admitConfiguration(options);
+    const repo = await readRepository(options.deps.gh, checkout);
+    label = repo.repository;
+    return await runRepo(repo, { ...admitted, named }, options);
   } catch (err) {
     if (err instanceof Error) err.message = named(err.message);
     throw err;
   }
+}
+
+// The repository's owner/name, read once the configuration has passed preflight and before the Run reads GitHub for
+// anything else: a failure fails preflight, naming the checkout.
+async function readRepository(gh: github.Gh, checkout: Omit<admission.Repo, 'repository'>): Promise<admission.Repo> {
+  const { repository, error } = await gh.repositoryName(checkout.mainRoot);
+  if (repository !== null) return { ...checkout, repository };
+  const found = report.newReport();
+  const message = `cannot read the GitHub owner/name of ${checkout.mainRoot}: ${error}`;
+  report.error(found, '', 'repository-unread', message, { path: checkout.mainRoot, reason: error });
+  throw Object.assign(new Error(`preflight failed:\n${report.line('error', found.errors[0]!)}`), { exitCode: 1 });
 }
 
 // The Ticket, or an Epic's ready sub-issues. Every sub-issue is read before the Run's first effect, so an epic with
@@ -188,10 +203,13 @@ function startRun(
   return { runId, runLog };
 }
 
-async function runRepo(repo: admission.Repo, named: (message: string) => string, options: RunOptions) {
+// What admission gave the Run, and how its lines name the repository.
+type Admitted = Awaited<ReturnType<typeof runFlows.admitConfiguration>> & { named: (message: string) => string };
+
+async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOptions) {
+  const { flows, selected, warnings, settings, named } = admitted;
   const { target, harnesses, protectedPaths, testImmutability, deps, log } = options;
   const { gh, git, exec, integrity, locks = locksModule, database = record, clock = clockModule.WALL_CLOCK } = deps;
-  const { flows, selected, warnings, settings } = await runFlows.admitConfiguration(options);
   const { flow, hash, source } = selected;
   const declared = [...flows.values()];
   const { issue, subIssues, tickets } = await readTickets(gh, target, repo, settings);

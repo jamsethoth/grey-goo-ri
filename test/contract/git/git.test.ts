@@ -249,7 +249,7 @@ for (const [name, repo] of sides) {
       const info = await git.repoInfo(join(link, 'main'));
       assert.equal(info.gitCommonDir, join(link, 'main', '.git'));
       assert.equal(info.mainRoot, join(link, 'main'));
-      assert.equal(info.name, 'main');
+      assert.equal(info.folder, 'main');
       assert.notEqual(realpathSync.native(info.gitCommonDir), info.gitCommonDir);
     } finally {
       rmSync(link, { recursive: true, force: true }); // removes the link, not its target

@@ -48,7 +48,10 @@ test('a held ticket lock skips the ticket', async (t) => {
   assert.deepEqual(fixture.labelAdds(), [], 'no label written');
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
     'no repository label setup on a held lock',
   );
   assert.equal(fixture.worktrees(), 1, 'no worktree');
@@ -275,7 +278,7 @@ test(
     const aEnded = latch.latch();
     fixture.options.log = (line) => {
       fixture.logs.push(line);
-      if (line.startsWith('[main] #22 ERROR')) bFailed.open();
+      if (line.startsWith('[o/r] #22 ERROR')) bFailed.open();
     };
     runFixture.hookGh(fixture, async (args) => {
       if (epicRun.addsLabel(args, 21, 'gg:state:ready-for-qa')) aEnded.open();

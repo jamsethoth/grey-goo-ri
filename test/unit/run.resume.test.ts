@@ -67,7 +67,10 @@ test('an in-progress ticket without a record is skipped', async (t) => {
   assert.deepEqual(fixture.labelAdds(), [], 'no label written');
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
     'no repository label setup on a Stuck Ticket',
   );
   assert.ok(fixture.gh.labels.has(IN_PROGRESS_LABEL), 'the State Label is left for Stuck handling');
@@ -105,7 +108,10 @@ for (const state of ['ready-for-qa', 'fault', 'abandoned'] as const) {
     );
     assert.deepEqual(
       fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-      [['issue', 'view']],
+      [
+        ['repo', 'view'],
+        ['issue', 'view'],
+      ],
       'gh made only the discovery read',
     );
   });
@@ -137,7 +143,10 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
   assert.equal(fixture.harness.calls.length, 0);
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
   );
 });
 
@@ -307,7 +316,10 @@ test('a resumed Execution whose Flow is no longer declared is an error naming it
   assert.equal(fixture.loadRow(), row, 'the record is kept as it was');
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
     'gh made only the discovery read',
   );
 });

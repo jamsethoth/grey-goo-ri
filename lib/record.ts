@@ -165,7 +165,7 @@ export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
   return {
     schemaVersion: SCHEMA_VERSION,
     commonDir,
-    repository: '',
+    repository: start.repository,
     execution: `${ticket}.${randomBytes(3).toString('hex')}`,
     ticket,
     epic,

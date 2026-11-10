@@ -262,7 +262,8 @@ test('a repository whose owner/name cannot be read fails preflight naming it, an
   await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
     assert.deepEqual(err?.message.split('\n'), [
       '[main] preflight failed:',
-      `error: cannot read the GitHub owner/name of ${fixture.mainRoot}: no git remotes found [repository-unread]`,
+      `error: cannot read the GitHub owner/name of ${fixture.mainRoot}: no git remotes found | ` +
+        'gh repo view --json nameWithOwner [repository-unread]',
     ]);
     assert.equal(err.exitCode, 1);
     return true;
