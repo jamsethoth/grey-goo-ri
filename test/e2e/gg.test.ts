@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -264,6 +264,15 @@ for (const [name, args, acted] of REPO_COMMANDS) {
     assert.equal(missing.status, 1, missing.stderr);
     assert.match(missing.stderr, /--repo/);
     assertUsage(missing.stderr);
+  });
+
+  // Node reports a missing working directory as a missing executable, `spawn git ENOENT`, so gg names the path first.
+  test(`gg ${name} --repo at a directory that does not exist names it`, (t) => {
+    const { repo, ggOutside } = tempRepo(t, MACHINE_SETTINGS);
+    const absent = join(repo, '..', 'absent');
+    const result = ggOutside(...args, '--repo', absent);
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stderr, `gg ${name}: --repo ${resolve(absent)}: no such directory\n`);
   });
 }
 

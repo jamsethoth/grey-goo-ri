@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as clock from '../lib/clock.ts';
 import * as config from '../lib/config.ts';
@@ -34,8 +35,13 @@ const realDeps = (): interpreter.Deps => ({
   clock: clock.WALL_CLOCK,
 });
 
-// The repository a command acts on: the one --repo names, else the one holding the current directory.
-const repositoryPath = (parsed: options.ParsedOptions) => resolve((parsed.repo as string | undefined) ?? process.cwd());
+// The repository a command acts on: the one --repo names, else the one holding the current directory. Node reports a
+// missing working directory as `spawn git ENOENT`, as if git were missing, so a missing one is named first.
+function repositoryPath(parsed: options.ParsedOptions) {
+  const path = resolve((parsed.repo as string | undefined) ?? process.cwd());
+  if (!existsSync(path)) throw new Error(`--repo ${path}: no such directory`);
+  return path;
+}
 
 async function runCommand(parsed: options.ParsedOptions) {
   const target = options.positiveInteger(parsed._[0], 'ticket');
