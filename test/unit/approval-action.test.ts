@@ -266,10 +266,14 @@ test('a crash after consumption is not read twice', async (t) => {
   );
   assert.equal(fixture.gh.labels.has(APPROVED_LABEL), false, 'gg removed the Decide Label before the crash');
   const reads = timelineReads(fixture);
+  const commentsRead = approvalFlow.commentReads(fixture);
+  fixture.gh.humanComments('A comment after the crash.', OWNER);
 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'ready-for-qa', 'the unlabeled event gg made cannot undo the Decision');
   assert.equal(timelineReads(fixture), reads, 'the recorded consumption is completed, not read again');
+  assert.equal(approvalFlow.commentReads(fixture), commentsRead, 'nor are the comments');
+  assert.equal(consumedDecision(fixture)?.reply, null);
 });
 
 test('golden: a crash before the decide label is removed completes the recorded consumption', async (t) => {
@@ -303,8 +307,13 @@ test('a crash after the consumption completed routes the saved Decision', async 
     (err) => err instanceof interpreter.CrashError,
   );
   const reads = timelineReads(fixture);
+  const commentsRead = approvalFlow.commentReads(fixture);
+  fixture.gh.humanComments('A comment after the crash.', OWNER);
   assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
   assert.equal(timelineReads(fixture), reads);
+  assert.equal(approvalFlow.commentReads(fixture), commentsRead);
+  const output = loadTicket(fixture).outputs.find((each) => each.vertex === 'approve' && each.action === 'ask');
+  assert.equal((output?.value.decision as { reply: unknown }).reply, null, 'the saved reply stands');
   const decided = approvalFlow.approveTrace(fixture).filter((event) => event.action === 'ask');
   assert.equal(decided.length, 1, 'its Event is written once');
 });
