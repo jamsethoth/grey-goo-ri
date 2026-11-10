@@ -13,6 +13,7 @@ import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as addSuite from '../support/add-suite.ts';
+import * as approvalFlow from '../support/approval-flow.ts';
 import * as caseDatabase from '../support/case-database.ts';
 import { actionEvent, attemptsOf, branchMessages, intents, loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
@@ -710,3 +711,30 @@ for (const claim of ['ok', 'halt'] as const) {
     assert.deepEqual(prototype, namedFlow.renamed(ordinary));
   });
 }
+
+test("the reply reaches the next Vertex's Brief through its input", async (t) => {
+  const responses = firstVisitWith({
+    [keys.responseKey('green', 2, 'green', 1)]: {
+      files: { 'lib/add.mjs': 'export const add = (a, b) => b + a;\n' },
+      response: golden.greenResponse,
+    },
+  });
+  const fixture = await approvalFlow.approvalFixture(t, { responses });
+  golden.configure(fixture, (configured) => {
+    configured.flows.golden!.ticket.vertices.green!.inputs = {
+      ...golden.GREEN_INPUTS,
+      answers: { from: 'approve.ask.decision.reply', optional: true },
+    };
+    const brief = configured.files['templates/green.md']!.bytes;
+    const answers = '{{#inputs.answers}}Answers: {{inputs.answers}}{{/inputs.answers}}\n';
+    configured.files['templates/green.md'] = golden.layerFile(`${brief}${answers}`);
+  });
+  await interpreter.runExecution(fixture.options);
+  fixture.gh.humanComments('1. Use B.', approvalFlow.OWNER);
+  fixture.gh.humanAddsLabel(approvalFlow.REJECTED_LABEL, approvalFlow.OWNER);
+
+  assert.equal((await approvalFlow.laterRun(fixture)).outcome, 'pending', 'green ran again and asks again');
+  const briefs = fixture.harness.calls.filter((call) => call.brief?.includes('Answers:')).map((call) => call.brief!);
+  assert.equal(briefs.length, 1, 'only the green Visit after the Decision has a reply');
+  assert.ok(briefs[0]!.includes('Answers: 1. Use B.'), briefs[0]);
+});

@@ -32,6 +32,32 @@ test('a Problem carries its code beside its location and message', () => {
   });
 });
 
+// The example with an owner-questions Vertex between baseline and red that asks and is answered, and red's input
+// `answers` reading `source`.
+const askedBeforeRed = (source: string) => {
+  const config = exampleLayer.config();
+  config.procedures['ask-owner'] = { actions: [{ id: 'ask', do: 'await-approval', decisions: ['answered'] }] };
+  config.flows.default.ticket.vertices.baseline.route = { ok: 'owner-questions' };
+  config.flows.default.ticket.vertices['owner-questions'] = { procedure: 'ask-owner', route: { answered: 'red' } };
+  config.flows.default.ticket.vertices.red.inputs.answers = { from: source };
+  return exampleLayer.check(config);
+};
+
+test("an input from an await-approval Action's decision.reply is accepted", () => {
+  for (const field of ['reply', 'outcome', 'actor']) {
+    const { errors, warnings } = askedBeforeRed(`owner-questions.ask.decision.${field}`);
+    assert.deepEqual(exampleLayer.firedRules(errors), [], `decision.${field}`);
+    assert.deepEqual(
+      warnings.filter((warning) => warning.at.includes('owner-questions') || warning.at.endsWith('red.inputs.answers')),
+      [],
+    );
+  }
+  const unknown = askedBeforeRed('owner-questions.ask.decision.replies').errors;
+  assert.deepEqual(exampleLayer.firedRules(unknown), [
+    { at: `${VERTICES}.red.inputs.answers`, code: 'undefined-reference' },
+  ]);
+});
+
 test('the example Flow resolves with no errors', () => {
   const { errors } = exampleLayer.check(exampleLayer.config());
   assert.deepEqual(errors, []);

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import * as config from './config.ts';
+import type * as github from './github.ts';
 import * as labels from './labels.ts';
 
 // The fingerprint of what a Decision covers; when it changes the Decision is stale.
@@ -170,4 +171,33 @@ export function decidingActors({
     return parsed?.family === 'decide' && labels.hasLabel([parsed.vertex], vertex) && actor ? [actor] : [];
   });
   return [...new Set(actors)];
+}
+
+// A Decision's reply (request 3.5): its actor's non-blank comments after the request's comment, oldest first, each
+// separated by a blank line; null when there are none. gg posts under the owner's login, so the ids of the comments it
+// `posted` tell its own apart, whatever an answer quotes. GitHub lists an issue's comments in ascending id order, so a
+// later comment has a higher id.
+export function reply({
+  comments,
+  actor,
+  requestComment,
+  posted,
+}: {
+  comments: Pick<github.IssueComment, 'id' | 'author' | 'body'>[];
+  actor: string | undefined;
+  requestComment: number;
+  posted: number[];
+}): string | null {
+  const bodies = comments
+    .filter(
+      (comment) =>
+        comment.id > requestComment &&
+        actor !== undefined &&
+        comment.author?.toLowerCase() === actor.toLowerCase() &&
+        comment.body.trim() !== '' &&
+        !posted.includes(comment.id),
+    )
+    .toSorted((left, right) => left.id - right.id)
+    .map((comment) => comment.body);
+  return bodies.length ? bodies.join('\n\n') : null;
 }

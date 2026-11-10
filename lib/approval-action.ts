@@ -10,7 +10,7 @@ import * as procedures from './procedures.ts';
 import * as render from './render.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
-import type * as visitScope from './visit-scope.ts';
+import * as visitScope from './visit-scope.ts';
 import * as writeAhead from './write-ahead.ts';
 
 type Running = visitScope.Running;
@@ -20,8 +20,18 @@ type ReportAction = 'retire' | 'await' | 'comment' | 'consume';
 // What a consumed Decision's intent saves before its label is removed, so a resume completes it without reading the
 // timeline, whose unlabeled event gg itself made could no longer show it (request 3.5).
 export interface Consumption extends pendingReport.LabelPayload {
-  decision: { instance: string; event: number; actor: string | undefined; time: string; outcome: string; next: string };
+  decision: {
+    instance: string;
+    event: number;
+    actor: string | undefined;
+    time: string;
+    outcome: string;
+    next: string;
+    reply: string | null;
+  };
 }
+// A Decision read from the issue, with the reply its actor's comments give.
+type Replied = approval.Decision & { reply: string | null };
 
 const namesOf = (runContext: RunContext) => labels.labelsFor(runContext.labelPrefix);
 
@@ -118,7 +128,7 @@ async function consume(
   runContext: RunContext,
   running: Running,
   instance: PendingInstance,
-  found: approval.Decision | null,
+  found: Replied | null,
 ): Promise<visitScope.ActionResolution> {
   const { record: executionRecord } = runContext;
   const { actionIdentity } = running;
@@ -126,7 +136,7 @@ async function consume(
   const consumption = reportActionOf(running, instance, 'consume');
   const actionMarker = runContext.markerOf(consumption);
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Consumption | undefined;
-  const payload: Consumption = intended ?? consumptionOf(runContext, running, instance, found as approval.Decision);
+  const payload: Consumption = intended ?? consumptionOf(runContext, running, instance, found as Replied);
   await effects.whileBusy(runContext, () =>
     effects.sideEffect<Consumption>(runContext, {
       actionMarker,
@@ -137,6 +147,8 @@ async function consume(
     }),
   );
   executionRecord.approvalRequest = null;
+  const { outcome, actor, reply } = payload.decision;
+  visitScope.recordOutput(executionRecord, actionIdentity, { decision: { outcome, actor, reply } });
   const resolution: visit.DecisionResolution = {
     outcome: payload.decision.outcome,
     direction: 'stop',
@@ -156,7 +168,7 @@ function consumptionOf(
   runContext: RunContext,
   { actionIdentity }: Running,
   instance: PendingInstance,
-  { event, actor, time, outcome }: approval.Decision,
+  { event, actor, time, outcome, reply }: Replied,
 ): Consumption {
   const names = namesOf(runContext);
   const { vertex } = actionIdentity;
@@ -171,8 +183,20 @@ function consumptionOf(
       time,
       outcome,
       next: bounds.edge(runContext, outcome).next,
+      reply,
     },
   };
+}
+
+// The ids of the comments this Execution posted, as its write-ahead log recorded them.
+function postedComments(executionRecord: RunContext['record']): number[] {
+  const { writeAheadLog } = executionRecord;
+  const comments = new Set(
+    writeAheadLog.filter((entry) => entry.effect === 'comment').map((entry) => entry.actionMarker),
+  );
+  return writeAheadLog
+    .filter((entry) => entry.step === 'evidence' && comments.has(entry.actionMarker))
+    .map((entry) => entry.evidence?.id as number);
 }
 
 // What the issue shows now. A login GitHub does not know has no permission (github.collaboratorPermission).
@@ -184,7 +208,7 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
   const permissions: Record<string, string> = {};
   for (const login of approval.decidingActors({ vertex: instance.vertex, timeline, prefix }))
     permissions[login] = await gh.collaboratorPermission(login, cwd);
-  return approval.read({
+  const read = approval.read({
     approvalRequest: instance,
     issueLabels,
     timeline,
@@ -194,6 +218,20 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
     prefix,
     decisions: procedures.decisionsOf(running.action),
   });
+  if (read.kind !== 'consume') return read;
+  // Read once, here: a resumed consumption keeps the reply its intent saved.
+  const requestComment = writeAhead.evidenceOf(
+    executionRecord,
+    runContext.markerOf(reportActionOf(running, instance, 'comment')),
+  )?.evidence as { id: number };
+  const comments = await gh.comments(executionRecord.ticket, cwd);
+  const reply = approval.reply({
+    comments,
+    actor: read.decision.actor,
+    requestComment: requestComment.id,
+    posted: postedComments(executionRecord),
+  });
+  return { kind: read.kind, decision: { ...read.decision, reply } };
 }
 
 // A run stop ends an Execution before it starts new work (request 3.4). A request already made starts none, and ending
