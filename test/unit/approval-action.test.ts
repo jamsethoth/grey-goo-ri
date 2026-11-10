@@ -151,6 +151,27 @@ test('a consumed Decision saves its reply in the consumption intent', async (t) 
   assert.deepEqual(output?.value, { decision: { outcome: 'approved', actor: OWNER, reply: '1. A\n\n2. C' } });
 });
 
+test("a comment gg recorded posting is not in the reply, and an answer that pastes gg's marker is", async (t) => {
+  const fixture = await approvalFixture(t);
+  await interpreter.runExecution(fixture.options);
+  // A comment gg posted after the request under the owner's login, as gg posts, which its write-ahead log records.
+  const executionRecord = loadTicket(fixture);
+  const ggMarker = golden.markerOf(executionRecord, 'approve', 1, 'ask.note.1');
+  const ggComment = fixture.gh.humanComments(`gg's note\n\n<!-- gg-action ${ggMarker} -->`, OWNER);
+  executionRecord.writeAheadLog.push(
+    writeAhead.entryOf('intent', ggMarker, 'comment', { payload: {} }),
+    writeAhead.entryOf('evidence', ggMarker, 'comment', { evidence: { id: ggComment } }),
+    writeAhead.entryOf('complete', ggMarker, 'comment'),
+  );
+  const pasted = `My answer, with a line copied from gg's comment:\n<!-- gg-action ${ggMarker} -->`;
+  fixture.gh.humanComments(pasted, OWNER);
+
+  fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
+  const result = await interpreter.runExecution({ ...fixture.options, record: executionRecord });
+  assert.equal(result.outcome, 'ready-for-qa');
+  assert.equal(consumedDecision(fixture)?.reply, pasted);
+});
+
 test('a resumed consumption keeps the recorded reply and reads no comments', async (t) => {
   const fixture = await approvalFixture(t);
   await interpreter.runExecution(fixture.options);

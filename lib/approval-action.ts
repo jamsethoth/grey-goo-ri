@@ -188,6 +188,17 @@ function consumptionOf(
   };
 }
 
+// The ids of the comments this Execution posted, as its write-ahead log recorded them.
+function postedComments(executionRecord: RunContext['record']): number[] {
+  const { writeAheadLog } = executionRecord;
+  const comments = new Set(
+    writeAheadLog.filter((entry) => entry.effect === 'comment').map((entry) => entry.actionMarker),
+  );
+  return writeAheadLog
+    .filter((entry) => entry.step === 'evidence' && comments.has(entry.actionMarker))
+    .map((entry) => entry.evidence?.id as number);
+}
+
 // What the issue shows now. A login GitHub does not know has no permission (github.collaboratorPermission).
 async function readDecision(runContext: RunContext, running: Running, instance: PendingInstance) {
   const { gh, record: executionRecord, cwd } = runContext;
@@ -214,7 +225,12 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
     runContext.markerOf(reportActionOf(running, instance, 'comment')),
   )?.evidence as { id: number };
   const comments = await gh.comments(executionRecord.ticket, cwd);
-  const reply = approval.reply({ comments, actor: read.decision.actor, requestComment: requestComment.id });
+  const reply = approval.reply({
+    comments,
+    actor: read.decision.actor,
+    requestComment: requestComment.id,
+    posted: postedComments(executionRecord),
+  });
   return { kind: read.kind, decision: { ...read.decision, reply } };
 }
 
