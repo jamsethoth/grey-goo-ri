@@ -327,7 +327,7 @@ admission (`lib/procedures.ts` holds the lists):
 | `push`, `pr-ready` | none | | none |
 | `pr-upsert` | `body`, `with` | the PR body template; optional, a name for each reference path the body reads | none |
 | `comment` | `target`, `body` | `pr` or `ticket`; the comment template | none |
-| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3) | none |
+| `await-approval` | `decisions` | the Decision values it accepts, `approved` and `rejected` by default (3.3) | `decision` |
 
 | Check kind | Keys | What each key takes | Outputs |
 |---|---|---|---|
@@ -335,6 +335,9 @@ admission (`lib/procedures.ts` holds the lists):
 | `tests-fail` | `command`, `testNames` | a Declared Command's name; the reference path to the test names the agent wrote | `evidence`, `cleanup` |
 | `response` | `field`, `is`, `none`, `any`, `all`, `count`, `where`, `<`, `<=`, `>`, `>=`, `=`, `allOf` | one condition: `{ field, is }`, `{ none \| any \| all: <list>, where }` or `{ count: <list>, where, <op>: <integer> }`, with `<op>` one of the comparison keys; or `allOf: [<condition>, ...]`, passing when every one holds | none |
 | `repeat` | `list`, `fields` | the reference path to a list of objects; the item fields its Findings Hash covers | `findingsHash` |
+
+An `await-approval` Action's `decision` is `{ outcome, actor, reply }`: the Decision's value, its actor's login, and the
+reply its actor wrote in non-blank comments (3.5), or `null` when there is none.
 
 A Check's `evidence` is `{ command, output }`, and a `tests-fail` Check's adds `foundByNameOnly`, true when the runner
 printed no per-test statuses and the test was found by its name alone. A `cleanup` is `{ confirmed, survivors, reason,
@@ -514,10 +517,14 @@ Approval flow, the only one. When a run reaches an approval vertex, or `gg publi
    no later unlabeled event undid, checks each actor's repository permission is write or higher (or the actor is in
    the optional `approvers` list), recomputes the digest and compares it with the record. Exactly one authorised
    decision and a matching digest: consume it. Consumption is a write-ahead action like any other: gg first persists
-   the pending instance id, the decision event id, actor and time, the outcome and the next graph position to the
-   record, then removes the decide label, then marks completion. A crash after the record write but before or after
-   the removal resumes by completing the recorded consumption, never by re-reading the timeline, so the unlabeled
-   event gg itself created cannot invalidate the decision. More than one surviving authorised decision: hold, retire
+   the pending instance id, the decision event id, actor and time, the outcome, the next graph position and the reply
+   to the record, then removes the decide label, then marks completion. The reply is the actor's non-blank comments on the
+   ticket after the request's comment, oldest first and separated by a blank line, or `null` when there are none.
+   gg comments under the owner's login, so it leaves out the comments its own record says it posted, by their ids,
+   whatever a human comment quotes; gg reads the comments once, before that record write. A crash after the record write but before
+   or after the removal resumes by completing the recorded consumption, never by re-reading the timeline or the
+   comments, so the unlabeled event gg itself created cannot invalidate the decision. An approver answers questions
+   in comments, not by editing the body, which the digest covers. More than one surviving authorised decision: hold, retire
    both, re-request. Digest differs: stale, retire, re-request with the new digest. Record or pending instance
    missing: cannot verify, retire, re-request. Epic-level approvals reconcile under an epic lock file; once verified,
    the epic record stores the approved digest and event id, and every execution under that epic reads the epic

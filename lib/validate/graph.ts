@@ -61,6 +61,13 @@ interface Edge {
   write: boolean;
 }
 
+// The output an Action kind leaves only on a passed ending: a commit's files, and a Decision, which takes the passed
+// table's place (X1c).
+const PASSED_OUTPUTS = new Map<unknown, string>([
+  ['commit', 'files'],
+  ['await-approval', 'decision'],
+]);
+
 // The outputs a Visit of Vertex `id` leaves when it ends in `ending` (H3): the agent's response on any Claim (N10);
 // effects, and the evidence of each Check the token requires (N9), only from the passed table (S4); and, when `rescued`
 // asks, the rescue when failing work moves on to a Vertex (R5a, W3).
@@ -76,7 +83,7 @@ function leaves(id: string, proc: checked.CheckedProcedure, ending: OutcomeCase,
       checked.requiredCheckIds(proc, ending.token as string).includes(action.id)
     )
       keys.push(`${id}.${action.id}.evidence`);
-    else if (passed && action.do === 'commit') keys.push(`${id}.${action.id}.files`);
+    else if (passed && PASSED_OUTPUTS.has(action.do)) keys.push(`${id}.${action.id}.${PASSED_OUTPUTS.get(action.do)}`);
     else if (passed && action.do === 'pr-ready') keys.push(PR_READY);
   }
   return !passed && rescued ? [...keys, `${id}.rescue`] : keys;

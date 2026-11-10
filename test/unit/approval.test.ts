@@ -193,6 +193,57 @@ test('a Decide Label for an Outcome the request does not declare is not a Decisi
   assert.deepEqual(result, { kind: 'waiting' });
 });
 
+// The Ticket's comments around a request, comment 20, as gh.comments lists them: in ascending id order. gg posts
+// under the owner's login; the comments it posted are those its write-ahead log recorded, the request and comment 33.
+const REQUEST_COMMENT = 20;
+const POSTED = [REQUEST_COMMENT, 33];
+const MARKED = '\n<!-- gg-action gg:7.a1b2c3:green:1:green:0:1:1 -->';
+const comment = (id: number, author: string | undefined, body: string) => ({ id, author, body, createdAt: '' });
+const replyOf = (comments: ReturnType<typeof comment>[]) =>
+  approval.reply({ comments, actor: 'owner', requestComment: REQUEST_COMMENT, posted: POSTED });
+
+test("a Decision's reply is its actor's comments after the request, oldest first", () => {
+  const comments = [comment(20, 'owner', 'the request'), comment(31, 'owner', '1. A'), comment(42, 'Owner', '2. C')];
+  assert.equal(replyOf(comments.toReversed()), '1. A\n\n2. C');
+});
+
+test('comments by another login or that gg posted are not in the reply', () => {
+  // Each comment that is not part of the reply, by the reason it is left out.
+  const excluded = {
+    'another login': comment(31, 'someone-else', 'my answer'),
+    'no login': comment(32, undefined, 'a ghost answer'),
+    'before the request': comment(19, 'owner', 'an earlier thought'),
+    'the request itself': comment(20, 'owner', 'the request'),
+    "gg's own comment": comment(33, 'owner', `gg's own report${MARKED}`),
+    'a blank comment': comment(35, 'owner', '  \n'),
+  };
+  const kept = comment(40, 'owner', 'the answer');
+  for (const [why, left] of Object.entries(excluded))
+    assert.equal(replyOf([left, kept]), 'the answer', `${why} is left out`);
+});
+
+test("an answer that carries a pasted Action Marker is in the reply: gg's own comments are known by id", () => {
+  const pasted = `my answer${MARKED}`;
+  assert.equal(replyOf([comment(34, 'owner', pasted)]), pasted);
+  assert.equal(
+    replyOf([comment(34, 'owner', 'a commit body\n\nGg-Action: gg:7.a1b2c3:green:1:green:0:1:1')]),
+    'a commit body\n\nGg-Action: gg:7.a1b2c3:green:1:green:0:1:1',
+  );
+});
+
+test('no comment gives a null reply', () => {
+  assert.equal(replyOf([]), null);
+  assert.equal(replyOf([comment(31, 'owner', '')]), null, 'a blank comment is no answer');
+  assert.equal(replyOf([comment(20, 'owner', 'the request'), comment(31, 'someone-else', 'an answer')]), null);
+  const noActor = approval.reply({
+    comments: [comment(31, 'owner', 'an answer')],
+    actor: undefined,
+    requestComment: REQUEST_COMMENT,
+    posted: POSTED,
+  });
+  assert.equal(noActor, null, 'a Decision with no actor has none');
+});
+
 test('the actors a read needs permissions for are those of Decide Labels for its Vertex', () => {
   assert.deepEqual(approval.decidingActors({ vertex: 'qa-approval', timeline: timeline('one-decision') }), ['owner']);
   assert.deepEqual(approval.decidingActors({ vertex: 'another', timeline: timeline('one-decision') }), []);

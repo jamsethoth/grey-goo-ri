@@ -323,8 +323,8 @@ test("comments reads a PR's comments through gh api", async (t) => {
   const { gh, calls } = commentsGh();
   const client = github.createGh(gh);
   assert.deepEqual(await client.comments(12, '/repo'), [
-    { id: 101, body: 'first', createdAt: '2026-10-01T00:00:00Z' },
-    { id: 102, body: 'second', createdAt: '2026-10-02T00:00:00Z' },
+    { id: 101, author: 'a', body: 'first', createdAt: '2026-10-01T00:00:00Z' },
+    { id: 102, author: 'b', body: 'second', createdAt: '2026-10-02T00:00:00Z' },
   ]);
   const apiCalls = calls.filter(({ args }) => args[0] === 'api');
   assert.equal(apiCalls.length, 1);
@@ -338,8 +338,8 @@ test("comments reads an issue's comments through gh api", async (t) => {
   const { gh, calls } = commentsGh();
   const client = github.createGh(gh);
   assert.deepEqual(await client.comments(7, '/repo'), [
-    { id: 101, body: 'first', createdAt: '2026-10-01T00:00:00Z' },
-    { id: 102, body: 'second', createdAt: '2026-10-02T00:00:00Z' },
+    { id: 101, author: 'a', body: 'first', createdAt: '2026-10-01T00:00:00Z' },
+    { id: 102, author: 'b', body: 'second', createdAt: '2026-10-02T00:00:00Z' },
   ]);
   const apiCalls = calls.filter(({ args }) => args[0] === 'api');
   assert.equal(apiCalls.length, 1);

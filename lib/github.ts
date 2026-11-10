@@ -74,6 +74,8 @@ export interface PullRequestView extends PullRequest {
 }
 export interface IssueComment {
   id: number;
+  // The login of the comment's author; GitHub gives none for a deleted account.
+  author: string | undefined;
   body: string;
   createdAt: string;
 }
@@ -241,13 +243,18 @@ function issueVerbs({ gh, ghJson }: Client) {
   // PR conversation comments live on the issues endpoint, so one read serves an issue and a PR.
   const comments = async (issue: number, cwd?: string): Promise<IssueComment[]> =>
     (
-      await ghJson<{ id: number; body: string; created_at: string }[][]>(
+      await ghJson<{ id: number; user: { login: string } | null; body: string; created_at: string }[][]>(
         ['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/comments`],
         cwd,
       )
     )
       .flat()
-      .map((posted) => ({ id: posted.id, body: posted.body, createdAt: posted.created_at }));
+      .map((posted) => ({
+        id: posted.id,
+        author: posted.user?.login,
+        body: posted.body,
+        createdAt: posted.created_at,
+      }));
 
   // A PR conversation comment is an issue comment, so one POST serves an issue and a PR.
   async function comment(issue: number, body: string, cwd?: string): Promise<{ id: number; url: string }> {
