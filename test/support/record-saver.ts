@@ -7,6 +7,7 @@ const [commonDir, ticket, count, worktree] = process.argv.slice(2);
 if (commonDir) {
   const executionRecord = record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket: Number(ticket),
     epic: 1,
     flow: { name: 'default', entry: 'implement' },

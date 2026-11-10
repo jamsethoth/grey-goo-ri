@@ -228,6 +228,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   const flow = resolve(configured);
   const executionRecord = record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket: TICKET,
     epic: 1,
     flow: { name: flow.name, entry: flow.ticket.entry as string },
@@ -275,8 +276,7 @@ const observedGit = (git: runContext.RunGit, observe: (what: string) => void) =>
     ]),
   ) as runContext.RunGit;
 
-// The case's clock: every sleep is recorded, and `onSleep`, when a case sets it, runs before the clock moves on.
-// `beat()` runs what is due on `every`, as a heartbeat timer firing.
+// The case's clock: each sleep is recorded and first runs `onSleep` when set; `beat()` fires what `every` has due.
 function goldenClock() {
   const time = { now: Date.parse('2026-10-15T00:00:00Z') };
   const sleeps: number[] = [];

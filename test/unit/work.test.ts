@@ -22,6 +22,7 @@ function abandoning(t: TestContext) {
   record.save(
     record.createExecutionRecord({
       commonDir,
+      repository: 'o/r',
       ticket: TICKET,
       epic: null,
       flow: { name: 'gone', entry: 'red' },

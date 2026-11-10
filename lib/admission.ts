@@ -19,12 +19,8 @@ import * as publicText from './public-text.ts';
 import type * as runContext from './run-context.ts';
 import * as ticketWorktree from './ticket-worktree.ts';
 
-// The repository a Run works in: its main checkout, its shared .git directory and its name.
-export interface Repo {
-  mainRoot: string;
-  gitCommonDir: string;
-  name: string;
-}
+// The repository a Run works in: its main checkout, its shared .git directory and its name, as git gives them.
+export type Repo = Awaited<ReturnType<runContext.RunGit['repoInfo']>>;
 
 // What every Ticket of a Run reads: the Run's settings and the Flow a new Execution pins, every admitted Flow, the deps
 // with gh and git as the Run shares them (labels ensured once, writes under the repo lock), Events and run stop.
@@ -221,6 +217,7 @@ async function startTicket(
   const { context, ticket } = admitting;
   admitting.executionRecord ??= record.createExecutionRecord({
     commonDir: context.repo.gitCommonDir,
+    repository: context.repo.name,
     ticket,
     epic: context.epic,
     // Preflight admits only a Flow with no errors, and a Flow without an entry Vertex is one.

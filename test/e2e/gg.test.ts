@@ -124,13 +124,16 @@ function tempRepo(t: TestContext, user?: object) {
     mkdirSync(userDirectory, { recursive: true });
     writeFileSync(join(userDirectory, 'gg.json'), JSON.stringify(user));
   }
-  const ggIn = (...args: string[]) =>
+  const ggAt = (cwd: string, ...args: string[]) =>
     spawnSync(process.execPath, [bin, ...args], {
-      cwd: repo,
+      cwd,
       encoding: 'utf8',
       env: { ...process.env, HOME: home, USERPROFILE: home, GG_HOME: userDirectory },
     });
-  return { repo, userDirectory, ggIn };
+  const ggIn = (...args: string[]) => ggAt(repo, ...args);
+  // gg from the temp directory beside the repository, which is in no repository.
+  const ggOutside = (...args: string[]) => ggAt(directory, ...args);
+  return { repo, userDirectory, ggIn, ggOutside };
 }
 
 // The machine settings gg init writes into the user's gg.json.
@@ -216,6 +219,52 @@ test('gg run accepts --flow with a value', (t) => {
 function writeExampleLayer(directory: string) {
   mkdirSync(directory, { recursive: true });
   for (const name of exampleLayer.WRITTEN_NAMES) writeFileSync(join(directory, name), exampleLayer.fixtureText(name));
+}
+
+// --repo <path> names the repository in place of the current directory, for each command that acts on one (#321). Run
+// from a directory in no repository, each fails without it and acts on the named repository with it.
+const REPO_COMMANDS: [
+  name: string,
+  args: string[],
+  acted: (result: ReturnType<typeof spawnSync>, repo: string) => void,
+][] = [
+  [
+    'init',
+    ['init'],
+    (result, repo) => {
+      assert.equal(result.status, 0, String(result.stderr));
+      assert.deepEqual(readdirSync(join(repo, '.agents', 'gg')).sort(), [...exampleLayer.WRITTEN_NAMES].sort());
+    },
+  ],
+  [
+    'doctor',
+    ['doctor'],
+    (result) => {
+      assert.equal(result.status, 0, String(result.stdout) + String(result.stderr));
+      assert.ok(String(result.stdout).includes('\nvertex reviewer\n  procedure: review\n'), String(result.stdout));
+    },
+  ],
+  [
+    'run',
+    ['run', '1'],
+    (result) => {
+      assert.equal(result.status, 1, String(result.stderr));
+      assert.match(String(result.stderr), /harness claude: not implemented/);
+    },
+  ],
+];
+for (const [name, args, acted] of REPO_COMMANDS) {
+  test(`gg ${name} --repo <path> acts on that repository from outside it`, (t) => {
+    const { repo, ggOutside } = tempRepo(t, MACHINE_SETTINGS);
+    if (name !== 'init') writeExampleLayer(join(repo, '.agents', 'gg'));
+    const without = ggOutside(...args);
+    assert.notEqual(without.status, 0, 'outside any repository, gg has none to act on');
+    acted(ggOutside(...args, '--repo', repo), repo);
+    const missing = ggOutside(...args, '--repo');
+    assert.equal(missing.status, 1, missing.stderr);
+    assert.match(missing.stderr, /--repo/);
+    assertUsage(missing.stderr);
+  });
 }
 
 test('gg init writes the example at the repository root, and a second gg init keeps it', (t) => {

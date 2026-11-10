@@ -158,12 +158,15 @@ for (const [issue, reason] of NOT_READY) {
     const fixture = runFixture.fixture(t, { issue });
     assert.equal(runFixture.ticketResult(await run.runTarget(fixture.options))?.outcome, 'skipped');
     assert.ok(
-      fixture.logs.includes(`[main] #${TICKET} skipped: it is not ready: ${reason}`),
+      fixture.logs.includes(`[o/r] #${TICKET} skipped: it is not ready: ${reason}`),
       JSON.stringify(fixture.logs),
     );
     assert.deepEqual(
       fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-      [['issue', 'view']],
+      [
+        ['repo', 'view'],
+        ['issue', 'view'],
+      ],
     );
   });
 }
@@ -176,7 +179,7 @@ test('every line a Run prints names its repository, in the terminal and in run.l
   runFixture.failComment(fixture);
 
   await run.runTarget(fixture.options);
-  const prefix = `[${basename(fixture.mainRoot)}] `;
+  const prefix = '[o/r] ';
   const logged = (start: string) => fixture.logs.some((line) => line.startsWith(`${prefix}${start}`));
   assert.ok(logged(`#${TICKET} ERROR worktree add failed`), `the admission error: ${JSON.stringify(fixture.logs)}`);
   assert.ok(logged(`#${TICKET} fault report failed:`), `the report failure: ${JSON.stringify(fixture.logs)}`);
@@ -225,6 +228,7 @@ test('a warning line ends in its code, in run.log', async (t) => {
   assert.match(runLog, / warning: agents\.spare: agent spare is used by no Vertex \[unused-agent\]\n/);
 });
 
+// Before gg has read the repository's owner/name, an error names its checkout's folder; after, its owner/name (#321).
 test('every error a Run throws names its repository', async (t) => {
   const preflight = runFixture.fixture(t);
   preflight.options.config.repository.agents.implementer.harness = 'nope';
@@ -235,19 +239,78 @@ test('every error a Run throws names its repository', async (t) => {
 
   const view = runFixture.fixture(t);
   view.options.deps.gh = github.createGh(async (args) => {
+    if (args[0] === 'repo') return JSON.stringify({ nameWithOwner: 'o/r' });
     throw new Error(`gh ${args.join(' ')} exited 1\nHTTP 404: Not Found`);
   });
   await assert.rejects(run.runTarget(view.options), (err: Error) => {
-    assert.ok(err?.message.startsWith(`[main] gh issue view ${TICKET} `), err?.message);
+    assert.ok(err?.message.startsWith(`[o/r] gh issue view ${TICKET} `), err?.message);
     return true;
   });
 
   const epic = runFixture.fixture(t, { issues: epicRun.epicOf([21], { 21: { state: 'CLOSED' } }) });
   epic.options.target = epicRun.EPIC;
   await assert.rejects(run.runTarget(epic.options), (err: Error) => {
-    assert.ok(err?.message.startsWith(`[main] #${epicRun.EPIC}: nothing ready`), err?.message);
+    assert.ok(err?.message.startsWith(`[o/r] #${epicRun.EPIC}: nothing ready`), err?.message);
     return true;
   });
+});
+
+// The read's own failure comes before any Ticket read, run directory or Event, and names the checkout it read from.
+test('a repository whose owner/name cannot be read fails preflight naming it, and gg reads nothing more', async (t) => {
+  const fixture = runFixture.fixture(t);
+  fixture.gh.fail({ matches: (args) => args[0] === 'repo', stderr: 'no git remotes found' });
+  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
+    assert.deepEqual(err?.message.split('\n'), [
+      '[main] preflight failed:',
+      `error: cannot read the GitHub owner/name of ${fixture.mainRoot}: no git remotes found [repository-unread]`,
+    ]);
+    assert.equal(err.exitCode, 1);
+    return true;
+  });
+  assert.deepEqual(
+    fixture.gh.calls.map((call) => call.args.slice(0, 2)),
+    [['repo', 'view']],
+    'no Ticket read',
+  );
+  assert.equal(existsSync(join(fixture.commonDir, 'gg', 'runs')), false, 'no run directory');
+  assert.equal(fixture.worktrees(), 1, 'no worktree');
+});
+
+test("an epic Run reads its repository's owner/name once", async (t) => {
+  const fixture = runFixture.fixture(t, { issues: epicRun.epicOf([21, 22]) });
+  fixture.options.target = epicRun.EPIC;
+  await run.runTarget(fixture.options);
+  assert.equal(fixture.gh.calls.filter((call) => call.args[0] === 'repo').length, 1);
+});
+
+// Two checkouts both named main, of two GitHub repositories, no longer share a ticket worktree (#321).
+test('a new Execution records its repository and works under worktreeRoot/<owner>/<name>/ticket-<n>', async (t) => {
+  const worktrees = [];
+  for (const repository of ['acme/app', 'jdoe/app']) {
+    const fixture = runFixture.fixture(t, { repository });
+    const results = await run.runTarget(fixture.options);
+    assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+    const saved = JSON.parse(fixture.loadRow()!) as { repository: string; worktree: string };
+    assert.equal(saved.repository, repository);
+    const [owner, name] = repository.split('/') as [string, string];
+    assert.equal(saved.worktree, join(fixture.root, 'wt', owner, name, `ticket-${TICKET}`));
+    worktrees.push(saved.worktree.slice(fixture.root.length));
+  }
+  assert.notEqual(worktrees[0], worktrees[1]);
+});
+
+// A resumed Execution keeps where it was created and what it recorded, whatever gh says now.
+test('a resumed Execution keeps its recorded worktree path and repository', async (t) => {
+  const fixture = runFixture.fixture(t, { labels: [executionContext.IN_PROGRESS_LABEL], repository: 'acme/app' });
+  const oldPath = join(fixture.root, 'wt', 'main', `ticket-${TICKET}`);
+  const seeded = unvisitedExecution.unvisitedExecution(fixture, { worktree: oldPath, repository: 'old/app' });
+  record.save(seeded);
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const saved = JSON.parse(fixture.loadRow()!) as { repository: string; worktree: string };
+  assert.equal(saved.worktree, oldPath);
+  assert.equal(saved.repository, 'old/app');
+  assert.equal(existsSync(join(fixture.root, 'wt', 'acme')), false, 'no worktree under the read owner/name');
 });
 
 // A preflight failure: the error gg run rejects with, its message and exit code.

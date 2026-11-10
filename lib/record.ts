@@ -96,6 +96,7 @@ export interface SessionEntry {
 export interface ExecutionRecord {
   schemaVersion: number;
   commonDir: string;
+  repository: string;
   execution: string;
   ticket: number;
   epic: number | null;
@@ -147,6 +148,7 @@ export const terminalCursor = (vertex: string) => ({ vertex, visit: null, action
 
 export interface ExecutionStart {
   commonDir: string;
+  repository: string;
   ticket: number;
   epic?: number | null;
   flow: { name: string; entry: string };
@@ -163,6 +165,7 @@ export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
   return {
     schemaVersion: SCHEMA_VERSION,
     commonDir,
+    repository: '',
     execution: `${ticket}.${randomBytes(3).toString('hex')}`,
     ticket,
     epic,
@@ -285,8 +288,7 @@ function parseRow<Saved extends AnyRecord>(commonDir: string, { kind, n: recordN
   }
   if (data?.schemaVersion !== SCHEMA_VERSION)
     throw new RecordCorruptError(file, `unknown schemaVersion ${data?.schemaVersion}`, json);
-  // The version stays 1 until #23 freezes it, so a cursor from before Action ids is told apart by its shape, not
-  // misread.
+  // The version stays 1 until #23, so a cursor from before Action ids is told apart by its shape, not misread.
   if (data.cursor && !Object.hasOwn(data.cursor, 'recovery')) {
     throw new RecordCorruptError(
       file,

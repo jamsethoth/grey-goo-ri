@@ -182,6 +182,7 @@ export async function nextTicket(fixture: golden.GoldenFixture, onRun?: () => vo
   await fixture.options.deps.git.ensureWorktree({ mainRoot: fixture.mainRoot, path: worktree, branch, base: 'main' });
   const next = record.createExecutionRecord({
     commonDir: fixture.commonDir,
+    repository: 'o/r',
     ticket: 16,
     epic: 1,
     flow: { name: fixture.flow.name, entry: fixture.flow.ticket.entry as string },

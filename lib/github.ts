@@ -321,6 +321,14 @@ function prVerbs({ gh, ghJson }: Client) {
   return { findPr, upsertPr, viewPr, markReady };
 }
 
+// The repository's GitHub owner/name, or why it could not be read.
+export type RepositoryRead = { repository: string; error: null } | { repository: null; error: string };
+
+const repositoryName = async (_client: Client, _cwd?: string): Promise<RepositoryRead> => ({
+  repository: null,
+  error: '',
+});
+
 // The gh verbs over `transport`, which runs gh with argv, a working directory and stdin and returns its stdout. The
 // entry point passes none, so gh itself runs; a test passes a fake that records argv and answers canned stdout.
 export function createGh(transport: Transport = defaultTransport) {
@@ -334,6 +342,7 @@ export function createGh(transport: Transport = defaultTransport) {
     ...prVerbs(ghClient),
     issueEvents: (issue: number, cwd?: string) => issueEvents(ghClient, issue, cwd),
     collaboratorPermission: (login: string, cwd?: string) => collaboratorPermission(ghClient, login, cwd),
+    repositoryName: (cwd?: string) => repositoryName(ghClient, cwd),
     setLabels: (issue: number, change: LabelChange, cwd: string | undefined, report: LabelReport) =>
       setLabels(editLabels, [issue, change, cwd], report),
     labelNames,

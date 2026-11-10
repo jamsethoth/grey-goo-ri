@@ -88,6 +88,8 @@ export interface RunFixtureOptions {
   linked?: boolean;
   integrity?: golden.Which;
   git?: golden.Which;
+  // The GitHub owner/name gh gives for the repository.
+  repository?: string;
 }
 
 // The fake gh answering one standalone Ticket: its issue view has the fixture Ticket's title and body.
@@ -100,9 +102,10 @@ function ticketGh(mainRoot: string, git: runContext.RunGit, options: RunFixtureO
     issues = {},
     failEdit = false,
     failCreate = false,
+    repository,
   } = options;
   const headOf = (head: string) => git.remoteSha(mainRoot, head);
-  const fake = fakeGh.fakeGh({ branch, ticket: TICKET, repoLabels, headOf });
+  const fake = fakeGh.fakeGh({ branch, ticket: TICKET, repoLabels, headOf, repository });
   for (const label of labels) fake.labels.add(label);
   fake.gh = fakeGh.ghThrough(fake, async (call, next) => {
     const [noun, verb, number] = call.args;
@@ -260,8 +263,8 @@ export async function seedExecution(
   const flow = model.fromJson(flows.default);
   const executionRecord = record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket: TICKET,
-    epic: null,
     flow: { name: flow.name, entry: flow.ticket.entry as string },
     configHash: 'cfg-hash',
     run: '20261016T000000Z-seed00',

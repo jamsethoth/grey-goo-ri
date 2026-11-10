@@ -13,10 +13,12 @@ export function unvisitedExecution(
     run = SEED_RUN,
     branch = golden.BRANCH,
     worktree = fixture.worktree,
-  }: { ticket?: number; run?: string; branch?: string; worktree?: string } = {},
+    repository = 'o/r',
+  }: { ticket?: number; run?: string; branch?: string; worktree?: string; repository?: string } = {},
 ): record.ExecutionRecord {
   return record.createExecutionRecord({
     commonDir: fixture.commonDir,
+    repository,
     ticket,
     epic: null,
     flow: { name: 'default', entry: 'red' },

@@ -28,6 +28,7 @@ export async function executionContext(t: TestContext) {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-effects-');
   const executionRecord = record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket: TICKET,
     flow: { name: 'default', entry: 'green' },
     configHash: 'abc123',

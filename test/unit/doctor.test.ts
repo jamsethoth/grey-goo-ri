@@ -461,6 +461,7 @@ test('gg doctor lists an Execution Record whose Flow is no longer declared as an
   const commonDir = tempDirectory.tempDirectory(t, 'gg-doctor-records-');
   const gone = record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket: 7,
     epic: null,
     flow: { name: 'gone', entry: 'red' },

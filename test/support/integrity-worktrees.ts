@@ -14,6 +14,7 @@ const sh = gitShell.sh;
 export function worktreeRecord(commonDir: string, ticket: number, worktree: string) {
   return record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket,
     flow: { name: 'default', entry: 'implement' },
     configHash: 'abc123',
