@@ -159,17 +159,15 @@ Four stages, ordered by speed:
 | **Check** | `prettier --check`, ESLint and `tsc` (ADR 0018), and no tests: `node scripts/run-suite.ts check` (ADR 0016) | in CI as its own `check` job beside the suite jobs, so a format, lint or type error shows on its own |
 | **Fast** | `prettier --check`, ESLint and `tsc` (ADR 0018), then `test/unit/`, plus the contract suite of each boundary whose module, fake or cases changed: `node scripts/run-suite.ts fast [boundary ...]` (ADR 0016) | every change: the inner loop for people and agents' fix rounds |
 | **Full** | `prettier --check`, ESLint and `tsc`, then every test: `node scripts/run-suite.ts` | before a PR is marked ready, and in CI on every PR |
-| **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held to `coverage-baseline.json`: `node scripts/run-suite.ts coverage` (ADR 0016, amended) | in CI as its own `coverage (<os>)` job on each platform, beside the suite jobs; locally with `coverage update` when a change raises coverage |
+| **Coverage** | `test/unit/` with coverage of the unit-testable `lib/`, held at or above a fixed floor: `node scripts/run-suite.ts coverage` (ADR 0016, amended) | in CI as its own `coverage (<os>)` job on each platform, beside the suite jobs |
 
 The coverage stage runs in one process (`--test-isolation=none`), so its figures do not depend on the order node reads
 coverage files in, and a test that ends the process fails the stage; the other stages keep a process per file (ADR 0016,
-amended). Coverage only climbs. The
-coverage stage fails when the line or function coverage of `lib/` under `test/unit/` falls
-below the figures `coverage-baseline.json` records for the platform, and when it rises above them without being
-recorded, so the next change cannot spend the gain. `node scripts/run-suite.ts coverage update` records a rise; CI's
-failure message prints the other platform's figures to paste. Each PR's figures hold only for its own tree, so the Main
-ruleset requires a branch to be up to date with `main` before it merges: #310 and #311 each recorded a rise from 98.28
-to 98.29, merged cleanly, and their combined tree measured 98.3, which failed `main`'s coverage jobs (2026-11-08). The
+amended). The
+coverage stage fails when the line or function coverage of `lib/` under `test/unit/` is below the fixed floor
+`COVERAGE_FLOOR` in `scripts/run-suite.ts`, the same on every platform. The floor is raised by hand, in a PR of its own
+when the measured figures have moved well above it; nothing is recorded per change, so open PRs do not conflict on it.
+Coverage can fall between the measured figure and the floor without failing. The
 measured set is what a small test can reach: `lib/`
 without `lib/exec.ts`, `lib/git.ts`, `lib/git-temp-index.ts`, `lib/git-default-branch.ts`, `lib/process-tree.ts` and `lib/containment.ts`, whose contract suites cover
 them, and without the `bin/gg.ts` entry point that wires them. Command Cleanup's decisions, which processes a command

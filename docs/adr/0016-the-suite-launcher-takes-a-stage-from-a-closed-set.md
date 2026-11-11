@@ -71,6 +71,18 @@ ends what it finds one process at a time, and kill-on-close takes anything left 
 through PowerShell's `Get-CimInstance`, from `SYSTEM32` as ADR 0021 runs `taskkill.exe`, and only then, so a clean stage
 starts nothing more.
 
+Amended 2026-11-11 (the fixed floor): the closed set is `fast [boundary ...]`, `check`, `coverage`, or nothing;
+`coverage update` is gone, and `coverage` followed by anything is a usage error with exit code 2. The coverage stage
+holds the line and function percentages at or above `COVERAGE_FLOOR` in `scripts/run-suite.ts`, 99% of lines and 98.5%
+of functions, the same on every platform, and `coverage-baseline.json` is deleted. The recorded figures failed on a
+rise as well as a fall, so nearly every change to `lib/` edited the same four numbers: 18 of the 39 merges after the
+ratchet landed changed the file, any two open PRs that raised coverage conflicted on it, and 17 of the 21 PR runs the
+coverage jobs failed were rises not yet recorded, most by 0.01. The cost is that coverage no longer only climbs: it can
+fall from the measured figure (99.3% and 98.94% when this was written) to the floor without failing. Raising the floor
+is a hand edit in a PR of its own. Comparing each PR with `main`'s measured figure would have kept the ratchet with
+nothing committed, and was not taken: it needs a stored figure per commit, or a second coverage run where none is
+stored. The one-process run and the failure when the report measures no lines stand.
+
 ## Considered options
 
 - A second launcher, `scripts/run-fast.mjs`, that also ignores its arguments and runs `test/unit/` with every contract
