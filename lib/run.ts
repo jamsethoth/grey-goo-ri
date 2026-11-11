@@ -193,8 +193,7 @@ function startRun(
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
   const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
   flowModule.writeResolved(runDir, model.toJson(selected.flow), selected.hash);
-  for (const { hash, pinned } of flows)
-    stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, JSON.stringify(pinned));
+  for (const { hash, pinned } of flows) stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, pinned);
   const runLog = (message: string) => {
     const line = named(message);
     appendFileSync(join(runDir, 'run.log'), `${new Date().toISOString()} ${line}\n`);

@@ -499,7 +499,7 @@ test('the State Database waits up to 60 s for another writer', async (t) => {
 test('savePinnedConfiguration stores a pinned configuration once per hash and loadPinnedConfiguration reads it back', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
-  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', JSON.stringify(pinned));
+  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', pinned);
   const firstSeen = () =>
     withDb(commonDir, (db) => db.prepare("SELECT firstSeen FROM configs WHERE hash = 'hash-1'").get()?.firstSeen);
   const first = firstSeen();
@@ -510,7 +510,7 @@ test('savePinnedConfiguration stores a pinned configuration once per hash and lo
   // An older firstSeen than any save could write, so a second save that replaced it would show.
   const older = '2020-01-01T00:00:00.000Z';
   withDb(commonDir, (db) => db.prepare("UPDATE configs SET firstSeen = ? WHERE hash = 'hash-1'").run(older));
-  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', JSON.stringify(pinned));
+  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', pinned);
   assert.equal(firstSeen(), older, 'the second save keeps the first firstSeen');
   withDb(commonDir, (db) => assert.equal(db.prepare('SELECT count(*) AS n FROM configs').get()?.n, 1));
   assert.deepEqual(await stateDatabase.loadPinnedConfiguration(commonDir, 'hash-1'), pinned);
@@ -571,7 +571,7 @@ test('close releases the database so the directory can be removed', async (t) =>
   const commonDir = await mkdtemp(join(tmpdir(), 'gg-record-'));
   t.after(() => rm(commonDir, { recursive: true, force: true }));
   record.save(knownRecord(commonDir));
-  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', '{}');
+  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', {});
   assert.ok(existsSync(dbPath(commonDir)), 'gg/gg.db exists');
   await stateDatabase.close(commonDir);
   rmSync(commonDir, { recursive: true });

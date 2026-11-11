@@ -3,6 +3,7 @@
 import { mkdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
+import type * as jsonValue from './json-value.ts';
 import * as paths from './paths.ts';
 
 export const SCHEMA_VERSION = 1;
@@ -103,10 +104,14 @@ export function close(commonDir: string): void {
   connection?.close();
 }
 
-export function savePinnedConfiguration(commonDir: string, hash: string, json: string): void {
+export function savePinnedConfiguration<Pinned>(
+  commonDir: string,
+  hash: string,
+  pinned: Pinned & jsonValue.JsonChecked<Pinned>,
+): void {
   open(commonDir)
     .prepare('INSERT OR IGNORE INTO configs (hash, json, firstSeen) VALUES (?, ?, ?)')
-    .run(hash, json, new Date().toISOString());
+    .run(hash, JSON.stringify(pinned), new Date().toISOString());
 }
 
 export function loadPinnedConfiguration(commonDir: string, hash: string): unknown {
