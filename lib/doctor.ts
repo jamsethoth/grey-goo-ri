@@ -35,9 +35,7 @@ interface Target {
   exhausted?: unknown;
 }
 
-// A configured value as a summary line shows it: a string as written, anything else as JSON, so a value of the wrong
-// type never shows as [object Object] or a blank (#305).
-const shown = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
+const { shown } = report;
 
 function target(given: unknown): string {
   if (typeof given === 'string') return given;
