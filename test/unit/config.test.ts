@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
+import * as model from '../../lib/model.ts';
+import type * as runFlows from '../../lib/run-flows.ts';
 import * as settings from '../../lib/settings.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
@@ -30,6 +32,21 @@ function reversed<Value>(value: Value): Value {
 // the model's toJson converts first (#174).
 test('hashOf refuses a Map, which it would otherwise hash as an empty object', () => {
   assert.throws(() => config.hashOf({ flow: { vertices: new Map([['red', 1]]) } }), /Map/);
+});
+
+// The Flow is pinned as the validator's JSON, so tsc refuses a Resolved Flow with its Maps before the hash does (#330).
+test('a Pinned Configuration takes the Resolved Flow as JSON, not with its Maps', () => {
+  const json = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: null, vertices: {} } };
+  const pinned = { flow: model.fromJson(json), files: {}, harnesses: {}, commands: {}, testPaths: [] };
+  // @ts-expect-error -- a Resolved Flow holds Maps; model.toJson converts it first
+  assert.throws(() => config.configHash(pinned), /a Map cannot be hashed/);
+  assert.match(config.configHash({ ...pinned, flow: model.toJson(pinned.flow) }), /^[0-9a-f]{64}$/);
+});
+
+// gg run saves each PinnedFlow's pinned with JSON.stringify, so its type must be one gg/no-map-to-json can read (#330).
+test("a PinnedFlow's pinned is a Pinned Configuration, or null for a Flow no longer declared", () => {
+  const typed: [runFlows.PinnedFlow['pinned']] extends [config.PinnedConfiguration | null] ? true : false = true;
+  assert.equal(typed, true);
 });
 
 test('configHash changes with persona, vertex, command and testPaths changes and ignores key order', () => {
@@ -353,7 +370,8 @@ test("this repository AGENTS.md Commands line matches the repository's gg.json",
 });
 
 test('approvers change the Config Hash, and none leaves it as it was', () => {
-  const pinned = { flow: {}, files: {}, harnesses: {}, commands: {}, testPaths: [] };
+  const flow = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: null, vertices: {} } };
+  const pinned = { flow, files: {}, harnesses: {}, commands: {}, testPaths: [] };
   const hash = config.configHash(pinned);
   assert.notEqual(config.configHash({ ...pinned, approvers: ['some-login'] }), hash);
   assert.equal(config.configHash({ ...pinned, approvers: undefined }), hash);

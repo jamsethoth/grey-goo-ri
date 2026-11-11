@@ -6,19 +6,10 @@ import type * as marker from './marker.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 import * as writeAhead from './write-ahead.ts';
+import * as recordJson from './record-json.ts';
 
-const SCHEMA_VERSION = 1;
-
-export class RecordCorruptError extends Error {
-  declare file: string;
-  declare raw: string;
-  constructor(file: string, reason: string, raw: string) {
-    super(`corrupt record ${file}: ${reason}`);
-    this.name = 'RecordCorruptError';
-    this.file = file;
-    this.raw = raw;
-  }
-}
+export { RecordCorruptError, fromJson, toJson } from './record-json.ts';
+export type { ExecutionRecordJson, VisitStateJson } from './record-json.ts';
 
 // A record transition whose Event failed was rolled back, but the record object still holds it: saving that object
 // again would publish the transition without its Event, so it is rethrown and nothing more of it is saved.
@@ -163,7 +154,7 @@ export interface ExecutionStart {
 export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
   const { commonDir, ticket, epic = null, flow, configHash, run, worktree, branch, base } = start;
   return {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: recordJson.SCHEMA_VERSION,
     commonDir,
     repository: start.repository,
     execution: `${ticket}.${randomBytes(3).toString('hex')}`,
@@ -209,7 +200,7 @@ export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
 }
 
 export function createEpicRecord({ commonDir, epic }: { commonDir: string; epic: number }): EpicRecord {
-  return { schemaVersion: SCHEMA_VERSION, commonDir, epic, planDecision: null, approvalRequest: null };
+  return { schemaVersion: recordJson.SCHEMA_VERSION, commonDir, epic, planDecision: null, approvalRequest: null };
 }
 
 const declaredFields = (kind: RecordKind): string[] =>
@@ -237,12 +228,12 @@ type WriteEvent = (() => void) | null;
 // synchronous: nothing awaited may run inside the transaction. Any failed save is a RecordSaveError, after which the
 // caller saves nothing more of the record.
 function saveRecord(record: AnyRecord, writeEvent: WriteEvent, beforeSave: (record: AnyRecord) => void): void {
-  const { commonDir, ...data } = record;
   const kind: RecordKind = 'execution' in record ? 'ticket' : 'epic';
-  const connection = stateDatabase.open(commonDir);
+  const connection = stateDatabase.open(record.commonDir);
   const upsert = () => {
     assertDeclared(kind, record);
     beforeSave(record);
+    const row = 'execution' in record ? recordJson.toJson(record) : recordJson.epicJson(record);
     connection
       .prepare(
         'INSERT INTO records (kind, n, json) VALUES (?, ?, ?) ON CONFLICT(kind, n) DO UPDATE SET json = excluded.json',
@@ -250,8 +241,7 @@ function saveRecord(record: AnyRecord, writeEvent: WriteEvent, beforeSave: (reco
       .run(
         kind,
         kind === 'ticket' ? (record as ExecutionRecord).ticket : record.epic,
-        JSON.stringify(data, (_key, value: unknown) => (value instanceof Map ? Object.fromEntries(value) : value), 2) +
-          '\n',
+        `${JSON.stringify(row, null, 2)}\n`,
       );
   };
   if (!writeEvent) {
@@ -272,54 +262,14 @@ function saveRecord(record: AnyRecord, writeEvent: WriteEvent, beforeSave: (reco
   }
 }
 
-interface RecordRow {
-  kind: RecordKind;
-  n: number;
-  json: string;
-}
-
-function parseRow<Saved extends AnyRecord>(commonDir: string, { kind, n: recordNumber, json }: RecordRow): Saved {
-  const file = `${stateDatabase.filePath(commonDir)}#${kind}-${recordNumber}`;
-  let data;
-  try {
-    data = JSON.parse(json);
-  } catch (err) {
-    throw new RecordCorruptError(file, (err as Error).message, json);
-  }
-  if (data?.schemaVersion !== SCHEMA_VERSION)
-    throw new RecordCorruptError(file, `unknown schemaVersion ${data?.schemaVersion}`, json);
-  // The version stays 1 until #23, so a cursor from before Action ids is told apart by its shape, not misread.
-  if (data.cursor && !Object.hasOwn(data.cursor, 'recovery')) {
-    throw new RecordCorruptError(
-      file,
-      'its cursor has no Recovery Number, so it was written before Action ids (#111)',
-      json,
-    );
-  }
-  // The counts kept as Maps are saved as objects (#174); anything else makes the row corrupt, not a TypeError.
-  const maps = (holder: Record<string, unknown> | null, keys: string[]) => {
-    for (const key of holder ? keys : []) {
-      const saved = holder![key];
-      if (!saved || typeof saved !== 'object' || Array.isArray(saved))
-        throw new RecordCorruptError(file, `its ${key} is not an object`, json);
-      holder![key] = new Map(Object.entries(saved));
-    }
-  };
-  if (kind === 'ticket') {
-    maps(data, ['visits', 'traversals']);
-    maps(data.visitState, ['runs', 'checks']);
-  }
-  return { ...data, commonDir };
-}
-
 type Saved<Kind extends RecordKind> = Kind extends 'ticket' ? ExecutionRecord : EpicRecord;
 
 export function load<Kind extends RecordKind>(commonDir: string, kind: Kind, recordNumber: number): Saved<Kind> | null {
   const row = stateDatabase
     .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? AND n = ?')
-    .get(kind, recordNumber) as RecordRow | undefined;
-  return row ? parseRow<Saved<Kind>>(commonDir, row) : null;
+    .get(kind, recordNumber) as recordJson.RecordRow | undefined;
+  return row ? recordJson.parseRow<Saved<Kind>>(commonDir, row) : null;
 }
 
 // A record's row deleted, as gg work abandon forgets a Ticket's position; its Events stay. Says whether one was.
@@ -335,17 +285,17 @@ export function removeRecord(commonDir: string, kind: RecordKind, recordNumber: 
 export function loadAll<Kind extends RecordKind>(
   commonDir: string,
   kind: Kind,
-  { onCorrupt = () => {} }: { onCorrupt?: (err: RecordCorruptError) => void } = {},
+  { onCorrupt = () => {} }: { onCorrupt?: (err: recordJson.RecordCorruptError) => void } = {},
 ): Saved<Kind>[] {
   const rows = stateDatabase
     .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? ORDER BY n')
-    .all(kind) as unknown as RecordRow[];
+    .all(kind) as unknown as recordJson.RecordRow[];
   return rows.flatMap((row) => {
     try {
-      return [parseRow<Saved<Kind>>(commonDir, row)];
+      return [recordJson.parseRow<Saved<Kind>>(commonDir, row)];
     } catch (err) {
-      if (!(err instanceof RecordCorruptError)) throw err;
+      if (!(err instanceof recordJson.RecordCorruptError)) throw err;
       onCorrupt(err);
       return [];
     }

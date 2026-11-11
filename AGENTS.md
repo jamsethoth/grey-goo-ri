@@ -92,6 +92,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/checks.ts` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
 | `lib/integrity.ts` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) and their types: the snapshot, the Attempt baseline, Integrity Violations |
 | `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
+| `lib/record-json.ts` | a record's row: the Execution Record's JSON type (`ExecutionRecordJson`) and its only Map conversion (`toJson`, `fromJson`), the parse that tells a corrupt row (`RecordCorruptError`); `lib/record.ts` re-exports what callers use |
 | `lib/state-database.ts` | the State Database file: one connection per repository, WAL and schema, Pinned Configurations and reusable Check results |
 | `lib/write-ahead.ts` | the write-ahead log's entries and what reads them: open intents, evidence, the last commit |
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union) |
