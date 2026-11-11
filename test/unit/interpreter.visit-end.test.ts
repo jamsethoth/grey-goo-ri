@@ -233,3 +233,54 @@ test('a spent Edge whose exhausted target is its own Vertex records no edge or c
     },
   );
 });
+
+test('a restart before the Terminal save writes the visit_end it lost', async (t) => {
+  const fixture = await golden.fixture(t);
+  // The save of publish's route to its end fails, and its visit_end, in the same transaction, is lost with it.
+  const restore = caseDatabase.failSaves(t, (_saved, next) => (next as record.ExecutionRecord).terminalReason !== null);
+  await assert.rejects(interpreter.runExecution(fixture.options), (err) => err instanceof record.RecordSaveError);
+  restore();
+  assert.deepEqual(visitPlaces(fixture), ['red/1', 'green/1']);
+
+  const result = await interpreter.runExecution({ ...fixture.options, record: executionReads.loadTicket(fixture) });
+
+  assert.equal(result.outcome, 'ready-for-qa');
+  assert.deepEqual(visitPlaces(fixture), ['red/1', 'green/1', 'publish/1']);
+});
+
+test('a route into a spent Vertex lists that Vertex in spent', async (t) => {
+  const fixture = await reviewFlow.reviewFixture(
+    t,
+    {
+      [reviewCall(1)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+      [fixCall('implementer-fix')]: fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
+      [reviewCall(2)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
+      [fixCall('senior-dev')]: fixed({ 'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n' }),
+      [reviewCall(3)]: reviewed(review('ok')),
+    },
+    {
+      configure: (configured) => {
+        Object.assign(configured.flows.golden!.ticket.vertices['implementer-fix']!, {
+          max: 1,
+          exhausted: 'senior-dev',
+        });
+      },
+    },
+  );
+  const result = await interpreter.runExecution(fixture.options);
+
+  assert.equal(result.outcome, 'ready-for-qa');
+  assert.deepEqual(
+    executionReads.visitEnds(fixture).find((visitEnd) => visitEnd.vertex === 'reviewer' && visitEnd.visit === 2),
+    {
+      vertex: 'reviewer',
+      visit: 2,
+      outcome: 'changes',
+      rule: { table: 'passed', row: 'otherwise' },
+      next: 'senior-dev',
+      edge: null,
+      count: null,
+      spent: [{ vertex: 'implementer-fix' }],
+    },
+  );
+});
