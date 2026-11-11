@@ -130,19 +130,56 @@ test('a Proxy is refused whatever it shows, since it may answer each question di
   assert.throws(() => jsonValue.checked({ held: plainLooking }, 'the row'), /^Error: the row: held is a Proxy/);
   const hiding = new Proxy(new Map([['first', 1]]), { getPrototypeOf: () => Object.prototype });
   assert.throws(() => jsonValue.checked({ held: hiding }, 'the row'), /^Error: the row: held is a Proxy/);
+  // One that throws when asked anything is still refused by its path.
+  const revoked = Proxy.revocable({}, {});
+  revoked.revoke();
+  assert.throws(() => jsonValue.checked({ held: revoked.proxy }, 'the row'), /^Error: the row: held is a Proxy/);
+  const throwing = new Proxy({}, { getPrototypeOf: () => assert.fail('the Proxy was asked its prototype') });
+  assert.throws(() => jsonValue.checked({ held: throwing }, 'the row'), /^Error: the row: held is a Proxy/);
+});
+
+test('a class instance whose constructor throws is still refused by its path', () => {
+  class Guarded {}
+  const guarded = new Guarded();
+  Object.defineProperty(guarded, 'constructor', { get: () => assert.fail('no name') });
+  assert.throws(() => jsonValue.checked({ held: guarded }, 'the row'), /^Error: the row: held is a class instance/);
 });
 
 test('-0 is saved as 0, the same number to every comparison but Object.is', () => {
   assert.equal(jsonValue.text({ count: -0 }, 'the row'), '{"count":0}');
 });
 
-test('a toJSON every object inherits fails the save, since it would run on the copy', (t) => {
+test('a toJSON every object inherits fails the save, since it would run on the copy', () => {
   const prototype = Object.prototype as { toJSON?: unknown };
-  t.after(() => delete prototype.toJSON);
-  prototype.toJSON = () => 'swapped';
-  assert.throws(() => jsonValue.checked({ kept: 1 }, 'the row'), /^Error: the row: every object inherits a toJSON/);
-  delete prototype.toJSON;
+  const refused = /^Error: the row: every object inherits a toJSON/;
+  // The toJSON is gone again before anything else runs: the coverage stage runs every unit file in this process.
+  const saving = (save: () => unknown): void => {
+    try {
+      assert.throws(save, refused);
+    } finally {
+      delete prototype.toJSON;
+    }
+  };
+  saving(() => {
+    prototype.toJSON = () => 'swapped';
+    return jsonValue.checked({ kept: 1 }, 'the row');
+  });
   assert.deepEqual(jsonValue.checked({ kept: 1 }, 'the row'), { kept: 1 });
+  // One a getter adds while the value is copied, after any check made before the copy.
+  const adding = {
+    get kept() {
+      prototype.toJSON = () => 'swapped';
+      return 1;
+    },
+  };
+  saving(() => jsonValue.text(adding, 'the row'));
+  // One that is a getter, which would run while the copy is written. It is found without being run.
+  let ran = 0;
+  saving(() => {
+    Object.defineProperty(prototype, 'toJSON', { get: () => void ran++, configurable: true });
+    return jsonValue.text({ kept: 1 }, 'the row');
+  });
+  assert.equal(ran, 0);
 });
 
 test('what is checked is what is written: each property is read once, and no toJSON runs', () => {

@@ -60,16 +60,26 @@ function lost(value: unknown): string | null {
   // JSON writes NaN and the infinities as null.
   if (typeof value === 'number') return Number.isFinite(value) ? null : String(value);
   if (typeof value !== 'object') return value === undefined ? 'undefined' : named(typeof value);
+  // A Proxy is refused before it is asked anything: it may answer each question differently, or throw.
+  if (types.isProxy(value)) return 'a Proxy';
   const prototype: unknown = Object.getPrototypeOf(value);
   const plain = Array.isArray(value)
     ? prototype === Array.prototype
     : prototype === Object.prototype || prototype === null;
   // JSON writes a Map, a Set or an Error as {}, and any other class instance as something a load does not give back.
-  if (!plain) return named((value as { constructor?: { name?: string } }).constructor?.name || 'class instance');
-  // A prototype can be reset, so a Map may look plain; what a value is inside cannot. A Proxy is refused whatever it
-  // shows: it may answer each question differently.
+  if (!plain) return named(className(value));
+  // A prototype can be reset, so a Map may look plain; what a value is inside cannot.
   const built = BUILT_IN.find(([, is]) => is(value));
   return built ? named(built[0]) : null;
+}
+
+// A class instance's name for the refusal, which its own `constructor` may refuse to give.
+function className(value: object): string {
+  try {
+    return String((value as { constructor?: { name?: unknown } }).constructor?.name || 'class instance');
+  } catch {
+    return 'class instance';
+  }
 }
 
 // Each kind of object the language builds with more inside than its properties, by node's own test of it and the
@@ -115,15 +125,17 @@ function copied(value: unknown, path: string, what: string, within: object[]): J
 // The value as a load would give it back: plain objects, lists, strings, booleans, finite numbers and null, at every
 // depth. It throws on anything else, naming the save (`what`) and the path to the value refused. The copy is what a
 // save writes: a getter read again, or a toJSON, could otherwise give the write a value the check never saw. The copy
-// holds only new plain objects and lists, so writing it runs no code but a toJSON they would all inherit, which is
-// refused here.
+// holds only new plain objects and lists, so writing it runs no code but a toJSON they would all inherit. That is
+// asked once the copy is made, the last moment anything of the value's own could run, and by `in`, which finds a
+// getter without running it.
 // What it leaves: a key that is not enumerable is not saved, which gg uses to keep a field off a row
 // (lib/exec.ts closeJob); -0 is saved as 0, the same number to every comparison but Object.is; and a plain object
 // from another realm (node:vm) is refused, since its prototype is not this realm's.
 export function checked(value: unknown, what: string): JsonValue {
-  const inherited = [{}, []].some((made) => typeof (made as { toJSON?: unknown }).toJSON === 'function');
-  if (inherited) throw new Error(`${what}: every object inherits a toJSON, so JSON would not write what was checked`);
-  return copied(value, '', what, []);
+  const copy = copied(value, '', what, []);
+  if ('toJSON' in Object.prototype || 'toJSON' in Array.prototype)
+    throw new Error(`${what}: every object inherits a toJSON, so JSON would not write what was checked`);
+  return copy;
 }
 
 // The text a save writes. The only call that turns saved data into JSON (docs/research/configured-name-collections.md,
