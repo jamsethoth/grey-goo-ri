@@ -195,8 +195,7 @@ function sortedKeys(value: unknown): unknown {
 // A Map has no keys to sort and would hash as {} in silence, so the hash takes only what a save takes: the model's
 // toJson gives the JSON to hash (#174).
 export function hashOf(value: unknown): string {
-  jsonValue.assertJson(value, 'the value to hash');
-  return sha256(JSON.stringify(sortedKeys(value)));
+  return sha256(JSON.stringify(sortedKeys(jsonValue.checked(value, 'the value to hash'))));
 }
 
 // What a Pinned Configuration holds.

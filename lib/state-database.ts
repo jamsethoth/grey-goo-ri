@@ -111,7 +111,7 @@ export function savePinnedConfiguration<Pinned>(
 ): void {
   open(commonDir)
     .prepare('INSERT OR IGNORE INTO configs (hash, json, firstSeen) VALUES (?, ?, ?)')
-    .run(hash, jsonValue.text(pinned, 'the Pinned Configuration'), new Date().toISOString());
+    .run(hash, jsonValue.text<Pinned>(pinned, 'the Pinned Configuration'), new Date().toISOString());
 }
 
 export function loadPinnedConfiguration(commonDir: string, hash: string): unknown {

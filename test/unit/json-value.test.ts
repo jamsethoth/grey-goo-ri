@@ -23,6 +23,7 @@ function roundTrips(value: unknown): boolean {
 class Point {
   across = 1;
 }
+class Rows extends Array<number> {}
 // One value of every kind a save could be handed: each JSON kind, and each kind JSON.stringify changes or refuses.
 const CORPUS: [string, unknown][] = [
   ['a string', 'text'],
@@ -53,14 +54,15 @@ const CORPUS: [string, unknown][] = [
   ['a symbol', Symbol('lost')],
   ['a bigint', 10n],
   ['a list with a hole', [, 1]],
+  ['a list subclass', Rows.of(1, 2)],
 ];
 
-test('assertJson accepts exactly the values a save reads back unchanged, and names the path to any other', () => {
+test('checked accepts exactly the values a save reads back unchanged, and names the path to any other', () => {
   for (const [name, value] of CORPUS) {
     const held = { list: ['first', { items: [value] }] };
     const refusal = (() => {
       try {
-        jsonValue.assertJson(held, 'the row');
+        jsonValue.checked(held, 'the row');
         return null;
       } catch (err) {
         return (err as Error).message;
@@ -71,9 +73,40 @@ test('assertJson accepts exactly the values a save reads back unchanged, and nam
   }
 });
 
-test('assertJson names the value itself when the whole value is not JSON', () => {
-  assert.throws(() => jsonValue.assertJson(new Map(), 'the row'), /^Error: the row: the value is a Map/);
-  assert.throws(() => jsonValue.assertJson(undefined, 'the row'), /^Error: the row: the value is undefined/);
+test('checked names the value itself when the whole value is not JSON', () => {
+  assert.throws(() => jsonValue.checked(new Map(), 'the row'), /^Error: the row: the value is a Map/);
+  assert.throws(() => jsonValue.checked(undefined, 'the row'), /^Error: the row: the value is undefined/);
+});
+
+test('what is checked is what is written: each property is read once, and no toJSON runs', () => {
+  let reads = 0;
+  // A number by its type, so only the run-time check stands between its second answer and the row.
+  const later: unknown = new Map([['first', 1]]);
+  const changing = {
+    get counts() {
+      return (++reads === 1 ? 0 : later) as number;
+    },
+  };
+  assert.equal(jsonValue.text(changing, 'the row'), '{"counts":0}');
+  assert.equal(reads, 1);
+  const hidden = { kept: 1 };
+  Object.defineProperty(hidden, 'toJSON', { value: () => ({ swapped: new Map() }) });
+  assert.equal(jsonValue.text(hidden, 'the row'), '{"kept":1}');
+  const shown = { kept: 1, toJSON: () => ({ swapped: 1 }) };
+  // @ts-expect-error a toJSON is a function
+  assert.throws(() => jsonValue.text(shown, 'the row'), /^Error: the row: toJSON is a function/);
+});
+
+test('a value that holds itself is refused by its path, and one held twice is not', () => {
+  const inner: Record<string, unknown> = { name: 'inner' };
+  const cyclic = { outer: { inner } };
+  inner.back = cyclic.outer;
+  assert.throws(() => jsonValue.checked(cyclic, 'the row'), /^Error: the row: outer\.inner\.back holds itself/);
+  const shared = { name: 'shared' };
+  assert.equal(
+    jsonValue.text({ first: shared, second: shared }, 'the row'),
+    JSON.stringify({ first: shared, second: shared }),
+  );
 });
 
 test('an undefined property is not given, so text drops it as JSON.stringify does', () => {
@@ -109,6 +142,8 @@ test('tsc refuses text a Map, a Set, a function or an unknown, at any depth and 
   const loose: unknown = { one: 1 };
   const withUnknown: { inner: { value: unknown } } = { inner: { value: 1 } };
   const anything: any = { one: 1 };
+  const withAny: { inner: { value: any } } = { inner: { value: 1 } };
+  const listOfAny: any[] = [1];
   // @ts-expect-error a Map nested in the value
   assert.throws(() => jsonValue.text(withMap, 'the row'), lost);
   // @ts-expect-error a Set nested in a list
@@ -126,6 +161,10 @@ test('tsc refuses text a Map, a Set, a function or an unknown, at any depth and 
   assert.equal(jsonValue.text(withUnknown, 'the row'), '{"inner":{"value":1}}');
   // @ts-expect-error an any
   assert.equal(jsonValue.text(anything, 'the row'), '{"one":1}');
+  // @ts-expect-error an any nested in the value
+  assert.equal(jsonValue.text(withAny, 'the row'), '{"inner":{"value":1}}');
+  // @ts-expect-error a list of any
+  assert.equal(jsonValue.text(listOfAny, 'the row'), '[1]');
 });
 
 // Each save path below takes a Map, a Set and an unknown in turn. tsc refuses each where the comment says, and the
