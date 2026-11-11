@@ -229,8 +229,8 @@ test('the Action Cap ends the Ticket at needs-human', async (t) => {
     golden
       .trace(fixture.readEvents())
       .filter((event) => event.vertex === 'red' || event.vertex === 'green')
-      .map((event) => `${event.vertex}/${event.action}`),
-    ['red/red', 'red/red-check', 'red/commit', 'green/green'],
+      .map(golden.line((event) => `${event.vertex}/${event.action}`)),
+    ['red/red', 'red/red-check', 'red/commit', 'red ok -> green', 'green/green', 'green needs-human -> needs-human'],
     'no Attempt past the cap runs',
   );
   assert.equal(fixture.shells.length, 1, "only red's Check ran the tests");
@@ -337,7 +337,7 @@ test('the needs-human report runs after the cap is reached', async (t) => {
     golden
       .trace(fixture.readEvents())
       .filter((event) => event.vertex === 'needs-human')
-      .map((event) => `${event.action}/${event.outcome}`),
+      .map(golden.line((event) => `${event.action}/${event.outcome}`)),
     ['end-comment/ok', 'end-label/ok'],
     'the report is traced',
   );
@@ -497,6 +497,7 @@ const CAPPED_TRACE = [
   'red/red/0/2',
   'red/red-check/0/1',
   'red/commit/0/1',
+  'red ok -> green',
   'green/green/0/1',
   'green/test/0/1',
   'green/green/1/1',
@@ -504,21 +505,26 @@ const CAPPED_TRACE = [
   'green/commit/1/1',
   'green/push/1/1',
   'green/pr/1/1',
+  'green ok -> reviewer',
   'reviewer/review/0/1',
   'reviewer/review-pass/0/1',
   'reviewer/repeat/0/1',
   'reviewer/comment/0/1',
   'reviewer/pr/0/1',
+  'reviewer changes -> implementer-fix',
   'implementer-fix/fix/0/1',
   'implementer-fix/test/0/1',
   'implementer-fix/commit/0/1',
   'implementer-fix/push/0/1',
   'implementer-fix/pr/0/1',
+  'implementer-fix ok -> reviewer',
   'reviewer/review/0/1',
   'reviewer/review-pass/0/1',
   'reviewer/repeat/0/1',
   'reviewer/comment/0/1',
   'reviewer/pr/0/1',
+  'reviewer changes -> senior-dev',
+  'senior-dev needs-human -> needs-human',
 ];
 
 test(
@@ -541,7 +547,7 @@ test(
       golden
         .trace(fixture.readEvents())
         .filter((event) => !['needs-human'].includes(event.vertex))
-        .map((event) => `${event.vertex}/${event.action}/${event.recovery}/${event.attempt}`),
+        .map(golden.line((event) => `${event.vertex}/${event.action}/${event.recovery}/${event.attempt}`)),
       CAPPED_TRACE,
       'the 26 Attempts the cap allows',
     );

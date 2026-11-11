@@ -99,7 +99,7 @@ test('the interpreter names no Procedure, Action or Check', async (t) => {
 
   assert.equal(outcome, 'ready-for-qa');
   assert.deepEqual(
-    golden.trace(fixture.readEvents()).map((event) => `${event.vertex}/${event.action}/${event.outcome}`),
+    golden.trace(fixture.readEvents()).map(golden.line((event) => `${event.vertex}/${event.action}/${event.outcome}`)),
     [
       'build/ask/ok',
       'build/gate/ok',
@@ -107,6 +107,7 @@ test('the interpreter names no Procedure, Action or Check', async (t) => {
       'build/ship/ok',
       'build/post/ok',
       'build/done/ok',
+      'build ok -> ready-for-qa',
       'ready-for-qa/end-comment/ok',
       'ready-for-qa/end-label/ok',
     ],
@@ -302,7 +303,7 @@ test('a Check with recoverable: false is not recovered', async (t) => {
 
   assert.equal(outcome, 'needs-human');
   assert.equal(fixture.harness.calls.length, 2, 'no recovery call');
-  assert.deepEqual(greenTrace(fixture), ['green/0', 'test/0']);
+  assert.deepEqual(greenTrace(fixture), ['green/0', 'test/0', 'green failed -> needs-human']);
   assert.deepEqual(fixture.executionRecord.terminalReason!.rule, { table: 'failed', row: null });
 });
 

@@ -96,10 +96,13 @@ test('golden: a failed red is recovered once then fails at needs-human with its 
   const { outcome } = await interpreter.runExecution(fixture.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(
-    tddTrace(fixture).map((event) => `${event.action}/${event.recovery}`),
-    ['red/0', 'red-check/0', 'red/1', 'red-check/1'],
-  );
+  assert.deepEqual(tddTrace(fixture).map(golden.line((event) => `${event.action}/${event.recovery}`)), [
+    'red/0',
+    'red-check/0',
+    'red/1',
+    'red-check/1',
+    'red failed -> needs-human',
+  ]);
   assert.equal(fixture.harness.calls.length, 2);
   assert.equal(fixture.harness.calls[1].resume, 'fake-session-1', 'the recovery pass resumes the red session');
   const exhausted = actionEvent(fixture, 'red', 'red-check', 1);

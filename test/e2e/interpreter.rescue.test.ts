@@ -287,7 +287,7 @@ const fixTrace = (fixture: goldenRun.GoldenRun) =>
   golden
     .trace(fixture.events)
     .filter((event) => ['implementer-fix', 'senior-dev'].includes(event.vertex))
-    .map((event) => `${event.vertex}/${event.action}/${event.recovery}`);
+    .map(golden.line((event) => `${event.vertex}/${event.action}/${event.recovery}`));
 
 test('golden: a failed fix is rescued into an escalation Vertex', async (t) => {
   const fixture = await escalatingFix(t, {
@@ -306,11 +306,13 @@ test('golden: a failed fix is rescued into an escalation Vertex', async (t) => {
     'implementer-fix/fix/1',
     'implementer-fix/test/1',
     'implementer-fix/rescue/1',
+    'implementer-fix failed -> senior-dev',
     'senior-dev/fix/0',
     'senior-dev/test/0',
     'senior-dev/commit/0',
     'senior-dev/push/0',
     'senior-dev/pr/0',
+    'senior-dev ok -> reviewer',
   ]);
   const ref = rescue.rescueRef(golden.markerOf(fixture.executionRecord, 'implementer-fix', 1, 'rescue', 1, 1));
   assert.deepEqual(rescueFlow.rescueRefs(fixture), [ref]);
@@ -332,10 +334,11 @@ test('golden: the same failure is left in place once the escalation is exhausted
     [fixRecovery(2)]: wrongFix(),
   });
   assert.equal(fixture.result.outcome, 'needs-human');
-  assert.deepEqual(fixTrace(fixture).slice(-3), [
+  assert.deepEqual(fixTrace(fixture).slice(-4), [
     'implementer-fix/test/0',
     'implementer-fix/fix/1',
     'implementer-fix/test/1',
+    'implementer-fix failed -> needs-human',
   ]);
   const first = rescue.rescueRef(golden.markerOf(fixture.executionRecord, 'implementer-fix', 1, 'rescue', 1, 1));
   assert.deepEqual(rescueFlow.rescueRefs(fixture), [first], 'only the failure that escalated was rescued');

@@ -8,35 +8,38 @@ import { editRuns } from '../support/suite-runs.ts';
 // The example Flow `gg init` writes (#120), run end to end over the fakes; its rescues run on real git in
 // test/e2e/doctor.test.ts.
 const { call, requires, PASSED } = exampleRun;
+const advanced = (vertex: string, action: string) => ({ vertex, action, recovery: 0, attempt: 1, outcome: 'ok' });
 const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test("golden: the example Flow's first-visit pass", async (t) => {
   const fixture = await exampleRun.runExample(t);
   assert.equal(fixture.result.outcome, 'ready-for-qa');
-  assert.deepEqual(
-    golden.trace(fixture.events),
-    [
-      ['baseline', 'test'],
-      ['red', 'red'],
-      ['red', 'red-check'],
-      ['red', 'commit'],
-      ['green', 'green'],
-      ['green', 'test'],
-      ['green', 'commit'],
-      ['green', 'push'],
-      ['green', 'pr'],
-      ['reviewer', 'review'],
-      ['reviewer', 'review-pass'],
-      ['reviewer', 'repeat'],
-      ['reviewer', 'comment'],
-      ['reviewer', 'pr'],
-      ['publish', 'test'],
-      ['publish', 'pr'],
-      ['publish', 'pr-ready'],
-      ['ready-for-qa', 'end-comment'],
-      ['ready-for-qa', 'end-label'],
-    ].map(([vertex, action]) => ({ vertex, action, recovery: 0, attempt: 1, outcome: 'ok' })),
-  );
+  assert.deepEqual(golden.trace(fixture.events), [
+    advanced('baseline', 'test'),
+    golden.visitEnded('baseline', 'red'),
+    advanced('red', 'red'),
+    advanced('red', 'red-check'),
+    advanced('red', 'commit'),
+    golden.visitEnded('red', 'green'),
+    advanced('green', 'green'),
+    advanced('green', 'test'),
+    advanced('green', 'commit'),
+    advanced('green', 'push'),
+    advanced('green', 'pr'),
+    golden.visitEnded('green', 'reviewer'),
+    advanced('reviewer', 'review'),
+    advanced('reviewer', 'review-pass'),
+    advanced('reviewer', 'repeat'),
+    advanced('reviewer', 'comment'),
+    advanced('reviewer', 'pr'),
+    golden.visitEnded('reviewer', 'publish', { rule: { table: 'passed', row: 0 } }),
+    advanced('publish', 'test'),
+    advanced('publish', 'pr'),
+    advanced('publish', 'pr-ready'),
+    golden.visitEnded('publish', 'ready-for-qa'),
+    advanced('ready-for-qa', 'end-comment'),
+    advanced('ready-for-qa', 'end-label'),
+  ]);
 });
 
 test('golden: two retests and senior-red reach ready-for-qa within the Action Cap', async (t) => {

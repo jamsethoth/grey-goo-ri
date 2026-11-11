@@ -108,7 +108,16 @@ function runsPublishWithoutAnAgent(fixture: FirstVisitPass) {
   // publish has no Agent: its test Check, the PR body re-render and pr-ready, each at Recovery Number 0.
   assert.deepEqual(
     golden.trace(traced).filter((event) => event.vertex === 'publish'),
-    ['test', 'pr', 'pr-ready'].map((action) => ({ vertex: 'publish', action, recovery: 0, attempt: 1, outcome: 'ok' })),
+    [
+      ...['test', 'pr', 'pr-ready'].map((action) => ({
+        vertex: 'publish',
+        action,
+        recovery: 0,
+        attempt: 1,
+        outcome: 'ok',
+      })),
+      golden.visitEnded('publish', 'ready-for-qa'),
+    ],
   );
   assert.deepEqual(
     traced
