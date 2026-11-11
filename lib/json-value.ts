@@ -4,24 +4,52 @@
 // A value JSON.parse gives: what configuration, a Structured Response and a Harness's output are.
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-// A type as a save takes it: itself where JSON holds every value of it, with `never` at each place that could hold
-// what JSON cannot: a Map, a Set, a function, a symbol, a bigint, or an `unknown` or `any`, which hide any of them. It
-// reads an interface property by property, which a plain JsonValue parameter cannot: an interface has no index
-// signature (type-fest's Jsonify pattern, whose own mapping lets `unknown` through). Only JsonValue itself is taken
-// whole, which also ends the walk of its own recursion: an object or a list is read member by member, since
-// `{ value: any }` is assignable to JsonValue. An `undefined` is left to the run-time check, which knows a property
-// not given from a list's lost element.
+// Whether two types are the same type, which assignability cannot say: `any` is assignable both ways to anything.
+type Same<Left, Right> =
+  (<Probe>() => Probe extends Left ? 1 : 2) extends <Probe>() => Probe extends Right ? 1 : 2 ? true : false;
+
+type Scalar = string | number | boolean | null | undefined;
+
+// What stands where a type could hold what JSON cannot. No saved value is assignable to it, and unlike `never` it
+// does not vanish from a union, so an alternative refused stays to be seen.
+declare const notJson: unique symbol;
+interface NotJson {
+  readonly [notJson]: true;
+}
+
+// One alternative of a type as a save takes it: itself where JSON holds it, with NotJson at each place that could
+// hold what JSON cannot. `any` is assignable to anything but `never`, and an optional property's `never` reads
+// `undefined`, so a property typed `any` or `unknown` is required as `never`.
+type Walked<Value> = Value extends Scalar
+  ? Value
+  : Value extends object
+    ? Value extends ReadonlyMap<unknown, unknown> | ReadonlySet<unknown> | ((...parameters: never[]) => unknown)
+      ? NotJson
+      : { [Key in keyof Value]: JsonChecked<Value[Key]> } & {
+          [Key in keyof Value as unknown extends Value[Key] ? Key : never]-?: never;
+        }
+    : NotJson;
+
+// The alternatives of a type that JSON cannot hold, each as walked. Each is judged against its own walk, never
+// against the whole type's: beside JsonValue, `{ value: any }` is assignable to JsonValue's own object.
+type Refused<Value> = Value extends unknown ? ([Value] extends [Walked<Value>] ? never : Walked<Value>) : never;
+
+// A type as a save takes it: itself when JSON holds every value of it. Otherwise it is what `Refused` gives, beside
+// its scalars, so no value of the type is assignable to it and tsc names the place that could hold what JSON cannot:
+// a Map, a Set, a function, a symbol, a bigint, or an `unknown` or `any`, which hide any of them.
+// - It reads an interface property by property, which a plain JsonValue parameter cannot: an interface has no index
+//   signature (type-fest's Jsonify pattern, whose own mapping lets `unknown` through).
+// - JsonValue itself is taken whole, which ends the walk of its own recursion. Only the same type is: `JsonValue | Map`
+//   and `{ value: any }` are each assignable from it or to it.
+// - An `undefined` is left to the run-time check, which knows a property not given from a list's lost element. So is
+//   a class instance whose type is only its data: a type cannot tell it from a plain object.
 export type JsonChecked<Value> = unknown extends Value
   ? never
-  : [JsonValue] extends [Value]
+  : Same<Value, JsonValue> extends true
     ? Value
-    : Value extends string | number | boolean | null | undefined
+    : [Refused<Value>] extends [never]
       ? Value
-      : Value extends ReadonlyMap<unknown, unknown> | ReadonlySet<unknown> | ((...parameters: never[]) => unknown)
-        ? never
-        : Value extends object
-          ? { [Key in keyof Value]: JsonChecked<Value[Key]> }
-          : never;
+      : Refused<Value> | Extract<Value, Scalar>;
 
 const named = (name: string): string => `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`;
 
@@ -39,19 +67,30 @@ function lost(value: unknown): string | null {
   return plain ? null : named((value as { constructor?: { name?: string } }).constructor?.name || 'class instance');
 }
 
-// The value copied as JSON holds it, each property read once. `within` holds the objects the value is inside.
+// A key JSON leaves out without a word: a symbol key, and a list's property that is not one of its elements.
+const leftOut = (value: object): boolean =>
+  Object.getOwnPropertySymbols(value).some((key) => Object.prototype.propertyIsEnumerable.call(value, key)) ||
+  (Array.isArray(value) && Object.keys(value).length > value.length);
+
+// The value copied as JSON.stringify would read it, each property read once: a list by index up to its length, an
+// object by its own enumerable string keys. `within` holds the objects the value is inside.
 function copied(value: unknown, path: string, what: string, within: object[]): JsonValue {
   const refuse = (problem: string): never => {
-    throw new Error(`${what}: ${path || 'the value'} ${problem}, which JSON cannot hold`);
+    throw new Error(`${what}: ${path || 'the value'} ${problem}`);
   };
   const kind = lost(value);
-  if (kind) refuse(`is ${kind}`);
+  if (kind) refuse(`is ${kind}, which JSON cannot hold`);
   if (value === null || typeof value !== 'object') return value as JsonValue;
-  if (within.includes(value)) refuse('holds itself');
+  if (within.includes(value)) refuse('holds itself, which JSON cannot hold');
+  if (leftOut(value)) refuse('has a key JSON leaves out');
   const inside = [...within, value];
-  // Array.from gives a hole as the undefined JSON would write as null.
-  if (Array.isArray(value))
-    return Array.from(value, (held: unknown, index) => copied(held, `${path}[${index}]`, what, inside));
+  if (Array.isArray(value)) {
+    // Never through its iterator, which may give other elements. A hole reads as the undefined JSON writes as null.
+    const items: JsonValue[] = [];
+    const { length } = value;
+    for (let index = 0; index < length; index++) items.push(copied(value[index], `${path}[${index}]`, what, inside));
+    return items;
+  }
   // An undefined property is one not given, which JSON leaves out. Built from entries, so a key such as __proto__
   // stays an own key.
   const entries = Object.entries(value).filter(([, held]) => held !== undefined);
@@ -67,6 +106,6 @@ export const checked = (value: unknown, what: string): JsonValue => copied(value
 
 // The text a save writes. The only call that turns saved data into JSON (docs/research/configured-name-collections.md,
 // open question 5).
-export function text<Value>(value: Value & JsonChecked<Value>, what: string, space?: number): string {
+export function text<Value>(value: Value & NoInfer<JsonChecked<Value>>, what: string, space?: number): string {
   return JSON.stringify(checked(value, what), null, space);
 }

@@ -107,7 +107,7 @@ export function close(commonDir: string): void {
 export function savePinnedConfiguration<Pinned>(
   commonDir: string,
   hash: string,
-  pinned: Pinned & jsonValue.JsonChecked<Pinned>,
+  pinned: Pinned & NoInfer<jsonValue.JsonChecked<Pinned>>,
 ): void {
   open(commonDir)
     .prepare('INSERT OR IGNORE INTO configs (hash, json, firstSeen) VALUES (?, ?, ?)')

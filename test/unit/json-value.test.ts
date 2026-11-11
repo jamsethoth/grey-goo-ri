@@ -55,21 +55,35 @@ const CORPUS: [string, unknown][] = [
   ['a bigint', 10n],
   ['a list with a hole', [, 1]],
   ['a list subclass', Rows.of(1, 2)],
+  // Values that are not what they seem to a reader other than JSON.stringify, which reads a list by index and an
+  // object by its own enumerable string keys.
+  ['a list whose iterator gives other elements', withIterator([1, 2], [9])],
+  ['a list whose iterator hides a Map', withIterator([new Map()], [])],
+  ['a list with a property that is not an element', Object.assign([1], { note: 'lost' })],
+  ['an object with a symbol key', { kept: 1, [Symbol('lost')]: 2 }],
+  ['an object with a property that is not enumerable', Object.defineProperty({ kept: 1 }, 'job', { value: () => 1 })],
 ];
 
+// A list whose own iterator gives `given`, whatever its indices hold.
+function withIterator<Item>(list: Item[], given: Item[]): Item[] {
+  return Object.defineProperty(list, Symbol.iterator, { value: () => given[Symbol.iterator]() });
+}
+
+// The run-time check's one rule, held over every kind of value: a value is accepted exactly when a load gives it
+// back, and what is then written is what JSON.stringify writes of it.
 test('checked accepts exactly the values a save reads back unchanged, and names the path to any other', () => {
   for (const [name, value] of CORPUS) {
     const held = { list: ['first', { items: [value] }] };
-    const refusal = (() => {
+    const outcome = (() => {
       try {
-        jsonValue.checked(held, 'the row');
-        return null;
+        return { written: JSON.stringify(jsonValue.checked(held, 'the row')), refusal: null };
       } catch (err) {
-        return (err as Error).message;
+        return { written: null, refusal: (err as Error).message };
       }
     })();
-    assert.equal(refusal === null, roundTrips(held), `${name}: ${refusal ?? 'accepted'}`);
-    if (refusal !== null) assert.match(refusal, /^the row: list\[1\]\.items\[0\]\S* is /, name);
+    assert.equal(outcome.refusal === null, roundTrips(held), `${name}: ${outcome.refusal ?? 'accepted'}`);
+    if (outcome.refusal === null) assert.equal(outcome.written, JSON.stringify(held), name);
+    else assert.match(outcome.refusal, /^the row: list\[1\]\.items\[0\]\S* (is|has) /, name);
   }
 });
 
@@ -165,6 +179,64 @@ test('tsc refuses text a Map, a Set, a function or an unknown, at any depth and 
   assert.equal(jsonValue.text(withAny, 'the row'), '{"inner":{"value":1}}');
   // @ts-expect-error a list of any
   assert.equal(jsonValue.text(listOfAny, 'the row'), '[1]');
+});
+
+// The typed gate's one rule, held over every place a type can hold another: `text` takes a value of a type exactly
+// when the type is assignable to its checked form.
+type Accepts<Value> = [Value] extends [jsonValue.JsonChecked<Value>] ? true : false;
+interface Holder<Held> {
+  held: Held;
+}
+// Whole, in a property, an optional one, a list, a readonly list, a tuple, a keyed object, an interface and two deep;
+// then as one alternative beside null, a plain object and the whole of JsonValue, alone and inside each of those.
+type Places<Held> = [
+  Held,
+  { held: Held },
+  { held?: Held },
+  Held[],
+  readonly Held[],
+  [string, Held],
+  Record<string, Held>,
+  Holder<Held>,
+  { outer: { inner: Holder<Held>[] } },
+  Held | null,
+  Held | { plain: string },
+  Held | jsonValue.JsonValue,
+  { held: Held | jsonValue.JsonValue },
+  (Held | jsonValue.JsonValue)[],
+  Record<string, Held | jsonValue.JsonValue>,
+  Holder<Held | jsonValue.JsonValue | undefined>,
+];
+type AcceptsEach<Tuple> = { [Index in keyof Tuple]: Accepts<Tuple[Index]> };
+type Each<Answer, Tuple = Places<0>> = { [Index in keyof Tuple]: Answer };
+// tsc fails the line of any kind the gate answers otherwise for, at any of the places.
+type Holds<Answers extends Wanted, Wanted> = Answers;
+interface Plain {
+  name: string;
+  count?: number;
+  inner: { list: (string | null)[] };
+}
+type GateAnswers = [
+  Holds<AcceptsEach<Places<Map<string, number>>>, Each<false>>,
+  Holds<AcceptsEach<Places<Set<string>>>, Each<false>>,
+  Holds<AcceptsEach<Places<() => void>>, Each<false>>,
+  Holds<AcceptsEach<Places<symbol>>, Each<false>>,
+  Holds<AcceptsEach<Places<bigint>>, Each<false>>,
+  Holds<AcceptsEach<Places<unknown>>, Each<false>>,
+  Holds<AcceptsEach<Places<any>>, Each<false>>,
+  Holds<AcceptsEach<Places<{ counts: Map<string, number> }>>, Each<false>>,
+  Holds<AcceptsEach<Places<{ hidden: any }>>, Each<false>>,
+  Holds<AcceptsEach<Places<{ hidden?: any }>>, Each<false>>,
+  Holds<AcceptsEach<Places<string>>, Each<true>>,
+  Holds<AcceptsEach<Places<number | null>>, Each<true>>,
+  Holds<AcceptsEach<Places<Plain>>, Each<true>>,
+  Holds<AcceptsEach<Places<jsonValue.JsonValue>>, Each<true>>,
+];
+
+test('the typed gate refuses what JSON cannot hold at every place a type can hold it, and takes JSON there', () => {
+  // The table above is the case: it is checked by tsc, which the check stage runs.
+  const answers: GateAnswers | null = null;
+  assert.equal(answers, null);
 });
 
 // Each save path below takes a Map, a Set and an unknown in turn. tsc refuses each where the comment says, and the
