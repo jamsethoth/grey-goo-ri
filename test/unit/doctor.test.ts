@@ -644,3 +644,99 @@ test('gg doctor prints each declared Flow, in the order the Layer declares them'
   assert.equal(text, one.replace(flowSection, flowSection + flowSection.replace('flow default\n', 'flow light\n')));
   assert.equal(exitCode, 0);
 });
+
+// The keys a summary line shows a value of the wrong type at: a Vertex's access (its Agent's), a Check's kind, a
+// requires item, a Flow route's end and a table row's Outcome.
+const SHOWN_KEYS = [
+  ['agents', 'implementer', 'access'],
+  ['procedures', 'base-check', 'actions', 0, 'kind'],
+  ['procedures', 'implement', 'claimTokens', 'ok', 'requires', 0],
+  ['flows', 'default', 'ticket', 'routes', 'misscoped', 'end'],
+  ['procedures', 'review', 'passed', 0, 'outcome'],
+];
+type KeyPath = (string | number)[];
+
+// Puts `value` at `path` in `layer`.
+function setValue(layer: exampleLayer.Layer, path: KeyPath, value: unknown) {
+  const parent = path.slice(0, -1).reduce((node, key) => node[key], layer);
+  parent[path.at(-1)!] = value;
+}
+
+// The example Layer with `value` at `path`.
+function withValue(path: KeyPath, value: unknown) {
+  const layer = example();
+  setValue(layer, path, value);
+  return layer;
+}
+
+// A value that is not a string shows as JSON, where String() would print [object Object] or a blank (#305).
+for (const shown of ['{}', '[]']) {
+  test(`gg doctor shows ${shown} where a key holds it in place of a string`, async () => {
+    const layer = example();
+    for (const path of SHOWN_KEYS) setValue(layer, path, JSON.parse(shown));
+    const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+    for (const line of [
+      `\nvertex red\n  procedure: tests-fail\n  agent: implementer (harness fake)\n  access: ${shown}\n`,
+      `\n  checks: test (${shown} test)\n`,
+      `\n  claimTokens: ok requires ${shown}, blocked stops\n`,
+      `\n  routes: misscoped -> end ${shown}, * -> end needs-human\n`,
+      `\n    1. claim = ok and check.review-pass = passed -> ${shown}\n`,
+    ])
+      assert.ok(text.includes(line), `${line}\n---\n${text}`);
+  });
+}
+
+test("gg doctor says a null item in an input's from is no source", async () => {
+  const layer = withValue(
+    ['flows', 'default', 'ticket', 'vertices', 'implementer-fix', 'inputs', 'previous', 'from', 0],
+    null,
+  );
+  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  assert.ok(text.includes('\n    previous <- no source | senior-red.rescue (optional)\n'), text);
+});
+
+// Every key of the example Layer, an object's keys and a list's indexes.
+function keyPaths(value: unknown, path: KeyPath = []): KeyPath[] {
+  if (value === null || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, child]) => {
+    const childPath = [...path, Array.isArray(value) ? Number(key) : key];
+    return [childPath, ...keyPaths(child, childPath)];
+  });
+}
+const EXAMPLE_KEYS = keyPaths(exampleLayer.config());
+
+// A summary line that shows a value as String() does: [object Object], or a blank where a value belongs, which leaves
+// trailing or doubled whitespace, or a space inside parentheses or before a separator.
+const UNCLEAR_VALUE = /\[object Object\]|\s$|\S {2}|\( | \)| [,;]/;
+
+// The summary lines, not the error and warning lines, that show a value unclearly with `value` at `path`.
+async function unclearLines(path: KeyPath, value: unknown) {
+  const { text } = await doctor.doctor({ config: sources(withValue(path, value)), ...DEPS });
+  return text
+    .split('\n')
+    .filter((line) => !/^(error|warning): /.test(line) && UNCLEAR_VALUE.test(line))
+    .map((line) => `${path.join('.')}: ${line}`);
+}
+
+test("the example's doctor.txt shows no value unclearly", () => {
+  const lines = exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n').split('\n');
+  assert.deepEqual(
+    lines.filter((line) => !/^(error|warning): /.test(line) && UNCLEAR_VALUE.test(line)),
+    [],
+  );
+  assert.ok(EXAMPLE_KEYS.length > 500, `${EXAMPLE_KEYS.length} keys`);
+});
+
+// Each key of the example Layer in turn, swapped for {}, for [], and each list item for null (#305).
+for (const [name, value, paths] of [
+  ['{}', {}, EXAMPLE_KEYS],
+  ['[]', [], EXAMPLE_KEYS],
+  ['null', null, EXAMPLE_KEYS.filter((path) => typeof path.at(-1) === 'number')],
+] as const) {
+  const keys = name === 'null' ? 'list item' : 'key';
+  test(`no summary line shows [object Object] or a blank when any ${keys} of the example holds ${name}`, async () => {
+    const unclear: string[] = [];
+    for (const path of paths) unclear.push(...(await unclearLines(path, value)));
+    assert.deepEqual(unclear, []);
+  });
+}
