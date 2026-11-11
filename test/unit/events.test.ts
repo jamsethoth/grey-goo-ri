@@ -164,7 +164,7 @@ const ACTION_EVENT_KEYS = [
 ];
 
 test('an action event carries schema version 2 and every required field', (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const log = events.eventLog(directory, { run: 'r1' });
   const event = events.actionEvent(actionFields());
   log(event.type, event);
@@ -228,7 +228,7 @@ test('actionEvent accepts every optional key together', () => {
 });
 
 test('an Event carries schemaVersion and time', (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   events.eventLog(directory, { run: 'r1' })('run_start');
   const [event] = events.readEvents(directory);
   assert.deepEqual(Object.keys(event), ['schemaVersion', 'time', 'type', 'run']);
@@ -358,7 +358,7 @@ test('actionEvent accepts Usage members whose counts are all null', () => {
 });
 
 test('eventLog validates every event before appending it', (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const log = events.eventLog(directory);
   assert.throws(() => log('action', {}), /\bflow\b/);
   assert.throws(() => log('stage_call' as events.LifecycleType, { run: 'r1' }), /\bstage_call\b/);
@@ -405,12 +405,12 @@ for (const type of ['toString', 'constructor', '__proto__']) {
 }
 
 test('eventLog appends a row with the identity columns and the full event', (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   events.eventLog(directory, { run: 'r1' })('ticket_start', { execution: 'e1', ticket: 7 });
   assert.deepEqual(
-    readdirSync(join(directory, 'gg')).filter((name) => !name.startsWith('gg.db') && name !== 'locks'),
+    readdirSync(join(directory, 'gg')).filter((name) => !name.startsWith('gg.db')),
     [],
-    'only the State Database and its open lock are written',
+    'only the State Database is written',
   );
   const [row, ...rest] = rows(directory);
   assert.equal(rest.length, 0);
@@ -434,7 +434,7 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
 });
 
 test('readEvents returns events in insertion order', (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const log = events.eventLog(directory, { run: 'r1' });
   log('run_start');
   log('ticket_start', { execution: 'e1', ticket: 7 });
@@ -461,7 +461,7 @@ test('readEvents returns events in insertion order', (t) => {
 });
 
 test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const log = events.eventLog(directory, { run: 'r1' });
   log('ticket_start', { execution: '7.aaa', ticket: 7 });
   log('run_end');
@@ -471,8 +471,8 @@ test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
   assert.equal(events.hasTicketEnd(directory, '7.bbb'), true);
 });
 
-test('readEvents on a fresh directory returns nothing', (t) => {
-  assert.deepEqual(events.readEvents(tempDirectory.tempDirectory(t, 'gg-events-')), []);
+test('readEvents on a new State Database returns nothing', (t) => {
+  assert.deepEqual(events.readEvents(tempDirectory.stateDatabaseDirectory(t, 'gg-events-')), []);
 });
 
 test('diffStats splits test and non-test insertions', () => {

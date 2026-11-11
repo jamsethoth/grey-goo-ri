@@ -105,7 +105,11 @@ async function installed(t: TestContext, install: string, edit = (_root: string)
   const copied = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
   const copiedDoctor = await import(pathToFileURL(join(root, 'lib', 'doctor.ts')).href);
   const repo = join(root, '..', 'repo');
-  copiedDoctor.init(repo, { baseBranch: 'main', userDirectory: join(root, '..', 'user') });
+  copiedDoctor.init(repo, {
+    baseBranch: 'main',
+    userDirectory: join(root, '..', 'user'),
+    commonDir: join(repo, '.git'),
+  });
   const loaded = copied.loadSources(repo, join(root, '..', 'user')).repository;
   const input = { flow: loaded.flows.default, files: loaded.files, harnesses: {}, commands: {} };
   return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: copied.configHash(input) };
@@ -185,7 +189,7 @@ test('a source with no gg.json loads empty, and its required settings are Proble
 for (const name of ['implementer.md', 'reviewer.md']) {
   test(`loadSources reads the example Persona ${name} that gg init wrote, with its hash`, (t) => {
     const roots = sources(t);
-    doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user });
+    doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user, commonDir: join(roots.repo, '.git') });
     const file = readFileSync(join(config.repositoryDirectory(roots.repo), name));
     const persona = config.loadSources(roots.repo, roots.user).repository.files[name];
     assert.ok(persona, `${name} is loaded`);

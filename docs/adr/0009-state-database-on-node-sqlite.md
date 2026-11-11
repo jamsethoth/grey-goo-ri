@@ -5,6 +5,9 @@ date: 2026-10-15
 
 # Execution Records, Events and Pinned Configurations live in one node:sqlite state database
 
+ADR 0023 supersedes the lazy creation below: only `gg init` creates `gg.db`, so the open lock, the WAL switch on open
+and the table creation on open are gone.
+
 Paths here predate the TypeScript conversion (grey-goo-ri epic #193): `lib/`, `bin/`, `scripts/` and `test/` files named
 `.mjs` are `.ts` today, and modules have since split; the AGENTS.md Layout table has the current ones.
 

@@ -25,7 +25,7 @@ interface EmittedEvent extends Record<string, unknown> {
 }
 
 export async function executionContext(t: TestContext) {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-effects-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-effects-');
   const executionRecord = record.createExecutionRecord({
     commonDir,
     repository: 'o/r',

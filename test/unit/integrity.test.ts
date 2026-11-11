@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import { fakeGit } from '../support/fake-git.ts';
 import * as integrityWorktrees from '../support/integrity-worktrees.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -15,6 +16,7 @@ import * as tempDirectory from '../support/temp-directory.ts';
 async function twoRecords(t: TestContext) {
   const root = tempDirectory.tempDirectory(t, 'gg-integrity-', (directory) => join(directory, 'own', '.git'));
   const commonDir = join(root, 'own', '.git');
+  stateDatabase.create(commonDir);
   const ownRecord = integrityWorktrees.worktreeRecord(commonDir, 1, join(root, 'own'));
   record.save(ownRecord);
   const other = join(root, 'other');
