@@ -410,6 +410,9 @@ const TYPED_HEADER = [
   'declare const loose: any;',
   'declare const anyObject: object;',
   'declare const objectOrText: object | string;',
+  'declare const empty: {};',
+  'declare const boxed: Object;',
+  'const mapAsEmpty: {} = new Map<string, number>();',
   'declare const maybeReplacer: ((key: string, value: unknown) => unknown) | undefined;',
   'const local = { stringify: (value: unknown) => String(value) };',
   'class TrackedCounts extends Map<string, number> {',
@@ -515,7 +518,7 @@ const unknownCheckingEslint = new ESLint({
   overrideConfig: { files: ['test/unit/layout.test.ts'], rules: { 'gg/no-map-to-json': ['error', { unknown: true }] } },
 });
 
-test('with its unknown check, lint fails JSON.stringify of a value typed unknown, any or object', async (t) => {
+test('with its unknown check, lint fails JSON.stringify of a value whose type cannot say it is no Map', async (t) => {
   await holdsMapBoundary(t, {
     eslint: unknownCheckingEslint,
     rule: 'gg/no-map-to-json',
@@ -524,6 +527,13 @@ test('with its unknown check, lint fails JSON.stringify of a value typed unknown
       ['JSON.stringify(loose, null, 2)', 'the value, typed any,'],
       ['JSON.stringify(anyObject)', 'the value, typed object,'],
       ['JSON.stringify(objectOrText)', 'the value, typed object,'],
+      // Types that say no more than unknown does: any value but null or undefined may be one, a Map too (#330 D2).
+      ['JSON.stringify(empty)', 'the value, typed {},'],
+      ['JSON.stringify(mapAsEmpty)', 'the value, typed {},'],
+      ['JSON.stringify(boxed)', 'the value, typed Object,'],
+      ['<Value,>(value: Value) => JSON.stringify(value)', 'the value, typed Value,'],
+      ['<Value extends unknown>(value: Value) => JSON.stringify(value)', 'the value, typed Value,'],
+      ['<Value extends object>(value: Value) => JSON.stringify(value)', 'the value, typed Value,'],
       ['JSON.stringify(executionRecord)', 'the value.visits (Map)'],
     ],
     passed: [
@@ -532,6 +542,9 @@ test('with its unknown check, lint fails JSON.stringify of a value typed unknown
       'JSON.stringify(parsed, (_key, value: unknown) => value)',
       // Only the value passed is read: an unknown held inside a typed value is #342's.
       'JSON.stringify({ quoted: parsed })',
+      // An empty object literal is no Map, and a type parameter is as narrow as its constraint.
+      'JSON.stringify({})',
+      '<Value extends { name: string }>(value: Value) => JSON.stringify(value)',
     ],
   });
 });
