@@ -140,6 +140,7 @@ test('a save waits out another process that holds the write lock for longer than
   await new Promise((resolve) => holder.stdout.once('data', resolve));
   const executionRecord = record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket: 1,
     epic: 1,
     flow: { name: 'default', entry: 'implement' },

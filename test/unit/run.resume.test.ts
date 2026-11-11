@@ -67,7 +67,10 @@ test('an in-progress ticket without a record is skipped', async (t) => {
   assert.deepEqual(fixture.labelAdds(), [], 'no label written');
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
     'no repository label setup on a Stuck Ticket',
   );
   assert.ok(fixture.gh.labels.has(IN_PROGRESS_LABEL), 'the State Label is left for Stuck handling');
@@ -105,7 +108,10 @@ for (const state of ['ready-for-qa', 'fault', 'abandoned'] as const) {
     );
     assert.deepEqual(
       fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-      [['issue', 'view']],
+      [
+        ['repo', 'view'],
+        ['issue', 'view'],
+      ],
       'gh made only the discovery read',
     );
   });
@@ -137,7 +143,10 @@ test('a held Execution Record skip gives row-delete recovery without GitHub writ
   assert.equal(fixture.harness.calls.length, 0);
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
   );
 });
 
@@ -244,6 +253,48 @@ test('a resumed Execution keeps its pinned Flow', async (t) => {
   assert.deepEqual([...new Set(actionFlows)], ['light']);
 });
 
+// A user Flow's record names it with its source (`user:light`), so a resume runs it from the user's directory, and
+// one the user no longer declares is kept as a repository Flow's is (X2, ADR 0022). The user's directory copies the
+// repository's Agents, Procedures and files, so only the source of the Flow differs.
+async function pinnedToUserFlow(t: TestContext, { declared }: { declared: boolean }) {
+  const fixture = await pinnedTo(t, 'user:light');
+  const { repository, user } = fixture.options.config;
+  const { agents, procedures, files } = structuredClone(repository);
+  const flows = declared ? { light: runFixture.testConfig(fixture.root).flows.default! } : {};
+  Object.assign(user, { flows, agents, procedures, files });
+  return fixture;
+}
+
+test("a resumed Execution of a user Flow runs that Flow from the user's directory", async (t) => {
+  const fixture = await pinnedToUserFlow(t, { declared: true });
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const vertexOf = (call: { marker?: string }) => marker.parseMarker(marker.markerTrailer(call.marker!))?.vertex;
+  assert.deepEqual(fixture.harness.calls.map(vertexOf), ['red', 'green'], "the user's light Flow has no reviewer");
+  const actionFlows = fixture.readEvents().flatMap((event) => (event.type === 'action' ? [event.flow] : []));
+  assert.deepEqual([...new Set(actionFlows)], ['user:light']);
+  assert.equal((JSON.parse(fixture.loadRow()!) as { flow: string }).flow, 'user:light');
+});
+
+test('a resumed Execution whose user Flow is gone is skipped, and its record is kept', async (t) => {
+  const fixture = await pinnedToUserFlow(t, { declared: false });
+  const row = fixture.loadRow();
+  const results = await run.runTarget(fixture.options);
+  assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'skipped');
+  assert.equal(fixture.harness.calls.length, 0, 'no agent started');
+  assert.ok(
+    fixture.logs.some((line) =>
+      line.endsWith(
+        `#${TICKET} ERROR its Execution Record runs Flow user:light, which is no longer declared; declare it again ` +
+          `to resume it, or run gg work abandon ${TICKET} to start over`,
+      ),
+    ),
+    JSON.stringify(fixture.logs),
+  );
+  assert.equal(fixture.loadRow(), row, 'the record is kept as it was');
+});
+
 // It waits, kept and resumable, for the Flow to be declared again, but loudly (A2): the Run exits 2 with an error that
 // names both remedies, and nothing on GitHub changes.
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
@@ -265,7 +316,10 @@ test('a resumed Execution whose Flow is no longer declared is an error naming it
   assert.equal(fixture.loadRow(), row, 'the record is kept as it was');
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
     'gh made only the discovery read',
   );
 });

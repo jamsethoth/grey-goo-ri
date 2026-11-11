@@ -573,3 +573,45 @@ test('an actor GitHub does not know as a collaborator has no permission, and any
   denied.fail({ matches: () => true, status: 502 });
   await assert.rejects(github.createGh(denied.gh).collaboratorPermission('anyone', '/repo'), github.GhError);
 });
+
+test("repositoryName reads the repository's owner/name through gh repo view", async (t) => {
+  const fake = fakeGhModule.fakeGh({ branch: 'b', ticket: 1, repository: 'acme/app' });
+  assert.deepEqual(await github.createGh(fake.gh).repositoryName('/repo'), { repository: 'acme/app', error: null });
+  assert.deepEqual(fake.calls, [{ args: ['repo', 'view', '--json', 'nameWithOwner'], cwd: '/repo', input: undefined }]);
+});
+
+// A Run's preflight reports the failure, so the read returns it instead of throwing, whatever failed (#321).
+test('a failed owner/name read returns its reason and never throws', async (t) => {
+  const failed = fakeGhModule.fakeGh({ branch: 'b', ticket: 1 });
+  failed.fail({ matches: () => true, stderr: 'no git remotes found' });
+  const unread = await github.createGh(failed.gh).repositoryName('/repo');
+  assert.equal(unread.repository, null);
+  assert.match(unread.error ?? '', /no git remotes found/);
+
+  const spawnFailure = failingGh(() => Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }));
+  const unspawned = await github.createGh(spawnFailure.gh).repositoryName('/repo');
+  assert.equal(unspawned.repository, null);
+  assert.match(unspawned.error ?? '', /spawn gh ENOENT/);
+});
+
+// The owner/name becomes two directories of a worktree's path, so only GitHub's own form is accepted.
+const MALFORMED_ANSWERS = [
+  'not json',
+  '{}',
+  '{"nameWithOwner":null}',
+  '{"nameWithOwner":""}',
+  '{"nameWithOwner":"app"}',
+  '{"nameWithOwner":"acme/app/extra"}',
+  '{"nameWithOwner":"../app"}',
+  '{"nameWithOwner":"acme/.."}',
+  '{"nameWithOwner":"acme\\\\app"}',
+  '{"nameWithOwner":"acme/a p"}',
+];
+for (const answer of MALFORMED_ANSWERS) {
+  test(`an owner/name answer ${answer} is a failed read naming it`, async (t) => {
+    const { gh } = scriptedGh(() => answer);
+    const read = await github.createGh(gh).repositoryName('/repo');
+    assert.equal(read.repository, null);
+    assert.ok(read.error?.includes(answer), read.error ?? 'no error');
+  });
+}

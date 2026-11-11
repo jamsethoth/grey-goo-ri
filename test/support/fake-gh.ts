@@ -89,7 +89,7 @@ export function ghError(
 }
 
 // What the fake holds, which its answers read and change.
-function ghState(branch: string, repoLabels: string[]) {
+function ghState(branch: string, repoLabels: string[], repository: string) {
   const calls: GhCall[] = [];
   // Each issue's label events, in the order they happened, one second apart, as GitHub's REST API gives them.
   const events = new Map<number, FakeEvent[]>();
@@ -131,6 +131,7 @@ function ghState(branch: string, repoLabels: string[]) {
   };
   return {
     branch,
+    repository,
     calls,
     comments,
     failures,
@@ -235,7 +236,8 @@ function answerLabel(state: GhState, args: string[]) {
 async function answer(state: GhState, { args, input }: GhCall, headOf: HeadOf): Promise<string> {
   const noun = args[0];
   let answered: string | null = null;
-  if (noun === 'pr') answered = await answerPr(state, args, input, headOf);
+  if (noun === 'repo' && args[1] === 'view') answered = JSON.stringify({ nameWithOwner: state.repository });
+  else if (noun === 'pr') answered = await answerPr(state, args, input, headOf);
   else if (noun === 'api') answered = answerApi(state, args, input);
   else if (noun === 'issue') answered = answerIssue(state, args);
   else if (noun === 'label') answered = answerLabel(state, args);
@@ -249,6 +251,8 @@ export interface FakeGhOptions {
   observe?: (what: string) => void;
   headOf?: HeadOf;
   repoLabels?: string[];
+  // The owner/name `gh repo view` gives.
+  repository?: string;
 }
 
 // A PR's head commit is what `headOf(branch)` says origin has, unless a case sets the PR's `headRefOid`.
@@ -258,8 +262,9 @@ export function fakeGh({
   observe = () => {},
   headOf = async () => null,
   repoLabels = labelModule.STATE_NAMES.map(labelModule.labelsFor().state),
+  repository = 'o/r',
 }: FakeGhOptions) {
-  const state = ghState(branch, repoLabels);
+  const state = ghState(branch, repoLabels, repository);
   const gh: github.Transport = async (args, cwd, input) => {
     observe(`gh ${args[0]} ${args[1]}`);
     state.calls.push({ args, cwd, input });

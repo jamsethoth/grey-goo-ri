@@ -14,8 +14,9 @@ export const slugify = (text: string) =>
     .replace(/^-|-$/g, '')
     .slice(0, 40);
 
-export const worktreePath = (root: string, repo: string, ticket: number | string) =>
-  join(root, repo, `ticket-${ticket}`);
+// A ticket worktree goes under its repository's GitHub owner/name, so checkouts sharing a folder name never share one.
+export const worktreePath = (root: string, repository: string, ticket: number | string) =>
+  join(root, repository, `ticket-${ticket}`);
 
 export type Change = 'added' | 'modified' | 'deleted' | 'other';
 // git's name-status letters.
@@ -46,8 +47,7 @@ function pathspecs(within: integrity.Within | undefined) {
   return combined.length ? ['--', ...combined] : [];
 }
 
-// Concurrent `git worktree add` calls race on .git/config's lock, so they run one at a time, in every git of the
-// process.
+// Concurrent `git worktree add` calls race on .git/config's lock, so they run one at a time in every git of a process.
 // eslint-disable-next-line no-restricted-syntax -- the queue is the process's, as the lock it orders is the repo's.
 let worktreeLock: Promise<unknown> = Promise.resolve();
 
@@ -92,7 +92,7 @@ export interface WorktreeRequest {
 async function readRepoInfo({ git }: Runner, cwd: string) {
   const gitCommonDir = resolve(cwd, await git(['rev-parse', '--git-common-dir'], cwd));
   const mainRoot = dirname(gitCommonDir);
-  return { mainRoot, gitCommonDir, name: basename(mainRoot) };
+  return { mainRoot, gitCommonDir, folder: basename(mainRoot) };
 }
 
 // A worktree already at `path` is reused only if it is this repository's, on a ticket/ branch.

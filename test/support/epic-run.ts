@@ -18,7 +18,7 @@ export const epicOf = (children: number[], extra: Record<number, Record<string, 
 });
 
 export const worktreeOf = (fixture: RunFixture, ticket: number) =>
-  gitModule.worktreePath(fixture.options.config.user.worktreeRoot, 'main', ticket);
+  gitModule.worktreePath(fixture.options.config.user.worktreeRoot, 'o/r', ticket);
 export const addsLabel = (args: string[], ticket: number, label: string) =>
   args[0] === 'issue' &&
   args[1] === 'edit' &&

@@ -338,6 +338,7 @@ async function assertAbandonedBeforeFirstVisit(fixture: RunFixture, before: inte
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
     [
+      ['repo', 'view'],
       ['issue', 'view'],
       ['issue', 'edit'],
     ],
@@ -389,7 +390,10 @@ function assertNoAdmissionEffect(fixture: RunFixture, row: string | undefined) {
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
     'no label write or comment',
   );
   assert.equal(fixture.worktrees(), 1, 'no worktree created');
@@ -515,7 +519,10 @@ test('a differently cased in-progress without a record is left for Stuck handlin
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
   assert.deepEqual(
     fixture.gh.calls.map((call) => call.args.slice(0, 2)),
-    [['issue', 'view']],
+    [
+      ['repo', 'view'],
+      ['issue', 'view'],
+    ],
     'no write on a Stuck Ticket',
   );
   assert.equal(fixture.worktrees(), 1, 'no worktree');

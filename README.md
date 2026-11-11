@@ -13,6 +13,9 @@ Status: under construction, and not yet usable on a real ticket.
 - `gg doctor` validates the configuration and prints each Resolved Flow.
 - `gg run <ticket>` would carry a Ticket through its Flow, but the Claude Code and Codex Harnesses are stubs, so its
   preflight fails with "not implemented" for every Vertex that has an Agent, before any Ticket is admitted.
+- `gg init`, `gg doctor` and `gg run` act on the repository holding the current directory, or the one `--repo <path>`
+  names. A Run reads the repository's GitHub `owner/name` and puts each ticket worktree at
+  `<worktreeRoot>/<owner>/<name>/ticket-<n>`.
 - `gg work abandon <ticket>` forgets a Ticket's Execution Record and keeps its worktree and branch.
 - `plan`, `publish`, `trace` and `stats`, and `gg work`'s other verbs, are not implemented.
 

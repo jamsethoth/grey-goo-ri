@@ -106,9 +106,10 @@ export const PROBLEM_CODES = [
   // What gg doctor reads from GitHub beside the configuration.
   'repository-labels-missing',
   'repository-labels-unread',
-  // The repository's commands and testPaths, each Vertex's Harness and the Flow gg run runs, which its preflight
-  // checks.
+  // The repository's commands, testPaths and GitHub owner/name, each Vertex's Harness and the Flow gg run runs, which
+  // its preflight checks.
   'harness-preflight-failed',
+  'repository-unread',
   'invalid-command-line',
   'invalid-glob',
   'unknown-flow',
@@ -201,6 +202,7 @@ interface ProblemParams {
   'invalid-command-line': { command: string; file: string };
   'invalid-glob': { glob: unknown; file: string };
   'harness-preflight-failed': { vertex: string; harness: string; reason: string };
+  'repository-unread': { path: string; reason: string };
   'unknown-flow': { name: string; declared: string[]; ticket?: number };
   'table-never-applies': { table: string };
   'optional-input-unsure': { input: string; vertex: string };

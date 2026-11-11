@@ -53,7 +53,7 @@ function worktreeVerbs({ store, placeAt, writeFiles }: Parts) {
       return {
         mainRoot: dirname(gitCommonDir),
         gitCommonDir,
-        name: dirname(gitCommonDir).split(/[\\/]/).at(-1) as string,
+        folder: dirname(gitCommonDir).split(/[\\/]/).at(-1) as string,
       };
     },
     commonDir: async (cwd: string) => paths.canonical(placeAt(cwd).repo.commonDir),

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as clock from '../lib/clock.ts';
 import * as config from '../lib/config.ts';
 import * as containment from '../lib/containment.ts';
@@ -33,10 +35,18 @@ const realDeps = (): interpreter.Deps => ({
   clock: clock.WALL_CLOCK,
 });
 
+// The repository a command acts on: the one --repo names, else the one holding the current directory. Node reports a
+// missing working directory as `spawn git ENOENT`, as if git were missing, so a missing one is named first.
+function repositoryPath(parsed: options.ParsedOptions) {
+  const path = resolve((parsed.repo as string | undefined) ?? process.cwd());
+  if (!existsSync(path)) throw new Error(`--repo ${path}: no such directory`);
+  return path;
+}
+
 async function runCommand(parsed: options.ParsedOptions) {
   const target = options.positiveInteger(parsed._[0], 'ticket');
   const deps = realDeps();
-  const { mainRoot } = await deps.git.repoInfo(process.cwd());
+  const { mainRoot } = await deps.git.repoInfo(repositoryPath(parsed));
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
   const results = await run.runTarget({
     deps,
@@ -52,13 +62,13 @@ async function runCommand(parsed: options.ParsedOptions) {
 }
 
 async function initCommand(parsed: options.ParsedOptions) {
-  const { mainRoot } = await git.repoInfo(process.cwd());
+  const { mainRoot } = await git.repoInfo(repositoryPath(parsed));
   const baseBranch = await git.defaultBranch(mainRoot);
   process.stdout.write(doctor.init(mainRoot, { baseBranch, harness: parsed.harness as string | undefined }));
 }
 
-async function doctorCommand() {
-  const { mainRoot, gitCommonDir } = await git.repoInfo(process.cwd());
+async function doctorCommand(parsed: options.ParsedOptions) {
+  const { mainRoot, gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
   const { text, exitCode } = await doctor.doctor({
     config: config.loadSources(mainRoot),
@@ -102,10 +112,14 @@ async function workCommand(parsed: options.ParsedOptions) {
 const COMMANDS: Record<string, Command> = {
   init: {
     summary: "write the example into the repository and the user's gg.json; --harness <name> names each Agent's",
-    flags: { values: ['harness'] },
+    flags: { values: ['harness', 'repo'] },
     run: initCommand,
   },
-  doctor: { summary: 'validate the configuration and print each Resolved Flow', run: doctorCommand },
+  doctor: {
+    summary: 'validate the configuration and print each Resolved Flow',
+    flags: { values: ['repo'] },
+    run: doctorCommand,
+  },
   plan: {
     summary: 'produce the Plan for an Epic; plan --finish <planId> finishes one',
     flags: { bools: ['bg'], values: ['name', 'session', 'replan', 'finish'] },
@@ -113,7 +127,7 @@ const COMMANDS: Record<string, Command> = {
   publish: { summary: 'publish Tickets from a Plan' },
   run: {
     summary: 'carry Tickets through the default Flow, or the one --flow <name> names',
-    flags: { values: ['flow'] },
+    flags: { values: ['flow', 'repo'] },
     run: runCommand,
   },
   work: { summary: 'abandon <ticket> forgets its Execution Record; list, resume, reset, approve', run: workCommand },
@@ -129,7 +143,9 @@ const usage = `Usage: gg <command>
 Commands:
 ${Object.entries(COMMANDS)
   .map(([name, { summary, run: runs }]) => `  ${name.padEnd(10)}${summary}${runs ? '' : ' (not implemented)'}\n`)
-  .join('')}`;
+  .join('')}
+init, doctor and run act on the repository holding the current directory, or the one --repo <path> names.
+`;
 
 const name = process.argv[2];
 

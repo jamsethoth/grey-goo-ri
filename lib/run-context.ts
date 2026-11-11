@@ -38,8 +38,8 @@ export type RunGit = reconcile.ReconcileGit &
 
 // The git verbs gg run's admission calls before an Execution runs: the repository, and the Ticket's worktree.
 export interface AdmissionGit {
-  repoInfo(cwd: string): Promise<{ mainRoot: string; gitCommonDir: string; name: string }>;
-  worktreePath(root: string, repo: string, ticket: number): string;
+  repoInfo(cwd: string): Promise<{ mainRoot: string; gitCommonDir: string; folder: string }>;
+  worktreePath(root: string, repository: string, ticket: number): string;
   slugify(text: string): string;
   currentBranch(cwd: string): Promise<string | null>;
   ensureWorktree(request: { mainRoot: string; path: string; branch: string; base: string }): Promise<{

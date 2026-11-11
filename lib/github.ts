@@ -328,6 +328,30 @@ function prVerbs({ gh, ghJson }: Client) {
   return { findPr, upsertPr, viewPr, markReady };
 }
 
+// The repository's GitHub owner/name, or why it could not be read.
+export type RepositoryRead = { repository: string; error: null } | { repository: null; error: string };
+
+// GitHub's own form of owner/name, which becomes two directories of a ticket worktree's path, so neither part may be
+// `.` or `..`.
+const isOwnerName = (value: unknown): value is string =>
+  typeof value === 'string' && /^[\w.-]+\/[\w.-]+$/.test(value) && !value.split('/').some((part) => /^\.+$/.test(part));
+
+// Read once per Run. A Run's preflight reports a failure, so it is returned, whatever failed, and never thrown (#321).
+async function repositoryName({ gh }: Client, cwd?: string): Promise<RepositoryRead> {
+  let answer;
+  try {
+    answer = await gh(['repo', 'view', '--json', 'nameWithOwner'], cwd);
+  } catch (err) {
+    return { repository: null, error: errorExcerpt(err as Error) };
+  }
+  let repository: unknown;
+  try {
+    repository = (JSON.parse(answer) as { nameWithOwner?: unknown } | null)?.nameWithOwner;
+  } catch {}
+  if (isOwnerName(repository)) return { repository, error: null };
+  return { repository: null, error: `gh repo view gave ${answer.trim().slice(0, 300)}, not an owner/name` };
+}
+
 // The gh verbs over `transport`, which runs gh with argv, a working directory and stdin and returns its stdout. The
 // entry point passes none, so gh itself runs; a test passes a fake that records argv and answers canned stdout.
 export function createGh(transport: Transport = defaultTransport) {
@@ -341,6 +365,7 @@ export function createGh(transport: Transport = defaultTransport) {
     ...prVerbs(ghClient),
     issueEvents: (issue: number, cwd?: string) => issueEvents(ghClient, issue, cwd),
     collaboratorPermission: (login: string, cwd?: string) => collaboratorPermission(ghClient, login, cwd),
+    repositoryName: (cwd?: string) => repositoryName(ghClient, cwd),
     setLabels: (issue: number, change: LabelChange, cwd: string | undefined, report: LabelReport) =>
       setLabels(editLabels, [issue, change, cwd], report),
     labelNames,

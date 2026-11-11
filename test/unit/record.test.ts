@@ -27,6 +27,7 @@ function withDb<Result>(commonDir: string, query: (db: DatabaseSync) => Result) 
 function knownRecord(commonDir: string, ticket = 8) {
   return record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket,
     epic: 1,
     flow: { name: 'default', entry: 'implement' },
@@ -51,6 +52,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
   assert.equal(executionRecord.commonDir, commonDir);
   const expected = {
     schemaVersion: 1,
+    repository: 'o/r',
     execution: executionRecord.execution,
     ticket: 8,
     epic: 1,
@@ -88,6 +90,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
   const { epic, ...withoutEpic } = expected;
   const noEpic = record.createExecutionRecord({
     commonDir,
+    repository: 'o/r',
     ticket: 8,
     flow: { name: 'default', entry: 'implement' },
     configHash: 'abc123',
@@ -98,6 +101,29 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
   });
   assert.equal(epic, 1);
   assert.deepEqual(withoutCommonDir(noEpic), { ...withoutEpic, epic: null, execution: noEpic.execution });
+});
+
+// A record read outside its State Database still says which repository it belongs to and where its Flow came from: a
+// user Flow's name carries its source (ADR 0022).
+test("a created record carries its repository and its Flow's source, and keeps both through a save", async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const executionRecord = record.createExecutionRecord({
+    commonDir,
+    repository: 'acme/app',
+    ticket: 8,
+    flow: { name: 'user:strict', entry: 'red' },
+    configHash: 'abc123',
+    run: 'run-1',
+    worktree: join(commonDir, 'wt'),
+    branch: 'ticket/8',
+    base: 'main',
+  });
+  assert.equal(executionRecord.repository, 'acme/app');
+  assert.equal(executionRecord.flow, 'user:strict');
+  record.save(executionRecord);
+  const saved = record.load(commonDir, 'ticket', 8);
+  assert.equal(saved?.repository, 'acme/app');
+  assert.equal(saved?.flow, 'user:strict');
 });
 
 test('saving a record never adds a field createExecutionRecord did not declare', async (t) => {
