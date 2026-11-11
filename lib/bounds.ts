@@ -16,15 +16,20 @@ interface BoundedEdge {
 }
 
 // Where the Edge goes, the Bounds it passed (`spent`, for the Terminal Reason, and `spentBounds`, for visit_end), and,
-// for a bounded Edge taken, its traversal key and new count.
+// for an Edge declared `{ to }` that reached `to`, its traversal key and new count. `withinBound` says the Edge has a
+// `max` it has not spent, so visit_end names it: the record counts an Edge with no `max`, or one whose spent Bound's
+// `exhausted` is its own `to`, too.
 export interface Traversal {
   next: string;
   spent: string[];
   spentBounds: events.SpentBound[];
   key?: string;
   count?: number;
+  withinBound: boolean;
 }
 
+// An Edge declared with a `max` it has not yet spent: `{ to }` alone has none.
+const withinBound = (bounded: BoundedEdge, count: number) => bounded.max !== undefined && count < bounded.max;
 const nameOf = (target: Target): string => (typeof target === 'string' ? target : target.end);
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
@@ -60,15 +65,14 @@ export function edge(runContext: RunContext, outcomeName: string): Traversal {
   }
   // Admission rejects a loop of spent Vertices (H12); a run that meets one anyway ends at needs-human.
   for (const seen = new Set(); full(next);) {
-    if (seen.has(next)) return { next: labels.NEEDS_HUMAN, spent, spentBounds };
+    if (seen.has(next)) return { next: labels.NEEDS_HUMAN, spent, spentBounds, withinBound: false };
     seen.add(next);
     spent.push(`${next} had used its Bound of ${plural(bound(next)!, 'Visit')}`);
     spentBounds.push({ vertex: next });
     next = nameOf(runFlow.ticket.vertices.get(next)?.exhausted as Target);
   }
-  return bounded && next === bounded.to
-    ? { next, key, count: count + 1, spent, spentBounds }
-    : { next, spent, spentBounds };
+  if (!bounded || next !== bounded.to) return { next, spent, spentBounds, withinBound: false };
+  return { next, key, count: count + 1, spent, spentBounds, withinBound: withinBound(bounded, count) };
 }
 
 // Whether an Outcome's effective target is another Vertex, once its Bounds count (U5): its work must then leave the

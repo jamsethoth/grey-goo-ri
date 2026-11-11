@@ -171,3 +171,65 @@ test('every Visit whose Outcome takes its Edge writes exactly one visit_end', as
   assert.deepEqual(visitPlaces(stopped), visitsRan(stopped));
   assert.deepEqual(visitsRan(stopped), ['red/1', 'green/1'], 'the stopped flow ran two Visits');
 });
+
+test('an Edge declared with no max records no edge or count', async (t) => {
+  const fixture = await golden.fixture(t);
+  golden.configure(fixture, (configured) => {
+    configured.flows.golden!.ticket.vertices.red!.route = { ok: { to: 'green' } };
+  });
+  const result = await interpreter.runExecution(fixture.options);
+
+  assert.equal(result.outcome, 'ready-for-qa');
+  assert.deepEqual(executionReads.visitEnds(fixture)[0], {
+    vertex: 'red',
+    visit: 1,
+    outcome: 'ok',
+    rule: { table: 'passed', row: null },
+    next: 'green',
+    edge: null,
+    count: null,
+    spent: [],
+  });
+});
+
+test('a spent Edge whose exhausted target is its own Vertex records no edge or count', async (t) => {
+  const fixture = await reviewFlow.reviewFixture(
+    t,
+    {
+      [reviewCall(1)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'first problem')])),
+      [fixCall('implementer-fix')]: fixed({ 'lib/add.mjs': 'export const add = (a, b) => a + b; // one\n' }),
+      [reviewCall(2)]: reviewed(review('changes', [finding('major', 'lib/add.mjs', 'second problem')])),
+      [keys.responseKey('implementer-fix', 2, 'fix', 1)]: fixed({
+        'lib/add.mjs': 'export const add = (a, b) => Number(a) + Number(b);\n',
+      }),
+      [reviewCall(3)]: reviewed(review('ok')),
+    },
+    {
+      configure: (configured) => {
+        const reviewer = configured.flows.golden!.ticket.vertices.reviewer!;
+        (reviewer.route as Record<string, Routes>).changes = {
+          to: 'implementer-fix',
+          max: 1,
+          exhausted: 'implementer-fix',
+        };
+        Object.assign(reviewer, { max: 3, exhausted: { end: 'needs-human' } });
+      },
+    },
+  );
+  const result = await interpreter.runExecution(fixture.options);
+
+  assert.equal(result.outcome, 'ready-for-qa');
+  assert.deepEqual(
+    executionReads.visitEnds(fixture).find((visitEnd) => visitEnd.vertex === 'reviewer' && visitEnd.visit === 2),
+    {
+      vertex: 'reviewer',
+      visit: 2,
+      outcome: 'changes',
+      rule: { table: 'passed', row: 'otherwise' },
+      next: 'implementer-fix',
+      edge: null,
+      count: null,
+      spent: [{ edge: 'reviewer->implementer-fix:changes' }],
+    },
+  );
+});

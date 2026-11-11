@@ -188,8 +188,8 @@ function visitEndEvent(runContext: RunContext, { next, taken }: visitRunner.Visi
       outcome,
       rule,
       next,
-      edge: traversal.key ?? null,
-      count: traversal.count ?? null,
+      edge: traversal.withinBound ? traversal.key : null,
+      count: traversal.withinBound ? traversal.count : null,
       spent: traversal.spentBounds,
     });
 }
