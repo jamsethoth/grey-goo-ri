@@ -206,12 +206,18 @@ a `Map` subclass (`structuredClone` deserialises it as a plain Map and `deepStri
 4. `ReadonlyMap` on the Resolved Flow is a type-only change; whether the churn in `test/support/named-flow.ts` (which
    rebuilds Maps) is worth it depends on how often a test mutates a Flow after `fromJson`.
 5. Should `gg/no-map-to-json` also fail a value typed `unknown`, `any` or `object`, which can hide a Map from any rule
-   that reads types? Decided 2026-11-11 (owner, #330, option D). The rule's `unknown` option fails such an argument in
-   `lib/`, `bin/` and `scripts/`, and also a union with such a member.
-   - Measured on ada8948: **29** such arguments outside `test/` (28 in `lib/`, 1 in `scripts/`) and 8 in `test/`.
-   - 26 quoted a configuration or response value in a message. They now go through `lib/quote.ts`, the one file
-     exempt.
-   - The 3 that carry gg data got types: the Pinned Configuration, `hashOf`'s sorted value and the coverage baseline.
-   - `test/` keeps the Map check only.
-   - The rule reads the value passed, not an `unknown` held inside a typed value. With that nested check, the count
-     was 114, 79 of them in `test/`. The Execution Record's 19 such fields are #342's.
+   that reads types? Decided 2026-11-11 (owner, #330): no. The guard belongs on the paths that save data, and #342 adds
+   it there.
+   - Measured on ada8948: **29** such arguments outside `test/` (28 in `lib/`, 1 in `scripts/`). In `test/` the check
+     would fail 8, and 1 more passes a replacer.
+   - 26 of the 29 quote a configuration or response value in an error message, so a Map there would cost a wrong
+     message, not data. The other 3 carry gg data: the Pinned Configuration, typed in #330; `hashOf`, which throws on
+     a Map at run time; and the coverage baseline, read from `JSON.parse`.
+   - A trial of the stricter rule needed an exempt quoting helper for those 26 messages, then 10 more once `{}`,
+     `Object` and loose generics counted. That policed messages that cannot lose data.
+   - Other projects guard where data is stored, not at every `JSON.stringify`:
+     - typed serializer input: type-fest's `JsonValue` and `Jsonify<T>`;
+     - a compile error for a Map: typia since v5.2.2, its issue #823;
+     - a check at the store: Redux Toolkit's serializability middleware.
+     So #342 gates gg's save paths, the record, the Pinned Configuration, the Event append and the run directory's
+     JSON, with types and a check at run time.

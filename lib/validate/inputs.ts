@@ -2,7 +2,6 @@
 // input one type (T6), and `pick` typed in each item of a list.
 
 import * as procedures from '../procedures.ts';
-import * as quote from '../quote.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as checked from './procedures.ts';
 import * as report from './report.ts';
@@ -67,7 +66,7 @@ function firstSource(problems: report.Report, location: string, from: unknown[],
     if (resolved.node === referencePaths.ANY) continue;
     if (!first) first = { source, node: resolved.node };
     else if (typeKey(first.node) !== typeKey(resolved.node)) {
-      const sources = `${quote.json(first.source)} and ${quote.json(source)}`;
+      const sources = `${JSON.stringify(first.source)} and ${JSON.stringify(source)}`;
       report.error(problems, location, 'source-types-differ', `sources ${sources} have different types`, {
         sources: [first.source, source],
       });
@@ -92,7 +91,7 @@ function pickedNode(problems: report.Report, location: string, pick: unknown, fi
       problems,
       location,
       'not-a-list-of-objects',
-      `pick needs a list of objects; ${quote.json(source)} is ${JSON.stringify(type)}`,
+      `pick needs a list of objects; ${JSON.stringify(source)} is ${JSON.stringify(type)}`,
       { path: source, type },
     );
     return referencePaths.ANY;

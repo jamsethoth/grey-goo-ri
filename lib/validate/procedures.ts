@@ -5,7 +5,6 @@
 import * as briefs from '../briefs.ts';
 import * as procedures from '../procedures.ts';
 import * as outcome from '../outcome.ts';
-import * as quote from '../quote.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as actionChecks from './actions.ts';
 import * as conditions from './conditions.ts';
@@ -84,7 +83,7 @@ function checkClaimToken(problems: report.Report, token: unknown, checkIds: unkn
           problems,
           location,
           'undeclared-check',
-          `requires ${quote.json(id)}, which is not a Check of this Procedure`,
+          `requires ${JSON.stringify(id)}, which is not a Check of this Procedure`,
           { check: id },
         );
     }

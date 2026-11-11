@@ -3,7 +3,6 @@
 import * as briefs from '../briefs.ts';
 import * as labels from '../labels.ts';
 import * as procedures from '../procedures.ts';
-import * as quote from '../quote.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as report from './report.ts';
 
@@ -95,7 +94,7 @@ function requireFields(problems: report.Report, fields: unknown, location: strin
         problems,
         location,
         'invalid-name',
-        `fields[${index}] must be a field name, not ${quote.json(name)}`,
+        `fields[${index}] must be a field name, not ${JSON.stringify(name)}`,
         { name, index },
       );
   });
@@ -187,7 +186,7 @@ function checkCheckAction(declaring: ProcedureContext, declared: DeclaredSoFar, 
     (check.kind === 'command' || check.kind === 'tests-fail') &&
     !report.hasOwnKey(declaring.commands, check.command)
   ) {
-    const command = quote.json(check.command);
+    const command = JSON.stringify(check.command);
     if (check.command === undefined)
       report.error(problems, location, 'required-key-missing', `Check ${actionLabel(check.id)} must name a command`, {
         key: 'command',
@@ -239,7 +238,7 @@ function checkDecisions(problems: report.Report, decisions: unknown, location: s
     if (new Set(decisions).size !== decisions.length)
       report.error(problems, location, 'repeated-decision', 'a Decision is repeated');
     for (const decision of decisions) {
-      const shown = quote.json(decision);
+      const shown = JSON.stringify(decision);
       if (typeof decision !== 'string' || !/^[a-z][a-z0-9-]*$/.test(decision))
         report.error(problems, location, 'invalid-name', `Decision ${shown} must match [a-z][a-z0-9-]*`, {
           name: decision,

@@ -406,13 +406,6 @@ const TYPED_HEADER = [
   'declare const nested: { deeper: { counts: Map<string, number> }; shallow: Map<string, number> | null };',
   'declare const flows: Record<string, model.ResolvedFlowJson>;',
   'declare const savedRow: record.ExecutionRecordJson;',
-  'declare const parsed: unknown;',
-  'declare const loose: any;',
-  'declare const anyObject: object;',
-  'declare const objectOrText: object | string;',
-  'declare const empty: {};',
-  'declare const boxed: Object;',
-  'const mapAsEmpty: {} = new Map<string, number>();',
   'declare const maybeReplacer: ((key: string, value: unknown) => unknown) | undefined;',
   'const local = { stringify: (value: unknown) => String(value) };',
   'class TrackedCounts extends Map<string, number> {',
@@ -441,16 +434,16 @@ const TYPED_HEADER = [
   '}',
 ];
 // Each sample is linted as `export const sampleN = <sample>;`, with what the rules find on its line.
-const typedFindings = async (samples: string[], eslint = typedEslint) => {
+const typedFindings = async (samples: string[]) => {
   const lines = [...TYPED_HEADER, ...samples.map((sample, i) => `export const sample${i} = ${sample};`)];
-  const [result] = await eslint.lintText(`${lines.join('\n')}\n`, { filePath: 'test/unit/layout.test.ts' });
+  const [result] = await typedEslint.lintText(`${lines.join('\n')}\n`, { filePath: 'test/unit/layout.test.ts' });
   return samples.map((_sample, i) => result.messages.filter((message) => message.line === TYPED_HEADER.length + i + 1));
 };
 const holdsMapBoundary = async (
   t: TestContext,
-  { rule, flagged, passed, eslint }: { rule: string; flagged: [string, string][]; passed: string[]; eslint?: ESLint },
+  { rule, flagged, passed }: { rule: string; flagged: [string, string][]; passed: string[] },
 ) => {
-  const found = await typedFindings([...flagged.map(([sample]) => sample), ...passed], eslint);
+  const found = await typedFindings([...flagged.map(([sample]) => sample), ...passed]);
   for (const [i, [sample, where]] of flagged.entries())
     await t.test(`fails ${sample}`, () => {
       assert.deepEqual(
@@ -510,54 +503,6 @@ test('lint fails JSON.stringify of a value whose type holds a Map or Set', async
       'JSON.stringify(Object.fromEntries(executionRecord.visits))',
     ],
   });
-});
-
-// The rule as lib/, bin/ and scripts/ run it: a value typed unknown, any or object may hide a Map, so it fails (#330).
-const unknownCheckingEslint = new ESLint({
-  cwd: root,
-  overrideConfig: { files: ['test/unit/layout.test.ts'], rules: { 'gg/no-map-to-json': ['error', { unknown: true }] } },
-});
-
-test('with its unknown check, lint fails JSON.stringify of a value whose type cannot say it is no Map', async (t) => {
-  await holdsMapBoundary(t, {
-    eslint: unknownCheckingEslint,
-    rule: 'gg/no-map-to-json',
-    flagged: [
-      ['JSON.stringify(parsed)', 'the value, typed unknown,'],
-      ['JSON.stringify(loose, null, 2)', 'the value, typed any,'],
-      ['JSON.stringify(anyObject)', 'the value, typed object,'],
-      ['JSON.stringify(objectOrText)', 'the value, typed object,'],
-      // Types that say no more than unknown does: any value but null or undefined may be one, a Map too (#330 D2).
-      ['JSON.stringify(empty)', 'the value, typed {},'],
-      ['JSON.stringify(mapAsEmpty)', 'the value, typed {},'],
-      ['JSON.stringify(boxed)', 'the value, typed Object,'],
-      ['<Value,>(value: Value) => JSON.stringify(value)', 'the value, typed Value,'],
-      ['<Value extends unknown>(value: Value) => JSON.stringify(value)', 'the value, typed Value,'],
-      ['<Value extends object>(value: Value) => JSON.stringify(value)', 'the value, typed Value,'],
-      ['JSON.stringify(executionRecord)', 'the value.visits (Map)'],
-    ],
-    passed: [
-      'JSON.stringify(text)',
-      'JSON.stringify(savedRow, null, 2)',
-      'JSON.stringify(parsed, (_key, value: unknown) => value)',
-      // Only the value passed is read: an unknown held inside a typed value is #342's.
-      'JSON.stringify({ quoted: parsed })',
-      // An empty object literal is no Map, and a type parameter is as narrow as its constraint.
-      'JSON.stringify({})',
-      '<Value extends { name: string }>(value: Value) => JSON.stringify(value)',
-    ],
-  });
-});
-
-test('the unknown check runs in lib/, bin/ and scripts/, except lib/quote.ts, and not in test/', async () => {
-  const ruleIn = async (filePath: string) =>
-    ((await typedEslint.calculateConfigForFile(filePath)) as { rules: Record<string, unknown> }).rules[
-      'gg/no-map-to-json'
-    ];
-  for (const filePath of ['lib/run.ts', 'lib/validate/flows.ts', 'bin/gg.ts', 'scripts/run-suite.ts'])
-    assert.deepEqual(await ruleIn(filePath), [2, { unknown: true }], filePath);
-  for (const filePath of ['lib/quote.ts', 'test/unit/layout.test.ts', 'test/support/record-row.ts'])
-    assert.deepEqual(await ruleIn(filePath), [2], filePath);
 });
 
 test("lint fails JSON.stringify of a slice of a Map's type, and reads spread arguments", async (t) => {

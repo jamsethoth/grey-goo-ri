@@ -2,7 +2,6 @@ import * as config from './config.ts';
 import type * as exec from './exec.ts';
 import * as procedures from './procedures.ts';
 import * as publicText from './public-text.ts';
-import * as quote from './quote.ts';
 import * as referencePaths from './reference-paths.ts';
 
 // A test's status in a runner's output: failed, passed, or the TODO or SKIP directive that excuses it.
@@ -257,7 +256,7 @@ function failures(response: unknown, condition: ResponseCondition): string[] {
     const value = referencePaths.read(response, condition.field);
     return value === condition.is
       ? []
-      : [`${condition.field} is ${quote.json(value)}, expected ${quote.json(condition.is)}`];
+      : [`${condition.field} is ${JSON.stringify(value)}, expected ${JSON.stringify(condition.is)}`];
   }
   return quantifierFailures(response, condition);
 }

@@ -5,7 +5,6 @@ import * as config from '../config.ts';
 import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
 import * as procedures from '../procedures.ts';
-import * as quote from '../quote.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as actionChecks from './actions.ts';
 import * as graph from './graph.ts';
@@ -120,7 +119,7 @@ export function checkHarness(
 }
 
 const unknownVertex = (problems: report.Report, location: string, vertex: unknown) =>
-  report.error(problems, location, 'unknown-vertex', `${quote.json(vertex)} is not a Vertex`, { vertex });
+  report.error(problems, location, 'unknown-vertex', `${JSON.stringify(vertex)} is not a Vertex`, { vertex });
 
 function checkTarget(problems: report.Report, location: string, target: unknown, vertices: Value) {
   if (typeof target === 'string') {
@@ -133,7 +132,7 @@ function checkTarget(problems: report.Report, location: string, target: unknown,
         problems,
         location,
         'unknown-end',
-        `end ${quote.json(target.end)} is not one of ${labels.END_STATES.join(', ')}`,
+        `end ${JSON.stringify(target.end)} is not one of ${labels.END_STATES.join(', ')}`,
         { end: target.end },
       );
   } else {

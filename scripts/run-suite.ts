@@ -154,9 +154,7 @@ export function compareCoverage(
 // Coverage differs by platform (win32 and POSIX branches), so each platform keeps its own figures.
 function ratchet(mode: 'check' | 'update'): number {
   const path = join(root, BASELINE);
-  const baseline: Record<string, Record<string, number>> = existsSync(path)
-    ? JSON.parse(readFileSync(path, 'utf8'))
-    : {};
+  const baseline = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
   const report = existsSync(join(root, LCOV)) ? readFileSync(join(root, LCOV), 'utf8') : '';
   if (!/^LF:[1-9]/m.test(report)) {
     console.error(`coverage measured no lines: a unit test ended the process early, or lib/ has nothing to measure.`);

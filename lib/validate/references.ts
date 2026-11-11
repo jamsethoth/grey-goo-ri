@@ -2,7 +2,6 @@
 // Vertex, with that Vertex's inputs. A table whose fields all type is analysed (rules.ts).
 
 import * as procedures from '../procedures.ts';
-import * as quote from '../quote.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as rules from '../rules.ts';
 import * as conditions from './conditions.ts';
@@ -82,7 +81,7 @@ const stringList =
       ? null
       : {
           code: 'not-a-list-of-strings',
-          message: `${label} must read a list of strings; ${quote.json(path)} is ${JSON.stringify(type)}`,
+          message: `${label} must read a list of strings; ${JSON.stringify(path)} is ${JSON.stringify(type)}`,
           params: { path, type },
         };
 const anyType: Want = () => null;
@@ -92,7 +91,7 @@ const repeatList =
     if (!conditions.isObjectList(type))
       return {
         code: 'not-a-list-of-objects',
-        message: `list must read a list of objects; ${quote.json(check.list)} is ${JSON.stringify(type)}`,
+        message: `list must read a list of objects; ${JSON.stringify(check.list)} is ${JSON.stringify(type)}`,
         params: { path: check.list, type },
       };
     const field = (Array.isArray(check.fields) ? check.fields : []).find(
@@ -102,7 +101,7 @@ const repeatList =
       ? null
       : {
           code: 'unknown-item-field',
-          message: `fields: ${quote.json(field)} is not a field of the list's items`,
+          message: `fields: ${JSON.stringify(field)} is not a field of the list's items`,
           params: { field },
         };
   };
@@ -172,7 +171,7 @@ function fieldOf(found: Found[], reference: Reference & { path: string }, condit
       : typeof condition === scalar;
   if (!fits) {
     const message =
-      `condition ${quote.json(condition)} on ${JSON.stringify(path)} ` +
+      `condition ${JSON.stringify(condition)} on ${JSON.stringify(path)} ` +
       `does not fit its field, which is ${JSON.stringify(type)}`;
     found.push({ where, path, code: 'rule-condition-mismatch', message, params: { field: path, condition, type } });
     return null;

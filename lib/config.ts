@@ -5,7 +5,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
 import type * as model from './model.ts';
-import * as quote from './quote.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
 
@@ -176,20 +175,16 @@ export function loadSources(repoRoot: string, directory = userDirectory()): Conf
 // A file a source named, by that name (loadSources's `files`).
 export function namedFile(files: unknown, name: unknown): string {
   if (!referencePaths.isRecord(files) || !Object.hasOwn(files, name as string))
-    throw new Error(`no source names file ${quote.json(name)}`);
+    throw new Error(`no source names file ${JSON.stringify(name)}`);
   return (files as SourceFiles)[name as string]!.bytes;
 }
 
 // Sorted keys at every depth, so the hash ignores key order. A Map has no keys here and would hash as {} in silence,
 // so it is refused: the model's toJson gives the JSON to hash (#174).
-// A value as JSON holds it: what JSON.parse gives, and what JSON.stringify writes whole.
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
-function sortedKeys(value: unknown): JsonValue {
+function sortedKeys(value: unknown): unknown {
   if (value instanceof Map) throw new Error('a Map cannot be hashed; convert it to an object first (model.toJson)');
   if (Array.isArray(value)) return value.map(sortedKeys);
-  // A leaf: a string, number, boolean or null, or undefined, which JSON.stringify leaves out of an object.
-  if (!value || typeof value !== 'object') return value as JsonValue;
+  if (!value || typeof value !== 'object') return value;
   const object = value as Record<string, unknown>;
   return Object.fromEntries(
     Object.keys(object)

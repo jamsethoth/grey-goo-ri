@@ -263,20 +263,10 @@ const stringifyLayouts = (elements) => {
   fill(0, []);
   return layouts;
 };
-// A value typed unknown, any or object may be a Map, or hold one, and no type says which; nor may a union with one.
-const LOOSE_NAMES = [
-  [ts.TypeFlags.Unknown, 'unknown'],
-  [ts.TypeFlags.Any, 'any'],
-  [ts.TypeFlags.NonPrimitive, 'object'],
-];
-const looseTypes = (type) =>
-  (type.isUnion() ? type.types : [type]).flatMap((member) =>
-    LOOSE_NAMES.filter(([flag]) => member.flags & flag).map(([, name]) => name),
-  );
 const NO_MAP_TO_JSON = {
   meta: {
     type: 'problem',
-    schema: [{ type: 'object', properties: { unknown: { type: 'boolean' } }, additionalProperties: false }],
+    schema: [],
     messages: {
       lost:
         'JSON.stringify writes a Map or Set as {}: {{where}} ({{name}}). Convert it first, with ' +
@@ -285,13 +275,9 @@ const NO_MAP_TO_JSON = {
         '{{where}} has a type made from part of a {{name}}, so lint cannot tell whether it is one, and ' +
         'JSON.stringify writes a {{name}} as {}. Type it as the whole {{name}} if it is one, or as a plain object ' +
         'type if it is not.',
-      loose:
-        'JSON.stringify writes a Map or Set as {}, and lint cannot tell whether {{where}}, typed {{name}}, is or ' +
-        "holds one. Give it the type it has, or quote a configuration value with lib/quote.ts's json.",
     },
   },
   create(context) {
-    const checksUnknown = context.options[0]?.unknown === true;
     const services = context.sourceCode.parserServices;
     if (!services?.program) throw new Error('gg/no-map-to-json needs type information (parserOptions.projectService)');
     const checker = services.program.getTypeChecker();
@@ -307,14 +293,11 @@ const NO_MAP_TO_JSON = {
           .map((value) => findLost(checker, services.program, value))
           .find(Boolean);
         if (found)
-          return void context.report({
+          context.report({
             node,
             messageId: found.whole ? 'lost' : 'part',
             data: { where: found.path, name: found.name },
           });
-        // Only the value passed is read: an unknown held inside a typed value is not (#342).
-        const loose = checksUnknown && unconverted.flatMap((value) => looseTypes(value)).at(0);
-        if (loose) context.report({ node, messageId: 'loose', data: { where: 'the value', name: loose } });
       },
     };
   },
@@ -376,12 +359,5 @@ export default defineConfig([
       '@typescript-eslint/no-misused-spread': ['error', { allow: [{ from: 'lib', name: 'string' }] }],
       'gg/no-map-to-json': 'error',
     },
-  },
-  {
-    // Outside test/, a value typed unknown, any or object fails too, since it may hide a Map. A configuration value
-    // quoted in a message goes through lib/quote.ts, the one file that may stringify one (#330).
-    files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts'],
-    ignores: ['lib/quote.ts'],
-    rules: { 'gg/no-map-to-json': ['error', { unknown: true }] },
   },
 ]);

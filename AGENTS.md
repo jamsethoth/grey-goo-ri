@@ -118,7 +118,6 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/github.ts` | gh verbs, and the label writes and the read of the repository's `owner/name` that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
-| `lib/quote.ts` | a configuration or response value quoted in a message, as JSON: the one place `gg/no-map-to-json` lets a value typed `unknown` be stringified |
 | `lib/templates/` | gg's own templates, which no source declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
 | `lib/work.ts` | `gg work abandon`: a Ticket's Execution Record forgotten, its worktree and branch kept; the rest of `gg work` and the Registry are to come |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |

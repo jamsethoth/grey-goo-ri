@@ -1,7 +1,6 @@
 // The settings both gg.json files hold beside their Flows, checked before any Flow by gg doctor and gg run preflight
 // alike (D7): the repository contract, the user's machine settings, and the keys each file may hold (ADR 0022).
 import type * as config from './config.ts';
-import * as quote from './quote.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
 
@@ -183,7 +182,7 @@ export function testPathsProblems(testPaths: unknown, file: string): report.Prob
     testPaths.forEach((glob, index) => {
       if (!badGlob(glob)) return;
       const message =
-        `${file}: testPaths entry ${quote.json(glob)} must be a glob relative to the repository root: ` +
+        `${file}: testPaths entry ${JSON.stringify(glob)} must be a glob relative to the repository root: ` +
         'non-empty segments split by "/", no "." or ".." segment, "**" only as a whole segment, ' +
         'and no [ ] ? \\ : or control character';
       report.error(found, `testPaths[${index}]`, 'invalid-glob', message, { glob, file });
