@@ -133,6 +133,28 @@ export interface ExecutionRecord {
   writeAheadLog: writeAhead.WriteAheadEntry[];
 }
 
+// The current Visit's progress as its row saves it, the Check Maps as keyed objects.
+export type VisitStateJson = Omit<visit.VisitState, 'runs' | 'checks'> & {
+  runs: Record<string, visit.CheckRun>;
+  checks: Record<string, visit.CheckSignal>;
+};
+
+// The Execution Record as its row saves it: no commonDir, which is where the row is, and every Map a keyed object.
+export type ExecutionRecordJson = Omit<ExecutionRecord, 'commonDir' | 'visits' | 'traversals' | 'visitState'> & {
+  visits: Record<string, number>;
+  traversals: Record<string, number>;
+  visitState: VisitStateJson | null;
+};
+
+export function toJson(executionRecord: ExecutionRecord): ExecutionRecordJson {
+  const { commonDir, ...data } = executionRecord;
+  return data as unknown as ExecutionRecordJson;
+}
+
+export function fromJson(json: ExecutionRecordJson, commonDir: string): ExecutionRecord {
+  return { ...json, commonDir } as unknown as ExecutionRecord;
+}
+
 export interface EpicRecord {
   schemaVersion: number;
   commonDir: string;
