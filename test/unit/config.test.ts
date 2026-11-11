@@ -88,7 +88,11 @@ async function installed(t: TestContext, install: string, edit = (_root: string)
   const copied = await import(pathToFileURL(join(root, 'lib', 'config.ts')).href);
   const copiedDoctor = await import(pathToFileURL(join(root, 'lib', 'doctor.ts')).href);
   const repo = join(root, '..', 'repo');
-  copiedDoctor.init(repo, { baseBranch: 'main', userDirectory: join(root, '..', 'user') });
+  copiedDoctor.init(repo, {
+    baseBranch: 'main',
+    userDirectory: join(root, '..', 'user'),
+    commonDir: join(repo, '.git'),
+  });
   const loaded = copied.loadSources(repo, join(root, '..', 'user')).repository;
   const input = { flow: loaded.flows.default, files: loaded.files, harnesses: {}, commands: {} };
   return { root: JSON.stringify(root).slice(1, -1), input: JSON.stringify(input), hash: copied.configHash(input) };

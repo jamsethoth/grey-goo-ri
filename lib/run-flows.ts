@@ -1,10 +1,12 @@
 // The Flows a Run admits: each source's Flows as the validator resolves them, each with its Pinned Configuration, the
 // one `--flow` names, preflight over every admitted Flow's Harnesses, and the Flow an Execution runs.
+import { existsSync } from 'node:fs';
 import * as config from './config.ts';
 import * as contract from './harnesses/contract.ts';
 import * as model from './model.ts';
 import * as report from './validate/report.ts';
 import * as settingsModule from './settings.ts';
+import * as stateDatabase from './state-database.ts';
 import * as validator from './validate/index.ts';
 
 // A user Flow's name carries its source, so no Flow shadows another (ADR 0022).
@@ -209,10 +211,25 @@ function pin(name: string, declared: DeclaredFlow, settings: config.Settings): P
   return { flow, pinned, hash: config.configHash(pinned), source: declared.source, files };
 }
 
+// A repository without a State Database, as an error: only gg init creates one (#150), so gg run's preflight and
+// gg doctor both name it.
+export function stateDatabaseProblems(commonDir: string): report.Problem[] {
+  if (existsSync(stateDatabase.filePath(commonDir))) return [];
+  const found = report.newReport();
+  const path = stateDatabase.filePath(commonDir);
+  report.error(found, '', 'state-database-missing', stateDatabase.missingMessage(commonDir), { path });
+  return found.errors;
+}
+
 // Admission runs the checks gg doctor runs, so gg run rejects exactly what gg doctor rejects (V1, ADR 0014), except a
 // user Flow that does not fit the repository, refused only when selected. A new Execution runs the Flow `--flow` names,
 // else default (X2), which must be declared.
-export async function admitConfiguration({ config: configuration, harnesses, flow: flowName = 'default' }: Admitted) {
+export async function admitConfiguration({
+  commonDir,
+  config: configuration,
+  harnesses,
+  flow: flowName = 'default',
+}: Admitted) {
   const declared = declaredFlows(configuration, harnesses);
   const { errors, warnings, misfits } = declared;
   const misfit = misfits.get(flowName);
@@ -224,6 +241,7 @@ export async function admitConfiguration({ config: configuration, harnesses, flo
     report.error(unknown, 'flows', 'unknown-flow', message, { name: flowName, declared: names });
     errors.push(...unknown.errors);
   }
+  errors.push(...stateDatabaseProblems(commonDir));
   const admitted = [...declared.flows].filter(([name]) => !misfits.has(name));
   await preflight(
     admitted.map(([name, { json }]) => model.fromJson({ ...json, name })),

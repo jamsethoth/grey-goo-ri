@@ -197,9 +197,12 @@ export interface DoctorOptions {
 }
 
 // Each Execution Record a Run would resume whose Flow is no longer declared, as an error: gg run keeps it and exits 2
-// (A2), so doctor says so first. A record finished, held or with a decided report to finish is not resumed.
-function missingFlowProblems(commonDir: string | undefined, declared: ReadonlySet<string>): report.Problem[] {
-  if (commonDir === undefined || !existsSync(stateDatabase.filePath(commonDir))) return [];
+// (A2), so doctor says so first. A record finished, held or with a decided report to finish is not resumed. A missing
+// State Database is the error instead, as gg run's preflight gives it.
+function recordProblems(commonDir: string | undefined, declared: ReadonlySet<string>): report.Problem[] {
+  if (commonDir === undefined) return [];
+  const missing = runFlows.stateDatabaseProblems(commonDir);
+  if (missing.length) return missing;
   const found = report.newReport();
   for (const executionRecord of record.loadAll(commonDir, 'ticket')) {
     const { ticket, flow, state } = executionRecord;
@@ -222,7 +225,7 @@ export async function doctor({ config: configuration, harnesses, gh, cwd, common
 }> {
   const declared = runFlows.declaredFlows(configuration, harnesses);
   const admitted = new Set([...declared.flows.keys()].filter((name) => !declared.misfits.has(name)));
-  const errors = [...declared.errors, ...missingFlowProblems(commonDir, admitted)];
+  const errors = [...declared.errors, ...recordProblems(commonDir, admitted)];
   const warnings = [...declared.warnings, ...declared.misfits.values()];
   const flows = [...declared.flows.values()];
   const lines: string[] = [];
@@ -277,9 +280,9 @@ function writtenExample(text: string, { baseBranch, harness }: InitOptions): str
 const userAdvice = (userFile: string | null) =>
   userFile ? `gg init wrote the machine settings maxParallel and worktreeRoot to ${userFile}.\n` : '';
 
-function initAdvice(directory: string, names: string[], userFile: string | null): string {
+function initAdvice(directory: string, names: string[], userFile: string | null, database: string): string {
   return `gg init wrote the example to ${directory}: ${names.join(', ')}.
-${userAdvice(userFile)}
+${userAdvice(userFile)}${database}
 Before gg doctor passes, declare the command that runs your tests as commands.test in gg.json. Every Check in the
 example runs it. Each Agent runs on the harness gg.json names; gg init --harness <name> also writes a model and
 effort for each, for ${config.exampleHarnesses().join(' or ')}.
@@ -299,8 +302,29 @@ function writeUserSettings(directory: string): string | null {
   return file;
 }
 
+// The State Database, created when missing (#150). An existing one is kept and opened once, so gg init never
+// reports as kept one no command can open; it leaves that one untouched, since it may hold Execution Records and is
+// the evidence of what went wrong (owner, #150 Q2, ADR 0023).
+function initStateDatabase(commonDir: string): string {
+  const created = stateDatabase.create(commonDir);
+  try {
+    stateDatabase.open(commonDir);
+  } catch (err) {
+    const newer = err instanceof stateDatabase.StateDatabaseVersionError && err.version > stateDatabase.SCHEMA_VERSION;
+    const advice = newer
+      ? 'run the gg that wrote it.'
+      : 'move it aside and keep it, since it may hold Execution Records and shows what went wrong, then run gg init ' +
+        'again to create a new one.';
+    throw new Error(`${(err as Error).message}\ngg init kept it untouched: ${advice}`, { cause: err });
+  } finally {
+    stateDatabase.close(commonDir);
+  }
+  return `gg init ${created ? 'created' : 'kept'} the State Database at ${stateDatabase.filePath(commonDir)}.\n`;
+}
+
 // Writes the example into `repoRoot`'s .agents/gg/, unless a file it would write exists: then it writes none of it, so
-// gg init is safe to repeat (owner, 2026-11-06). It also creates the user's gg.json when there is none.
+// gg init is safe to repeat (owner, 2026-11-06). It also creates the user's gg.json and the State Database when there
+// is none.
 export function init(repoRoot: string, options: InitOptions): string {
   const directory = config.repositoryDirectory(repoRoot);
   const names = [
@@ -309,16 +333,18 @@ export function init(repoRoot: string, options: InitOptions): string {
   ];
   const existing = names.map((name) => join(directory, name)).find((path) => existsSync(path));
   const example = existing ? null : writtenExample(readFileSync(join(EXAMPLE_DIRECTORY, 'gg.json'), 'utf8'), options);
+  const database = initStateDatabase(options.commonDir);
   const userFile = writeUserSettings(options.userDirectory ?? config.userDirectory());
   if (existing)
     return (
       `gg init kept the existing configuration and wrote none of the example: ${existing} exists.\n` +
-      userAdvice(userFile)
+      userAdvice(userFile) +
+      database
     );
   mkdirSync(directory, { recursive: true });
   for (const name of names) {
     const text = name === 'gg.json' ? example! : readFileSync(join(EXAMPLE_DIRECTORY, name), 'utf8');
     writeFileSync(join(directory, name), text, { flag: 'wx' });
   }
-  return initAdvice(directory, names, userFile);
+  return initAdvice(directory, names, userFile, database);
 }

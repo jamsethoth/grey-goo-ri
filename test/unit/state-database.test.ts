@@ -81,6 +81,7 @@ test('open refuses a missing State Database by name, telling the person to run g
 const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknown) | null>> = {
   stateDatabase: {
     filePath: null,
+    missingMessage: null,
     create: null,
     open: (commonDir) => stateDatabase.open(commonDir),
     close: null,

@@ -71,8 +71,7 @@ test('two processes save different records concurrently without loss', async (t)
 // past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136, ADR 0015). The save
 // runs in this process, so the time it blocks is the time it waited for the other process's lock.
 test('a save waits out another process that holds the write lock for longer than 5 s', CASE, async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-  stateDatabase.open(commonDir);
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const holder = spawn(process.execPath, [holderScript, commonDir, '8000'], { stdio: ['ignore', 'pipe', 'inherit'] });
   t.after(() => {
     if (holder.exitCode === null) holder.kill();
