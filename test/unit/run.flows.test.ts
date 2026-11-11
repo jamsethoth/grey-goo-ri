@@ -1,5 +1,7 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
@@ -145,6 +147,27 @@ test('preflight refuses a selected user Flow that names a command the repository
   assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', 'the default Flow still runs');
 });
 
+// Only gg init creates the State Database (#150), so preflight names a missing one beside the configuration's errors,
+// before the Run reads GitHub or writes anything.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('preflight lists a missing State Database beside the configuration errors, before any GitHub read or write', async (t) => {
+  const fixture = runFixture.fixture(t, { stateDatabase: false });
+  const user = withUserFlows(fixture, { strict: runFixture.testConfig(fixture.root).flows.default! });
+  user.procedures.publish!.actions[0]!.command = 'lint';
+  await assert.rejects(run.runTarget({ ...fixture.options, flow: 'user:strict' }), (err: Error) => {
+    assert.deepEqual(err?.message.split('\n'), [
+      '[main] preflight failed:',
+      'error: user:flows.strict: Flow user:strict names command "lint", which ' +
+        `${fixture.options.config.repositoryFile} does not declare, so it cannot run in this repository ` +
+        '[undeclared-command]',
+      `error: no State Database at ${join(fixture.commonDir, 'gg', 'gg.db')}: run gg init [state-database-missing]`,
+    ]);
+    return true;
+  });
+  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
+  assert.equal(existsSync(join(fixture.commonDir, 'gg')), false, 'no gg directory: no run directory, lock or database');
+});
+
 // The Config Hash fingerprints a Flow's content, not its source (Q25): the same Flow, with files only another Agent
 // names beside it, hashes alike from either source.
 test("a user Flow's Config Hash equals the same Flow's declared in the repository", async (t) => {
@@ -153,6 +176,7 @@ test("a user Flow's Config Hash equals the same Flow's declared in the repositor
   user.agents.spare = { ...user.agents.implementer, persona: 'spare.md' };
   user.files['spare.md'] = { bytes: '# spare\n', hash: config.sha256('# spare\n') };
   const { flows } = await runFlows.admitConfiguration({
+    commonDir: fixture.commonDir,
     config: fixture.options.config,
     harnesses: fixture.options.harnesses,
   });

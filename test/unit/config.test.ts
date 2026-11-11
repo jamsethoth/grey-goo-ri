@@ -168,7 +168,7 @@ test('a source with no gg.json loads empty, and its required settings are Proble
 for (const name of ['implementer.md', 'reviewer.md']) {
   test(`loadSources reads the example Persona ${name} that gg init wrote, with its hash`, (t) => {
     const roots = sources(t);
-    doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user });
+    doctor.init(roots.repo, { baseBranch: 'main', userDirectory: roots.user, commonDir: join(roots.repo, '.git') });
     const file = readFileSync(join(config.repositoryDirectory(roots.repo), name));
     const persona = config.loadSources(roots.repo, roots.user).repository.files[name];
     assert.ok(persona, `${name} is loaded`);

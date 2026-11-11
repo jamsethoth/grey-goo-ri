@@ -14,6 +14,7 @@ import * as marker from '../../lib/marker.ts';
 import * as model from '../../lib/model.ts';
 import * as record from '../../lib/record.ts';
 import type * as runContext from '../../lib/run-context.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as validate from '../../lib/validate/index.ts';
 import * as addSuiteModule from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';
@@ -221,6 +222,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   if (which === 'real') gitShell.sh(mainRoot, 'worktree', 'add', '-q', '-b', BRANCH, worktree, 'main');
   else await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const commonDir = join(mainRoot, '.git');
+  stateDatabase.create(commonDir);
   const configured = goldenConfig();
   const flow = resolve(configured);
   const executionRecord = record.createExecutionRecord({

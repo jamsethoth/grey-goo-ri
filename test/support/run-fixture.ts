@@ -14,6 +14,7 @@ import * as model from '../../lib/model.ts';
 import type * as runModule from '../../lib/run.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as record from '../../lib/record.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as validate from '../../lib/validate/index.ts';
 import * as addSuite from './add-suite.ts';
 import * as caseDatabase from './case-database.ts';
@@ -90,6 +91,8 @@ export interface RunFixtureOptions {
   git?: golden.Which;
   // The GitHub owner/name gh gives for the repository.
   repository?: string;
+  // false leaves the repository without a State Database, as before gg init.
+  stateDatabase?: boolean;
 }
 
 // The fake gh answering one standalone Ticket: its issue view has the fixture Ticket's title and body.
@@ -180,6 +183,7 @@ export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) 
   const mainRoot = join(root, 'main');
   const commonDir = join(mainRoot, '.git');
   const { base, git, fakeGit } = golden.seedGit(real, which);
+  if (fixtureOptions.stateDatabase !== false) stateDatabase.create(commonDir);
   const fakeIntegrity = golden.fakeIntegrityFor(integrity, base, git);
   const gh = ticketGh(mainRoot, git, fixtureOptions);
   const harness = golden.goldenHarness(join(root, 'transcripts'), responses);

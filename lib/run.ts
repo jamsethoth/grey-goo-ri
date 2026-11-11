@@ -113,7 +113,7 @@ export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
   let label = checkout.folder;
   const named = (message: string) => `[${label}] ${message}`;
   try {
-    const admitted = await runFlows.admitConfiguration(options);
+    const admitted = await runFlows.admitConfiguration({ ...options, commonDir: checkout.gitCommonDir });
     const repo = await readRepository(options.deps.gh, checkout);
     label = repo.repository;
     return await runRepo(repo, { ...admitted, named }, options);

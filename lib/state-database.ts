@@ -68,6 +68,10 @@ function createSchema(connection: DatabaseSync, path: string): void {
   }
 }
 
+export function create(directory: string): boolean {
+  return directory !== '';
+}
+
 export function open(directory: string): DatabaseSync {
   const commonDir = resolve(directory);
   const key = paths.pathKey(commonDir);

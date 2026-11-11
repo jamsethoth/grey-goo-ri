@@ -63,9 +63,10 @@ async function runCommand(parsed: options.ParsedOptions) {
 }
 
 async function initCommand(parsed: options.ParsedOptions) {
-  const { mainRoot } = await git.repoInfo(repositoryPath(parsed));
+  const { mainRoot, gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
   const baseBranch = await git.defaultBranch(mainRoot);
-  process.stdout.write(doctor.init(mainRoot, { baseBranch, harness: parsed.harness as string | undefined }));
+  const harness = parsed.harness as string | undefined;
+  process.stdout.write(doctor.init(mainRoot, { baseBranch, commonDir: gitCommonDir, harness }));
 }
 
 async function doctorCommand(parsed: options.ParsedOptions) {

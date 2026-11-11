@@ -183,8 +183,10 @@ async function preflight(flows: model.ResolvedFlow[], errors: report.Problem[], 
   if (failed.length) throw withExitCode(`preflight failed:\n${failed.join('\n')}`, unset ? 2 : 1);
 }
 
-// What gg run admits: both sources, the registered Harnesses and the Flow `--flow` names.
+// What gg run admits: both sources, the registered Harnesses, the Flow `--flow` names, and the repository's common
+// dir, which must hold the State Database.
 interface Admitted {
+  commonDir: string;
   config: config.Configuration;
   harnesses: Record<string, unknown>;
   flow?: string;

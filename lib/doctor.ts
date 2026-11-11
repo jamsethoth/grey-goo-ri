@@ -245,10 +245,11 @@ const EXAMPLE_DIRECTORY = fileURLToPath(new URL('../test/fixtures/example/', imp
 // The machine settings gg init writes into a new user gg.json.
 const MACHINE_SETTINGS = { maxParallel: 2, worktreeRoot: '~/worktrees' };
 
-// What gg init writes: the repository's default branch, the user's directory, and a Harness whose harness, model and
-// effort the example's Agents take.
+// What gg init writes: the repository's default branch, the user's directory, a Harness whose harness, model and
+// effort the example's Agents take, and the repository's common dir, where it creates the State Database.
 export interface InitOptions {
   baseBranch: string;
+  commonDir: string;
   userDirectory?: string;
   harness?: string;
 }
