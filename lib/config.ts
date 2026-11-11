@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
+import type * as model from './model.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
 
@@ -196,13 +197,13 @@ export const hashOf = (value: unknown): string => sha256(JSON.stringify(sortedKe
 
 // What a Pinned Configuration holds.
 export interface PinnedConfiguration {
-  flow: unknown;
-  files: unknown;
-  harnesses: unknown;
-  launchProfile?: unknown;
-  commands: unknown;
-  testPaths: unknown;
-  approvers?: unknown;
+  flow: model.ResolvedFlowJson;
+  files: SourceFiles;
+  harnesses: Record<string, unknown>;
+  launchProfile?: string | null;
+  commands: Settings['commands'];
+  testPaths: string[];
+  approvers?: string[];
 }
 
 // The Pinned Configuration's hash: the Resolved Flow and every file it uses by name, never by path (no install path

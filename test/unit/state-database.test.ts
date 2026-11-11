@@ -102,6 +102,8 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
     createExecutionRecord: null,
     createEpicRecord: null,
     createStateDatabase: null,
+    toJson: null,
+    fromJson: null,
     beforeAppend: null,
     load: (commonDir) => record.load(commonDir, 'ticket', 8),
     removeRecord: (commonDir) => record.removeRecord(commonDir, 'ticket', 8),

@@ -284,7 +284,7 @@ const NO_MAP_TO_JSON = {
     return {
       CallExpression(node) {
         if (!isJsonStringify(checker, services, node)) return;
-        // A replacer function is its owner's conversion (lib/record.ts saveRecord); the rule does not judge it. An
+        // A replacer function is its owner's conversion (lib/validate/inputs.ts); the rule does not judge it. An
         // array of keys, null or undefined converts nothing, and a replacer that may be absent does not guarantee it.
         const unconverted = stringifyLayouts(passedElements(checker, services, node.arguments))
           .filter(([value, replacer]) => value && !(replacer?.getCallSignatures().length > 0))

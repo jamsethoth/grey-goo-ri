@@ -126,6 +126,55 @@ test("a created record carries its repository and its Flow's source, and keeps b
   assert.equal(saved?.flow, 'user:strict');
 });
 
+// Every Map and Set in a value, by path: plain objects and arrays are walked, so a Map field added later is found too.
+function collectionsIn(value: unknown, path = ''): [string, Map<string, unknown> | Set<unknown>][] {
+  if (value instanceof Map || value instanceof Set) return [[path, value]];
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, item]) => collectionsIn(item, path ? `${path}.${key}` : key));
+}
+
+// A Vertex or Check named like a property every object inherits must stay data through the row (#174, #330).
+test('toJson and fromJson round-trip every Map of the record, keyed __proto__ and toString', () => {
+  const commonDir = join(tmpdir(), 'gg-record-json');
+  const executionRecord = knownRecord(commonDir);
+  executionRecord.visitState = {
+    recovery: 0,
+    firstAttemptBaseline: null,
+    call: null,
+    response: null,
+    runs: new Map(),
+    checks: new Map(),
+    checkFollows: false,
+    settled: null,
+    unconfirmedCleanup: null,
+  };
+  const maps = collectionsIn(executionRecord);
+  assert.deepEqual(
+    maps.map(([path]) => path),
+    ['visits', 'traversals', 'visitState.runs', 'visitState.checks'],
+  );
+  const entries: Record<string, (key: string) => unknown> = {
+    'visitState.runs': (key) => ({ output: `${key} output`, reason: null, failure: null, recoverable: false }),
+    'visitState.checks': (key) => ({ id: key, kind: 'command', state: 'passed', tree: null }),
+  };
+  for (const [path, map] of maps)
+    for (const key of ['__proto__', 'toString']) (map as Map<string, unknown>).set(key, entries[path]?.(key) ?? 1);
+
+  const json = record.toJson(executionRecord);
+  assert.deepEqual(collectionsIn(json), [], 'the JSON holds no Map or Set');
+  assert.equal(Object.hasOwn(json, 'commonDir'), false, 'the row leaves out commonDir');
+  assert.deepEqual(
+    json.visits,
+    Object.fromEntries([
+      ['__proto__', 1],
+      ['toString', 1],
+    ]),
+  );
+  const revived = record.fromJson(JSON.parse(JSON.stringify(json)), commonDir);
+  // deepEqual compares a Map's entries, so each revived Map holds both keys as entries, not properties.
+  assert.deepEqual(revived, executionRecord);
+});
+
 test('saving a record never adds a field createExecutionRecord did not declare', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
@@ -206,7 +255,7 @@ test('save writes a records row and never a records directory', async (t) => {
     /* eslint-disable id-length -- n is the records table's column */
     assert.deepEqual(rows, [
       { kind: 'epic', n: 1, json: recordRow.json(withoutCommonDir(epic)) },
-      { kind: 'ticket', n: 8, json: recordRow.json(withoutCommonDir(executionRecord)) },
+      { kind: 'ticket', n: 8, json: recordRow.json(record.toJson(executionRecord)) },
     ]);
     /* eslint-enable id-length */
   });
@@ -222,7 +271,7 @@ test('load returns null for a missing row and the record for a saved one', async
   // Changed behind the module's back, so the load must come from the row.
   withDb(commonDir, (db) => {
     db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8").run(
-      recordRow.json({ ...withoutCommonDir(executionRecord), state: 'ready-for-qa' }),
+      recordRow.json({ ...record.toJson(executionRecord), state: 'ready-for-qa' }),
     );
   });
   const loaded = record.load(commonDir, 'ticket', 8);
@@ -243,9 +292,9 @@ test('a record with visits entries survives the golden-row comparison and a raw-
   record.save(executionRecord);
   withDb(commonDir, (db) => {
     const row = db.prepare("SELECT json FROM records WHERE kind = 'ticket' AND n = 8").get();
-    assert.equal(row?.json, recordRow.json(withoutCommonDir(executionRecord)));
+    assert.equal(row?.json, recordRow.json(record.toJson(executionRecord)));
     db.prepare("UPDATE records SET json = ? WHERE kind = 'ticket' AND n = 8").run(
-      recordRow.json({ ...withoutCommonDir(executionRecord), state: 'ready-for-qa' }),
+      recordRow.json({ ...record.toJson(executionRecord), state: 'ready-for-qa' }),
     );
   });
   assert.deepEqual(record.load(commonDir, 'ticket', 8), { ...executionRecord, state: 'ready-for-qa' });
@@ -427,12 +476,11 @@ test('a record written before Action ids is corrupt, not misread', async (t) => 
   // Its cursor names a phase and ordinal, which a resume would read as an Action id and a Recovery Number.
   record.save(knownRecord(commonDir, 8));
   const old = {
-    ...knownRecord(commonDir, 11),
+    ...record.toJson(knownRecord(commonDir, 11)),
     cursor: { vertex: 'green', visit: 1, phase: 'green', ordinal: 3, attempt: 1 },
   };
-  delete (old as { commonDir?: string }).commonDir;
   withDb(commonDir, (db) =>
-    db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run('ticket', 11, recordRow.json(old)),
+    db.prepare('INSERT INTO records (kind, n, json) VALUES (?, ?, ?)').run('ticket', 11, JSON.stringify(old)),
   );
   assert.throws(
     () => record.load(commonDir, 'ticket', 11),

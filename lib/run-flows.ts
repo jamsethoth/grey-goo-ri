@@ -28,7 +28,7 @@ export interface DeclaredFlow {
 // configuration's Config Hash, its source and the files it uses.
 export interface PinnedFlow {
   flow: model.ResolvedFlow;
-  pinned: unknown;
+  pinned: config.PinnedConfiguration | null;
   hash: string;
   source: SourceName;
   files: config.SourceFiles;
@@ -199,7 +199,9 @@ interface Admitted {
 function pin(name: string, declared: DeclaredFlow, settings: config.Settings): PinnedFlow {
   const files = config.usedFiles(declared.json, declared.files);
   const pinned = {
-    flow: { ...declared.json, name: declared.declaredName },
+    // The validator's JSON, which model.fromJson below also reads as a Resolved Flow's: the validator reads the
+    // configuration as unknown, so its own type cannot say so.
+    flow: { ...declared.json, name: declared.declaredName } as model.ResolvedFlowJson,
     files,
     harnesses: {},
     launchProfile: null,
