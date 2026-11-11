@@ -35,14 +35,18 @@ interface Target {
   exhausted?: unknown;
 }
 
+// A configured value as a summary line shows it: a string as written, anything else as JSON, so a value of the wrong
+// type never shows as [object Object] or a blank (#305).
+const shown = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
+
 function target(given: unknown): string {
   if (typeof given === 'string') return given;
   const edge = given as Target | null | undefined;
-  if (edge?.end !== undefined) return `end ${edge.end}`;
+  if (edge?.end !== undefined) return `end ${shown(edge.end)}`;
   const exhausted = edge?.exhausted === undefined ? '' : `, exhausted ${target(edge.exhausted)}`;
-  return `${edge?.to ?? 'no target'} (max ${edge?.max ?? 'none'}${exhausted})`;
+  return `${shown(edge?.to ?? 'no target')} (max ${shown(edge?.max ?? 'none')}${exhausted})`;
 }
-const list = (items: unknown[]) => (items.length ? items.join(', ') : 'none');
+const list = (items: unknown[]) => (items.length ? items.map(shown).join(', ') : 'none');
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 function table(name: string, rows: unknown[]): string[] {
@@ -51,7 +55,7 @@ function table(name: string, rows: unknown[]): string[] {
     `  ${name}:`,
     ...rows.map((row, index) => {
       const { when, outcome } = (row ?? {}) as { when?: Record<string, rules.Condition>; outcome?: unknown };
-      return `    ${index + 1}. ${rules.conditions(when ?? {})} -> ${outcome ?? 'no outcome'}`;
+      return `    ${index + 1}. ${rules.conditions(when ?? {})} -> ${shown(outcome ?? 'no outcome')}`;
     }),
   ];
 }
@@ -63,8 +67,9 @@ function accessNote(vertex: graph.ResolvedVertex, procedure: ShownProcedure | un
 }
 
 function testsLine(tests: unknown): string {
-  if (typeof tests === 'object' && tests !== null) return `named ${(tests as { named: unknown }).named ?? 'nothing'}`;
-  return String(tests ?? 'none');
+  if (typeof tests === 'object' && tests !== null)
+    return `named ${shown((tests as { named: unknown }).named ?? 'nothing')}`;
+  return shown(tests ?? 'none');
 }
 
 function procedureLines(procedure: ShownProcedure): string[] {
@@ -72,17 +77,18 @@ function procedureLines(procedure: ShownProcedure): string[] {
   const claimTokens = Object.entries(procedure.claimTokens).map(([token, claim]) =>
     claim?.stop ? `${token} stops` : `${token} requires ${list((claim?.requires ?? []).map((id) => id ?? 'no id'))}`,
   );
-  const shown = checks.map(
-    (check) => `${check.id ?? 'no id'} (${check.kind ?? 'no kind'}${check.command ? ` ${check.command}` : ''})`,
-  );
+  const shownChecks = checks.map((check) => {
+    const command = check.command ? ` ${shown(check.command)}` : '';
+    return `${shown(check.id ?? 'no id')} (${shown(check.kind ?? 'no kind')}${command})`;
+  });
   const lines = [
-    `  checks: ${list(shown)}`,
+    `  checks: ${list(shownChecks)}`,
     `  claimTokens: ${list(claimTokens)}`,
     ...table('passed', procedure.passed),
     ...table('failed', procedure.failed),
     ...table('stopped', procedure.stopped),
   ];
-  if (procedure.otherwise !== null) lines.push(`  otherwise: ${procedure.otherwise}`);
+  if (procedure.otherwise !== null) lines.push(`  otherwise: ${shown(procedure.otherwise)}`);
   return lines;
 }
 
@@ -106,19 +112,22 @@ function inputLines(vertex: graph.ResolvedVertex): string[] {
   return [
     '  inputs:',
     ...inputs.map(([name, input]) => {
-      const pick = input.pick === undefined ? '' : `, pick ${input.pick}`;
-      return `    ${name} <- ${input.from.join(' | ') || 'no source'}${pick}${input.optional ? ' (optional)' : ''}`;
+      const pick = input.pick === undefined ? '' : `, pick ${shown(input.pick)}`;
+      const from = input.from.map((source) => shown(source ?? 'no source'));
+      return `    ${name} <- ${from.join(' | ') || 'no source'}${pick}${input.optional ? ' (optional)' : ''}`;
     }),
   ];
 }
 
 function vertexLines(id: string, vertex: graph.ResolvedVertex, procedure: ShownProcedure | undefined): string[] {
-  const agent = vertex.agent ? `${vertex.use ?? 'inline'} (harness ${vertex.agent.harness ?? 'none'})` : 'none';
+  const agent = vertex.agent
+    ? `${shown(vertex.use ?? 'inline')} (harness ${shown(vertex.agent.harness ?? 'none')})`
+    : 'none';
   const lines = [
     `vertex ${id}`,
-    `  procedure: ${vertex.procedure ?? 'none'}`,
+    `  procedure: ${shown(vertex.procedure ?? 'none')}`,
     `  agent: ${agent}`,
-    `  access: ${vertex.access}${accessNote(vertex, procedure)}`,
+    `  access: ${shown(vertex.access)}${accessNote(vertex, procedure)}`,
     `  tests: ${testsLine(vertex.tests)}`,
   ];
   if (procedure) lines.push(...procedureLines(procedure));
@@ -127,7 +136,9 @@ function vertexLines(id: string, vertex: graph.ResolvedVertex, procedure: ShownP
     lines.push(`  approval labels: ${[vertex.approvalLabels.await, ...vertex.approvalLabels.decide].join(', ')}`);
   // H11: a Vertex's bound, beside its routes.
   if (vertex.max !== null)
-    lines.push(`  max: ${vertex.max}, exhausted ${vertex.exhausted === null ? 'none' : target(vertex.exhausted)}`);
+    lines.push(
+      `  max: ${shown(vertex.max)}, exhausted ${vertex.exhausted === null ? 'none' : target(vertex.exhausted)}`,
+    );
   return [...lines, ...routeLines(vertex), ...inputLines(vertex)];
 }
 
@@ -144,8 +155,8 @@ function flowLines(flow: ShownFlow, source: runFlows.SourceName): string[] {
   const lines = [
     `flow ${flow.name}`,
     `  source: ${source}`,
-    `  actionCap: ${flow.actionCap ?? 'none'}`,
-    `  entry: ${flow.ticket.entry ?? 'none'}`,
+    `  actionCap: ${shown(flow.actionCap ?? 'none')}`,
+    `  entry: ${shown(flow.ticket.entry ?? 'none')}`,
     `  routes: ${list(routes)}`,
   ];
   const procedures = new Map(Object.entries(flow.procedures));
