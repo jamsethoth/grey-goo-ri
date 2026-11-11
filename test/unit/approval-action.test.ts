@@ -76,6 +76,7 @@ test('golden: an approval request ends the run and a later approval routes on', 
   assert.deepEqual(approvalFlow.approveTrace(fixture), [
     ...requestTrace(1),
     { vertex: 'approve', action: 'ask', recovery: 0, attempt: 1, outcome: 'approved' },
+    golden.visitEnded('approve', 'publish', { outcome: 'approved', rule: { table: 'fixed', row: 'decision' } }),
   ]);
   assert.equal(fixture.gh.pr()?.isDraft, false, 'publish ran after the Decision');
   const consumption = ended.writeAheadLog.find(
@@ -335,7 +336,9 @@ test('a crash after the consumption completed routes the saved Decision', async 
   assert.equal(approvalFlow.commentReads(fixture), commentsRead);
   const output = loadTicket(fixture).outputs.find((each) => each.vertex === 'approve' && each.action === 'ask');
   assert.equal((output?.value.decision as { reply: unknown }).reply, null, 'the saved reply stands');
-  const decided = approvalFlow.approveTrace(fixture).filter((event) => event.action === 'ask');
+  const decided = approvalFlow
+    .approveTrace(fixture)
+    .filter((event) => golden.isTracedAction(event) && event.action === 'ask');
   assert.equal(decided.length, 1, 'its Event is written once');
 });
 

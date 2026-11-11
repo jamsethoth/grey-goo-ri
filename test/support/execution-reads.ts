@@ -42,6 +42,21 @@ export const actionEvent = (fixture: Readable, vertex: string, action: string, r
   fixture.readEvents().find((event) => isAction(event, vertex, action, recovery));
 export const attemptsOf = (fixture: Readable, vertex: string, action: string, recovery = 0) =>
   fixture.readEvents().filter((event) => isAction(event, vertex, action, recovery));
+// Each visit_end Event, in order, without the identity a case does not vary (time, run, execution and ticket).
+export const visitEnds = (fixture: Readable) =>
+  fixture
+    .readEvents()
+    .filter((event): event is events.VisitEndEvent => event.type === 'visit_end')
+    .map(({ vertex, visit, outcome, rule, next, edge, count, spent }) => ({
+      vertex,
+      visit,
+      outcome,
+      rule,
+      next,
+      edge,
+      count,
+      spent,
+    }));
 // The case's Execution's run stop, as its Action Events record it.
 export const runStopEvent = (fixture: GoldenFixture) =>
   terminalReport.runStopEvent(

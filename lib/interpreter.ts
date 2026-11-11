@@ -144,18 +144,20 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
 }
 
 // The persisted cursor, not the Flow's entry: a restart continues at the Action it names with the Edge counts already
-// taken. Each next Vertex's cursor is saved with the traversal count, so a crash before it runs routes the same way.
-// The Terminal cursor, reason and stop are one save, before any Terminal side effect, so a crash inside the Terminal
-// keeps all three. A resume inside the Terminal has them saved already.
+// taken. Each next Vertex's cursor is saved with the traversal count and the ended Visit's visit_end, so a crash
+// before it runs routes the same way and writes that visit_end once. The Terminal cursor, reason, stop and visit_end
+// are one save, before any Terminal side effect, so a crash inside the Terminal keeps all four. A resume inside the
+// Terminal has them saved already.
 async function runVertices(runContext: RunContext): Promise<TerminalResult> {
   const { record: executionRecord } = runContext;
-  let ended: visitRunner.VisitEnd = { next: executionRecord.cursor.vertex, stop: null, reason: null };
+  let ended: visitRunner.VisitEnd = { next: executionRecord.cursor.vertex, stop: null, reason: null, taken: null };
   while (!flow.isEnd(ended.next)) {
     ended = await visitRunner.runVisit(runContext, ended.next, executionRecord.cursor.visit!);
     if (flow.isEnd(ended.next)) break;
+    const visitEnd = visitEndEvent(runContext, ended);
     const visitNumber = (executionRecord.visits.get(ended.next) ?? 0) + 1;
     executionRecord.cursor = { vertex: ended.next, visit: visitNumber, action: null, recovery: 0, attempt: 1 };
-    runContext.database.save(executionRecord);
+    runContext.database.save(executionRecord, visitEnd);
   }
   const { next, stop, reason } = ended;
   if (reason) {
@@ -165,9 +167,31 @@ async function runVertices(runContext: RunContext): Promise<TerminalResult> {
         ? { ...reason, text: `${reason.text} PR #${executionRecord.pr} is ready for review.` }
         : reason;
     executionRecord.terminalStop = stop && terminalReport.declaredStop(stop);
-    runContext.database.save(executionRecord);
+    runContext.database.save(executionRecord, visitEndEvent(runContext, ended));
   }
   return await terminal.terminal(runContext, next);
+}
+
+// The ended Visit's visit_end, written in the save that moves the cursor past it; none for a Visit that took no Edge.
+function visitEndEvent(runContext: RunContext, { next, taken }: visitRunner.VisitEnd): (() => void) | null {
+  if (!taken) return null;
+  const { record: executionRecord } = runContext;
+  const { vertex, visit } = executionRecord.configurationSnapshot!;
+  const { outcome, rule, traversal } = taken;
+  return () =>
+    runContext.events('visit_end', {
+      run: runContext.run,
+      execution: executionRecord.execution,
+      ticket: executionRecord.ticket,
+      vertex,
+      visit,
+      outcome,
+      rule,
+      next,
+      edge: traversal.withinBound ? traversal.key : null,
+      count: traversal.withinBound ? traversal.count : null,
+      spent: traversal.spentBounds,
+    });
 }
 
 // An Action found deep inside it that the Execution ends now (effectErrors.EarlyTerminalError), so it unwound to here

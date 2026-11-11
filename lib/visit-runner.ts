@@ -31,11 +31,14 @@ import * as visitScope from './visit-scope.ts';
 type ActionResolution = visitScope.ActionResolution;
 type RunningVisit = visitScope.RunningVisit;
 
-// Where a Visit leaves: the next Vertex or end, the stop a Terminal saves, and the Terminal Reason if it decides one.
+// Where a Visit leaves: the next Vertex or end, the stop a Terminal saves, the Terminal Reason if it decides one, and
+// the Outcome that took the Edge, with its rule and Traversal, which visit_end records. A hold before the Visit's
+// Actions took no Edge.
 export interface VisitEnd {
   next: string;
   stop: terminalReport.StopDeclaration | null;
   reason: record.TerminalReason | null;
+  taken: { outcome: string; rule: visit.RuleIdentity; traversal: bounds.Traversal } | null;
 }
 // The last Action the Visit ran and its result.
 interface Ran {
@@ -146,6 +149,7 @@ async function heldDirty(runContext: RunContext, vertexId: string): Promise<Visi
   return {
     next: labels.NEEDS_HUMAN,
     stop: { outcome: labels.NEEDS_HUMAN },
+    taken: null,
     reason: {
       decidedBy: { hold: 'dirty-worktree' },
       outcome: null,
@@ -283,6 +287,7 @@ async function stopVisit(runContext: RunContext, state: RunningVisit, ran: Ran, 
     next: traversal.next,
     stop: stopOf(state, ran),
     reason: terminal.terminalReason(actionIdentity, resolution.outcome, resolution, spent),
+    taken: { outcome: outcomeName, rule: resolution.rule, traversal },
   };
 }
 
@@ -366,6 +371,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
     next: traversal.next,
     stop: null,
     reason: terminal.terminalReason(actionIdentity, outcomeName, { rule }, text),
+    taken: { outcome: outcomeName, rule, traversal },
   };
 }
 

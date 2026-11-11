@@ -12,16 +12,20 @@ type GoldenFixture = golden.GoldenFixture;
 
 export const TDD_VERTICES = ['red', 'green'];
 
+const advanced = (vertex: string, action: string) => ({ vertex, action, recovery: 0, attempt: 1, outcome: 'ok' });
+// red's and green's Actions, each Visit ending by its Claim token ok.
 export const FIRST_VISIT = [
-  ['red', 'red'],
-  ['red', 'red-check'],
-  ['red', 'commit'],
-  ['green', 'green'],
-  ['green', 'test'],
-  ['green', 'commit'],
-  ['green', 'push'],
-  ['green', 'pr'],
-].map(([vertex, action]) => ({ vertex, action, recovery: 0, attempt: 1, outcome: 'ok' }));
+  advanced('red', 'red'),
+  advanced('red', 'red-check'),
+  advanced('red', 'commit'),
+  golden.visitEnded('red', 'green'),
+  advanced('green', 'green'),
+  advanced('green', 'test'),
+  advanced('green', 'commit'),
+  advanced('green', 'push'),
+  advanced('green', 'pr'),
+  golden.visitEnded('green', 'publish'),
+];
 
 // The golden fixture once its Execution has run: what runExecution returned, and the Events it left.
 export type GoldenRun = GoldenFixture & {
@@ -88,7 +92,7 @@ export const RIGHT_ADD = 'export const add = (a, b) => a + b;\n';
 export const greenTrace = (fixture: Pick<GoldenFixture, 'readEvents'>) =>
   tddTrace(fixture)
     .filter((event) => event.vertex === 'green')
-    .map((event) => `${event.action}/${event.recovery}`);
+    .map(golden.line((event) => `${event.action}/${event.recovery}`));
 
 // A green Attempt's script: it writes `files` and reports the golden green response.
 export const greenWrites = (files: Record<string, string>): fakeHarness.ScriptedResponse => ({

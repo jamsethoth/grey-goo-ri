@@ -1,5 +1,6 @@
 // Where an Outcome takes the Execution once its Bounds count: the route lib/flow.ts gives, an exhausted Bound's
 // `exhausted` target in its place, and the Action Cap no Flow Attempt passes (request 3.3, U5, V1).
+import type * as events from './events.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
 import * as outcome from './outcome.ts';
@@ -14,15 +15,21 @@ interface BoundedEdge {
   exhausted: Target;
 }
 
-// Where the Edge goes, the Bounds it passed (`spent`, for the Terminal Reason), and, for a bounded Edge taken, its
-// traversal key and new count.
+// Where the Edge goes, the Bounds it passed (`spent`, for the Terminal Reason, and `spentBounds`, for visit_end), and,
+// for an Edge declared `{ to }` that reached `to`, its traversal key and new count. `withinBound` says the Edge has a
+// `max` it has not spent, so visit_end names it: the record counts an Edge with no `max`, or one whose spent Bound's
+// `exhausted` is its own `to`, too.
 export interface Traversal {
   next: string;
   spent: string[];
+  spentBounds: events.SpentBound[];
   key?: string;
   count?: number;
+  withinBound: boolean;
 }
 
+// An Edge declared with a `max` it has not yet spent: `{ to }` alone has none.
+const withinBound = (bounded: BoundedEdge, count: number) => bounded.max !== undefined && count < bounded.max;
 const nameOf = (target: Target): string => (typeof target === 'string' ? target : target.end);
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
@@ -46,22 +53,26 @@ export function edge(runContext: RunContext, outcomeName: string): Traversal {
   const bound = (id: string) => runFlow.ticket.vertices.get(id)?.max;
   const full = (id: string) => !!bound(id) && (executionRecord.visits.get(id) ?? 0) >= bound(id)!;
   const spent: string[] = [];
+  const spentBounds: events.SpentBound[] = [];
   const bounded = typeof target === 'object' && 'to' in target ? target : null;
   let next = bounded ? bounded.to : nameOf(target as Target);
   const key = bounded ? `${executionRecord.configurationSnapshot!.vertex}->${bounded.to}:${outcomeName}` : undefined;
   const count = key ? (executionRecord.traversals.get(key) ?? 0) : 0;
   if (bounded && count >= bounded.max) {
     spent.push(`its Edge to ${bounded.to} had used its Bound of ${plural(bounded.max, 'traversal')}`);
+    spentBounds.push({ edge: key! });
     if (!full(bounded.to)) next = nameOf(bounded.exhausted);
   }
   // Admission rejects a loop of spent Vertices (H12); a run that meets one anyway ends at needs-human.
   for (const seen = new Set(); full(next);) {
-    if (seen.has(next)) return { next: labels.NEEDS_HUMAN, spent };
+    if (seen.has(next)) return { next: labels.NEEDS_HUMAN, spent, spentBounds, withinBound: false };
     seen.add(next);
     spent.push(`${next} had used its Bound of ${plural(bound(next)!, 'Visit')}`);
+    spentBounds.push({ vertex: next });
     next = nameOf(runFlow.ticket.vertices.get(next)?.exhausted as Target);
   }
-  return bounded && next === bounded.to ? { next, key, count: count + 1, spent } : { next, spent };
+  if (!bounded || next !== bounded.to) return { next, spent, spentBounds, withinBound: false };
+  return { next, key, count: count + 1, spent, spentBounds, withinBound: withinBound(bounded, count) };
 }
 
 // Whether an Outcome's effective target is another Vertex, once its Bounds count (U5): its work must then leave the

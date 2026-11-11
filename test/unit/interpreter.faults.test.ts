@@ -96,17 +96,26 @@ test('golden: a failing test Check is recovered once then fails with the Outcome
   const { outcome } = await interpreter.runExecution(fixture.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(
-    tddTrace(fixture).map((event) => `${event.vertex}/${event.action}/${event.recovery}`),
-    ['red/red/0', 'red/red-check/0', 'red/commit/0', 'green/green/0', 'green/test/0', 'green/green/1', 'green/test/1'],
-  );
+  assert.deepEqual(tddTrace(fixture).map(golden.line((event) => `${event.vertex}/${event.action}/${event.recovery}`)), [
+    'red/red/0',
+    'red/red-check/0',
+    'red/commit/0',
+    'red ok -> green',
+    'green/green/0',
+    'green/test/0',
+    'green/green/1',
+    'green/test/1',
+    'green failed -> needs-human',
+  ]);
   assert.deepEqual(
     actionEvent(fixture, 'green', 'test')!.rule,
     { table: 'fixed', row: 'recover' },
     'the first failure recovers',
   );
   assert.ok(
-    tddTrace(fixture).every((event) => event.attempt === 1),
+    tddTrace(fixture)
+      .filter(golden.isTracedAction)
+      .every((event) => event.attempt === 1),
     'the recovery pass is its own Actions, not another Attempt',
   );
   const fix = fixture.harness.calls[2];

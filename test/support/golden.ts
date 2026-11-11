@@ -155,11 +155,8 @@ export function resolve(goldenConfiguration: GoldenConfig): model.ResolvedFlow {
   return model.fromJson(Object.values(flows)[0]);
 }
 
-// Reduces Action Events to what a golden trace asserts.
-export const trace = (traced: events.Event[]) =>
-  traced
-    .filter((event): event is events.ActionEvent => event.type === 'action')
-    .map(({ vertex, action, recovery, attempt, outcome }) => ({ vertex, action, recovery, attempt, outcome }));
+export { isTracedAction, line, trace, visitEnded } from './golden-trace.ts';
+export type { TracedAction, TracedVisitEnd } from './golden-trace.ts';
 
 // Where an Attempt is, in the Action Marker's part order: its Vertex, Visit and Action, its recovery pass and attempt.
 export type MarkerPlace = [vertex: string, visit: number, action: string, recovery?: number, attempt?: number];

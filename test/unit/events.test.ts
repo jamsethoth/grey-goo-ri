@@ -306,6 +306,27 @@ test('a Lifecycle Event declares every field of its type, null where it was not 
   );
 });
 
+test('a visit_end event holds exactly its declared fields', () => {
+  const fields = {
+    run: 'r1',
+    execution: 'e1',
+    ticket: 7,
+    vertex: 'reviewer',
+    visit: 2,
+    outcome: 'repeat',
+    rule: { table: 'passed', row: 1 },
+    next: 'senior-dev',
+    edge: 'reviewer->senior-dev:repeat',
+    count: 1,
+    spent: [{ edge: 'reviewer->implementer-fix:changes' }, { vertex: 'implementer-fix' }],
+  };
+  const visitEnd = events.lifecycleEvent('visit_end', fields);
+  assert.deepEqual(visitEnd, { type: 'visit_end', ...fields });
+  assert.deepEqual(Object.keys(visitEnd), ['type', ...Object.keys(fields)]);
+  assert.throws(() => events.lifecycleEvent('visit_end', { ...fields, edge: undefined }), /\bedge\b/);
+  assert.throws(() => events.lifecycleEvent('visit_end', { ...fields, owner: null }), /\bowner\b/);
+});
+
 for (const key of [...required, ...agentRequired]) {
   test(`actionEvent throws when a required field is undefined: ${key}`, () => {
     assert.throws(() => events.actionEvent({ ...actionFields(), [key]: undefined }), new RegExp(`\\b${key}\\b`));
