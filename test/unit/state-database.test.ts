@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import * as events from '../../lib/events.ts';
@@ -150,3 +150,14 @@ for (const [moduleName, calls] of Object.entries(ENTRY_POINTS)) {
     });
   }
 }
+
+// A lost gg.db must not come back empty (#150): with gg/ still there, SQLite would create the file but for mode=rw.
+test('open refuses a gg.db deleted from an existing gg directory, and creates no empty one in its place', (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-state-');
+  stateDatabase.create(commonDir);
+  rmSync(dbPath(commonDir));
+  assert.throws(() => stateDatabase.open(commonDir), {
+    message: `no State Database at ${dbPath(commonDir)}: run gg init`,
+  });
+  assert.equal(existsSync(dbPath(commonDir)), false, 'no gg.db is created');
+});
