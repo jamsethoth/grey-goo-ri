@@ -266,7 +266,7 @@ const stringifyLayouts = (elements) => {
 const NO_MAP_TO_JSON = {
   meta: {
     type: 'problem',
-    schema: [],
+    schema: [{ type: 'object', properties: { unknown: { type: 'boolean' } }, additionalProperties: false }],
     messages: {
       lost:
         'JSON.stringify writes a Map or Set as {}: {{where}} ({{name}}). Convert it first, with ' +
