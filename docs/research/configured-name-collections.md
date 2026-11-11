@@ -166,15 +166,15 @@ producers, `new Map(...)` is assignable to it, and the compiler then refuses a `
 record's Maps stay `Map`: the interpreter writes them.
 
 The JSON boundary stays where it is and stays explicit: `model.fromJson` and `model.toJson` for the Flow;
-`saveRecord`'s replacer and `parseRow` for the record, each reading through `Object.entries` and writing through
-`Object.fromEntries`, which only ever see own keys. The hazard to design against is silence: a Map that reaches
-`JSON.stringify` or an object spread anywhere else becomes `{}` with no error. So no Map should sit in a shape that any
-module other than its owner stringifies (events, comments, public text); the record's replacer is a guard, not a
-licence. A test per owner should hold this: a record with `visits` and `traversals` keyed `__proto__` and `toString`
-saved and read back equal (`test/unit/record.test.ts`), and the model round-trip to the same Config Hash
-(`test/unit/model.test.ts`, present). A grep in `test/unit/layout.test.ts` or an ESLint restriction on
-`JSON.stringify` outside `record.ts`, `model.ts`, `config.ts` and `events.ts` would make the boundary mechanical; the
-open question below asks whether an existing rule does it.
+`record.toJson` and `record.fromJson` for the record (`lib/record-json.ts`, #330, which replaced `saveRecord`'s
+replacer), each reading through `Object.entries` and writing through `Object.fromEntries`, which only ever see own keys.
+The hazard to design against is silence: a Map that reaches `JSON.stringify` or an object spread anywhere else becomes
+`{}` with no error. So no Map should sit in a shape that any module other than its owner stringifies (events, comments,
+public text); the record's conversion is a guard, not a licence. A test per owner should hold this: a record with
+`visits` and `traversals` keyed `__proto__` and `toString` saved and read back equal (`test/unit/record.test.ts`), and
+the model round-trip to the same Config Hash (`test/unit/model.test.ts`, present). A grep in `test/unit/layout.test.ts`
+or an ESLint restriction on `JSON.stringify` outside `record.ts`, `model.ts`, `config.ts` and `events.ts` would make the
+boundary mechanical; the open question below asks whether an existing rule does it.
 
 Tests should compare Maps with `deepStrictEqual` against `new Map([...])`, never against an object literal (the
 prototype differs, so it always fails) and never after converting to an object (which hides an integer-key reorder).
@@ -205,3 +205,19 @@ a `Map` subclass (`structuredClone` deserialises it as a plain Map and `deepStri
    owns its concept" argues for the latter.
 4. `ReadonlyMap` on the Resolved Flow is a type-only change; whether the churn in `test/support/named-flow.ts` (which
    rebuilds Maps) is worth it depends on how often a test mutates a Flow after `fromJson`.
+5. Should `gg/no-map-to-json` also fail a value typed `unknown`, `any` or `object`, which can hide a Map from any rule
+   that reads types? Decided 2026-11-11 (owner, #330): no. The guard belongs on the paths that save data, and #342 adds
+   it there.
+   - Measured on ada8948: **29** such arguments outside `test/` (28 in `lib/`, 1 in `scripts/`). In `test/` the check
+     would fail 8, and 1 more passes a replacer.
+   - 26 of the 29 quote a configuration or response value in an error message, so a Map there would cost a wrong
+     message, not data. The other 3 carry gg data: the Pinned Configuration, typed in #330; `hashOf`, which throws on
+     a Map at run time; and the coverage baseline, read from `JSON.parse`.
+   - A trial of the stricter rule needed an exempt quoting helper for those 26 messages, then 10 more once `{}`,
+     `Object` and loose generics counted. That policed messages that cannot lose data.
+   - Other projects guard where data is stored, not at every `JSON.stringify`:
+     - typed serializer input: type-fest's `JsonValue` and `Jsonify<T>`;
+     - a compile error for a Map: typia since v5.2.2, its issue #823;
+     - a check at the store: Redux Toolkit's serializability middleware.
+     So #342 gates gg's save paths, the record, the Pinned Configuration, the Event append and the run directory's
+     JSON, with types and a check at run time.
