@@ -1,6 +1,7 @@
 // The validator's findings, one report passed to each part that checks, and the value tests every part shares.
 
 import * as labels from '../labels.ts';
+import * as quote from '../quote.ts';
 import * as referencePaths from '../reference-paths.ts';
 
 // Which rule a Problem breaks, one code per rule however many sentences name it. Code that needs the kind of problem
@@ -323,7 +324,7 @@ export function checkName(
   const rule = carried
     ? 'must be non-empty with no ":", ".", "/", "--" or whitespace'
     : 'must not be empty or only whitespace';
-  if (!valid) error(report, location, 'invalid-name', `${what} ${JSON.stringify(name)} ${rule}`, { name });
+  if (!valid) error(report, location, 'invalid-name', `${what} ${quote.json(name)} ${rule}`, { name });
   return valid;
 }
 export const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;

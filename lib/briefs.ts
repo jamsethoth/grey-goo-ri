@@ -3,6 +3,7 @@
 
 import * as referencePaths from './reference-paths.ts';
 import * as publicText from './public-text.ts';
+import * as quote from './quote.ts';
 import * as render from './render.ts';
 import type * as visit from './visit.ts';
 
@@ -27,8 +28,7 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
   const keyword = Object.keys(schema).find((key) => !(keywords ?? ['type']).includes(key));
   if (keyword !== undefined)
     throw new Error(`${path}: keyword ${JSON.stringify(keyword)} is outside the strict subset`);
-  if (!keywords)
-    throw new Error(`${path}: type ${JSON.stringify(schema.type) ?? '(none)'} is outside the strict subset`);
+  if (!keywords) throw new Error(`${path}: type ${quote.json(schema.type) ?? '(none)'} is outside the strict subset`);
   if (
     Object.hasOwn(schema, 'enum') &&
     !(Array.isArray(schema.enum) && schema.enum.length && schema.enum.every((value) => typeof value === 'string'))
@@ -109,7 +109,7 @@ export function validateResponse(schema: referencePaths.SchemaNode, response: un
     : { valid: true, token: (response as { claim?: string | null }).claim ?? null, reason: null };
 }
 
-const quoted = (list: unknown[]) => (list.length ? list.map((value) => JSON.stringify(value)).join(' | ') : '(none)');
+const quoted = (list: unknown[]) => (list.length ? list.map((value) => quote.json(value)).join(' | ') : '(none)');
 
 // Tokens are matched exactly, so values that differ only in case would be a Claim nobody can route (V1).
 export function assertClaimEnum(schema: referencePaths.SchemaNode | undefined, tokens: unknown) {

@@ -3,6 +3,7 @@
 // an integer fact may carry `min` and `max` (J15).
 
 import type * as report from './validate/report.ts';
+import * as quote from './quote.ts';
 
 // A node of a schema-shaped scope: a Structured Response schema's node, or one of gg's own facts.
 export interface SchemaNode {
@@ -130,13 +131,13 @@ export function resolve(scope: SchemaNode, path: unknown, what = 'defined', { re
   if (walked.list !== undefined) {
     const { list } = walked;
     const error =
-      `${JSON.stringify(path)}: ${JSON.stringify(list)} is a list, ` +
+      `${quote.json(path)}: ${JSON.stringify(list)} is a list, ` +
       'so a path reads only its length or an item by index';
     return { error, finding: { code: 'reference-into-list', message: error, params: { path, list } }, list };
   }
   if (walked.missing !== undefined) {
     const { missing } = walked;
-    const error = `${missing === path ? '' : `${JSON.stringify(path)}: `}${JSON.stringify(missing)} is not ${what}`;
+    const error = `${missing === path ? '' : `${quote.json(path)}: `}${JSON.stringify(missing)} is not ${what}`;
     return { error, finding: { code: 'undefined-reference', message: error, params: { path, missing } } };
   }
   return { type: kindOf(walked.node), node: walked.node };

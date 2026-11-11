@@ -166,15 +166,15 @@ producers, `new Map(...)` is assignable to it, and the compiler then refuses a `
 record's Maps stay `Map`: the interpreter writes them.
 
 The JSON boundary stays where it is and stays explicit: `model.fromJson` and `model.toJson` for the Flow;
-`saveRecord`'s replacer and `parseRow` for the record, each reading through `Object.entries` and writing through
-`Object.fromEntries`, which only ever see own keys. The hazard to design against is silence: a Map that reaches
-`JSON.stringify` or an object spread anywhere else becomes `{}` with no error. So no Map should sit in a shape that any
-module other than its owner stringifies (events, comments, public text); the record's replacer is a guard, not a
-licence. A test per owner should hold this: a record with `visits` and `traversals` keyed `__proto__` and `toString`
-saved and read back equal (`test/unit/record.test.ts`), and the model round-trip to the same Config Hash
-(`test/unit/model.test.ts`, present). A grep in `test/unit/layout.test.ts` or an ESLint restriction on
-`JSON.stringify` outside `record.ts`, `model.ts`, `config.ts` and `events.ts` would make the boundary mechanical; the
-open question below asks whether an existing rule does it.
+`record.toJson` and `record.fromJson` for the record (`lib/record-json.ts`, #330, which replaced `saveRecord`'s
+replacer), each reading through `Object.entries` and writing through `Object.fromEntries`, which only ever see own keys.
+The hazard to design against is silence: a Map that reaches `JSON.stringify` or an object spread anywhere else becomes
+`{}` with no error. So no Map should sit in a shape that any module other than its owner stringifies (events, comments,
+public text); the record's conversion is a guard, not a licence. A test per owner should hold this: a record with
+`visits` and `traversals` keyed `__proto__` and `toString` saved and read back equal (`test/unit/record.test.ts`), and
+the model round-trip to the same Config Hash (`test/unit/model.test.ts`, present). A grep in `test/unit/layout.test.ts`
+or an ESLint restriction on `JSON.stringify` outside `record.ts`, `model.ts`, `config.ts` and `events.ts` would make the
+boundary mechanical; the open question below asks whether an existing rule does it.
 
 Tests should compare Maps with `deepStrictEqual` against `new Map([...])`, never against an object literal (the
 prototype differs, so it always fails) and never after converting to an object (which hides an integer-key reorder).
@@ -205,3 +205,13 @@ a `Map` subclass (`structuredClone` deserialises it as a plain Map and `deepStri
    owns its concept" argues for the latter.
 4. `ReadonlyMap` on the Resolved Flow is a type-only change; whether the churn in `test/support/named-flow.ts` (which
    rebuilds Maps) is worth it depends on how often a test mutates a Flow after `fromJson`.
+5. Should `gg/no-map-to-json` also fail a value typed `unknown`, `any` or `object`, which can hide a Map from any rule
+   that reads types? Decided 2026-11-11 (owner, #330, option D). The rule's `unknown` option fails such an argument in
+   `lib/`, `bin/` and `scripts/`, and also a union with such a member.
+   - Measured on ada8948: **29** such arguments outside `test/` (28 in `lib/`, 1 in `scripts/`) and 8 in `test/`.
+   - 26 quoted a configuration or response value in a message. They now go through `lib/quote.ts`, the one file
+     exempt.
+   - The 3 that carry gg data got types: the Pinned Configuration, `hashOf`'s sorted value and the coverage baseline.
+   - `test/` keeps the Map check only.
+   - The rule reads the value passed, not an `unknown` held inside a typed value. With that nested check, the count
+     was 114, 79 of them in `test/`. The Execution Record's 19 such fields are #342's.

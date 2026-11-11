@@ -2,6 +2,7 @@
 // or a repeat Check names.
 
 import * as procedures from '../procedures.ts';
+import * as quote from '../quote.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as report from './report.ts';
 
@@ -27,12 +28,12 @@ export function itemField(items: referencePaths.SchemaNode | undefined, field: s
 function valueProblem(field: unknown, type: referencePaths.FieldType | null, value: unknown): report.Finding | null {
   if (type === null) return null;
   if (type.kind === 'boolean') {
-    const message = `${JSON.stringify(value)} is not true or false`;
+    const message = `${quote.json(value)} is not true or false`;
     return typeof value === 'boolean' ? null : { code: 'condition-value-mismatch', message, params: { field, value } };
   }
   if (type.kind === 'enum') {
     const { values } = type as { values: string[] };
-    const message = `${JSON.stringify(value)} is not one of ${values.join(' | ')}`;
+    const message = `${quote.json(value)} is not one of ${values.join(' | ')}`;
     return values.includes(value as string)
       ? null
       : { code: 'condition-value-mismatch', message, params: { field, value, values } };
@@ -48,7 +49,7 @@ function fieldProblems(condition: Value, schema: referencePaths.SchemaNode): rep
   const resolved = typedPath(schema, condition.field);
   if (resolved.error) return [resolved.finding];
   const { type } = resolved;
-  const field = JSON.stringify(condition.field);
+  const field = quote.json(condition.field);
   const named = { field: condition.field };
   if (type?.kind === 'boolean' && typeof condition.is !== 'boolean') {
     const message = `${field} is a boolean, so is must be true or false`;
@@ -69,7 +70,7 @@ function listProblems(condition: Value, form: string, schema: referencePaths.Sch
   if (resolved.error) return [resolved.finding];
   const { type, node } = resolved;
   if (type && !isObjectList(type)) {
-    const message = `${form} must read a list of objects; ${JSON.stringify(list)} is ${JSON.stringify(type)}`;
+    const message = `${form} must read a list of objects; ${quote.json(list)} is ${JSON.stringify(type)}`;
     return [{ code: 'not-a-list-of-objects', message, params: { path: list, type } }];
   }
   const problems: report.Finding[] = [];
