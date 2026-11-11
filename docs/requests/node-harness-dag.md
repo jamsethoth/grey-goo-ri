@@ -413,7 +413,9 @@ claim and every Check the claimed token requires passing on the current tree; an
 publishing runs only on the tree its Vertex's required Checks passed. Which Outcome a Visit takes among the
 legitimate ones is the Procedure's rule tables, first match, analysed at admission for unreachable rows and overlaps
 over the inputs of every Claim token that reaches each table (ADR 0014). Configurable per agent through `resolutionPolicy`, with a shipped default: per-class retry budgets. Every
-signal received and the rule that decided (`{ table, row }`) are recorded on the action event.
+signal received and the rule that decided (`{ table, row }`) are recorded on the action event. A Visit's own Outcome,
+from its `passed` table, `otherwise` or its Claim token, or from the Action that stopped it, is recorded with the rule
+that decided it and the Edge it took on the Visit's `visit_end` lifecycle event (3.7).
 
 ### 3.5 Execution record, approvals and work management
 
@@ -593,8 +595,8 @@ branches and PRs finish under ff; cutover (section 6) archives ff after a real-h
 ### 3.7 Tracing, metrics and export
 
 Events come in two kinds. Action events record one attempt and belong to their execution. Lifecycle events record a
-run or an execution starting or ending (run start and end, ticket start and end) and belong to the run or the
-execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
+run, an execution or a visit starting or ending (run start and end, ticket start and end, visit end) and belong to the
+run or the execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
 events. Action events, schema 2, appended as rows of the state database carry: flow name, config hash,
 launch profile, ticket, run, vertex, visit, procedure, action, recovery, attempt, duration, outcome, direction, signals
 received, the resolution rule applied, and the failure class and error, null unless the action failed. Agent actions
@@ -615,7 +617,12 @@ Fixtures cover a resumed Claude session and a resumed Codex thread.
 
 Stats: every action event carries the vertex id, visit, action id and recovery; lifecycle events carry only the run or execution they describe; aggregation defaults to procedure and action, with vertex,
 harness and model as further dimensions, so two reviewers on the same procedure stay distinguishable and renaming
-a vertex does not hide escalations. `rounds`, `red_failed` and `blocked` remain derivable. The commit trailer text
+a vertex does not hide escalations. `rounds`, `red_failed` and `blocked` remain derivable. A visit whose outcome
+takes its edge records `visit_end` in the same transaction as the next cursor: its outcome and rule, where the route
+went (`next`), the bounded edge's key and new count (null for an unbounded route or a spent bound), and the bounds it
+passed spent (`spent`, each `{ edge }` or `{ vertex }`). Stats derives from it the traversals per bounded edge by the
+outcome that took it (`rounds` by outcome), each spent bound and where it routed, and, with the agent action events,
+the cost per vertex. The commit trailer text
 `Gg-Vertex:` (feature-flow's `Feature-Flow-Stage:` under a gg name, grey-goo-ri issue #198) carries vertex and harness.
 
 Config hash = resolved flow + persona hashes + harness settings + launch profile + declared commands. It covers the

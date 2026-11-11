@@ -222,6 +222,7 @@ test('every Check runs again after recovery', async (t) => {
     'commit/1',
     'push/1',
     'pr/1',
+    'green ok -> publish',
   ]);
   assert.deepEqual(lintRuns, [], 'lint passed in the first pass and still ran again');
   assert.doesNotMatch(fixture.harness.calls[2]!.brief!, /Check lint/, 'a passing Check has no section');
@@ -242,7 +243,7 @@ test('a stop token after recovery stops', async (t) => {
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(
     greenTrace(fixture),
-    ['green/0', 'test/0', 'green/1', 'test/1'],
+    ['green/0', 'test/0', 'green/1', 'test/1', 'green blocked -> needs-human'],
     "the stop waits for its pass's Checks",
   );
   assert.match(fixture.gh.comments[0]!.body, /### gg: blocked/);
@@ -279,10 +280,13 @@ test('named tests missing from the output are recovered once, then fail', async 
   const { outcome } = await interpreter.runExecution(fixture.options);
 
   assert.equal(outcome, 'needs-human');
-  assert.deepEqual(
-    tddTrace(fixture).map((event) => `${event.action}/${event.recovery}`),
-    ['red/0', 'red-check/0', 'red/1', 'red-check/1'],
-  );
+  assert.deepEqual(tddTrace(fixture).map(golden.line((event) => `${event.action}/${event.recovery}`)), [
+    'red/0',
+    'red-check/0',
+    'red/1',
+    'red-check/1',
+    'red failed -> needs-human',
+  ]);
   const recovery = fixture.harness.calls[1]!;
   assert.equal(recovery.resume, 'fake-session-1', "the recovery pass resumes red's Session");
   assert.match(recovery.brief!, /as the runner prints them/);
@@ -301,10 +305,13 @@ test('a red that changed no test file is recovered once, then fails', async (t) 
 
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(fixture.shells, [], 'the test command never ran');
-  assert.deepEqual(
-    tddTrace(fixture).map((event) => `${event.action}/${event.recovery}`),
-    ['red/0', 'red-check/0', 'red/1', 'red-check/1'],
-  );
+  assert.deepEqual(tddTrace(fixture).map(golden.line((event) => `${event.action}/${event.recovery}`)), [
+    'red/0',
+    'red-check/0',
+    'red/1',
+    'red-check/1',
+    'red failed -> needs-human',
+  ]);
   assert.match(fixture.harness.calls[1]!.brief!, /no-test-needed/, 'the section offers the no-test-needed stop');
   assert.deepEqual(
     [fixture.executionRecord.terminalReason!.outcome, fixture.executionRecord.terminalReason!.rule],
@@ -353,7 +360,7 @@ test('a command Check that times out is not recovered', async (t) => {
 
   assert.equal(outcome, 'needs-human');
   assert.deepEqual(runs, [], 'the test command ran once in red and once in green');
-  assert.deepEqual(greenTrace(fixture), ['green/0', 'test/0']);
+  assert.deepEqual(greenTrace(fixture), ['green/0', 'test/0', 'green failed -> needs-human']);
   assert.deepEqual(fixture.executionRecord.terminalReason!.rule, { table: 'failed', row: null });
 });
 
