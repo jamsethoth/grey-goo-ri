@@ -370,7 +370,8 @@ test("this repository AGENTS.md Commands line matches the repository's gg.json",
 });
 
 test('approvers change the Config Hash, and none leaves it as it was', () => {
-  const pinned = { flow: {}, files: {}, harnesses: {}, commands: {}, testPaths: [] };
+  const flow = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: null, vertices: {} } };
+  const pinned = { flow, files: {}, harnesses: {}, commands: {}, testPaths: [] };
   const hash = config.configHash(pinned);
   assert.notEqual(config.configHash({ ...pinned, approvers: ['some-login'] }), hash);
   assert.equal(config.configHash({ ...pinned, approvers: undefined }), hash);

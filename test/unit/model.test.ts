@@ -7,7 +7,7 @@ import * as namedFlow from '../support/named-flow.ts';
 
 // The Config Hash of a Pinned Configuration holding `flow` and nothing else.
 const pinnedHash = (flow: unknown) =>
-  config.configHash({ flow, files: {}, harnesses: {}, commands: {}, testPaths: [] });
+  config.configHash({ flow: flow as model.ResolvedFlowJson, files: {}, harnesses: {}, commands: {}, testPaths: [] });
 
 test("the model's JSON round-trips to the same Config Hash", () => {
   const example = exampleLayer.check(exampleLayer.config()).flows.default;
