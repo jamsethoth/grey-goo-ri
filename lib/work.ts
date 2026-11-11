@@ -3,6 +3,7 @@ import type * as github from './github.ts';
 import * as labels from './labels.ts';
 import type * as locks from './locks.ts';
 import * as record from './record.ts';
+import * as stateDatabase from './state-database.ts';
 
 // What gg work abandon reaches: the repository's State Database and ticket lock, and GitHub for its State Label.
 export interface AbandonOptions {
@@ -20,6 +21,8 @@ export interface AbandonOptions {
 // an in-progress one with no record behind it reads as stuck, so every State Label goes first, and the row only once
 // they have.
 export async function abandon({ ticket, commonDir, cwd, labelPrefix, gh, locks }: AbandonOptions): Promise<string> {
+  // Before the lock, which would leave its file in a repository gg init never set up (#150).
+  stateDatabase.open(commonDir);
   const lock = await locks.tryAcquire(commonDir, `ticket-${ticket}`);
   if (!lock)
     throw new Error(

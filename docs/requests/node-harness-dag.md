@@ -680,7 +680,9 @@ over by name when they land: `planApproval`, `stuckAfterHours`, `allowNetwork` a
 `apiPrices` and `contextBudget.byModel` in the user's `gg.json`. A `gg.json` that is not JSON, or has a duplicate key,
 is a load error. An eval variant is a named Flow in either source, picked with `--flow` (#122). The Config Hash
 fingerprints a Flow's content, not its source: the Pinned Configuration takes only the files the selected Flow uses.
-Without a Flow in either source, preflight and `gg doctor` fail naming `gg init` (P1a).
+Without a Flow in either source, preflight and `gg doctor` fail naming `gg init` (P1a). `gg init` also creates the
+State Database, and nothing else does (ADR 0023): preflight and `gg doctor` fail without one (`state-database-missing`),
+naming `gg init`, and `gg init` keeps an existing one, or fails, leaving it untouched, on one no command can open.
 
 ## 4. Behaviours to port, and deliberate changes
 

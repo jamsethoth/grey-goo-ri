@@ -45,7 +45,7 @@ function withoutCommonDir<Saved extends { commonDir: string }>(savedRecord: Save
 }
 
 test('a fresh Execution Record declares every field it can hold', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   assert.match(executionRecord.execution, /^8\.[0-9a-f]{6}$/);
   assert.notEqual(knownRecord(commonDir).execution, executionRecord.execution);
@@ -106,7 +106,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
 // A record read outside its State Database still says which repository it belongs to and where its Flow came from: a
 // user Flow's name carries its source (ADR 0022).
 test("a created record carries its repository and its Flow's source, and keeps both through a save", async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = record.createExecutionRecord({
     commonDir,
     repository: 'acme/app',
@@ -176,7 +176,7 @@ test('toJson and fromJson round-trip every Map of the record, keyed __proto__ an
 });
 
 test('saving a record never adds a field createExecutionRecord did not declare', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   Object.assign(executionRecord, { admission: { kind: 'hold' } });
   assert.throws(
@@ -196,7 +196,7 @@ test('saving a record never adds a field createExecutionRecord did not declare',
 });
 
 test('saving a record never drops a field createExecutionRecord declared', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   delete (executionRecord as Partial<record.ExecutionRecord>).admissionStop;
   assert.throws(() => record.save(executionRecord), /\badmissionStop\b/);
@@ -204,7 +204,7 @@ test('saving a record never drops a field createExecutionRecord declared', async
 });
 
 test('a fresh Epic Record declares every field it can hold', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
   const expected = { schemaVersion: 1, epic: 1, planDecision: null, approvalRequest: null };
   assert.deepEqual(withoutCommonDir(epicRecord), expected);
@@ -212,7 +212,7 @@ test('a fresh Epic Record declares every field it can hold', async (t) => {
 });
 
 test('a write-ahead entry carries every field, null where its step has none', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   record.evidence(executionRecord, 'm1', { sha: 's1' });
@@ -240,7 +240,7 @@ test('a write-ahead entry carries every field, null where its step has none', as
 });
 
 test('save writes a records row and never a records directory', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   const epic = record.createEpicRecord({ commonDir, epic: 1 });
   record.save(executionRecord);
@@ -269,7 +269,7 @@ test('save writes a records row and never a records directory', async (t) => {
 });
 
 test('load returns null for a missing row and the record for a saved one', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   record.save(executionRecord);
   assert.equal(record.load(commonDir, 'ticket', 9), null);
@@ -291,7 +291,7 @@ test('load returns null for a missing row and the record for a saved one', async
 
 // An empty Map and {} write the same JSON, so only a record with entries shows a row built without its Maps (#327).
 test('a record with visits entries survives the golden-row comparison and a raw-row write', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   executionRecord.visits.set('green', 2);
   executionRecord.traversals.set('green->review:pass', 1);
@@ -307,7 +307,7 @@ test('a record with visits entries survives the golden-row comparison and a raw-
 });
 
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   record.evidence(executionRecord, 'm1', { sha: 'deadbeef' });
@@ -335,7 +335,7 @@ test('the write-ahead log records intent, evidence and completion per marker', a
 });
 
 test('a record transition and its event commit together', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   // Every Event insert fails while `appends.failing` is set, as a disk error would.
   const appends = { failing: true };
   const database = record.createStateDatabase({
@@ -377,7 +377,7 @@ test('a record transition and its event commit together', async (t) => {
 });
 
 test('openIntents lists intents without completion oldest first', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
   record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   assert.deepEqual(
@@ -398,7 +398,7 @@ test('openIntents lists intents without completion oldest first', async (t) => {
 });
 
 test('loadAll lists every ticket record', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   assert.deepEqual(record.loadAll(commonDir, 'ticket'), []);
   record.save(knownRecord(commonDir, 8));
   record.save(knownRecord(commonDir, 12));
@@ -411,7 +411,7 @@ test('loadAll lists every ticket record', async (t) => {
 });
 
 test('loadAll reports a corrupt row and an unknown schemaVersion and returns the rest', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   record.save(knownRecord(commonDir, 8));
   const unknown = JSON.stringify({ schemaVersion: 99, ticket: 10 });
   withDb(commonDir, (db) => {
@@ -451,7 +451,7 @@ test('loadAll reports a corrupt row and an unknown schemaVersion and returns the
 // The counts a record keeps as Maps are read back from objects (#174): a row holding anything else is corrupt, and one
 // such row leaves every other row readable.
 test('a record whose visits, traversals or Check runs are not objects is corrupt; the rest load', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   record.save(knownRecord(commonDir, 8));
   const saved = JSON.parse(
     withDb(commonDir, (db) => db.prepare('SELECT json FROM records WHERE n = 8').get()!.json as string),
@@ -484,7 +484,7 @@ test('a record whose visits, traversals or Check runs are not objects is corrupt
 });
 
 test('a record written before Action ids is corrupt, not misread', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   // Its cursor names a phase and ordinal, which a resume would read as an Action id and a Recovery Number.
   record.save(knownRecord(commonDir, 8));
   const old = {
@@ -503,13 +503,13 @@ test('a record written before Action ids is corrupt, not misread', async (t) => 
 // SQLite's busy handler is not fair, so on a loaded Windows runner another process's burst of writes held a save off
 // past the old 5 s busy_timeout and it failed with `database is locked` (grey-goo-ri issue #136).
 test('the State Database waits up to 60 s for another writer', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   assert.deepEqual({ ...stateDatabase.open(commonDir).prepare('PRAGMA busy_timeout').get() }, { timeout: 60_000 });
 });
 
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('savePinnedConfiguration stores a pinned configuration once per hash and loadPinnedConfiguration reads it back', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
   await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', pinned);
   const firstSeen = () =>
@@ -550,7 +550,7 @@ test('an unknown database version is refused by name', async (t) => {
 // Another gg process writing events must not starve a new connection: on a loaded Windows runner two appenders saw
 // `database is locked` from stateDatabase.open's write transaction once its busy_timeout ran out.
 test('opening an existing State Database does not wait for a writer', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   stateDatabase.open(commonDir);
   await stateDatabase.close(commonDir);
   const writer = new DatabaseSync(dbPath(commonDir));
@@ -570,7 +570,7 @@ test('opening an existing State Database does not wait for a writer', async (t) 
 });
 
 test('stateDatabase.open shares one connection between spellings of the same directory', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const db = stateDatabase.open(commonDir);
   // String concatenation, not join: join would normalise the segments before open sees them.
   assert.equal(stateDatabase.open(`${commonDir}/./gg/../`), db, 'a relative-segment spelling hits the cache');
@@ -582,13 +582,15 @@ test('stateDatabase.open shares one connection between spellings of the same dir
 test('close releases the database so the directory can be removed', async (t) => {
   const commonDir = await mkdtemp(join(tmpdir(), 'gg-record-'));
   t.after(() => rm(commonDir, { recursive: true, force: true }));
+  stateDatabase.create(commonDir);
   record.save(knownRecord(commonDir));
   await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', {});
   assert.ok(existsSync(dbPath(commonDir)), 'gg/gg.db exists');
   await stateDatabase.close(commonDir);
   rmSync(commonDir, { recursive: true });
   assert.ok(!existsSync(commonDir));
-  // A later call opens a fresh connection rather than reusing the closed one.
+  // Once gg init has made the database again, a later call opens a fresh connection rather than reusing the closed one.
+  stateDatabase.create(commonDir);
   record.save(knownRecord(commonDir));
   assert.equal(record.load(commonDir, 'ticket', 8)?.ticket, 8);
   await stateDatabase.close(commonDir);

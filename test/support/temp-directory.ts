@@ -18,3 +18,10 @@ export function tempDirectory(t: TestContext, prefix: string, commonDirOf = (dir
   });
   return directory;
 }
+
+// A temp directory holding a State Database, as gg init leaves a repository's common dir.
+export function stateDatabaseDirectory(t: TestContext, prefix: string): string {
+  const directory = tempDirectory(t, prefix);
+  stateDatabase.create(directory);
+  return directory;
+}

@@ -3,6 +3,7 @@ import type { TestContext } from 'node:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as record from '../../lib/record.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as gitShell from './git-shell.ts';
 import * as tempDirectory from './temp-directory.ts';
 
@@ -49,6 +50,7 @@ export async function twoWorktrees(t: TestContext) {
   sh(own, 'commit', '-q', '-m', 'init');
   sh(own, 'worktree', 'add', '-q', '-b', 'ticket/2', other);
   const commonDir = join(own, '.git');
+  stateDatabase.create(commonDir);
   const ownRecord = worktreeRecord(commonDir, 1, own);
   record.save(ownRecord);
   record.save(worktreeRecord(commonDir, 2, other));

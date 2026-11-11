@@ -66,7 +66,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/model.ts` | the Resolved Flow in memory: its Procedures, Vertices and Claim tokens as Maps keyed by configured name, read from and written back to the validator's JSON |
 | `lib/reference-paths.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.ts` | `gg run`: the Run's Tickets mapped concurrently, run directory, Lifecycle Events, exit codes |
-| `lib/run-flows.ts` | the Flows of both sources, each checked against the repository contract and named `user:<name>` when it is the user's; the Flows a Run admits with their Pinned Configurations, the one `--flow` names, preflight over every Flow's Harnesses, the Flow an Execution's record pins, and the error for one no longer declared |
+| `lib/run-flows.ts` | the Flows of both sources, each checked against the repository contract and named `user:<name>` when it is the user's; the Flows a Run admits with their Pinned Configurations, the one `--flow` names, preflight over every Flow's Harnesses and the State Database, the Flow an Execution's record pins, and the error for one no longer declared |
 | `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution |
 | `lib/ticket-worktree.ts` | the worktree admission runs a Ticket in: the branch checks that hold it, and the other ticket worktrees |
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |
@@ -98,7 +98,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
 | `lib/record-json.ts` | a record's row: the Execution Record's JSON type (`ExecutionRecordJson`) and its only Map conversion (`toJson`, `fromJson`), the parse that tells a corrupt row (`RecordCorruptError`); `lib/record.ts` re-exports what callers use |
 | `lib/json-value.ts` | the JSON gg saves: its type (`JsonValue`), the typed gate (`JsonChecked`) and `text`, the one function every save path serializes through: it writes a copy checked at run time (`checked`), which refuses what JSON cannot hold, by its path |
-| `lib/state-database.ts` | the State Database file: one connection per repository, WAL and schema, Pinned Configurations and reusable Check results |
+| `lib/state-database.ts` | the State Database file: its creation, which only `gg init` makes (ADR 0023), one connection per repository that refuses a missing or unknown database, Pinned Configurations and reusable Check results |
 | `lib/write-ahead.ts` | the write-ahead log's entries, what an intent and its evidence hold (`Payload`, `Evidence`), and what reads them: open intents, evidence, the last commit |
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union, an Action's outputs, a History item) |
 | `lib/marker.ts` | Action Marker format and parse |
@@ -127,7 +127,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/work.ts` | `gg work abandon`: a Ticket's Execution Record forgotten, its worktree and branch kept; the rest of `gg work` and the Registry are to come |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
-| `lib/doctor.ts` | `gg doctor`: both sources' Resolved Flows, each with its source, their warnings and errors per Vertex, the labels they can request that the repository lacks, and the Execution Records whose Flow is gone; `gg init`: the example, `test/fixtures/example/`, written into a repository, and the user's `gg.json` with the machine settings |
+| `lib/doctor.ts` | `gg doctor`: both sources' Resolved Flows, each with its source, their warnings and errors per Vertex, the labels they can request that the repository lacks, and the Execution Records whose Flow is gone or a missing State Database; `gg init`: the example, `test/fixtures/example/`, written into a repository, the user's `gg.json` with the machine settings, and the State Database |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |

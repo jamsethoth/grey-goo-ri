@@ -16,6 +16,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -256,7 +257,10 @@ const REPO_COMMANDS: [
 for (const [name, args, acted] of REPO_COMMANDS) {
   test(`gg ${name} --repo <path> acts on that repository from outside it`, (t) => {
     const { repo, ggOutside } = tempRepo(t, MACHINE_SETTINGS);
-    if (name !== 'init') writeExampleLayer(join(repo, '.agents', 'gg'));
+    if (name !== 'init') {
+      writeExampleLayer(join(repo, '.agents', 'gg'));
+      stateDatabase.create(join(repo, '.git'));
+    }
     const without = ggOutside(...args);
     assert.notEqual(without.status, 0, 'outside any repository, gg has none to act on');
     acted(ggOutside(...args, '--repo', repo), repo);
@@ -297,6 +301,18 @@ test('gg init writes the example at the repository root, and a second gg init ke
   assert.match(second.stdout, /^gg init kept the existing configuration and wrote none of the example: /);
 });
 
+// gg.db lives in the git common dir and is not committed, so gg init runs once per clone (#150).
+test('gg init creates the State Database in the git common dir, and a second gg init keeps it', (t) => {
+  const { repo, ggIn } = tempRepo(t);
+  const database = join(repo, '.git', 'gg', 'gg.db');
+  const first = ggIn('init');
+  assert.equal(first.status, 0, first.stderr);
+  assert.ok(first.stdout.includes(`\ngg init created the State Database at ${database}.\n`), first.stdout);
+  const second = ggIn('init');
+  assert.equal(second.status, 0, second.stderr);
+  assert.ok(second.stdout.includes(`\ngg init kept the State Database at ${database}.\n`), second.stdout);
+});
+
 // The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command.
 test('gg init --harness claude then gg doctor passes in a temp repository with a temp GG_HOME', (t) => {
   const { repo, userDirectory, ggIn } = tempRepo(t);
@@ -316,6 +332,7 @@ test('gg init --harness claude then gg doctor passes in a temp repository with a
 test("gg doctor reads the repository's configuration and its schemas and prints the Resolved Flow", (t) => {
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleLayer(join(repo, '.agents', 'gg'));
+  stateDatabase.create(join(repo, '.git'));
   const result = ggIn('doctor');
   assert.ok(
     result.stdout.includes('\nvertex reviewer\n  procedure: review\n  agent: reviewer (harness claude)\n'),

@@ -24,7 +24,7 @@ function rows(commonDir: string) {
 }
 
 test('two processes append to the same table without loss', async (t) => {
-  const directory = tempDirectory.tempDirectory(t, 'gg-events-');
+  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const exits = await Promise.all(
     ['a', 'b'].map((run) =>
       childExit

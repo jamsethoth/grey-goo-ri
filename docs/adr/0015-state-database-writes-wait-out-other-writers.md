@@ -33,6 +33,7 @@ so the wait ends when the other writer's burst does, and only a lock truly held 
   leaves it: a failed call result rolls back with its Event, so files the agent wrote look like a stranger's and the
   Ticket holds at `needs-human` with them in place, until grey-goo-ri issue #68 rescues an Interrupted Attempt. A
   lock held that long means a hung process, which this surfaces instead of making every other gg process wait.
-- The open lock (`gg/locks/open.db`) keeps its 5 s timeout, and the locks keep `busy_timeout = 0` (ADR 0008).
+- The open lock (`gg/locks/open.db`) keeps its 5 s timeout, and the locks keep `busy_timeout = 0` (ADR 0008). ADR
+  0023 removed the open lock: only `gg init` creates `gg.db`, with no lock.
 - `test/contract/sqlite/record.test.ts` has another process hold the write lock for 8 s and checks that a save waits
   it out for longer than 5 s.

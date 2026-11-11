@@ -310,7 +310,7 @@ const outputOf = <Value>(value: Value) => ({ vertex: 'implement', visit: 1, acti
 const loose: unknown = 'parsed';
 
 test('the Execution Record row refuses a Map, a Set and an unknown', (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-json-value-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-json-value-');
   const withMap = record.createExecutionRecord(startOf(commonDir));
   // @ts-expect-error an Action's output holds no Map
   withMap.outputs.push(outputOf({ counts: new Map([['a', 1]]) }));
@@ -328,7 +328,7 @@ test('the Execution Record row refuses a Map, a Set and an unknown', (t) => {
 });
 
 test('the Epic Record row refuses a Map, a Set and an unknown', (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-json-value-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-json-value-');
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
   // @ts-expect-error a plan Decision holds no Map
   epicRecord.planDecision = { counts: new Map([['a', 1]]) };
@@ -344,7 +344,7 @@ test('the Epic Record row refuses a Map, a Set and an unknown', (t) => {
 });
 
 test('the Pinned Configuration refuses a Map, a Set and an unknown', (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-json-value-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-json-value-');
   const withMap = { flow: { procedures: new Map([['a', 1]]) } };
   const withSet = { flow: { outcomes: [new Set(['a'])] } };
   const withUnknown = { flow: loose };
@@ -360,7 +360,7 @@ test('the Pinned Configuration refuses a Map, a Set and an unknown', (t) => {
 });
 
 test('the Event append refuses a Map, a Set and an unknown', (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-json-value-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-json-value-');
   const log = events.eventLog(commonDir);
   const withMap = { ticket: 8, error: 'no label', change: { add: new Map([['a', 1]]), remove: [] } };
   const withSet = { ticket: 8, error: 'no label', change: { add: [], remove: new Set(['a']) } };

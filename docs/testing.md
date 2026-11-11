@@ -20,7 +20,7 @@ entry point since #199 (ADR 0019).
    waits on the event it
    asserts on (a PID file written, a lock taken, a run settled), never on a fixed duration; a wait may be bounded
    only by the case's own timeout (#143). Time-dependent logic takes the injected clock (`{ now, sleep }`), not the
-   wall clock. Four cases measure real time, recorded as exceptions because their subject is real time across
+   wall clock. Three cases measure real time, recorded as exceptions because their subject is real time across
    processes, which no injected clock reaches. None compares one process's clock with another's: two processes'
    `Date.now()` can disagree by a millisecond on Windows, so an order between processes is shown causally, by what one
    saw of the other's writes (#260):
@@ -32,9 +32,6 @@ entry point since #199 (ADR 0019).
    - `test/contract/exec/exec.timeout.test.ts`, `runShell timeout kills an orphan its watcher listed, however slowly ps
      answers`: its `ps` answers after 2 s and then 5 s, past the 1.5 s listing budget and the 2 s start-time
      tolerance `runShell` once had (POSIX only).
-   - `test/contract/sqlite/record.test.ts`, `openers of a new database queue while the open lock is held and all
-     succeed once it is released`: it holds the lock a second longer so an opener that got past it shows itself (#188);
-     each opener then reports whether the marker the parent writes just before the release was there when it switched.
 2. **Test behaviour through the public interface.** Call a module's exports (the namespace import of AGENTS.md
    Tests), not its private helpers or internal shapes. A refactor that keeps behaviour must not break a test.
 3. **Assert state, not interactions.** Check the result (the record, the events, the worktree, the labels), not

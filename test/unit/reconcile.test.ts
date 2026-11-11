@@ -54,7 +54,7 @@ test('a record the State Database cannot open fails with its error, not as a cor
 });
 
 test('a corrupt row loads as corrupt, not as an error', async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-reconcile-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-reconcile-');
   stateDatabase.open(commonDir).prepare("INSERT INTO records (kind, n, json) VALUES ('ticket', 1, '{')").run();
   const loaded = reconcile.loadExecutionRecord(commonDir, 1);
   assert.equal(loaded.executionRecord, null);

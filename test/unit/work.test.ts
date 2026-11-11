@@ -16,7 +16,7 @@ const IN_PROGRESS = 'gg:state:in-progress';
 // A repository's common dir holding Ticket 7's Execution Record, one Event and its worktree, with the Ticket labelled
 // in progress on the fake gh.
 function abandoning(t: TestContext) {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-work-');
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-work-');
   const worktree = join(commonDir, 'wt', 'ticket-7');
   mkdirSync(worktree, { recursive: true });
   record.save(
@@ -100,4 +100,17 @@ test('gg work abandon keeps the record when its in-progress label cannot be remo
   await assert.rejects(work.abandon(options), /label update .* failed: .*; Execution Record ticket-7 is kept$/);
   assert.ok(record.load(commonDir, 'ticket', TICKET), 'the record is kept');
   assert.ok(fake.labels.has(IN_PROGRESS), 'the label is kept');
+});
+
+// Only gg init creates the State Database (#150), so abandon refuses a repository without one before it takes the
+// ticket lock, which would leave a lock file behind.
+test('gg work abandon refuses a missing State Database before it takes the ticket lock', async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-work-');
+  const fake = fakeGh.fakeGh({ branch: 'ticket/7-add', ticket: TICKET });
+  const options = { ticket: TICKET, commonDir, cwd: commonDir, labelPrefix: 'gg', gh: github.createGh(fake.gh), locks };
+  await assert.rejects(work.abandon(options), {
+    message: `no State Database at ${join(commonDir, 'gg', 'gg.db')}: run gg init`,
+  });
+  assert.equal(existsSync(join(commonDir, 'gg')), false, 'no gg directory: no lock file and no database');
+  assert.deepEqual(fake.calls, [], 'no gh call');
 });
