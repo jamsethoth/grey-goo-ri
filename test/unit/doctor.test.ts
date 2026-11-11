@@ -644,3 +644,124 @@ test('gg doctor prints each declared Flow, in the order the Layer declares them'
   assert.equal(text, one.replace(flowSection, flowSection + flowSection.replace('flow default\n', 'flow light\n')));
   assert.equal(exitCode, 0);
 });
+
+// The keys a summary line shows a value of the wrong type at: a Vertex's access (its Agent's), a Check's kind, a
+// requires item, a Flow route's end, a table row's Outcome, condition and comparison, and the labelPrefix.
+const SHOWN_KEYS = [
+  ['agents', 'implementer', 'access'],
+  ['procedures', 'base-check', 'actions', 0, 'kind'],
+  ['procedures', 'implement', 'claimTokens', 'ok', 'requires', 0],
+  ['flows', 'default', 'ticket', 'routes', 'misscoped', 'end'],
+  ['procedures', 'review', 'passed', 0, 'outcome'],
+  ['procedures', 'review', 'passed', 1, 'when', 'check.repeat'],
+  ['procedures', 'review', 'passed', 3, 'when', 'response.count', '>'],
+  ['labelPrefix'],
+];
+type KeyPath = (string | number)[];
+
+// The example with the summary sites it lacks: a Vertex that asks a human, and a comparison in a table row. No field
+// of the example's schemas is a number, so the comparison's field is undefined, an error doctor reports beside the
+// summary.
+function summaryLayer() {
+  const layer = asking();
+  layer.procedures.review.passed.push({ when: { 'response.count': { '>': 0 } }, outcome: 'retest' });
+  return layer;
+}
+
+// Puts `value` at `path` in `layer`.
+function setValue(layer: exampleLayer.Layer, path: KeyPath, value: unknown) {
+  const parent = path.slice(0, -1).reduce((node, key) => node[key], layer);
+  parent[path.at(-1)!] = value;
+}
+
+// The summary layer with `value` at `path`.
+function withValue(path: KeyPath, value: unknown) {
+  const layer = summaryLayer();
+  setValue(layer, path, value);
+  return layer;
+}
+
+// A value that is not a string shows as JSON, where String() would print [object Object] or a blank (#305).
+for (const shown of ['{}', '[]']) {
+  test(`gg doctor shows ${shown} where a key holds it in place of a string`, async () => {
+    const layer = summaryLayer();
+    for (const path of SHOWN_KEYS) setValue(layer, path, JSON.parse(shown));
+    const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+    for (const line of [
+      `\nvertex red\n  procedure: tests-fail\n  agent: implementer (harness fake)\n  access: ${shown}\n`,
+      `\n  checks: test (${shown} test)\n`,
+      `\n  claimTokens: ok requires ${shown}, blocked stops\n`,
+      `\n  routes: misscoped -> end ${shown}, * -> end needs-human\n`,
+      `\n    1. claim = ok and check.review-pass = passed -> ${shown}\n`,
+      `\n    2. check.repeat = ${shown} -> repeat\n`,
+      `\n    4. response.count > ${shown} -> retest\n`,
+      `\n  approval labels: ${['await:approve', 'decide:approve:approved', 'decide:approve:rejected']
+        .map((label) => `${shown}:${label}`)
+        .join(', ')}\n`,
+    ])
+      assert.ok(text.includes(line), `${line}\n---\n${text}`);
+  });
+}
+
+// JSON.parse reads a number past the largest double, such as 1e999, as Infinity, which JSON would spell null.
+test('gg doctor shows a number too large for a double as Infinity, not null', async () => {
+  const layer = withValue(['flows', 'default', 'actionCap'], JSON.parse('1e999'));
+  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  assert.ok(text.includes('\n  actionCap: Infinity\n'), text);
+});
+
+test("gg doctor says a null item in an input's from is no source", async () => {
+  const layer = withValue(
+    ['flows', 'default', 'ticket', 'vertices', 'implementer-fix', 'inputs', 'previous', 'from', 0],
+    null,
+  );
+  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  assert.ok(text.includes('\n    previous <- no source | senior-red.rescue (optional)\n'), text);
+});
+
+// Every key of a Layer, an object's keys and a list's indexes.
+function keyPaths(value: unknown, path: KeyPath = []): KeyPath[] {
+  if (value === null || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, child]) => {
+    const childPath = [...path, Array.isArray(value) ? Number(key) : key];
+    return [childPath, ...keyPaths(child, childPath)];
+  });
+}
+// The summary layer's keys, not the files loaded beside it.
+const SUMMARY_KEYS = keyPaths(summaryLayer()).filter((path) => path[0] !== 'files');
+
+// A summary line that shows a value as String() does: [object Object], or a blank where a value belongs, which leaves
+// trailing or doubled whitespace, a space inside parentheses or before a separator, or a label with no prefix.
+const UNCLEAR_VALUE = /\[object Object\]|\s$|\S {2}|\( | \)| [,;:]/;
+
+// The summary lines, not the error and warning lines, that show a value unclearly with `value` at `path`.
+async function unclearLines(path: KeyPath, value: unknown) {
+  const { text } = await doctor.doctor({ config: sources(withValue(path, value)), ...DEPS });
+  return text
+    .split('\n')
+    .filter((line) => !/^(error|warning): /.test(line) && UNCLEAR_VALUE.test(line))
+    .map((line) => `${path.join('.')}: ${line}`);
+}
+
+test("the example's doctor.txt shows no value unclearly", () => {
+  const lines = exampleLayer.fixtureText('doctor.txt').replaceAll('\r\n', '\n').split('\n');
+  assert.deepEqual(
+    lines.filter((line) => !/^(error|warning): /.test(line) && UNCLEAR_VALUE.test(line)),
+    [],
+  );
+  assert.ok(SUMMARY_KEYS.length > 500, `${SUMMARY_KEYS.length} keys`);
+});
+
+// Each key of the summary layer in turn, swapped for {}, for [], and each list item for null (#305).
+for (const [name, value, paths] of [
+  ['{}', {}, SUMMARY_KEYS],
+  ['[]', [], SUMMARY_KEYS],
+  ['null', null, SUMMARY_KEYS.filter((path) => typeof path.at(-1) === 'number')],
+] as const) {
+  const keys = name === 'null' ? 'list item' : 'key';
+  test(`no summary line shows [object Object] or a blank when any ${keys} of the example holds ${name}`, async () => {
+    const unclear: string[] = [];
+    for (const path of paths) unclear.push(...(await unclearLines(path, value)));
+    assert.deepEqual(unclear, []);
+  });
+}
