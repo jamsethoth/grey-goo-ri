@@ -138,6 +138,9 @@ export interface DiffStats {
   testInsertions: number;
 }
 
+// A Bound a route passed because it was spent: a bounded Edge by its traversal key, or a Vertex by its id.
+export type SpentBound = { edge: string } | { vertex: string };
+
 interface LifecycleFields {
   run_start: { run: string };
   run_end: { run: string; tickets: { ticket: number; outcome: string }[]; failureClass: string };
@@ -153,6 +156,19 @@ interface LifecycleFields {
     interrupted: unknown;
   };
   label_failed: { ticket: number; change: unknown; error: string; run: string };
+  visit_end: {
+    run: string;
+    execution: string;
+    ticket: number;
+    vertex: string;
+    visit: number;
+    outcome: string;
+    rule: visit.RuleIdentity;
+    next: string;
+    edge: string | null;
+    count: number | null;
+    spent: SpentBound[];
+  };
 }
 const LIFECYCLE = {
   run_start: { run: 'required' },
@@ -169,6 +185,19 @@ const LIFECYCLE = {
     interrupted: 'optional',
   },
   label_failed: { ticket: 'required', change: 'required', error: 'required', run: 'optional' },
+  visit_end: {
+    run: 'optional',
+    execution: 'optional',
+    ticket: 'optional',
+    vertex: 'optional',
+    visit: 'optional',
+    outcome: 'optional',
+    rule: 'optional',
+    next: 'optional',
+    edge: 'optional',
+    count: 'optional',
+    spent: 'optional',
+  },
 } as const satisfies { [Type in keyof LifecycleFields]: Declaration<LifecycleFields[Type]> };
 
 export type LifecycleType = keyof LifecycleFields;
@@ -179,7 +208,9 @@ export type RunEndEvent = LifecycleOf<'run_end'>;
 export type TicketStartEvent = LifecycleOf<'ticket_start'>;
 export type TicketEndEvent = LifecycleOf<'ticket_end'>;
 export type LabelFailedEvent = LifecycleOf<'label_failed'>;
-export type LifecycleEvent = RunStartEvent | RunEndEvent | TicketStartEvent | TicketEndEvent | LabelFailedEvent;
+export type VisitEndEvent = LifecycleOf<'visit_end'>;
+export type LifecycleEvent =
+  RunStartEvent | RunEndEvent | TicketStartEvent | TicketEndEvent | LabelFailedEvent | VisitEndEvent;
 export type Event = ActionEvent | LifecycleEvent;
 
 type Fields = Record<string, unknown>;
