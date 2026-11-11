@@ -272,7 +272,17 @@ for (const [name, args, acted] of REPO_COMMANDS) {
     const absent = join(repo, '..', 'absent');
     const result = ggOutside(...args, '--repo', absent);
     assert.equal(result.status, 1, result.stderr);
-    assert.equal(result.stderr, `gg ${name}: --repo ${resolve(absent)}: no such directory\n`);
+    assert.equal(result.stderr, `gg ${name}: --repo ${resolve(absent)}: not a directory\n`);
+  });
+
+  // A file as the working directory fails the same way, `spawn git ENOENT`, so gg names it too.
+  test(`gg ${name} --repo at an existing file names it`, (t) => {
+    const { repo, ggOutside } = tempRepo(t, MACHINE_SETTINGS);
+    const file = join(repo, 'a-file');
+    writeFileSync(file, '');
+    const result = ggOutside(...args, '--repo', file);
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stderr, `gg ${name}: --repo ${resolve(file)}: not a directory\n`);
   });
 }
 

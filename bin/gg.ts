@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as clock from '../lib/clock.ts';
 import * as config from '../lib/config.ts';
@@ -36,10 +36,11 @@ const realDeps = (): interpreter.Deps => ({
 });
 
 // The repository a command acts on: the one --repo names, else the one holding the current directory. Node reports a
-// missing working directory as `spawn git ENOENT`, as if git were missing, so a missing one is named first.
+// working directory that is missing or a file as `spawn git ENOENT`, as if git were missing, so gg names it first.
 function repositoryPath(parsed: options.ParsedOptions) {
   const path = resolve((parsed.repo as string | undefined) ?? process.cwd());
-  if (!existsSync(path)) throw new Error(`--repo ${path}: no such directory`);
+  if (statSync(path, { throwIfNoEntry: false })?.isDirectory() !== true)
+    throw new Error(`--repo ${path}: not a directory`);
   return path;
 }
 
