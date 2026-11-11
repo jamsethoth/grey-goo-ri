@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { runInNewContext } from 'node:vm';
 import * as config from '../../lib/config.ts';
 import * as events from '../../lib/events.ts';
 import * as flow from '../../lib/flow.ts';
@@ -60,17 +61,32 @@ const CORPUS: [string, unknown][] = [
   ['a list whose iterator gives other elements', withIterator([1, 2], [9])],
   ['a list whose iterator hides a Map', withIterator([new Map()], [])],
   ['a list with a property that is not an element', Object.assign([1], { note: 'lost' })],
+  ['a list with a hidden element and a property', hiddenFirst(Object.assign([1], { note: 'lost' }))],
+  ['a match, which is a list with properties', 'ab'.match(/a/)],
   ['an object with a symbol key', { kept: 1, [Symbol('lost')]: 2 }],
   ['an object with a property that is not enumerable', Object.defineProperty({ kept: 1 }, 'job', { value: () => 1 })],
+  // Another realm's plain values have another realm's prototypes, so a load does not give them back as they were.
+  ['a plain object from another realm', runInNewContext('({ kept: 1 })')],
+  ['a list from another realm', runInNewContext('[1]')],
 ];
 
 // A list whose own iterator gives `given`, whatever its indices hold.
 function withIterator<Item>(list: Item[], given: Item[]): Item[] {
   return Object.defineProperty(list, Symbol.iterator, { value: () => given[Symbol.iterator]() });
 }
+// A list whose first element is not enumerable, so its keys do not count what JSON.stringify reads.
+function hiddenFirst<Item>(list: Item[]): Item[] {
+  return Object.defineProperty(list, '0', { enumerable: false });
+}
+// A built-in object given a plain object's prototype.
+function madePlain(value: object): object {
+  return Object.setPrototypeOf(value, Object.prototype) as object;
+}
 
 // The run-time check's one rule, held over every kind of value: a value is accepted exactly when a load gives it
-// back, and what is then written is what JSON.stringify writes of it.
+// back, and what is then written is what JSON.stringify writes of it. Two values are outside the rule, each with a
+// case of its own below: a Proxy, and -0. A built-in object given a plain prototype is outside this test's reach, not
+// the rule's: it deceives the comparison here as it would the check, so its case below names what each is refused as.
 test('checked accepts exactly the values a save reads back unchanged, and names the path to any other', () => {
   for (const [name, value] of CORPUS) {
     const held = { list: ['first', { items: [value] }] };
@@ -90,6 +106,43 @@ test('checked accepts exactly the values a save reads back unchanged, and names 
 test('checked names the value itself when the whole value is not JSON', () => {
   assert.throws(() => jsonValue.checked(new Map(), 'the row'), /^Error: the row: the value is a Map/);
   assert.throws(() => jsonValue.checked(undefined, 'the row'), /^Error: the row: the value is undefined/);
+});
+
+test('a built-in object given a plain prototype is refused as what it is inside', () => {
+  const madePlainValues: [string, object][] = [
+    ['Map', new Map([['first', 1]])],
+    ['Set', new Set([1])],
+    ['Date', new Date(0)],
+    ['NumberObject', new Number(5)],
+    ['StringObject', new String('boxed')],
+    ['RegExp', /lost/],
+    ['NativeError', new Error('lost')],
+    ['ArrayBufferView', new Uint8Array(2)],
+  ];
+  for (const [name, value] of madePlainValues) {
+    const refused = new RegExp(`^Error: the row: held is an? ${name}, which JSON cannot hold`);
+    assert.throws(() => jsonValue.checked({ held: madePlain(value) }, 'the row'), refused, name);
+  }
+});
+
+test('a Proxy is refused whatever it shows, since it may answer each question differently', () => {
+  const plainLooking = new Proxy({ kept: 1 }, {});
+  assert.throws(() => jsonValue.checked({ held: plainLooking }, 'the row'), /^Error: the row: held is a Proxy/);
+  const hiding = new Proxy(new Map([['first', 1]]), { getPrototypeOf: () => Object.prototype });
+  assert.throws(() => jsonValue.checked({ held: hiding }, 'the row'), /^Error: the row: held is a Proxy/);
+});
+
+test('-0 is saved as 0, the same number to every comparison but Object.is', () => {
+  assert.equal(jsonValue.text({ count: -0 }, 'the row'), '{"count":0}');
+});
+
+test('a toJSON every object inherits fails the save, since it would run on the copy', (t) => {
+  const prototype = Object.prototype as { toJSON?: unknown };
+  t.after(() => delete prototype.toJSON);
+  prototype.toJSON = () => 'swapped';
+  assert.throws(() => jsonValue.checked({ kept: 1 }, 'the row'), /^Error: the row: every object inherits a toJSON/);
+  delete prototype.toJSON;
+  assert.deepEqual(jsonValue.checked({ kept: 1 }, 'the row'), { kept: 1 });
 });
 
 test('what is checked is what is written: each property is read once, and no toJSON runs', () => {

@@ -1,5 +1,6 @@
 // The JSON gg saves: its type, and the one function every save path serializes through (#342). tsc refuses a value
 // whose type could hold what JSON cannot, and the same call refuses such a value at run time, naming the path to it.
+import { types } from 'node:util';
 
 // A value JSON.parse gives: what configuration, a Structured Response and a Harness's output are.
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -64,13 +65,25 @@ function lost(value: unknown): string | null {
     ? prototype === Array.prototype
     : prototype === Object.prototype || prototype === null;
   // JSON writes a Map, a Set or an Error as {}, and any other class instance as something a load does not give back.
-  return plain ? null : named((value as { constructor?: { name?: string } }).constructor?.name || 'class instance');
+  if (!plain) return named((value as { constructor?: { name?: string } }).constructor?.name || 'class instance');
+  // A prototype can be reset, so a Map may look plain; what a value is inside cannot. A Proxy is refused whatever it
+  // shows: it may answer each question differently.
+  const built = BUILT_IN.find(([, is]) => is(value));
+  return built ? named(built[0]) : null;
 }
+
+// Each kind of object the language builds with more inside than its properties, by node's own test of it and the
+// name the test gives it: Map, Set, Date, Proxy, BoxedPrimitive and the rest. None is true of a plain object or list.
+const BUILT_IN = Object.entries(types)
+  .filter((entry): entry is [string, (value: unknown) => boolean] => entry[0].startsWith('is'))
+  .map(([name, is]): [string, (value: unknown) => boolean] => [name.slice('is'.length), is]);
+
+const isIndex = (key: string, length: number): boolean => /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < length;
 
 // A key JSON leaves out without a word: a symbol key, and a list's property that is not one of its elements.
 const leftOut = (value: object): boolean =>
   Object.getOwnPropertySymbols(value).some((key) => Object.prototype.propertyIsEnumerable.call(value, key)) ||
-  (Array.isArray(value) && Object.keys(value).length > value.length);
+  (Array.isArray(value) && Object.keys(value).some((key) => !isIndex(key, value.length)));
 
 // The value copied as JSON.stringify would read it, each property read once: a list by index up to its length, an
 // object by its own enumerable string keys. `within` holds the objects the value is inside.
@@ -101,8 +114,17 @@ function copied(value: unknown, path: string, what: string, within: object[]): J
 
 // The value as a load would give it back: plain objects, lists, strings, booleans, finite numbers and null, at every
 // depth. It throws on anything else, naming the save (`what`) and the path to the value refused. The copy is what a
-// save writes: a getter read again, or a toJSON, could otherwise give the write a value the check never saw.
-export const checked = (value: unknown, what: string): JsonValue => copied(value, '', what, []);
+// save writes: a getter read again, or a toJSON, could otherwise give the write a value the check never saw. The copy
+// holds only new plain objects and lists, so writing it runs no code but a toJSON they would all inherit, which is
+// refused here.
+// What it leaves: a key that is not enumerable is not saved, which gg uses to keep a field off a row
+// (lib/exec.ts closeJob); -0 is saved as 0, the same number to every comparison but Object.is; and a plain object
+// from another realm (node:vm) is refused, since its prototype is not this realm's.
+export function checked(value: unknown, what: string): JsonValue {
+  const inherited = [{}, []].some((made) => typeof (made as { toJSON?: unknown }).toJSON === 'function');
+  if (inherited) throw new Error(`${what}: every object inherits a toJSON, so JSON would not write what was checked`);
+  return copied(value, '', what, []);
+}
 
 // The text a save writes. The only call that turns saved data into JSON (docs/research/configured-name-collections.md,
 // open question 5).
