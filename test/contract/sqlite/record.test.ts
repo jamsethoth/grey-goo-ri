@@ -118,11 +118,16 @@ test(
   'concurrent creators make one State Database: one creates it, the rest keep it, and it is in WAL mode',
   CASE,
   async (t) => {
-    const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
-    const started = creators.map(() => createInChild(commonDir));
-    t.after(() => {
-      for (const { child } of started) if (child.exitCode === null) child.kill();
+    // node:test runs after hooks in order and skips the rest once one throws, and removing the temp directory throws
+    // while a creator holds its temp database open, so this hook comes first: it kills the creators and waits for them.
+    const started: ReturnType<typeof createInChild>[] = [];
+    t.after(async () => {
+      const running = started.filter(({ child }) => child.exitCode === null);
+      for (const { child } of running) child.kill();
+      await Promise.allSettled(running.map(({ exit }) => exit));
     });
+    const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
+    started.push(...creators.map(() => createInChild(commonDir)));
     // Eight Node start-ups spread over a while under load, so the creates start together once all have loaded.
     await Promise.all(started.map(({ ready }) => ready));
     for (const { go } of started) go();

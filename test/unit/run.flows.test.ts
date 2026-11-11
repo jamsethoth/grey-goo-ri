@@ -1,6 +1,6 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
 import * as marker from '../../lib/marker.ts';
@@ -11,6 +11,7 @@ import * as approvalFlow from '../support/approval-flow.ts';
 import * as executionContext from '../support/execution-context.ts';
 import type * as golden from '../support/golden.ts';
 import * as runFixture from '../support/run-fixture.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 import * as unvisitedExecution from '../support/unvisited-execution.ts';
 
 const { BRANCH, TICKET } = runFixture;
@@ -166,6 +167,22 @@ test('preflight lists a missing State Database beside the configuration errors, 
   });
   assert.deepEqual(fixture.gh.calls, [], 'no gh call');
   assert.equal(existsSync(join(fixture.commonDir, 'gg')), false, 'no gg directory: no run directory, lock or database');
+});
+
+// A lost gg.db leaves gg/ behind, so the check is on the file: preflight and gg doctor both report it this way (#150).
+test('a gg.db deleted from an existing gg directory is a missing State Database', (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-run-flows-');
+  rmSync(join(commonDir, 'gg', 'gg.db'));
+  assert.deepEqual(
+    runFlows.stateDatabaseProblems(commonDir).map(({ code, message, params }) => ({ code, message, params })),
+    [
+      {
+        code: 'state-database-missing',
+        message: `no State Database at ${join(commonDir, 'gg', 'gg.db')}: run gg init`,
+        params: { path: join(commonDir, 'gg', 'gg.db') },
+      },
+    ],
+  );
 });
 
 // The Config Hash fingerprints a Flow's content, not its source (Q25): the same Flow, with files only another Agent
