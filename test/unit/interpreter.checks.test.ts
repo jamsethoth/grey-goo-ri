@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
 import { signalsOf } from '../support/action-signals.ts';
@@ -110,7 +111,8 @@ test('a Check result on an older tree does not count', async (t) => {
   // A file appears after green's test passed and before its commit, so the commit sees a tree the Check never saw.
   fixture.options.events = (type, data) => {
     appendEvent(type, data);
-    if (type === 'action' && data!.vertex === 'green' && data!.action === 'test')
+    const action = type === 'action' ? (data as events.EventInput<'action'>) : null;
+    if (action?.vertex === 'green' && action.action === 'test')
       writeFileSync(join(fixture.worktree, 'lib', 'late.mjs'), 'export {};\n');
   };
   const { outcome } = await interpreter.runExecution(fixture.options);

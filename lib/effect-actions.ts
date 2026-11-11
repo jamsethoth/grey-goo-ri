@@ -21,6 +21,7 @@ export type CommitPayload = { message: string; tree: string; parent: string };
 export type PushPayload = { branch: string; sha: string };
 export type CommentPayload = { target: { kind: string; number: number }; body: string; bodyHash: string };
 export type PrUpsertPayload = { branch: string; base?: string; title: string; body: string; bodyHash: string };
+export type PrReadyPayload = { number: number; sha: string | null; tree: string | null };
 // A commit made, with the paths it changed, or the required Checks that no longer hold on the tree it would commit.
 type Committed = { sha: string | null; files: string[]; stale?: undefined } | { stale: visit.CheckSignal[] };
 

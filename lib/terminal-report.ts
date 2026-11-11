@@ -12,6 +12,7 @@ import * as outcome from './outcome.ts';
 import * as record from './record.ts';
 import * as render from './render.ts';
 import * as visitScope from './visit-scope.ts';
+import type * as writeAhead from './write-ahead.ts';
 
 type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 
@@ -103,7 +104,7 @@ export const terminalActionIdentity =
   });
 
 // One deterministic Action of a Terminal: bracketed, write-ahead, with its own Action Event.
-async function terminalAction<Payload>(
+async function terminalAction<Payload extends writeAhead.Payload>(
   context: TerminalContext,
   actionIdentity: marker.ActionIdentity,
   { effect, payload, perform }: Omit<effects.SideEffect<Payload>, 'actionMarker' | 'deferred'>,
@@ -228,7 +229,7 @@ function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
           {
             log: context.log,
             // setLabels reports a failed update as a label_failed Event.
-            ev: context.events as github.LabelReport['ev'],
+            ev: context.events,
           },
         );
         // A hold or abandonment lands only with its label, so a failed one stays open for the next Run.

@@ -49,7 +49,7 @@ export interface EvidenceContext {
 // An open intent's effect: found (its evidence completes it), conflicting (a hold), absent (to be redone), or unknown
 // when the lookup threw, which never counts as absent.
 export type FindResult =
-  | { status: 'found'; evidence: Record<string, unknown> }
+  | { status: 'found'; evidence: writeAhead.Evidence }
   | { status: 'conflicting'; reason: string }
   | { status: 'absent' }
   | { status: 'unknown'; error: unknown };
@@ -61,7 +61,7 @@ export const carries = (text: string | null | undefined, actionMarker: string): 
   return !!parts && marker.formatMarker(parts) === actionMarker;
 };
 
-const found = (evidence: Record<string, unknown>): FindResult => ({ status: 'found', evidence });
+const found = (evidence: writeAhead.Evidence): FindResult => ({ status: 'found', evidence });
 const conflicting = (reason: string): FindResult => ({ status: 'conflicting', reason });
 const ABSENT: FindResult = { status: 'absent' };
 const FINDERS: Record<string, FindEffect | undefined> = {

@@ -13,7 +13,7 @@ import * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
 import * as writeAhead from './write-ahead.ts';
 
-type Evidence = Record<string, unknown>;
+type Evidence = writeAhead.Evidence;
 
 // The Actions whose effect is on GitHub or origin. A recognised transient failure is retried inside the Action, on a
 // budget saved in the record before each wait, so a crash cannot refill it (#66).

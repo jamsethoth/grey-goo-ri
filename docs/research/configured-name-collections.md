@@ -221,3 +221,19 @@ a `Map` subclass (`structuredClone` deserialises it as a plain Map and `deepStri
      - a check at the store: Redux Toolkit's serializability middleware.
      So #342 gates gg's save paths, the record, the Pinned Configuration, the Event append and the run directory's
      JSON, with types and a check at run time.
+   - Done in #342 (owner, 2026-11-11: the checked generic). `lib/json-value.ts` holds the gate:
+     - **By type.** `text<Value>(value: Value & JsonChecked<Value>)` is type-fest's generic pattern, which reads an
+       interface where a plain `JsonValue` parameter cannot. Its mapping is gg's own: type-fest's `Jsonify<unknown>` is
+       `JsonValue` and its `Jsonify<Map>` an empty object, so neither would fail; `JsonChecked` gives `never` for a
+       Map, a Set, a function and an `unknown`. The 39 `unknown` fields the four paths reached are typed: by what gg
+       builds, or as `JsonValue` where the value was parsed.
+     - **At run time.** The same call refuses whatever a load would not give back, by its path: Redux Toolkit's
+       `isPlain` rule, which also refuses a `Date` and any other class instance, made to throw where Redux logs, and to
+       refuse `NaN` and the infinities, which `isPlain` passes and JSON writes as `null`. `config.hashOf` takes only
+       what a save takes.
+   - The nested variant of the rule, which fails an `unknown` anywhere inside a stringified value's type, is not built
+     (owner, 2026-11-11): it polices every `JSON.stringify` again. Recounted with that variant applied to a copy of the
+     rule: **118** sites on 7b2d346 (36 outside `test/`, 82 in it; #330 counted 114 on ada8948) and **102** once the
+     save paths are gated (29 in `lib/`, 1 in `scripts/`, 72 in `test/`). None of the 30 outside `test/` is a save: the
+     four paths no longer call `JSON.stringify`, and what is left quotes a value in a message, builds a key, feeds
+     `hashOf`, or writes the coverage baseline.

@@ -29,7 +29,7 @@ function reversed<Value>(value: Value): Value {
 }
 
 // JSON.stringify and the hash's key sort see no entry of a Map, so a Map reaching the hash would hash as {} in silence;
-// the model's toJson converts first (#174).
+// the model's toJson converts first (#174). The hash refuses what a save refuses (lib/json-value.ts).
 test('hashOf refuses a Map, which it would otherwise hash as an empty object', () => {
   assert.throws(() => config.hashOf({ flow: { vertices: new Map([['red', 1]]) } }), /Map/);
 });
@@ -39,11 +39,11 @@ test('a Pinned Configuration takes the Resolved Flow as JSON, not with its Maps'
   const json = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: null, vertices: {} } };
   const pinned = { flow: model.fromJson(json), files: {}, harnesses: {}, commands: {}, testPaths: [] };
   // @ts-expect-error -- a Resolved Flow holds Maps; model.toJson converts it first
-  assert.throws(() => config.configHash(pinned), /a Map cannot be hashed/);
+  assert.throws(() => config.configHash(pinned), /flow\.procedures is a Map/);
   assert.match(config.configHash({ ...pinned, flow: model.toJson(pinned.flow) }), /^[0-9a-f]{64}$/);
 });
 
-// gg run saves each PinnedFlow's pinned with JSON.stringify, so its type must be one gg/no-map-to-json can read (#330).
+// gg run saves each PinnedFlow's pinned, so its type must be one the save's typed gate can read (#330, #342).
 test("a PinnedFlow's pinned is a Pinned Configuration, or null for a Flow no longer declared", () => {
   const typed: [runFlows.PinnedFlow['pinned']] extends [config.PinnedConfiguration | null] ? true : false = true;
   assert.equal(typed, true);

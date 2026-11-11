@@ -21,14 +21,14 @@ interface Checked {
   passed: boolean;
   ran: boolean;
   recoverable?: boolean;
-  failure?: unknown;
+  failure?: string | null;
   reason?: string;
   output?: string;
-  evidence?: { command: string; output: string; [field: string]: unknown };
-  outputs?: Record<string, unknown>;
+  evidence?: visit.ActionOutputValue['evidence'];
+  outputs?: visit.ActionOutputValue;
   tree?: string | null;
   // What its command left, or NO_COMMAND's report for a kind that could run one and did not.
-  cleanup?: Pick<commandCleanup.CleanupReport, 'confirmed' | 'survivors'>;
+  cleanup?: commandCleanup.CallCleanup;
 }
 // One run of a Check kind: the Action as the Visit runs it, and the tree it checks, if it reads one.
 interface Checking extends visitScope.Running {

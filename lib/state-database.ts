@@ -3,7 +3,7 @@
 import { mkdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
-import type * as jsonValue from './json-value.ts';
+import * as jsonValue from './json-value.ts';
 import * as paths from './paths.ts';
 
 export const SCHEMA_VERSION = 1;
@@ -111,7 +111,7 @@ export function savePinnedConfiguration<Pinned>(
 ): void {
   open(commonDir)
     .prepare('INSERT OR IGNORE INTO configs (hash, json, firstSeen) VALUES (?, ?, ?)')
-    .run(hash, JSON.stringify(pinned), new Date().toISOString());
+    .run(hash, jsonValue.text(pinned, 'the Pinned Configuration'), new Date().toISOString());
 }
 
 export function loadPinnedConfiguration(commonDir: string, hash: string): unknown {

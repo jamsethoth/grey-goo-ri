@@ -1,5 +1,10 @@
 // Append-only event log, schema 2: one row per Event in the events table of the State Database.
+import type * as approvalAction from './approval-action.ts';
 import * as checks from './checks.ts';
+import type * as commandCleanup from './command-cleanup.ts';
+import type * as github from './github.ts';
+import type * as integrity from './integrity.ts';
+import * as jsonValue from './json-value.ts';
 import * as record from './record.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
@@ -26,7 +31,16 @@ interface EventHeader<Type extends string> {
 }
 
 // shortcut: Usage is typed by key, not closed; T8 owns the full Usage shape.
-type Usage = Record<string, number | null>;
+export type Usage = Record<string, number | null>;
+
+// The Signals an Action's Outcome was decided from: the Harness Result, the Claim, the Check signals and the Integrity
+// Assertions. An effect that reads none gives none.
+export interface ActionSignals {
+  harnessResult?: { status: visit.CallSignal['status']; failureClass?: string | null };
+  claim?: visit.ClaimSignal;
+  checks?: visit.CheckSignal[];
+  integrity?: { name: string; passed: boolean; violations: integrity.IntegrityViolation[] }[];
+}
 
 interface ActionFields {
   flow: string;
@@ -45,17 +59,17 @@ interface ActionFields {
   durationMs: number;
   outcome: string;
   direction: string;
-  signals: Record<string, unknown>;
+  signals: ActionSignals;
   rule: visit.RuleIdentity;
   check: string;
-  integrityViolations: unknown[];
+  integrityViolations: integrity.IntegrityViolation[];
   retryAfterMs: number;
   // Null unless the Action failed: a Harness's class, or a remote Action's that failed for good (#251).
   failureClass: string;
   error: string;
   // What the call's or the command's Command Cleanup found (L11).
-  cleanup: unknown;
-  decision: unknown;
+  cleanup: commandCleanup.CallCleanup;
+  decision: approvalAction.Consumption['decision'];
 }
 const ACTION = {
   flow: 'required',
@@ -91,8 +105,8 @@ interface AgentFields {
   model: string | null;
   effort: string | null;
   personaHash: string;
-  tools: unknown;
-  sessionInit: unknown;
+  tools: jsonValue.JsonValue;
+  sessionInit: jsonValue.JsonValue;
   sessionId: string | null;
   sessionLineage: string | null;
   transcriptPath: string | null;
@@ -100,8 +114,8 @@ interface AgentFields {
   exitCode: number | null;
   exitSignal: string | null;
   finalEventSubtype: string | null;
-  permissionDenials: unknown;
-  commandsRun: unknown;
+  permissionDenials: jsonValue.JsonValue;
+  commandsRun: jsonValue.JsonValue;
 }
 const AGENT = {
   harness: 'required',
@@ -153,9 +167,9 @@ interface LifecycleFields {
     diffStats: DiffStats;
     terminalReason: record.TerminalReason;
     error: string;
-    interrupted: unknown;
+    interrupted: record.TerminalStop['interrupted'];
   };
-  label_failed: { ticket: number; change: unknown; error: string; run: string };
+  label_failed: { ticket: number; change: github.LabelChange; error: string; run: string };
   visit_end: {
     run: string;
     execution: string;
@@ -214,6 +228,14 @@ export type LifecycleEvent =
 export type Event = ActionEvent | LifecycleEvent;
 
 type Fields = Record<string, unknown>;
+// What a caller gives for an Event of a type: any of its declared fields, each of its declared type or null, so tsc
+// refuses a value JSON cannot hold where the Event is made. Which fields are required is checked when it is built:
+// `base` may give them.
+type Given<Declared> = { [Field in keyof Declared]?: Declared[Field] | null };
+export type EventType = 'action' | LifecycleType;
+export type EventInput<Type extends EventType> = Type extends LifecycleType
+  ? Given<LifecycleFields[Type]> & { type?: Type }
+  : Given<ActionFields & AgentFields> & { type?: 'action'; agent?: boolean };
 // An Event as actionEvent and lifecycleEvent build it, before eventLog adds the header's version and time. It
 // distributes over a union, so each member keeps its own fields.
 type EventBody<Built> = Built extends unknown ? Omit<Built, 'schemaVersion' | 'time'> : never;
@@ -228,12 +250,12 @@ const AGENT_REQUIRED = declaredAs(AGENT, 'required');
 // every Event through.
 export function eventLog(
   commonDir: string,
-  base: Fields = {},
+  base: EventInput<EventType> = {},
   database: Pick<record.StateDatabase, 'beforeAppend'> = record,
-): (type: 'action' | LifecycleType, data?: Fields) => void {
-  return (type, data = {}) => {
+): <Type extends EventType>(type: Type, data?: EventInput<Type>) => void {
+  return (type, data) => {
     // `data` may be the output of actionEvent or lifecycleEvent, which already carries a matching `type`.
-    const { type: own = type, ...fields } = { ...base, ...data };
+    const { type: own = type, ...fields }: Fields = { ...base, ...data };
     if (own !== type) throw new Error(`${type} event: field type is ${own}`);
     const event = {
       schemaVersion: 2,
@@ -252,7 +274,7 @@ export function eventLog(
         columns.run ?? null,
         columns.execution ?? null,
         columns.ticket ?? null,
-        JSON.stringify(event),
+        jsonValue.text(event, `the ${event.type} Event`),
       );
   };
 }
@@ -297,7 +319,7 @@ const ordered = (fields: Fields, required: string[], optional: string[]): Fields
   ]);
 
 // An agent Action's event adds the agent fields; a deterministic Action's has none of them, and `agent: false`.
-export function actionEvent(fields: Fields): EventBody<ActionEvent> {
+export function actionEvent(fields: EventInput<'action'>): EventBody<ActionEvent> {
   const agent = fields.agent === true;
   closed('action event', fields, agent ? [...ACTION_REQUIRED, ...AGENT_REQUIRED] : ACTION_REQUIRED, [
     'agent',
@@ -327,8 +349,9 @@ function checkUsage(usage: unknown, member: string): void {
 
 export function lifecycleEvent<Type extends LifecycleType>(
   type: Type,
-  fields: Fields = {},
+  given?: EventInput<Type>,
 ): EventBody<LifecycleOf<Type>> {
+  const fields: Fields = given ?? {};
   // An own key only: `toString` or `__proto__` would otherwise find Object.prototype's member and pass as a type.
   if (!Object.hasOwn(LIFECYCLE, type)) throw new Error(`unknown lifecycle event type ${type}`);
   const shape: DeclaredShape = LIFECYCLE[type];

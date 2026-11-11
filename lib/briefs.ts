@@ -153,7 +153,7 @@ const quotesOutput = (ref: string) => ref === 'output' || ref.endsWith('.output'
 // when the Brief names it (U1). `failure` is how a recovery section's Check failed.
 export interface BriefContext {
   commands?: Record<string, string>;
-  history?: Record<string, unknown>[];
+  history?: visit.HistoryItem[];
   failure?: string | null;
   [name: string]: unknown;
 }

@@ -211,7 +211,8 @@ function labelVerbs({ gh, ghJson }: Client) {
 // What setLabels reports a failed label update to.
 export interface LabelReport {
   log: (message: string) => void;
-  ev: (type: string, fields: Record<string, unknown>) => void;
+  // Records a label update that failed, as a label_failed Event's fields.
+  ev: (type: 'label_failed', fields: { ticket: number; change: LabelChange; error: string }) => void;
   ensureLabels?: () => Promise<unknown>;
 }
 

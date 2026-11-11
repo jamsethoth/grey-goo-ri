@@ -7,6 +7,9 @@ import * as visit from '../../lib/visit.ts';
 import * as support from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
 
+// A reset's payload, which these cases only pass through.
+const resetTo = (baseline: string): visit.ResetPayload => ({ baseline, history: { kind: 'rescued', text: 'reset' } });
+
 test('whileBusy marks the worktree busy while its function runs and idle after', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const during = await effects.whileBusy(context, async () => ({ ...executionRecord.activity }));
@@ -37,7 +40,7 @@ test('a side effect is logged as intent, evidence and completion, and returns it
   const evidence = await effects.sideEffect(context, {
     actionMarker: 'gg:m',
     effect: 'reset',
-    payload: { baseline: 'abc' },
+    payload: resetTo('abc'),
     perform: async () => ({ head: 'abc' }),
   });
   assert.deepEqual(evidence, { head: 'abc' });
@@ -46,12 +49,12 @@ test('a side effect is logged as intent, evidence and completion, and returns it
 
 test('a proven side effect is not made again: its saved evidence is returned and the Action completed', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
-  record.intent(executionRecord, 'gg:m', 'reset', { baseline: 'abc' });
+  record.intent(executionRecord, 'gg:m', 'reset', resetTo('abc'));
   record.evidence(executionRecord, 'gg:m', { head: 'saved' });
   const evidence = await effects.sideEffect(context, {
     actionMarker: 'gg:m',
     effect: 'reset',
-    payload: { baseline: 'abc' },
+    payload: resetTo('abc'),
     perform: async () => assert.fail('a proven effect is made again'),
   });
   assert.deepEqual(evidence, { head: 'saved' });
@@ -64,7 +67,7 @@ test('a deferred side effect is left for saveResolution to complete', async (t) 
   const evidence = await effects.sideEffect(context, {
     actionMarker: 'gg:m',
     effect: 'reset',
-    payload: {},
+    payload: resetTo('abc'),
     perform,
     deferred: true,
   });
@@ -74,11 +77,11 @@ test('a deferred side effect is left for saveResolution to complete', async (t) 
 
 test('an open intent is redone with its intended payload, not the one given now', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
-  record.intent(executionRecord, 'gg:m', 'reset', { baseline: 'intended' });
+  record.intent(executionRecord, 'gg:m', 'reset', resetTo('intended'));
   const evidence = await effects.sideEffect(context, {
     actionMarker: 'gg:m',
     effect: 'reset',
-    payload: { baseline: 'now' },
+    payload: resetTo('now'),
     perform: async (payload) => ({ head: payload.baseline }),
   });
   assert.deepEqual(evidence, { head: 'intended' });
@@ -135,7 +138,7 @@ test("saveResolution saves a Flow Action's settled resolution with its Action Ev
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('saveResolution completes a marked Action with its evidence once, and returns a completed one unsaved', async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
-  record.intent(executionRecord, 'gg:m', 'push', {});
+  record.intent(executionRecord, 'gg:m', 'push', { branch: 'ticket/8', sha: 'abc' });
   const resolution: visit.TableResolution = {
     outcome: 'ok',
     direction: 'retry',
@@ -198,7 +201,7 @@ test("a Flow Action's retry is not settled, so a resumed Visit runs the Action a
 
 test('a completed side effect finishes as effect-completed', async (t) => {
   const { context, executionRecord, emitted } = await support.executionContext(t);
-  record.intent(executionRecord, 'gg:m', 'push', {});
+  record.intent(executionRecord, 'gg:m', 'push', { branch: 'ticket/8', sha: 'abc' });
   const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, procedure: null };
   assert.deepEqual(await effects.completeEffect(context, actionIdentity, 5, 'gg:m'), {
     outcome: 'ok',

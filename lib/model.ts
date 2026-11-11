@@ -3,6 +3,7 @@
 // the validator gives and the Run's directory and the Pinned Configuration keep, holds the same collections as keyed
 // objects.
 
+import type * as jsonValue from './json-value.ts';
 import type * as procedures from './procedures.ts';
 import type * as inputs from './validate/inputs.ts';
 import type * as visit from './visit.ts';
@@ -14,10 +15,10 @@ export interface Vertex {
   procedure: string;
   outcomes: string[];
   approvalLabels?: { await: string; decide: string[] } | null;
-  route?: unknown;
+  route?: jsonValue.JsonValue;
   inputs?: Record<string, inputs.ResolvedInput>;
   max?: number;
-  exhausted?: unknown;
+  exhausted?: jsonValue.JsonValue;
 }
 
 // A Procedure with its Claim tokens by name.
@@ -30,7 +31,7 @@ export interface ResolvedFlow {
   name: string;
   actionCap: number;
   procedures: ReadonlyMap<string, Procedure>;
-  ticket: { entry: string | null; routes?: unknown; vertices: ReadonlyMap<string, Vertex> };
+  ticket: { entry: string | null; routes?: jsonValue.JsonValue; vertices: ReadonlyMap<string, Vertex> };
 }
 
 // The Resolved Flow's JSON, as the validator gives it.
@@ -38,7 +39,7 @@ export interface ResolvedFlowJson {
   name: string;
   actionCap: number;
   procedures: Record<string, procedures.Procedure>;
-  ticket: { entry: string | null; routes?: unknown; vertices: Record<string, Vertex> };
+  ticket: { entry: string | null; routes?: jsonValue.JsonValue; vertices: Record<string, Vertex> };
 }
 
 // JSON.parse, the validator and Object.entries give only own keys, so every name read from the JSON is one it declares.

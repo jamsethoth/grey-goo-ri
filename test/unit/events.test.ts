@@ -36,7 +36,7 @@ function rows(commonDir: string): EventRow[] {
 
 const usage = () => ({ peakContextTokens: 1200, turns: 3, toolCalls: 4, compactions: 0, costUsd: null });
 
-const actionFields = () => ({
+const actionFields = (): events.EventInput<'action'> => ({
   flow: 'default',
   configHash: 'c0ffee',
   launchProfile: null,
@@ -53,8 +53,8 @@ const actionFields = () => ({
   durationMs: 1500,
   outcome: 'ok',
   direction: 'forward',
-  signals: [],
-  rule: 'red-ok',
+  signals: {},
+  rule: { table: 'fixed', row: 'red-ok' },
   agent: true,
   harness: 'fake',
   agentCliVersion: null,
@@ -64,7 +64,7 @@ const actionFields = () => ({
   tools: ['Read'],
   sessionInit: null,
   sessionId: 's1',
-  sessionLineage: [],
+  sessionLineage: null,
   transcriptPath: null,
   usage: { cumulative: usage(), delta: usage() },
   exitCode: 0,
@@ -202,6 +202,7 @@ test('actionEvent needs none of the agent fields when agent is false', () => {
 });
 
 test('actionEvent rejects an unknown key', () => {
+  // @ts-expect-error -- an undeclared key
   assert.throws(() => events.actionEvent({ ...actionFields(), tokensIn: 5 }), /\btokensIn\b/);
 });
 
@@ -301,13 +302,14 @@ test('a Lifecycle Event declares every field of its type, null where it was not 
     run: null,
   });
   assert.throws(
+    // @ts-expect-error -- an undeclared key
     () => events.lifecycleEvent('ticket_end', { run: 'r1', execution: 'e1', ticket: 7, reason: {} }),
     /\breason\b/,
   );
 });
 
 test('a visit_end event holds exactly its declared fields', () => {
-  const fields = {
+  const fields: events.EventInput<'visit_end'> = {
     run: 'r1',
     execution: 'e1',
     ticket: 7,
@@ -324,6 +326,7 @@ test('a visit_end event holds exactly its declared fields', () => {
   assert.deepEqual(visitEnd, { type: 'visit_end', ...fields });
   assert.deepEqual(Object.keys(visitEnd), ['type', ...Object.keys(fields)]);
   assert.throws(() => events.lifecycleEvent('visit_end', { ...fields, edge: undefined }), /\bedge\b/);
+  // @ts-expect-error -- an undeclared key
   assert.throws(() => events.lifecycleEvent('visit_end', { ...fields, owner: null }), /\bowner\b/);
 });
 
@@ -348,6 +351,7 @@ const BAD_USAGE: [string, unknown][] = [
 ];
 for (const [name, value] of BAD_USAGE) {
   test(`actionEvent rejects an agent action's Usage with ${name}`, () => {
+    // @ts-expect-error -- a Usage of the wrong shape
     assert.throws(() => events.actionEvent({ ...actionFields(), usage: value }), /\busage\b/);
   });
 }
@@ -362,9 +366,12 @@ test('eventLog validates every event before appending it', (t) => {
   const log = events.eventLog(directory);
   assert.throws(() => log('action', {}), /\bflow\b/);
   assert.throws(() => log('stage_call' as events.LifecycleType, { run: 'r1' }), /\bstage_call\b/);
+  // @ts-expect-error -- the header is eventLog's to write
   assert.throws(() => log('run_start', { run: 'r1', schemaVersion: 1 }), /\bschemaVersion\b/);
+  // @ts-expect-error -- the header is eventLog's to write
   assert.throws(() => log('run_start', { run: 'r1', time: 'then' }), /\btime\b/);
   assert.throws(() => log('run_start', { run: 'r1', type: 'run_end' }), /\btype\b/);
+  // @ts-expect-error -- the header is eventLog's to write
   assert.throws(() => events.eventLog(directory, { time: 'then' })('run_start', { run: 'r1' }), /\btime\b/);
   assert.deepEqual(events.readEvents(directory), []);
   events.eventLog(directory, { run: 'r1' })('run_start');
@@ -382,14 +389,15 @@ test('lifecycle events validate their required fields per type', () => {
   assert.equal(events.lifecycleEvent('ticket_start', { run: 'r1', execution: 'e1', ticket: 7 }).type, 'ticket_start');
   assert.throws(() => events.lifecycleEvent('ticket_end', { run: 'r1', ticket: 7 }), /\bexecution\b/);
   assert.equal(
-    events.lifecycleEvent('label_failed', { ticket: 7, change: 'add gg:ready', error: 'gh 502' }).type,
+    events.lifecycleEvent('label_failed', { ticket: 7, change: { add: ['gg:ready'] }, error: 'gh 502' }).type,
     'label_failed',
   );
   assert.equal(
-    events.lifecycleEvent('label_failed', { ticket: 7, change: 'add gg:ready', error: 'gh 502', run: 'r1' }).run,
+    events.lifecycleEvent('label_failed', { ticket: 7, change: { add: ['gg:ready'] }, error: 'gh 502', run: 'r1' }).run,
     'r1',
   );
-  assert.throws(() => events.lifecycleEvent('label_failed', { ticket: 7, change: 'add gg:ready' }), /\berror\b/);
+  assert.throws(() => events.lifecycleEvent('label_failed', { ticket: 7, change: { add: ['gg:ready'] } }), /\berror\b/);
+  // @ts-expect-error -- an undeclared key
   assert.throws(() => events.lifecycleEvent('run_start', { run: 'r1', extra: 1 }), /\bextra\b/);
   assert.throws(() => events.lifecycleEvent('stage_call' as events.LifecycleType, { run: 'r1' }), /\bstage_call\b/);
 });
@@ -428,7 +436,7 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
     { ts: event.time, type: 'ticket_start', run: 'r1', execution: 'e1', ticket: 7 },
   );
 
-  events.eventLog(directory)('label_failed', { ticket: 8, change: 'add gg:ready', error: 'gh 502' });
+  events.eventLog(directory)('label_failed', { ticket: 8, change: { add: ['gg:ready'] }, error: 'gh 502' });
   const absent = rows(directory)[1];
   assert.deepEqual([absent.type, absent.run, absent.execution, absent.ticket], ['label_failed', null, null, 8]);
 });

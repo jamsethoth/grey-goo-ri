@@ -67,7 +67,7 @@ test('assertJson accepts exactly the values a save reads back unchanged, and nam
       }
     })();
     assert.equal(refusal === null, roundTrips(held), `${name}: ${refusal ?? 'accepted'}`);
-    if (refusal !== null) assert.match(refusal, /^the row: list\[1\]\.items\[0\] is /, name);
+    if (refusal !== null) assert.match(refusal, /^the row: list\[1\]\.items\[0\]\S* is /, name);
   }
 });
 

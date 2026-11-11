@@ -214,7 +214,7 @@ test('a fresh Epic Record declares every field it can hold', async (t) => {
 test('a write-ahead entry carries every field, null where its step has none', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
-  record.intent(executionRecord, 'm1', 'commit', { tree: 't1' });
+  record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   record.evidence(executionRecord, 'm1', { sha: 's1' });
   record.complete(executionRecord, 'm1');
   const entries = executionRecord.writeAheadLog;
@@ -222,7 +222,13 @@ test('a write-ahead entry carries every field, null where its step has none', as
   assert.deepEqual(
     entries.map(({ time, ...entry }) => entry),
     [
-      { step: 'intent', actionMarker: 'm1', effect: 'commit', payload: { tree: 't1' }, evidence: null },
+      {
+        step: 'intent',
+        actionMarker: 'm1',
+        effect: 'commit',
+        payload: { message: 'red', tree: 't1', parent: 'p1' },
+        evidence: null,
+      },
       { step: 'evidence', actionMarker: 'm1', effect: 'commit', payload: null, evidence: { sha: 's1' } },
       { step: 'complete', actionMarker: 'm1', effect: 'commit', payload: null, evidence: null },
     ],
@@ -303,13 +309,19 @@ test('a record with visits entries survives the golden-row comparison and a raw-
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
-  record.intent(executionRecord, 'm1', 'commit', { message: 'red' });
+  record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   record.evidence(executionRecord, 'm1', { sha: 'deadbeef' });
   record.complete(executionRecord, 'm1');
   assert.deepEqual(
     executionRecord.writeAheadLog.map(({ time, ...entry }) => entry),
     [
-      { step: 'intent', actionMarker: 'm1', effect: 'commit', payload: { message: 'red' }, evidence: null },
+      {
+        step: 'intent',
+        actionMarker: 'm1',
+        effect: 'commit',
+        payload: { message: 'red', tree: 't1', parent: 'p1' },
+        evidence: null,
+      },
       { step: 'evidence', actionMarker: 'm1', effect: 'commit', payload: null, evidence: { sha: 'deadbeef' } },
       { step: 'complete', actionMarker: 'm1', effect: 'commit', payload: null, evidence: null },
     ],
@@ -367,13 +379,13 @@ test('a record transition and its event commit together', async (t) => {
 test('openIntents lists intents without completion oldest first', async (t) => {
   const commonDir = tempDirectory.tempDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
-  record.intent(executionRecord, 'm1', 'commit', {});
+  record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   assert.deepEqual(
     writeAhead.openIntents(executionRecord).map((entry) => entry.actionMarker ?? entry),
     ['m1'],
   );
-  record.intent(executionRecord, 'm2', 'push', {});
-  record.intent(executionRecord, 'm3', 'comment', {});
+  record.intent(executionRecord, 'm2', 'push', { branch: 'ticket/8', sha: 'abc' });
+  record.intent(executionRecord, 'm3', 'comment', { branch: 'ticket/8', sha: 'abc' });
   record.evidence(executionRecord, 'm2', { ok: true });
   record.complete(executionRecord, 'm2');
   assert.deepEqual(

@@ -2,6 +2,9 @@
 // Vertex inputs, its progress (VisitState) and each Action's Resolution, by the row that decided it.
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as integrity from './integrity.ts';
+import type * as events from './events.ts';
+import type * as jsonValue from './json-value.ts';
+import type * as runContext from './run-context.ts';
 
 // The rule identity { table, row }: a fixed row by name, or a Procedure table's row by index, `otherwise`, or null
 // when no row matched (request 3.3).
@@ -94,7 +97,7 @@ export interface ClaimSignal {
 // A Vertex input as Visit entry resolved it (S4, T6): the value and the Visit and Action that produced it, or absent
 // (T10), every field then null.
 export interface VertexInput {
-  value: unknown;
+  value: jsonValue.JsonValue;
   vertex: string | null;
   visit: number | null;
   action: string | null;
@@ -111,15 +114,15 @@ export interface HarnessFailure {
 // A call's Harness Result and response, as the Transition Table reads them (outcome.resolve).
 export interface CallSignal {
   status: 'completed' | 'failed' | 'timed-out' | 'killed';
-  response: unknown;
+  response: jsonValue.JsonValue;
   failure: HarnessFailure | null;
 }
 
 // The agent Action's latest Attempt, as the Transition Table reads it: the three Signals of a call.
 export interface AgentCall {
-  harnessResult: Record<string, unknown>;
+  harnessResult: runContext.HarnessResult;
   claim: ClaimSignal;
-  response: unknown;
+  response: jsonValue.JsonValue;
   baseline: integrity.IntegrityBaseline;
   signal: CallSignal;
 }
@@ -128,7 +131,8 @@ export interface AgentCall {
 export interface CheckRun {
   output: string | null;
   reason: string | null;
-  failure: unknown;
+  // Which of its kind's failures a failed run was, where the kind has several (lib/check-action.ts).
+  failure: string | null;
   recoverable: boolean;
 }
 
@@ -137,7 +141,7 @@ export interface VisitState {
   recovery: number;
   firstAttemptBaseline: integrity.IntegrityBaseline | null;
   call: AgentCall | null;
-  response: unknown;
+  response: jsonValue.JsonValue;
   // Each Check's run and signal by Action id: Maps, so a Check such as __proto__ is kept like any other (#174).
   runs: Map<string, CheckRun>;
   checks: Map<string, CheckSignal>;
@@ -153,27 +157,57 @@ export interface ConfigurationSnapshot {
   vertex: string;
   visit: number;
   agent:
-    | ({ harness: string; model: string | null; effort: string | null; persona: string } & Record<string, unknown>)
+    | ({ harness: string; model: string | null; effort: string | null; persona: string } & Record<
+        string,
+        jsonValue.JsonValue
+      >)
     | null;
   access: string;
   procedure: { name: string; hash: string };
-  outcomes: unknown;
-  route: unknown;
-  routes: unknown;
+  outcomes: jsonValue.JsonValue;
+  route: jsonValue.JsonValue;
+  routes: jsonValue.JsonValue;
   inputs: Record<string, VertexInput>;
-  commands: Record<string, unknown>;
+  commands: Record<string, jsonValue.JsonValue>;
   testPaths: string[];
   persona: { name: string; bytes: string; hash: string } | null;
+}
+
+// What an earlier Attempt left for the next Brief to read: a hold, a rescue or an Integrity Violation's rollback.
+export interface HistoryItem {
+  // held, rescued or integrity violation: a Brief template prints it as text.
+  kind: string;
+  text: string;
 }
 
 // The reset intent's payload (lib/rescue.ts): the baseline head, the History item it adds, what git clean leaves to
 // restore, and the worktree as the agent left it.
 export interface ResetPayload {
   baseline: string;
-  history: Record<string, unknown>;
+  history: HistoryItem;
   untracked?: integrity.RollbackSet;
   // An intent saved before the index was fingerprinted has no `index`.
   left?: Omit<integrity.WorktreeSnapshot, 'index'> & { index?: string; files?: integrity.UntrackedFiles };
+}
+
+// What an Action leaves for later Vertices' inputs, by the name they read it under: each Action kind's own outputs
+// (lib/procedures.ts), and what gg adds to any call.
+export interface ActionOutputValue {
+  // An agent Action's Structured Response, once valid.
+  response?: jsonValue.JsonValue;
+  // What a call's or a Check's Command Cleanup found (L11).
+  cleanup?: commandCleanup.CallCleanup;
+  // A passed Check's evidence (N9), and a repeat Check's Findings Hash.
+  evidence?: { command: string; output: string; [field: string]: jsonValue.JsonValue };
+  findingsHash?: string;
+  // The files a commit Action committed.
+  files?: string[];
+  // An await-approval Action's Decision.
+  decision?: { outcome: string; actor: string | undefined; reply: string | null };
+  // A rescue's ref, what it holds and why (#118).
+  ref?: string;
+  diffStat?: events.DiffStats;
+  output?: string;
 }
 
 // An Action's outputs in Visit order, by Vertex, Visit and Action, which later Vertices' inputs read (W2).
@@ -181,5 +215,5 @@ export interface ActionOutput {
   vertex: string;
   visit: number;
   action: string;
-  value: Record<string, unknown>;
+  value: ActionOutputValue;
 }

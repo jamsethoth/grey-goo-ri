@@ -8,12 +8,16 @@ import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
+import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as namedFlow from '../support/named-flow.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
+
+// A worktree snapshot a case never reads.
+const UNREAD: integrity.WorktreeSnapshot = { head: '', index: '', tree: '' };
 
 // The Ticket branch's log from its head: two commits since the base, the base, and the commit the base was cut from.
 const branchLog = [
@@ -123,7 +127,10 @@ test('a push that landed before a crash is found by its remote sha', async (t) =
 
 test('an unknown intent effect holds', async (t) => {
   const fixture = await golden.fixture(t);
-  fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:someone-elses', 'teleport', {});
+  fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:someone-elses', 'teleport', {
+    branch: 'ticket/8',
+    sha: 'abc',
+  });
   const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, fixture.executionRecord));
   assert.equal(decided.next, 'hold');
   assert.match(decided.reason as string, /teleport/);
@@ -131,7 +138,11 @@ test('an unknown intent effect holds', async (t) => {
 
 test('a finder-less replay-safe action replays', async (t) => {
   const fixture = await golden.fixture(t);
-  fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:pr-ready', 'pr-ready', {});
+  fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:pr-ready', 'pr-ready', {
+    number: 1,
+    sha: null,
+    tree: null,
+  });
   const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, fixture.executionRecord));
   assert.equal(decided.next, 'continue');
   assert.deepEqual(executionReads.writeAheadSteps(fixture.executionRecord, 'gg:pr-ready'), ['intent']);
@@ -141,21 +152,23 @@ test("a rescue intent is found by its ref's commit, absent with no ref, a confli
   const fixture = await golden.fixture(t);
   const { git } = fixture.options.deps;
   const context = { executionRecord: fixture.executionRecord, git, issueLabels: [] };
-  const entry = {
+  // The finder reads only the ref and the commit.
+  const rescued = (commit: string) => ({ ref: 'refs/gg/rescue/abc', commit, tree: '', parent: '', left: UNREAD });
+  const entry: writeAhead.WriteAheadEntry = {
     step: 'intent',
     actionMarker: 'gg:rescue',
     effect: 'rescue',
-    payload: { ref: 'refs/gg/rescue/abc', commit: fixture.base },
+    payload: rescued(fixture.base),
     evidence: null,
     time: '',
-  } as const;
+  };
   assert.equal((await effectEvidence.findEffect(entry, context)).status, 'absent');
   await git.createRef!(fixture.worktree, 'refs/gg/rescue/abc', fixture.base);
   assert.deepEqual(await effectEvidence.findEffect(entry, context), {
     status: 'found',
     evidence: { ref: 'refs/gg/rescue/abc', commit: fixture.base },
   });
-  const other = { ...entry, payload: { ref: 'refs/gg/rescue/abc', commit: 'f'.repeat(40) } };
+  const other = { ...entry, payload: rescued('f'.repeat(40)) };
   assert.equal((await effectEvidence.findEffect(other, context)).status, 'conflicting');
 });
 
