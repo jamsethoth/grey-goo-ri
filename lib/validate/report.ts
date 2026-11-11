@@ -310,6 +310,11 @@ export function hasOwnKey(value: unknown, key: unknown): key is string;
 export function hasOwnKey(value: unknown, key: unknown) {
   return typeof key === 'string' && referencePaths.isRecord(value) && Object.hasOwn(value, key);
 }
+// A configured value as gg shows it: a string or number as written, anything else as JSON, so a value of the wrong
+// type never shows as [object Object] or a blank (#305). A number past the largest double parses to Infinity, which
+// JSON would spell null.
+export const shown = (value: unknown) =>
+  typeof value === 'string' || typeof value === 'number' ? String(value) : JSON.stringify(value);
 export const isName = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
 // Every configured name has a character other than whitespace. A carried one has no ":", ".", "/", "--" or whitespace
 // at all: the Action Marker and the Await and Decide Labels split on ":", a reference path on ".", an Action's retry

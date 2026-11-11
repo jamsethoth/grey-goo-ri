@@ -3,7 +3,7 @@
 import type * as procedures from './procedures.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as ruleDomain from './rule-domain.ts';
-import type * as report from './validate/report.ts';
+import * as report from './validate/report.ts';
 
 export type RuleValue = string | number | boolean;
 // A row's condition on one field: the value it must equal, or integer comparisons that must all hold.
@@ -64,9 +64,10 @@ export function evaluate(table: { rows: RuleRow[] }, input: unknown) {
 export const conditions = (when: Record<string, Condition>) =>
   Object.entries(when)
     .flatMap(([path, condition]) =>
-      condition !== null && typeof condition === 'object'
-        ? Object.entries(condition).map(([operator, operand]) => `${path} ${operator} ${operand}`)
-        : [`${path} = ${condition}`],
+      // An empty object or a list is no comparison, so it shows whole rather than vanishing from the row (#305).
+      referencePaths.isRecord(condition) && Object.keys(condition).length
+        ? Object.entries(condition).map(([operator, operand]) => `${path} ${operator} ${report.shown(operand)}`)
+        : [`${path} = ${report.shown(condition)}`],
     )
     .join(' and ') || 'no conditions';
 

@@ -339,7 +339,8 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   checkVertexRoutes(problems, location, vertex, state.vertices);
   const falls = proc ? vertexFalls(checking, { flow: state.name, id }, typed, proc) : {};
-  const approvalLabels = actionChecks.approvalLabelsOf(proc?.actions, id, checking.labelPrefix as string | undefined);
+  const prefix = checking.labelPrefix === undefined ? undefined : report.shown(checking.labelPrefix);
+  const approvalLabels = actionChecks.approvalLabelsOf(proc?.actions, id, prefix);
   state.resolved.set(id, resolveVertex(vertex, { agent, inputs: typed.inputs, falls, approvalLabels }, proc));
   state.procs.set(id, proc);
   state.fallsOf.set(id, falls);
