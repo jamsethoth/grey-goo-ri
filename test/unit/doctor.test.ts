@@ -703,6 +703,13 @@ for (const shown of ['{}', '[]']) {
   });
 }
 
+// JSON.parse reads a number past the largest double, such as 1e999, as Infinity, which JSON would spell null.
+test('gg doctor shows a number too large for a double as Infinity, not null', async () => {
+  const layer = withValue(['flows', 'default', 'actionCap'], JSON.parse('1e999'));
+  const { text } = await doctor.doctor({ config: sources(layer), ...DEPS });
+  assert.ok(text.includes('\n  actionCap: Infinity\n'), text);
+});
+
 test("gg doctor says a null item in an input's from is no source", async () => {
   const layer = withValue(
     ['flows', 'default', 'ticket', 'vertices', 'implementer-fix', 'inputs', 'previous', 'from', 0],
