@@ -176,7 +176,7 @@ test('a source with no gg.json loads empty, and its required settings are Proble
   assert.deepEqual(loaded.repository, { files: {} });
   assert.deepEqual(loaded.user, { files: {} });
   assert.deepEqual(
-    settings.sourceProblems(loaded).map((problem) => `${problem.at} ${problem.code}`),
+    (settings.parse(loaded).errors ?? []).map((problem) => `${problem.at} ${problem.code}`),
     [
       'commands required-key-missing',
       'testPaths required-key-missing',

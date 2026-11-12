@@ -148,6 +148,13 @@ export function sourceProblems({ repository, user, repositoryFile, userFile }: c
   return found.errors;
 }
 
+// The two gg.json files' settings: Settings when they hold no error, else the errors, never both (#362).
+export type ParsedSettings =
+  { settings: config.Settings; errors?: never } | { errors: report.Problem[]; settings?: never };
+
+// stub (#362)
+export const parse = (_configuration: config.Configuration): ParsedSettings => ({ errors: [] });
+
 // The settings a Run reads, once sourceProblems has found none.
 export const runSettings = ({ repository, user }: config.Configuration): config.Settings => ({
   labelPrefix: repository.labelPrefix as string,

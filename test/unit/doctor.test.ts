@@ -6,14 +6,19 @@ import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as github from '../../lib/github.ts';
 import * as record from '../../lib/record.ts';
+import * as run from '../../lib/run.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
+import * as fakeHarness from '../support/fake-harness.ts';
 import * as namedFlow from '../support/named-flow.ts';
+import * as runFixture from '../support/run-fixture.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
+// A Harness that passes preflight, as gg run's admission checks it.
+const FAKE_HARNESS = fakeHarness.fakeHarness();
 // A case that asks nobody reads no labels.
 const DEPS = {
-  harnesses: { fake: {} },
+  harnesses: { fake: FAKE_HARNESS },
   gh: github.createGh(fakeGh.fakeGh({ branch: 'b', ticket: 1 }).gh),
   cwd: '/repo',
 };
@@ -315,6 +320,69 @@ test('gg doctor lists an Execution Record whose Flow is no longer declared as an
   assert.ok(!text.includes('ticket-8'), text);
 });
 
+// gg doctor runs the Harness preflight gg run does, so a stub Harness fails both (#362, decision 1).
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("gg doctor reports harness-preflight-failed for each Vertex on a stub Harness, as gg run's preflight does", async () => {
+  const layer = example();
+  for (const agent of Object.values<Record<string, unknown>>(layer.agents)) agent.harness = 'claude';
+  const claude = await import('../../lib/harnesses/claude.ts');
+  const { text, exitCode } = await doctor.doctor({ config: sources(layer), ...DEPS, harnesses: { claude } });
+  assert.equal(exitCode, 1, text);
+  const vertices = Object.entries(layer.flows.default.ticket.vertices)
+    .filter(([, vertex]) => (vertex as { use?: string }).use !== undefined)
+    .map(([id]) => id);
+  assert.ok(vertices.length > 1, 'the example runs several Vertices on an Agent');
+  assert.deepEqual(
+    text.split('\n').filter((line) => line.startsWith('error: ')),
+    vertices.map(
+      (id) =>
+        `error: flows.default.ticket.vertices.${id}: vertex ${id}: harness claude: not implemented ` +
+        '[harness-preflight-failed]',
+    ),
+  );
+});
+
+// Each configuration gg run's preflight refuses, by what it breaks: none names --flow, which is gg run's own choice.
+const REFUSED: [string, (repository: ReturnType<typeof runFixture.testConfig>) => void][] = [
+  ['an undeclared command', (repository) => (repository.procedures.implement!.actions[1]!.command = 'lint')],
+  ['no testPaths', (repository) => delete repository.testPaths],
+  ['malformed commands', (repository) => (repository.commands = { Test: 'npm test', lint: '' })],
+  ['malformed approvers', (repository) => (repository.approvers = 'some-login')],
+  ['an unknown key', (repository) => ((repository.flows.default as { plan?: unknown }).plan = {})],
+  ['an access outside the Permission Intents', (repository) => (repository.agents.implementer!.access = 'read-write')],
+  ['an unset harness', (repository) => delete repository.agents.implementer!.harness],
+  ['an unregistered harness', (repository) => (repository.agents.implementer!.harness = 'nope')],
+  ['a stub harness', (repository) => (repository.agents.implementer!.harness = 'claude')],
+  ['no State Database', () => undefined],
+];
+
+// V1: a configuration cannot pass one command and fail the other, so doctor prints each error gg run refuses with.
+test("gg doctor gives every error gg run's preflight refuses with, line for line", async (t) => {
+  const claude = await import('../../lib/harnesses/claude.ts');
+  const harnesses = { fake: FAKE_HARNESS, claude };
+  for (const [breaks, change] of REFUSED) {
+    const commonDir =
+      breaks === 'no State Database'
+        ? tempDirectory.tempDirectory(t, 'gg-doctor-parity-')
+        : tempDirectory.stateDatabaseDirectory(t, 'gg-doctor-parity-');
+    const repository = runFixture.testConfig('');
+    change(repository);
+    const configuration = sources(repository);
+    let refused: string[] = [];
+    await run.admitConfiguration({ commonDir, config: configuration, harnesses }).catch((err: Error) => {
+      refused = err.message.split('\n').filter((line) => line.startsWith('error: '));
+    });
+    assert.ok(refused.length, `gg run refuses ${breaks}`);
+    const { text, exitCode } = await doctor.doctor({ config: configuration, ...DEPS, harnesses, commonDir });
+    assert.deepEqual(
+      text.split('\n').filter((line) => line.startsWith('error: ')),
+      refused,
+      breaks,
+    );
+    assert.equal(exitCode, 1, breaks);
+  }
+});
+
 test("the example declares its Procedures in the validator's shape", () => {
   const { flows, errors } = exampleLayer.check(
     exampleLayer.config(),
@@ -396,7 +464,7 @@ test('gg doctor prints the Await and Decide Labels of a Vertex that asks, and ea
   const gh = repository(AWAIT_LABEL, APPROVED_LABEL, REJECTED_LABEL);
   const { text, exitCode } = await doctor.doctor({
     config: sources(asking()),
-    harnesses: { fake: {} },
+    harnesses: { fake: FAKE_HARNESS },
     gh,
     cwd: '/repo',
   });
@@ -411,7 +479,7 @@ test('gg doctor reports the labels a Flow can request that the repository lacks'
   const gh = repository(AWAIT_LABEL);
   const { text, exitCode } = await doctor.doctor({
     config: sources(asking()),
-    harnesses: { fake: {} },
+    harnesses: { fake: FAKE_HARNESS },
     gh,
     cwd: '/repo',
   });
@@ -430,7 +498,7 @@ test("gg doctor says when it cannot read the repository's labels", async () => {
   fake.fail({ matches: () => true, status: 502 });
   const { text, exitCode } = await doctor.doctor({
     config: sources(asking()),
-    harnesses: { fake: {} },
+    harnesses: { fake: FAKE_HARNESS },
     gh: github.createGh(fake.gh),
     cwd: '/repo',
   });
@@ -442,7 +510,7 @@ test('gg doctor reads no labels for a Flow that asks nobody', async () => {
   const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
   await doctor.doctor({
     config: sources(example()),
-    harnesses: { fake: {} },
+    harnesses: { fake: FAKE_HARNESS },
     gh: github.createGh(fake.gh),
     cwd: '/repo',
   });

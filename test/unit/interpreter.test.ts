@@ -22,6 +22,8 @@ import * as golden from '../support/golden.ts';
 import { WRONG_ADD, greenFixture, greenWrites, runFirstVisit } from '../support/golden-run.ts';
 import * as keys from '../support/keys.ts';
 import * as namedFlow from '../support/named-flow.ts';
+import * as seededRecords from '../support/seeded-records.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 import { editRuns } from '../support/suite-runs.ts';
 
 type GoldenFixture = golden.GoldenFixture;
@@ -739,4 +741,19 @@ test("the reply reaches the next Vertex's Brief through its input", async (t) =>
   const briefs = fixture.harness.calls.filter((call) => call.brief?.includes('Answers:')).map((call) => call.brief!);
   assert.equal(briefs.length, 1, 'only the green Visit after the Decision has a reply');
   assert.ok(briefs[0]!.includes('Answers: 1. Use B.'), briefs[0]);
+});
+
+// One function says what a Run does with a record it finds, so admission and the configuration check never disagree
+// (#362): its state, a fresh hold, and a report still to finish.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a Run resumes, restarts, finishes the report of, or leaves each Execution Record by its state and report', (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-resumption-');
+  const found = seededRecords.SHAPES.map((shape, index) => ({
+    shape: shape.name,
+    resumption: interpreter.resumption(seededRecords.seed(commonDir, index + 1, 'default', shape)),
+  }));
+  assert.deepEqual(
+    found,
+    seededRecords.SHAPES.map(({ name, resumption }) => ({ shape: name, resumption })),
+  );
 });

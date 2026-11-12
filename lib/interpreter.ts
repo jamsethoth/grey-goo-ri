@@ -46,6 +46,12 @@ export const pendingReport = (executionRecord: record.ExecutionRecord): boolean 
   (!!executionRecord.admissionStop && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
   context.reportDecided(executionRecord);
 
+// What a Run does with an Execution Record it finds (#362).
+export type Resumption = 'finish-report' | 'restart' | 'held' | 'finished' | 'resume';
+
+// stub (#362)
+export const resumption = (_executionRecord: record.ExecutionRecord): Resumption => 'finished';
+
 // Reconciliation looks for a remote effect as a retry does: a failed lookup is retried on the Action's budget.
 const findEffect =
   (runContext: RunContext): effects.FindEffect =>

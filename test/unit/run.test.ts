@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -204,19 +204,6 @@ test('every line a Run prints names its repository, in the terminal and in run.l
   );
 });
 
-test('an error line ends in its code', async (t) => {
-  const fixture = runFixture.fixture(t);
-  fixture.options.config.repository.procedures.implement.actions[1].command = 'lint';
-  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      'error: procedures.implement.actions[1]: Check test names command "lint", ' +
-        'which the repository does not declare [undeclared-command]',
-    ]);
-    return true;
-  });
-});
-
 test('a warning line ends in its code, in run.log', async (t) => {
   const fixture = runFixture.fixture(t);
   fixture.options.config.repository.agents.spare = { harness: 'fake' };
@@ -317,6 +304,19 @@ test('a resumed Execution keeps its recorded worktree path and repository', asyn
 // A preflight failure: the error gg run rejects with, its message and exit code.
 type PreflightError = Error & { exitCode?: number };
 
+// gg run builds its preflight failure in one place, so the configuration's and the repository read's read alike (#362).
+test('the preflight failed text is built at one site', () => {
+  const lib = fileURLToPath(new URL('../../lib/', import.meta.url));
+  const sites = readdirSync(lib, { recursive: true, encoding: 'utf8' })
+    .filter((name) => name.endsWith('.ts'))
+    .flatMap((name) =>
+      readFileSync(join(lib, name), 'utf8')
+        .split('\n')
+        .flatMap((line, index) => (/[`'"]preflight failed/.test(line) ? [`${name}:${index + 1}`] : [])),
+    );
+  assert.equal(sites.length, 1, sites.join('\n'));
+});
+
 test('preflight names every failing vertex in one error, before any gh call, worktree or run directory', async (t) => {
   const fixture = runFixture.fixture(t, { fullFlow: true });
   fixture.options.config.repository.agents.implementer.harness = 'nope';
@@ -341,44 +341,6 @@ test('preflight names every failing vertex in one error, before any gh call, wor
   assert.equal(existsSync(join(fixture.root, 'wt')), false, 'no worktree root');
   assert.equal(existsSync(join(fixture.commonDir, 'gg', 'runs')), false, 'no run directory');
   assert.equal(fixture.harness.calls.length, 0, 'no agent started');
-});
-
-test('preflight rejects a repository without testPaths', async (t) => {
-  const fixture = runFixture.fixture(t);
-  delete fixture.options.config.repository.testPaths;
-  const file = fixture.options.config.repositoryFile;
-  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      `error: testPaths: ${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it [required-key-missing]`,
-    ]);
-    assert.equal(err.exitCode, 1);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
-  assert.equal(fixture.worktrees(), 1, 'no worktree');
-});
-
-// gg ships no Flow, so a repository that declares none, beside a user's directory that declares none, fails preflight
-// naming gg init (P1a).
-test('preflight without a Flow names gg init', async (t) => {
-  const fixture = runFixture.fixture(t);
-  const bare = join(fixture.root, 'bare');
-  mkdirSync(config.repositoryDirectory(bare), { recursive: true });
-  const contract = { commands: { test: 'npm test' }, testPaths: ['test/**'], labelPrefix: 'gg', baseBranch: 'main' };
-  writeFileSync(config.configFile(config.repositoryDirectory(bare)), JSON.stringify(contract));
-  fixture.options.config.repository = config.loadSources(bare, join(fixture.root, 'no-user'))
-    .repository as unknown as typeof fixture.options.config.repository;
-  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      "error: flows: no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/ " +
-        '[no-flow-declared]',
-    ]);
-    assert.equal(err.exitCode, 1);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
 });
 
 // The fixture's full Flow as default, and as light its red, green and publish Flow, which has no reviewer.
@@ -509,41 +471,6 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
   assert.deepEqual(fixture.gh.calls, [], 'no gh call');
 });
 
-// The fixture Flow's green Vertex, whose inputs a case adds to.
-const greenInputs = (fixture: runFixture.RunFixture) =>
-  fixture.options.config.repository.flows.default.ticket.vertices.green.inputs as Record<string, unknown>;
-
-test('gg run rejects a required input that a route may not produce', async (t) => {
-  const fixture = runFixture.fixture(t);
-  greenInputs(fixture).previous = { from: 'green.commit.files' };
-  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      'error: flows.default.ticket.vertices.green.inputs.previous: input previous is required, but some route to ' +
-        'green may not produce any of its sources; admission checks routes, not runs, so if every run does produce ' +
-        'one, mark the input optional [required-input-unsure]',
-    ]);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
-  assert.equal(fixture.harness.calls.length, 0, 'no Visit');
-});
-
-test('gg run rejects pick over a value that is not a list of objects', async (t) => {
-  const fixture = runFixture.fixture(t);
-  greenInputs(fixture).names = { from: 'red.commit.files', pick: 'name' };
-  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      'error: flows.default.ticket.vertices.green.inputs.names: pick needs a list of objects; "red.commit.files" is ' +
-        '{"kind":"list","of":{"kind":"string"}} [not-a-list-of-objects]',
-    ]);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
-  assert.equal(fixture.harness.calls.length, 0, 'no Visit');
-});
-
 test('an Agent naming no harness still exits 2 naming the example Layers', async (t) => {
   const fixture = runFixture.fixture(t);
   delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
@@ -647,15 +574,6 @@ test("a Run creates the Flow's await and decide labels before it asks", async (t
     assert.ok(fixture.gh.repoLabels.has(label), label);
   assert.ok(fixture.gh.repoLabels.has('gg:await:cleanup'), 'and the label a cleanup hold asks with');
   assert.ok(fixture.gh.labels.has('gg:await:approve'));
-});
-
-test('approvers reach the reader, and a malformed list fails preflight', async (t) => {
-  const fixture = runFixture.fixture(t);
-  fixture.options.config.repository.approvers = 'some-login';
-  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
-    assert.match(err.message, /approvers must be a list of GitHub logins/);
-    return true;
-  });
 });
 
 test('an epic Run resumes a Pending sub-issue', async (t) => {

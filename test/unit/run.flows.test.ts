@@ -6,7 +6,6 @@ import * as config from '../../lib/config.ts';
 import * as marker from '../../lib/marker.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
-import * as runFlows from '../../lib/run-flows.ts';
 import * as approvalFlow from '../support/approval-flow.ts';
 import * as executionContext from '../support/execution-context.ts';
 import type * as golden from '../support/golden.ts';
@@ -52,26 +51,6 @@ test("a Run under one Flow ensures another declared Flow's Await and Decide Labe
   assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
   for (const label of ['gg:await:approve', 'gg:decide:approve:approved', 'gg:decide:approve:rejected'])
     assert.ok(fixture.gh.repoLabels.has(label), label);
-});
-
-test('preflight names a Harness that fails in a Flow --flow does not name', async (t) => {
-  const fixture = runFixture.fixture(t);
-  const other = runFixture.testConfig(fixture.root).flows.default as golden.ConfiguredFlow;
-  fixture.options.config.repository.agents.other = {
-    ...fixture.options.config.repository.agents.implementer,
-    harness: 'claude',
-  };
-  (other.ticket.vertices.red as { use: string }).use = 'other';
-  fixture.options.config.repository.flows.other = other;
-  fixture.options.harnesses.claude = await import('../../lib/harnesses/claude.ts');
-  await assert.rejects(run.runTarget({ ...fixture.options, flow: 'default' }), (err: Error) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      'error: flows.other.ticket.vertices.red: vertex red: harness claude: not implemented [harness-preflight-failed]',
-    ]);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
 });
 
 // A hold an earlier Run decided, whose report has not landed, is finished though its Flow is no longer declared: the
@@ -169,22 +148,6 @@ test('preflight lists a missing State Database beside the configuration errors, 
   assert.equal(existsSync(join(fixture.commonDir, 'gg')), false, 'no gg directory: no run directory, lock or database');
 });
 
-// A lost gg.db leaves gg/ behind, so the check is on the file: preflight and gg doctor both report it this way (#150).
-test('a gg.db deleted from an existing gg directory is a missing State Database', (t) => {
-  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-run-flows-');
-  rmSync(join(commonDir, 'gg', 'gg.db'));
-  assert.deepEqual(
-    runFlows.stateDatabaseProblems(commonDir).map(({ code, message, params }) => ({ code, message, params })),
-    [
-      {
-        code: 'state-database-missing',
-        message: `no State Database at ${join(commonDir, 'gg', 'gg.db')}: run gg init`,
-        params: { path: join(commonDir, 'gg', 'gg.db') },
-      },
-    ],
-  );
-});
-
 // The Config Hash fingerprints a Flow's content, not its source (Q25): the same Flow, with files only another Agent
 // names beside it, hashes alike from either source.
 test("a user Flow's Config Hash equals the same Flow's declared in the repository", async (t) => {
@@ -192,7 +155,7 @@ test("a user Flow's Config Hash equals the same Flow's declared in the repositor
   const user = withUserFlows(fixture, { default: runFixture.testConfig(fixture.root).flows.default! });
   user.agents.spare = { ...user.agents.implementer, persona: 'spare.md' };
   user.files['spare.md'] = { bytes: '# spare\n', hash: config.sha256('# spare\n') };
-  const { flows } = await runFlows.admitConfiguration({
+  const { flows } = await run.admitConfiguration({
     commonDir: fixture.commonDir,
     config: fixture.options.config,
     harnesses: fixture.options.harnesses,

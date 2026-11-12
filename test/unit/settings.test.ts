@@ -16,12 +16,14 @@ function settingsProblems({ repository = {}, user = {} }: { repository?: object;
     ...Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)),
     files: {},
   });
-  return settings.sourceProblems({
-    repository: without({ ...SETTINGS.repository, ...repository }),
-    user: without({ ...SETTINGS.user, ...user }),
-    repositoryFile: REPOSITORY_FILE,
-    userFile: USER_FILE,
-  });
+  return (
+    settings.parse({
+      repository: without({ ...SETTINGS.repository, ...repository }),
+      user: without({ ...SETTINGS.user, ...user }),
+      repositoryFile: REPOSITORY_FILE,
+      userFile: USER_FILE,
+    }).errors ?? []
+  );
 }
 const firedSettings = (changes: { repository?: object; user?: object }) =>
   settingsProblems(changes).map((problem) => `${problem.at} ${problem.code}`);
@@ -215,54 +217,53 @@ test('a repository Flow named user:<name> is a reserved name', () => {
 });
 /* eslint-enable id-denylist */
 
-// The sentences a repository contract check gives, for the cases about its wording.
-const commandMessages = (declared: unknown, file: string) =>
-  settings.commandProblems(declared, file).map((problem) => problem.message);
-const testPathsMessages = (testPaths: unknown, file: string) =>
-  settings.testPathsProblems(testPaths, file).map((problem) => problem.message);
-const approversMessages = (approvers: unknown, file: string) =>
-  settings.approversProblems(approvers, file).map((problem) => problem.message);
+// The sentences the parse gives for one repository setting, the others valid, for the cases about its wording.
+const repositoryMessages = (key: string, value: unknown) =>
+  settingsProblems({ repository: { [key]: value } }).map((problem) => problem.message);
+const commandMessages = (declared: unknown) => repositoryMessages('commands', declared);
+const testPathsMessages = (testPaths: unknown) => repositoryMessages('testPaths', testPaths);
+const approversMessages = (approvers: unknown) => repositoryMessages('approvers', approvers);
 // The message for a testPaths entry that is not a glob relative to the repository root.
 const notAGlob = (shown: string) =>
   `${REPOSITORY_FILE}: testPaths entry ${shown} must be a glob relative to the repository root: non-empty segments ` +
   'split by "/", no "." or ".." segment, "**" only as a whole segment, and no [ ] ? \\ : or control character';
 
-test('commandProblems accepts a valid set and names each malformed entry', () => {
+test('the parse accepts a valid set of commands and names each malformed entry', () => {
   const missing = `${REPOSITORY_FILE} declares no test command; merge {"commands":{"test":"<command line>"}} into it`;
-  assert.deepEqual(commandMessages({ test: 'npm test', 'lint-js': 'x' }, REPOSITORY_FILE), []);
-  assert.deepEqual(commandMessages(undefined, REPOSITORY_FILE), [missing]);
-  assert.deepEqual(commandMessages({ Test: 'npm test' }, REPOSITORY_FILE), [
+  assert.deepEqual(commandMessages({ test: 'npm test', 'lint-js': 'x' }), []);
+  assert.deepEqual(commandMessages(undefined), [missing]);
+  assert.deepEqual(commandMessages({ Test: 'npm test' }), [
     `${REPOSITORY_FILE}: command name "Test" must match [a-z][a-z0-9-]*`,
     missing,
   ]);
 });
 
 for (const bad of ['', '  ', 'a\nb', 'a\rb', 1, null]) {
-  test(`commandProblems names a test command of ${JSON.stringify(bad)} as malformed`, () => {
-    assert.deepEqual(commandMessages({ test: bad }, REPOSITORY_FILE), [
+  test(`the parse names a test command of ${JSON.stringify(bad)} as malformed`, () => {
+    assert.deepEqual(commandMessages({ test: bad }), [
       `${REPOSITORY_FILE}: command test must be a non-empty single-line string`,
     ]);
   });
 }
 
 for (const bad of [['npm test'], 'npm test', null]) {
-  test(`commandProblems names commands of ${JSON.stringify(bad)} as not an object`, () => {
-    assert.deepEqual(commandMessages(bad, REPOSITORY_FILE), [
+  test(`the parse names commands of ${JSON.stringify(bad)} as not an object`, () => {
+    assert.deepEqual(commandMessages(bad), [
       `${REPOSITORY_FILE}: commands must be an object from name to command line`,
     ]);
   });
 }
 
-test('testPathsProblems names a missing, empty or malformed testPaths', () => {
+test('the parse names a missing, empty or malformed testPaths', () => {
   const notAList = `${REPOSITORY_FILE}: testPaths must be a non-empty list of glob strings`;
-  assert.deepEqual(testPathsMessages(['test/**', '**/*.spec.*'], REPOSITORY_FILE), []);
-  assert.deepEqual(testPathsMessages(undefined, REPOSITORY_FILE), [
+  assert.deepEqual(testPathsMessages(['test/**', '**/*.spec.*']), []);
+  assert.deepEqual(testPathsMessages(undefined), [
     `${REPOSITORY_FILE} declares no testPaths; merge {"testPaths":["<glob>"]} into it`,
   ]);
-  assert.deepEqual(testPathsMessages([], REPOSITORY_FILE), [notAList]);
-  assert.deepEqual(testPathsMessages('test/**', REPOSITORY_FILE), [notAList]);
-  assert.deepEqual(testPathsMessages({ globs: ['test/**'] }, REPOSITORY_FILE), [notAList]);
-  assert.deepEqual(testPathsMessages(['test/**', 1, '', ' ', 'a\nb', null], REPOSITORY_FILE), [
+  assert.deepEqual(testPathsMessages([]), [notAList]);
+  assert.deepEqual(testPathsMessages('test/**'), [notAList]);
+  assert.deepEqual(testPathsMessages({ globs: ['test/**'] }), [notAList]);
+  assert.deepEqual(testPathsMessages(['test/**', 1, '', ' ', 'a\nb', null]), [
     notAGlob('1'),
     notAGlob('""'),
     notAGlob('" "'),
@@ -274,56 +275,44 @@ test('testPathsProblems names a missing, empty or malformed testPaths', () => {
 // Git rejects a pathspec outside the repository only when the first Attempt lists its tests, after admission's
 // effects, and reads brackets, backslashes, a partial "**" and "?" (one byte of a UTF-8 name) differently from Test
 // Immutability, so preflight refuses them.
-test(
-  'testPathsProblems names a testPaths entry git would reject ' + 'or read differently from Test Immutability',
-  () => {
-    assert.deepEqual(
-      testPathsMessages(
-        ['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs'],
-        REPOSITORY_FILE,
-      ),
-      [],
-    );
-    assert.deepEqual(
-      testPathsMessages(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/'], REPOSITORY_FILE),
-      [
-        notAGlob('"../tests/**"'),
-        notAGlob('"/abs/**"'),
-        notAGlob('"C:/x/**"'),
-        notAGlob('"./test/**"'),
-        notAGlob('"test//x"'),
-        notAGlob('"test/"'),
-      ],
-    );
-    assert.deepEqual(
-      testPathsMessages(
-        ['spec/[ab].mjs', 'spec\\a.mjs', '**.test.mjs', 'deep**', 'a/***/b', 'a\u0000b', 'spec/a?.mjs'],
-        REPOSITORY_FILE,
-      ),
-      [
-        notAGlob('"spec/[ab].mjs"'),
-        notAGlob('"spec\\\\a.mjs"'),
-        notAGlob('"**.test.mjs"'),
-        notAGlob('"deep**"'),
-        notAGlob('"a/***/b"'),
-        notAGlob('"a\\u0000b"'),
-        notAGlob('"spec/a?.mjs"'),
-      ],
-    );
-  },
-);
+test('the parse names a testPaths entry git would reject ' + 'or read differently from Test Immutability', () => {
+  assert.deepEqual(
+    testPathsMessages(['spec', 'spec/**', '**/x/**', 'de*/**/z.mjs', 'spec/é*', 'scripts/run-suite.mjs']),
+    [],
+  );
+  assert.deepEqual(testPathsMessages(['../tests/**', '/abs/**', 'C:/x/**', './test/**', 'test//x', 'test/']), [
+    notAGlob('"../tests/**"'),
+    notAGlob('"/abs/**"'),
+    notAGlob('"C:/x/**"'),
+    notAGlob('"./test/**"'),
+    notAGlob('"test//x"'),
+    notAGlob('"test/"'),
+  ]);
+  assert.deepEqual(
+    testPathsMessages(['spec/[ab].mjs', 'spec\\a.mjs', '**.test.mjs', 'deep**', 'a/***/b', 'a\u0000b', 'spec/a?.mjs']),
+    [
+      notAGlob('"spec/[ab].mjs"'),
+      notAGlob('"spec\\\\a.mjs"'),
+      notAGlob('"**.test.mjs"'),
+      notAGlob('"deep**"'),
+      notAGlob('"a/***/b"'),
+      notAGlob('"a\\u0000b"'),
+      notAGlob('"spec/a?.mjs"'),
+    ],
+  );
+});
 
 test('a malformed approvers list fails admission', () => {
   const file = '/repo/.agents/gg/gg.json';
   const notAList = `${file}: approvers must be a list of GitHub logins, each non-empty with no surrounding space`;
-  assert.deepEqual(approversMessages(undefined, file), []);
-  assert.deepEqual(approversMessages([], file), []);
-  assert.deepEqual(approversMessages(['some-login'], file), []);
-  assert.deepEqual(approversMessages('some-login', file), [notAList]);
-  assert.deepEqual(approversMessages([''], file), [notAList]);
-  assert.deepEqual(approversMessages([' '], file), [notAList]);
-  assert.deepEqual(approversMessages([' some-login '], file), [notAList], 'it could never match a login');
-  assert.deepEqual(approversMessages(['some-login', 3], file), [notAList]);
+  assert.deepEqual(approversMessages(undefined), []);
+  assert.deepEqual(approversMessages([]), []);
+  assert.deepEqual(approversMessages(['some-login']), []);
+  assert.deepEqual(approversMessages('some-login'), [notAList]);
+  assert.deepEqual(approversMessages(['']), [notAList]);
+  assert.deepEqual(approversMessages([' ']), [notAList]);
+  assert.deepEqual(approversMessages([' some-login ']), [notAList], 'it could never match a login');
+  assert.deepEqual(approversMessages(['some-login', 3]), [notAList]);
 });
 
 /* eslint-disable id-denylist -- a Problem's key is at */
@@ -331,7 +320,7 @@ test('a malformed approvers list fails admission', () => {
 // breaks, and carrying the values its sentence names, the gg.json among them.
 test('each repository contract problem carries its location, code and params', () => {
   const file = REPOSITORY_FILE;
-  assert.deepEqual(settings.commandProblems({ Test: 'npm test', lint: '' }, file), [
+  assert.deepEqual(settingsProblems({ repository: { commands: { Test: 'npm test', lint: '' } } }), [
     {
       at: 'commands',
       code: 'invalid-name',
@@ -353,25 +342,25 @@ test('each repository contract problem carries its location, code and params', (
   ]);
   const codes = (problems: { at: string; code: string; params?: unknown }[]) =>
     problems.map(({ at, code, params }) => ({ at, code, params }));
-  assert.deepEqual(codes(settings.commandProblems('npm test', file)), [
+  assert.deepEqual(codes(settingsProblems({ repository: { commands: 'npm test' } })), [
     { at: 'commands', code: 'not-an-object', params: { file } },
   ]);
-  assert.deepEqual(codes(settings.testPathsProblems(undefined, file)), [
+  assert.deepEqual(codes(settingsProblems({ repository: { testPaths: undefined } })), [
     { at: 'testPaths', code: 'required-key-missing', params: { key: 'testPaths', file } },
   ]);
-  assert.deepEqual(codes(settings.testPathsProblems([], file)), [
+  assert.deepEqual(codes(settingsProblems({ repository: { testPaths: [] } })), [
     { at: 'testPaths', code: 'empty-list', params: { file } },
   ]);
-  assert.deepEqual(codes(settings.testPathsProblems('test/**', file)), [
+  assert.deepEqual(codes(settingsProblems({ repository: { testPaths: 'test/**' } })), [
     { at: 'testPaths', code: 'not-a-list', params: { file } },
   ]);
-  assert.deepEqual(codes(settings.testPathsProblems(['test/**', '../x'], file)), [
+  assert.deepEqual(codes(settingsProblems({ repository: { testPaths: ['test/**', '../x'] } })), [
     { at: 'testPaths[1]', code: 'invalid-glob', params: { glob: '../x', file } },
   ]);
-  assert.deepEqual(codes(settings.approversProblems('some-login', file)), [
+  assert.deepEqual(codes(settingsProblems({ repository: { approvers: 'some-login' } })), [
     { at: 'approvers', code: 'not-a-list', params: { file } },
   ]);
-  assert.deepEqual(codes(settings.approversProblems(['some-login', 3], file)), [
+  assert.deepEqual(codes(settingsProblems({ repository: { approvers: ['some-login', 3] } })), [
     { at: 'approvers', code: 'invalid-name', params: { file } },
   ]);
 });
@@ -386,7 +375,7 @@ test('the repository contract problems are its commands, testPaths, approvers, l
     baseBranch: 1,
   };
   assert.deepEqual(
-    settings.contractProblems(repository, REPOSITORY_FILE).map(({ at, code }) => `${at} ${code}`),
+    settingsProblems({ repository }).map(({ at, code }) => `${at} ${code}`),
     [
       'commands invalid-name',
       'testPaths empty-list',
@@ -394,5 +383,38 @@ test('the repository contract problems are its commands, testPaths, approvers, l
       'labelPrefix invalid-name',
       'baseBranch not-a-string',
     ],
+  );
+});
+
+// Settings when the two files hold no error, the errors otherwise, never both: tsc then stops a caller reading Settings
+// it has not checked (#362, decision 4).
+test('the parse gives every Setting when the settings hold no error, and only the errors otherwise', () => {
+  const configuration = (repository: object) => ({
+    repository: { ...SETTINGS.repository, approvers: ['some-login'], ...repository, files: {} },
+    user: { ...SETTINGS.user, files: {} },
+    repositoryFile: REPOSITORY_FILE,
+    userFile: USER_FILE,
+  });
+  assert.deepEqual(settings.parse(configuration({})), {
+    settings: {
+      labelPrefix: 'gg',
+      baseBranch: 'main',
+      worktreeRoot: '~/worktrees',
+      maxParallel: 2,
+      commands: { test: 'npm test' },
+      testPaths: ['test/**'],
+      approvers: ['some-login'],
+    },
+  });
+  const { approvers: _approvers, ...withoutApprovers } = configuration({}).repository;
+  assert.deepEqual(
+    settings.parse({ ...configuration({}), repository: withoutApprovers }).settings?.approvers,
+    undefined,
+  );
+  const failed = settings.parse(configuration({ labelPrefix: 'a:b' }));
+  assert.deepEqual(Object.keys(failed), ['errors']);
+  assert.deepEqual(
+    failed.errors?.map((problem) => problem.code),
+    ['invalid-name'],
   );
 });

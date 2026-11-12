@@ -216,6 +216,20 @@ test('gg run accepts --flow with a value', (t) => {
   assertUsage(missing.stderr);
 });
 
+// gg doctor runs gg run's Harness preflight (#362), and the shipped Harnesses are stubs until slices 2 and 3: the
+// example's only errors are each claude Vertex's preflight, and doctor exits 1.
+function assertOnlyStubPreflight(stdout: string, status: number | null) {
+  const errors = stdout.split('\n').filter((line) => line.startsWith('error: '));
+  assert.ok(errors.length, stdout);
+  for (const line of errors)
+    assert.match(
+      line,
+      /^error: flows\.default\.ticket\.vertices\.[\w-]+: vertex [\w-]+: harness claude: not implemented /,
+    );
+  for (const line of errors) assert.ok(line.endsWith(' [harness-preflight-failed]'), line);
+  assert.equal(status, 1, stdout);
+}
+
 // The example fixture as the repository's configuration in `directory`: its gg.json and every file it names.
 function writeExampleLayer(directory: string) {
   mkdirSync(directory, { recursive: true });
@@ -241,7 +255,7 @@ const REPO_COMMANDS: [
     'doctor',
     ['doctor'],
     (result) => {
-      assert.equal(result.status, 0, String(result.stdout) + String(result.stderr));
+      assertOnlyStubPreflight(String(result.stdout), result.status);
       assert.ok(String(result.stdout).includes('\nvertex reviewer\n  procedure: review\n'), String(result.stdout));
     },
   ],
@@ -313,8 +327,10 @@ test('gg init creates the State Database in the git common dir, and a second gg 
   assert.ok(second.stdout.includes(`\ngg init kept the State Database at ${database}.\n`), second.stdout);
 });
 
-// The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command.
-test('gg init --harness claude then gg doctor passes in a temp repository with a temp GG_HOME', (t) => {
+// The first thing a person runs: gg init writes both sources, and gg doctor then needs only the test command, until the
+// shipped Harnesses pass preflight.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test("gg init --harness claude then gg doctor reports only the stub Harness's preflight, in a temp repository with a temp GG_HOME", (t) => {
   const { repo, userDirectory, ggIn } = tempRepo(t);
   const init = ggIn('init', '--harness', 'claude');
   assert.equal(init.status, 0, init.stderr);
@@ -325,8 +341,8 @@ test('gg init --harness claude then gg doctor passes in a temp repository with a
   written.commands.test = 'npm test';
   writeFileSync(file, JSON.stringify(written));
   const doctor = ggIn('doctor');
-  assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr);
-  assert.match(doctor.stdout, /\n0 errors, 2 warnings\n$/);
+  assertOnlyStubPreflight(doctor.stdout, doctor.status);
+  assert.match(doctor.stdout, /\n\d+ errors, 2 warnings\n$/);
 });
 
 test("gg doctor reads the repository's configuration and its schemas and prints the Resolved Flow", (t) => {
@@ -339,8 +355,7 @@ test("gg doctor reads the repository's configuration and its schemas and prints 
     result.stdout + result.stderr,
   );
   assert.ok(result.stdout.includes('\n  routes: misscoped -> end needs-replan, * -> end needs-human\n'), result.stdout);
-  assert.ok(!result.stdout.includes('\nerror: '), result.stdout);
-  assert.equal(result.status, 0, result.stdout);
+  assertOnlyStubPreflight(result.stdout, result.status);
 });
 
 for (const args of [['doctor'], ['run', '1']]) {

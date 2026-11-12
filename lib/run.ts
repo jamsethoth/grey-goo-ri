@@ -106,6 +106,9 @@ export interface RunOptions {
   testImmutability?: runContext.TestImmutability;
 }
 
+// stub (#362): moves here from lib/run-flows.ts.
+export const admitConfiguration = runFlows.admitConfiguration;
+
 // Every line and error a Run prints names its repository on its first line, so two gg processes can share a terminal or
 // a log: by its checkout's folder until gh has given its owner/name, then by that (#321).
 export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
