@@ -51,9 +51,9 @@ export async function timeOutWhen(
   let wasReady = false;
   const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal }))
     .then((result) => {
-      // What the result names, recorded as it answers, so the teardown below ends only those processes.
-      for (const pid of [...(result.survivors ?? []).map((survivor) => survivor.pid), ...(result.leftovers ?? [])])
-        processProbe.remember(pid);
+      // Each survivor recorded by the start its cleanup read while it ran, so the teardown below never ends a process
+      // that took its pid since. A leftover is ended by that cleanup, or else named a survivor.
+      for (const { pid, created } of result.survivors ?? []) processProbe.remember(pid, created);
       return result;
     })
     .finally(() => {
@@ -63,9 +63,8 @@ export async function timeOutWhen(
     async () => {
       clock.abort();
       await running.then(
-        ({ survivors = [], leftovers = [] }) => {
+        ({ survivors = [] }) => {
           for (const survivor of survivors) processProbe.endProcess(survivor.pid);
-          for (const pid of leftovers) processProbe.endProcess(pid);
         },
         () => {},
       );

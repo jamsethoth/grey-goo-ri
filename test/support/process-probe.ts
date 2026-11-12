@@ -1,27 +1,35 @@
 // What a case reads of the processes it started, and how it ends them. A pid is checked against the process it was
 // recorded for, never alone: a pid read after its process ended can name another process by then, as Windows gives a
-// freed pid out again within seconds on a busy machine (#332).
-import { existsSync, readFileSync } from 'node:fs';
+// freed pid out again within seconds on a busy machine (#332). That other process started after the recorded one ended,
+// so a pid means the recorded process only while the process under it started no later than when the recorded one was
+// seen running.
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import * as containment from '../../lib/containment.ts';
 
-// The process each pid was recorded for, by what its command line holds: the pid file it was read from, since every
-// script that writes one has that path among its arguments, or the whole command line remember() read. null records a
-// process that had ended before it could be read.
-const recorded = new Map<number, string | null>();
+// For each recorded pid, when its process was last seen running (ms since the epoch): its pid file's write, since a
+// pid file is written while the process it names runs, or when remember() found it, or the start a cleanup reported.
+// null records a process that had ended before it could be seen.
+const recorded = new Map<number, number | null>();
+
+// How much later than the true start a start read here can be: Windows gives it to the millisecond, Linux in clock
+// ticks of 10 ms against an uptime of 10 ms.
+const START_READ_MS = process.platform === 'win32' ? 1 : 20;
+// ps lstart gives whole seconds, from a boot time that can itself be a second off.
+const LSTART_MS = 2000;
 
 // kernel32, opened on the first Windows check rather than at import.
 const windowsKernel32 = (() => {
   let opened: { kernel32: containment.Kernel32 | null } | undefined;
   return () => {
     opened ??= { kernel32: containment.openKernel32() };
-    if (!opened.kernel32) throw new Error('process-probe reads command lines through node:ffi, which is unavailable');
+    if (!opened.kernel32) throw new Error('process-probe reads start times through node:ffi, which is unavailable');
     return opened.kernel32;
   };
 })();
 
-// Whether any process runs under pid. A Windows process that has exited can still answer its command line while
-// something holds it open, so its command line alone does not say it runs.
+// Whether any process runs under pid. A Windows process that has exited can still answer while something holds it
+// open, so a start time alone does not say it runs.
 const runs = (pid: number) => {
   try {
     process.kill(pid, 0);
@@ -31,13 +39,21 @@ const runs = (pid: number) => {
   }
 };
 
-// The command line of the process running under pid, or null when none runs there.
+// When the process running under pid started (ms since the epoch), or null when none runs there.
 // shortcut: Windows and Linux (/proc) only, the platforms CI runs; macOS would need ps.
-function commandLineOf(pid: number): string | null {
+function startOf(pid: number): number | null {
   if (!runs(pid)) return null;
-  if (process.platform === 'win32') return containment.describe(windowsKernel32(), pid).commandLine;
+  if (process.platform === 'win32') {
+    const { created } = containment.describe(windowsKernel32(), pid);
+    return created === null ? null : Date.parse(created);
+  }
   try {
-    return readFileSync(`/proc/${pid}/cmdline`, 'utf8').replaceAll('\0', ' ') || null;
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' '); // from field 3 on: the name may hold spaces
+    if (fields[0] === 'Z') return null; // a zombie runs nothing
+    // field 22 is the start in clock ticks (100 a second) since boot, which /proc/uptime counts in seconds
+    const uptimeMs = Number(readFileSync('/proc/uptime', 'utf8').split(' ')[0]) * 1000;
+    return Date.now() - uptimeMs + Number(fields[19]) * 10;
   } catch {
     return null;
   }
@@ -48,22 +64,27 @@ function commandLineOf(pid: number): string | null {
 // process recorded is an error too, since nothing tells its process from another that took the pid.
 export const alive = (pid: number) => {
   if (!(pid > 0)) throw new Error(`no process to check: the pid is ${pid}`);
-  const marker = recorded.get(pid);
-  if (marker === undefined)
+  const seen = recorded.get(pid);
+  if (seen === undefined)
     throw new Error(`no process recorded for pid ${pid}: read it with pidIn, or remember it while it runs`);
-  return marker !== null && (commandLineOf(pid)?.includes(marker) ?? false);
+  const started = startOf(pid);
+  return seen !== null && started !== null && started <= seen + START_READ_MS;
 };
 
-// Records the process now running under pid as the one a later check of that pid means. Called while the case knows
-// the process runs; one already gone is recorded as ended.
-export function remember(pid: number) {
-  recorded.set(pid, commandLineOf(pid));
+// Records the process under pid as the one a later check of that pid means: by started, its start as a cleanup
+// reported it (an ISO time, or ps lstart in UTC), or else as the process running now, recorded as ended if none is.
+// Without started it must be called while the case knows the process runs.
+export function remember(pid: number, started?: string | null) {
+  if (started) {
+    const iso = started.includes('T');
+    recorded.set(pid, Date.parse(iso ? started : `${started} UTC`) + (iso ? 0 : LSTART_MS));
+  } else recorded.set(pid, startOf(pid) === null ? null : Date.now());
 }
 
 // The pid a script wrote to file, or 0 while it has not (yet) written it in full.
 export const pidIn = (file: string) => {
   const pid = existsSync(file) ? Number(readFileSync(file, 'utf8')) : 0;
-  if (pid > 0) recorded.set(pid, file);
+  if (pid > 0) recorded.set(pid, statSync(file).mtimeMs);
   return pid;
 };
 

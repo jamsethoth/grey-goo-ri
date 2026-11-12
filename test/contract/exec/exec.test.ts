@@ -1,9 +1,10 @@
 // lib/exec.ts's contract on every platform: run, and runShell with the commands that finish or time out on their own.
 // The descendants a timeout kills are in exec.timeout.test.ts, and the Windows job object in exec.job.test.ts.
 import { test } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as exec from '../../../lib/exec.ts';
@@ -99,18 +100,53 @@ test('checking a process whose pid was never written fails the case', () => {
 });
 
 // A pid read after its process ended can name another process by then: Windows gives a freed pid out again (#332).
-test('a pid file naming a process that did not write it reads as not running, and is never ended', async (t) => {
-  const pidFile = join(scratch, 'held-by-another.pid');
-  const other = spawn(process.execPath, ['-e', 'process.stdin.on("end", () => process.exit(7)).resume()'], {
+// That process started after the one it replaced ended, so after the pid file was written.
+function laterProcess(t: TestContext) {
+  const later = spawn(process.execPath, ['-e', 'process.stdin.on("end", () => process.exit(7)).resume()'], {
     stdio: ['pipe', 'ignore', 'ignore'],
   });
-  t.after(() => other.kill());
-  const exited = new Promise((resolve) => other.on('exit', (code) => resolve(code)));
-  writeFileSync(pidFile, String(other.pid));
-  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'the pid names another process');
+  t.after(() => later.kill());
+  const exited = new Promise((resolve) => later.on('exit', (code) => resolve(code)));
+  return { pid: later.pid as number, ranToItsEnd: () => (later.stdin.end(), exited) };
+}
+
+test('a pid file written before a later process took its pid reads as not running, and is never ended', async (t) => {
+  const later = laterProcess(t);
+  const pidFile = join(scratch, 'held-by-a-later-process.pid');
+  writeFileSync(pidFile, String(later.pid));
+  const written = new Date(Date.now() - 60_000);
+  utimesSync(pidFile, written, written);
+  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'the pid names a later process');
   processProbe.endProcessIn(pidFile);
-  other.stdin.end();
-  assert.equal(await exited, 7, 'the other process ran on to its own end');
+  assert.equal(await later.ranToItsEnd(), 7, 'the later process ran on to its own end');
+});
+
+test('a process remembered by a start before its own reads as not running, and is never ended', async (t) => {
+  const later = laterProcess(t);
+  processProbe.remember(later.pid, new Date(Date.now() - 60_000).toISOString());
+  assert.equal(processProbe.alive(later.pid), false, 'the pid names a later process');
+  processProbe.endProcess(later.pid);
+  assert.equal(await later.ranToItsEnd(), 7, 'the later process ran on to its own end');
+});
+
+// Not every script names its pid file among its arguments: a shell script reads it from a variable.
+test('a process whose pid file is not among its arguments reads as running until it ends', async (t) => {
+  const pidFile = join(scratch, 'named-by-a-variable.pid');
+  const writer = spawn(
+    process.execPath,
+    [
+      '-e',
+      'require("fs").writeFileSync(process.env.GG_TEST_PID_FILE, String(process.pid)); setInterval(() => {}, 1000)',
+    ],
+    { stdio: 'ignore', env: { ...process.env, GG_TEST_PID_FILE: pidFile } },
+  );
+  t.after(() => writer.kill());
+  const exited = new Promise((resolve) => writer.on('exit', resolve));
+  await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
+  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), true, 'it runs');
+  processProbe.endProcessIn(pidFile);
+  await exited;
+  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'it ended');
 });
 
 test('checking or ending a pid whose process was never recorded fails the case', (t) => {
