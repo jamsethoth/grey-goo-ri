@@ -228,12 +228,12 @@ test('an Execution Record a Run would resume whose Flow is gone is a gone-Flow r
   const verdict = await checked(sources(repository, user), { commonDir });
   assert.deepEqual(errorLines(verdict), []);
   assert.deepEqual(
-    verdict.goneFlowRecords.map((problem) => problem.at),
+    verdict.goneFlowRecords().map((problem) => problem.at),
     expected,
   );
-  assert.ok(!verdict.goneFlowRecords.some((problem) => problem.at === `records.${declared.execution}`));
+  assert.ok(!verdict.goneFlowRecords().some((problem) => problem.at === `records.${declared.execution}`));
   assert.equal(
-    report.line('error', verdict.goneFlowRecords[0]!),
+    report.line('error', verdict.goneFlowRecords()[0]!),
     'error: records.ticket-1: Execution Record ticket-1 runs Flow gone, which is no longer declared; declare it ' +
       'again to resume it, or run gg work abandon 1 to start over [unknown-flow]',
   );

@@ -184,12 +184,13 @@ interface CheckOptions {
 
 // The verdict: every declared Flow, the configuration's errors (the settings' first, as #301 lists them, then each
 // source's), the environment's (the State Database, then the Harnesses), the records whose Flow is gone, the warnings,
-// each misfit by its Flow's name, and the Settings when they hold no error.
+// each misfit by its Flow's name, and the Settings when they hold no error. The records are read only when a caller
+// asks: gg run reports each for its own Ticket (A2), so its preflight never opens the State Database.
 export interface Verdict {
   flows: Map<string, DeclaredFlow>;
   configurationErrors: report.Problem[];
   environmentErrors: report.Problem[];
-  goneFlowRecords: report.Problem[];
+  goneFlowRecords: () => report.Problem[];
   warnings: report.Problem[];
   misfits: Map<string, report.Problem>;
   settings?: config.Settings;
@@ -210,7 +211,7 @@ export async function check({ config: configuration, harnesses, commonDir }: Che
     flows: declared.flows,
     configurationErrors: [...(parsed.errors ?? []), ...declared.errors],
     environmentErrors: environment.errors,
-    goneFlowRecords: readable ? goneFlowRecords(commonDir, new Set(admitted.map(([name]) => name))) : [],
+    goneFlowRecords: () => (readable ? goneFlowRecords(commonDir, new Set(admitted.map(([name]) => name))) : []),
     warnings: declared.warnings,
     misfits: declared.misfits,
     ...(parsed.settings && { settings: parsed.settings }),

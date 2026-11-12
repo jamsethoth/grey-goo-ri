@@ -212,7 +212,7 @@ export async function doctor({ config: configuration, harnesses, gh, cwd, common
   exitCode: number;
 }> {
   const verdict = await configurationCheck.check({ config: configuration, harnesses, commonDir });
-  const errors = [...verdict.configurationErrors, ...verdict.environmentErrors, ...verdict.goneFlowRecords];
+  const errors = [...verdict.configurationErrors, ...verdict.environmentErrors, ...verdict.goneFlowRecords()];
   const warnings = [...verdict.warnings, ...verdict.misfits.values()];
   const flows = [...verdict.flows.values()];
   const lines: string[] = [];
