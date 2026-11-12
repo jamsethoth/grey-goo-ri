@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import * as jsonValue from './json-value.ts';
 import * as paths from './paths.ts';
 
 export const SCHEMA_VERSION = 1;
@@ -116,10 +117,14 @@ export function close(commonDir: string): void {
   connection?.close();
 }
 
-export function savePinnedConfiguration(commonDir: string, hash: string, json: string): void {
+export function savePinnedConfiguration<Pinned>(
+  commonDir: string,
+  hash: string,
+  pinned: Pinned & NoInfer<jsonValue.JsonChecked<Pinned>>,
+): void {
   open(commonDir)
     .prepare('INSERT OR IGNORE INTO configs (hash, json, firstSeen) VALUES (?, ?, ?)')
-    .run(hash, json, new Date().toISOString());
+    .run(hash, jsonValue.text<Pinned>(pinned, 'the Pinned Configuration'), new Date().toISOString());
 }
 
 export function loadPinnedConfiguration(commonDir: string, hash: string): unknown {

@@ -40,7 +40,9 @@ const MARKER = 'gg:8.run-1:implement:1:commit:1';
 // A record whose write-ahead log holds an open intent, so evidence and complete reach their save.
 function withIntent(commonDir: string) {
   const executionRecord = knownRecord(commonDir);
-  executionRecord.writeAheadLog.push(writeAhead.entryOf('intent', MARKER, 'commit', { payload: {} }));
+  executionRecord.writeAheadLog.push(
+    writeAhead.entryOf('intent', MARKER, 'commit', { payload: { message: 'red', tree: 't1', parent: 'p1' } }),
+  );
   return executionRecord;
 }
 
@@ -109,7 +111,8 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
     removeRecord: (commonDir) => record.removeRecord(commonDir, 'ticket', 8),
     loadAll: (commonDir) => record.loadAll(commonDir, 'ticket'),
     save: (commonDir) => record.save(knownRecord(commonDir)),
-    intent: (commonDir) => record.intent(knownRecord(commonDir), MARKER, 'commit', {}),
+    intent: (commonDir) =>
+      record.intent(knownRecord(commonDir), MARKER, 'commit', { message: 'red', tree: 't1', parent: 'p1' }),
     evidence: (commonDir) => record.evidence(withIntent(commonDir), MARKER, { sha: 'abc' }),
     complete: (commonDir) => record.complete(withIntent(commonDir), MARKER),
   },

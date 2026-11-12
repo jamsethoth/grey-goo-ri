@@ -8,10 +8,11 @@ import type * as outcome from './outcome.ts';
 import type * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
 import * as remoteEffects from './remote-effects.ts';
+import type * as events from './events.ts';
 import type * as visit from './visit.ts';
 import * as writeAhead from './write-ahead.ts';
 
-type Evidence = Record<string, unknown>;
+type Evidence = writeAhead.Evidence;
 
 // The run stop a Run latched: the first Failure Class that reached the whole Run, the Ticket it came from, and the
 // remote Action's effect that failed (none for a Harness's).
@@ -42,7 +43,7 @@ export interface EffectContext {
   clock: { now(): number; sleep(ms: number): Promise<void> };
   log: (line: string) => void;
   // Records one Action Event: the Action's identity, when it began, and its outcome and payload.
-  emit: (actionIdentity: marker.ActionIdentity, startedAt: number, fields: Record<string, unknown>) => void;
+  emit: (actionIdentity: marker.ActionIdentity, startedAt: number, fields: events.EventInput<'action'>) => void;
   markerOf: (actionIdentity: marker.ActionIdentity) => string;
   gh: reconcile.ReconcileGh;
   git?: effectEvidence.EvidenceGit;
@@ -74,7 +75,7 @@ export async function whileBusy<Result>(
   return result;
 }
 
-export interface SideEffect<Payload> {
+export interface SideEffect<Payload extends writeAhead.Payload> {
   actionMarker: string;
   effect: string;
   payload: Payload;
@@ -85,7 +86,7 @@ export interface SideEffect<Payload> {
 
 // An Action whose effect is proven by saved evidence is not repeated; an open one, left by Reconciliation to be redone,
 // reuses its intended payload.
-export async function sideEffect<Payload>(
+export async function sideEffect<Payload extends writeAhead.Payload>(
   context: EffectContext,
   { actionMarker, effect, payload, perform, deferred = false }: SideEffect<Payload>,
 ): Promise<Evidence> {
@@ -116,7 +117,7 @@ export interface SavedResolution<Settled extends visit.Resolution> {
   startedAt: number;
   resolution: Settled;
   // The Action Event's fields beyond the resolution's.
-  fields?: Record<string, unknown>;
+  fields?: events.EventInput<'action'>;
   // The marker of a side effect this completes, with the evidence saved in the same write.
   actionMarker?: string | null;
   evidence?: Evidence;
@@ -206,7 +207,7 @@ export const completeEffect = (
 
 // One deterministic Action outside any Visit's Actions, a Terminal's or a Pending report's: bracketed, write-ahead,
 // with its own Action Event.
-export async function effectAction<Payload>(
+export async function effectAction<Payload extends writeAhead.Payload>(
   context: EffectContext,
   actionIdentity: marker.ActionIdentity,
   { effect, payload, perform }: Omit<SideEffect<Payload>, 'actionMarker' | 'deferred'>,

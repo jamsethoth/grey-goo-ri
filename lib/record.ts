@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type * as approval from './approval.ts';
 import type * as effects from './effects.ts';
 import type * as events from './events.ts';
+import * as jsonValue from './json-value.ts';
 import type * as marker from './marker.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
@@ -22,9 +23,19 @@ export class RecordSaveError extends Error {
   }
 }
 
+// Who decided an Execution's end state: a hold by its name, a human by the label they set, or an Action by its
+// identity, which has no Visit or Action when the stop came before one. Exactly one of the three: each form rules out
+// the others' keys, so a mix or an empty object does not compile, and any key is still read without a test first
+// (docs/research/exclusive-variant-shapes.md). A reader tells the forms apart with `!== undefined` or a literal, not
+// with `in`, and a fourth form adds its keys to the other three.
+export type DecidedBy =
+  | { hold: string | null; human?: never; vertex?: never; visit?: never; action?: never; recovery?: never }
+  | { human: string; hold?: never; vertex?: never; visit?: never; action?: never; recovery?: never }
+  | { vertex: string; visit: number | null; action: string | null; recovery: number; hold?: never; human?: never };
+
 // Why an Execution reached its end state: the Action, hold or human that decided it (request 3.1).
 export interface TerminalReason {
-  decidedBy: Record<string, unknown>;
+  decidedBy: DecidedBy;
   outcome: string | null;
   rule: visit.RuleIdentity | null;
   text: string;
@@ -33,7 +44,7 @@ export interface TerminalReason {
 // How the Terminal classifies the stop, every field present (terminal.declaredStop).
 export interface TerminalStop {
   outcome: string;
-  response: unknown;
+  response: jsonValue.JsonValue;
   // The stopped Action's identity, or null for a stop decided before any Action.
   actionRef: marker.ActionIdentity | null;
   held: boolean;
@@ -77,7 +88,7 @@ export interface SessionEntry {
   harness: string;
   personaHash: string;
   transcriptPath: string | null;
-  cumulativeUsage: unknown;
+  cumulativeUsage: events.Usage;
   vertex: string;
   model: string | null;
   effort: string | null;
@@ -111,7 +122,7 @@ export interface ExecutionRecord {
   attempts: number;
   outputs: visit.ActionOutput[];
   testCommits: { first: string | null; baseline: string | null };
-  history: Record<string, unknown>[];
+  history: visit.HistoryItem[];
   worktree: string;
   branch: string;
   base: string;
@@ -128,7 +139,7 @@ export interface EpicRecord {
   schemaVersion: number;
   commonDir: string;
   epic: number;
-  planDecision: unknown;
+  planDecision: jsonValue.JsonValue;
   approvalRequest: approval.PendingInstance | null;
 }
 
@@ -233,16 +244,15 @@ function saveRecord(record: AnyRecord, writeEvent: WriteEvent, beforeSave: (reco
   const upsert = () => {
     assertDeclared(kind, record);
     beforeSave(record);
-    const row = 'execution' in record ? recordJson.toJson(record) : recordJson.epicJson(record);
+    const row =
+      'execution' in record
+        ? jsonValue.text(recordJson.toJson(record), "the Execution Record's row", 2)
+        : jsonValue.text(recordJson.epicJson(record), "the Epic Record's row", 2);
     connection
       .prepare(
         'INSERT INTO records (kind, n, json) VALUES (?, ?, ?) ON CONFLICT(kind, n) DO UPDATE SET json = excluded.json',
       )
-      .run(
-        kind,
-        kind === 'ticket' ? (record as ExecutionRecord).ticket : record.epic,
-        `${JSON.stringify(row, null, 2)}\n`,
-      );
+      .run(kind, kind === 'ticket' ? (record as ExecutionRecord).ticket : record.epic, `${row}\n`);
   };
   if (!writeEvent) {
     try {
@@ -319,7 +329,7 @@ export function createStateDatabase({
     return save(record, writeEvent);
   }
 
-  const intent = (record: ExecutionRecord, actionMarker: string, effect: string, payload: unknown) =>
+  const intent = (record: ExecutionRecord, actionMarker: string, effect: string, payload: writeAhead.Payload) =>
     append(record, writeAhead.entryOf('intent', actionMarker, effect, { payload }));
 
   const evidence = (record: ExecutionRecord, actionMarker: string, evidence: writeAhead.WriteAheadEntry['evidence']) =>

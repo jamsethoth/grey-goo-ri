@@ -1,6 +1,7 @@
 // A Vertex's inputs: each source typed among the outputs the Flow's Vertices produce (W2, W3), every source of one
 // input one type (T6), and `pick` typed in each item of a list.
 
+import type * as jsonValue from '../json-value.ts';
 import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as checked from './procedures.ts';
@@ -11,9 +12,9 @@ export const INPUT_KEYS = ['from', 'optional', 'pick'];
 type Value = Record<string, unknown>;
 // An input as the Resolved Flow carries it.
 export interface ResolvedInput {
-  from: unknown[];
+  from: jsonValue.JsonValue[];
   optional: boolean;
-  pick?: unknown;
+  pick?: jsonValue.JsonValue;
 }
 // A Vertex's inputs, and the node each reads as, for the scope of `inputs`.
 export interface TypedInputs {
@@ -140,7 +141,12 @@ export function checkInputs(
         report.absentOr(given, 'from', 'empty-list', 'from must name at least one source'),
       );
     const { pick } = declaration;
-    inputs.push([input, { from, optional: declaration.optional === true, ...(pick !== undefined && { pick }) }]);
+    // The declaration is the configuration's JSON, which the validator reads as unknown.
+    const picked = pick as jsonValue.JsonValue | undefined;
+    inputs.push([
+      input,
+      { from, optional: declaration.optional === true, ...(picked !== undefined && { pick: picked }) },
+    ]);
     const first = firstSource(problems, inputLocation, from, scope);
     nodes.push([input, pickedNode(problems, inputLocation, pick, first)]);
   }

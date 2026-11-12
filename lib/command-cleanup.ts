@@ -36,6 +36,11 @@ export interface CleanupReport {
   closeJob?: () => void;
 }
 
+// A report as a record or an Event saves it: closeJob is not enumerable, so no save writes it.
+export type SavedCleanup = Omit<CleanupReport, 'closeJob'>;
+// What a call or a Check's command reports of its cleanup: always whether it was confirmed and what survived.
+export type CallCleanup = Pick<SavedCleanup, 'confirmed' | 'survivors'> & Partial<SavedCleanup>;
+
 // A Check that ran no command started no process (owner, 2026-11-06).
 export const NO_COMMAND: Pick<CleanupReport, 'confirmed' | 'survivors'> = { confirmed: true, survivors: [] };
 

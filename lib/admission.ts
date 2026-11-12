@@ -35,7 +35,7 @@ export interface AdmissionContext {
   protectedPaths: string[];
   deps: Required<Omit<runContext.Deps, 'integrity'>> & Pick<runContext.Deps, 'integrity'>;
   testImmutability?: runContext.TestImmutability;
-  commands: Record<string, unknown>;
+  commands: config.Settings['commands'];
   testPaths: string[] | undefined;
   log: (line: string) => void;
   events: ReturnType<typeof events.eventLog>;
@@ -72,7 +72,7 @@ interface Admitting {
   redact: (text: unknown) => string;
   labelFailed: boolean;
   started: boolean;
-  events: (type: string, data?: Record<string, unknown>) => void;
+  events: ReturnType<typeof events.eventLog>;
 }
 // What admission decided before the Execution runs: a hold, abandonment or fault, and the other worktrees to guard.
 interface Decided {
@@ -127,9 +127,10 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
   const issueLabels = deps.gh.labelNames(issue);
   const admitting = { issue, context, ticket, cwd, issueLabels, state, recovery, labelFailed: false } as Admitting;
   admitting.events = (type, data) => {
-    if (type === 'label_failed') admitting.labelFailed = true;
-    const logged = type as Parameters<AdmissionContext['events']>[0];
-    context.events(logged, type === 'label_failed' ? { run: runId, ...data } : data);
+    if (type !== 'label_failed') return context.events(type, data);
+    admitting.labelFailed = true;
+    // The check above says which Event this is, which tsc cannot read from a type parameter.
+    context.events('label_failed', { run: runId, ...(data as events.EventInput<'label_failed'>) });
   };
   const loaded = reconcile.loadExecutionRecord(repo.gitCommonDir, ticket);
   const { corrupt } = loaded;

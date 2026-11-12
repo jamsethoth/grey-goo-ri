@@ -102,7 +102,7 @@ test("a Terminal's Actions are named for its report: end, fault, hold or abandon
 
 test('a fault report whose comment cannot be rendered fails, rather than landing without its comment', async (t) => {
   const { context, executionRecord, fakeGh, commonDir } = await support.executionContext(t);
-  executionRecord.terminalReason = { decidedBy: {}, outcome: null, rule: null, text: 'It faulted.' };
+  executionRecord.terminalReason = { decidedBy: { hold: null }, outcome: null, rule: null, text: 'It faulted.' };
   const stop = {
     outcome: 'fault',
     error: 'boom',
@@ -119,7 +119,7 @@ test('a fault report whose comment cannot be rendered fails, rather than landing
 
 test('a Terminal posts its reason, sets its end label and lands that state with ticket_end', async (t) => {
   const { context, executionRecord, fakeGh, commonDir } = await support.executionContext(t);
-  executionRecord.terminalReason = { decidedBy: {}, outcome: 'replan', rule: null, text: 'Replan it.' };
+  executionRecord.terminalReason = { decidedBy: { hold: null }, outcome: 'replan', rule: null, text: 'Replan it.' };
   const result = await terminalReport.report(context, 'needs-replan', { outcome: 'replan' });
   assert.deepEqual(result, { outcome: 'needs-replan' });
   assert.equal(executionRecord.state, 'needs-replan');
