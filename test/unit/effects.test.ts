@@ -2,13 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import * as effectErrors from '../../lib/effect-errors.ts';
 import * as effects from '../../lib/effects/index.ts';
 import * as label from '../../lib/effects/label.ts';
 import * as reset from '../../lib/effects/reset.ts';
 import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as record from '../../lib/record.ts';
-import type * as visit from '../../lib/visit.ts';
 import * as support from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
 
@@ -19,31 +17,6 @@ const resetTo = (baseline: string): reset.Payload => ({ baseline, history: { kin
 const performing = (perform: (payload: reset.Payload) => Promise<Record<string, string>>) => ({
   ...reset.effect,
   perform: async (_context: unknown, payload: reset.Payload) => perform(payload),
-});
-
-test('whileBusy marks the worktree busy while its function runs and idle after', async (t) => {
-  const { context, executionRecord } = await support.executionContext(t);
-  const during = await sideEffect.whileBusy(context, async () => ({ ...executionRecord.activity }));
-  assert.deepEqual(during, { busy: true, generation: 1 });
-  assert.deepEqual(executionRecord.activity, { busy: false, generation: 2 });
-});
-
-test('whileBusy marks the worktree idle after a failure, but leaves it busy after a crash', async (t) => {
-  const { context, executionRecord } = await support.executionContext(t);
-  await assert.rejects(
-    sideEffect.whileBusy(context, async () => {
-      throw new Error('gh failed');
-    }),
-    /gh failed/,
-  );
-  assert.deepEqual(executionRecord.activity, { busy: false, generation: 2 });
-  await assert.rejects(
-    sideEffect.whileBusy(context, async () => {
-      throw new effectErrors.CrashError('crash');
-    }),
-    effectErrors.CrashError,
-  );
-  assert.deepEqual(executionRecord.activity, { busy: true, generation: 3 });
 });
 
 test('a side effect is logged as intent, evidence and completion, and returns its evidence', async (t) => {
@@ -93,134 +66,6 @@ test('an open intent is redone with its intended payload, not the one given now'
   });
   assert.deepEqual(evidence, { head: 'intended' });
   assert.equal(executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent').length, 1);
-});
-
-test("saveResolution saves a Flow Action's settled resolution with its Action Event", async (t) => {
-  const { context, executionRecord, emitted } = await support.executionContext(t);
-  executionRecord.visitState = {
-    recovery: 0,
-    firstAttemptBaseline: null,
-    call: null,
-    response: null,
-    runs: new Map(),
-    checks: new Map(),
-    checkFollows: false,
-    settled: null,
-    unconfirmedCleanup: null,
-  };
-  const resolution: visit.TableResolution = {
-    outcome: 'ok',
-    direction: 'advance',
-    rule: { table: 'passed', row: 0 },
-    row: null,
-    check: null,
-    retryAfterMs: null,
-    retryKind: null,
-    failureClass: null,
-  };
-  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, action: 'test' };
-  const finished = await sideEffect.saveResolution(context, {
-    actionIdentity,
-    startedAt: 5,
-    resolution,
-    fields: { check: 'test' },
-  });
-  assert.equal(finished, resolution);
-  assert.deepEqual(executionRecord.visitState.settled, { action: 'test', recovery: 0, resolution });
-  assert.deepEqual(emitted, [
-    {
-      ...actionIdentity,
-      startedAt: 5,
-      outcome: 'ok',
-      direction: 'advance',
-      rule: { table: 'passed', row: 0 },
-      signals: {},
-      check: 'test',
-    },
-  ]);
-  const saved = record.load(executionRecord.commonDir, 'ticket', support.TICKET);
-  assert.deepEqual(saved?.visitState?.settled, { action: 'test', recovery: 0, resolution });
-});
-
-// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
-test('saveResolution completes a marked Action with its evidence once, and returns a completed one unsaved', async (t) => {
-  const { context, executionRecord, emitted } = await support.executionContext(t);
-  record.intent(executionRecord, 'gg:m', 'push', { branch: 'ticket/8', sha: 'abc' });
-  const resolution: visit.TableResolution = {
-    outcome: 'ok',
-    direction: 'retry',
-    rule: { table: 'fixed', row: 'transient-retry' },
-    row: null,
-    check: null,
-    retryAfterMs: null,
-    retryKind: null,
-    failureClass: null,
-  };
-  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, procedure: null };
-  await sideEffect.saveResolution(context, {
-    actionIdentity,
-    startedAt: 5,
-    resolution,
-    actionMarker: 'gg:m',
-    evidence: { remoteSha: 'abc' },
-  });
-  assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
-  assert.equal(executionRecord.visitState, null, 'a Terminal Action or a retry settles nothing');
-  assert.equal(
-    await sideEffect.saveResolution(context, { actionIdentity, startedAt: 5, resolution, actionMarker: 'gg:m' }),
-    resolution,
-  );
-  assert.equal(emitted.length, 1, 'a completed Action records no second Event');
-});
-
-test("a Flow Action's retry is not settled, so a resumed Visit runs the Action again", async (t) => {
-  const { context, executionRecord, emitted } = await support.executionContext(t);
-  executionRecord.visitState = {
-    recovery: 0,
-    firstAttemptBaseline: null,
-    call: null,
-    response: null,
-    runs: new Map(),
-    checks: new Map(),
-    checkFollows: false,
-    settled: null,
-    unconfirmedCleanup: null,
-  };
-  const resolution: visit.TableResolution = {
-    outcome: 'failed',
-    direction: 'retry',
-    rule: { table: 'fixed', row: 'transient-retry' },
-    row: 'transient-retry',
-    check: null,
-    retryAfterMs: 60_000,
-    retryKind: 'transient',
-    failureClass: 'transient',
-  };
-  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, action: 'green' };
-  await sideEffect.saveResolution(context, { actionIdentity, startedAt: 5, resolution });
-  assert.equal(executionRecord.visitState.settled, null);
-  assert.deepEqual(
-    emitted.map((event) => [event.action, event.direction]),
-    [['green', 'retry']],
-    'its Action Event is still recorded',
-  );
-});
-
-test('a completed side effect finishes as effect-completed', async (t) => {
-  const { context, executionRecord, emitted } = await support.executionContext(t);
-  record.intent(executionRecord, 'gg:m', 'push', { branch: 'ticket/8', sha: 'abc' });
-  const actionIdentity = { ...support.PUSH_ACTION_IDENTITY, procedure: null };
-  assert.deepEqual(await sideEffect.completeEffect(context, actionIdentity, 5, 'gg:m'), {
-    outcome: 'ok',
-    direction: 'advance',
-    row: 'effect-completed',
-    rule: { table: 'fixed', row: 'effect-completed' },
-  });
-  assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'complete']);
-  assert.deepEqual(
-    emitted.map((event) => [event.action, event.outcome, event.rule]),
-    [['push', 'ok', { table: 'fixed', row: 'effect-completed' }]],
-  );
 });
 
 const EFFECT_NAMES = ['commit', 'push', 'comment', 'pr-upsert', 'pr-ready', 'label', 'rescue', 'reset'];

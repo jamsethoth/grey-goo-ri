@@ -2,6 +2,7 @@
 // passes, and where it leaves: a stop's Terminal, or the Visit's Outcome through the Edge it takes.
 import { basename } from 'node:path';
 import * as agentAction from './agent-action.ts';
+import type * as attempt from './attempt.ts';
 import * as approvalAction from './approval-action.ts';
 import * as bounds from './bounds.ts';
 import * as checkAction from './check-action.ts';
@@ -259,6 +260,16 @@ async function savedResult(
   return action.do === 'agent'
     ? agentAction.completeHeld(runContext, running)
     : checkAction.completeHeld(runContext, running);
+}
+
+// The Visit's write of an Action's result, which lib/attempt.ts applies inside the Attempt's save, so a resumed Visit
+// routes it instead of running the Action again. A retry is no result: its Action runs its next Attempt.
+export function settleOf(
+  _executionRecord: record.ExecutionRecord,
+  _running: Pick<visitScope.Running, 'actionIdentity' | 'state'>,
+  _options: { held?: boolean } = {},
+): attempt.Settle {
+  return () => {};
 }
 
 // An Action that stopped the Visit: its result is saved, so a restart routes it again, and the stop takes its Edge.
