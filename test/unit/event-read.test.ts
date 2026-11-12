@@ -163,6 +163,26 @@ const sourceFiles = (directory: string): string[] =>
     .map((file) => `${directory}${file.replaceAll('\\', '/')}`);
 const textOf = (file: string) => readFileSync(new URL(file, ROOT), 'utf8');
 
+test('readEvents returns the Events in the order they were appended', (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-event-read-');
+  const log = events.eventLog(commonDir);
+  const order = ['run_start', 'ticket_start', 'action deterministic', 'action agent', 'ticket_end', 'run_end'];
+  for (const shape of order) SHAPES[shape](log);
+  const read = eventRead.readEvents(commonDir);
+  assert.deepEqual(
+    read.map((event) => event.type),
+    ['run_start', 'ticket_start', 'action', 'action', 'ticket_end', 'run_end'],
+  );
+  assert.deepEqual(
+    read,
+    rowsOf(commonDir).map((row) => JSON.parse(row.json)),
+  );
+});
+
+test('readEvents on a new State Database returns nothing', (t) => {
+  assert.deepEqual(eventRead.readEvents(tempDirectory.stateDatabaseDirectory(t, 'gg-event-read-')), []);
+});
+
 test('the shapes read back are every Event shape gg declares', () => {
   assert.deepEqual(Object.keys(SHAPES).sort(), [
     'action agent',

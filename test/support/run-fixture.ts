@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.ts';
 import * as github from '../../lib/github.ts';
@@ -225,7 +226,7 @@ export function fixture(t: TestContext, fixtureOptions: RunFixtureOptions = {}) 
     clock,
     options,
     fakeGit,
-    readEvents: () => events.readEvents(commonDir),
+    readEvents: () => eventRead.readEvents(commonDir),
     worktrees: () =>
       fakeGit ? fakeGit.worktreeCount(mainRoot) : gitShell.sh(mainRoot, 'worktree', 'list').split('\n').length,
     loadRow: () => caseDatabase.savedJson(commonDir, 'ticket', TICKET),

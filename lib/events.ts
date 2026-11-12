@@ -1,4 +1,5 @@
-// Append-only event log, schema 2: one row per Event in the events table of the State Database.
+// Append-only event log, schema 2: one row per Event in the events table of the State Database. lib/event-read.ts
+// reads it back, checked against the declarations here.
 import type * as approvalAction from './approval-action.ts';
 import * as checks from './checks.ts';
 import type * as commandCleanup from './command-cleanup.ts';
@@ -294,22 +295,6 @@ export function eventLog<Base extends EventInput<EventType>>(
       );
   };
 }
-
-export function readEvents(commonDir: string): Event[] {
-  return stateDatabase
-    .open(commonDir)
-    .prepare('SELECT json FROM events ORDER BY id')
-    .all()
-    .map((row) => JSON.parse(row.json as string) as Event);
-}
-
-// One Execution's Events, in the order they were appended.
-export const executionEvents = (commonDir: string, execution: string): Event[] =>
-  stateDatabase
-    .open(commonDir)
-    .prepare('SELECT json FROM events WHERE execution = ? ORDER BY id')
-    .all(execution)
-    .map((row) => JSON.parse(row.json as string) as Event);
 
 // An Execution's Terminal has landed once its ticket_end is in the log.
 export const hasTicketEnd = (commonDir: string, execution: string): boolean =>

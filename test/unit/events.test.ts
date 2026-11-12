@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import { fakeGit } from '../support/fake-git.ts';
@@ -184,7 +185,7 @@ test('an action event carries schema version 2 and every required field', (t) =>
   assert.equal(back.confinement, null);
   assert.deepEqual(back.usage, { cumulative: usage(), delta: usage() });
   assert.deepEqual(
-    events.readEvents(directory).map((event) => event.type),
+    eventRead.readEvents(directory).map((event) => event.type),
     ['action', 'run_end'],
   );
 });
@@ -232,7 +233,7 @@ test('actionEvent accepts every optional key together', () => {
 test('an Event carries schemaVersion and time', (t) => {
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   events.eventLog(directory, { run: 'r1' })('run_start');
-  const [event] = events.readEvents(directory);
+  const [event] = eventRead.readEvents(directory);
   assert.deepEqual(Object.keys(event), ['schemaVersion', 'time', 'type', 'run']);
   assert.equal(event.schemaVersion, 2);
   assert.ok(!Number.isNaN(Date.parse(event.time)), event.time);
@@ -375,7 +376,7 @@ test('eventLog validates every event before appending it', (t) => {
   assert.throws(() => log('run_start', { run: 'r1', type: 'run_end' }), /\btype\b/);
   // @ts-expect-error -- the header is eventLog's to write
   assert.throws(() => events.eventLog(directory, { time: 'then' })('run_start', { run: 'r1' }), /\btime\b/);
-  assert.deepEqual(events.readEvents(directory), []);
+  assert.deepEqual(eventRead.readEvents(directory), []);
   events.eventLog(directory, { run: 'r1' })('run_start');
   const [row] = rows(directory);
   const back = JSON.parse(row.json);
@@ -443,35 +444,6 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
   assert.deepEqual([absent.type, absent.run, absent.execution, absent.ticket], ['label_failed', null, null, 8]);
 });
 
-test('readEvents returns events in insertion order', (t) => {
-  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
-  const log = events.eventLog(directory, { run: 'r1' });
-  log('run_start');
-  log('ticket_start', { execution: 'e1', ticket: 7 });
-  const first: events.EventInput<'action'> = events.actionEvent(actionFields());
-  const second: events.EventInput<'action'> = events.actionEvent({ ...actionFields(), recovery: 1 });
-  log('action', first);
-  log('action', second);
-  log('ticket_end', { execution: 'e1', ticket: 7, outcome: 'ready-for-qa' });
-  log('run_end');
-  const read = events.readEvents(directory);
-  assert.deepEqual(
-    read.map((event) => [event.type, (event as { recovery?: number }).recovery ?? null]),
-    [
-      ['run_start', null],
-      ['ticket_start', null],
-      ['action', 0],
-      ['action', 1],
-      ['ticket_end', null],
-      ['run_end', null],
-    ],
-  );
-  assert.deepEqual(
-    read,
-    rows(directory).map((row) => JSON.parse(row.json)),
-  );
-});
-
 test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const log = events.eventLog(directory, { run: 'r1' });
@@ -481,10 +453,6 @@ test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
   log('ticket_end', { execution: '7.bbb', ticket: 7, outcome: 'needs-human' });
   assert.equal(events.hasTicketEnd(directory, '7.aaa'), false, "another Execution's end of the same Ticket");
   assert.equal(events.hasTicketEnd(directory, '7.bbb'), true);
-});
-
-test('readEvents on a new State Database returns nothing', (t) => {
-  assert.deepEqual(events.readEvents(tempDirectory.stateDatabaseDirectory(t, 'gg-events-')), []);
 });
 
 test('diffStats splits test and non-test insertions', () => {

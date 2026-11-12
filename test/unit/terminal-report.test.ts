@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type * as effects from '../../lib/effects.ts';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
@@ -11,7 +12,7 @@ import * as golden from '../support/golden.ts';
 import * as remoteFailures from '../support/remote-failures.ts';
 
 const ticketEnds = (commonDir: string, execution: string) =>
-  events.executionEvents(commonDir, execution).filter((event) => event.type === 'ticket_end');
+  eventRead.executionEvents(commonDir, execution).filter((event) => event.type === 'ticket_end');
 
 const PUSH_EVENT = {
   flow: 'default',
