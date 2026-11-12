@@ -313,12 +313,12 @@ const NO_JSON_PARSE_ASSERTION = {
       const operand = bare(node.expression);
       if (operand.type !== 'CallExpression') return;
       const { name, parent } = checker.getResolvedSignature(tsNodes.get(operand))?.declaration ?? {};
-      if (name?.text === 'parse' && parent?.name?.text === 'JSON') context.report({ node, messageId: 'asserted' });
+      if (name?.text === 'parse' && parent?.name?.text === 'JSON' && !ts.isExternalModule(parent.getSourceFile()))
+        context.report({ node, messageId: 'asserted' });
     };
     return { TSAsExpression: asserted, TSTypeAssertion: asserted };
   },
 };
-
 // eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {

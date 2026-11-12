@@ -242,6 +242,16 @@ test('a schema keyword outside the strict subset is rejected with its path (in a
   });
 });
 
+// assertStrict types what it passes as a SchemaNode, whose required is a list of property names, for any input (#354).
+test('a required entry that names no property is rejected, an undefined one too', () => {
+  for (const entry of [undefined, null, 1])
+    assert.throws(
+      () => briefs.assertStrict({ type: 'object', properties: {}, required: [entry], additionalProperties: false }),
+      { message: `(root): required names ${JSON.stringify(entry)}, which is not a property` },
+      String(entry),
+    );
+});
+
 const inField = (field: unknown) => ({
   type: 'object',
   properties: { field },

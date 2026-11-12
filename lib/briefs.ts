@@ -51,8 +51,10 @@ function assertObject(schema: Record<string, unknown>, path: string) {
   if (repeatedName !== undefined) throw new Error(`${path}: required repeats ${JSON.stringify(repeatedName)}`);
   const missing = keys.find((key) => !required.includes(key));
   if (missing !== undefined) throw new Error(`${path}: required lacks property ${JSON.stringify(missing)}`);
-  const extra = required.find((key) => !keys.includes(key as string));
-  if (extra !== undefined) throw new Error(`${path}: required names ${JSON.stringify(extra)}, which is not a property`);
+  // An index, since find() gives undefined for no match and for an entry that is undefined.
+  const extraAt = required.findIndex((key) => !keys.includes(key as string));
+  const extra = required[extraAt];
+  if (extraAt !== -1) throw new Error(`${path}: required names ${JSON.stringify(extra)}, which is not a property`);
   const unreachable = keys.find((key) => key === '' || key.includes('.'));
   if (unreachable !== undefined)
     throw new Error(`${path}: property name ${JSON.stringify(unreachable)} cannot be reached by a dotted path`);

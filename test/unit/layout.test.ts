@@ -530,6 +530,16 @@ test('lint fails an assertion on what JSON.parse gives in lib, bin and scripts, 
   );
 });
 
+test("lint passes an assertion on a module's own interface named JSON", async () => {
+  const lines = ['interface JSON {', '  parse(text: string): string;', '}', 'declare const own: JSON;'];
+  const text = [...lines, "export const parsed = own.parse('7') as string;", ''].join('\n');
+  const [result] = await typedEslint.lintText(text, { filePath: 'lib/config.ts' });
+  assert.deepEqual(
+    result.messages.filter((message) => message.ruleId === 'gg/no-json-parse-assertion'),
+    [],
+  );
+});
+
 const TYPED_HEADER = [
   "import type * as model from '../../lib/model.ts';",
   "import type * as record from '../../lib/record.ts';",

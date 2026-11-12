@@ -31,12 +31,18 @@ const isJsonParse = (declaration: ts.Declaration | undefined): declaration is ts
   ts.isIdentifier(declaration.name) &&
   declaration.name.text === 'parse' &&
   ts.isInterfaceDeclaration(declaration.parent) &&
-  declaration.parent.name.text === 'JSON';
+  declaration.parent.name.text === 'JSON' &&
+  !ts.isExternalModule(declaration.getSourceFile());
 
-// Whether `node` is the callee of a call, through parentheses or a `!`.
+// Whether `node` is the callee of a call, through parentheses, a `!` or a `satisfies`.
 function isCallee(node: ts.Node) {
   let child = node;
-  while (ts.isParenthesizedExpression(child.parent) || ts.isNonNullExpression(child.parent)) child = child.parent;
+  while (
+    ts.isParenthesizedExpression(child.parent) ||
+    ts.isNonNullExpression(child.parent) ||
+    ts.isSatisfiesExpression(child.parent)
+  )
+    child = child.parent;
   return ts.isCallExpression(child.parent) && child.parent.expression === child;
 }
 // A name or an access that may hold a value: not the member name of an access, and not a name inside a type.
@@ -149,6 +155,7 @@ const SPELLINGS = [
   'export const bound = JSON.parse.bind(JSON);',
   'export const mapped = [text].map(JSON.parse);',
   'export const aliased = [alias(text), parse(text)];',
+  'export const satisfied = (JSON.parse satisfies typeof JSON.parse)(text);',
 ].join('\n');
 
 test('the census counts every spelling of a JSON.parse call, and finds JSON.parse read other than to be called', () => {
@@ -157,8 +164,24 @@ test('the census counts every spelling of a JSON.parse call, and finds JSON.pars
   const line = (where: string) => Number(where.split(':').at(-1));
   assert.deepEqual(
     calls.map(({ where, unknown }) => [line(where), unknown]),
-    [3, 4, 5, 6, 7, 8, 9, 17, 17].map((lineNumber) => [lineNumber, true]),
+    [3, 4, 5, 6, 7, 8, 9, 17, 17, 18].map((lineNumber) => [lineNumber, true]),
     'the direct spellings and the aliases are calls that give unknown',
   );
   assert.deepEqual(uncalled.map(line), [10, 11, 12, 13, 14, 15, 16], 'every read that is not a call is found');
+});
+
+test("the census passes a module's own interface named JSON", () => {
+  const { program, plantedFile } = plantedProgram(
+    [
+      'interface JSON {',
+      '  parse(text: string): string;',
+      '}',
+      'declare const own: JSON;',
+      "export const parsed = [own.parse('7'), own.parse];",
+    ].join('\n'),
+  );
+  assert.deepEqual(
+    census(program, (sourceFile) => sourceFile === plantedFile),
+    { calls: [], uncalled: [] },
+  );
 });
