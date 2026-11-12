@@ -235,9 +235,11 @@ type Fields = Record<string, unknown>;
 // `base` may give them. Every field is optional, which a record of unknown values would also fit, so eventLog takes
 // what it is given through the save's typed gate as well.
 type Given<Declared> = { [Field in keyof Declared]?: Declared[Field] | null };
-// The keys of what is given that the Event does not declare, each as never: a generic parameter gets no excess-key
-// check of its own.
-type Undeclared<Given, Declared> = { [Key in Exclude<keyof Given, keyof Declared>]: never };
+// What eventLog takes of an Event's fields, as `base` or as `data`: the save's typed gate, and each key no Event of
+// the kind declares as never, since a generic parameter gets no excess-key check of its own.
+type DeclaredKeys<Declared> = Declared extends unknown ? keyof Declared : never;
+type Gated<Given, Declared> = Given &
+  NoInfer<jsonValue.JsonChecked<Given> & { [Key in Exclude<keyof Given, DeclaredKeys<Declared>>]: never }>;
 export type EventType = 'action' | LifecycleType;
 export type EventInput<Type extends EventType> = Type extends LifecycleType
   ? Given<LifecycleFields[Type]> & { type?: Type }
@@ -260,18 +262,16 @@ const AGENT_REQUIRED = declaredAs(AGENT, 'required');
 
 // `database` (record.createStateDatabase) sees each Event before it is inserted; the real one, the record module, lets
 // every Event through.
-export function eventLog(
+export function eventLog<Base extends EventInput<EventType>>(
   commonDir: string,
-  base: EventInput<EventType> = {},
+  base?: Gated<Base, EventInput<EventType>>,
   database: Pick<record.StateDatabase, 'beforeAppend'> = record,
-): <Type extends EventType, Given extends EventInput<Type>>(
-  type: Type,
-  data?: Given & NoInfer<jsonValue.JsonChecked<Given> & Undeclared<Given, EventInput<Type>>>,
-) => void {
+): <Type extends EventType, Given extends EventInput<Type>>(type: Type, data?: Gated<Given, EventInput<Type>>) => void {
+  const always: EventInput<EventType> | undefined = base;
   return (type, data) => {
     const given: EventInput<typeof type> | undefined = data;
     // `data` may be the output of actionEvent or lifecycleEvent, which already carries a matching `type`.
-    const { type: own = type, ...fields }: Fields = { ...base, ...given };
+    const { type: own = type, ...fields }: Fields = { ...always, ...given };
     if (own !== type) throw new Error(`${type} event: field type is ${own}`);
     const event: Event = {
       schemaVersion: 2,

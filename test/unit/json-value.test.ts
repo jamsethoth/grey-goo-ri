@@ -411,10 +411,17 @@ test('the Event append refuses a Map, a Set and an unknown', (t) => {
   assert.deepEqual(events.readEvents(commonDir), [], 'neither Event was appended');
   // @ts-expect-error an unknown as an Event's field
   log('label_failed', withUnknown);
-  // Every field of an Event's input is optional, which a record of unknown values also fits.
+  // Every field of an Event's input is optional, which a record of unknown values also fits: as the fields of one
+  // Event, and as the fields every Event of a log is given.
   const untyped: Record<string, unknown> = { ticket: 8, error: 'no label', change: { add: ['gg:ready'] } };
   // @ts-expect-error a record of unknown values
   log('label_failed', untyped);
+  const untypedBase: Record<string, unknown> = { run: new Map([['a', 1]]) };
+  // @ts-expect-error a record of unknown values
+  const withBase = events.eventLog(commonDir, untypedBase);
+  assert.throws(() => withBase('run_start'), /^Error: the run_start Event: run is a Map/);
+  // @ts-expect-error a key no Event declares
+  assert.throws(() => events.eventLog(commonDir, { owner: 'me' })('run_start', { run: 'run-1' }), /\bowner\b/);
   // @ts-expect-error a key the Event does not declare, which fails when the Event is built
   assert.throws(() => log('label_failed', { ticket: 8, error: 'no label', change: {}, owner: 'me' }), /\bowner\b/);
   assert.deepEqual(
