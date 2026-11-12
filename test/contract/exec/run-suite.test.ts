@@ -55,6 +55,7 @@ test('the census has ended what it names by the time it answers', options.WIN_CA
   });
   child.unref();
   const pid = child.pid as number;
+  processProbe.remember(pid);
   t.after(() => processProbe.endProcess(pid));
   const entry = { pid, parentPid: process.pid, exe: 'node.exe' };
   const { failed, report } = await runSuite.census(() => (processProbe.alive(pid) ? [entry] : []));

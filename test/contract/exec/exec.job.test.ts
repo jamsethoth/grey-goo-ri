@@ -160,6 +160,7 @@ test(
     try {
       assert.ok(match, `breakaway request was refused: ${result.output}`);
       assert.equal(result.timedOut, true);
+      await waitFor(() => pidIn(sleeperPid) === pid, t.signal); // the pid file records which process the pid means
       assert.ok(alive(pid as number), 'a child that broke away on purpose should be outside the job');
       assert.ok(
         !result.survivors.some((survivor) => survivor.pid === pid),

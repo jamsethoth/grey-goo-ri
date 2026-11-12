@@ -49,9 +49,16 @@ export async function timeOutWhen(
   const clock = new AbortController();
   let settled = false;
   let wasReady = false;
-  const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal })).finally(() => {
-    settled = true;
-  });
+  const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal }))
+    .then((result) => {
+      // What the result names, recorded as it answers, so the teardown below ends only those processes.
+      for (const pid of [...(result.survivors ?? []).map((survivor) => survivor.pid), ...(result.leftovers ?? [])])
+        processProbe.remember(pid);
+      return result;
+    })
+    .finally(() => {
+      settled = true;
+    });
   t.after(
     async () => {
       clock.abort();
