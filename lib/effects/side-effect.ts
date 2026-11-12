@@ -1,16 +1,16 @@
-// The write-ahead side effects of an Execution's Actions: the context they read, whileBusy, and each
-// effect's intent, evidence and completion with its Action Event. A remote Action's retries are remote-effects'.
-import * as effectErrors from './effect-errors.ts';
-import type * as effectEvidence from './effect-evidence.ts';
-import * as integrity from './integrity.ts';
-import type * as marker from './marker.ts';
-import type * as outcome from './outcome.ts';
-import type * as reconcile from './reconcile.ts';
-import type * as record from './record.ts';
-import * as remoteEffects from './remote-effects.ts';
-import type * as events from './events.ts';
-import type * as visit from './visit.ts';
-import * as writeAhead from './write-ahead.ts';
+// The write-ahead side effects of an Execution's Actions: the context they read, whileBusy, and each Effect's intent,
+// evidence and completion with its Action Event. A remote Effect's retries are remote-effects'.
+import * as effectErrors from '../effect-errors.ts';
+import * as integrity from '../integrity.ts';
+import type * as marker from '../marker.ts';
+import type * as outcome from '../outcome.ts';
+import type * as reconcile from '../reconcile.ts';
+import type * as record from '../record.ts';
+import * as remoteEffects from '../remote-effects.ts';
+import type * as events from '../events.ts';
+import type * as visit from '../visit.ts';
+import * as writeAhead from '../write-ahead.ts';
+import type * as effects from './index.ts';
 
 type Evidence = writeAhead.Evidence;
 
@@ -46,7 +46,7 @@ export interface EffectContext {
   emit: (actionIdentity: marker.ActionIdentity, startedAt: number, fields: events.EventInput<'action'>) => void;
   markerOf: (actionIdentity: marker.ActionIdentity) => string;
   gh: reconcile.ReconcileGh;
-  git?: effectEvidence.EvidenceGit;
+  git?: effects.EvidenceGit;
   cwd?: string;
   labelPrefix?: string;
   crashAt?: { marker: string; point: effectErrors.CrashPointName };
@@ -75,20 +75,19 @@ export async function whileBusy<Result>(
   return result;
 }
 
-export interface SideEffect<Payload extends writeAhead.Payload> {
+export interface SideEffect<Payload, Context> {
   actionMarker: string;
-  effect: string;
+  effect: effects.Effect<Payload, Context>;
   payload: Payload;
-  perform: (payload: Payload) => Promise<Evidence>;
   // Completed by `saveResolution`, with its Action Event.
   deferred?: boolean;
 }
 
 // An Action whose effect is proven by saved evidence is not repeated; an open one, left by Reconciliation to be redone,
-// reuses its intended payload.
-export async function sideEffect<Payload extends writeAhead.Payload>(
-  context: EffectContext,
-  { actionMarker, effect, payload, perform, deferred = false }: SideEffect<Payload>,
+// reuses its intended payload. The context is what every Action's effects read, and what the Effect's perform reads.
+export async function sideEffect<Payload extends writeAhead.Payload, Context>(
+  context: EffectContext & NoInfer<Context>,
+  { actionMarker, effect, payload, deferred = false }: SideEffect<Payload, Context>,
 ): Promise<Evidence> {
   const { record: executionRecord } = context;
   const found = writeAhead.evidenceOf(executionRecord, actionMarker);
@@ -98,11 +97,12 @@ export async function sideEffect<Payload extends writeAhead.Payload>(
     return found.evidence as Evidence;
   }
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Payload | undefined;
-  if (!intended) context.database.intent(executionRecord, actionMarker, effect, payload);
+  if (!intended) context.database.intent(executionRecord, actionMarker, effect.name, payload);
   effectErrors.crashPoint(context, actionMarker, 'before-effect');
   const launched = intended ?? payload;
-  const evidence = remoteEffects.REMOTE_ACTIONS.includes(effect)
-    ? await remoteEffects.remoteEffect(context, { actionMarker, effect, payload: launched }, perform)
+  const perform = (planned: Payload) => effect.perform(context, planned, { redo: !!intended });
+  const evidence = effect.remote
+    ? await remoteEffects.remoteEffect(context, { actionMarker, effect: effect.name, payload: launched }, perform)
     : await perform(launched);
   effectErrors.crashPoint(context, actionMarker, 'after-effect');
   context.database.evidence(executionRecord, actionMarker, evidence);
@@ -207,15 +207,15 @@ export const completeEffect = (
 
 // One deterministic Action outside any Visit's Actions, a Terminal's or a Pending report's: bracketed, write-ahead,
 // with its own Action Event.
-export async function effectAction<Payload extends writeAhead.Payload>(
-  context: EffectContext,
+export async function effectAction<Payload extends writeAhead.Payload, Context>(
+  context: EffectContext & NoInfer<Context>,
   actionIdentity: marker.ActionIdentity,
-  { effect, payload, perform }: Omit<SideEffect<Payload>, 'actionMarker' | 'deferred'>,
-) {
+  { effect, payload }: Omit<SideEffect<Payload, Context>, 'actionMarker' | 'deferred'>,
+): Promise<Evidence> {
   const startedAt = context.clock.now();
   const actionMarker = context.markerOf(actionIdentity);
   const evidence = await whileBusy(context, () =>
-    sideEffect(context, { actionMarker, effect, payload, perform, deferred: true }),
+    sideEffect(context, { actionMarker, effect, payload, deferred: true }),
   );
   await completeEffect(context, actionIdentity, startedAt, actionMarker);
   return evidence;

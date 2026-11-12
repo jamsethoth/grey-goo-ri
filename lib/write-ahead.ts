@@ -1,27 +1,14 @@
 // The write-ahead log an Execution Record keeps: the intent, evidence and completion of every side effect, by its
 // Action Marker, so Reconciliation can tell which effects landed (request 3.5). The State Database's writes append to
 // it (record.createStateDatabase); these read it.
-import type * as approvalAction from './approval-action.ts';
-import type * as effectActions from './effect-actions.ts';
+import type * as effects from './effects/index.ts';
 import type * as integrity from './integrity.ts';
 import type * as jsonValue from './json-value.ts';
-import type * as pendingReport from './pending-report.ts';
 import type * as record from './record.ts';
-import type * as rescue from './rescue.ts';
 import type * as visit from './visit.ts';
 
-// What an intent saves ahead of its effect, by the effect's kind: enough to redo the effect, or to find it done.
-export type Payload =
-  | effectActions.CommitPayload
-  | effectActions.PushPayload
-  | effectActions.CommentPayload
-  | effectActions.PrUpsertPayload
-  | effectActions.PrReadyPayload
-  | pendingReport.LabelPayload
-  | approvalAction.Consumption
-  | rescue.RescuePayload
-  | visit.ResetPayload
-  | { baseline: integrity.IntegrityBaseline };
+// What an intent saves ahead of its effect: an Effect's payload (lib/effects/), or an agent Attempt's baseline.
+export type Payload = effects.Payload | { baseline: integrity.IntegrityBaseline };
 
 // What a side effect leaves as proof, by its effect's own fields: a sha, an id, a url. A settled Action's also holds
 // its Resolution's fields, which the next Attempt reads.
@@ -78,22 +65,9 @@ export const evidenceOf = (
     (entry) => entry.actionMarker === actionMarker && entry.step === 'evidence' && entry.evidence?.ok !== false,
   );
 
-export function openIntents(executionRecord: record.ExecutionRecord): WriteAheadEntry[] {
+export function openIntents(executionRecord: Pick<record.ExecutionRecord, 'writeAheadLog'>): WriteAheadEntry[] {
   const done = new Set(
     executionRecord.writeAheadLog.filter((entry) => entry.step === 'complete').map((entry) => entry.actionMarker),
   );
   return executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent' && !done.has(entry.actionMarker));
 }
-
-// The ref and commit an unfinished rescue intends. Its intent comes before its ref, so a caller that could run before
-// the ref was made asks git whether it holds that commit.
-export const openRescue = (executionRecord: record.ExecutionRecord): { ref: string; commit: string } | null => {
-  const open = openIntents(executionRecord).find((entry) => entry.effect === 'rescue');
-  return open ? (open.payload as { ref: string; commit: string }) : null;
-};
-
-// The evidence of the last commit gg made, or undefined before its first: the branch must still be at its sha.
-export const lastCommit = (executionRecord: record.ExecutionRecord): WriteAheadEntry | undefined =>
-  executionRecord.writeAheadLog.findLast(
-    (entry) => entry.step === 'evidence' && entry.effect === 'commit' && entry.evidence!.sha,
-  );

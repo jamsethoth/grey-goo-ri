@@ -1,23 +1,23 @@
 import * as record from './record.ts';
-import type * as rescue from './rescue.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
-import * as effectEvidence from './effect-evidence.ts';
+import * as commit from './effects/commit.ts';
+import * as effects from './effects/index.ts';
+import * as label from './effects/label.ts';
+import * as rescue from './effects/rescue.ts';
+import * as reset from './effects/reset.ts';
 import * as labels from './labels.ts';
-import type * as visit from './visit.ts';
 
 // The git verbs Reconciliation calls, beside those its default Integrity Assertions and the
 // effect finders take.
-export interface ReconcileGit extends integrityModule.IntegrityGit, effectEvidence.EvidenceGit {
-  treeDiff(worktree: string, from: string, to: string): Promise<{ path: string; change: string }[]>;
-  resetTo(worktree: string, sha: string): Promise<unknown>;
+export interface ReconcileGit extends integrityModule.IntegrityGit, effects.EvidenceGit, reset.ResetGit {
   conflictedPaths(worktree: string): Promise<string[]>;
   diffSummary(worktree: string): Promise<string>;
 }
 
 type Issue = { labels: { name: string }[] };
 // The gh verbs Reconciliation calls, beside the effect finders' (lib/github.ts).
-export interface ReconcileGh extends effectEvidence.EvidenceGh {
+export interface ReconcileGh extends effects.EvidenceGh {
   labelNames(issue: Issue): string[];
   viewIssue(ticket: number, cwd?: string): Promise<Issue>;
 }
@@ -27,8 +27,6 @@ export interface ReconciledFlow {
   ticket: { vertices: ReadonlyMap<string, unknown> };
   procedures: ReadonlyMap<string, { hash: string }>;
 }
-
-type ResetPayload = visit.ResetPayload;
 
 // What Reconciliation decides: continue at the cursor, hold the Ticket, or abandon it for a human's label.
 export type HumanOverride = {
@@ -47,92 +45,7 @@ type Database = Pick<record.StateDatabase, 'evidence' | 'complete'>;
 export const heldForCleanup = (executionRecord: record.ExecutionRecord): boolean =>
   executionRecord.visitState?.settled?.resolution.row === 'cleanup-unconfirmed';
 
-const ignoredOf = async (
-  worktree: string,
-  untracked: integrityModule.RollbackSet | undefined,
-  integrity: integrityModule.Integrity,
-) => (untracked ? integrity.ignoredFiles(worktree, integrityModule.withinOf(untracked)) : {});
-
-// Where an open reset can be found: 'left' while the worktree is exactly as the agent left it, ignored Protected Files
-// and tests included; 'cleaning' between git.resetTo's hard reset and its clean, the tracked files back and every
-// untracked one as the agent left it; 'restoring' once the git reset landed, however far its restore of untracked files
-// got, each rollback file being absent, as the agent left it or restored; null for anything else, which is a human's
-// (ADR-0005).
-async function resetState(
-  worktree: string,
-  { baseline, untracked, left }: ResetPayload,
-  git: ReconcileGit,
-  integrity: integrityModule.Integrity,
-): Promise<'left' | 'cleaning' | 'restoring' | null> {
-  const now = await integrity.snapshot(worktree);
-  const tree = await git.treeOf(worktree, baseline);
-  const hardReset = now.head === baseline && now.index === tree;
-  if (hardReset && (await onlyRestored(worktree, { from: tree, to: now.tree, untracked, left }, git, integrity)))
-    return 'restoring';
-  // An intent saved before the index was fingerprinted proves nothing.
-  if (!left?.index) return null;
-  if (!integrityModule.sameFiles(left.files ?? {}, await ignoredOf(worktree, untracked, integrity))) return null;
-  if (now.head === left.head && now.index === left.index && now.tree === left.tree) return 'left';
-  return hardReset && (await onlyLeftBehind(worktree, { from: tree, to: now.tree, left: left.tree }, git))
-    ? 'cleaning'
-    : null;
-}
-
-// The flag-aware tree differs from the baseline only by added files, each as the tree the agent left has it.
-async function onlyLeftBehind(
-  worktree: string,
-  { from, to, left }: { from: string; to: string; left: string },
-  git: ReconcileGit,
-): Promise<boolean> {
-  const differs = new Set((await git.treeDiff(worktree, to, left)).map(({ path }) => path));
-  return (await git.treeDiff(worktree, from, to)).every(({ path, change }) => change === 'added' && !differs.has(path));
-}
-
-// Each rollback file is absent, as the agent left it or restored, and the flag-aware tree differs from the baseline
-// only by untracked files the restore has put back with their saved bytes.
-async function onlyRestored(
-  worktree: string,
-  { from, to, untracked, left }: { from: string; to: string } & Pick<ResetPayload, 'untracked' | 'left'>,
-  git: ReconcileGit,
-  integrity: integrityModule.Integrity,
-): Promise<boolean> {
-  const saved = untracked?.files ?? {};
-  const files = untracked ? await integrity.untrackedFiles(worktree, integrityModule.withinOf(untracked)) : {};
-  const eachKnown = Object.entries(files).every(
-    ([path, file]) =>
-      integrityModule.sameFile(file, left?.files?.[path]) || integrityModule.sameFile(file, saved[path]),
-  );
-  if (!eachKnown) return false;
-  if (from === to) return true;
-  return (await git.treeDiff(worktree, from, to)).every(
-    ({ path, change }) => change === 'added' && integrityModule.sameFile(files[path], saved[path]),
-  );
-}
-
-// True when the worktree is in a state an open intent proves the agent's (ADR-0005), for Reconciliation to finish the
-// intent: a reset's, a rescue's worktree as it found it, or a commit's recorded parent and the tree it staged. push,
-// pr-upsert, pr-ready, comment and label leave the worktree alone and record none, so they prove no uncommitted change.
-async function asRecorded(
-  worktree: string,
-  { effect, payload }: writeAhead.WriteAheadEntry,
-  git: ReconcileGit,
-  integrity: integrityModule.Integrity,
-): Promise<boolean> {
-  if (effect === 'reset') return (await resetState(worktree, payload as ResetPayload, git, integrity)) !== null;
-  if (effect === 'rescue') {
-    const { left } = payload as rescue.RescuePayload;
-    const now = await integrity.snapshot(worktree);
-    return now.head === left.head && now.index === left.index && now.tree === left.tree;
-  }
-  if (effect !== 'commit') return false;
-  const { parent, tree } = payload as effectEvidence.CommitPayload;
-  const now = await integrity.snapshot(worktree);
-  return now.head === parent && now.index === tree && now.tree === tree;
-}
-
-// An open reset is made now while the worktree is as the agent left it or partway through it, where the reset changes
-// no tracked file again, and its restore is replayed once the reset landed; restoreUntracked skips files already back.
-// Anything else is a human's and Held, nothing discarded, and the History item waits in the intent.
+// Each open reset is finished from the worktree as found, or the Ticket is held (lib/effects/reset.ts).
 export async function resets(
   executionRecord: record.ExecutionRecord,
   {
@@ -141,20 +54,12 @@ export async function resets(
     database = record,
   }: { git: ReconcileGit; integrity?: integrityModule.Integrity; database?: Database },
 ): Promise<'held' | 'continue'> {
-  for (const entry of writeAhead.openIntents(executionRecord).filter((intent) => intent.effect === 'reset')) {
-    if (!writeAhead.evidenceOf(executionRecord, entry.actionMarker)) {
-      const payload = entry.payload as ResetPayload;
-      let state = await resetState(executionRecord.worktree, payload, git, integrity);
-      if (state === 'left' || state === 'cleaning') {
-        await git.resetTo(executionRecord.worktree, payload.baseline);
-        state = await resetState(executionRecord.worktree, payload, git, integrity);
-      }
-      if (state !== 'restoring') return 'held';
-      if (payload.untracked) await integrity.restoreUntracked(executionRecord.worktree, payload.untracked);
-      const head = await git.headSha(executionRecord.worktree);
-      executionRecord.history.push(payload.history);
-      database.evidence(executionRecord, entry.actionMarker, { head });
-    }
+  for (const entry of reset.openResets(executionRecord)) {
+    if (
+      !writeAhead.evidenceOf(executionRecord, entry.actionMarker) &&
+      (await reset.finish(executionRecord, entry, { git, integrity, database })) === 'held'
+    )
+      return 'held';
     database.complete(executionRecord, entry.actionMarker);
   }
   return 'continue';
@@ -183,9 +88,9 @@ export async function dirtyState(
   if (!unmerged && executionRecord && heldForCleanup(executionRecord)) return null;
   if (!unmerged && (await integrity.isCleanAt(worktree))) return null;
   for (const entry of !unmerged && executionRecord ? writeAhead.openIntents(executionRecord) : [])
-    if (await asRecorded(worktree, entry, git, integrity)) return null;
+    if (await effects.proves(entry, worktree, { git, integrity })) return null;
   const untracked = await git.untrackedPaths(worktree);
-  const intended = executionRecord && writeAhead.openRescue(executionRecord);
+  const intended = executionRecord && rescue.openRescue(executionRecord);
   return {
     conflicts,
     rescueRef: intended && (await git.refTarget(worktree, intended.ref)) === intended.commit ? intended.ref : null,
@@ -203,13 +108,7 @@ export function humanOverride(
   const state = labels.labelsFor(labelPrefix).state;
   const needsHuman = state(labels.NEEDS_HUMAN);
   // A needs-human Terminal that crashed after its label Action shows gg's own label, not a human's.
-  const own = executionRecord.writeAheadLog.some(
-    (entry) =>
-      entry.step === 'intent' &&
-      entry.effect === 'label' &&
-      labels.hasLabel((entry.payload as effectEvidence.LabelPayload).add, needsHuman),
-  );
-  if (own || !labels.hasLabel(issueLabels, needsHuman)) return null;
+  if (label.intendsToAdd(executionRecord, needsHuman) || !labels.hasLabel(issueLabels, needsHuman)) return null;
   return {
     next: 'abandon',
     cursor: executionRecord.cursor,
@@ -223,12 +122,12 @@ export function humanOverride(
 // findEffect; the interpreter passes one that retries a failed remote lookup on the Action's budget.
 async function findEffects(
   entries: writeAhead.WriteAheadEntry[],
-  context: effectEvidence.EvidenceContext & { database: Database },
-  find: effectEvidence.FindEffect = effectEvidence.findEffect,
+  context: effects.EvidenceContext & { database: Database },
+  find: effects.FindEffect = effects.findEffect,
 ): Promise<string | null> {
   for (const entry of entries) {
     if (writeAhead.evidenceOf(context.executionRecord, entry.actionMarker)) continue;
-    if (!effectEvidence.recognised(entry.effect))
+    if (!effects.recognised(entry.effect))
       return (
         `The intent of Action Marker ${entry.actionMarker} names the effect ${entry.effect}, which this gg does not ` +
         'recognise, so whether it happened cannot be told; nothing was run or discarded.'
@@ -258,7 +157,7 @@ export async function terminalEffects(
     labelPrefix?: string;
     cwd?: string;
     markers: string[];
-    find?: effectEvidence.FindEffect;
+    find?: effects.FindEffect;
     database?: Database;
   },
 ): Promise<ReconcileResult> {
@@ -303,7 +202,7 @@ export type ReconcileOptions = ({ record: record.ExecutionRecord } | { corrupt: 
   gh: ReconcileGh;
   labelPrefix?: string;
   cwd?: string;
-  find?: effectEvidence.FindEffect;
+  find?: effects.FindEffect;
   database?: Database;
 };
 
@@ -320,10 +219,10 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
   if ((await resets(executionRecord, { git, integrity, database })) === 'held') {
     // A rescue's reset is intended only once its ref holds the work.
-    const rescue = writeAhead.openRescue(executionRecord);
+    const rescued = rescue.openRescue(executionRecord);
     return hold(
       'An interrupted reset did not leave the worktree clean at its baseline; nothing was discarded.' +
-        (rescue ? ` Rescue Ref ${rescue.ref} keeps the work rescued before it.` : ''),
+        (rescued ? ` Rescue Ref ${rescued.ref} keeps the work rescued before it.` : ''),
     );
   }
   const conflict = await findEffects(
@@ -334,11 +233,11 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (conflict) return hold(conflict);
   // A completed commit has no open intent to check, and an amend keeps its marker: only the branch tip shows the
   // change.
-  const last = writeAhead.lastCommit(executionRecord);
+  const last = commit.lastCommit(executionRecord);
   const head = last && (await git.headSha(executionRecord.worktree));
-  if (last && head !== last.evidence!.sha) {
+  if (last && head !== last.sha) {
     return hold(
-      `The branch is at ${head}, not at commit ${last.evidence!.sha} of Action Marker ${last.actionMarker}, ` +
+      `The branch is at ${head}, not at commit ${last.sha} of Action Marker ${last.actionMarker}, ` +
         'so it was changed by hand; nothing was committed, pushed or discarded.',
     );
   }

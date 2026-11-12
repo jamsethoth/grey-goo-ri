@@ -7,7 +7,7 @@ import * as briefs from './briefs.ts';
 import * as cleanupHold from './cleanup-hold.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import * as config from './config.ts';
-import * as effects from './effects.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import type * as integrity from './integrity.ts';
 import type * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
@@ -125,12 +125,12 @@ async function briefOf(runContext: RunContext, attempt: Attempt, commands: Recor
     reason: nudge,
     // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
     // ones, read git only for a Brief that names them.
-    diff: () => effects.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
+    diff: () => sideEffect.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
     // A red Visit that needed no test committed none (N6), so no test file changed since.
     changedTestFiles: async () => {
       const first = executionRecord.testCommits.first;
       if (first == null) return [];
-      const { changed } = await effects.whileBusy(runContext, () =>
+      const { changed } = await sideEffect.whileBusy(runContext, () =>
         runContext.testImmutability(executionRecord.worktree, first, executionRecord.configurationSnapshot!.testPaths),
       );
       return changed;
@@ -151,7 +151,9 @@ async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<Ac
   const brief = await briefOf(runContext, attempt, pinned.commands);
   const call = callOf(runContext, attempt, { pinned, brief, actionMarker, harness });
   const startedAt = runContext.clock.now();
-  const called = await effects.whileBusy(runContext, () => agentCall.guardedCall(runContext, attempt, call, harness));
+  const called = await sideEffect.whileBusy(runContext, () =>
+    agentCall.guardedCall(runContext, attempt, call, harness),
+  );
   // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is saved.
   const own = { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona };
   saveSession(executionRecord, actionIdentity, called.result, own);
@@ -231,7 +233,7 @@ function settleAttempt(
   };
   state.response = response;
   const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity, state }, violations);
-  return effects.saveResolution(runContext, {
+  return sideEffect.saveResolution(runContext, {
     actionIdentity,
     startedAt,
     resolution: done,
@@ -288,14 +290,14 @@ export async function completeHeld(
   const identity = { ...actionIdentity, attempt: executionRecord.cursor.attempt };
   const startedAt = runContext.clock.now();
   const held = state.call!;
-  await effects.whileBusy(runContext, () =>
+  await sideEffect.whileBusy(runContext, () =>
     agentCall.validateHeld(runContext, { actionIdentity: identity, action, state }, held),
   );
   const cleanup = cleanupHold.confirmedReport(held.harnessResult.cleanup as commandCleanup.CleanupReport);
   held.harnessResult.cleanup = cleanup;
   visitScope.recordOutput(executionRecord, actionIdentity, { cleanup });
   const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity: identity, state }, []);
-  await effects.replaceResolution(runContext, {
+  await sideEffect.replaceResolution(runContext, {
     actionIdentity: identity,
     startedAt,
     resolution: done,

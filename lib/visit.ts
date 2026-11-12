@@ -180,16 +180,6 @@ export interface HistoryItem {
   text: string;
 }
 
-// The reset intent's payload (lib/rescue.ts): the baseline head, the History item it adds, what git clean leaves to
-// restore, and the worktree as the agent left it.
-export interface ResetPayload {
-  baseline: string;
-  history: HistoryItem;
-  untracked?: integrity.RollbackSet;
-  // An intent saved before the index was fingerprinted has no `index`.
-  left?: Omit<integrity.WorktreeSnapshot, 'index'> & { index?: string; files?: integrity.UntrackedFiles };
-}
-
 // What an Action leaves for later Vertices' inputs, by the name they read it under: each Action kind's own outputs
 // (lib/procedures.ts), and what gg adds to any call.
 export interface ActionOutputValue {

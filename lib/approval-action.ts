@@ -3,7 +3,9 @@
 // the Visit's Outcome. Nothing here reads the timeline once its consumption is recorded.
 import * as approval from './approval.ts';
 import * as bounds from './bounds.ts';
-import * as effects from './effects.ts';
+import * as comment from './effects/comment.ts';
+import type * as label from './effects/label.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as labels from './labels.ts';
 import * as pendingReport from './pending-report.ts';
 import * as procedures from './procedures.ts';
@@ -19,7 +21,7 @@ type ReportAction = 'retire' | 'await' | 'comment' | 'consume';
 
 // What a consumed Decision's intent saves before its label is removed, so a resume completes it without reading the
 // timeline, whose unlabeled event gg itself made could no longer show it (request 3.5).
-export interface Consumption extends pendingReport.LabelPayload {
+export interface Consumption extends label.Payload {
   decision: {
     instance: string;
     event: number;
@@ -137,14 +139,8 @@ async function consume(
   const actionMarker = runContext.markerOf(consumption);
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Consumption | undefined;
   const payload: Consumption = intended ?? consumptionOf(runContext, running, instance, found as Replied);
-  await effects.whileBusy(runContext, () =>
-    effects.sideEffect<Consumption>(runContext, {
-      actionMarker,
-      effect: 'label',
-      payload,
-      perform: pendingReport.performLabels(runContext),
-      deferred: true,
-    }),
+  await sideEffect.whileBusy(runContext, () =>
+    sideEffect.sideEffect(runContext, { actionMarker, effect: pendingReport.keptPending, payload, deferred: true }),
   );
   executionRecord.approvalRequest = null;
   const { outcome, actor, reply } = payload.decision;
@@ -155,7 +151,7 @@ async function consume(
     row: 'decision',
     rule: { table: 'fixed', row: 'decision' },
   };
-  return effects.saveResolution(runContext, {
+  return sideEffect.saveResolution(runContext, {
     actionIdentity,
     startedAt,
     resolution,
@@ -188,17 +184,6 @@ function consumptionOf(
   };
 }
 
-// The ids of the comments this Execution posted, as its write-ahead log recorded them.
-function postedComments(executionRecord: RunContext['record']): number[] {
-  const { writeAheadLog } = executionRecord;
-  const comments = new Set(
-    writeAheadLog.filter((entry) => entry.effect === 'comment').map((entry) => entry.actionMarker),
-  );
-  return writeAheadLog
-    .filter((entry) => entry.step === 'evidence' && comments.has(entry.actionMarker))
-    .map((entry) => entry.evidence?.id as number);
-}
-
 // What the issue shows now. A login GitHub does not know has no permission (github.collaboratorPermission).
 async function readDecision(runContext: RunContext, running: Running, instance: PendingInstance) {
   const { gh, record: executionRecord, cwd } = runContext;
@@ -229,7 +214,7 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
     comments,
     actor: read.decision.actor,
     requestComment: requestComment.id,
-    posted: postedComments(executionRecord),
+    posted: comment.postedIds(executionRecord),
   });
   return { kind: read.kind, decision: { ...read.decision, reply } };
 }

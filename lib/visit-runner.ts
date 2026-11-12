@@ -9,7 +9,7 @@ import * as checks from './checks.ts';
 import * as cleanupHold from './cleanup-hold.ts';
 import * as config from './config.ts';
 import * as effectActions from './effect-actions.ts';
-import * as effects from './effects.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as events from './events.ts';
 import * as integrity from './integrity.ts';
 import * as labels from './labels.ts';
@@ -134,7 +134,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
 // explains, as at admission (R2d); anything else is Held before any agent runs.
 async function heldDirty(runContext: RunContext, vertexId: string): Promise<VisitEnd | null> {
   const executionRecord = runContext.record;
-  const dirty = await effects.whileBusy(runContext, () =>
+  const dirty = await sideEffect.whileBusy(runContext, () =>
     reconcile.dirtyState(executionRecord, {
       git: runContext.git,
       worktree: executionRecord.worktree,
@@ -327,7 +327,7 @@ async function rescueRouted(runContext: RunContext, state: RunningVisit, { actio
     failure: `${terminal.actionText(actionIdentity)} at ${actionIdentity.vertex} ended with ${resolution.outcome}`,
   });
   if (!rescued) return;
-  const files = await effects.whileBusy(runContext, () =>
+  const files = await sideEffect.whileBusy(runContext, () =>
     runContext.git.diffStats(executionRecord.worktree, baseline.head, rescued.commit),
   );
   visitScope.recordOutput(
@@ -348,7 +348,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
   const signals = [...state.checks.values()];
   const checked =
     state.proc.passed.length && signals.some((signal) => signal.tree)
-      ? await effects.whileBusy(runContext, () => visitScope.fresh(runContext, signals))
+      ? await sideEffect.whileBusy(runContext, () => visitScope.fresh(runContext, signals))
       : signals;
   const { claim, signal } = state.call ?? visitScope.IMPLICIT_OK;
   const { outcome: outcomeName, rule } = outcome.decide({

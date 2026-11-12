@@ -3,7 +3,7 @@
 // the recorded containment (L14). The suspended Action then completes as if it had just returned (J4): each Action
 // kind's completeHeld does that.
 import type * as commandCleanup from './command-cleanup.ts';
-import type * as effectEvidence from './effect-evidence.ts';
+import type * as effects from './effects/index.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as labels from './labels.ts';
 import type * as marker from './marker.ts';
@@ -118,7 +118,7 @@ async function confirm(
   runContext: RunContext,
   held: HeldAction,
   cleanup: commandCleanup.CleanupReport,
-  find: effectEvidence.FindEffect,
+  find: effects.FindEffect,
 ) {
   const { record: executionRecord, database } = runContext;
   const number = holdNumber(runContext, held);
@@ -146,7 +146,7 @@ async function confirm(
 // A resumed record held for cleanup, confirmed once. The label comes down after that save, so a crash cannot make this
 // hold read as a new one: while it stands its number is fixed, and once released no label of the next number exists.
 // The suspended Action completes at its Visit (visit-runner).
-export async function awaitConfirmation(runContext: RunContext, find: effectEvidence.FindEffect): Promise<void> {
+export async function awaitConfirmation(runContext: RunContext, find: effects.FindEffect): Promise<void> {
   const { record: executionRecord } = runContext;
   const state = executionRecord.visitState;
   if (state?.settled?.resolution.row !== 'cleanup-unconfirmed') return;

@@ -156,6 +156,11 @@ _Avoid_: try, iteration
 The identity of an Attempt, carried into the side effects it produces so recovery can recognise them.
 _Avoid_: correlation id, tag
 
+**Effect**:
+A kind of write outside the Execution Record that an Action makes (commit, push, comment, label, pr-upsert,
+pr-ready, rescue, reset), with its payload, how it is made, and how it is found again at resume.
+_Avoid_: side-effect type, effect handler
+
 **Interrupted Attempt**:
 An agent Attempt whose intent is open at resume because gg died during it. It is rescued, reset to its baseline and
 retried once (ADR 0011).

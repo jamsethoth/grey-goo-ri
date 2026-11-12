@@ -2,8 +2,8 @@
 // backoff whose budget is saved first, its effect looked for by marker before a retry, and the repo-lock guard that
 // checks a queued git write again once it holds the lock.
 import * as effectErrors from './effect-errors.ts';
-import * as effectEvidence from './effect-evidence.ts';
-import type * as effects from './effects.ts';
+import * as effects from './effects/index.ts';
+import type * as sideEffect from './effects/side-effect.ts';
 import * as flow from './flow.ts';
 import * as integrity from './integrity.ts';
 import * as labels from './labels.ts';
@@ -15,9 +15,8 @@ import * as writeAhead from './write-ahead.ts';
 
 type Evidence = writeAhead.Evidence;
 
-// The Actions whose effect is on GitHub or origin. A recognised transient failure is retried inside the Action, on a
-// budget saved in the record before each wait, so a crash cannot refill it (#66).
-export const REMOTE_ACTIONS = ['comment', 'pr-upsert', 'push', 'pr-ready'];
+// A remote Effect (lib/effects/) whose launch fails on a recognised transient failure is retried inside the Action, on
+// a budget saved in the record before each wait, so a crash cannot refill it (#66).
 const REMOTE_RETRIES = 2;
 const actionKey = (actionMarker: string) => marker.actionKeyOf(marker.partsOf(actionMarker));
 const remoteRetry = (executionRecord: record.ExecutionRecord, actionMarker: string) =>
@@ -38,7 +37,7 @@ const stopApplies = (vertex: string) => !flow.isEnd(vertex) || vertex === 'ready
 
 // A needs-human, needs-replan, hold, fault or abandonment report is what a stop leads to, so only it goes on.
 // `retrying` is false for a repo-lock wait, which keeps no retry.
-function checkStop(context: effects.EffectContext, { retrying = true }: { retrying?: boolean } = {}) {
+function checkStop(context: sideEffect.EffectContext, { retrying = true }: { retrying?: boolean } = {}) {
   const stop = context.runState.stop;
   if (!stop || !stopApplies(context.record.cursor.vertex)) return;
   const during = retrying ? 'a backoff' : 'a repo-lock wait';
@@ -55,7 +54,7 @@ const MAX_RETRY_WAIT = 31 * 24 * 3_600_000;
 // Node fires a timer longer than 2^31 - 1 ms at once, so a backoff sleeps in chunks of at most this.
 const MAX_SLEEP = 3_600_000;
 
-function eligibleAt(context: effects.EffectContext, actionMarker: string, eligible: number): number {
+function eligibleAt(context: sideEffect.EffectContext, actionMarker: string, eligible: number): number {
   if (Number.isFinite(eligible) && eligible >= 0 && eligible <= context.clock.now() + MAX_RETRY_WAIT) return eligible;
   // A time Date can show is logged as one; anything else as the value saved.
   const shown =
@@ -81,7 +80,7 @@ interface FailedLaunch {
 // its class, its error, and the outcome and rule of what it leads to, a run stop or a fault (#251). Its save failing is
 // fatal, as any Event's is.
 function failedEvent(
-  context: effects.EffectContext,
+  context: sideEffect.EffectContext,
   { actionMarker, startedAt, err }: FailedLaunch,
   { failureClass, consequence }: { failureClass: outcome.FailureClass; consequence: 'run-stop' | 'fault' },
 ) {
@@ -116,7 +115,7 @@ function failedEvent(
 // latches the run stop, as a Harness run stop does, and ends this Execution at needs-human; in a Terminal's own report,
 // which is what a stop leads to, it is only latched (#240). The latch comes first, so the Run stops even when the
 // Event's save fails.
-async function finalFailure(context: effects.EffectContext, failed: FailedLaunch, failure: outcome.RemoteFailure) {
+async function finalFailure(context: sideEffect.EffectContext, failed: FailedLaunch, failure: outcome.RemoteFailure) {
   const { failureClass, status } = failure;
   const { err } = failed;
   const source = writeAhead.effectOf(context.record, failed.actionMarker) ?? 'remote Action';
@@ -148,7 +147,7 @@ async function finalFailure(context: effects.EffectContext, failed: FailedLaunch
 
 // Spends one retry on a recognised transient failure, and saves it with its deadline, which the Run's shared cooldown
 // also waits for, before any wait. Any other failure, or one past the budget, is rethrown.
-async function reserveRetry(context: effects.EffectContext, failed: FailedLaunch) {
+async function reserveRetry(context: sideEffect.EffectContext, failed: FailedLaunch) {
   const { record: executionRecord } = context;
   const { actionMarker, err } = failed;
   const failure = outcome.classifyRemoteFailure(err as outcome.RemoteError);
@@ -175,7 +174,7 @@ async function reserveRetry(context: effects.EffectContext, failed: FailedLaunch
     throw err;
   }
   const now = context.clock.now();
-  const retry: effects.RemoteRetry = {
+  const retry: sideEffect.RemoteRetry = {
     count: spent + 1,
     failureClass: failure.failureClass,
     nextEligibleAt: eligibleAt(context, actionMarker, now + outcome.remoteRetryDelay(failure, spent + 1, now)),
@@ -195,7 +194,7 @@ async function reserveRetry(context: effects.EffectContext, failed: FailedLaunch
 // A wait leaves the labels last read stale (`labelsStale`), wherever it happened, Reconciliation's lookup included.
 // A busy worktree is idle while it waits, so other Tickets' integrity checks see a stray write into it, and busy again
 // before the lookup and the launch. A run stop is checked before each sleep and after the last.
-async function cooldown(context: effects.EffectContext, actionMarker: string): Promise<boolean> {
+async function cooldown(context: sideEffect.EffectContext, actionMarker: string): Promise<boolean> {
   const { record: executionRecord } = context;
   const busy = executionRecord.activity.busy;
   const deadline = () => {
@@ -223,7 +222,7 @@ async function cooldown(context: effects.EffectContext, actionMarker: string): P
 
 // A launch that had started when the process stopped may have landed or not; Reconciliation's lookup found it absent,
 // so launching it again spends a new retry, saved first, and none is left once the budget is spent.
-async function relaunch(context: effects.EffectContext, actionMarker: string, retry: effects.RemoteRetry) {
+async function relaunch(context: sideEffect.EffectContext, actionMarker: string, retry: sideEffect.RemoteRetry) {
   if (retry.count >= REMOTE_RETRIES) {
     const message =
       `Action Marker ${actionMarker} was launched again for its last retry, which did not finish; with its retries ` +
@@ -248,14 +247,14 @@ async function relaunch(context: effects.EffectContext, actionMarker: string, re
 // Looks for a remote Action's effect by its marker. A failed lookup proves nothing, so it is retried on the Action's
 // budget; only a lookup that worked can find the effect absent.
 export async function findEffectRetrying(
-  context: effects.EffectContext,
+  context: sideEffect.EffectContext,
   entry: writeAhead.WriteAheadEntry,
-  finderContext: effectEvidence.EvidenceContext,
-): Promise<effectEvidence.FindResult> {
+  finderContext: effects.EvidenceContext,
+): Promise<effects.FindResult> {
   const startedAt = context.clock.now();
   for (;;) {
     await cooldown(context, entry.actionMarker);
-    const found = await effectEvidence.findEffect(entry, finderContext);
+    const found = await effects.findEffect(entry, finderContext);
     if (found.status !== 'unknown') return found;
     await reserveRetry(context, { actionMarker: entry.actionMarker, startedAt, err: found.error });
   }
@@ -267,7 +266,7 @@ type RemoteEntry = Pick<writeAhead.WriteAheadEntry, 'actionMarker' | 'effect' | 
 // the effect again, whether or not it had started (a pending report's has): `found` with its evidence, `again` when
 // another Ticket raised the cooldown meanwhile, or `launch`.
 async function recheck(
-  context: effects.EffectContext,
+  context: sideEffect.EffectContext,
   entry: RemoteEntry,
 ): Promise<{ found: Evidence } | 'again' | 'launch'> {
   const { record: executionRecord, gh, cwd } = context;
@@ -276,7 +275,7 @@ async function recheck(
   const overridden = reconcile.humanOverride(executionRecord, issueLabels, context.labelPrefix);
   if (overridden) throw new effectErrors.EarlyTerminalError(overridden);
   // A finder reads only the entry's marker, effect and payload.
-  const found = await effectEvidence.findEffect(entry as writeAhead.WriteAheadEntry, {
+  const found = await effects.findEffect(entry as writeAhead.WriteAheadEntry, {
     executionRecord,
     git: context.git,
     gh,
@@ -293,9 +292,9 @@ async function recheck(
 // A launch is saved as started before it runs. The first launch is saved too, so launching it again after a crash
 // spends a retry like any other.
 async function markStarted(
-  context: effects.EffectContext,
+  context: sideEffect.EffectContext,
   actionMarker: string,
-  retry: effects.RemoteRetry | undefined,
+  retry: sideEffect.RemoteRetry | undefined,
 ) {
   if (retry && !retry.started) {
     retry.started = true;
@@ -315,7 +314,7 @@ async function markStarted(
 // looks for the effect by its marker, so a write that landed before its call failed is found, never made twice.
 // pr-ready has no finder: gh pr ready on a ready PR succeeds, so it is simply made again.
 export async function remoteEffect<Payload>(
-  context: effects.EffectContext,
+  context: sideEffect.EffectContext,
   entry: RemoteEntry & { payload: Payload },
   perform: (payload: Payload) => Promise<Evidence>,
 ): Promise<Evidence> {
@@ -348,10 +347,10 @@ export async function remoteEffect<Payload>(
 // human override again once it holds the lock; a push whose commit origin already has is not made again. `git` is
 // unlocked; a push's `args` are its worktree, branch and sha.
 export async function lockGuard(
-  context: effects.EffectContext,
+  context: sideEffect.EffectContext,
   verb: string,
   args: unknown[],
-  git: Pick<effectEvidence.EvidenceGit, 'remoteSha'>,
+  git: Pick<effects.EvidenceGit, 'remoteSha'>,
 ): Promise<{ skip: boolean } | undefined> {
   const { record: executionRecord, gh, cwd } = context;
   checkStop(context, { retrying: false });

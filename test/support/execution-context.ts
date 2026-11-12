@@ -3,7 +3,8 @@
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import * as effects from '../../lib/effects.ts';
+import * as comment from '../../lib/effects/comment.ts';
+import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as marker from '../../lib/marker.ts';
@@ -97,27 +98,26 @@ function commentEffect(context: ExecutionContext) {
   const actionMarker = context.markerOf(PUSH_ACTION_IDENTITY);
   return {
     actionMarker,
-    effect: 'comment',
+    effect: comment.effect,
     payload: {
       target: { kind: 'issue', number: TICKET },
       body: `A comment.\n${marker.markerComment(actionMarker)}`,
       bodyHash: 'hash',
     },
-    perform: async (payload: { target: { number: number }; body: string }) => ({
-      id: (await context.gh.comment(payload.target.number, payload.body, context.cwd)).id,
-    }),
   };
 }
 
 // The remote comment launched as an Action launches it, write-ahead.
-export const remoteComment = (context: ExecutionContext) => effects.sideEffect(context, commentEffect(context));
+export const remoteComment = (context: ExecutionContext) => sideEffect.sideEffect(context, commentEffect(context));
 
 // The remote comment's launch alone, after its intent is logged as sideEffect logs it: a run stop's source and a spent
 // budget's effect are read from that intent.
 export async function remoteCommentLaunch(context: ExecutionContext) {
-  const { perform, ...entry } = commentEffect(context);
-  context.database.intent(context.record, entry.actionMarker, entry.effect, entry.payload);
-  return remoteEffects.remoteEffect(context, entry, perform);
+  const { actionMarker, effect, payload } = commentEffect(context);
+  context.database.intent(context.record, actionMarker, effect.name, payload);
+  return remoteEffects.remoteEffect(context, { actionMarker, effect: effect.name, payload }, (planned) =>
+    effect.perform(context, planned, { redo: false }),
+  );
 }
 
 // What a promise rejects with; a promise that resolves fails the case.

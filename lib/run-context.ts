@@ -3,7 +3,7 @@
 import * as checks from './checks.ts';
 import * as clockModule from './clock.ts';
 import type * as commandCleanup from './command-cleanup.ts';
-import type * as effects from './effects.ts';
+import type * as sideEffect from './effects/side-effect.ts';
 import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import type * as exec from './exec.ts';
@@ -128,13 +128,13 @@ export interface ExecutionOptions {
   harness?: Harness;
   harnesses?: Record<string, Harness>;
   run?: string;
-  runState?: effects.RunState;
+  runState?: sideEffect.RunState;
   testImmutability?: TestImmutability;
   publicText?: (text: string) => string;
   // The Approvers the repository lists, and the Config Hash this Run admitted under, perhaps not the record's.
   approvers?: string[];
   configHash?: string;
-  crashAt?: effects.EffectContext['crashAt'];
+  crashAt?: sideEffect.EffectContext['crashAt'];
   fault?: unknown;
   admission?: Admission | null;
 }
@@ -151,7 +151,7 @@ export interface RunContext extends Omit<ExecutionOptions, 'deps'>, terminalRepo
   integrity: integrity.Integrity;
   testImmutability: TestImmutability;
   run: string;
-  runState: effects.RunState;
+  runState: sideEffect.RunState;
   files: unknown;
   publicText: (text: string) => string;
   laterRunReport: boolean;

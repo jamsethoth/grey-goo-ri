@@ -2,6 +2,7 @@
 // reads (request 3.5, X1).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type * as approvalAction from '../../lib/approval-action.ts';
 import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
@@ -82,7 +83,7 @@ test('golden: an approval request ends the run and a later approval routes on', 
   const consumption = ended.writeAheadLog.find(
     (entry) => entry.step === 'intent' && entry.actionMarker === golden.markerOf(ended, 'approve', 1, 'ask.consume.1'),
   );
-  const { decision } = consumption!.payload as { decision: Record<string, unknown> };
+  const { decision } = consumption!.payload as approvalAction.Consumption;
   assert.equal(decision.instance, instance.id);
   assert.equal(decision.actor, OWNER);
   assert.equal(decision.outcome, 'approved');

@@ -21,8 +21,8 @@ leverage and a change lands in one place (locality).
 
 - One domain concept, one module. What gg knows about a GLOSSARY.md concept (its types, its rules, how it is made, read
   and resumed) lives in the module named for it, so adding a kind or changing a rule is a one-module edit. A list of
-  names that other modules match against (`REMOTE_ACTIONS`, an `if (effect === …)` chain) means the concept is
-  scattered. #355, which gathers each Effect into one module, is the first such move.
+  names that other modules match against means the concept is scattered, as the Effects were before #355 gathered each
+  into one module in `lib/effects/`, ending `REMOTE_ACTIONS` and an `if (effect === …)` chain.
 - The interface is the test surface (`docs/testing.md` rule 2). When reaching one rule takes a golden Flow, the rule
   sits behind the wrong interface.
 - The deletion test: a module whose deletion would only move its code into one caller is a pass-through, so fold it in.
@@ -94,13 +94,13 @@ leverage and a change lands in one place (locality).
 | `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the Transition Table makes of its Signals |
 | `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
 | `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |
-| `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready) and the intents they write ahead |
+| `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready): the payload each builds for its Effect |
 | `lib/approval-action.ts` | the await-approval Action: an Approval Request's write-ahead Actions and a Decision's consumption |
 | `lib/cleanup-hold.ts` | a Pending cleanup hold: its label and comment, and a later Run's confirmation under the recorded containment |
 | `lib/pending-report.ts` | what a Run does for a Ticket it leaves Pending: its label and comment Actions and the ending that stops the Run |
-| `lib/effects.ts` | write-ahead side effects: the context an Action's effects read, `whileBusy`, each effect's intent, evidence and completion with its Action Event |
+| `lib/effects/` | the Effects, one module each (`commit.ts`, `push.ts`, `comment.ts`, `pr-upsert.ts`, `pr-ready.ts`, `label.ts`, `rescue.ts`, `reset.ts`): its payload, its perform, how an open intent of it is found by its Action Marker or finished at resume, the worktree state it proves, and whether it is remote; `index.ts`, the lookup by the name an intent persists; `side-effect.ts`, the context an Action's effects read, `whileBusy`, and each Effect's intent, evidence and completion with its Action Event |
 | `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
-| `lib/remote-effects.ts` | the remote Actions' retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
+| `lib/remote-effects.ts` | a remote Effect's retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
 | `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
 | `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop |
 | `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs (Procedures themselves are configuration) |
@@ -115,11 +115,10 @@ leverage and a change lands in one place (locality).
 | `lib/json-value.ts` | the JSON gg saves: its type (`JsonValue`), the typed gate (`JsonChecked`) and `text`, the one function every save path serializes through: it writes a copy checked at run time (`checked`), which refuses what JSON cannot hold, by its path |
 | `lib/json-parse.d.ts` | the overload that makes `JSON.parse` give `unknown` in gg, so tsc refuses its result wherever no check has narrowed it |
 | `lib/state-database.ts` | the State Database file: its creation, which only `gg init` makes (ADR 0023), one connection per repository that refuses a missing or unknown database, Pinned Configurations and reusable Check results |
-| `lib/write-ahead.ts` | the write-ahead log's entries, what an intent and its evidence hold (`Payload`, `Evidence`), and what reads them: open intents, evidence, the last commit |
+| `lib/write-ahead.ts` | the write-ahead log's entries, what an intent and its evidence hold (`Payload`, `Evidence`), and what reads them: open intents, evidence |
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union, an Action's outputs, a History item) |
 | `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.ts` | Reconciliation of a record against git and GitHub at resume, and admission's load of a record or its corrupt row |
-| `lib/effect-evidence.ts` | Effect Evidence: an open intent's side effect looked for by its Action Marker in git or on GitHub, one finder per effect kind |
 | `lib/events.ts` | event schema 2: each Event's declaration, its builders and its append to the State Database |
 | `lib/event-read.ts` | the event log read back: each row checked against its Event's declaration, its fields gg reads and its indexed columns, a refused row an `EventCorruptError` naming it; whether an Execution's ticket_end has landed |
 | `lib/labels.ts` | State, Await and Decide Label names and prefix, and the end states |
@@ -167,7 +166,7 @@ leverage and a change lands in one place (locality).
 - A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.ts` (a closed set of
   inputs, a usage error that prints the usage).
 - A module split along a seam inside it: `lib/rules.ts` with `lib/rule-domain.ts`, which only it imports.
-- Options objects in place of positional flags: `effects.sideEffect`, `effects.saveResolution`.
+- Options objects in place of positional flags: `sideEffect.sideEffect`, `sideEffect.saveResolution` (`lib/effects/side-effect.ts`).
 - A long function cut into named steps: `lib/interpreter.ts`, with `lib/visit-runner.ts`.
 - A new unit test: `test/unit/record.test.ts` and `test/unit/interpreter.retry.test.ts` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).

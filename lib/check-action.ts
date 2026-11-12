@@ -4,7 +4,7 @@ import * as agentCall from './agent-call.ts';
 import * as checks from './checks.ts';
 import * as cleanupHold from './cleanup-hold.ts';
 import * as commandCleanup from './command-cleanup.ts';
-import * as effects from './effects.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
 import type * as procedures from './procedures.ts';
@@ -225,7 +225,7 @@ export async function check(runContext: RunContext, running: visitScope.Running)
   const startedAt = runContext.clock.now();
   const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;
   const work = () => runCheck(runContext, running);
-  const checked = CHECK_KINDS[action.kind!].tree ? await effects.whileBusy(runContext, work) : await work();
+  const checked = CHECK_KINDS[action.kind!].tree ? await sideEffect.whileBusy(runContext, work) : await work();
   const signal = keepResult(runContext, running, checked);
   const output = signal.state === 'failed' ? checked.output : undefined;
   const resolution = visitScope.settle(runContext.record, actionIdentity, state, {
@@ -235,7 +235,7 @@ export async function check(runContext: RunContext, running: visitScope.Running)
     retries: {},
     cleanup: checked.cleanup,
   });
-  return effects.saveResolution(runContext, {
+  return sideEffect.saveResolution(runContext, {
     actionIdentity,
     startedAt,
     resolution: { reason: checked.reason ?? null, signal, output: output ?? null, ...resolution },
@@ -263,7 +263,7 @@ export async function completeHeld(
   const { actionIdentity, action, state } = running;
   const startedAt = runContext.clock.now();
   const baseline = state.call?.baseline ?? state.firstAttemptBaseline!;
-  const tree = await effects.whileBusy(runContext, async () => {
+  const tree = await sideEffect.whileBusy(runContext, async () => {
     await agentCall.validateHeld(runContext, running, { baseline, response: state.response });
     return (await integrity.snapshot(executionRecord.worktree, git, locks)).tree;
   });
@@ -288,7 +288,7 @@ export async function completeHeld(
     retries: {},
   });
   const { output, reason } = visitScope.checkRun(state, action.id);
-  return effects.replaceResolution(runContext, {
+  return sideEffect.replaceResolution(runContext, {
     actionIdentity,
     startedAt,
     resolution: {

@@ -4,8 +4,8 @@ import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
-import * as effectEvidence from './effect-evidence.ts';
-import type * as effects from './effects.ts';
+import * as effects from './effects/index.ts';
+import type * as sideEffect from './effects/side-effect.ts';
 import type * as events from './events.ts';
 import type * as github from './github.ts';
 import * as interpreter from './interpreter.ts';
@@ -39,7 +39,7 @@ export interface AdmissionContext {
   testPaths: string[] | undefined;
   log: (line: string) => void;
   events: ReturnType<typeof events.eventLog>;
-  runState: effects.RunState;
+  runState: sideEffect.RunState;
   epic: number | null;
 }
 
@@ -173,7 +173,7 @@ async function holdCorruptRecord(admitting: Admitting, corrupt: record.RecordCor
     run: rowHash,
     attempt: 1,
   });
-  if (!(await gh.comments(ticket, cwd)).some((comment) => effectEvidence.carries(comment.body, actionMarker))) {
+  if (!(await gh.comments(ticket, cwd)).some((comment) => effects.carries(comment.body, actionMarker))) {
     const text = admitting.redact(
       `### gg: needs-human\n\nExecution Record ticket-${ticket} could not be read, so no agent ran and the record ` +
         `was kept. ${admitting.recovery}\n`,

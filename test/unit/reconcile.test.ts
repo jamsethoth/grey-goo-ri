@@ -2,22 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import * as effectEvidence from '../../lib/effect-evidence.ts';
+import * as reset from '../../lib/effects/reset.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
-import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.ts';
 import * as crashResume from '../support/crash-resume.ts';
+import * as effectFixture from '../support/effect-fixture.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as namedFlow from '../support/named-flow.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
-
-// A worktree snapshot a case never reads.
-const UNREAD: integrity.WorktreeSnapshot = { head: '', index: '', tree: '' };
 
 // The Ticket branch's log from its head: two commits since the base, the base, and the commit the base was cut from.
 const branchLog = [
@@ -125,6 +122,32 @@ test('a push that landed before a crash is found by its remote sha', async (t) =
   });
 });
 
+// Reconciliation finishes open resets before it looks for any other intent, which would hold a reset as an effect it
+// does not recognise.
+test('an open reset is finished before any intent is looked for, so the Ticket continues', async (t) => {
+  const given = await effectFixture.effectFixture(t);
+  given.write('extra.txt', 'left by the agent\n');
+  const left = await given.context.integrity.snapshot(given.worktree);
+  const history = { kind: 'integrity violation', text: 'The agent wrote outside its scope.' };
+  const actionMarker = given.markerOf('reset');
+  given.database.intent(given.executionRecord, actionMarker, reset.effect.name, {
+    baseline: given.fixture.base,
+    history,
+    left: { ...left, files: {} },
+  });
+  const decided = await reconcile.reconcile({
+    ...crashResume.reconcileOptions(given.fixture, given.executionRecord),
+    database: given.database,
+  });
+  assert.equal(decided.next, 'continue', JSON.stringify(decided));
+  assert.deepEqual(executionReads.writeAheadSteps(given.executionRecord, actionMarker), [
+    'intent',
+    'evidence',
+    'complete',
+  ]);
+  assert.deepEqual(given.executionRecord.history, [history]);
+});
+
 test('an unknown intent effect holds', async (t) => {
   const fixture = await golden.fixture(t);
   fixture.options.deps.database!.intent(fixture.executionRecord, 'gg:someone-elses', 'teleport', {
@@ -146,30 +169,6 @@ test('a finder-less replay-safe action replays', async (t) => {
   const decided = await reconcile.reconcile(crashResume.reconcileOptions(fixture, fixture.executionRecord));
   assert.equal(decided.next, 'continue');
   assert.deepEqual(executionReads.writeAheadSteps(fixture.executionRecord, 'gg:pr-ready'), ['intent']);
-});
-
-test("a rescue intent is found by its ref's commit, absent with no ref, a conflict on another commit", async (t) => {
-  const fixture = await golden.fixture(t);
-  const { git } = fixture.options.deps;
-  const context = { executionRecord: fixture.executionRecord, git, issueLabels: [] };
-  // The finder reads only the ref and the commit.
-  const rescued = (commit: string) => ({ ref: 'refs/gg/rescue/abc', commit, tree: '', parent: '', left: UNREAD });
-  const entry: writeAhead.WriteAheadEntry = {
-    step: 'intent',
-    actionMarker: 'gg:rescue',
-    effect: 'rescue',
-    payload: rescued(fixture.base),
-    evidence: null,
-    time: '',
-  };
-  assert.equal((await effectEvidence.findEffect(entry, context)).status, 'absent');
-  await git.createRef!(fixture.worktree, 'refs/gg/rescue/abc', fixture.base);
-  assert.deepEqual(await effectEvidence.findEffect(entry, context), {
-    status: 'found',
-    evidence: { ref: 'refs/gg/rescue/abc', commit: fixture.base },
-  });
-  const other = { ...entry, payload: rescued('f'.repeat(40)) };
-  assert.equal((await effectEvidence.findEffect(other, context)).status, 'conflicting');
 });
 
 test('a record at a Vertex named constructor resumes, and one the Flow lacks holds', async (t) => {

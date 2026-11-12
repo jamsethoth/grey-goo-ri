@@ -4,8 +4,8 @@
 // (agent-action, check-action, effect-actions), visit-scope (what every Action reads) and bounds (Edge traversal).
 import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';
-import * as effectEvidence from './effect-evidence.ts';
-import * as effects from './effects.ts';
+import * as effects from './effects/index.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as flow from './flow.ts';
@@ -48,11 +48,11 @@ export const pendingReport = (executionRecord: record.ExecutionRecord): boolean 
 
 // Reconciliation looks for a remote effect as a retry does: a failed lookup is retried on the Action's budget.
 const findEffect =
-  (runContext: RunContext): effectEvidence.FindEffect =>
-  (entry: writeAhead.WriteAheadEntry, evidenceContext: effectEvidence.EvidenceContext) =>
-    entry.effect !== null && remoteEffects.REMOTE_ACTIONS.includes(entry.effect)
+  (runContext: RunContext): effects.FindEffect =>
+  (entry: writeAhead.WriteAheadEntry, evidenceContext: effects.EvidenceContext) =>
+    effects.lookup(entry.effect)?.remote
       ? remoteEffects.findEffectRetrying(runContext, entry, evidenceContext)
-      : effectEvidence.findEffect(entry, evidenceContext);
+      : effects.findEffect(entry, evidenceContext);
 
 export async function runExecution(options: context.ExecutionOptions): Promise<TerminalResult> {
   // Missing, nothing would be protected.
@@ -116,7 +116,7 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
   const { record: executionRecord } = runContext;
   await cleanupHold.awaitConfirmation(runContext, findEffect(runContext));
   const reconciled = () =>
-    effects.whileBusy(runContext, () =>
+    sideEffect.whileBusy(runContext, () =>
       reconcile.reconcile({
         record: executionRecord,
         flow: runContext.flow,
