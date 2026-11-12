@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type * as approval from './approval.ts';
-import type * as effects from './effects.ts';
+import type * as sideEffect from './effects/side-effect.ts';
 import type * as events from './events.ts';
 import * as jsonValue from './json-value.ts';
 import type * as marker from './marker.ts';
@@ -116,7 +116,7 @@ export interface ExecutionRecord {
   traversals: Map<string, number>;
   retries: Record<
     string,
-    Partial<Record<NonNullable<visit.TableResolution['retryKind']>, number>> & { remote?: effects.RemoteRetry }
+    Partial<Record<NonNullable<visit.TableResolution['retryKind']>, number>> & { remote?: sideEffect.RemoteRetry }
   >;
   sessions: Record<string, SessionEntry>;
   attempts: number;

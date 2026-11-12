@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as interpreter from '../../lib/interpreter.ts';
+import type * as rescueEffect from '../../lib/effects/rescue.ts';
 import * as rescue from '../../lib/rescue.ts';
 import { actionEvent, intents, loadTicket } from '../support/execution-reads.ts';
 import * as golden from '../support/golden.ts';
@@ -171,7 +172,7 @@ test("a rescue's intent is saved before its ref is made", async (t) => {
     (err) => err instanceof interpreter.CrashError,
   );
   const saved = loadTicket(fixture);
-  assert.equal((intents(saved, 'rescue')[0]!.payload as rescue.RescuePayload).ref, refOf(fixture));
+  assert.equal((intents(saved, 'rescue')[0]!.payload as rescueEffect.Payload).ref, refOf(fixture));
   assert.equal(await fixture.options.deps.git.refTarget(fixture.worktree, refOf(fixture)), null);
 });
 

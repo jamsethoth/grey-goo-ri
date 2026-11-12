@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
-import * as effectEvidence from '../../lib/effect-evidence.ts';
+import * as effects from '../../lib/effects/index.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import type * as model from '../../lib/model.ts';
 import * as reconcile from '../../lib/reconcile.ts';
@@ -296,9 +296,9 @@ test('a failed lookup is unknown, not absent', async (t) => {
 
   // Only the context a comment's lookup reads.
   const context = { executionRecord: loaded, gh: down, cwd: fixture.mainRoot } as unknown as Parameters<
-    typeof effectEvidence.findEffect
+    typeof effects.findEffect
   >[1];
-  const found = await effectEvidence.findEffect(entry as writeAhead.WriteAheadEntry, context);
+  const found = await effects.findEffect(entry as writeAhead.WriteAheadEntry, context);
   assert.equal(found.status, 'unknown');
   assert.match((found as { error: Error }).error.message, /HTTP 502/);
   await assert.rejects(

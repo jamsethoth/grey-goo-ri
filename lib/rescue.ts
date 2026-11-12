@@ -5,27 +5,19 @@
 import * as checks from './checks.ts';
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
-import * as effects from './effects.ts';
+import * as rescueEffect from './effects/rescue.ts';
+import * as resetEffect from './effects/reset.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as integrity from './integrity.ts';
 import * as marker from './marker.ts';
 import type { RunContext } from './run-context.ts';
 import type * as visit from './visit.ts';
 import * as writeAhead from './write-ahead.ts';
 
-// The rescue intent's payload, saved before any effect: the ref, the commit it is to hold and that commit's tree and
-// parent, and the worktree as the rescue found it, which at resume proves its uncommitted changes the agent's.
-export interface RescuePayload {
-  ref: string;
-  commit: string;
-  tree: string;
-  parent: string;
-  left: integrity.WorktreeSnapshot;
-}
-
 // A marker's colons are not valid in a ref name (ADR 0011).
 export const rescueRef = (actionMarker: string): string => `refs/gg/rescue/${config.sha256(actionMarker)}`;
 
-const held = (reason: string) => new effectErrors.EarlyTerminalError({ next: 'hold', name: 'rescue', reason });
+const { held } = rescueEffect;
 
 const isEnding = (err: unknown) => effectErrors.fatal(err) || err instanceof effectErrors.EarlyTerminalError;
 
@@ -33,34 +25,26 @@ const isEnding = (err: unknown) => effectErrors.fatal(err) || err instanceof eff
 // git clean leaves, so a crash after the reset can still finish the restore.
 export async function reset(
   runContext: RunContext,
-  { actionIdentity, ...given }: { actionIdentity: marker.ActionIdentity } & Omit<visit.ResetPayload, 'left'>,
+  { actionIdentity, ...given }: { actionIdentity: marker.ActionIdentity } & Omit<resetEffect.Payload, 'left'>,
 ) {
   const { record: executionRecord, git } = runContext;
   // The worktree as the agent left it: at admission, only dirty state that still matches this is proven the agent's.
   // The ignored Protected Files and tests are in it too: the tree cannot see them, but the restore rewrites them.
-  const left = await effects.whileBusy(runContext, async () => ({
+  const left = await sideEffect.whileBusy(runContext, async () => ({
     ...(await runContext.integrity.snapshot(executionRecord.worktree)),
     files: given.untracked
       ? await runContext.integrity.ignoredFiles(executionRecord.worktree, given.untracked.within)
       : {},
   }));
-  const payload: visit.ResetPayload = {
+  const payload: resetEffect.Payload = {
     ...given,
     left: { head: left.head, index: left.index, tree: left.tree, files: left.files },
   };
-  await effects.whileBusy(runContext, () =>
-    effects.sideEffect(runContext, {
+  await sideEffect.whileBusy(runContext, () =>
+    sideEffect.sideEffect(runContext, {
       actionMarker: runContext.markerOf(actionIdentity),
-      effect: 'reset',
+      effect: resetEffect.effect,
       payload,
-      perform: async () => {
-        await git.resetTo(executionRecord.worktree, payload.baseline);
-        if (payload.untracked) await runContext.integrity.restoreUntracked(executionRecord.worktree, payload.untracked);
-        // HEAD is read first: nothing awaited may sit between the History push and saving the evidence that proves it.
-        const head = await git.headSha(executionRecord.worktree);
-        executionRecord.history.push(payload.history);
-        return { head };
-      },
     }),
   );
 }
@@ -93,7 +77,7 @@ async function planRescue(
   runContext: RunContext,
   { actionIdentity, baseline, failure }: Rescuing,
   untracked: RollbackSet,
-): Promise<RescuePayload | null> {
+): Promise<rescueEffect.Payload | null> {
   const { record: executionRecord, git } = runContext;
   const { worktree } = executionRecord;
   if (await atBaseline(runContext, baseline, untracked)) return null;
@@ -110,18 +94,8 @@ async function planRescue(
   return { ref: rescueRef(actionMarker), commit, tree, parent: left.head, left };
 }
 
-// The ref is created only when absent, so an earlier rescue is never overwritten; one already holding this commit is a
-// repeat of this rescue.
-async function makeRef(runContext: RunContext, { ref, commit }: RescuePayload) {
-  const { git, record: executionRecord } = runContext;
-  if (await git.createRef(executionRecord.worktree, ref, commit)) return { ref, commit };
-  const found = await git.refTarget(executionRecord.worktree, ref);
-  if (found === commit) return { ref, commit };
-  throw held(`Rescue Ref ${ref} already holds ${found}, so nothing was overwritten or reset.`);
-}
-
 // A rescue that does not hold what is in the worktree would lose work in the reset.
-async function verifyRef(runContext: RunContext, { ref }: RescuePayload, untracked: RollbackSet) {
+async function verifyRef(runContext: RunContext, { ref }: rescueEffect.Payload, untracked: RollbackSet) {
   const { git, record: executionRecord } = runContext;
   const { worktree } = executionRecord;
   const now = await git.rescueTree(worktree, { within: untracked.within });
@@ -133,7 +107,7 @@ async function verifyRef(runContext: RunContext, { ref }: RescuePayload, untrack
 async function resetRescued(
   runContext: RunContext,
   { actionIdentity, baseline, failure }: Rescuing,
-  { ref }: RescuePayload,
+  { ref }: rescueEffect.Payload,
   untracked: RollbackSet,
 ) {
   const named = `Rescue Ref ${ref} keeps the work`;
@@ -151,7 +125,7 @@ async function resetRescued(
     if (isEnding(err)) throw err;
     throw held(`The reset after ${failure} failed: ${(err as Error).message}. ${named}; nothing more was discarded.`);
   }
-  if (!(await effects.whileBusy(runContext, () => atBaseline(runContext, baseline, untracked))))
+  if (!(await sideEffect.whileBusy(runContext, () => atBaseline(runContext, baseline, untracked))))
     throw held(`The reset after ${failure} did not leave the worktree at its baseline. ${named}.`);
 }
 
@@ -169,24 +143,20 @@ export async function rescueAndReset(
   const { testPaths } = executionRecord.configurationSnapshot!;
   const untracked = integrity.rollbackSet(baseline, protectedPaths, checks.testPathSet(testPaths));
 
-  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as RescuePayload | undefined;
-  const payload = intended ?? (await effects.whileBusy(runContext, () => planRescue(runContext, rescuing, untracked)));
+  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as
+    rescueEffect.Payload | undefined;
+  const payload =
+    intended ?? (await sideEffect.whileBusy(runContext, () => planRescue(runContext, rescuing, untracked)));
   if (!payload) return null;
   const answer = { ref: payload.ref, commit: payload.commit };
   if (writeAhead.findEntry(executionRecord, actionMarker, 'complete')) return answer;
 
   const startedAt = runContext.clock.now();
-  await effects.whileBusy(runContext, () =>
-    effects.sideEffect(runContext, {
-      actionMarker,
-      effect: 'rescue',
-      payload,
-      deferred: true,
-      perform: () => makeRef(runContext, payload),
-    }),
+  await sideEffect.whileBusy(runContext, () =>
+    sideEffect.sideEffect(runContext, { actionMarker, effect: rescueEffect.effect, payload, deferred: true }),
   );
   if (!writeAhead.findEntry(executionRecord, resetMarker, 'intent')) {
-    await effects.whileBusy(runContext, () => verifyRef(runContext, payload, untracked));
+    await sideEffect.whileBusy(runContext, () => verifyRef(runContext, payload, untracked));
     effectErrors.crashPoint(runContext, resetMarker, 'before-intent');
   }
   await resetRescued(runContext, rescuing, payload, untracked);

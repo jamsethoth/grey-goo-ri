@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type * as effectActions from '../../lib/effect-actions.ts';
+import type * as commit from '../../lib/effects/commit.ts';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
@@ -14,7 +14,7 @@ import * as gitShell from '../support/git-shell.ts';
 import * as keys from '../support/keys.ts';
 import * as suiteRuns from '../support/suite-runs.ts';
 
-type Commit = writeAhead.WriteAheadEntry & { payload: effectActions.CommitPayload };
+type Commit = writeAhead.WriteAheadEntry & { payload: commit.Payload };
 const RED_CALL = keys.responseKey('red', 1, 'red', 1);
 const RED_RECOVERY = keys.responseKey('red', 1, 'recover', 1);
 const GREEN_CALL = keys.responseKey('green', 1, 'green', 1);

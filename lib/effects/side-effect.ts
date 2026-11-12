@@ -1,21 +1,79 @@
 // The write-ahead side effects of an Execution's Actions: the context they read, whileBusy, and each Effect's intent,
 // evidence and completion with its Action Event. A remote Effect's retries are remote-effects'.
+import * as effectErrors from '../effect-errors.ts';
+import * as integrity from '../integrity.ts';
 import type * as marker from '../marker.ts';
-import type * as writeAhead from '../write-ahead.ts';
+import type * as outcome from '../outcome.ts';
+import type * as reconcile from '../reconcile.ts';
+import type * as record from '../record.ts';
+import * as remoteEffects from '../remote-effects.ts';
+import type * as events from '../events.ts';
+import type * as visit from '../visit.ts';
+import * as writeAhead from '../write-ahead.ts';
 import type * as effects from './index.ts';
-import type * as legacy from '../effects.ts';
 
-export {
-  whileBusy,
-  saveResolution,
-  replaceResolution,
-  completeEffect,
-  type EffectContext,
-  type RemoteRetry,
-  type RunState,
-  type RunStop,
-  type SavedResolution,
-} from '../effects.ts';
+type Evidence = writeAhead.Evidence;
+
+// The run stop a Run latched: the first Failure Class that reached the whole Run, the Ticket it came from, and the
+// remote Action's effect that failed (none for a Harness's).
+export interface RunStop {
+  failureClass: string;
+  ticket: number;
+  source?: string;
+}
+// What every Execution of a Run shares: its run stop, and the cooldown no remote Action launches before.
+export interface RunState {
+  stop: RunStop | null;
+  remoteNotBefore: number;
+}
+
+// A remote Action's retry budget as the record saves it, under its Action key's `remote` (record.retries).
+export interface RemoteRetry {
+  count: number;
+  failureClass: outcome.FailureClass | null;
+  nextEligibleAt: number;
+  started: boolean;
+}
+
+// What the effects read of the Execution they run in, which runExecution builds (lib/run-context.ts).
+export interface EffectContext {
+  record: record.ExecutionRecord;
+  database: Pick<record.StateDatabase, 'save' | 'intent' | 'evidence' | 'complete'>;
+  runState: RunState;
+  clock: { now(): number; sleep(ms: number): Promise<void> };
+  log: (line: string) => void;
+  // Records one Action Event: the Action's identity, when it began, and its outcome and payload.
+  emit: (actionIdentity: marker.ActionIdentity, startedAt: number, fields: events.EventInput<'action'>) => void;
+  markerOf: (actionIdentity: marker.ActionIdentity) => string;
+  gh: reconcile.ReconcileGh;
+  git?: effects.EvidenceGit;
+  cwd?: string;
+  labelPrefix?: string;
+  crashAt?: { marker: string; point: effectErrors.CrashPointName };
+  // A wait since the labels were last read leaves them stale, wherever it happened.
+  labelsStale?: boolean;
+  // A report a later Run delivers once more (#60).
+  laterRunReport?: boolean;
+}
+
+// The worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone.
+export async function whileBusy<Result>(
+  context: Pick<EffectContext, 'record' | 'database'>,
+  work: () => Promise<Result>,
+): Promise<Result> {
+  const { record: executionRecord, database } = context;
+  await integrity.markBusy(executionRecord, database);
+  let result;
+  try {
+    result = await work();
+  } catch (err) {
+    // A crashed process saves nothing more: marking idle would also persist whatever the crash left unsaved.
+    if (!effectErrors.fatal(err)) await integrity.markIdle(executionRecord, database);
+    throw err;
+  }
+  await integrity.markIdle(executionRecord, database);
+  return result;
+}
 
 export interface SideEffect<Payload, Context> {
   actionMarker: string;
@@ -26,20 +84,139 @@ export interface SideEffect<Payload, Context> {
 }
 
 // An Action whose effect is proven by saved evidence is not repeated; an open one, left by Reconciliation to be redone,
-// reuses its intended payload.
+// reuses its intended payload. The context is what every Action's effects read, and what the Effect's perform reads.
 export async function sideEffect<Payload extends writeAhead.Payload, Context>(
-  _context: legacy.EffectContext & NoInfer<Context>,
-  _sideEffect: SideEffect<Payload, Context>,
-): Promise<writeAhead.Evidence> {
-  return { stub: true };
+  context: EffectContext & NoInfer<Context>,
+  { actionMarker, effect, payload, deferred = false }: SideEffect<Payload, Context>,
+): Promise<Evidence> {
+  const { record: executionRecord } = context;
+  const found = writeAhead.evidenceOf(executionRecord, actionMarker);
+  if (found) {
+    if (!deferred && !writeAhead.findEntry(executionRecord, actionMarker, 'complete'))
+      context.database.complete(executionRecord, actionMarker);
+    return found.evidence as Evidence;
+  }
+  const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Payload | undefined;
+  if (!intended) context.database.intent(executionRecord, actionMarker, effect.name, payload);
+  effectErrors.crashPoint(context, actionMarker, 'before-effect');
+  const launched = intended ?? payload;
+  const perform = (planned: Payload) => effect.perform(context, planned, { redo: !!intended });
+  const evidence = effect.remote
+    ? await remoteEffects.remoteEffect(context, { actionMarker, effect: effect.name, payload: launched }, perform)
+    : await perform(launched);
+  effectErrors.crashPoint(context, actionMarker, 'after-effect');
+  context.database.evidence(executionRecord, actionMarker, evidence);
+  if (deferred) return evidence;
+  context.database.complete(executionRecord, actionMarker);
+  effectErrors.crashPoint(context, actionMarker, 'after-completion');
+  return evidence;
 }
+
+export interface SavedResolution<Settled extends visit.Resolution> {
+  actionIdentity: marker.ActionIdentity;
+  startedAt: number;
+  resolution: Settled;
+  // The Action Event's fields beyond the resolution's.
+  fields?: events.EventInput<'action'>;
+  // The marker of a side effect this completes, with the evidence saved in the same write.
+  actionMarker?: string | null;
+  evidence?: Evidence;
+}
+
+// Saves an Action's result, its marker's completion when it has one, and its Action Event in one transaction. A resumed
+// Visit routes the saved (settled) result instead of running the Action again; a retried Attempt's result stays in its
+// evidence for the next Attempt to read.
+export async function saveResolution<Settled extends visit.Resolution>(
+  context: EffectContext,
+  {
+    actionIdentity,
+    startedAt,
+    resolution,
+    fields = {},
+    actionMarker = null,
+    evidence = undefined,
+  }: SavedResolution<Settled>,
+): Promise<Settled> {
+  const { record: executionRecord } = context;
+  if (actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'complete')) return resolution;
+  if (actionIdentity.procedure && resolution.direction !== 'retry')
+    executionRecord.visitState!.settled = {
+      action: actionIdentity.action,
+      recovery: actionIdentity.recovery,
+      resolution,
+    };
+  const event = () =>
+    context.emit(actionIdentity, startedAt, {
+      outcome: resolution.outcome,
+      direction: resolution.direction,
+      rule: resolution.rule,
+      signals: {},
+      ...fields,
+    });
+  if (actionMarker) context.database.complete(executionRecord, actionMarker, { evidence, event });
+  else context.database.save(executionRecord, event);
+  if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
+  return resolution;
+}
+
+// A result a later Run decided for an Action held for cleanup (J4): it replaces the one the hold saved, with its Action
+// Event and whatever its caller spent, in one write. A retried Attempt's stays in its evidence for the next to read, as
+// saveResolution's does.
+export async function replaceResolution<Settled extends visit.Resolution>(
+  context: EffectContext,
+  { actionIdentity, startedAt, resolution, fields = {}, actionMarker = null }: SavedResolution<Settled>,
+): Promise<Settled> {
+  const { record: executionRecord } = context;
+  executionRecord.visitState!.settled =
+    resolution.direction === 'retry'
+      ? null
+      : { action: actionIdentity.action, recovery: actionIdentity.recovery, resolution };
+  const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
+  if (saved) saved.evidence = { ...saved.evidence, ...resolution };
+  context.database.save(executionRecord, () =>
+    context.emit(actionIdentity, startedAt, {
+      outcome: resolution.outcome,
+      direction: resolution.direction,
+      rule: resolution.rule,
+      signals: {},
+      ...fields,
+    }),
+  );
+  if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
+  return resolution;
+}
+
+export const completeEffect = (
+  context: EffectContext,
+  actionIdentity: marker.ActionIdentity,
+  startedAt: number,
+  actionMarker: string,
+): Promise<visit.EffectResolution> =>
+  saveResolution(context, {
+    actionIdentity,
+    startedAt,
+    resolution: {
+      outcome: 'ok',
+      direction: 'advance',
+      row: 'effect-completed',
+      rule: { table: 'fixed', row: 'effect-completed' },
+    },
+    fields: {},
+    actionMarker,
+  });
 
 // One deterministic Action outside any Visit's Actions, a Terminal's or a Pending report's: bracketed, write-ahead,
 // with its own Action Event.
 export async function effectAction<Payload extends writeAhead.Payload, Context>(
-  _context: legacy.EffectContext & NoInfer<Context>,
-  _actionIdentity: marker.ActionIdentity,
-  _sideEffect: Omit<SideEffect<Payload, Context>, 'actionMarker' | 'deferred'>,
-): Promise<writeAhead.Evidence> {
-  return { stub: true };
+  context: EffectContext & NoInfer<Context>,
+  actionIdentity: marker.ActionIdentity,
+  { effect, payload }: Omit<SideEffect<Payload, Context>, 'actionMarker' | 'deferred'>,
+): Promise<Evidence> {
+  const startedAt = context.clock.now();
+  const actionMarker = context.markerOf(actionIdentity);
+  const evidence = await whileBusy(context, () =>
+    sideEffect(context, { actionMarker, effect, payload, deferred: true }),
+  );
+  await completeEffect(context, actionIdentity, startedAt, actionMarker);
+  return evidence;
 }

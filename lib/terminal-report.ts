@@ -2,8 +2,10 @@
 // first, and the state and ticket_end it lands with.
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
-import type * as effectEvidence from './effect-evidence.ts';
-import * as effects from './effects.ts';
+import * as comment from './effects/comment.ts';
+import type * as effects from './effects/index.ts';
+import * as label from './effects/label.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as github from './github.ts';
@@ -20,9 +22,9 @@ type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 // What a Terminal reads beside the effects' context, which runExecution builds (lib/run-context.ts): the Event log and
 // Run its ticket_end goes to, the Source files a stop token's comment renders, and how each Terminal Action is entered
 // and marked.
-export interface TerminalContext extends effects.EffectContext {
+export interface TerminalContext extends sideEffect.EffectContext {
   gh: github.Gh;
-  git: effectEvidence.EvidenceGit & {
+  git: effects.EvidenceGit & {
     diffStats(worktree: string, base: string, to?: string): Promise<DiffStatsFile[]>;
   };
   events: ReturnType<typeof events.eventLog>;
@@ -111,13 +113,13 @@ export const terminalActionIdentity =
   });
 
 // One deterministic Action of a Terminal: bracketed, write-ahead, with its own Action Event.
-async function terminalAction<Payload extends writeAhead.Payload>(
-  context: TerminalContext,
+async function terminalAction<Payload extends writeAhead.Payload, Context>(
+  context: TerminalContext & NoInfer<Context>,
   actionIdentity: marker.ActionIdentity,
-  { effect, payload, perform }: Omit<effects.SideEffect<Payload>, 'actionMarker' | 'deferred'>,
+  made: Omit<sideEffect.SideEffect<Payload, Context>, 'actionMarker' | 'deferred'>,
 ) {
   await context.enter(actionIdentity);
-  return effects.effectAction(context, actionIdentity, { effect, payload, perform });
+  return sideEffect.effectAction(context, actionIdentity, made);
 }
 
 // Saved before the first Terminal Action, so a restart inside the Terminal runs the same Actions under the same ids and
@@ -197,11 +199,8 @@ async function postComment(
     context,
     reporting.stop,
     terminalAction(context, actionIdentity, {
-      effect: 'comment',
+      effect: comment.effect,
       payload: { target: { kind: 'issue', number }, body, bodyHash: config.sha256(body) },
-      perform: async (payload) => ({
-        id: (await context.gh.comment(payload.target.number, payload.body, context.cwd)).id,
-      }),
     }),
   );
 }
@@ -217,6 +216,12 @@ function asked({ record: executionRecord, labelPrefix }: TerminalContext): strin
   ];
 }
 
+// A hold or abandonment lands only with its label, so a failed one stays open for the next Run. setLabels reports a
+// failed update as a label_failed Event.
+const landsWithLabel = label.keepOpen(
+  ({ add, remove }) => new Error(`label update ${JSON.stringify({ add, remove })} failed`),
+);
+
 // The end's State Label replaces in-progress; an abandonment, under the human's label, only takes labels down.
 function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
   const { record: executionRecord, labelPrefix } = context;
@@ -226,24 +231,8 @@ function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
     context,
     stop,
     terminalAction(context, terminalActionIdentity(name, stop)('label'), {
-      effect: 'label',
+      effect: stop?.held || stop?.abandoned ? landsWithLabel : label.recordAndGoOn,
       payload: { ticket: executionRecord.ticket, ...change },
-      perform: async (payload) => {
-        const ok = await context.gh.setLabels(
-          payload.ticket,
-          { add: payload.add, remove: payload.remove },
-          context.cwd,
-          {
-            log: context.log,
-            // setLabels reports a failed update as a label_failed Event.
-            ev: context.events,
-          },
-        );
-        // A hold or abandonment lands only with its label, so a failed one stays open for the next Run.
-        if (!ok && (stop?.held || stop?.abandoned))
-          throw new Error(`label update ${JSON.stringify({ add: payload.add, remove: payload.remove })} failed`);
-        return { ok };
-      },
     }),
   );
 }
@@ -274,7 +263,9 @@ export async function report(
   const diffStats =
     name === 'ready-for-qa'
       ? events.diffStats(
-          await effects.whileBusy(context, () => context.git.diffStats(executionRecord.worktree, executionRecord.base)),
+          await sideEffect.whileBusy(context, () =>
+            context.git.diffStats(executionRecord.worktree, executionRecord.base),
+          ),
           executionRecord.configurationSnapshot!.testPaths,
         )
       : null;

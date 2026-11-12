@@ -1,7 +1,8 @@
 // Terminals: the hold, abandonment, fault and run stops that end an Execution, the Terminal it ends at, and the
 // sentences of their Terminal Reasons. A Terminal's report is terminal-report's.
 import * as effectErrors from './effect-errors.ts';
-import type * as effects from './effects.ts';
+import * as effects from './effects/index.ts';
+import type * as sideEffect from './effects/side-effect.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
 import * as record from './record.ts';
@@ -59,7 +60,8 @@ const httpOf = (status: number | null) => (status ? ` (HTTP ${status})` : '');
 function faultText(err: unknown, where: string | null): string {
   if (err instanceof effectErrors.RetriesExhaustedError) {
     const { spent } = err;
-    const target = spent.effect === 'push' ? 'push' : 'GitHub';
+    // A spent push names it; every other remote Effect lands on GitHub.
+    const target = effects.lookup(spent.effect)?.remote === 'origin' ? 'push' : 'GitHub';
     const what = spent.failureClass === 'rate-limited' ? `A ${target} rate limit` : `A transient ${target} failure`;
     return `${what}${httpOf(spent.status)} at ${where} persisted after ${spent.count} retries; ${ON_TICKET_END}`;
   }
@@ -98,7 +100,7 @@ export async function fault(context: TerminalContext, err: unknown): Promise<Ter
 
 // Another Execution's run stop ends this one at needs-human before it starts another Action or Attempt (request 3.4).
 export const runStopped = (context: {
-  runState?: effects.RunState;
+  runState?: sideEffect.RunState;
 }): (visit.RunStoppedResolution & { source: string | null }) | null => {
   const stop = context.runState?.stop;
   return stop

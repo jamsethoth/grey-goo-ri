@@ -3,7 +3,7 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as effectActions from '../../lib/effect-actions.ts';
+import type * as commit from '../../lib/effects/commit.ts';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
@@ -63,7 +63,7 @@ async function assertCallIntents(fixture: GoldenRun) {
 
 // The commit, push and pr-upsert intents carry their full payloads, and their evidence what landed.
 async function assertEffectIntents(fixture: GoldenRun) {
-  const commits = intents(fixture.executionRecord, 'commit') as Intent<effectActions.CommitPayload>[];
+  const commits = intents(fixture.executionRecord, 'commit') as Intent<commit.Payload>[];
   assert.equal(commits.length, 2);
   assert.deepEqual(Object.keys(commits[0].payload).sort(), ['message', 'parent', 'tree']);
   assert.ok(commits[0].payload.message.includes(`Gg-Action: ${commits[0].actionMarker}`), commits[0].payload.message);

@@ -3,15 +3,13 @@
 // still active (Pending, L11, J6).
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
-import * as effects from './effects.ts';
+import * as comment from './effects/comment.ts';
+import * as label from './effects/label.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import * as github from './github.ts';
 import * as outcome from './outcome.ts';
 import type * as marker from './marker.ts';
 import type { RunContext } from './run-context.ts';
-import type * as writeAhead from './write-ahead.ts';
-
-// A label write's intent, as Effect Evidence's finder reads it.
-export type LabelPayload = { ticket: number; add: string[]; remove: string[] };
 
 // The Run ends for this Ticket, whose Execution goes on at its next Run.
 export const pending = (reason: string) => new effectErrors.EarlyTerminalError({ next: 'pending', reason });
@@ -39,38 +37,26 @@ export async function keepPendingIfUnread<Result>(
 
 // A label write that does not land leaves its intent open for the next Run, and the Ticket Pending: nothing was lost,
 // and setLabels has reported it.
-export const performLabels =
-  (runContext: RunContext) =>
-  async ({ ticket, add, remove }: LabelPayload): Promise<writeAhead.Evidence> => {
-    if (!add.length && !remove.length) return { ok: true };
-    const ok = await runContext.gh.setLabels(ticket, { add, remove }, runContext.cwd, {
-      log: runContext.log,
-      ev: runContext.events,
-    });
-    if (!ok) throw pending(`The label update on #${ticket} failed, so the next Run makes it.`);
-    return { ok };
-  };
+export const keptPending = label.keepOpen(({ ticket }) =>
+  pending(`The label update on #${ticket} failed, so the next Run makes it.`),
+);
 
 export const labelAction = (
   runContext: RunContext,
   actionIdentity: marker.ActionIdentity,
   { add = [], remove = [] }: { add?: string[]; remove?: string[] },
 ) =>
-  effects.effectAction(runContext, actionIdentity, {
-    effect: 'label',
+  sideEffect.effectAction(runContext, actionIdentity, {
+    effect: keptPending,
     payload: { ticket: runContext.record.ticket, add, remove },
-    perform: performLabels(runContext),
   });
 
 export const commentAction = (runContext: RunContext, actionIdentity: marker.ActionIdentity, body: string) =>
-  effects.effectAction(runContext, actionIdentity, {
-    effect: 'comment',
+  sideEffect.effectAction(runContext, actionIdentity, {
+    effect: comment.effect,
     payload: {
       target: { kind: 'issue', number: runContext.record.ticket },
       body,
       bodyHash: config.sha256(body),
     },
-    perform: async (payload) => ({
-      id: (await runContext.gh.comment(payload.target.number, payload.body, runContext.cwd)).id,
-    }),
   });
