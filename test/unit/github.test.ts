@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as github from '../../lib/github.ts';
+import type * as jsonValue from '../../lib/json-value.ts';
 import * as labels from '../../lib/labels.ts';
 import * as outcome from '../../lib/outcome.ts';
 import * as fakeGhModule from '../support/fake-gh.ts';
@@ -615,3 +616,108 @@ for (const answer of MALFORMED_ANSWERS) {
     assert.ok(read.error?.includes(answer), read.error ?? 'no error');
   });
 }
+
+// Each verb that reads gh's JSON, with an answer holding every field it reads, linked issues in both of gh's forms
+// (#354).
+const JSON_VERBS: {
+  verb: string;
+  read: (client: github.Gh) => Promise<unknown>;
+  answer: jsonValue.JsonValue;
+  respond?: (answer: jsonValue.JsonValue) => string;
+}[] = [
+  { verb: 'repositoryLabels', read: (client) => client.repositoryLabels('/repo'), answer: [[{ name: 'one' }]] },
+  {
+    verb: 'viewIssue',
+    read: (client) => client.viewIssue(7, '/repo'),
+    answer: {
+      number: 7,
+      title: 'title',
+      body: 'body',
+      state: 'OPEN',
+      labels: [{ name: 'one' }],
+      blockedBy: [{ number: 3, state: 'OPEN' }],
+      subIssues: { nodes: [{ number: 4 }] },
+    },
+  },
+  {
+    verb: 'comments',
+    read: (client) => client.comments(7, '/repo'),
+    answer: [[{ id: 101, user: { login: 'a' }, body: 'first', created_at: '2026-10-01T00:00:00Z' }]],
+  },
+  {
+    verb: 'comment',
+    read: (client) => client.comment(7, 'body', '/repo'),
+    answer: { id: 6, html_url: 'https://github.com/o/r/issues/7#issuecomment-6' },
+    respond: (answer) => fakeGhModule.included(201, { 'Content-Type': 'application/json' }, answer),
+  },
+  {
+    verb: 'issueEvents',
+    read: (client) => client.issueEvents(7, '/repo'),
+    answer: [
+      [
+        {
+          id: 1,
+          event: 'labeled',
+          created_at: '2026-10-15T00:00:00Z',
+          label: { name: 'one' },
+          actor: { login: 'a' },
+        },
+      ],
+    ],
+  },
+  {
+    verb: 'collaboratorPermission',
+    read: (client) => client.collaboratorPermission('a', '/repo'),
+    answer: { permission: 'write' },
+  },
+  {
+    verb: 'findPr',
+    read: (client) => client.findPr('ticket/7-x', '/repo'),
+    answer: [{ number: 12, state: 'OPEN', isDraft: false, url: 'https://github.com/o/r/pull/12' }],
+  },
+  {
+    verb: 'viewPr',
+    read: (client) => client.viewPr(12, '/repo'),
+    answer: { ...prView, headRefOid: 'a'.repeat(40), isCrossRepository: false },
+  },
+];
+
+// The nodes a node holds, each with its path: `answer.key` or `answer[0]`.
+const heldNodes = (value: jsonValue.JsonValue, path: string): [string, jsonValue.JsonValue][] => {
+  if (Array.isArray(value)) return value.map((item, i) => [`${path}[${i}]`, item]);
+  if (value !== null && typeof value === 'object')
+    return Object.entries(value).map(([key, item]) => [`${path}.${key}`, item]);
+  return [];
+};
+// Every node of an answer, by its path from the answer.
+const answerNodes = (value: jsonValue.JsonValue, path = 'answer'): [string, jsonValue.JsonValue][] => [
+  [path, value],
+  ...heldNodes(value, path).flatMap(([held, item]) => answerNodes(item, held)),
+];
+// The answer with the node at `path` swapped for a value of another JSON type.
+const swapped = (answer: jsonValue.JsonValue, path: string): jsonValue.JsonValue => {
+  const swap = (value: jsonValue.JsonValue, where: string): jsonValue.JsonValue => {
+    if (where === path) return typeof value === 'string' ? 7 : 'text';
+    if (Array.isArray(value)) return value.map((item, i) => swap(item, `${where}[${i}]`));
+    if (value !== null && typeof value === 'object')
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, swap(item, `${where}.${key}`)]));
+    return value;
+  };
+  return swap(answer, 'answer');
+};
+
+test("each verb that reads gh's JSON fails on a field of the wrong type, naming it", async (t) => {
+  for (const { verb, read, answer, respond = (given: jsonValue.JsonValue) => JSON.stringify(given) } of JSON_VERBS) {
+    await t.test(`${verb} reads its well-formed answer`, async () => {
+      await read(github.createGh(scriptedGh(() => respond(answer)).gh));
+    });
+    for (const [path] of answerNodes(answer))
+      await t.test(`${verb} fails on ${path} of the wrong type`, async () => {
+        const { gh } = scriptedGh(() => respond(swapped(answer, path)));
+        await assert.rejects(read(github.createGh(gh)), (err: Error) => {
+          assert.ok(err.message.includes(`${path} `), err.message);
+          return true;
+        });
+      });
+  }
+});

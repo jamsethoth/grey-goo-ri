@@ -474,6 +474,46 @@ test('lint fails an Event typed by an assertion or an any on the read side, in a
   );
 });
 
+// gg's own code narrows what JSON.parse gives with a check, so an assertion on it is refused however it is spelled; a
+// test may type a parse by what the case expects (#354).
+const PARSE_ASSERTIONS = [
+  'JSON.parse(text) as string',
+  '(JSON.parse(text)) as string',
+  '<string>JSON.parse(text)',
+  'JSON.parse(text) as unknown as string',
+  'globalThis.JSON.parse(text) as string',
+  "JSON['parse'](text) as string",
+  'JSON.parse(text)! as string',
+];
+const OTHER_ASSERTIONS = ['parser.parse(text) as string', 'JSON.stringify(text) as string', "'parse' as const"];
+const parseAssertions = async (filePath: string, samples: string[]) => {
+  const header = ['declare const text: string;', 'declare const parser: { parse(source: string): unknown };'];
+  const lines = [...header, ...samples.map((sample, i) => `export const sample${i} = ${sample};`)];
+  const [result] = await typedEslint.lintText(`${lines.join('\n')}\n`, { filePath });
+  return samples.map((sample, i) => [
+    sample,
+    result.messages.filter(
+      (message) => message.line === header.length + i + 1 && message.ruleId === 'gg/no-json-parse-assertion',
+    ).length,
+  ]);
+};
+
+test('lint fails an assertion on what JSON.parse gives in lib, bin and scripts, and not in a test', async (t) => {
+  for (const filePath of ['lib/config.ts', 'bin/gg.ts', 'scripts/run-suite.ts']) {
+    const found = await parseAssertions(filePath, [...PARSE_ASSERTIONS, ...OTHER_ASSERTIONS]);
+    await t.test(`in ${filePath}`, () => {
+      assert.deepEqual(found, [
+        ...PARSE_ASSERTIONS.map((sample) => [sample, 1]),
+        ...OTHER_ASSERTIONS.map((sample) => [sample, 0]),
+      ]);
+    });
+  }
+  assert.deepEqual(
+    await parseAssertions('test/unit/layout.test.ts', PARSE_ASSERTIONS),
+    PARSE_ASSERTIONS.map((sample) => [sample, 0]),
+  );
+});
+
 const TYPED_HEADER = [
   "import type * as model from '../../lib/model.ts';",
   "import type * as record from '../../lib/record.ts';",

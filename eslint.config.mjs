@@ -303,6 +303,16 @@ const NO_MAP_TO_JSON = {
   },
 };
 
+// Stub (#354): an assertion on JSON.parse's result is not reported yet.
+const NO_JSON_PARSE_ASSERTION = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { asserted: 'JSON.parse gives unknown: narrow what it gives with a check, never an assertion (#354).' },
+  },
+  create: () => ({}),
+};
+
 // eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {
@@ -311,7 +321,13 @@ export default defineConfig([
     plugins: {
       '@stylistic': stylistic,
       '@typescript-eslint': tseslint.plugin,
-      gg: { rules: { 'thrown-class': THROWN_CLASS, 'no-map-to-json': NO_MAP_TO_JSON } },
+      gg: {
+        rules: {
+          'thrown-class': THROWN_CLASS,
+          'no-map-to-json': NO_MAP_TO_JSON,
+          'no-json-parse-assertion': NO_JSON_PARSE_ASSERTION,
+        },
+      },
     },
     rules: {
       '@typescript-eslint/naming-convention': ['error', ...NAMING],
@@ -359,6 +375,11 @@ export default defineConfig([
       '@typescript-eslint/no-misused-spread': ['error', { allow: [{ from: 'lib', name: 'string' }] }],
       'gg/no-map-to-json': 'error',
     },
+  },
+  {
+    // gg's own code narrows JSON.parse's unknown with a check; a test may type it by what the case expects (#354).
+    files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts'],
+    rules: { 'gg/no-json-parse-assertion': 'error' },
   },
   {
     // The read side of the event log takes its Event types from lib/event-read.ts's check, never from an assertion or
