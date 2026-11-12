@@ -201,7 +201,11 @@ test('a Claim token named failed or harness-timeout is an error', () => {
   config.procedures['tests-fail'].claimTokens.failed = { stop: true };
   config.procedures['tests-fail'].claimTokens['harness-timeout'] = { stop: true };
   const files = exampleLayer.schemas();
-  files['red.schema.json'].properties.claim.enum = ['ok', 'blocked', 'failed', 'harness-timeout'];
+  exampleLayer.putAt(
+    files['red.schema.json'],
+    ['properties', 'claim', 'enum'],
+    ['ok', 'blocked', 'failed', 'harness-timeout'],
+  );
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config, files).errors), [
     {
       at: 'procedures.tests-fail.claimTokens.failed',

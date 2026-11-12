@@ -27,7 +27,7 @@ test('a Claim enum that differs from the declared tokens is an error', () => {
 
 test('a schema outside the strict subset is an error naming the file', () => {
   const files = exampleLayer.schemas();
-  files['review.schema.json'].properties.summary = { type: 'string', minLength: 1 };
+  exampleLayer.putAt(files['review.schema.json'], ['properties', 'summary'], { type: 'string', minLength: 1 });
   const { errors } = exampleLayer.check(exampleLayer.config(), files);
   assert.deepEqual(exampleLayer.firedRules(errors), [
     { at: 'procedures.review.actions[0]', code: 'schema-not-strict' },
@@ -272,7 +272,7 @@ test(
     config.procedures.implement.claimTokens.partial = { requires: [] };
     config.procedures.implement.passed = [{ when: { claim: 'ok', 'check.test': 'failed' }, outcome: 'odd' }];
     const files = exampleLayer.schemas();
-    files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
+    exampleLayer.putAt(files['implement.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'partial']);
     config.procedures.fix.claimTokens.partial = { requires: [] };
     assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config, files).errors), [
       {
@@ -299,7 +299,7 @@ test('a token whose every passing case a row maps away is not an Outcome', () =>
   config.procedures.implement.claimTokens.partial = { requires: ['test'] };
   config.procedures.implement.passed = [{ when: { claim: 'ok' }, outcome: 'done-ish' }];
   const files = exampleLayer.schemas();
-  files['implement.schema.json'].properties.claim.enum = ['ok', 'blocked', 'partial'];
+  exampleLayer.putAt(files['implement.schema.json'], ['properties', 'claim', 'enum'], ['ok', 'blocked', 'partial']);
   config.procedures.fix.claimTokens.partial = { requires: ['test'] };
   config.flows.default.ticket.routes['done-ish'] = 'reviewer';
   const { errors, flows } = exampleLayer.check(config, files);
@@ -348,8 +348,8 @@ test('schemas that differ only in the order of required or enum are one type', (
   procedureActions.actionById(config.procedures.fix, 'fix').schema = 'fix.schema.json';
   const files = exampleLayer.schemas();
   files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
-  files['fix.schema.json'].required.reverse();
-  files['fix.schema.json'].properties.reason.enum.reverse();
+  files['fix.schema.json'].required!.reverse();
+  files['fix.schema.json'].properties!.reason.enum!.reverse();
   assert.deepEqual(exampleLayer.check(config, files).errors, []);
 });
 
@@ -358,13 +358,13 @@ test("a Check's evidence and a response object of the same fields are one type",
   procedureActions.actionById(config.procedures.fix, 'fix').schema = 'fix.schema.json';
   const files = exampleLayer.schemas();
   files['fix.schema.json'] = structuredClone(files['implement.schema.json']);
-  files['fix.schema.json'].properties.output = {
+  exampleLayer.putAt(files['fix.schema.json'], ['properties', 'output'], {
     type: 'object',
     properties: { command: { type: 'string' }, output: { type: 'string' }, foundByNameOnly: { type: 'boolean' } },
     required: ['command', 'output', 'foundByNameOnly'],
     additionalProperties: false,
-  };
-  files['fix.schema.json'].required.push('output');
+  });
+  files['fix.schema.json'].required!.push('output');
   config.flows.default.ticket.vertices.green.inputs.red.from = [
     'red.red-check.evidence',
     'implementer-fix.fix.response.output',
@@ -429,14 +429,14 @@ test('an input source that steps into a list of objects is an error', () => {
 // The review schema with an object and a list of objects inside each finding.
 function nestedFindings() {
   const files = exampleLayer.schemas();
-  const { items } = files['review.schema.json'].properties.findings;
-  items.properties.detail = {
+  const findings = ['properties', 'findings', 'items'];
+  exampleLayer.putAt(files['review.schema.json'], [...findings, 'properties', 'detail'], {
     type: 'object',
     properties: { severity: { type: 'string', enum: ['major', 'minor'] } },
     required: ['severity'],
     additionalProperties: false,
-  };
-  items.properties.details = {
+  });
+  exampleLayer.putAt(files['review.schema.json'], [...findings, 'properties', 'details'], {
     type: 'array',
     items: {
       type: 'object',
@@ -444,8 +444,8 @@ function nestedFindings() {
       required: ['file'],
       additionalProperties: false,
     },
-  };
-  items.required.push('detail', 'details');
+  });
+  files['review.schema.json'].properties!.findings.items!.required!.push('detail', 'details');
   return files;
 }
 

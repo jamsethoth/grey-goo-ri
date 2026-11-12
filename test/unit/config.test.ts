@@ -89,7 +89,9 @@ test('configHash changes with persona, vertex, command and testPaths changes and
 function copyInstall(root: string) {
   for (const directory of ['lib', 'examples', 'test/fixtures/example'])
     cpSync(join(repoRoot, directory), join(root, directory), { recursive: true });
-  const { dependencies = {} } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+  const { dependencies = {} } = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>;
+  };
   for (const name of Object.keys(dependencies))
     cpSync(join(repoRoot, 'node_modules', name), join(root, 'node_modules', name), { recursive: true });
 }

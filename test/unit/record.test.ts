@@ -171,7 +171,7 @@ test('toJson and fromJson round-trip every Map of the record, keyed __proto__ an
       ['toString', 1],
     ]),
   );
-  const revived = record.fromJson(JSON.parse(JSON.stringify(json)), commonDir);
+  const revived = record.fromJson(JSON.parse(JSON.stringify(json)) as typeof json, commonDir);
   // deepEqual compares a Map's entries, so each revived Map holds both keys as entries, not properties.
   assert.deepEqual(revived, executionRecord);
 });
@@ -477,7 +477,7 @@ test('a record whose visits, traversals or Check runs are not objects is corrupt
   record.save(knownRecord(commonDir, 8));
   const saved = JSON.parse(
     withDb(commonDir, (db) => db.prepare('SELECT json FROM records WHERE n = 8').get()!.json as string),
-  );
+  ) as object;
   const broken: [number, Record<string, unknown>][] = [
     [20, { visits: null }],
     [21, { traversals: undefined }],

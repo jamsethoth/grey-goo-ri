@@ -208,7 +208,9 @@ test('the codex rule allows only node scripts/run-suite.ts and has no BOM', asyn
 });
 
 test('npm test is the launcher', async () => {
-  const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
+  const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8')) as {
+    scripts: Record<string, string>;
+  };
   assert.equal(pkg.scripts.test, 'node scripts/run-suite.ts');
   const agents = await readFile(new URL('../../AGENTS.md', import.meta.url), 'utf8');
   assert.match(agents, /^- test: `node scripts\/run-suite\.ts`/m);

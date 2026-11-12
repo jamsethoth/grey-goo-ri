@@ -210,13 +210,13 @@ const unlistedJavaScript = (files: string[]) =>
   files.filter((path) => /\.(?:[cm]?js|[cm]ts)$/.test(path) && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
-  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8')) as { type: string };
   assert.equal(pkg.type, 'module');
 });
 
 // Node will not strip types under node_modules, so an npm package of gg cannot start until #243 builds one (ADR 0018).
 test('package.json is private, so npm refuses to publish gg until it is built for publishing', async () => {
-  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8')) as { private: boolean };
   assert.equal(pkg.private, true);
 });
 
@@ -229,7 +229,10 @@ const rangeMajor = (range: string) => {
 
 // tsc checks the code against @types/node, so its major must be the Node gg runs on (ADR 0020).
 test('the @types/node major in package.json is the engines.node major', async () => {
-  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8')) as {
+    devDependencies: Record<string, string>;
+    engines: { node: string };
+  };
   assert.equal(rangeMajor(pkg.devDependencies['@types/node']), rangeMajor(pkg.engines.node));
 });
 
@@ -258,7 +261,7 @@ const eslint = new ESLint({
   cwd: root,
   overrideConfig: [
     { files: ['**/*.ts'], ...tseslint.configs.disableTypeChecked },
-    { rules: { 'gg/no-map-to-json': 'off' } },
+    { rules: { 'gg/no-map-to-json': 'off', 'gg/no-json-parse-assertion': 'off' } },
   ],
 });
 const lintFindings = async (filePath: string, text: string) => {
@@ -439,6 +442,8 @@ test('lint fails an Event typed by an assertion or an any on the read side, in a
     "import type * as events from './events.ts';",
     'declare const value: unknown;',
     'declare const text: string;',
+    // JSON.parse gives unknown in gg (#354), so an `any` comes from a declaration.
+    'declare const loose: any;',
     'declare const end: events.TicketEndEvent;',
     'declare const takes: (event: events.Event) => void;',
     'type ReadEvent =',
@@ -455,9 +460,9 @@ test('lint fails an Event typed by an assertion or an any on the read side, in a
     ['export const e = value as OfAlias;', 'no-unsafe-type-assertion'],
     ['export const f = value as readonly events.Event[];', 'no-unsafe-type-assertion'],
     ['export const g = <events.Event>value;', 'no-unsafe-type-assertion'],
-    ['export const h = (): events.Event => JSON.parse(text);', 'no-unsafe-return'],
-    ['export const i: events.Event = JSON.parse(text);', 'no-unsafe-assignment'],
-    ['export const j = takes(JSON.parse(text));', 'no-unsafe-argument'],
+    ['export const h = (): events.Event => loose;', 'no-unsafe-return'],
+    ['export const i: events.Event = loose;', 'no-unsafe-assignment'],
+    ['export const j = takes(loose);', 'no-unsafe-argument'],
     ['export const k = end as events.Event;', null],
     ["export const l = 'action' as const;", null],
   ];

@@ -234,7 +234,7 @@ test("text writes JSON.stringify's bytes, at the indent it is given", () => {
   const row: Row = { name: 'é "quoted"\n', counts: { toString: 2, first: 1 }, list: ['a', null] };
   assert.equal(jsonValue.text(row, 'the row'), JSON.stringify(row));
   assert.equal(jsonValue.text(row, 'the row', 2), JSON.stringify(row, null, 2));
-  const parsed: jsonValue.JsonValue = JSON.parse(JSON.stringify(row));
+  const parsed = JSON.parse(JSON.stringify(row)) as jsonValue.JsonValue;
   assert.equal(jsonValue.text(parsed, 'the row'), JSON.stringify(row));
 });
 

@@ -54,7 +54,7 @@ export const failSaves = (t: TestContext, when: (saved: Saved | undefined, next:
       'execution' in next
         ? savedJson(next.commonDir, 'ticket', next.ticket)
         : savedJson(next.commonDir, 'epic', next.epic);
-    if (when(json === undefined ? undefined : JSON.parse(json), next)) throw new Error('disk I/O error');
+    if (when(json === undefined ? undefined : (JSON.parse(json) as Saved), next)) throw new Error('disk I/O error');
   });
 
 // Fails each Event insert that matches `when(event)`, as a disk error would. Undone by the returned function or when

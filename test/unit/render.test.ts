@@ -342,7 +342,12 @@ test('a section that crosses a fence, and a fence that is not closed, are refuse
 });
 
 const fixture = (name: string) => readFileSync(new URL(`../fixtures/templates/${name}`, import.meta.url), 'utf8');
-const shapes = JSON.parse(fixture('comments.json'));
+const shapes = JSON.parse(fixture('comments.json')) as {
+  parts: Record<marker.MarkerPart, string | number>;
+  prImpl: Record<string, unknown>;
+  provenance: unknown[];
+  review: Record<string, unknown>;
+};
 const fixtureMarker = marker.formatMarker(shapes.parts);
 
 // The fixtures are the builders' output before #105.

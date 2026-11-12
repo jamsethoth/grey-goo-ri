@@ -13,7 +13,6 @@ import type * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
 import type * as outcome from './outcome.ts';
 import * as record from './record.ts';
-import * as referencePaths from './reference-paths.ts';
 import * as render from './render.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
@@ -167,7 +166,8 @@ function callOf(
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
-  const schema = JSON.parse(config.namedFile(runContext.files, action.schema)) as referencePaths.SchemaNode;
+  const schema = JSON.parse(config.namedFile(runContext.files, action.schema));
+  briefs.assertStrict(schema);
   return {
     marker: actionMarker,
     vertex: actionIdentity.vertex,

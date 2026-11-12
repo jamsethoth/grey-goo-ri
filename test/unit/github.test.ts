@@ -287,6 +287,8 @@ const prView = {
   url: 'https://github.com/o/r/pull/12',
   body: 'PR body',
   headRefName: 'ticket/7-x',
+  headRefOid: 'a'.repeat(40),
+  isCrossRepository: false,
 };
 const commentPages = [
   [
@@ -678,7 +680,7 @@ const JSON_VERBS: {
   {
     verb: 'viewPr',
     read: (client) => client.viewPr(12, '/repo'),
-    answer: { ...prView, headRefOid: 'a'.repeat(40), isCrossRepository: false },
+    answer: prView,
   },
 ];
 

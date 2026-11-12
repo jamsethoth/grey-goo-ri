@@ -6,9 +6,9 @@ import * as procedures from '../../lib/procedures.ts';
 import * as rules from '../../lib/rules.ts';
 
 // Every Rule Table of the example Flow (docs/research/user-defined-procedures-example-flow.md).
-const flow: { tables: rules.RuleTable[] } = JSON.parse(
-  readFileSync(new URL('../fixtures/rules-flow.json', import.meta.url), 'utf8'),
-);
+const flow = JSON.parse(readFileSync(new URL('../fixtures/rules-flow.json', import.meta.url), 'utf8')) as {
+  tables: rules.RuleTable[];
+};
 const [testsFailStopped, implementStopped, fixStopped, reviewPassed, reviewStopped] = flow.tables;
 
 const states: rules.FieldSpec = { kind: 'enum', values: ['passed', 'failed', 'not-run'] };

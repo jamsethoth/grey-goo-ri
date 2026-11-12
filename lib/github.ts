@@ -1,7 +1,9 @@
 import type * as approval from './approval.ts';
 import * as exec from './exec.ts';
+import * as ghAnswer from './gh-answer.ts';
 import * as labels from './labels.ts';
 import * as outcome from './outcome.ts';
+import * as referencePaths from './reference-paths.ts';
 
 const STATE_STYLE: Record<labels.StateName, [color: string, description: string]> = {
   'in-progress': ['fbca04', 'An agent is working on this ticket'],
@@ -56,7 +58,7 @@ export interface Issue {
   subIssues?: Linked<Pick<IssueRef, 'number'>>;
 }
 // gh gives an issue's linked issues as a list, or as a connection with its list under `nodes`.
-type Linked<Item> = Item[] | { nodes?: Item[] };
+export type Linked<Item> = Item[] | { nodes?: Item[] };
 export const linkedIssues = <Item>(given: Linked<Item> | undefined): Item[] =>
   ((given as { nodes?: Item[] } | undefined)?.nodes ?? given ?? []) as Item[];
 export interface PullRequest {
@@ -124,17 +126,18 @@ async function probeRateLimit(transport: Transport, err: GhError, args: string[]
   const failure = outcome.classifyRemoteFailure(err);
   if (failure.failureClass !== 'rate-limited' || failure.retryAfterMs !== null || failure.resetAt !== null) return;
   try {
-    const { remaining, reset } = JSON.parse(await transport(['api', 'rate_limit'], cwd)).resources[
-      args[0] === 'api' ? 'core' : 'graphql'
-    ];
+    const probe = ['api', 'rate_limit'];
+    const resources = ghAnswer.fields(ghAnswer.answered(JSON.parse(await transport(probe, cwd)), probe))('resources');
+    const quota = ghAnswer.fields(ghAnswer.fields(resources)(args[0] === 'api' ? 'core' : 'graphql'));
+    const [remaining, reset] = [ghAnswer.count(quota('remaining')), ghAnswer.count(quota('reset'))];
     if (remaining === 0 && Number.isFinite(reset)) err.rateLimit = { resetAt: reset * 1000 };
   } catch {}
 }
 
-// How the verbs call gh: for its stdout, or for its stdout parsed as JSON.
+// How the verbs call gh: for its stdout, or for its stdout parsed as JSON, unknown until a verb reads it.
 interface Client {
   gh(args: string[], cwd?: string, input?: string): Promise<string>;
-  ghJson<T>(args: string[], cwd?: string): Promise<T>;
+  ghJson(args: string[], cwd?: string): Promise<ghAnswer.Answered>;
 }
 
 // `gh api --include` prints the status line and headers on an HTTP error too, so a retry reads Retry-After and the
@@ -153,7 +156,7 @@ function client(transport: Transport): Client {
       throw ghError;
     }
   }
-  return { gh, ghJson: async (args, cwd) => JSON.parse(await gh(args, cwd)) };
+  return { gh, ghJson: async (args, cwd) => ghAnswer.answered(JSON.parse(await gh(args, cwd)), args) };
 }
 
 // A label change: the names to add and to remove.
@@ -164,9 +167,9 @@ export interface LabelChange {
 
 function labelVerbs({ gh, ghJson }: Client) {
   const repositoryLabels = async (cwd?: string): Promise<string[]> =>
-    (await ghJson<IssueLabel[][]>(['api', '--paginate', '--slurp', 'repos/{owner}/{repo}/labels?per_page=100'], cwd))
-      .flat()
-      .map((label) => label.name);
+    ghAnswer
+      .pagedItems(await ghJson(['api', '--paginate', '--slurp', 'repos/{owner}/{repo}/labels?per_page=100'], cwd))
+      .map((label) => ghAnswer.readLabel(label).name);
 
   // GitHub matches label names case-insensitively, and another Run may create a label between the read and the
   // create: a failed create counts as done only once a fresh read shows the label. `flowLabels` are the Await and
@@ -235,27 +238,19 @@ async function setLabels(
 }
 
 function issueVerbs({ gh, ghJson }: Client) {
-  const viewIssue = (issue: number, cwd?: string) =>
-    ghJson<Issue>(
-      ['issue', 'view', String(issue), '--json', 'number,title,body,state,labels,blockedBy,subIssues'],
-      cwd,
+  const viewIssue = async (issue: number, cwd?: string) =>
+    ghAnswer.readIssue(
+      await ghJson(
+        ['issue', 'view', String(issue), '--json', 'number,title,body,state,labels,blockedBy,subIssues'],
+        cwd,
+      ),
     );
 
   // PR conversation comments live on the issues endpoint, so one read serves an issue and a PR.
   const comments = async (issue: number, cwd?: string): Promise<IssueComment[]> =>
-    (
-      await ghJson<{ id: number; user: { login: string } | null; body: string; created_at: string }[][]>(
-        ['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/comments`],
-        cwd,
-      )
-    )
-      .flat()
-      .map((posted) => ({
-        id: posted.id,
-        author: posted.user?.login,
-        body: posted.body,
-        createdAt: posted.created_at,
-      }));
+    ghAnswer
+      .pagedItems(await ghJson(['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/comments`], cwd))
+      .map(ghAnswer.readComment);
 
   // A PR conversation comment is an issue comment, so one POST serves an issue and a PR.
   async function comment(issue: number, body: string, cwd?: string): Promise<{ id: number; url: string }> {
@@ -268,8 +263,10 @@ function issueVerbs({ gh, ghJson }: Client) {
       '--input',
       '-',
     ];
-    const { id, html_url: url } = JSON.parse(included(await gh(args, cwd, JSON.stringify({ body }))).body);
-    return { id, url };
+    const field = ghAnswer.fields(
+      ghAnswer.answered(JSON.parse(included(await gh(args, cwd, JSON.stringify({ body }))).body), args),
+    );
+    return { id: ghAnswer.count(field('id')), url: ghAnswer.text(field('html_url')) };
   }
 
   return { viewIssue, comments, comment };
@@ -277,18 +274,15 @@ function issueVerbs({ gh, ghJson }: Client) {
 
 // An issue's events, which GitHub gives no way to edit or delete, so a Decision is read from them (ADR 0003).
 const issueEvents = async ({ ghJson }: Client, issue: number, cwd?: string): Promise<approval.IssueEvent[]> =>
-  (
-    await ghJson<approval.IssueEvent[][]>(
-      ['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/events`],
-      cwd,
-    )
-  ).flat();
+  ghAnswer
+    .pagedItems(await ghJson(['api', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${issue}/events`], cwd))
+    .map(ghAnswer.readIssueEvent);
 
 // GitHub answers 404 for a login it does not know as a collaborator, which has no permission (L5).
 async function collaboratorPermission({ ghJson }: Client, login: string, cwd?: string): Promise<string> {
   try {
     const path = `repos/{owner}/{repo}/collaborators/${encodeURIComponent(login)}/permission`;
-    return (await ghJson<{ permission: string }>(['api', path], cwd)).permission;
+    return ghAnswer.text(ghAnswer.fields(await ghJson(['api', path], cwd))('permission'));
   } catch (err) {
     if (outcome.classifyRemoteFailure(err as outcome.RemoteError).status === 404) return 'none';
     throw err;
@@ -299,7 +293,9 @@ const PR_FIELDS = 'number,state,isDraft,url';
 
 function prVerbs({ gh, ghJson }: Client) {
   const findPr = async (branch: string, cwd?: string) =>
-    (await ghJson<PullRequest[]>(['pr', 'list', '--head', branch, '--state', 'all', '--json', PR_FIELDS], cwd))[0];
+    ghAnswer
+      .items(await ghJson(['pr', 'list', '--head', branch, '--state', 'all', '--json', PR_FIELDS], cwd))
+      .map(ghAnswer.readPullRequest)[0];
 
   async function upsertPr(
     { branch, base, title, body }: { branch: string; base: string; title: string; body: string },
@@ -318,10 +314,12 @@ function prVerbs({ gh, ghJson }: Client) {
     return findPr(branch, cwd);
   }
 
-  const viewPr = (pr: number, cwd?: string) =>
-    ghJson<PullRequestView>(
-      ['pr', 'view', String(pr), '--json', `${PR_FIELDS},body,headRefName,headRefOid,isCrossRepository`],
-      cwd,
+  const viewPr = async (pr: number, cwd?: string) =>
+    ghAnswer.readPullRequestView(
+      await ghJson(
+        ['pr', 'view', String(pr), '--json', `${PR_FIELDS},body,headRefName,headRefOid,isCrossRepository`],
+        cwd,
+      ),
     );
 
   const markReady = (pr: number, cwd?: string) => gh(['pr', 'ready', String(pr)], cwd);
@@ -347,7 +345,8 @@ async function repositoryName({ gh }: Client, cwd?: string): Promise<RepositoryR
   }
   let repository: unknown;
   try {
-    repository = (JSON.parse(answer) as { nameWithOwner?: unknown } | null)?.nameWithOwner;
+    const parsed = JSON.parse(answer);
+    repository = referencePaths.isRecord(parsed) ? parsed.nameWithOwner : undefined;
   } catch {}
   if (isOwnerName(repository)) return { repository, error: null };
   return { repository: null, error: `gh repo view gave ${answer.trim().slice(0, 300)}, not an owner/name` };

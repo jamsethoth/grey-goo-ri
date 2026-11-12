@@ -340,8 +340,7 @@ function observedExecution(repos: Repos, planned: Planned) {
   const { configured, flow, executionRecord, database } = planned;
   // What every launched process saw of the worktree's activity, read from the saved row as another process would.
   const activity: Record<string, unknown>[] = [];
-  const observe = (what: string) =>
-    activity.push({ what, ...JSON.parse(caseDatabase.savedJson(commonDir, 'ticket', TICKET) as string).activity });
+  const observe = (what: string) => activity.push({ what, ...record.load(commonDir, 'ticket', TICKET)!.activity });
   const harness = goldenHarness(join(root, 'transcripts'), planned.responses);
   const run = harness.run;
   harness.run = (call) => {

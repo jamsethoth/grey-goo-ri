@@ -52,7 +52,7 @@ async function doctorOver(repo: string, user: string, commonDir?: string) {
 // Adds the test command the example leaves out, which only the repository can say.
 function declareTest(repo: string) {
   const file = join(repositoryDirectory(repo), 'gg.json');
-  const written = JSON.parse(readFileSync(file, 'utf8'));
+  const written = JSON.parse(readFileSync(file, 'utf8')) as { commands: Record<string, string> };
   written.commands.test = 'npm test';
   writeFileSync(file, JSON.stringify(written));
 }
@@ -65,7 +65,10 @@ test("gg init writes the example with the repository's keys, creates the user's 
   assert.deepEqual(readdirSync(written).sort(), [...exampleLayer.WRITTEN_NAMES].sort(), 'every file but doctor.txt');
   for (const name of exampleLayer.WRITTEN_NAMES.filter((name) => name !== 'gg.json'))
     assert.equal(readFileSync(join(written, name), 'utf8'), exampleLayer.fixtureText(name), name);
-  const expected = JSON.parse(exampleLayer.fixtureText('gg.json'));
+  const expected = JSON.parse(exampleLayer.fixtureText('gg.json')) as {
+    commands: Record<string, string>;
+    baseBranch: string;
+  };
   delete expected.commands.test;
   expected.baseBranch = 'trunk';
   assert.deepEqual(
@@ -133,7 +136,9 @@ for (const [harness, expected] of Object.entries(HARNESS_AGENTS)) {
   test(`gg init --harness ${harness} writes each Agent's harness, model and effort, and gg doctor accepts them`, async (t) => {
     const { repo, user, commonDir } = initRoots(t);
     doctor.init(repo, { baseBranch: 'main', userDirectory: user, commonDir, harness });
-    const { agents } = JSON.parse(readFileSync(join(repositoryDirectory(repo), 'gg.json'), 'utf8'));
+    const { agents } = JSON.parse(readFileSync(join(repositoryDirectory(repo), 'gg.json'), 'utf8')) as {
+      agents: unknown;
+    };
     assert.deepEqual(agents, expected);
     declareTest(repo);
     const accepted = await doctorOver(repo, user, commonDir);
@@ -248,8 +253,8 @@ test(
   "this repository's configuration is the example with its own commands and testPaths, " + 'and gg doctor accepts it',
   async (t) => {
     const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-    const own = JSON.parse(readFileSync(join(repositoryDirectory(repoRoot), 'gg.json'), 'utf8'));
-    const example = JSON.parse(exampleLayer.fixtureText('gg.json'));
+    const own = JSON.parse(readFileSync(join(repositoryDirectory(repoRoot), 'gg.json'), 'utf8')) as object;
+    const example = JSON.parse(exampleLayer.fixtureText('gg.json')) as object;
     assert.deepEqual(
       { ...own, commands: undefined, testPaths: undefined },
       { ...example, commands: undefined, testPaths: undefined },
@@ -271,7 +276,7 @@ test(
 
 // The repository commits each Agent's harness, so gg init alone gives a Flow gg doctor accepts (ADR 0022).
 test("the example's Agents name a harness", () => {
-  const { agents } = JSON.parse(exampleLayer.fixtureText('gg.json'));
+  const { agents } = JSON.parse(exampleLayer.fixtureText('gg.json')) as { agents: unknown };
   assert.deepEqual(agents, {
     implementer: { persona: 'implementer.md', access: 'workspace-write', harness: 'claude' },
     reviewer: { persona: 'reviewer.md', access: 'read-only', harness: 'claude' },

@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs';
 import * as approval from '../../lib/approval.ts';
 
 const timeline = (name: string): approval.IssueEvent[] =>
-  JSON.parse(readFileSync(new URL(`../fixtures/approval/${name}.json`, import.meta.url), 'utf8'));
+  JSON.parse(
+    readFileSync(new URL(`../fixtures/approval/${name}.json`, import.meta.url), 'utf8'),
+  ) as approval.IssueEvent[];
 
 // The REST collaborator `permission` field: maintain reads as write and triage as read (L5).
 const permissions = { owner: 'admin', maintainer: 'write', triager: 'read' };

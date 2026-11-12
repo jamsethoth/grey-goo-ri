@@ -6,7 +6,9 @@ import * as exampleLayer from '../support/example-layer.ts';
 const persona = (name: string) => exampleLayer.fixtureText(`${name}.md`);
 const properties = (...schemas: string[]) =>
   new Set(
-    schemas.flatMap((name) => Object.keys(JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)).properties)),
+    schemas.flatMap((name) =>
+      Object.keys((JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)) as { properties: object }).properties),
+    ),
   );
 // The fields a Persona's report section asks for, one `- \`field\`` line each.
 const asked = (text: string) =>

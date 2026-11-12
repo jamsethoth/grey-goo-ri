@@ -176,7 +176,7 @@ test('an action event carries schema version 2 and every required field', (t) =>
     lines.map((line) => line.slice(0, 18)),
     ['{"schemaVersion":2', '{"schemaVersion":2'],
   );
-  const back = JSON.parse(lines[0]);
+  const back = JSON.parse(lines[0]) as Record<string, unknown>;
   assert.equal(back.schemaVersion, 2);
   assert.equal(back.type, 'action');
   assert.equal(typeof back.time, 'string');
@@ -379,7 +379,7 @@ test('eventLog validates every event before appending it', (t) => {
   assert.deepEqual(eventRead.readEvents(directory), []);
   events.eventLog(directory, { run: 'r1' })('run_start');
   const [row] = rows(directory);
-  const back = JSON.parse(row.json);
+  const back = JSON.parse(row.json) as Record<string, unknown>;
   assert.equal(back.schemaVersion, 2);
   assert.equal(back.type, 'run_start');
   assert.equal(back.run, 'r1');
@@ -425,7 +425,7 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
   );
   const [row, ...rest] = rows(directory);
   assert.equal(rest.length, 0);
-  const event = JSON.parse(row.json);
+  const event = JSON.parse(row.json) as { time: string };
   assert.deepEqual(event, {
     schemaVersion: 2,
     time: event.time,

@@ -730,7 +730,7 @@ test('a Pending Ticket whose read GitHub refuses stays Pending, and the Run exit
     fixture.logs.some((line) => line.includes('class permission')),
     fixture.logs.join('\n'),
   );
-  assert.equal(JSON.parse(fixture.loadRow() as string).state, 'active', 'nothing was lost');
+  assert.equal((JSON.parse(fixture.loadRow() as string) as { state: string }).state, 'active', 'nothing was lost');
 });
 
 test('a Pending Ticket whose read fails on a blip stays Pending, and the Run exits 0', async (t) => {

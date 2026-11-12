@@ -60,7 +60,8 @@ function assertObject(schema: Record<string, unknown>, path: string) {
   for (const key of keys) assertStrict(properties[key], `${path}.${key}`);
 }
 
-export function assertStrict(schema: unknown, path = '(root)') {
+// A schema in the subset has every keyword typed as a SchemaNode types it.
+export function assertStrict(schema: unknown, path = '(root)'): asserts schema is referencePaths.SchemaNode {
   if (!referencePaths.isRecord(schema)) throw new Error(`${path}: schema must be an object`);
   assertKeywords(schema, path);
   if (schema.type === 'array' && schema.items === undefined) throw new Error(`${path}: array lacks items`);
