@@ -19,9 +19,14 @@ const intended = (given: Fixture, actionMarker: string): prUpsert.Payload => {
   };
 };
 
+// A PR is opened on a branch origin has, so it has a head commit, as every PR on GitHub does.
+const pushBranch = async (given: Fixture) =>
+  given.git.push(given.worktree, given.executionRecord.branch, await given.git.headSha(given.worktree));
+
 test('a PR upserted, then looked for, is found by the marker in its body, and its number kept', async (t) => {
   const given = await effectFixture.effectFixture(t);
   const actionMarker = given.markerOf('pr');
+  await pushBranch(given);
   const evidence = await prUpsert.effect.perform(given.context, intended(given, actionMarker), { redo: false });
   const pr = given.fixture.gh.pr();
   assert.ok(pr, 'a PR was made');
@@ -44,6 +49,7 @@ for (const [state, edit] of [
     const given = await effectFixture.effectFixture(t);
     const actionMarker = given.markerOf('pr');
     if (edit) {
+      await pushBranch(given);
       await prUpsert.effect.perform(given.context, intended(given, actionMarker), { redo: false });
       const pr = given.fixture.gh.pr();
       assert.ok(pr, 'a PR was made');
