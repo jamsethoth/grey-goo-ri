@@ -45,8 +45,8 @@ jobs:
       - name: Check
         run: node scripts/run-suite.ts check
 
-  # test/unit/'s line and function coverage of lib/, held to each platform's figures in coverage-baseline.json (ADR
-  # 0016, amended): a fall, or a rise not yet recorded, fails the job. Its own job, beside the suite's, so it adds no
+  # test/unit/'s line and function coverage of lib/, held at or above the fixed floor in scripts/run-suite.ts (ADR
+  # 0016, amended): a figure below it fails the job. Its own job, beside the suite's, so it adds no
   # wall time; no tripwire, since test/unit/ spawns nothing (test/unit/layout.test.ts).
   coverage:
     # Stable names: the Main ruleset requires these checks by name.
@@ -88,7 +88,7 @@ jobs:
         shell: bash
         run: node scripts/run-suite.ts coverage 2>&1 | tee "$RUNNER_TEMP/coverage.log"
 
-      # The ratchet's verdict, and node's per-file table: lines, branches, functions and the uncovered line numbers.
+      # The floor's verdict, and node's per-file table: lines, branches, functions and the uncovered line numbers.
       - name: Summary
         if: always()
         shell: bash
@@ -98,7 +98,7 @@ jobs:
           log="$RUNNER_TEMP/coverage.log"
           {
             echo "### coverage: $LEG"
-            grep -aE '^coverage (held|rose|fell)' "$log" || echo 'no verdict: the unit tests did not finish or failed'
+            grep -aE '^coverage (held|fell)' "$log" || echo 'no verdict: the unit tests did not finish or failed'
             echo '```'
             sed -n '/start of coverage report/,/end of coverage report/p' "$log" | sed 's/^ℹ //'
             echo '```'

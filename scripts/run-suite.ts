@@ -2,7 +2,7 @@
 // every environment variable that could make node load other code, and gives git no global or system config. The full
 // and fast stages run in a job it holds, and fail when a test leaves a process in it (docs/testing.md).
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -13,11 +13,11 @@ import type * as containment from '../lib/containment.ts';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const USAGE = `usage: node scripts/run-suite.ts [fast [boundary ...]]
        node scripts/run-suite.ts check
-       node scripts/run-suite.ts coverage [update]
+       node scripts/run-suite.ts coverage
   no arguments: the full suite
   fast: test/unit/, plus test/contract/<boundary>/ for each boundary named
   check: the format check, lint and the type check, no tests
-  coverage: test/unit/ with line and function coverage of lib/, held to coverage-baseline.json; update records a rise`;
+  coverage: test/unit/ with line and function coverage of lib/, held at or above a fixed floor`;
 // ADR 0018: each runs as node plus the package's own bin script, never through a shell or an npm .cmd shim. The format
 // check runs first, so lint judges formatted code.
 const CHECKS = [
@@ -27,7 +27,9 @@ const CHECKS = [
 ];
 const UNIT = 'test/unit/**/*.test.{mjs,ts}';
 const LCOV = 'coverage/lcov.info';
-const BASELINE = 'coverage-baseline.json';
+// The least line and function coverage of lib/ the coverage stage accepts, in percent. A fixed floor, raised by hand:
+// a figure recorded per change made every two open PRs conflict on it (ADR 0016, amended 2026-11-11).
+export const COVERAGE_FLOOR = { lines: 99, functions: 98.5 };
 // test/unit/ may not reach the process boundaries (test/unit/layout.test.ts), so their lines are not unit-testable;
 // lib/process-tree.ts and lib/containment.ts are reached only through lib/exec.ts and this launcher's census, and
 // lib/git-temp-index.ts and lib/git-default-branch.ts only through lib/git.ts. Their contract suites cover them; the
@@ -55,14 +57,14 @@ export class SuiteUsageError extends Error {
 }
 
 // What the launcher runs: node, in the repository root, with this environment, once per step in order. `coverage` is
-// set for the coverage stage, and says whether a rise is recorded or refused. `census` is set for a stage whose tests
+// set for the coverage stage, whose figures are held to the floor. `census` is set for a stage whose tests
 // run in a job: the coverage stage's one process has no boundaries to leave anything behind, and check runs no tests.
 export interface SuiteCommand {
   command: string;
   cwd: string;
   env: Record<string, string | undefined>;
   steps: string[][];
-  coverage?: 'check' | 'update';
+  coverage?: true;
   census?: true;
 }
 
@@ -102,7 +104,7 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
   const base = { command: process.execPath, cwd: root, env: { ...Object.fromEntries(kept), ...GIT_CONFIG } };
   // The check job and the suite stages already run CHECKS, so the coverage stage runs only the measured tests.
   if (argv[0] === 'coverage') {
-    if (argv.length > 2 || (argv.length === 2 && argv[1] !== 'update')) throw new SuiteUsageError();
+    if (argv.length > 1) throw new SuiteUsageError();
     // One process, so no merge: node merges each process's coverage in directory order, and a line's count can depend
     // on that order, so the same tree could pass or fail (grey-goo-ri issue #285, ADR 0016).
     const test = ['--test', '--test-isolation=none', '--experimental-test-coverage'];
@@ -119,7 +121,7 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
         UNIT,
       ],
     ];
-    return { ...base, steps, coverage: argv[1] === 'update' ? 'update' : 'check' };
+    return { ...base, steps, coverage: true };
   }
   const files = stage(argv);
   if (!files) return { ...base, steps: CHECKS };
@@ -136,53 +138,27 @@ export function coverageTotals(lcov: string): Record<'lines' | 'functions', numb
   return { lines: percent(sum.LH, sum.LF), functions: percent(sum.FNH, sum.FNF) };
 }
 
-// The ratchet: each figure that fell below the recorded one, and each that rose above it. A missing record rose.
-export function compareCoverage(
-  recorded: Record<string, number> | undefined,
-  current: Record<string, number>,
-): { fell: string[]; rose: string[] } {
-  const fell: string[] = [];
-  const rose: string[] = [];
-  for (const [metric, now] of Object.entries(current)) {
-    const was = recorded?.[metric];
-    if (was === undefined || now > was) rose.push(`${metric} ${was ?? 'unrecorded'} -> ${now}`);
-    else if (now < was) fell.push(`${metric} ${was} -> ${now}`);
-  }
-  return { fell, rose };
+// Each figure below its floor, as `metric now < floor`.
+export function belowFloor(current: Record<string, number>, floor: Record<string, number> = COVERAGE_FLOOR): string[] {
+  return Object.entries(floor)
+    .filter(([metric, least]) => current[metric] < least)
+    .map(([metric, least]) => `${metric} ${current[metric]} < ${least}`);
 }
 
-// Coverage differs by platform (win32 and POSIX branches), so each platform keeps its own figures.
-function ratchet(mode: 'check' | 'update'): number {
-  const path = join(root, BASELINE);
-  const baseline = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {};
+function holdCoverage(): number {
   const report = existsSync(join(root, LCOV)) ? readFileSync(join(root, LCOV), 'utf8') : '';
   if (!/^LF:[1-9]/m.test(report)) {
     console.error(`coverage measured no lines: a unit test ended the process early, or lib/ has nothing to measure.`);
     return 1;
   }
   const current = coverageTotals(report);
-  const { fell, rose } = compareCoverage(baseline[process.platform], current);
-  const figures = `${process.platform}: ${JSON.stringify(current)}`;
+  const fell = belowFloor(current);
   if (fell.length) {
-    console.error(
-      `coverage fell (${fell.join(', ')}). Add unit tests; ${BASELINE} is lowered only by hand, in review.`,
-    );
+    console.error(`coverage fell below the floor (${fell.join(', ')}). Add unit tests.`);
     return 1;
   }
-  if (!rose.length) {
-    console.log(`coverage held at ${figures}`);
-    return 0;
-  }
-  if (mode === 'update') {
-    writeFileSync(path, `${JSON.stringify({ ...baseline, [process.platform]: current }, null, 2)}\n`);
-    console.log(`coverage rose (${rose.join(', ')}); ${BASELINE} now records ${figures}`);
-    return 0;
-  }
-  console.error(
-    `coverage rose (${rose.join(', ')}). Record it: node scripts/run-suite.ts coverage update, ` +
-      `or set ${figures} in ${BASELINE}.`,
-  );
-  return 1;
+  console.log(`coverage held at ${JSON.stringify(current)}, floor ${JSON.stringify(COVERAGE_FLOOR)}`);
+  return 0;
 }
 
 // On demand: test/unit/ imports this file and may not load a process boundary (ADR 0016).
@@ -316,5 +292,5 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     if (failed && !stageCode) stageCode = 1;
   }
   if (stageCode) process.exit(stageCode);
-  if (suite.coverage) process.exit(ratchet(suite.coverage));
+  if (suite.coverage) process.exit(holdCoverage());
 }
