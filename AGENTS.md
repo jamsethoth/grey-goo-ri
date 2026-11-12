@@ -191,7 +191,7 @@ Test design (rules, doubles, sizes, layout and stages) follows `docs/testing.md`
 - test: `node scripts/run-suite.ts` (`npm test` is the same)
 - fast stage: `node scripts/run-suite.ts fast [boundary ...]` runs `test/unit/` and the named `test/contract/` suites
 - check stage: `node scripts/run-suite.ts check` runs the format check, lint and the type check, and no tests
-- coverage stage: `node scripts/run-suite.ts coverage` holds unit coverage to `coverage-baseline.json` (`coverage update` records a rise)
+- coverage stage: `node scripts/run-suite.ts coverage` holds unit coverage at or above the fixed floor `COVERAGE_FLOOR` in `scripts/run-suite.ts`
 - lint: `node node_modules/eslint/bin/eslint.js .`
 - typecheck: `node node_modules/typescript/bin/tsc -p tsconfig.json`
 - format: `node node_modules/prettier/bin/prettier.cjs --check .` (`--write` in place of `--check` fixes the format)

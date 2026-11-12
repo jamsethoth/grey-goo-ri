@@ -113,13 +113,7 @@ test('the coverage stage runs test/unit in one process over lib/ outside its bou
       'test/unit/**/*.test.{mjs,ts}',
     ],
   ]);
-  assert.equal(suite.coverage, 'check');
-});
-
-test('coverage update runs the same tests and records a rise', () => {
-  const suite = runSuite.suiteCommand({}, ['coverage', 'update']);
-  assert.deepEqual(suite.steps, runSuite.suiteCommand({}, ['coverage']).steps);
-  assert.equal(suite.coverage, 'update');
+  assert.equal(suite.coverage, true);
 });
 
 test('coverage totals sum every file of an lcov report, floored to two places', () => {
@@ -143,37 +137,14 @@ test('coverage totals sum every file of an lcov report, floored to two places', 
   assert.deepEqual(runSuite.coverageTotals(lcov), { lines: 33.33, functions: 66.66 });
 });
 
-test('coverage that falls below the recorded figures is reported as a fall', () => {
-  assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.31, functions: 97.25 }), {
-    fell: ['lines 98.32 -> 98.31'],
-    rose: [],
-  });
+test('coverage below the floor is reported, figure by figure', () => {
+  assert.deepEqual(runSuite.belowFloor({ lines: 98.99, functions: 98.5 }, { lines: 99, functions: 98.5 }), [
+    'lines 98.99 < 99',
+  ]);
 });
 
-test('coverage above the recorded figures is reported as a rise to record', () => {
-  assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.32, functions: 97.3 }), {
-    fell: [],
-    rose: ['functions 97.25 -> 97.3'],
-  });
-});
-
-test('coverage equal to the recorded figures neither falls nor rises', () => {
-  assert.deepEqual(runSuite.compareCoverage({ lines: 98.32, functions: 97.25 }, { lines: 98.32, functions: 97.25 }), {
-    fell: [],
-    rose: [],
-  });
-});
-
-test('a platform with no recorded figures has risen', () => {
-  assert.deepEqual(runSuite.compareCoverage(undefined, { lines: 98.32, functions: 97.25 }), {
-    fell: [],
-    rose: ['lines unrecorded -> 98.32', 'functions unrecorded -> 97.25'],
-  });
-});
-
-test('every platform CI runs has recorded coverage figures', async () => {
-  const baseline = JSON.parse(await readFile(new URL('../../coverage-baseline.json', import.meta.url), 'utf8'));
-  assert.deepEqual(Object.keys(baseline).sort(), ['linux', 'win32']);
+test('coverage at or above the floor holds', () => {
+  assert.deepEqual(runSuite.belowFloor({ lines: 99, functions: 99.2 }, { lines: 99, functions: 98.5 }), []);
 });
 
 // ADR 0016: anything outside the closed set stops the launcher before it runs anything.
@@ -186,8 +157,8 @@ const refused: [string, string[]][] = [
   ['an unknown boundary', ['fast', 'nope']],
   ['a boundary in the wrong case', ['fast', 'GIT']],
   ['a file under test/contract that is not a directory', ['fast', 'git/git.test.mjs']],
-  ['an argument after coverage other than update', ['coverage', 'git']],
-  ['a flag after coverage update', ['coverage', 'update', '--test-name-pattern=x']],
+  ['an argument after coverage', ['coverage', 'update']],
+  ['a flag after coverage', ['coverage', '--test-name-pattern=x']],
 ];
 for (const [what, argv] of refused) {
   test(`the launcher refuses ${what}`, () => {
