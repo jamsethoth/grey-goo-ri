@@ -33,6 +33,16 @@ for (const redo of [false, true]) {
   });
 }
 
+// A commit redone after a restart commits the tree its intent saved, never what was staged since.
+test('a commit made again from its intent commits the saved tree, not what is staged now', async (t) => {
+  const given = await effectFixture.effectFixture(t);
+  const payload = await staged(given, given.markerOf('commit'));
+  given.write('lib/later.mjs', 'export const later = 1;\n');
+  await given.git.stageAll(given.worktree);
+  const { sha } = await commit.effect.perform(given.context, payload, { redo: true });
+  assert.equal(await given.git.treeOf(given.worktree, sha as string), payload.tree);
+});
+
 test('a commit not made is absent while the branch is at its parent and its tree is there', async (t) => {
   const given = await effectFixture.effectFixture(t);
   const actionMarker = given.markerOf('commit');

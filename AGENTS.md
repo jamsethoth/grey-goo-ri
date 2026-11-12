@@ -21,8 +21,8 @@ leverage and a change lands in one place (locality).
 
 - One domain concept, one module. What gg knows about a GLOSSARY.md concept (its types, its rules, how it is made, read
   and resumed) lives in the module named for it, so adding a kind or changing a rule is a one-module edit. A list of
-  names that other modules match against (`REMOTE_ACTIONS`, an `if (effect === …)` chain) means the concept is
-  scattered. #355, which gathers each Effect into one module, is the first such move.
+  names that other modules match against means the concept is scattered, as the Effects were before #355 gathered each
+  into one module in `lib/effects/`, ending `REMOTE_ACTIONS` and an `if (effect === …)` chain.
 - The interface is the test surface (`docs/testing.md` rule 2). When reaching one rule takes a golden Flow, the rule
   sits behind the wrong interface.
 - The deletion test: a module whose deletion would only move its code into one caller is a pass-through, so fold it in.
