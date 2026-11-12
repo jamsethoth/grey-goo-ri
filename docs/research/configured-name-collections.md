@@ -245,7 +245,7 @@ a `Map` subclass (`structuredClone` deserialises it as a plain Map and `deepStri
        (`docs/research/declared-event-shapes.md`) and `decidedBy` (`docs/research/exclusive-variant-shapes.md`).
    - The nested variant of the rule, which fails an `unknown` anywhere inside a stringified value's type, is not built
      (owner, 2026-11-11): it polices every `JSON.stringify` again. Recounted with that variant applied to a copy of the
-     rule: **118** sites on 7b2d346 (36 outside `test/`, 82 in it; #330 counted 114 on ada8948) and **104** on #342's
-     final tree, which has main's #305 and #150 merged in (30 in `lib/`, 1 in `scripts/`, 73 in `test/`). None of the
-     31 outside `test/` is a save: the four paths no longer call `JSON.stringify`, and what is left quotes a value in a
-     message, builds a key, feeds `hashOf`, or writes the coverage baseline.
+     rule: **118** sites on 7b2d346 (36 outside `test/`, 82 in it; #330 counted 114 on ada8948) and **103** on #342's
+     final tree, which has main's #305, #150 and #348 merged in (30 in `lib/`, 73 in `test/`, none in `scripts/`
+     since #348 stopped writing a coverage baseline). None of the 30 outside `test/` is a save: the four paths no
+     longer call `JSON.stringify`, and what is left quotes a value in a message, builds a key or feeds `hashOf`.
