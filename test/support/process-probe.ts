@@ -18,6 +18,9 @@ const recorded = new Map<number, Recorded>();
 
 // How much later than its pid file's write a process's start can read: measured at 0.6 ms on Windows over 200 spawns,
 // and at 8 ms on Linux, whose start counts clock ticks of 10 ms against an uptime of 10 ms.
+// shortcut: a process that took the pid within this slack of the write reads as the one that wrote it. Windows gave a
+// freed pid out again only after 327 or more spawns, about 29 ms each, and Linux hands out its 4,194,304 pids in turn,
+// so neither reaches it; upgrade to a start each producer writes into its pid file if a case ever does (owner, #332).
 const START_READ_MS = process.platform === 'win32' ? 2 : 20;
 // The widest a clock sample may be: the boot time read between two wall times this close is that close to true.
 const CLOCK_SAMPLE_MS = 2;

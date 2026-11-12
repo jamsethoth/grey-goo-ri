@@ -178,13 +178,15 @@ for (const [recording, { itsOwn, anEarlier }] of Object.entries(RECORDINGS)) {
     });
 }
 
-// A zombie answers a signal but runs nothing: its parent, which never reaps it, is a sleep the shell became.
+// A zombie answers a signal but runs nothing: its parent, which never reaps it, is a sleep the shell became. The child
+// ends only once the shell has become that sleep, so no shell is left to reap it.
 test(
   'a zombie reads as not running, however it was recorded',
   { skip: process.platform === 'win32' && 'a Windows process leaves no zombie' },
   async (t) => {
     const pidFile = join(scratch, 'zombie.pid');
-    const parent = spawn('sh', ['-c', `sleep 0 & echo $! > "$GG_TEST_ZOMBIE_PID"; exec sleep 60`], {
+    const child = `sh -c 'until [ "$(cat /proc/$PPID/comm)" = sleep ]; do sleep 0.01; done' &`;
+    const parent = spawn('sh', ['-c', `${child} echo $! > "$GG_TEST_ZOMBIE_PID"; exec sleep 60`], {
       stdio: 'ignore',
       env: { ...process.env, GG_TEST_ZOMBIE_PID: pidFile },
     });
