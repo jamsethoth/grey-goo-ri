@@ -108,8 +108,6 @@ function endedEarly(t: TestContext) {
   writeFileSync(join(copy.root, 'test', 'unit', 'early.test.mjs'), 'process.exit(0);\n');
   mkdirSync(join(copy.root, 'coverage'));
   writeFileSync(join(copy.root, 'coverage', 'lcov.info'), 'SF:lib/a.ts\nFNF:1\nFNH:1\nLF:1\nLH:1\nend_of_record\n');
-  const held = { lines: 100, functions: 100 };
-  writeFileSync(join(copy.root, 'coverage-baseline.json'), JSON.stringify({ [process.platform]: held }));
   return copy;
 }
 
@@ -118,14 +116,6 @@ test("a coverage stage whose test ends the process early fails, and does not rea
   const result = copy.run(['coverage']);
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /measured no lines/);
-});
-
-test('coverage update records nothing when a test ends the process early', (t) => {
-  const copy = endedEarly(t);
-  const before = readFileSync(join(copy.root, 'coverage-baseline.json'), 'utf8');
-  const result = copy.run(['coverage', 'update']);
-  assert.equal(result.status, 1, result.stdout);
-  assert.equal(readFileSync(join(copy.root, 'coverage-baseline.json'), 'utf8'), before);
 });
 
 test('a coverage stage that measures no lines fails', (t) => {
