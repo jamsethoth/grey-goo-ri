@@ -157,17 +157,15 @@ test(
     );
     const match = result.output.match(/created pid=(\d+)/);
     const pid = match && Number(match[1]);
-    try {
-      assert.ok(match, `breakaway request was refused: ${result.output}`);
-      assert.equal(result.timedOut, true);
-      assert.ok(alive(pid as number), 'a child that broke away on purpose should be outside the job');
-      assert.ok(
-        !result.survivors.some((survivor) => survivor.pid === pid),
-        'an escaped child is not a survivor of the job',
-      );
-    } finally {
-      if (pid) processProbe.endProcess(pid);
-    }
+    assert.ok(match, `breakaway request was refused: ${result.output}`);
+    assert.equal(result.timedOut, true);
+    // the escaped child is the sleeper, so its pid file records which process the pid means, and its teardown ends it
+    await waitFor(() => pidIn(sleeperPid) === pid, t.signal);
+    assert.ok(alive(pid as number), 'a child that broke away on purpose should be outside the job');
+    assert.ok(
+      !result.survivors.some((survivor) => survivor.pid === pid),
+      'an escaped child is not a survivor of the job',
+    );
   },
 );
 

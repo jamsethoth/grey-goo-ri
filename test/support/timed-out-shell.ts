@@ -49,16 +49,22 @@ export async function timeOutWhen(
   const clock = new AbortController();
   let settled = false;
   let wasReady = false;
-  const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal })).finally(() => {
-    settled = true;
-  });
+  const running = runShell(commandLine, shellOptions({ ...options, signal: clock.signal }))
+    .then((result) => {
+      // Each survivor recorded by the start its cleanup read while it ran, so the teardown below never ends a process
+      // that took its pid since. A leftover is ended by that cleanup, or else named a survivor.
+      for (const { pid, created } of result.survivors ?? []) processProbe.remember(pid, created);
+      return result;
+    })
+    .finally(() => {
+      settled = true;
+    });
   t.after(
     async () => {
       clock.abort();
       await running.then(
-        ({ survivors = [], leftovers = [] }) => {
+        ({ survivors = [] }) => {
           for (const survivor of survivors) processProbe.endProcess(survivor.pid);
-          for (const pid of leftovers) processProbe.endProcess(pid);
         },
         () => {},
       );
