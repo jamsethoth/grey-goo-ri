@@ -14,14 +14,16 @@ import type * as visit from './visit.ts';
 // both. A required field must be given, though it may be null; an optional one not given is saved as null.
 type Presence = 'required' | 'optional';
 type Declaration<Fields> = { readonly [Field in keyof Fields]-?: Presence };
-type Declared<Fields, Shape> = {
+type RequiredOf<Fields, Shape> = {
   [
     Field in keyof Fields as Field extends keyof Shape ? (Shape[Field] extends 'required' ? Field : never) : never
   ]: Fields[Field];
-} & {
+};
+type OptionalOf<Fields, Shape> = {
   [Field in keyof Fields as Field extends keyof Shape ? (Shape[Field] extends 'optional' ? Field : never) : never]:
     Fields[Field] | null;
 };
+type Declared<Fields, Shape> = RequiredOf<Fields, Shape> & OptionalOf<Fields, Shape>;
 
 // Every Event's own header, ahead of its declared fields.
 interface EventHeader<Type extends string> {
@@ -230,8 +232,12 @@ export type Event = ActionEvent | LifecycleEvent;
 type Fields = Record<string, unknown>;
 // What a caller gives for an Event of a type: any of its declared fields, each of its declared type or null, so tsc
 // refuses a value JSON cannot hold where the Event is made. Which fields are required is checked when it is built:
-// `base` may give them.
+// `base` may give them. Every field is optional, which a record of unknown values would also fit, so eventLog takes
+// what it is given through the save's typed gate as well.
 type Given<Declared> = { [Field in keyof Declared]?: Declared[Field] | null };
+// The keys of what is given that the Event does not declare, each as never: a generic parameter gets no excess-key
+// check of its own.
+type Undeclared<Given, Declared> = { [Key in Exclude<keyof Given, keyof Declared>]: never };
 export type EventType = 'action' | LifecycleType;
 export type EventInput<Type extends EventType> = Type extends LifecycleType
   ? Given<LifecycleFields[Type]> & { type?: Type }
@@ -240,6 +246,12 @@ export type EventInput<Type extends EventType> = Type extends LifecycleType
 // distributes over a union, so each member keeps its own fields.
 type EventBody<Built> = Built extends unknown ? Omit<Built, 'schemaVersion' | 'time'> : never;
 type DeclaredShape = Readonly<Record<string, Presence>>;
+// A Lifecycle Event's body, written as a lookup into one map of the types, so that for the union of types it is the
+// union of bodies. eventLog can then build an Event that tsc checks, with no assertion (TypeScript 4.6;
+// docs/research/declared-event-shapes.md).
+type LifecycleBody<Type extends LifecycleType> = {
+  [Each in Type]: { type: Each } & Declared<LifecycleFields[Each], (typeof LIFECYCLE)[Each]>;
+}[Type];
 const declaredAs = (shape: DeclaredShape, presence: Presence): string[] =>
   Object.keys(shape).filter((field) => shape[field] === presence);
 const ACTION_REQUIRED = declaredAs(ACTION, 'required');
@@ -252,16 +264,20 @@ export function eventLog(
   commonDir: string,
   base: EventInput<EventType> = {},
   database: Pick<record.StateDatabase, 'beforeAppend'> = record,
-): <Type extends EventType>(type: Type, data?: EventInput<Type>) => void {
+): <Type extends EventType, Given extends EventInput<Type>>(
+  type: Type,
+  data?: Given & NoInfer<jsonValue.JsonChecked<Given> & Undeclared<Given, EventInput<Type>>>,
+) => void {
   return (type, data) => {
+    const given: EventInput<typeof type> | undefined = data;
     // `data` may be the output of actionEvent or lifecycleEvent, which already carries a matching `type`.
-    const { type: own = type, ...fields }: Fields = { ...base, ...data };
+    const { type: own = type, ...fields }: Fields = { ...base, ...given };
     if (own !== type) throw new Error(`${type} event: field type is ${own}`);
-    const event = {
+    const event: Event = {
       schemaVersion: 2,
       time: new Date().toISOString(),
       ...(type === 'action' ? actionEvent(fields) : lifecycleEvent(type, fields)),
-    } as Event;
+    };
     database.beforeAppend(event);
     // Not every Event carries the indexed columns' fields.
     const columns = event as Partial<Record<'run' | 'execution' | 'ticket', string | number | null>>;
@@ -311,12 +327,13 @@ function closed(what: string, fields: Fields, required: string[], optional: stri
   for (const key of Object.keys(fields)) if (!known.has(key)) throw new Error(`${what}: unknown field ${key}`);
 }
 
-// An Event names its fields in one declared order, an optional one null when not given.
-const ordered = (fields: Fields, required: string[], optional: string[]): Fields =>
-  Object.fromEntries([
-    ...required.map((key) => [key, fields[key]]),
-    ...optional.map((key) => [key, fields[key] ?? null]),
-  ]);
+// The two halves of an Event's body, each in its declared order, an optional field null when not given. These are
+// the only assertions on the way to a saved Event: tsc gives a loop over names no type, and `closed` has checked the
+// names. What the builders make of the halves, tsc checks.
+const requiredOf = <Of, Shape extends DeclaredShape>(shape: Shape, fields: Fields): RequiredOf<Of, Shape> =>
+  Object.fromEntries(declaredAs(shape, 'required').map((key) => [key, fields[key]])) as RequiredOf<Of, Shape>;
+const optionalOf = <Of, Shape extends DeclaredShape>(shape: Shape, fields: Fields): OptionalOf<Of, Shape> =>
+  Object.fromEntries(declaredAs(shape, 'optional').map((key) => [key, fields[key] ?? null])) as OptionalOf<Of, Shape>;
 
 // An agent Action's event adds the agent fields; a deterministic Action's has none of them, and `agent: false`.
 export function actionEvent(fields: EventInput<'action'>): EventBody<ActionEvent> {
@@ -326,12 +343,11 @@ export function actionEvent(fields: EventInput<'action'>): EventBody<ActionEvent
     ...ACTION_OPTIONAL,
   ]);
   if (agent) for (const member of ['cumulative', 'delta']) checkUsage(fields.usage, member);
-  return {
-    type: 'action',
-    ...ordered(fields, ACTION_REQUIRED, []),
-    agent,
-    ...ordered(fields, agent ? AGENT_REQUIRED : [], ACTION_OPTIONAL),
-  } as EventBody<ActionEvent>;
+  const common = { type: 'action' as const, ...requiredOf<ActionFields, typeof ACTION>(ACTION, fields) };
+  const optional = optionalOf<ActionFields, typeof ACTION>(ACTION, fields);
+  return agent
+    ? { ...common, agent: true, ...requiredOf<AgentFields, typeof AGENT>(AGENT, fields), ...optional }
+    : { ...common, agent: false, ...optional };
 }
 
 // shortcut: checks only the Usage keys this ticket names, without closing the shape; T8 owns the full Usage shape.
@@ -347,10 +363,7 @@ function checkUsage(usage: unknown, member: string): void {
   }
 }
 
-export function lifecycleEvent<Type extends LifecycleType>(
-  type: Type,
-  given?: EventInput<Type>,
-): EventBody<LifecycleOf<Type>> {
+export function lifecycleEvent<Type extends LifecycleType>(type: Type, given?: EventInput<Type>): LifecycleBody<Type> {
   const fields: Fields = given ?? {};
   // An own key only: `toString` or `__proto__` would otherwise find Object.prototype's member and pass as a type.
   if (!Object.hasOwn(LIFECYCLE, type)) throw new Error(`unknown lifecycle event type ${type}`);
@@ -358,7 +371,11 @@ export function lifecycleEvent<Type extends LifecycleType>(
   const required = declaredAs(shape, 'required');
   const optional = declaredAs(shape, 'optional');
   closed(`${type} event`, fields, required, optional);
-  return { type, ...ordered(fields, required, optional) } as EventBody<LifecycleOf<Type>>;
+  return {
+    type,
+    ...requiredOf<LifecycleFields[Type], (typeof LIFECYCLE)[Type]>(LIFECYCLE[type], fields),
+    ...optionalOf<LifecycleFields[Type], (typeof LIFECYCLE)[Type]>(LIFECYCLE[type], fields),
+  };
 }
 
 // Per-file line counts (git.diffStats; a binary file's are null) -> totals, split into test and non-test files by the

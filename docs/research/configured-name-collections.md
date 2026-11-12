@@ -222,18 +222,30 @@ a `Map` subclass (`structuredClone` deserialises it as a plain Map and `deepStri
      So #342 gates gg's save paths, the record, the Pinned Configuration, the Event append and the run directory's
      JSON, with types and a check at run time.
    - Done in #342 (owner, 2026-11-11: the checked generic). `lib/json-value.ts` holds the gate:
-     - **By type.** `text<Value>(value: Value & JsonChecked<Value>)` is type-fest's generic pattern, which reads an
-       interface where a plain `JsonValue` parameter cannot. Its mapping is gg's own: type-fest's `Jsonify<unknown>` is
-       `JsonValue` and its `Jsonify<Map>` an empty object, so neither would fail; `JsonChecked` gives `never` for a
-       Map, a Set, a function and an `unknown`. The 39 `unknown` fields the four paths reached are typed: by what gg
-       builds, or as `JsonValue` where the value was parsed.
-     - **At run time.** The same call refuses whatever a load would not give back, by its path: Redux Toolkit's
-       `isPlain` rule, which also refuses a `Date` and any other class instance, made to throw where Redux logs, and to
-       refuse `NaN` and the infinities, which `isPlain` passes and JSON writes as `null`. `config.hashOf` takes only
-       what a save takes.
+     - **By type.** `text<Value>(value: Value & NoInfer<JsonChecked<Value>>)` is type-fest's generic pattern, which
+       reads an interface where a plain `JsonValue` parameter cannot. Its mapping is gg's own: type-fest's
+       `Jsonify<unknown>` is `JsonValue` and its `Jsonify<Map>` an empty object, so neither would fail.
+       - `JsonChecked` judges a type alternative by alternative. Where one could hold a Map, a Set or a function (by a
+         call or a construct signature), a symbol or a bigint, it puts a marker type, `NotJson`, which no saved value is
+         assignable to and which, unlike `never`, does not vanish from a union. An `unknown` or an `any` gives `never`,
+         the one type `any` is not assignable to.
+       - Only `JsonValue` itself is taken whole: `JsonValue | Map` and `{ value: any }` are each assignable from it or
+         to it.
+       - `NoInfer` keeps tsc inferring `Value` from the value alone.
+       - The 39 `unknown` fields the four paths reached are typed: by what gg builds, or as `JsonValue` where the value
+         was parsed. `eventLog` takes what it is given through the same gate, since every field of an Event's input is
+         optional and a record of unknown values would fit.
+     - **At run time.** The same call writes a copy it has checked, each property read once, and refuses whatever a
+       load would not give back, by its path. That is Redux Toolkit's `isPlain` rule, which also refuses a `Date` and
+       any other class instance, made to throw where Redux logs, and to refuse `NaN` and the infinities, which
+       `isPlain` passes and JSON writes as `null`. It also refuses a built-in object given a plain prototype, a Proxy,
+       a key JSON leaves out and a `toJSON` every object inherits. `config.hashOf` hashes the same copy. What it
+       leaves is stated above `checked` in `lib/json-value.ts`.
+     - Two shapes this typing settled have notes of their own: the Event builders
+       (`docs/research/declared-event-shapes.md`) and `decidedBy` (`docs/research/exclusive-variant-shapes.md`).
    - The nested variant of the rule, which fails an `unknown` anywhere inside a stringified value's type, is not built
      (owner, 2026-11-11): it polices every `JSON.stringify` again. Recounted with that variant applied to a copy of the
-     rule: **118** sites on 7b2d346 (36 outside `test/`, 82 in it; #330 counted 114 on ada8948) and **102** once the
-     save paths are gated (29 in `lib/`, 1 in `scripts/`, 72 in `test/`). None of the 30 outside `test/` is a save: the
-     four paths no longer call `JSON.stringify`, and what is left quotes a value in a message, builds a key, feeds
-     `hashOf`, or writes the coverage baseline.
+     rule: **118** sites on 7b2d346 (36 outside `test/`, 82 in it; #330 counted 114 on ada8948) and **104** on #342's
+     final tree, which has main's #305 and #150 merged in (30 in `lib/`, 1 in `scripts/`, 73 in `test/`). None of the
+     31 outside `test/` is a save: the four paths no longer call `JSON.stringify`, and what is left quotes a value in a
+     message, builds a key, feeds `hashOf`, or writes the coverage baseline.

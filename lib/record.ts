@@ -24,15 +24,14 @@ export class RecordSaveError extends Error {
 }
 
 // Who decided an Execution's end state: a hold by its name, a human by the label they set, or an Action by its
-// identity, which has no Visit or Action when the stop came before one.
-export interface DecidedBy {
-  hold?: string | null;
-  human?: string;
-  vertex?: string;
-  visit?: number | null;
-  action?: string | null;
-  recovery?: number;
-}
+// identity, which has no Visit or Action when the stop came before one. Exactly one of the three: each form rules out
+// the others' keys, so a mix or an empty object does not compile, and any key is still read without a test first
+// (docs/research/exclusive-variant-shapes.md). A reader tells the forms apart with `!== undefined` or a literal, not
+// with `in`, and a fourth form adds its keys to the other three.
+export type DecidedBy =
+  | { hold: string | null; human?: never; vertex?: never; visit?: never; action?: never; recovery?: never }
+  | { human: string; hold?: never; vertex?: never; visit?: never; action?: never; recovery?: never }
+  | { vertex: string; visit: number | null; action: string | null; recovery: number; hold?: never; human?: never };
 
 // Why an Execution reached its end state: the Action, hold or human that decided it (request 3.1).
 export interface TerminalReason {

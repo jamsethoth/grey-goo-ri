@@ -166,8 +166,9 @@ const ACTION_EVENT_KEYS = [
 test('an action event carries schema version 2 and every required field', (t) => {
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
   const log = events.eventLog(directory, { run: 'r1' });
-  const event = events.actionEvent(actionFields());
-  log(event.type, event);
+  // A built Event's body is one of two shapes; the log takes it as an Action Event's fields.
+  const event: events.EventInput<'action'> = events.actionEvent(actionFields());
+  log('action', event);
   log('run_end', events.lifecycleEvent('run_end', { run: 'r1' }));
   const lines = rows(directory).map((row) => row.json);
   assert.deepEqual(
@@ -370,6 +371,7 @@ test('eventLog validates every event before appending it', (t) => {
   assert.throws(() => log('run_start', { run: 'r1', schemaVersion: 1 }), /\bschemaVersion\b/);
   // @ts-expect-error -- the header is eventLog's to write
   assert.throws(() => log('run_start', { run: 'r1', time: 'then' }), /\btime\b/);
+  // @ts-expect-error -- a type that is not the Event's
   assert.throws(() => log('run_start', { run: 'r1', type: 'run_end' }), /\btype\b/);
   // @ts-expect-error -- the header is eventLog's to write
   assert.throws(() => events.eventLog(directory, { time: 'then' })('run_start', { run: 'r1' }), /\btime\b/);
@@ -446,8 +448,10 @@ test('readEvents returns events in insertion order', (t) => {
   const log = events.eventLog(directory, { run: 'r1' });
   log('run_start');
   log('ticket_start', { execution: 'e1', ticket: 7 });
-  log('action', events.actionEvent(actionFields()));
-  log('action', events.actionEvent({ ...actionFields(), recovery: 1 }));
+  const first: events.EventInput<'action'> = events.actionEvent(actionFields());
+  const second: events.EventInput<'action'> = events.actionEvent({ ...actionFields(), recovery: 1 });
+  log('action', first);
+  log('action', second);
   log('ticket_end', { execution: 'e1', ticket: 7, outcome: 'ready-for-qa' });
   log('run_end');
   const read = events.readEvents(directory);

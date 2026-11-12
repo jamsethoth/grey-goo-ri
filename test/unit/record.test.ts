@@ -203,6 +203,27 @@ test('saving a record never drops a field createExecutionRecord declared', async
   assert.equal(record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
 });
 
+test('decidedBy is exactly one of a hold, a human or an Action, and any of its keys reads without a test', () => {
+  const forms: record.DecidedBy[] = [
+    { hold: 'dirty-worktree' },
+    { hold: null },
+    { human: 'gg:needs-human' },
+    { vertex: 'red', visit: 1, action: 'agent', recovery: 0 },
+    { vertex: 'red', visit: null, action: null, recovery: 0 },
+  ];
+  assert.deepEqual(
+    forms.map((decidedBy) => decidedBy.hold ?? decidedBy.human ?? decidedBy.vertex),
+    ['dirty-worktree', undefined, 'gg:needs-human', 'red', 'red'],
+  );
+  // @ts-expect-error two deciders at once
+  const mixed: record.DecidedBy = { hold: 'dirty-worktree', human: 'gg:needs-human' };
+  // @ts-expect-error no decider
+  const none: record.DecidedBy = {};
+  // @ts-expect-error half an Action's identity
+  const partial: record.DecidedBy = { vertex: 'red' };
+  assert.equal([mixed, none, partial].length, 3);
+});
+
 test('a fresh Epic Record declares every field it can hold', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });

@@ -20,11 +20,16 @@ interface NotJson {
 
 // One alternative of a type as a save takes it: itself where JSON holds it, with NotJson at each place that could
 // hold what JSON cannot. `any` is assignable to anything but `never`, and an optional property's `never` reads
-// `undefined`, so a property typed `any` or `unknown` is required as `never`.
+// `undefined`, so a property typed `any` or `unknown` is required as `never`. A function is known by a call signature
+// or a construct signature: a class held as a value has only the second.
 type Walked<Value> = Value extends Scalar
   ? Value
   : Value extends object
-    ? Value extends ReadonlyMap<unknown, unknown> | ReadonlySet<unknown> | ((...parameters: never[]) => unknown)
+    ? Value extends
+        | ReadonlyMap<unknown, unknown>
+        | ReadonlySet<unknown>
+        | ((...parameters: never[]) => unknown)
+        | (abstract new (...parameters: never[]) => unknown)
       ? NotJson
       : { [Key in keyof Value]: JsonChecked<Value[Key]> } & {
           [Key in keyof Value as unknown extends Value[Key] ? Key : never]-?: never;

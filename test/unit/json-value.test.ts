@@ -310,6 +310,8 @@ type GateAnswers = [
   Holds<AcceptsEach<Places<Map<string, number>>>, Each<false>>,
   Holds<AcceptsEach<Places<Set<string>>>, Each<false>>,
   Holds<AcceptsEach<Places<() => void>>, Each<false>>,
+  Holds<AcceptsEach<Places<new () => object>>, Each<false>>,
+  Holds<AcceptsEach<Places<typeof Point>>, Each<false>>,
   Holds<AcceptsEach<Places<symbol>>, Each<false>>,
   Holds<AcceptsEach<Places<bigint>>, Each<false>>,
   Holds<AcceptsEach<Places<unknown>>, Each<false>>,
@@ -409,9 +411,15 @@ test('the Event append refuses a Map, a Set and an unknown', (t) => {
   assert.deepEqual(events.readEvents(commonDir), [], 'neither Event was appended');
   // @ts-expect-error an unknown as an Event's field
   log('label_failed', withUnknown);
+  // Every field of an Event's input is optional, which a record of unknown values also fits.
+  const untyped: Record<string, unknown> = { ticket: 8, error: 'no label', change: { add: ['gg:ready'] } };
+  // @ts-expect-error a record of unknown values
+  log('label_failed', untyped);
+  // @ts-expect-error a key the Event does not declare, which fails when the Event is built
+  assert.throws(() => log('label_failed', { ticket: 8, error: 'no label', change: {}, owner: 'me' }), /\bowner\b/);
   assert.deepEqual(
     events.readEvents(commonDir).map((event) => event.type),
-    ['label_failed'],
+    ['label_failed', 'label_failed'],
   );
 });
 
