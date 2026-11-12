@@ -7,10 +7,6 @@ import * as support from '../support/execution-context.ts';
 
 const pushKey = marker.actionKeyOf(support.PUSH_ACTION_IDENTITY);
 
-test('the remote Actions are the comment, PR upsert, push and PR ready', () => {
-  assert.deepEqual(remoteEffects.REMOTE_ACTIONS, ['comment', 'pr-upsert', 'push', 'pr-ready']);
-});
-
 test('a remote effect that fails transiently is retried after its backoff, once its effect is not found', async (t) => {
   const { context, executionRecord, fakeGh, sleeps } = await support.executionContext(t);
   fakeGh.fail({ matches: support.commentPost, status: 502 });

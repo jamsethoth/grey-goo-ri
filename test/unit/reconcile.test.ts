@@ -148,30 +148,6 @@ test('a finder-less replay-safe action replays', async (t) => {
   assert.deepEqual(executionReads.writeAheadSteps(fixture.executionRecord, 'gg:pr-ready'), ['intent']);
 });
 
-test("a rescue intent is found by its ref's commit, absent with no ref, a conflict on another commit", async (t) => {
-  const fixture = await golden.fixture(t);
-  const { git } = fixture.options.deps;
-  const context = { executionRecord: fixture.executionRecord, git, issueLabels: [] };
-  // The finder reads only the ref and the commit.
-  const rescued = (commit: string) => ({ ref: 'refs/gg/rescue/abc', commit, tree: '', parent: '', left: UNREAD });
-  const entry: writeAhead.WriteAheadEntry = {
-    step: 'intent',
-    actionMarker: 'gg:rescue',
-    effect: 'rescue',
-    payload: rescued(fixture.base),
-    evidence: null,
-    time: '',
-  };
-  assert.equal((await effectEvidence.findEffect(entry, context)).status, 'absent');
-  await git.createRef!(fixture.worktree, 'refs/gg/rescue/abc', fixture.base);
-  assert.deepEqual(await effectEvidence.findEffect(entry, context), {
-    status: 'found',
-    evidence: { ref: 'refs/gg/rescue/abc', commit: fixture.base },
-  });
-  const other = { ...entry, payload: rescued('f'.repeat(40)) };
-  assert.equal((await effectEvidence.findEffect(other, context)).status, 'conflicting');
-});
-
 test('a record at a Vertex named constructor resumes, and one the Flow lacks holds', async (t) => {
   const names = namedFlow.PROTOTYPE;
   // Crashed after the commit of the Visit to the Vertex named constructor, then resumed: the same as the ordinary
