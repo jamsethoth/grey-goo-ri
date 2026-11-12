@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as attempt from '../../lib/attempt.ts';
 import type * as model from '../../lib/model.ts';
 import type * as visit from '../../lib/visit.ts';
 import type * as visitScope from '../../lib/visit-scope.ts';
@@ -45,11 +46,23 @@ function runningVisit(): visitScope.RunningVisit {
 }
 
 test("a Flow Action's retry is not settled, so a resumed Visit runs the Action again", async (t) => {
-  const { executionRecord } = await support.executionContext(t);
+  const { context, executionRecord } = await support.executionContext(t);
   const state = runningVisit();
+  executionRecord.visitState = state;
   const settle = visitRunner.settleOf(executionRecord, { actionIdentity: IDENTITY, state });
-  settle(tableResolution('retry'));
+  await attempt.run(context, {
+    actionIdentity: IDENTITY,
+    busy: false,
+    work: async () => null,
+    finish: () => ({ resolution: tableResolution('retry') }),
+    settle,
+  });
   assert.equal(state.settled, null);
+  assert.deepEqual(
+    support.actionEvents(executionRecord).map((event) => [event.action, event.direction]),
+    [['red-check', 'retry']],
+    'its Action Event is still recorded',
+  );
   settle(tableResolution('advance'));
   assert.deepEqual(state.settled, { action: 'red-check', recovery: 0, resolution: tableResolution('advance') });
 });

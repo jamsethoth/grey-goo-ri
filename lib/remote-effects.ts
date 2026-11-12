@@ -1,6 +1,7 @@
 // The remote Actions' effects, on GitHub or origin: each launch retried on a recognised transient failure after a
 // backoff whose budget is saved first, its effect looked for by marker before a retry, and the repo-lock guard that
 // checks a queued git write again once it holds the lock.
+import * as attempt from './attempt.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects/index.ts';
 import type * as sideEffect from './effects/side-effect.ts';
@@ -69,53 +70,15 @@ function eligibleAt(context: sideEffect.EffectContext, actionMarker: string, eli
   });
 }
 
-// A remote Action's launch that failed: its marker, when the Action began, and the error.
-interface FailedLaunch {
-  actionMarker: string;
-  startedAt: number;
-  err: unknown;
-}
-
-// A remote Action whose Attempt fails for good records its Action Event where it fails, in a Visit or a Terminal alike:
-// its class, its error, and the outcome and rule of what it leads to, a run stop or a fault (#251). Its save failing is
-// fatal, as any Event's is.
-function failedEvent(
-  context: sideEffect.EffectContext,
-  { actionMarker, startedAt, err }: FailedLaunch,
-  { failureClass, consequence }: { failureClass: outcome.FailureClass; consequence: 'run-stop' | 'fault' },
-) {
-  const { vertex, visit: visitNumber, action, recovery, attempt } = marker.partsOf(actionMarker);
-  const snapshot = context.record.configurationSnapshot;
-  // A Terminal's report runs outside any Procedure.
-  const inVisit = snapshot?.vertex === vertex && snapshot.visit === Number(visitNumber);
-  const event = () =>
-    context.emit(
-      {
-        vertex,
-        visit: Number(visitNumber),
-        procedure: inVisit ? snapshot.procedure.name : null,
-        action,
-        recovery: Number(recovery),
-        attempt: Number(attempt),
-      },
-      startedAt,
-      {
-        outcome: consequence,
-        direction: 'stop',
-        rule: { table: 'fixed', row: consequence },
-        signals: {},
-        failureClass,
-        error: effectErrors.errorText(err),
-      },
-    );
-  context.database.save(context.record, event);
-}
-
 // A final remote failure names its Action and class in the Terminal Reason. One whose class reaches the whole Run
 // latches the run stop, as a Harness run stop does, and ends this Execution at needs-human; in a Terminal's own report,
 // which is what a stop leads to, it is only latched (#240). The latch comes first, so the Run stops even when the
 // Event's save fails.
-async function finalFailure(context: sideEffect.EffectContext, failed: FailedLaunch, failure: outcome.RemoteFailure) {
+async function finalFailure(
+  context: sideEffect.EffectContext,
+  failed: attempt.FailedLaunch,
+  failure: outcome.RemoteFailure,
+) {
   const { failureClass, status } = failure;
   const { err } = failed;
   const source = writeAhead.effectOf(context.record, failed.actionMarker) ?? 'remote Action';
@@ -125,7 +88,7 @@ async function finalFailure(context: sideEffect.EffectContext, failed: FailedLau
   // A relaunch refused with its budget spent is unknown to the classifier; its Event names the class its retries were
   // spent on.
   const eventClass = err instanceof effectErrors.RetriesExhaustedError ? err.spent.failureClass : failureClass;
-  failedEvent(context, failed, { failureClass: eventClass, consequence: stops ? 'run-stop' : 'fault' });
+  attempt.failed(context, failed, { failureClass: eventClass, consequence: stops ? 'run-stop' : 'fault' });
   if (stops)
     return new effectErrors.EarlyTerminalError({
       next: 'run-stop',
@@ -147,14 +110,14 @@ async function finalFailure(context: sideEffect.EffectContext, failed: FailedLau
 
 // Spends one retry on a recognised transient failure, and saves it with its deadline, which the Run's shared cooldown
 // also waits for, before any wait. Any other failure, or one past the budget, is rethrown.
-async function reserveRetry(context: sideEffect.EffectContext, failed: FailedLaunch) {
+async function reserveRetry(context: sideEffect.EffectContext, failed: attempt.FailedLaunch) {
   const { record: executionRecord } = context;
   const { actionMarker, err } = failed;
   const failure = outcome.classifyRemoteFailure(err as outcome.RemoteError);
   const spent = remoteRetry(executionRecord, actionMarker)?.count ?? 0;
   if (!failure.retryable) throw await finalFailure(context, failed, failure);
   if (spent >= REMOTE_RETRIES) {
-    failedEvent(context, failed, { failureClass: failure.failureClass, consequence: 'fault' });
+    attempt.failed(context, failed, { failureClass: failure.failureClass, consequence: 'fault' });
     context.log(
       `#${executionRecord.ticket} ${actionKey(actionMarker)}: ${failure.failureClass} failure, retries exhausted ` +
         `after ${spent} of ${REMOTE_RETRIES}`,

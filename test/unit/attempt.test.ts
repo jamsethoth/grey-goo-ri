@@ -264,6 +264,33 @@ test("outputs land in the completion's save and in no save before it", async (t)
   assert.deepEqual(saved.outputs, []);
 });
 
+test('a finish that throws takes its outputs back, so no later save publishes them without their result', async (t) => {
+  const { context, executionRecord } = await support.executionContext(t);
+  const failing = (outputs: visit.ActionOutputValue) =>
+    attempt.run(context, {
+      actionIdentity: IDENTITY,
+      busy: false,
+      work: async () => null,
+      outputs: () => ({ outputs, dropped: ['files'] }),
+      finish: () => {
+        throw new Error('the Check result could not be saved');
+      },
+    });
+  await assert.rejects(failing({ findingsHash: 'h1' }), /could not be saved/);
+  assert.equal(executionRecord.outputs.length, 0, 'a new entry is removed');
+  executionRecord.outputs.push({ vertex: 'green', visit: 1, action: 'push', value: { files: ['lib/add.mjs'] } });
+  await assert.rejects(failing({ findingsHash: 'h2' }), /could not be saved/);
+  assert.deepEqual(
+    executionRecord.outputs,
+    [{ vertex: 'green', visit: 1, action: 'push', value: { files: ['lib/add.mjs'] } }],
+    'an earlier entry is as it was',
+  );
+  // A later save, as a fault's report makes, carries none of them.
+  record.save(executionRecord);
+  assert.deepEqual(record.load(executionRecord.commonDir, 'ticket', support.TICKET)?.outputs, executionRecord.outputs);
+  assert.equal(support.actionEvents(executionRecord).length, 0);
+});
+
 test('the work runs inside the busy bracket only when the kind declares it', async (t) => {
   for (const busy of [true, false]) {
     await t.test(`busy: ${busy}`, async (t) => {
@@ -349,7 +376,8 @@ test('a held completion replaces the saved result with its Event, or leaves none
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // What only lib/attempt.ts does for an Attempt, and what the other modules a rule names may do for what is no Attempt:
 // the reset's own completion (lib/effects/side-effect.ts), Reconciliation's finish of a reset, the rescue output the
-// next Vertex's entry saves (lib/visit-runner.ts), and a remote Action's final failure (lib/remote-effects.ts).
+// next Vertex's entry saves (lib/visit-runner.ts), and the start of a remote launch or lookup (lib/remote-effects.ts),
+// which a final failure's Event, recorded by lib/attempt.ts, measures from.
 const ATTEMPT_RULES: { what: string; re: RegExp; allowed: string[] }[] = [
   {
     what: "reads whether an Attempt's marker is complete",
@@ -372,11 +400,7 @@ const ATTEMPT_RULES: { what: string; re: RegExp; allowed: string[] }[] = [
     re: /startedAt\s*=\s*\w+(?:\.\w+)*\.now\(\)/,
     allowed: ['lib/attempt.ts', 'lib/remote-effects.ts'],
   },
-  {
-    what: 'records an Action Event',
-    re: /\.emit\(/,
-    allowed: ['lib/attempt.ts', 'lib/remote-effects.ts'],
-  },
+  { what: 'records an Action Event', re: /\.emit\(/, allowed: ['lib/attempt.ts'] },
 ];
 const broken = (path: string, text: string) =>
   ATTEMPT_RULES.filter(({ re, allowed }) => !allowed.includes(path) && re.test(text)).map(

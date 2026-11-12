@@ -5,7 +5,8 @@ import * as effectErrors from './effect-errors.ts';
 import * as sideEffect from './effects/side-effect.ts';
 import type * as events from './events.ts';
 import * as integrity from './integrity.ts';
-import type * as marker from './marker.ts';
+import * as marker from './marker.ts';
+import type * as outcome from './outcome.ts';
 import type * as record from './record.ts';
 import type * as visit from './visit.ts';
 import * as visitScope from './visit-scope.ts';
@@ -92,11 +93,31 @@ export async function whileBusy<Result>(
 }
 
 // The outputs go to the record after the work, outside the bracket, so its idle save cannot publish them; the
-// synchronous finish that decides the result reads them, and the save that follows carries them.
+// synchronous finish that decides the result reads them, and the save that follows carries them. A finish that throws
+// takes them back, so no later save (a fault's report) publishes them without their result and Event.
 function keepOutputs(context: Context, actionIdentity: marker.ActionIdentity, { outputs, dropped = [] }: Outputs = {}) {
-  const entry = visitScope.outputOf(context.record, actionIdentity);
+  const { record: executionRecord } = context;
+  const entry = visitScope.outputOf(executionRecord, actionIdentity);
+  // Shallow: outputs only set or drop an Action's fields, never change one in place.
+  const before = entry && { ...entry.value };
   for (const field of dropped) if (entry) Reflect.deleteProperty(entry.value, field);
-  if (outputs) visitScope.recordOutput(context.record, actionIdentity, outputs);
+  if (outputs) visitScope.recordOutput(executionRecord, actionIdentity, outputs);
+  return () => {
+    if (entry) entry.value = before!;
+    else {
+      const added = visitScope.outputOf(executionRecord, actionIdentity);
+      if (added) executionRecord.outputs.splice(executionRecord.outputs.indexOf(added), 1);
+    }
+  };
+}
+
+function finishing<Result>(takeBack: () => void, finish: () => Result): Result {
+  try {
+    return finish();
+  } catch (err) {
+    takeBack();
+    throw err;
+  }
 }
 
 const eventOf =
@@ -139,15 +160,25 @@ export async function run<Prepared, Worked, Settled extends visit.Resolution>(
 ): Promise<Settled> {
   const { actionIdentity, busy, prepare, work, outputs, finish, settle } = attempting;
   const resumed = (attempting.resumed ?? effectResumed) as NonNullable<typeof attempting.resumed>;
+  const { record: executionRecord } = context;
   const actionMarker = attempting.actionMarker ?? context.markerOf(actionIdentity);
-  if (completed(context.record, actionMarker))
-    return resumed(writeAhead.findEntry(context.record, actionMarker, 'evidence')?.evidence ?? undefined);
+  const savedResult = () =>
+    resumed(writeAhead.findEntry(executionRecord, actionMarker, 'evidence')?.evidence ?? undefined);
+  const complete = completed(executionRecord, actionMarker);
+  // A complete Effect whose evidence proves nothing (a label write that did not land saves { ok: false }) is made
+  // again, as an open one would be; its result and Event are saved already.
+  const unproven =
+    complete &&
+    !!writeAhead.findEntry(executionRecord, actionMarker, 'intent') &&
+    !writeAhead.evidenceOf(executionRecord, actionMarker);
+  if (complete && !unproven) return savedResult();
   const prepared = (prepare ? await prepare(actionMarker) : undefined) as Prepared;
   const startedAt = context.clock.now();
   const working = () => work(prepared, actionMarker);
   const worked = busy ? await whileBusy(context, working) : await working();
-  keepOutputs(context, actionIdentity, outputs?.(worked));
-  const done = finish(worked, prepared);
+  if (unproven) return savedResult();
+  const takeBack = keepOutputs(context, actionIdentity, outputs?.(worked));
+  const done = finishing(takeBack, () => finish(worked, prepared));
   save(context, { actionIdentity, actionMarker, startedAt }, done, settle);
   return done.resolution;
 }
@@ -162,8 +193,8 @@ export async function runHeld<Worked, Settled extends visit.Resolution>(
   const { record: executionRecord, database } = context;
   const startedAt = context.clock.now();
   const worked = await whileBusy(context, work);
-  keepOutputs(context, actionIdentity, outputs?.(worked));
-  const { resolution, ...done } = finish(worked);
+  const takeBack = keepOutputs(context, actionIdentity, outputs?.(worked));
+  const { resolution, ...done } = finishing(takeBack, () => finish(worked));
   settle?.(resolution);
   if (resolution === null) {
     database.save(executionRecord);
@@ -174,6 +205,48 @@ export async function runHeld<Worked, Settled extends visit.Resolution>(
   database.save(executionRecord, eventOf(context, actionIdentity, startedAt, { ...done, resolution }));
   if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
   return resolution;
+}
+
+// An Attempt's launch that failed for good: its marker, when the launch (or the lookup) began, and the error.
+export interface FailedLaunch {
+  actionMarker: string;
+  startedAt: number;
+  err: unknown;
+}
+
+// A remote Action whose Attempt fails for good records its Action Event where it fails, in a Visit or a Terminal alike:
+// its class, its error, and the outcome and rule of what it leads to, a run stop or a fault (#251). Its save failing is
+// fatal, as any Event's is.
+export function failed(
+  context: Context,
+  { actionMarker, startedAt, err }: FailedLaunch,
+  { failureClass, consequence }: { failureClass: outcome.FailureClass; consequence: 'run-stop' | 'fault' },
+) {
+  const { vertex, visit: visitNumber, action, recovery, attempt: attemptNumber } = marker.partsOf(actionMarker);
+  const snapshot = context.record.configurationSnapshot;
+  // A Terminal's report runs outside any Procedure.
+  const inVisit = snapshot?.vertex === vertex && snapshot.visit === Number(visitNumber);
+  const event = () =>
+    context.emit(
+      {
+        vertex,
+        visit: Number(visitNumber),
+        procedure: inVisit ? snapshot.procedure.name : null,
+        action,
+        recovery: Number(recovery),
+        attempt: Number(attemptNumber),
+      },
+      startedAt,
+      {
+        outcome: consequence,
+        direction: 'stop',
+        rule: { table: 'fixed', row: consequence },
+        signals: {},
+        failureClass,
+        error: effectErrors.errorText(err),
+      },
+    );
+  context.database.save(context.record, event);
 }
 
 // One Effect's Attempt: its payload made in the bracket (after `prepare`, when given), launched write-ahead, and
