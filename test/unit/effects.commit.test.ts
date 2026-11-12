@@ -33,7 +33,6 @@ for (const redo of [false, true]) {
   });
 }
 
-// A commit redone after a restart commits the tree its intent saved, never what was staged since.
 test('a commit made again from its intent commits the saved tree, not what is staged now', async (t) => {
   const given = await effectFixture.effectFixture(t);
   const payload = await staged(given, given.markerOf('commit'));
