@@ -14,6 +14,22 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   names its source lines; "port unchanged" without a source is not a complete ticket. A ported file may rename
   identifiers and feature-flow strings; its case names and assertions otherwise stay.
 
+## Architecture
+
+New and changed code moves gg toward deep modules: a lot of behaviour behind a small interface, so callers get
+leverage and a change lands in one place (locality).
+
+- One domain concept, one module. What gg knows about a GLOSSARY.md concept (its types, its rules, how it is made, read
+  and resumed) lives in the module named for it, so adding a kind or changing a rule is a one-module edit. A list of
+  names that other modules match against (`REMOTE_ACTIONS`, an `if (effect === …)` chain) means the concept is
+  scattered. #355, which gathers each Effect into one module, is the first such move.
+- The interface is the test surface (`docs/testing.md` rule 2). When reaching one rule takes a golden Flow, the rule
+  sits behind the wrong interface.
+- The deletion test: a module whose deletion would only move its code into one caller is a pass-through, so fold it in.
+  A module whose deletion would copy its code into several callers earns its place.
+- The lint caps (400 lines a file, 60 a function) split a module along a seam inside it, into a module only it imports,
+  so the concept keeps one owner.
+
 ## Conventions
 
 - TypeScript ESM on Node 26 LTS (26.13 or later, where `node:sqlite` loads without a warning; ADR 0020), must run on
@@ -24,11 +40,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   loads a `.ts` config only through the optional `jiti` package or an unstable flag. Erasable syntax only (no enums,
   namespaces or parameter properties). The strict ESLint rules apply to every file.
 - Must work on native Windows: spawn real executables without a shell, forward-slash-safe paths.
-- Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Logic tests use the fake harness and the fake
-  git (`test/support/fake-git.ts`); real git in temp repositories only for the `lib/git.ts` contract suite, tests whose
-  subject is git behaviour (integrity snapshots and violations, rollback of real files, Test Immutability, dirty state,
-  admission's dirty, conflict and branch checks, Reconciliation against git state, the repo lock), and a few end-to-end
-  runs.
+- Tests must not call the real `claude`, `codex` or `gh`, or touch GitHub. Which tests run on a fake and which on real
+  git is `docs/testing.md`'s (Test doubles, and the `test/e2e/` row of Layout and stages).
 - Codex output schemas are strict: every property required, `additionalProperties: false`.
 - Comments only for the non-obvious why. A comment that carries a spec code starts with a plain-language clause and
   puts the code after it: `// A Hold needs an Await Label (R11f)`. Codes resolve in `docs/requests/node-harness-dag.md`
@@ -38,7 +51,7 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   Abbreviations only from `id`, `url`, `sha`, `err`,
   `gh`, `pr`, `json` and `ms`: spell out `ctx`, `opts`, `cfg`, `res`, `out`, `dir` and the like. Types are PascalCase,
   other identifiers camelCase (module constants may be CONSTANT_CASE), exports named, never default (ESLint); a file is
-  lowercase words joined by hyphens, named for its job, never `utils` or `helpers` (`test/unit/layout.test.ts`).
+  lowercase words joined by hyphens, named for the concept it owns or its job, never `utils` or `helpers` (`test/unit/layout.test.ts`).
 - A thrown class ends its name in `Error` and sets `name` to it (`name = 'CrashError';`). ESLint's `gg/thrown-class`
   checks both.
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
@@ -51,7 +64,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
   built once in `bin/gg.ts` and passed down as one `deps` key typed `Deps` (ADR 0019): `run.runTarget` takes it and
   passes it on to `interpreter.runExecution`. New code takes what it needs from its caller as a parameter; ESLint fails
-  a module-level `let` or an exported `set*` function.
+  a module-level `let` or an exported `set*` function. A new key in `Deps` needs a second adapter beside the real one:
+  the double `docs/testing.md` (Test doubles) lists for it, held to the real module by a contract suite where the
+  boundary allows one.
 
 ## Layout
 
@@ -151,11 +166,9 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 
 - A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.ts` (a closed set of
   inputs, a usage error that prints the usage).
-- A module split by job with no import cycle, its context typed and its errors subclasses a catch site tests:
-  `lib/effects.ts` with `lib/effect-errors.ts` and `lib/remote-effects.ts`, and `lib/terminal.ts` with
-  `lib/terminal-report.ts`; options objects in place of positional flags (`effects.sideEffect`, `effects.saveResolution`).
-- A long function cut into named steps, its context declared as one type and built in one place: `lib/interpreter.ts`,
-  with `lib/run-context.ts` and `lib/visit-runner.ts`.
+- A module split along a seam inside it: `lib/rules.ts` with `lib/rule-domain.ts`, which only it imports.
+- Options objects in place of positional flags: `effects.sideEffect`, `effects.saveResolution`.
+- A long function cut into named steps: `lib/interpreter.ts`, with `lib/visit-runner.ts`.
 - A new unit test: `test/unit/record.test.ts` and `test/unit/interpreter.retry.test.ts` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).
 - A contract suite and its fake: `test/contract/git/git.test.ts` and `test/support/fake-git.ts`.
