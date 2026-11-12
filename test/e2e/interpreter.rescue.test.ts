@@ -221,6 +221,10 @@ test('a clean worktree is not rescued or reset', async (t) => {
   );
 });
 
+// On Windows a child started without detached sits in its starter's kill-on-close job and dies with the starter, before
+// gg's cleanup could end it; detached, only gg's job can (#332). On POSIX it stays in the command's process group.
+const WRITER_START = process.platform === 'win32' ? 'detached' : 'ignore';
+
 test('a background writer left by a returned call is killed before the rescue', async (t) => {
   const directory = tempDirectory.tempDirectory(t, 'gg-writer-');
   const pidFile = join(directory, 'writer.pid');
@@ -231,26 +235,33 @@ test('a background writer left by a returned call is killed before the rescue', 
   const suite = fixture.options.deps.exec;
   const real = exec.createExec();
   let first = true;
+  const returned: { result?: exec.ShellResult; writerRuns?: boolean } = {};
   fixture.options.deps.exec = {
     ...suite,
-    runShell: (command, options) => {
+    runShell: async (command, options) => {
       if (!existsSync(join(fixture.worktree, 'lib', 'add.mjs')) || !first) return suite.runShell(command, options);
       first = false;
       const writes = childScripts.nodeCommand(
         t,
         childScripts.BACKGROUND_STARTER,
-        'ignore',
+        WRITER_START,
         '1',
         pidFile,
         childScripts.BACKGROUND_WRITER,
         join(fixture.worktree, 'writer.log'),
       );
-      return real.runShell(writes, options);
+      returned.result = await real.runShell(writes, options);
+      returned.writerRuns = processProbe.alive(processProbe.pidIn(pidFile));
+      return returned.result;
     },
   };
   const { outcome } = await interpreter.runExecution(fixture.options);
   assert.equal(outcome, 'ready-for-qa');
-  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'the writer is gone');
+  // What the call's cleanup promises, read as it returned: it named the writer and confirmed it ended.
+  const writer = processProbe.pidIn(pidFile);
+  assert.ok(returned.result?.leftovers?.includes(writer), JSON.stringify(returned.result?.leftovers));
+  assert.equal(returned.result?.cleanup.confirmed, true, JSON.stringify(returned.result?.cleanup));
+  assert.equal(returned.writerRuns, false, 'the writer is gone when the call returns');
   assert.equal(inWorktree(fixture, 'writer.log'), false, 'nothing wrote after the reset');
   const ref = rescue.rescueRef(golden.markerOf(fixture.executionRecord, 'green', 1, 'rescue', 0, 1));
   assert.deepEqual(rescueFlow.rescueRefs(fixture), [ref]);

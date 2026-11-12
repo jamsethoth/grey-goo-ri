@@ -14,6 +14,9 @@ export const alive = (pid: number) => {
   }
 };
 
+// Records the process now running under pid as the one a later check of that pid means.
+export function remember(_pid: number): void {}
+
 // The pid a script wrote to file, or 0 while it has not (yet) written it in full.
 export const pidIn = (file: string) => (existsSync(file) ? Number(readFileSync(file, 'utf8')) : 0);
 

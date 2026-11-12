@@ -98,6 +98,29 @@ test('checking a process whose pid was never written fails the case', () => {
   assert.throws(() => processProbe.alive(NaN), /no process to check: the pid is NaN/);
 });
 
+// A pid read after its process ended can name another process by then: Windows gives a freed pid out again (#332).
+test('a pid file naming a process that did not write it reads as not running, and is never ended', async (t) => {
+  const pidFile = join(scratch, 'held-by-another.pid');
+  const other = spawn(process.execPath, ['-e', 'process.stdin.on("end", () => process.exit(7)).resume()'], {
+    stdio: ['pipe', 'ignore', 'ignore'],
+  });
+  t.after(() => other.kill());
+  const exited = new Promise((resolve) => other.on('exit', (code) => resolve(code)));
+  writeFileSync(pidFile, String(other.pid));
+  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'the pid names another process');
+  processProbe.endProcessIn(pidFile);
+  other.stdin.end();
+  assert.equal(await exited, 7, 'the other process ran on to its own end');
+});
+
+test('checking or ending a pid whose process was never recorded fails the case', (t) => {
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });
+  t.after(() => other.kill());
+  const pid = other.pid as number;
+  assert.throws(() => processProbe.alive(pid), new RegExp(`no process recorded for pid ${pid}`));
+  assert.throws(() => processProbe.endProcess(pid), new RegExp(`no process recorded for pid ${pid}`));
+});
+
 test("a case's environment variables are restored after the case even when it fails", async (t) => {
   caseEnv.caseEnv(t, { GG_TEST_ENV_PROBE: 'before' });
   let release = () => {};
