@@ -1,11 +1,14 @@
 // lib/exec.ts's contract on every platform: run, and runShell with the commands that finish or time out on their own.
 // The descendants a timeout kills are in exec.timeout.test.ts, and the Windows job object in exec.job.test.ts.
 import { test } from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as commandCleanup from '../../../lib/command-cleanup.ts';
+import * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
 import * as render from '../../../lib/render.ts';
 import * as caseEnv from '../../support/case-env.ts';
@@ -96,6 +99,133 @@ test(
 test('checking a process whose pid was never written fails the case', () => {
   assert.throws(() => processProbe.alive(0), /no process to check: the pid is 0/);
   assert.throws(() => processProbe.alive(NaN), /no process to check: the pid is NaN/);
+});
+
+// A pid read after its process ended can name another process by then: Windows gives a freed pid out again (#332).
+// That process started after the one it replaced ended, so after its pid file was written and after its start.
+function runningProcess(t: TestContext) {
+  const running = spawn(process.execPath, ['-e', 'process.stdin.on("end", () => process.exit(7)).resume()'], {
+    stdio: ['pipe', 'ignore', 'ignore'],
+  });
+  t.after(() => running.kill());
+  const exited = new Promise((resolve) => running.on('exit', (code) => resolve(code)));
+  return { pid: running.pid as number, ranToItsEnd: () => (running.stdin.end(), exited) };
+}
+
+// The start a cleanup reports for the process under pid, read as lib reads it: the creation time on Windows, and
+// elsewhere lstart from the process listing lib takes.
+function cleanupStartOf(pid: number) {
+  if (process.platform === 'win32') return containment.describe(kernel32Doubles.realKernel32, pid).created;
+  const listing = spawnSync('ps', ['-e', '-o', 'pid=,ppid=,lstart=,pgid=,args='], {
+    encoding: 'utf8',
+    env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+  });
+  const { processes } = commandCleanup.parseListing({
+    code: listing.status,
+    stdout: listing.stdout,
+    stderr: listing.stderr,
+  });
+  return processes.find((processRow) => processRow[0] === pid)?.[2] ?? null;
+}
+
+// Every way a case records a pid's process: as the process now running under it, and as one that ran there before.
+const RECORDINGS: Record<string, { itsOwn?: (pid: number) => void; anEarlier?: (pid: number) => void }> = {
+  'its pid file': {
+    itsOwn: (pid) => processProbe.pidIn(writtenPidFile(pid, new Date())),
+    anEarlier: (pid) => processProbe.pidIn(writtenPidFile(pid, new Date(Date.now() - 60_000))),
+  },
+  'the start its cleanup reported': {
+    itsOwn: (pid) => processProbe.remember(pid, cleanupStartOf(pid)),
+    anEarlier: (pid) => processProbe.remember(pid, aSecondEarlier(cleanupStartOf(pid))),
+  },
+  'remember while it runs': { itsOwn: (pid) => processProbe.remember(pid) },
+  'a cleanup that reported no start': { anEarlier: (pid) => processProbe.remember(pid, null) },
+};
+
+// A reported start one second before start, in its format: an ISO time, or ps lstart in UTC with lib's single spaces.
+function aSecondEarlier(start: string | null) {
+  assert.ok(start, 'the process has a start to report');
+  const iso = /^\d{4}-/.test(start);
+  const earlier = new Date(Date.parse(iso ? start : `${start} UTC`) - 1000);
+  if (iso) return earlier.toISOString();
+  const [weekday, day, month, year] = earlier.toUTCString().replace(',', '').split(' '); // Thu 12 Nov 2026
+  return `${weekday} ${month} ${Number(day)} ${earlier.toISOString().slice(11, 19)} ${year}`;
+}
+
+function writtenPidFile(pid: number, written: Date) {
+  const pidFile = join(scratch, `recorded-${pid}-${written.getTime()}.pid`);
+  writeFileSync(pidFile, String(pid));
+  utimesSync(pidFile, written, written);
+  return pidFile;
+}
+
+for (const [recording, { itsOwn, anEarlier }] of Object.entries(RECORDINGS)) {
+  if (itsOwn)
+    test(`a process recorded by ${recording} reads as running until it ends`, async (t) => {
+      const running = runningProcess(t);
+      itsOwn(running.pid);
+      assert.equal(processProbe.alive(running.pid), true, 'it runs');
+      assert.equal(await running.ranToItsEnd(), 7);
+      await processProbe.waitFor(() => !processProbe.alive(running.pid), t.signal); // read as running when it ended
+    });
+  if (anEarlier)
+    test(`a later process under a pid recorded by ${recording} reads as not running, and is never ended`, async (t) => {
+      const later = runningProcess(t);
+      anEarlier(later.pid);
+      assert.equal(processProbe.alive(later.pid), false, 'the pid names a later process');
+      processProbe.endProcess(later.pid);
+      assert.equal(await later.ranToItsEnd(), 7, 'the later process ran on to its own end');
+    });
+}
+
+// A zombie answers a signal but runs nothing: its parent, which never reaps it, is a sleep the shell became. The child
+// ends only once the shell has become that sleep, so no shell is left to reap it.
+test(
+  'a zombie reads as not running, however it was recorded',
+  { skip: process.platform === 'win32' && 'a Windows process leaves no zombie' },
+  async (t) => {
+    const pidFile = join(scratch, 'zombie.pid');
+    const child = `sh -c 'until [ "$(cat /proc/$PPID/comm)" = sleep ]; do sleep 0.01; done' &`;
+    const parent = spawn('sh', ['-c', `${child} echo $! > "$GG_TEST_ZOMBIE_PID"; exec sleep 60`], {
+      stdio: 'ignore',
+      env: { ...process.env, GG_TEST_ZOMBIE_PID: pidFile },
+    });
+    t.after(() => parent.kill());
+    await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
+    const zombie = processProbe.pidIn(pidFile);
+    await processProbe.waitFor(() => readFileSync(`/proc/${zombie}/stat`, 'utf8').includes(') Z '), t.signal);
+    assert.equal(processProbe.alive(zombie), false, 'by its pid file');
+    processProbe.remember(zombie, cleanupStartOf(zombie));
+    assert.equal(processProbe.alive(zombie), false, 'by the start its cleanup reported');
+  },
+);
+
+// Not every script names its pid file among its arguments: a shell script reads it from a variable.
+test('a process whose pid file is not among its arguments reads as running until it ends', async (t) => {
+  const pidFile = join(scratch, 'named-by-a-variable.pid');
+  const writer = spawn(
+    process.execPath,
+    [
+      '-e',
+      'require("fs").writeFileSync(process.env.GG_TEST_PID_FILE, String(process.pid)); setInterval(() => {}, 1000)',
+    ],
+    { stdio: 'ignore', env: { ...process.env, GG_TEST_PID_FILE: pidFile } },
+  );
+  t.after(() => writer.kill());
+  const exited = new Promise((resolve) => writer.on('exit', resolve));
+  await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
+  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), true, 'it runs');
+  processProbe.endProcessIn(pidFile);
+  await exited;
+  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'it ended');
+});
+
+test('checking or ending a pid whose process was never recorded fails the case', (t) => {
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });
+  t.after(() => other.kill());
+  const pid = other.pid as number;
+  assert.throws(() => processProbe.alive(pid), new RegExp(`no process recorded for pid ${pid}`));
+  assert.throws(() => processProbe.endProcess(pid), new RegExp(`no process recorded for pid ${pid}`));
 });
 
 test("a case's environment variables are restored after the case even when it fails", async (t) => {
