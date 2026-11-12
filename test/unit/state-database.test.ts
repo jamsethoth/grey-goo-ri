@@ -122,7 +122,6 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
     lifecycleEvent: null,
     diffStats: null,
     eventLog: (commonDir) => events.eventLog(commonDir)('run_start', { run: 'r1' }),
-    declaredAs: null,
   },
   eventRead: {
     readEvents: (commonDir) => eventRead.readEvents(commonDir),

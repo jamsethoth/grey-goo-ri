@@ -61,7 +61,9 @@ function assertEvent(value: unknown, row: EventRow): asserts value is events.Eve
   for (const column of COLUMNS) {
     const saved = fields[column] ?? null;
     if (row[column] !== saved)
-      throw new Error(`its ${column} column is ${String(row[column])} but its JSON holds ${String(saved)}`);
+      throw new Error(
+        `its ${column} column is ${JSON.stringify(row[column])} but its JSON holds ${JSON.stringify(saved)}`,
+      );
   }
 }
 

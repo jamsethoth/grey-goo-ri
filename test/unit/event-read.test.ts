@@ -264,11 +264,18 @@ test('no Event is cast on the read side: the read module and every lib module th
     (file) => file === 'lib/event-read.ts' || /from '\.\/event-read\.ts'/.test(textOf(file)),
   );
   assert.ok(readers.includes('lib/terminal-report.ts'), readers.join());
-  const casts = readers.flatMap((file) =>
-    textOf(file)
+  const casts = readers.flatMap((file) => {
+    // A local alias of an Event type is an Event type too.
+    const aliases = [...textOf(file).matchAll(/^\s*(?:export\s+)?type\s+(\w+)\s*=([^;\n]*)/gm)]
+      .filter((match) => eventCast().test(`as ${match[2].trim()}`))
+      .map((match) => match[1]);
+    const aliasCast = new RegExp(String.raw`\bas\s*\(?\s*(${aliases.join('|') || '(?!)'})\b`);
+    return textOf(file)
       .split('\n')
-      .flatMap((line, index) => (eventCast().test(line) ? [`${file}:${index + 1}: ${line.trim()}`] : [])),
-  );
+      .flatMap((line, index) =>
+        eventCast().test(line) || aliasCast.test(line) ? [`${file}:${index + 1}: ${line.trim()}`] : [],
+      );
+  });
   assert.deepEqual(casts, []);
 });
 
@@ -377,14 +384,25 @@ for (const column of COLUMNS) {
     const other = { type: 'ticket_start', run: 'r2', execution: 'e2', ticket: 8 }[column];
     const id = plant(commonDir, { ...row, [column]: other });
     const type = column === 'type' ? 'ticket_start' : 'ticket_end';
-    assertRefused(commonDir, id, type, new RegExp(`its ${column} column is ${other} but its JSON holds .+`));
+    assertRefused(
+      commonDir,
+      id,
+      type,
+      new RegExp(`its ${column} column is ${JSON.stringify(other)} but its JSON holds .+`),
+    );
   });
 }
+
+test('a row whose column holds a number where its JSON holds a string says which is which', (t) => {
+  const { commonDir, row } = written(t, 'ticket_start');
+  const id = plant(commonDir, { ...row, json: row.json.replace('"ticket":7', '"ticket":"7"') });
+  assertRefused(commonDir, id, 'ticket_start', /its ticket column is 7 but its JSON holds "7"/);
+});
 
 test('a row whose column is null where its JSON holds a value is refused by name', (t) => {
   const { commonDir, row } = written(t, 'ticket_end');
   const id = plant(commonDir, { ...row, run: null });
-  assertRefused(commonDir, id, 'ticket_end', /its run column is null but its JSON holds r1/);
+  assertRefused(commonDir, id, 'ticket_end', /its run column is null but its JSON holds "r1"/);
 });
 
 test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {

@@ -255,7 +255,7 @@ type DeclaredShape = Readonly<Record<string, Presence>>;
 type LifecycleBody<Type extends LifecycleType> = {
   [Each in Type]: { type: Each } & Declared<LifecycleFields[Each], (typeof LIFECYCLE)[Each]>;
 }[Type];
-export const declaredAs = (shape: DeclaredShape, presence: Presence): string[] =>
+const declaredAs = (shape: DeclaredShape, presence: Presence): string[] =>
   Object.keys(shape).filter((field) => shape[field] === presence);
 const ACTION_REQUIRED = declaredAs(ACTION, 'required');
 const ACTION_OPTIONAL = declaredAs(ACTION, 'optional');
