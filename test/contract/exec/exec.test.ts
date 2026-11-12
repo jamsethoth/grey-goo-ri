@@ -3,10 +3,12 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as commandCleanup from '../../../lib/command-cleanup.ts';
+import * as containment from '../../../lib/containment.ts';
 import * as exec from '../../../lib/exec.ts';
 import * as render from '../../../lib/render.ts';
 import * as caseEnv from '../../support/case-env.ts';
@@ -100,34 +102,81 @@ test('checking a process whose pid was never written fails the case', () => {
 });
 
 // A pid read after its process ended can name another process by then: Windows gives a freed pid out again (#332).
-// That process started after the one it replaced ended, so after the pid file was written.
-function laterProcess(t: TestContext) {
-  const later = spawn(process.execPath, ['-e', 'process.stdin.on("end", () => process.exit(7)).resume()'], {
+// That process started after the one it replaced ended, so after its pid file was written and after its start.
+function runningProcess(t: TestContext) {
+  const running = spawn(process.execPath, ['-e', 'process.stdin.on("end", () => process.exit(7)).resume()'], {
     stdio: ['pipe', 'ignore', 'ignore'],
   });
-  t.after(() => later.kill());
-  const exited = new Promise((resolve) => later.on('exit', (code) => resolve(code)));
-  return { pid: later.pid as number, ranToItsEnd: () => (later.stdin.end(), exited) };
+  t.after(() => running.kill());
+  const exited = new Promise((resolve) => running.on('exit', (code) => resolve(code)));
+  return { pid: running.pid as number, ranToItsEnd: () => (running.stdin.end(), exited) };
 }
 
-test('a pid file written before a later process took its pid reads as not running, and is never ended', async (t) => {
-  const later = laterProcess(t);
-  const pidFile = join(scratch, 'held-by-a-later-process.pid');
-  writeFileSync(pidFile, String(later.pid));
-  const written = new Date(Date.now() - 60_000);
-  utimesSync(pidFile, written, written);
-  assert.equal(processProbe.alive(processProbe.pidIn(pidFile)), false, 'the pid names a later process');
-  processProbe.endProcessIn(pidFile);
-  assert.equal(await later.ranToItsEnd(), 7, 'the later process ran on to its own end');
-});
+// The start a cleanup reports for the process under pid, read as lib reads it: the creation time on Windows, and
+// elsewhere lstart from the process listing lib takes.
+function cleanupStartOf(pid: number) {
+  if (process.platform === 'win32') return containment.describe(kernel32Doubles.realKernel32, pid).created;
+  const listing = spawnSync('ps', ['-e', '-o', 'pid=,ppid=,lstart=,pgid=,args='], {
+    encoding: 'utf8',
+    env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+  });
+  const { processes } = commandCleanup.parseListing({
+    code: listing.status,
+    stdout: listing.stdout,
+    stderr: listing.stderr,
+  });
+  return processes.find((processRow) => processRow[0] === pid)?.[2] ?? null;
+}
 
-test('a process remembered by a start before its own reads as not running, and is never ended', async (t) => {
-  const later = laterProcess(t);
-  processProbe.remember(later.pid, new Date(Date.now() - 60_000).toISOString());
-  assert.equal(processProbe.alive(later.pid), false, 'the pid names a later process');
-  processProbe.endProcess(later.pid);
-  assert.equal(await later.ranToItsEnd(), 7, 'the later process ran on to its own end');
-});
+// Every way a case records a pid's process: as the process now running under it, and as one that ran there before.
+const RECORDINGS: Record<string, { itsOwn?: (pid: number) => void; anEarlier?: (pid: number) => void }> = {
+  'its pid file': {
+    itsOwn: (pid) => processProbe.pidIn(writtenPidFile(pid, new Date())),
+    anEarlier: (pid) => processProbe.pidIn(writtenPidFile(pid, new Date(Date.now() - 60_000))),
+  },
+  'the start its cleanup reported': {
+    itsOwn: (pid) => processProbe.remember(pid, cleanupStartOf(pid)),
+    anEarlier: (pid) => processProbe.remember(pid, aSecondEarlier(cleanupStartOf(pid))),
+  },
+  'remember while it runs': { itsOwn: (pid) => processProbe.remember(pid) },
+  'a cleanup that reported no start': { anEarlier: (pid) => processProbe.remember(pid, null) },
+};
+
+// A reported start one second before start, in its format: an ISO time, or ps lstart in UTC with lib's single spaces.
+function aSecondEarlier(start: string | null) {
+  assert.ok(start, 'the process has a start to report');
+  const iso = /^\d{4}-/.test(start);
+  const earlier = new Date(Date.parse(iso ? start : `${start} UTC`) - 1000);
+  if (iso) return earlier.toISOString();
+  const [weekday, day, month, year] = earlier.toUTCString().replace(',', '').split(' '); // Thu 12 Nov 2026
+  return `${weekday} ${month} ${Number(day)} ${earlier.toISOString().slice(11, 19)} ${year}`;
+}
+
+function writtenPidFile(pid: number, written: Date) {
+  const pidFile = join(scratch, `recorded-${pid}-${written.getTime()}.pid`);
+  writeFileSync(pidFile, String(pid));
+  utimesSync(pidFile, written, written);
+  return pidFile;
+}
+
+for (const [recording, { itsOwn, anEarlier }] of Object.entries(RECORDINGS)) {
+  if (itsOwn)
+    test(`a process recorded by ${recording} reads as running until it ends`, async (t) => {
+      const running = runningProcess(t);
+      itsOwn(running.pid);
+      assert.equal(processProbe.alive(running.pid), true, 'it runs');
+      assert.equal(await running.ranToItsEnd(), 7);
+      await processProbe.waitFor(() => !processProbe.alive(running.pid), t.signal); // read as running when it ended
+    });
+  if (anEarlier)
+    test(`a later process under a pid recorded by ${recording} reads as not running, and is never ended`, async (t) => {
+      const later = runningProcess(t);
+      anEarlier(later.pid);
+      assert.equal(processProbe.alive(later.pid), false, 'the pid names a later process');
+      processProbe.endProcess(later.pid);
+      assert.equal(await later.ranToItsEnd(), 7, 'the later process ran on to its own end');
+    });
+}
 
 // Not every script names its pid file among its arguments: a shell script reads it from a variable.
 test('a process whose pid file is not among its arguments reads as running until it ends', async (t) => {
