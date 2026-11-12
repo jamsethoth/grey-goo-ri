@@ -30,7 +30,7 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
   if (!keywords)
     throw new Error(`${path}: type ${JSON.stringify(schema.type) ?? '(none)'} is outside the strict subset`);
   if (
-    Object.hasOwn(schema, 'enum') &&
+    schema.enum !== undefined &&
     !(Array.isArray(schema.enum) && schema.enum.length && schema.enum.every((value) => typeof value === 'string'))
   ) {
     throw new Error(`${path}: enum must be a non-empty list of strings`);
@@ -53,8 +53,8 @@ function assertObject(schema: Record<string, unknown>, path: string) {
   if (missing !== undefined) throw new Error(`${path}: required lacks property ${JSON.stringify(missing)}`);
   // An index, since find() gives undefined for no match and for an entry that is undefined.
   const extraAt = required.findIndex((key) => !keys.includes(key as string));
-  const extra = required[extraAt];
-  if (extraAt !== -1) throw new Error(`${path}: required names ${JSON.stringify(extra)}, which is not a property`);
+  if (extraAt !== -1)
+    throw new Error(`${path}: required names ${JSON.stringify(required[extraAt])}, which is not a property`);
   const unreachable = keys.find((key) => key === '' || key.includes('.'));
   if (unreachable !== undefined)
     throw new Error(`${path}: property name ${JSON.stringify(unreachable)} cannot be reached by a dotted path`);

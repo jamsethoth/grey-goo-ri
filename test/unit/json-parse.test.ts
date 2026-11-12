@@ -170,6 +170,26 @@ test('the census counts every spelling of a JSON.parse call, and finds JSON.pars
   assert.deepEqual(uncalled.map(line), [10, 11, 12, 13, 14, 15, 16], 'every read that is not a call is found');
 });
 
+// The overload's guarantee holds only while it and lib.es5 declare the global JSON.parse: a `declare global` in a
+// module can add another overload, which the census and the rule would not trust (#354).
+test('the global JSON.parse is declared only by lib.es5 and gg overload', () => {
+  const program = ts.createProgram(configured.fileNames, configured.options);
+  const jsonInterface = program.getSourceFile(OVERLOAD)!.statements.find(ts.isInterfaceDeclaration)!;
+  const parse = program
+    .getTypeChecker()
+    .getSymbolAtLocation(jsonInterface.name)!
+    .members!.get('parse' as ts.__String)!;
+  const files = parse.declarations!.map((declaration) => declaration.getSourceFile());
+  assert.deepEqual(
+    files.filter((file) => !program.isSourceFileDefaultLibrary(file)).map((file) => file.fileName.slice(root.length)),
+    ['lib/json-parse.d.ts'],
+  );
+  assert.ok(
+    files.some((file) => program.isSourceFileDefaultLibrary(file)),
+    "lib.es5's declaration is among them",
+  );
+});
+
 test("the census passes a module's own interface named JSON", () => {
   const { program, plantedFile } = plantedProgram(
     [

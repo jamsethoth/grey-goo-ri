@@ -252,6 +252,12 @@ test('a required entry that names no property is rejected, an undefined one too'
     );
 });
 
+// The enum assertStrict checks is the enum a reader of the SchemaNode gets, an inherited one too (#354).
+test('an inherited enum is checked like an own one', () => {
+  const inherited: unknown = Object.assign(Object.create({ enum: [1] }), { type: 'string' });
+  assert.throws(() => briefs.assertStrict(inherited), { message: '(root): enum must be a non-empty list of strings' });
+});
+
 const inField = (field: unknown) => ({
   type: 'object',
   properties: { field },
