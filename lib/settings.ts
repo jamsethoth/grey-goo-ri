@@ -79,7 +79,7 @@ export function labelPrefixProblems(labelPrefix: unknown, file: string): report.
   return found.errors;
 }
 
-export function baseBranchProblems(baseBranch: unknown, file: string): report.Problem[] {
+function baseBranchProblems(baseBranch: unknown, file: string): report.Problem[] {
   const found = report.newReport();
   nameProblems(found, baseBranch, {
     key: 'baseBranch',
@@ -114,7 +114,7 @@ function machineProblems(found: report.Report, user: config.Source, file: string
 
 // What gg doctor and gg run preflight both check of the two gg.json files before any Flow: each key, the repository
 // contract, the machine settings, and the repository's Flow names (D7).
-export function sourceProblems({ repository, user, repositoryFile, userFile }: config.Configuration): report.Problem[] {
+function sourceProblems({ repository, user, repositoryFile, userFile }: config.Configuration): report.Problem[] {
   const found = report.newReport();
   keyProblems(found, repository, {
     file: repositoryFile,
@@ -148,23 +148,41 @@ export function sourceProblems({ repository, user, repositoryFile, userFile }: c
   return found.errors;
 }
 
-// The two gg.json files' settings: Settings when they hold no error, else the errors, never both (#362).
-export type ParsedSettings =
-  { settings: config.Settings; errors?: never } | { errors: report.Problem[]; settings?: never };
+// The two gg.json files' settings: Settings when they hold no error, else the errors, never both, so tsc stops a
+// caller reading Settings it has not checked (#362).
+type ParsedSettings = { settings: config.Settings; errors?: never } | { errors: report.Problem[]; settings?: never };
 
-// stub (#362)
-export const parse = (_configuration: config.Configuration): ParsedSettings => ({ errors: [] });
+const isStrings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+const isCommands = (value: unknown): value is Record<string, string> =>
+  referencePaths.isRecord(value) && Object.values(value).every((line) => typeof line === 'string');
 
-// The settings a Run reads, once sourceProblems has found none.
-export const runSettings = ({ repository, user }: config.Configuration): config.Settings => ({
-  labelPrefix: repository.labelPrefix as string,
-  baseBranch: repository.baseBranch as string,
-  worktreeRoot: user.worktreeRoot as string,
-  maxParallel: user.maxParallel as number,
-  commands: (repository.commands ?? {}) as config.Settings['commands'],
-  testPaths: repository.testPaths as string[],
-  ...(repository.approvers !== undefined && { approvers: repository.approvers as string[] }),
-});
+export function parse(configuration: config.Configuration): ParsedSettings {
+  const errors = sourceProblems(configuration);
+  const { labelPrefix, baseBranch, commands = {}, testPaths, approvers } = configuration.repository;
+  const { worktreeRoot, maxParallel } = configuration.user;
+  // sourceProblems has checked every value; tsc cannot follow a list of Problems, so each is narrowed here again.
+  const valid =
+    typeof labelPrefix === 'string' &&
+    typeof baseBranch === 'string' &&
+    typeof worktreeRoot === 'string' &&
+    typeof maxParallel === 'number' &&
+    isCommands(commands) &&
+    isStrings(testPaths) &&
+    (approvers === undefined || isStrings(approvers));
+  if (errors.length || !valid) return { errors };
+  return {
+    settings: {
+      labelPrefix,
+      baseBranch,
+      worktreeRoot,
+      maxParallel,
+      commands,
+      testPaths,
+      ...(approvers !== undefined && { approvers }),
+    },
+  };
+}
 
 // Only globs that git's pathspecs (rollback) and checks.testPathMatcher (Test Immutability) read alike, and that git
 // accepts inside the repository: git's `?` takes one byte of a UTF-8 name, and its brackets and backslash are syntax.
@@ -177,7 +195,7 @@ const badGlob = (glob: unknown): boolean =>
     .some((segment) => !segment || segment === '.' || segment === '..' || (segment.includes('**') && segment !== '**'));
 
 // The repository's testPaths as Problems, each sentence naming `file`; none for a non-empty list of globs.
-export function testPathsProblems(testPaths: unknown, file: string): report.Problem[] {
+function testPathsProblems(testPaths: unknown, file: string): report.Problem[] {
   const found = report.newReport();
   if (testPaths === undefined) {
     const message = `${file} declares no testPaths; merge {"testPaths":["<glob>"]} into it`;
@@ -199,7 +217,7 @@ export function testPathsProblems(testPaths: unknown, file: string): report.Prob
 }
 
 // The repository's approvers as Problems, naming `file`; none for no list or a list of logins.
-export function approversProblems(approvers: unknown, file: string): report.Problem[] {
+function approversProblems(approvers: unknown, file: string): report.Problem[] {
   const found = report.newReport();
   if (approvers === undefined) return found.errors;
   // A login with space around it never matches the actor GitHub names.
@@ -211,7 +229,7 @@ export function approversProblems(approvers: unknown, file: string): report.Prob
 }
 
 // The repository's Declared Commands as Problems, each sentence naming `file`; none for a valid set with a test.
-export function commandProblems(declared: unknown, file: string): report.Problem[] {
+function commandProblems(declared: unknown, file: string): report.Problem[] {
   const found = report.newReport();
   const commands = declared === undefined ? {} : declared;
   if (!referencePaths.isRecord(commands)) {
@@ -238,7 +256,7 @@ export function commandProblems(declared: unknown, file: string): report.Problem
 }
 
 // The repository contract at `file` as Problems: what gg run preflight and gg doctor both check of it (#301).
-export const contractProblems = (repository: Record<string, unknown>, file: string): report.Problem[] => [
+const contractProblems = (repository: Record<string, unknown>, file: string): report.Problem[] => [
   ...commandProblems(repository.commands, file),
   ...testPathsProblems(repository.testPaths, file),
   ...approversProblems(repository.approvers, file),

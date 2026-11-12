@@ -2,7 +2,6 @@ import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as admission from '../../lib/admission.ts';
 import type * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as integrity from '../../lib/integrity.ts';
@@ -464,7 +463,7 @@ for (const { labels, edits, states: expectedStates } of MIXED_CASE) {
 }
 
 // A Run under the human's spelling of needs-human skips the Ticket, which it reports at needs-human.
-function assertSkippedAtNeedsHuman(results: admission.TicketResult[]) {
+function assertSkippedAtNeedsHuman(results: run.TicketResult[]) {
   assert.equal(runFixture.ticketResult(results)?.outcome, 'skipped', JSON.stringify(results));
   assert.equal(runFixture.ticketResult(results)?.state, 'needs-human');
   assert.equal(run.runExitCode(results), 2);

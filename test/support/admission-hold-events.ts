@@ -1,6 +1,5 @@
 // What an admission hold leaves: its Events and Terminal Reason, decided before any agent ran.
 import assert from 'node:assert/strict';
-import type * as admission from '../../lib/admission.ts';
 import type * as events from '../../lib/events.ts';
 import * as run from '../../lib/run.ts';
 import * as executionReads from './execution-reads.ts';
@@ -9,7 +8,7 @@ import * as runFixture from './run-fixture.ts';
 
 export async function assertAdmissionHoldEvents(
   fixture: runFixture.RunFixture,
-  results: admission.TicketResult[],
+  results: run.TicketResult[],
   hold: string,
 ): Promise<void> {
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));

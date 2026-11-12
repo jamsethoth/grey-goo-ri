@@ -11,6 +11,7 @@ import * as record from '../../lib/record.ts';
 import * as shipped from '../../lib/harnesses/shipped.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import * as fakeGh from '../support/fake-gh.ts';
+import * as fakeHarness from '../support/fake-harness.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
 // gg doctor reads no labels in these cases: the example asks nobody.
@@ -38,11 +39,17 @@ const knownRecord = (commonDir: string) =>
   });
 const MACHINE_SETTINGS = { maxParallel: 2, worktreeRoot: '~/worktrees' };
 
-// gg doctor over a repository and user directory as gg reads them, with the Harnesses gg ships.
+// A Harness that passes preflight under each name gg ships: gg doctor runs gg run's Harness preflight (#362), and the
+// shipped Harnesses are stubs until slices 2 and 3, so these cases judge the configuration gg init writes.
+const HARNESSES = Object.fromEntries(
+  Object.keys(shipped.HARNESSES).map((name) => [name, fakeHarness.fakeHarness({ name })]),
+);
+
+// gg doctor over a repository and user directory as gg reads them, with a passing Harness under each shipped name.
 async function doctorOver(repo: string, user: string, commonDir?: string) {
   return doctor.doctor({
     config: config.loadSources(repo, user),
-    harnesses: shipped.HARNESSES,
+    harnesses: HARNESSES,
     gh: GH,
     cwd: repo,
     commonDir,

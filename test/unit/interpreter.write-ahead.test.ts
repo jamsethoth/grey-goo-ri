@@ -352,7 +352,7 @@ for (const [kind, stopOptions, state] of stops) {
     assert.equal(err?.name, 'RecordSaveError', String(err));
     const mid = loadTicket(fixture);
     assert.equal(mid.state, 'active', 'no finished state without its ticket_end');
-    assert.ok(interpreter.pendingReport(mid), 'the decided report waits for the next Run');
+    assert.equal(interpreter.resumption(mid), 'finish-report', 'the decided report waits for the next Run');
 
     restore();
     await interpreter.runExecution({ ...fixture.options, record: mid });
@@ -388,7 +388,7 @@ for (const [name, json] of REFUSED_TICKET_ENDS) {
         "INSERT INTO events (ts, type, run, execution, ticket, json) VALUES ('t', 'ticket_end', 'run-1', ?, ?, ?)",
       )
       .run(mid.execution, golden.TICKET, json);
-    assert.equal(interpreter.pendingReport(mid), true, 'a refused row is no ticket_end');
+    assert.equal(interpreter.resumption(mid), 'finish-report', 'a refused row is no ticket_end');
 
     await interpreter.runExecution({ ...fixture.options, record: mid });
     assert.equal(loadTicket(fixture).state, 'fault');

@@ -5,6 +5,7 @@ import * as admission from './admission.ts';
 import * as cleanupHold from './cleanup-hold.ts';
 import * as clockModule from './clock.ts';
 import * as config from './config.ts';
+import * as configurationCheck from './configuration-check.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as events from './events.ts';
 import * as flowModule from './flow.ts';
@@ -13,13 +14,22 @@ import * as labels from './labels.ts';
 import * as locksModule from './locks.ts';
 import * as model from './model.ts';
 import * as record from './record.ts';
-import * as runFlows from './run-flows.ts';
 import type * as runContext from './run-context.ts';
-import * as settingsModule from './settings.ts';
 import * as report from './validate/report.ts';
 import * as stateDatabase from './state-database.ts';
 
-type TicketResult = admission.TicketResult;
+// A Ticket's result: its Outcome, the State Label it ends with, and whether a label update or a fault failed it.
+export interface TicketResult {
+  ticket: number;
+  outcome: string;
+  state?: string;
+  labelFailed?: boolean;
+  held?: boolean;
+  fault?: boolean;
+  error?: unknown;
+  unread?: string;
+  flowMissing?: boolean;
+}
 
 // A Ticket left needing a human, or a record whose Flow is gone, is a gap a person closes: exit 2.
 export const runExitCode = (results: TicketResult[]): number => {
@@ -106,8 +116,88 @@ export interface RunOptions {
   testImmutability?: runContext.TestImmutability;
 }
 
-// stub (#362): moves here from lib/run-flows.ts.
-export const admitConfiguration = runFlows.admitConfiguration;
+// A declared Flow, its Pinned Configuration (the Flow with the files, Harnesses and commands it runs under), that
+// configuration's Config Hash, its source and the files it uses.
+export interface PinnedFlow {
+  flow: model.ResolvedFlow;
+  pinned: config.PinnedConfiguration | null;
+  hash: string;
+  source: configurationCheck.SourceName;
+  files: config.SourceFiles;
+}
+
+// The Flow at `name` pinned with the files it uses from its own source and the repository contract. The source stays
+// out of the hash, and so does the prefix that names it, so a Flow hashes alike from either source (Q25).
+function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: config.Settings): PinnedFlow {
+  const files = config.usedFiles(declared.json, declared.files);
+  const pinned = {
+    // The validator's JSON, which model.fromJson below also reads as a Resolved Flow's: the validator reads the
+    // configuration as unknown, so its own type cannot say so.
+    flow: { ...declared.json, name: declared.declaredName } as model.ResolvedFlowJson,
+    files,
+    harnesses: {},
+    launchProfile: null,
+    commands: settings.commands,
+    testPaths: settings.testPaths,
+    approvers: settings.approvers,
+  };
+  const flow = model.fromJson({ ...declared.json, name });
+  return { flow, pinned, hash: config.configHash(pinned), source: declared.source, files };
+}
+
+// gg run's preflight failure: every line in one error, whatever failed it, before any effect.
+const preflightFailed = (lines: string[], exitCode: number) =>
+  Object.assign(new Error(`preflight failed:\n${lines.join('\n')}`), { exitCode });
+
+// A new Execution runs the Flow `--flow` names, else default (X2), which must be declared; a user Flow that does not
+// fit the repository is refused only when selected (Q21).
+function selectionErrors({ flows, misfits }: configurationCheck.Verdict, flowName: string): report.Problem[] {
+  const found = report.newReport();
+  const misfit = misfits.get(flowName);
+  if (misfit) found.errors.push(misfit);
+  const names = [...flows.keys()];
+  if (names.length && !flows.has(flowName)) {
+    const message = `no Flow named ${flowName} is declared; the declared Flows are ${names.join(', ')}`;
+    report.error(found, 'flows', 'unknown-flow', message, { name: flowName, declared: names });
+  }
+  return found.errors;
+}
+
+// What gg run admits: both sources, the registered Harnesses, the Flow `--flow` names, and the repository's common
+// dir, which must hold the State Database.
+interface ConfigurationOptions {
+  commonDir: string;
+  config: config.Configuration;
+  harnesses: Record<string, unknown>;
+  flow?: string;
+}
+
+// gg run refuses what gg doctor refuses (V1, ADR 0014), and its choice of Flow, all failures in one error. An unset
+// Harness is a configuration gap, so any one makes the error exit 2. A Run's records whose Flow is gone are each its
+// Ticket's to report (A2).
+export async function admitConfiguration({
+  commonDir,
+  config: configuration,
+  harnesses,
+  flow: flowName = 'default',
+}: ConfigurationOptions) {
+  const verdict = await configurationCheck.check({ config: configuration, harnesses, commonDir });
+  const errors = [...verdict.configurationErrors, ...selectionErrors(verdict, flowName), ...verdict.environmentErrors];
+  const { settings } = verdict;
+  if (errors.length || !settings) {
+    const lines = errors.map((problem) => report.line('error', problem));
+    const unset = errors.some((error) => error.code === 'harness-unset');
+    if (unset)
+      lines.push(
+        "Set each Agent's harness, model and effort in the gg.json that declares it; gg init --harness " +
+          `${config.exampleHarnesses().join(' or ')} writes them into the example, from ${config.EXAMPLES_DIRECTORY}.`,
+      );
+    throw preflightFailed(lines, unset ? 2 : 1);
+  }
+  const admitted = [...verdict.flows].filter(([name]) => !verdict.misfits.has(name));
+  const flows = new Map(admitted.map(([name, flow]) => [name, pin(name, flow, settings)]));
+  return { flows, selected: flows.get(flowName)!, warnings: verdict.warnings, settings };
+}
 
 // Every line and error a Run prints names its repository on its first line, so two gg processes can share a terminal or
 // a log: by its checkout's folder until gh has given its owner/name, then by that (#321).
@@ -116,7 +206,7 @@ export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
   let label = checkout.folder;
   const named = (message: string) => `[${label}] ${message}`;
   try {
-    const admitted = await runFlows.admitConfiguration({ ...options, commonDir: checkout.gitCommonDir });
+    const admitted = await admitConfiguration({ ...options, commonDir: checkout.gitCommonDir });
     const repo = await readRepository(options.deps.gh, checkout);
     label = repo.repository;
     return await runRepo(repo, { ...admitted, named }, options);
@@ -134,7 +224,7 @@ async function readRepository(gh: github.Gh, checkout: Omit<admission.Repo, 'rep
   const found = report.newReport();
   const message = `cannot read the GitHub owner/name of ${checkout.mainRoot}: ${error}`;
   report.error(found, '', 'repository-unread', message, { path: checkout.mainRoot, reason: error });
-  throw Object.assign(new Error(`preflight failed:\n${report.line('error', found.errors[0]!)}`), { exitCode: 1 });
+  throw preflightFailed([report.line('error', found.errors[0]!)], 1);
 }
 
 // The Ticket, or an Epic's ready sub-issues. Every sub-issue is read before the Run's first effect, so an epic with
@@ -161,7 +251,7 @@ function labelEnsuringGh(
   gh: github.Gh,
   repo: admission.Repo,
   settings: config.Settings,
-  flows: runFlows.PinnedFlow[],
+  flows: PinnedFlow[],
 ): github.Gh {
   const flowLabels = [
     labels.labelsFor(settings.labelPrefix).await(cleanupHold.AWAIT_VERTEX),
@@ -190,7 +280,7 @@ function labelEnsuringGh(
 // may run under, and the Run's log: each line goes to the run log and the caller's log, named.
 function startRun(
   repo: admission.Repo,
-  { flows, selected, clock }: { flows: runFlows.PinnedFlow[]; selected: runFlows.PinnedFlow; clock: clockModule.Clock },
+  { flows, selected, clock }: { flows: PinnedFlow[]; selected: PinnedFlow; clock: clockModule.Clock },
   { named, log }: { named: (message: string) => string; log: (line: string) => void },
 ) {
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
@@ -206,7 +296,7 @@ function startRun(
 }
 
 // What admission gave the Run, and how its lines name the repository.
-type Admitted = Awaited<ReturnType<typeof runFlows.admitConfiguration>> & { named: (message: string) => string };
+type Admitted = Awaited<ReturnType<typeof admitConfiguration>> & { named: (message: string) => string };
 
 async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOptions) {
   const { flows, selected, warnings, settings, named } = admitted;
@@ -219,7 +309,7 @@ async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOpt
   const eventLog = events.eventLog(repo.gitCommonDir, {}, database);
   eventLog('run_start', { run: runId });
   runLog(
-    `run ${runId} started for #${target} under Flow ${flow.name} from ${runFlows.sourceText(source)} ` +
+    `run ${runId} started for #${target} under Flow ${flow.name} from ${configurationCheck.sourceText(source)} ` +
       `(config ${hash.slice(0, 12)})`,
   );
   for (const warning of warnings) runLog(report.line('warning', warning));

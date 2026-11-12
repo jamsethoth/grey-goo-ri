@@ -338,7 +338,7 @@ test('a pending report waiting out a sibling cooldown checks the human override 
   });
   assert.equal(first.fault, true, JSON.stringify(first));
   const mid = loadTicket(fixture);
-  assert.ok(interpreter.pendingReport(mid));
+  assert.equal(interpreter.resumption(mid), 'finish-report');
   const posted = fixture.gh.calls.filter((call) => fakeGhModule.isCommentPost(call.args)).length;
 
   // Another Ticket of the next Run is backing off; a human sets needs-human during the wait.
