@@ -1,15 +1,39 @@
 // The write-ahead log an Execution Record keeps: the intent, evidence and completion of every side effect, by its
 // Action Marker, so Reconciliation can tell which effects landed (request 3.5). The State Database's writes append to
 // it (record.createStateDatabase); these read it.
+import type * as approvalAction from './approval-action.ts';
+import type * as effectActions from './effect-actions.ts';
+import type * as integrity from './integrity.ts';
+import type * as jsonValue from './json-value.ts';
+import type * as pendingReport from './pending-report.ts';
 import type * as record from './record.ts';
+import type * as rescue from './rescue.ts';
+import type * as visit from './visit.ts';
+
+// What an intent saves ahead of its effect, by the effect's kind: enough to redo the effect, or to find it done.
+export type Payload =
+  | effectActions.CommitPayload
+  | effectActions.PushPayload
+  | effectActions.CommentPayload
+  | effectActions.PrUpsertPayload
+  | effectActions.PrReadyPayload
+  | pendingReport.LabelPayload
+  | approvalAction.Consumption
+  | rescue.RescuePayload
+  | visit.ResetPayload
+  | { baseline: integrity.IntegrityBaseline };
+
+// What a side effect leaves as proof, by its effect's own fields: a sha, an id, a url. A settled Action's also holds
+// its Resolution's fields, which the next Attempt reads.
+export type Evidence = Record<string, jsonValue.JsonValue | visit.RuleIdentity | visit.CheckSignal | undefined>;
 
 // One step of a side effect in the write-ahead log.
 export interface WriteAheadEntry {
   step: 'intent' | 'evidence' | 'complete';
   actionMarker: string;
   effect: string | null;
-  payload: unknown;
-  evidence: Record<string, unknown> | null;
+  payload: Payload | null;
+  evidence: Evidence | null;
   time: string;
 }
 
@@ -18,7 +42,7 @@ export const entryOf = (
   step: WriteAheadEntry['step'],
   actionMarker: string,
   effect: string | null,
-  { payload = null, evidence = null }: { payload?: unknown; evidence?: WriteAheadEntry['evidence'] } = {},
+  { payload = null, evidence = null }: { payload?: Payload | null; evidence?: Evidence | null } = {},
 ): WriteAheadEntry => ({
   step,
   actionMarker,

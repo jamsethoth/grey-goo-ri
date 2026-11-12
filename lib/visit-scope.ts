@@ -35,7 +35,7 @@ export interface Running {
 
 // A Vertex with no agent Action has the implicit Claim ok, which requires all its Checks (R11f).
 export const IMPLICIT_OK: Omit<visit.AgentCall, 'baseline'> = {
-  harnessResult: { status: 'completed' },
+  harnessResult: { status: 'completed', sessionId: null, transcriptPath: null, usage: { cumulative: {}, delta: {} } },
   claim: { valid: true, token: 'ok', reason: null },
   response: null,
   signal: { status: 'completed', response: { claim: 'ok' }, failure: null },
@@ -128,7 +128,7 @@ export const outputOf = (executionRecord: record.ExecutionRecord, actionIdentity
 export function recordOutput(
   executionRecord: record.ExecutionRecord,
   actionIdentity: marker.ActionIdentity,
-  value: Record<string, unknown>,
+  value: visit.ActionOutputValue,
 ) {
   const entry = outputOf(executionRecord, actionIdentity);
   if (entry) Object.assign(entry.value, value);

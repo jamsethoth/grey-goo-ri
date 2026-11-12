@@ -8,6 +8,7 @@ import * as github from './github.ts';
 import * as outcome from './outcome.ts';
 import type * as marker from './marker.ts';
 import type { RunContext } from './run-context.ts';
+import type * as writeAhead from './write-ahead.ts';
 
 // A label write's intent, as Effect Evidence's finder reads it.
 export type LabelPayload = { ticket: number; add: string[]; remove: string[] };
@@ -40,11 +41,11 @@ export async function keepPendingIfUnread<Result>(
 // and setLabels has reported it.
 export const performLabels =
   (runContext: RunContext) =>
-  async ({ ticket, add, remove }: LabelPayload): Promise<Record<string, unknown>> => {
+  async ({ ticket, add, remove }: LabelPayload): Promise<writeAhead.Evidence> => {
     if (!add.length && !remove.length) return { ok: true };
     const ok = await runContext.gh.setLabels(ticket, { add, remove }, runContext.cwd, {
       log: runContext.log,
-      ev: runContext.events as github.LabelReport['ev'],
+      ev: runContext.events,
     });
     if (!ok) throw pending(`The label update on #${ticket} failed, so the next Run makes it.`);
     return { ok };

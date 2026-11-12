@@ -44,6 +44,10 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 - `null` means deliberately empty in anything persisted or emitted; `undefined` means not given. Use `== null` only to
   test for either. In a configuration file, `null` is never a value: the validator reports it (`null-value`). A missing
   key is optional or `required-key-missing`: each source is read whole, and nothing is inherited (ADR 0022).
+- Saved data is JSON by type and at run time: the Execution and Epic Record rows, the Pinned Configuration, an Event and
+  the Run directory's `flow.json` serialize through `jsonValue.text` (`lib/json-value.ts`), never `JSON.stringify`. A
+  saved field is typed by what gg builds, or as `JsonValue` when it was parsed (configuration, a Structured Response, a
+  Harness's output); `unknown` there fails tsc at the save (#342).
 - Seams: the deps (`gh`, `git`, `exec`, `locks`, `database`, `clock`, and `integrity` built from git and locks) are
   built once in `bin/gg.ts` and passed down as one `deps` key typed `Deps` (ADR 0019): `run.runTarget` takes it and
   passes it on to `interpreter.runExecution`. New code takes what it needs from its caller as a parameter; ESLint fails
@@ -93,9 +97,10 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/integrity.ts` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) and their types: the snapshot, the Attempt baseline, Integrity Violations |
 | `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
 | `lib/record-json.ts` | a record's row: the Execution Record's JSON type (`ExecutionRecordJson`) and its only Map conversion (`toJson`, `fromJson`), the parse that tells a corrupt row (`RecordCorruptError`); `lib/record.ts` re-exports what callers use |
+| `lib/json-value.ts` | the JSON gg saves: its type (`JsonValue`), the typed gate (`JsonChecked`) and `text`, the one function every save path serializes through: it writes a copy checked at run time (`checked`), which refuses what JSON cannot hold, by its path |
 | `lib/state-database.ts` | the State Database file: its creation, which only `gg init` makes (ADR 0023), one connection per repository that refuses a missing or unknown database, Pinned Configurations and reusable Check results |
-| `lib/write-ahead.ts` | the write-ahead log's entries and what reads them: open intents, evidence, the last commit |
-| `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union) |
+| `lib/write-ahead.ts` | the write-ahead log's entries, what an intent and its evidence hold (`Payload`, `Evidence`), and what reads them: open intents, evidence, the last commit |
+| `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union, an Action's outputs, a History item) |
 | `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.ts` | Reconciliation of a record against git and GitHub at resume, and admission's load of a record or its corrupt row |
 | `lib/effect-evidence.ts` | Effect Evidence: an open intent's side effect looked for by its Action Marker in git or on GitHub, one finder per effect kind |

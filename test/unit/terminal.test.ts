@@ -211,7 +211,7 @@ test('a hold or an abandonment is decided as its own Terminal', async (t) => {
 
 test("a decision found by a Terminal's own retry is taken by the Terminal", async (t) => {
   const { context, executionRecord, fakeGh } = await support.executionContext(t);
-  executionRecord.terminalReason = { decidedBy: {}, outcome: 'needs-human', rule: null, text: 'Stopped.' };
+  executionRecord.terminalReason = { decidedBy: { hold: null }, outcome: 'needs-human', rule: null, text: 'Stopped.' };
   fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
   fakeGh.fail({ matches: support.commentPost, status: 502 });
   const result = await terminal.terminal(context, 'needs-human', { outcome: 'needs-human' });

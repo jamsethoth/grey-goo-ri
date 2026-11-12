@@ -160,7 +160,7 @@ test("a comment gg recorded posting is not in the reply, and an answer that past
   const ggMarker = golden.markerOf(executionRecord, 'approve', 1, 'ask.note.1');
   const ggComment = fixture.gh.humanComments(`gg's note\n\n<!-- gg-action ${ggMarker} -->`, OWNER);
   executionRecord.writeAheadLog.push(
-    writeAhead.entryOf('intent', ggMarker, 'comment', { payload: {} }),
+    writeAhead.entryOf('intent', ggMarker, 'comment', { payload: { branch: 'ticket/8', sha: 'abc' } }),
     writeAhead.entryOf('evidence', ggMarker, 'comment', { evidence: { id: ggComment } }),
     writeAhead.entryOf('complete', ggMarker, 'comment'),
   );

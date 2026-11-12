@@ -203,6 +203,27 @@ test('saving a record never drops a field createExecutionRecord declared', async
   assert.equal(record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
 });
 
+test('decidedBy is exactly one of a hold, a human or an Action, and any of its keys reads without a test', () => {
+  const forms: record.DecidedBy[] = [
+    { hold: 'dirty-worktree' },
+    { hold: null },
+    { human: 'gg:needs-human' },
+    { vertex: 'red', visit: 1, action: 'agent', recovery: 0 },
+    { vertex: 'red', visit: null, action: null, recovery: 0 },
+  ];
+  assert.deepEqual(
+    forms.map((decidedBy) => decidedBy.hold ?? decidedBy.human ?? decidedBy.vertex),
+    ['dirty-worktree', undefined, 'gg:needs-human', 'red', 'red'],
+  );
+  // @ts-expect-error two deciders at once
+  const mixed: record.DecidedBy = { hold: 'dirty-worktree', human: 'gg:needs-human' };
+  // @ts-expect-error no decider
+  const none: record.DecidedBy = {};
+  // @ts-expect-error half an Action's identity
+  const partial: record.DecidedBy = { vertex: 'red' };
+  assert.equal([mixed, none, partial].length, 3);
+});
+
 test('a fresh Epic Record declares every field it can hold', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const epicRecord = record.createEpicRecord({ commonDir, epic: 1 });
@@ -214,7 +235,7 @@ test('a fresh Epic Record declares every field it can hold', async (t) => {
 test('a write-ahead entry carries every field, null where its step has none', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
-  record.intent(executionRecord, 'm1', 'commit', { tree: 't1' });
+  record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   record.evidence(executionRecord, 'm1', { sha: 's1' });
   record.complete(executionRecord, 'm1');
   const entries = executionRecord.writeAheadLog;
@@ -222,7 +243,13 @@ test('a write-ahead entry carries every field, null where its step has none', as
   assert.deepEqual(
     entries.map(({ time, ...entry }) => entry),
     [
-      { step: 'intent', actionMarker: 'm1', effect: 'commit', payload: { tree: 't1' }, evidence: null },
+      {
+        step: 'intent',
+        actionMarker: 'm1',
+        effect: 'commit',
+        payload: { message: 'red', tree: 't1', parent: 'p1' },
+        evidence: null,
+      },
       { step: 'evidence', actionMarker: 'm1', effect: 'commit', payload: null, evidence: { sha: 's1' } },
       { step: 'complete', actionMarker: 'm1', effect: 'commit', payload: null, evidence: null },
     ],
@@ -303,13 +330,19 @@ test('a record with visits entries survives the golden-row comparison and a raw-
 test('the write-ahead log records intent, evidence and completion per marker', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
-  record.intent(executionRecord, 'm1', 'commit', { message: 'red' });
+  record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   record.evidence(executionRecord, 'm1', { sha: 'deadbeef' });
   record.complete(executionRecord, 'm1');
   assert.deepEqual(
     executionRecord.writeAheadLog.map(({ time, ...entry }) => entry),
     [
-      { step: 'intent', actionMarker: 'm1', effect: 'commit', payload: { message: 'red' }, evidence: null },
+      {
+        step: 'intent',
+        actionMarker: 'm1',
+        effect: 'commit',
+        payload: { message: 'red', tree: 't1', parent: 'p1' },
+        evidence: null,
+      },
       { step: 'evidence', actionMarker: 'm1', effect: 'commit', payload: null, evidence: { sha: 'deadbeef' } },
       { step: 'complete', actionMarker: 'm1', effect: 'commit', payload: null, evidence: null },
     ],
@@ -367,13 +400,13 @@ test('a record transition and its event commit together', async (t) => {
 test('openIntents lists intents without completion oldest first', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const executionRecord = knownRecord(commonDir);
-  record.intent(executionRecord, 'm1', 'commit', {});
+  record.intent(executionRecord, 'm1', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   assert.deepEqual(
     writeAhead.openIntents(executionRecord).map((entry) => entry.actionMarker ?? entry),
     ['m1'],
   );
-  record.intent(executionRecord, 'm2', 'push', {});
-  record.intent(executionRecord, 'm3', 'comment', {});
+  record.intent(executionRecord, 'm2', 'push', { branch: 'ticket/8', sha: 'abc' });
+  record.intent(executionRecord, 'm3', 'comment', { branch: 'ticket/8', sha: 'abc' });
   record.evidence(executionRecord, 'm2', { ok: true });
   record.complete(executionRecord, 'm2');
   assert.deepEqual(
@@ -499,7 +532,7 @@ test('the State Database waits up to 60 s for another writer', async (t) => {
 test('savePinnedConfiguration stores a pinned configuration once per hash and loadPinnedConfiguration reads it back', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-record-');
   const pinned = { flow: { name: 'default' }, personas: { implementer: '# implementer\n' } };
-  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', JSON.stringify(pinned));
+  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', pinned);
   const firstSeen = () =>
     withDb(commonDir, (db) => db.prepare("SELECT firstSeen FROM configs WHERE hash = 'hash-1'").get()?.firstSeen);
   const first = firstSeen();
@@ -510,7 +543,7 @@ test('savePinnedConfiguration stores a pinned configuration once per hash and lo
   // An older firstSeen than any save could write, so a second save that replaced it would show.
   const older = '2020-01-01T00:00:00.000Z';
   withDb(commonDir, (db) => db.prepare("UPDATE configs SET firstSeen = ? WHERE hash = 'hash-1'").run(older));
-  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', JSON.stringify(pinned));
+  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', pinned);
   assert.equal(firstSeen(), older, 'the second save keeps the first firstSeen');
   withDb(commonDir, (db) => assert.equal(db.prepare('SELECT count(*) AS n FROM configs').get()?.n, 1));
   assert.deepEqual(await stateDatabase.loadPinnedConfiguration(commonDir, 'hash-1'), pinned);
@@ -572,7 +605,7 @@ test('close releases the database so the directory can be removed', async (t) =>
   t.after(() => rm(commonDir, { recursive: true, force: true }));
   stateDatabase.create(commonDir);
   record.save(knownRecord(commonDir));
-  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', '{}');
+  await stateDatabase.savePinnedConfiguration(commonDir, 'hash-1', {});
   assert.ok(existsSync(dbPath(commonDir)), 'gg/gg.db exists');
   await stateDatabase.close(commonDir);
   rmSync(commonDir, { recursive: true });

@@ -2,6 +2,7 @@
 // as `<action id>.<output>` (W2). The Procedures themselves are configuration, declared in a Source; the interpreter
 // runs each kind.
 
+import type * as jsonValue from './json-value.ts';
 import type * as referencePaths from './reference-paths.ts';
 import type * as rules from './rules.ts';
 
@@ -32,7 +33,7 @@ export interface Action {
   id: string;
   do: ActionKind;
   kind?: CheckKind;
-  [key: string]: unknown;
+  [key: string]: jsonValue.JsonValue | undefined;
 }
 
 // A Claim token (R11f): held to the Checks it requires, or a stop, which may name its comment template.

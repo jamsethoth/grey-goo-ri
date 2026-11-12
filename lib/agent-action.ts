@@ -9,6 +9,7 @@ import type * as commandCleanup from './command-cleanup.ts';
 import * as config from './config.ts';
 import * as effects from './effects.ts';
 import type * as integrity from './integrity.ts';
+import type * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
 import type * as outcome from './outcome.ts';
 import * as record from './record.ts';
@@ -260,7 +261,7 @@ function decideCall(
     claim,
     checks: visitScope.resolverChecks(integrityRows, []),
     retries: executionRecord.retries[key] ?? {},
-    cleanup: harnessResult.cleanup as outcome.Signals['cleanup'],
+    cleanup: harnessResult.cleanup,
   });
   if (resolution.retryKind)
     (executionRecord.retries[key] ??= {})[resolution.retryKind] =
@@ -268,7 +269,7 @@ function decideCall(
   const surfaces = violations.length ? [...new Set(violations.map((violation) => violation.surface))] : null;
   const done = {
     ...resolution,
-    sessionId: harnessResult.sessionId as string | null,
+    sessionId: harnessResult.sessionId,
     reason: claim.reason ?? null,
     surfaces,
     attempt: actionIdentity.attempt,
@@ -301,7 +302,7 @@ export async function completeHeld(
     fields: {
       cleanup,
       ...decisionFields(resolution, {
-        result: held.harnessResult as unknown as HarnessResult,
+        result: held.harnessResult,
         claim: held.claim,
         integrityRows,
       }),
@@ -312,7 +313,7 @@ export async function completeHeld(
 }
 
 // The Action Event's agent fields: the Agent the call ran as and the tools its Harness resolved.
-const agentFields = ({ agent: pinned, persona }: Own, tools: unknown) => ({
+const agentFields = ({ agent: pinned, persona }: Own, tools: jsonValue.JsonValue) => ({
   agent: true,
   harness: pinned.harness,
   agentCliVersion: null,

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as config from '../../lib/config.ts';
 import type * as integrity from '../../lib/integrity.ts';
+import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as publicText from '../../lib/public-text.ts';
@@ -469,7 +470,8 @@ test('pr-ready holds when the worktree changed after its Check passed', async (t
   // A committed file is rewritten once publish's test has passed, so the worktree is no longer the commit it publishes.
   fixture.options.events = (type, data) => {
     appendEvent(type, data);
-    if (type === 'action' && data!.vertex === 'publish' && data!.action === 'test')
+    const action = type === 'action' ? (data as events.EventInput<'action'>) : null;
+    if (action?.vertex === 'publish' && action.action === 'test')
       writeFileSync(join(fixture.worktree, 'lib', 'add.mjs'), 'export const add = (a, b) => b + a;\n');
   };
   const result = await interpreter.runExecution(fixture.options);

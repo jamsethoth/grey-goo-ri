@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
+import * as jsonValue from './json-value.ts';
 import type * as model from './model.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
@@ -38,7 +39,7 @@ export interface Settings {
   baseBranch: string;
   worktreeRoot: string;
   maxParallel: number;
-  commands: Record<string, unknown>;
+  commands: Record<string, jsonValue.JsonValue>;
   testPaths: string[];
   approvers?: string[];
 }
@@ -179,10 +180,8 @@ export function namedFile(files: unknown, name: unknown): string {
   return (files as SourceFiles)[name as string]!.bytes;
 }
 
-// Sorted keys at every depth, so the hash ignores key order. A Map has no keys here and would hash as {} in silence,
-// so it is refused: the model's toJson gives the JSON to hash (#174).
+// Sorted keys at every depth, so the hash ignores key order.
 function sortedKeys(value: unknown): unknown {
-  if (value instanceof Map) throw new Error('a Map cannot be hashed; convert it to an object first (model.toJson)');
   if (Array.isArray(value)) return value.map(sortedKeys);
   if (!value || typeof value !== 'object') return value;
   const object = value as Record<string, unknown>;
@@ -193,13 +192,17 @@ function sortedKeys(value: unknown): unknown {
   );
 }
 
-export const hashOf = (value: unknown): string => sha256(JSON.stringify(sortedKeys(value)));
+// A Map has no keys to sort and would hash as {} in silence, so the hash takes only what a save takes: the model's
+// toJson gives the JSON to hash (#174).
+export function hashOf(value: unknown): string {
+  return sha256(JSON.stringify(sortedKeys(jsonValue.checked(value, 'the value to hash'))));
+}
 
 // What a Pinned Configuration holds.
 export interface PinnedConfiguration {
   flow: model.ResolvedFlowJson;
   files: SourceFiles;
-  harnesses: Record<string, unknown>;
+  harnesses: Record<string, jsonValue.JsonValue>;
   launchProfile?: string | null;
   commands: Settings['commands'];
   testPaths: string[];

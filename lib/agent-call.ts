@@ -4,6 +4,7 @@ import * as checks from './checks.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import * as effectErrors from './effect-errors.ts';
 import type * as integrity from './integrity.ts';
+import type * as jsonValue from './json-value.ts';
 import * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
 import type { Harness, HarnessResult, RunContext } from './run-context.ts';
@@ -17,7 +18,7 @@ export interface Attempt extends visitScope.Running {
 }
 // What one Attempt's guarded call gave.
 export interface Called {
-  response: unknown;
+  response: jsonValue.JsonValue;
   result: HarnessResult;
   failure: visit.HarnessFailure | null;
   violations: integrity.IntegrityViolation[];

@@ -138,13 +138,14 @@ test('the repeat Check appends once per visit across a crash', async (t) => {
   const appendEvent = fixture.options.events;
   let crashed = false;
   // gg dies as the repeat Check of the first review records its Event.
-  const crashingEvents = ((type: string, data: { vertex?: string; action?: string }) => {
-    if (!crashed && type === 'action' && data.vertex === 'reviewer' && data.action === 'repeat') {
+  const crashingEvents: typeof appendEvent = (type, data) => {
+    const action = type === 'action' ? (data as events.EventInput<'action'>) : null;
+    if (!crashed && action?.vertex === 'reviewer' && action.action === 'repeat') {
       crashed = true;
       throw new interpreter.CrashError('crash at the repeat Event');
     }
-    return (appendEvent as (type: string, data: unknown) => unknown)(type, data);
-  }) as typeof appendEvent;
+    return appendEvent(type, data);
+  };
   await assert.rejects(
     interpreter.runExecution({ ...fixture.options, events: crashingEvents }),
     // The Event is appended in the save's transaction, so the crash surfaces as a failed save.
@@ -256,13 +257,14 @@ test('a label update whose failure was saved before its completion is retried on
   let crashed = false;
   // The ready-for-qa label does not land, and gg dies as that Action records its Event: { ok: false } is saved,
   // uncompleted.
-  const crashingEvents = ((type: string, data: { vertex?: string; action?: string }) => {
-    if (!crashed && type === 'action' && data.vertex === 'ready-for-qa' && data.action === 'end-label') {
+  const crashingEvents: typeof appendEvent = (type, data) => {
+    const action = type === 'action' ? (data as events.EventInput<'action'>) : null;
+    if (!crashed && action?.vertex === 'ready-for-qa' && action.action === 'end-label') {
       crashed = true;
       throw new interpreter.CrashError('crash at the label Event');
     }
-    return (appendEvent as (type: string, data: unknown) => unknown)(type, data);
-  }) as typeof appendEvent;
+    return appendEvent(type, data);
+  };
   await assert.rejects(
     interpreter.runExecution({
       ...fixture.options,

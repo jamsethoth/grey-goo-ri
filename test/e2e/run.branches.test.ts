@@ -156,7 +156,7 @@ test('fresh admission reuses its Ticket branch after a title change', async (t) 
 // An Execution of this Ticket recorded on another Ticket's branch, with one outstanding intent.
 async function foreignBranchRecord(fixture: RunFixture, branch: string) {
   const executionRecord = unvisitedExecution.unvisitedExecution(fixture, { branch });
-  record.intent(executionRecord, 'seed-intent', 'commit', { message: 'red' });
+  record.intent(executionRecord, 'seed-intent', 'commit', { message: 'red', tree: 't1', parent: 'p1' });
   assert.equal(writeAhead.openIntents(executionRecord).length, 1);
   return executionRecord;
 }

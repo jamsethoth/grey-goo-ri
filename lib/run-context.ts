@@ -8,6 +8,7 @@ import * as events from './events.ts';
 import type * as exec from './exec.ts';
 import type * as github from './github.ts';
 import * as integrity from './integrity.ts';
+import type * as jsonValue from './json-value.ts';
 import type * as locks from './locks.ts';
 import * as marker from './marker.ts';
 import type * as model from './model.ts';
@@ -67,18 +68,24 @@ export interface HarnessResult {
   status: visit.CallSignal['status'];
   sessionId: string | null;
   transcriptPath: string | null;
-  usage: { cumulative: unknown; delta: unknown };
-  cleanup?: Pick<commandCleanup.CleanupReport, 'confirmed' | 'survivors'> & Partial<commandCleanup.CleanupReport>;
-  [field: string]: unknown;
+  usage: { cumulative: events.Usage; delta: events.Usage };
+  exitCode?: number | null;
+  exitSignal?: string | null;
+  finalEventSubtype?: string | null;
+  // What the Harness's own stream reported, as it parsed it: diagnostic only.
+  sessionInit?: jsonValue.JsonValue;
+  permissionDenials?: jsonValue.JsonValue;
+  commandsRun?: jsonValue.JsonValue;
+  cleanup?: commandCleanup.CallCleanup;
 }
 export interface Harness {
   run(call: Record<string, unknown>): Promise<{
-    response: unknown;
+    response: jsonValue.JsonValue;
     result: HarnessResult;
     failure: visit.HarnessFailure | null;
   }>;
-  resolveTools(agent: unknown): unknown;
-  capabilities: { confinement?: unknown; sessionResume?: { supported?: boolean } };
+  resolveTools(agent: unknown): jsonValue.JsonValue;
+  capabilities: { confinement?: string | null; sessionResume?: { supported?: boolean } };
 }
 
 export interface Ticket {
@@ -108,7 +115,7 @@ export interface ExecutionOptions {
   protectedPaths: string[];
   log: (line: string) => void;
   files: unknown;
-  commands?: Record<string, unknown>;
+  commands?: Record<string, jsonValue.JsonValue>;
   testPaths?: string[];
   ticket?: Ticket;
   base?: string;

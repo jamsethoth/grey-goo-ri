@@ -154,7 +154,7 @@ export const runSettings = ({ repository, user }: config.Configuration): config.
   baseBranch: repository.baseBranch as string,
   worktreeRoot: user.worktreeRoot as string,
   maxParallel: user.maxParallel as number,
-  commands: (repository.commands ?? {}) as Record<string, unknown>,
+  commands: (repository.commands ?? {}) as config.Settings['commands'],
   testPaths: repository.testPaths as string[],
   ...(repository.approvers !== undefined && { approvers: repository.approvers as string[] }),
 });

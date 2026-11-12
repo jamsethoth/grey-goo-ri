@@ -1,10 +1,7 @@
-// An Action Event's Signals as a case reads them; the event declares them only as a record (lib/events.ts).
-import type * as visit from '../../lib/visit.ts';
+// An Action Event's Signals as a case reads them: the Claim and the Check signals, which an agent or Check Action's
+// Event always holds (lib/events.ts declares each Signal optional, since an effect reads none).
+import type * as events from '../../lib/events.ts';
 
-export interface ActionSignals {
-  claim: visit.ClaimSignal;
-  checks: visit.CheckSignal[];
-  [signal: string]: unknown;
-}
+export type ActionSignals = events.ActionSignals & Required<Pick<events.ActionSignals, 'claim' | 'checks'>>;
 
-export const signalsOf = (event: { signals: Record<string, unknown> }): ActionSignals => event.signals as ActionSignals;
+export const signalsOf = (event: { signals: events.ActionSignals }): ActionSignals => event.signals as ActionSignals;
