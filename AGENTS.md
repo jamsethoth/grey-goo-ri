@@ -104,7 +104,8 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
 | `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.ts` | Reconciliation of a record against git and GitHub at resume, and admission's load of a record or its corrupt row |
 | `lib/effect-evidence.ts` | Effect Evidence: an open intent's side effect looked for by its Action Marker in git or on GitHub, one finder per effect kind |
-| `lib/events.ts` | event schema 2 append and read from the State Database |
+| `lib/events.ts` | event schema 2: each Event's declaration, its builders and its append to the State Database |
+| `lib/event-read.ts` | the event log read back: each row checked against its Event's declaration, its fields gg reads and its indexed columns, a refused row an `EventCorruptError` naming it; whether an Execution's ticket_end has landed |
 | `lib/labels.ts` | State, Await and Decide Label names and prefix, and the end states |
 | `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |
 | `lib/locks.ts` | ticket, epic and repo locks as `node:sqlite` exclusive transactions |

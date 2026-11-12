@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as terminal from '../../lib/terminal.ts';
 import * as support from '../support/execution-context.ts';
@@ -36,7 +37,7 @@ function remoteError(context: support.ExecutionContext) {
   return support.rejection(support.remoteComment(context));
 }
 const ticketEnds = (commonDir: string, execution: string) =>
-  events.executionEvents(commonDir, execution).filter((event) => event.type === 'ticket_end');
+  eventRead.executionEvents(commonDir, execution).filter((event) => event.type === 'ticket_end');
 
 test('a hold posts its reason with its advice, labels needs-human and lands held with ticket_end', async (t) => {
   const { context, executionRecord, fakeGh, commonDir } = await support.executionContext(t);

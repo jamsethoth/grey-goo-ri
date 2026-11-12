@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { runInNewContext } from 'node:vm';
 import * as config from '../../lib/config.ts';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as flow from '../../lib/flow.ts';
 import * as jsonValue from '../../lib/json-value.ts';
@@ -408,7 +409,7 @@ test('the Event append refuses a Map, a Set and an unknown', (t) => {
   assert.throws(() => log('label_failed', withMap), /change\.add is a Map/);
   // @ts-expect-error a Set in an Event's field
   assert.throws(() => log('label_failed', withSet), /change\.remove is a Set/);
-  assert.deepEqual(events.readEvents(commonDir), [], 'neither Event was appended');
+  assert.deepEqual(eventRead.readEvents(commonDir), [], 'neither Event was appended');
   // @ts-expect-error an unknown as an Event's field
   log('label_failed', withUnknown);
   // Every field of an Event's input is optional, which a record of unknown values also fits: as the fields of one
@@ -425,7 +426,7 @@ test('the Event append refuses a Map, a Set and an unknown', (t) => {
   // @ts-expect-error a key the Event does not declare, which fails when the Event is built
   assert.throws(() => log('label_failed', { ticket: 8, error: 'no label', change: {}, owner: 'me' }), /\bowner\b/);
   assert.deepEqual(
-    events.readEvents(commonDir).map((event) => event.type),
+    eventRead.readEvents(commonDir).map((event) => event.type),
     ['label_failed', 'label_failed'],
   );
 });

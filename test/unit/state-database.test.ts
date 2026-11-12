@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
@@ -121,12 +122,14 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
     lifecycleEvent: null,
     diffStats: null,
     eventLog: (commonDir) => events.eventLog(commonDir)('run_start', { run: 'r1' }),
-    readEvents: (commonDir) => events.readEvents(commonDir),
-    executionEvents: (commonDir) => events.executionEvents(commonDir, '8.run-1'),
-    hasTicketEnd: (commonDir) => events.hasTicketEnd(commonDir, '8.run-1'),
+  },
+  eventRead: {
+    readEvents: (commonDir) => eventRead.readEvents(commonDir),
+    executionEvents: (commonDir) => eventRead.executionEvents(commonDir, '8.run-1'),
+    hasTicketEnd: (commonDir) => eventRead.hasTicketEnd(commonDir, '8.run-1'),
   },
 };
-const MODULES: Record<string, object> = { stateDatabase, record, events };
+const MODULES: Record<string, object> = { stateDatabase, record, events, eventRead };
 
 // A thrown class is no entry point; every other function export is one or says it is not.
 const isClass = (value: unknown) => /^class\b/.test(Function.prototype.toString.call(value));

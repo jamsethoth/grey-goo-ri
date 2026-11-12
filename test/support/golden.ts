@@ -5,6 +5,7 @@ import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as gitModule from '../../lib/git.ts';
 import * as github from '../../lib/github.ts';
@@ -381,7 +382,7 @@ function observedExecution(repos: Repos, planned: Planned) {
     files: configured.files,
     clock,
     sleeps,
-    readEvents: () => events.readEvents(commonDir),
+    readEvents: () => eventRead.readEvents(commonDir),
   };
 }
 

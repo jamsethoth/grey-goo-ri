@@ -6,6 +6,7 @@ import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effectEvidence from './effect-evidence.ts';
 import * as effects from './effects.ts';
+import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
@@ -32,9 +33,9 @@ const GG_PROTECTED_PATHS = ['.agents/', '.github/actions/', '.github/workflows/'
 // unprotected path.
 export function protectedFiles(harnesses: Record<string, { protectedPaths?: unknown }>): string[] {
   const declared = Object.entries(harnesses).flatMap(([name, { protectedPaths: paths }]) => {
-    if (!Array.isArray(paths) || !paths.every((path) => typeof path === 'string' && path))
+    if (!Array.isArray(paths) || !paths.every((path): path is string => typeof path === 'string' && path !== ''))
       throw new Error(`harness ${name} must declare protectedPaths as an array of paths`);
-    return paths as string[];
+    return paths;
   });
   return [...new Set([...GG_PROTECTED_PATHS, ...declared])].sort();
 }
@@ -42,14 +43,14 @@ export function protectedFiles(harnesses: Record<string, { protectedPaths?: unkn
 // A hold, fault or abandonment decided and saved, at admission or by a Terminal, whose ticket_end has not landed: the
 // next Run finishes its report.
 export const pendingReport = (executionRecord: record.ExecutionRecord): boolean =>
-  (!!executionRecord.admissionStop && !events.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
+  (!!executionRecord.admissionStop && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
   context.reportDecided(executionRecord);
 
 // Reconciliation looks for a remote effect as a retry does: a failed lookup is retried on the Action's budget.
 const findEffect =
   (runContext: RunContext): effectEvidence.FindEffect =>
   (entry: writeAhead.WriteAheadEntry, evidenceContext: effectEvidence.EvidenceContext) =>
-    remoteEffects.REMOTE_ACTIONS.includes(entry.effect as string)
+    entry.effect !== null && remoteEffects.REMOTE_ACTIONS.includes(entry.effect)
       ? remoteEffects.findEffectRetrying(runContext, entry, evidenceContext)
       : effectEvidence.findEffect(entry, evidenceContext);
 
@@ -62,9 +63,13 @@ export async function runExecution(options: context.ExecutionOptions): Promise<T
   const admission = options.admission ?? executionRecord.admissionStop;
   try {
     if (options.fault) throw options.fault;
+    // An admission's kind decides which of its fields it holds (lib/admission.ts builds each kind whole), which its
+    // Partial type cannot say.
+    /* eslint-disable @typescript-eslint/no-unsafe-type-assertion */
     if (admission?.kind === 'fault') throw new Error(admission.error as string);
     if (admission?.kind === 'hold') return await terminal.hold(runContext, admission as HoldDecision);
     if (admission?.kind === 'abandon') return await terminal.abandon(runContext, admission as AbandonDecision);
+    /* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
     if (runContext.laterRunReport) return await finishReport(runContext);
     // A record that has entered a Vertex is resumed, so GitHub and git are reconciled with it first.
     if (executionRecord.visits.size) {
@@ -215,7 +220,7 @@ async function endCaught(runContext: RunContext, caught: unknown): Promise<Termi
       fault: true,
       error: effectErrors.errorText(err),
     };
-    const runStop = terminalReport.runStopOf(executionRecord);
+    const runStop = terminalReport.runStopOf(executionRecord, runContext.log);
     if (runStop) result.runStop = runStop;
     return result;
   }

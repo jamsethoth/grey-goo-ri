@@ -385,6 +385,95 @@ test('lint fails a type imported by name from lib in a test file, and allows it 
 // JSON.stringify and an object spread write a Map as {} in silence (#174, #327). The typed rules need a file of
 // tsconfig.json's program, so the samples lint as this file, which nothing imports.
 const typedEslint = new ESLint({ cwd: root });
+
+// The read side of the event log takes its Event types from lib/event-read.ts's check, never from an assertion or
+// an `any` (#350): the type-aware rules, on exactly the lib modules that read through it.
+const READ_SIDE_RULES = [
+  '@typescript-eslint/no-unsafe-type-assertion',
+  '@typescript-eslint/no-unsafe-assignment',
+  '@typescript-eslint/no-unsafe-return',
+  '@typescript-eslint/no-unsafe-argument',
+  '@typescript-eslint/no-unsafe-member-access',
+  '@typescript-eslint/no-unsafe-call',
+];
+
+// An import of lib/event-read.ts from lib/ or any directory under it.
+const IMPORTS_EVENT_READ = /from '(?:\.\.?\/)+event-read\.ts'/;
+
+test('the importer census finds lib/event-read.ts imported from any lib directory', () => {
+  const specifiers = ["from './event-read.ts'", "from '../event-read.ts'", "from '../../event-read.ts'"];
+  assert.deepEqual(
+    specifiers.filter((specifier) => !IMPORTS_EVENT_READ.test(specifier)),
+    [],
+  );
+  assert.equal(IMPORTS_EVENT_READ.test("from './events.ts'"), false);
+});
+
+test('the read-side rules hold exactly the lib modules that import lib/event-read.ts', async () => {
+  const configured = new ESLint({ cwd: root });
+  const libFiles = readdirSync(`${root}lib`, { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.ts'))
+    .map((file) => `lib/${file.replaceAll('\\', '/')}`);
+  const importers = libFiles.filter(
+    (file) => file === 'lib/event-read.ts' || IMPORTS_EVENT_READ.test(readFileSync(root + file, 'utf8')),
+  );
+  assert.ok(importers.includes('lib/terminal-report.ts'), importers.join());
+  const ruled: string[] = [];
+  for (const file of libFiles) {
+    const { rules } = await configured.calculateConfigForFile(file);
+    const severities = READ_SIDE_RULES.map((rule) => [rule, rules?.[rule]?.[0] ?? 0]);
+    if (severities.some(([, severity]) => severity !== 0)) {
+      assert.deepEqual(
+        severities,
+        READ_SIDE_RULES.map((rule) => [rule, 2]),
+        file,
+      );
+      ruled.push(file);
+    }
+  }
+  assert.deepEqual(ruled, importers);
+});
+
+test('lint fails an Event typed by an assertion or an any on the read side, in any form', async () => {
+  const header = [
+    "import type * as events from './events.ts';",
+    'declare const value: unknown;',
+    'declare const text: string;',
+    'declare const end: events.TicketEndEvent;',
+    'declare const takes: (event: events.Event) => void;',
+    'type ReadEvent =',
+    '  | events.TicketEndEvent',
+    '  | null;',
+    'type Wrapped<Extra> = events.Event & Extra;',
+    'type OfAlias = ReadEvent;',
+  ];
+  const samples: [string, string | null][] = [
+    ['export const a = value as events.Event;', 'no-unsafe-type-assertion'],
+    ['export const b = text as unknown as events.ActionEvent;', 'no-unsafe-type-assertion'],
+    ['export const c = value as ReadEvent;', 'no-unsafe-type-assertion'],
+    ['export const d = value as Wrapped<{ extra: 1 }>;', 'no-unsafe-type-assertion'],
+    ['export const e = value as OfAlias;', 'no-unsafe-type-assertion'],
+    ['export const f = value as readonly events.Event[];', 'no-unsafe-type-assertion'],
+    ['export const g = <events.Event>value;', 'no-unsafe-type-assertion'],
+    ['export const h = (): events.Event => JSON.parse(text);', 'no-unsafe-return'],
+    ['export const i: events.Event = JSON.parse(text);', 'no-unsafe-assignment'],
+    ['export const j = takes(JSON.parse(text));', 'no-unsafe-argument'],
+    ['export const k = end as events.Event;', null],
+    ["export const l = 'action' as const;", null],
+  ];
+  const text = [...header, ...samples.map(([sample]) => sample)].join('\n');
+  const [result] = await typedEslint.lintText(`${text}\n`, { filePath: 'lib/event-read.ts' });
+  const found = samples.map((_sample, index) =>
+    result.messages
+      .filter((message) => message.line === header.length + index + 1 && message.ruleId?.includes('no-unsafe'))
+      .map((message) => message.ruleId),
+  );
+  assert.deepEqual(
+    found,
+    samples.map(([, rule]) => (rule ? [`@typescript-eslint/${rule}`] : [])),
+  );
+});
+
 const TYPED_HEADER = [
   "import type * as model from '../../lib/model.ts';",
   "import type * as record from '../../lib/record.ts';",

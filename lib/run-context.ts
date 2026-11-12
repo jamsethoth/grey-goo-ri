@@ -4,6 +4,7 @@ import * as checks from './checks.ts';
 import * as clockModule from './clock.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as effects from './effects.ts';
+import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import type * as exec from './exec.ts';
 import type * as github from './github.ts';
@@ -164,14 +165,16 @@ export const reportDecided = (executionRecord: record.ExecutionRecord): boolean 
     executionRecord.terminalStop?.held ||
     executionRecord.terminalStop?.error ||
     executionRecord.terminalStop?.abandoned
-  ) && !events.hasTicketEnd(executionRecord.commonDir, executionRecord.execution);
+  ) && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution);
 
 // The deps and options as one context; `integrity` and `testImmutability` default to the real ones over the git given.
 export function createRunContext(options: ExecutionOptions): RunContext {
   const { deps, ...given } = options;
   const { record: executionRecord } = options;
   const { clock = clockModule.WALL_CLOCK } = deps;
-  // A resumed record keeps the Run that wrote its markers, while its Events belong to the Run resuming it.
+  // A resumed record keeps the Run that wrote its markers, while its Events belong to the Run resuming it. The
+  // methods are attached below, so the literal is not yet a whole RunContext.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
   const runContext = {
     ...given,
     ...deps,
@@ -204,11 +207,10 @@ export function createRunContext(options: ExecutionOptions): RunContext {
 // their deterministic Actions record no confinement.
 function attachActionMethods(runContext: RunContext) {
   const { record: executionRecord, flow, clock } = runContext;
-  runContext.harnessOf = () =>
-    executionRecord.configurationSnapshot?.agent === null
-      ? null
-      : (runContext.harnesses?.[executionRecord.configurationSnapshot?.agent.harness as string] ??
-        (runContext.harness as Harness));
+  runContext.harnessOf = () => {
+    const agent = executionRecord.configurationSnapshot?.agent;
+    return agent == null ? null : (runContext.harnesses?.[agent.harness] ?? runContext.harness ?? null);
+  };
   // Records one Action Event: the Action's identity (with its attempt), when it began, and its outcome and payload.
   runContext.emit = (actionIdentity, startedAt, fields) =>
     runContext.events('action', {

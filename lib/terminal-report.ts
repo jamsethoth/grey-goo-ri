@@ -4,6 +4,7 @@ import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
 import type * as effectEvidence from './effect-evidence.ts';
 import * as effects from './effects.ts';
+import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as github from './github.ts';
 import * as labels from './labels.ts';
@@ -67,17 +68,23 @@ export const declaredStop = (stop: StopDeclaration): record.TerminalStop => ({
 
 // An Execution's run stop: the first of its Action Events whose Failure Class reaches the whole Run, or null. The
 // Events only grow, so no later Terminal can lose it (#251).
-export const runStopEvent = <Logged extends { type: string }>(executionEvents: Logged[]): Logged | null =>
-  executionEvents.find((event) => event.type === 'action' && reachOf(event as { failureClass?: string }) === 'run') ??
+export const runStopEvent = (executionEvents: events.Event[]): events.ActionEvent | null =>
+  executionEvents.filter((event) => event.type === 'action').find((event) => reachOf(event.failureClass) === 'run') ??
   null;
 
-const reachOf = ({ failureClass }: { failureClass?: string }) =>
-  outcome.FAILURE_CLASSES[failureClass as outcome.FailureClass]?.reach;
+const reachOf = (failureClass: string | null) =>
+  Object.entries(outcome.FAILURE_CLASSES).find(([name]) => name === failureClass)?.[1].reach;
 
-// The run stop an Execution's result reports, read from its Action Events.
-export function runStopOf(executionRecord: record.ExecutionRecord): { failureClass: string } | null {
-  const event = runStopEvent(events.executionEvents(executionRecord.commonDir, executionRecord.execution));
-  return event && { failureClass: (event as events.ActionEvent).failureClass as string };
+// The run stop an Execution's result reports, read from its Action Events. A row that fails the read's check is left
+// out and named in the log: the Terminal reading it has landed or is landing, and must not fail on another row (#350).
+export function runStopOf(
+  executionRecord: record.ExecutionRecord,
+  log: (line: string) => void,
+): { failureClass: string } | null {
+  const { commonDir, execution, ticket } = executionRecord;
+  const skipped = (err: eventRead.EventCorruptError) => log(`#${ticket} run stop: skipped ${err.message}`);
+  const failureClass = runStopEvent(eventRead.executionEvents(commonDir, execution, skipped))?.failureClass;
+  return failureClass == null ? null : { failureClass };
 }
 
 type StopFlags = Pick<record.TerminalStop, 'error' | 'held' | 'abandoned'>;
@@ -131,7 +138,7 @@ function tolerated<Result>(context: TerminalContext, stop: record.TerminalStop |
   if (!stop?.error) return pending;
   return pending.catch((err) => {
     if (effectErrors.fatal(err) || err instanceof effectErrors.EarlyTerminalError) throw err;
-    context.log(`#${context.record.ticket} fault report failed: ${(err as Error | undefined)?.message}`);
+    context.log(`#${context.record.ticket} fault report failed: ${effectErrors.errorText(err)}`);
   });
 }
 
@@ -286,7 +293,7 @@ export async function report(
       interrupted: stop?.interrupted,
     }),
   );
-  const runStop = runStopOf(executionRecord);
+  const runStop = runStopOf(executionRecord, context.log);
   return {
     outcome: name,
     ...(stop?.held && { held: true as const }),

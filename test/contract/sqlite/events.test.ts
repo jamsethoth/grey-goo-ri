@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as eventRead from '../../../lib/event-read.ts';
 import * as events from '../../../lib/events.ts';
 import * as childExit from '../../support/child-exit.ts';
 import * as tempDirectory from '../../support/temp-directory.ts';
@@ -37,7 +38,7 @@ test('two processes append to the same table without loss', async (t) => {
     { run: 'b', code: 0, err: '' },
   ]);
   assert.equal(rows(directory).length, 400);
-  const read = events.readEvents(directory);
+  const read = eventRead.readEvents(directory);
   assert.equal(read.length, 400);
   assert.equal(read.filter((event) => event.run === 'a').length, 200);
   assert.equal(read.filter((event) => event.run === 'b').length, 200);

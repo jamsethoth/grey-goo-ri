@@ -2,6 +2,7 @@ import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
 import * as locks from '../../lib/locks.ts';
@@ -45,7 +46,7 @@ test('gg work abandon deletes the Execution Record row and keeps its Events and 
   const text = await work.abandon(options);
   assert.equal(record.load(commonDir, 'ticket', TICKET), null, 'the row is deleted');
   assert.deepEqual(
-    events.readEvents(commonDir).map((event) => event.type),
+    eventRead.readEvents(commonDir).map((event) => event.type),
     ['run_start'],
     'the Events are kept',
   );

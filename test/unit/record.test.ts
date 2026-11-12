@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
+import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
@@ -366,7 +367,7 @@ test('a record transition and its event commit together', async (t) => {
   });
   const eventLog = events.eventLog(commonDir, { run: 'run-1', ticket: 8 }, database);
   const executionRecord = knownRecord(commonDir);
-  const eventTypes = () => events.readEvents(commonDir).map((event) => event.type);
+  const eventTypes = () => eventRead.readEvents(commonDir).map((event) => event.type);
   const start = () => eventLog('ticket_start', { execution: executionRecord.execution });
 
   assert.throws(
