@@ -7,9 +7,9 @@ import * as events from './events.ts';
 import * as stateDatabase from './state-database.ts';
 
 export class EventCorruptError extends Error {
-  declare id: number;
+  declare id: number | string;
   declare raw: string;
-  constructor(id: number, type: string, reason: string, raw: string) {
+  constructor(id: number | string, type: string, reason: string, raw: string) {
     super(`corrupt event ${id} (${type}): ${reason}`);
     this.name = 'EventCorruptError';
     this.id = id;
@@ -75,7 +75,8 @@ function assertEvent(value: unknown, row: EventRow): asserts value is events.Eve
 
 function checked(row: EventRow): events.Event {
   const raw = String(row.json);
-  const refused = (reason: string) => new EventCorruptError(Number(row.id), String(row.type), reason, raw);
+  const refused = (reason: string) =>
+    new EventCorruptError(typeof row.id === 'number' ? row.id : String(row.id), String(row.type), reason, raw);
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -104,7 +105,7 @@ function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => v
 }
 
 export const readEvents = (commonDir: string): events.Event[] =>
-  checkedRows(stateDatabase.open(commonDir).prepare(`${SELECT} ORDER BY id`).all());
+  checkedRows(stateDatabase.open(commonDir).prepare(`${SELECT} ORDER BY events.id`).all());
 
 // One Execution's Events, in the order they were appended.
 export const executionEvents = (
@@ -113,7 +114,7 @@ export const executionEvents = (
   onRefused?: (err: EventCorruptError) => void,
 ): events.Event[] =>
   checkedRows(
-    stateDatabase.open(commonDir).prepare(`${SELECT} WHERE execution = ? ORDER BY id`).all(execution),
+    stateDatabase.open(commonDir).prepare(`${SELECT} WHERE execution = ? ORDER BY events.id`).all(execution),
     onRefused,
   );
 
@@ -123,7 +124,7 @@ export const hasTicketEnd = (commonDir: string, execution: string): boolean =>
   checkedRows(
     stateDatabase
       .open(commonDir)
-      .prepare(`${SELECT} WHERE execution = ? AND type = 'ticket_end' ORDER BY id`)
+      .prepare(`${SELECT} WHERE execution = ? AND type = 'ticket_end' ORDER BY events.id`)
       .all(execution),
     () => {},
   ).length > 0;

@@ -378,6 +378,34 @@ test('a row whose id is beyond 2^53 reads back', (t) => {
   assert.deepEqual(eventRead.readEvents(commonDir), [JSON.parse(row.json)]);
 });
 
+test('a refused row whose id is beyond 2^53 is named by its exact id', (t) => {
+  const { commonDir, row } = written(t, 'ticket_start');
+  stateDatabase
+    .open(commonDir)
+    .prepare("UPDATE events SET id = ?, json = '{'")
+    .run(2n ** 60n + 1n);
+  assert.throws(() => eventRead.readEvents(commonDir), {
+    name: 'EventCorruptError',
+    id: '1152921504606846977',
+    message: /^corrupt event 1152921504606846977 \(ticket_start\): its JSON does not parse: /,
+  });
+  assert.equal(row.type, 'ticket_start');
+});
+
+test('rows are read in the order they were appended when an id is beyond 2^53', (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-event-read-');
+  const log = events.eventLog(commonDir);
+  for (const shape of ['run_start', 'ticket_start', 'run_end']) SHAPES[shape](log);
+  stateDatabase
+    .open(commonDir)
+    .prepare('UPDATE events SET id = ? WHERE id = 1')
+    .run(-(2n ** 60n));
+  assert.deepEqual(
+    eventRead.readEvents(commonDir).map((event) => event.type),
+    ['run_start', 'ticket_start', 'run_end'],
+  );
+});
+
 test('a row whose column is null where its JSON holds a value is refused by name', (t) => {
   const { commonDir, row } = written(t, 'ticket_end');
   const id = plant(commonDir, { ...row, run: null });

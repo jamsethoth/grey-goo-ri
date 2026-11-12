@@ -397,13 +397,25 @@ const READ_SIDE_RULES = [
   '@typescript-eslint/no-unsafe-call',
 ];
 
+// An import of lib/event-read.ts from lib/ or any directory under it.
+const IMPORTS_EVENT_READ = /from '(?:\.\.?\/)+event-read\.ts'/;
+
+test('the importer census finds lib/event-read.ts imported from any lib directory', () => {
+  const specifiers = ["from './event-read.ts'", "from '../event-read.ts'", "from '../../event-read.ts'"];
+  assert.deepEqual(
+    specifiers.filter((specifier) => !IMPORTS_EVENT_READ.test(specifier)),
+    [],
+  );
+  assert.equal(IMPORTS_EVENT_READ.test("from './events.ts'"), false);
+});
+
 test('the read-side rules hold exactly the lib modules that import lib/event-read.ts', async () => {
   const configured = new ESLint({ cwd: root });
   const libFiles = readdirSync(`${root}lib`, { recursive: true, encoding: 'utf8' })
     .filter((file) => file.endsWith('.ts'))
     .map((file) => `lib/${file.replaceAll('\\', '/')}`);
   const importers = libFiles.filter(
-    (file) => file === 'lib/event-read.ts' || /from '\.\/event-read\.ts'/.test(readFileSync(root + file, 'utf8')),
+    (file) => file === 'lib/event-read.ts' || IMPORTS_EVENT_READ.test(readFileSync(root + file, 'utf8')),
   );
   assert.ok(importers.includes('lib/terminal-report.ts'), importers.join());
   const ruled: string[] = [];
