@@ -233,52 +233,6 @@ test('every read of the events table goes through lib/event-read.ts', () => {
   );
 });
 
-// The Event types lib/events.ts exports, read from its text.
-const EVENT_TYPES = [...textOf('lib/events.ts').matchAll(/^export type (\w*Event)\b/gm)].map((match) => match[1]);
-
-// An assertion to an Event type under any namespace, an object type or `unknown as`, parenthesized or not.
-const eventCast = () => new RegExp(String.raw`\bas\s*\(?\s*(unknown\s+as\b|\{|(\w+\.)?(${EVENT_TYPES.join('|')})\b)`);
-
-test('the cast census finds an Event cast in any form, and nothing else', () => {
-  assert.ok(EVENT_TYPES.includes('Event') && EVENT_TYPES.includes('ActionEvent'), EVENT_TYPES.join());
-  const casts = [
-    'x as Event',
-    'x as events.ActionEvent[]',
-    'x as (eventTypes.Event)',
-    'x as unknown as T',
-    'x as { failureClass?: string }',
-  ];
-  assert.deepEqual(
-    casts.filter((line) => !eventCast().test(line)),
-    [],
-  );
-  const others = ['x as const', 'err as Error', 'name as outcome.FailureClass', 'type as events.LifecycleType'];
-  assert.deepEqual(
-    others.filter((line) => eventCast().test(line)),
-    [],
-  );
-});
-
-test('no Event is cast on the read side: the read module and every lib module that imports it', () => {
-  const readers = sourceFiles('lib/').filter(
-    (file) => file === 'lib/event-read.ts' || /from '\.\/event-read\.ts'/.test(textOf(file)),
-  );
-  assert.ok(readers.includes('lib/terminal-report.ts'), readers.join());
-  const casts = readers.flatMap((file) => {
-    // A local alias of an Event type is an Event type too.
-    const aliases = [...textOf(file).matchAll(/^\s*(?:export\s+)?type\s+(\w+)\s*=([^;\n]*)/gm)]
-      .filter((match) => eventCast().test(`as ${match[2].trim()}`))
-      .map((match) => match[1]);
-    const aliasCast = new RegExp(String.raw`\bas\s*\(?\s*(${aliases.join('|') || '(?!)'})\b`);
-    return textOf(file)
-      .split('\n')
-      .flatMap((line, index) =>
-        eventCast().test(line) || aliasCast.test(line) ? [`${file}:${index + 1}: ${line.trim()}`] : [],
-      );
-  });
-  assert.deepEqual(casts, []);
-});
-
 test('a row that is not JSON is refused by name', (t) => {
   const { commonDir, row } = written(t, 'ticket_start');
   const id = plant(commonDir, { ...row, json: '{"type":"ticket_start","run":' });
@@ -397,6 +351,31 @@ test('a row whose column holds a number where its JSON holds a string says which
   const { commonDir, row } = written(t, 'ticket_start');
   const id = plant(commonDir, { ...row, json: row.json.replace('"ticket":7', '"ticket":"7"') });
   assertRefused(commonDir, id, 'ticket_start', /its ticket column is 7 but its JSON holds "7"/);
+});
+
+// node:sqlite gives a number no JavaScript number holds as a RangeError for the whole read, before any check.
+test('a row whose ticket column holds a number beyond 2^53 is refused by name', (t) => {
+  const { commonDir, row } = written(t, 'ticket_start');
+  stateDatabase
+    .open(commonDir)
+    .prepare('UPDATE events SET ticket = ?')
+    .run(2n ** 60n);
+  assertRefused(commonDir, row.id, 'ticket_start', /its ticket column is "1152921504606846976" but its JSON holds 7/);
+});
+
+test('a row whose ticket column holds Infinity is refused by name, and the reason shows it', (t) => {
+  const { commonDir, row } = written(t, 'ticket_start');
+  stateDatabase.open(commonDir).prepare('UPDATE events SET ticket = ?').run(Infinity);
+  assertRefused(commonDir, row.id, 'ticket_start', /its ticket column is "Inf" but its JSON holds 7/);
+});
+
+test('a row whose id is beyond 2^53 reads back', (t) => {
+  const { commonDir, row } = written(t, 'ticket_start');
+  stateDatabase
+    .open(commonDir)
+    .prepare('UPDATE events SET id = ?')
+    .run(2n ** 60n);
+  assert.deepEqual(eventRead.readEvents(commonDir), [JSON.parse(row.json)]);
 });
 
 test('a row whose column is null where its JSON holds a value is refused by name', (t) => {

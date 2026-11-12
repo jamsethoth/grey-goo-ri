@@ -72,7 +72,8 @@ export const runStopEvent = (executionEvents: events.Event[]): events.ActionEven
   executionEvents.filter((event) => event.type === 'action').find((event) => reachOf(event.failureClass) === 'run') ??
   null;
 
-const reachOf = (failureClass: string | null) => outcome.FAILURE_CLASSES[failureClass as outcome.FailureClass]?.reach;
+const reachOf = (failureClass: string | null) =>
+  Object.entries(outcome.FAILURE_CLASSES).find(([name]) => name === failureClass)?.[1].reach;
 
 // The run stop an Execution's result reports, read from its Action Events. A row that fails the read's check is left
 // out and named in the log: the Terminal reading it has landed or is landing, and must not fail on another row (#350).
@@ -137,7 +138,7 @@ function tolerated<Result>(context: TerminalContext, stop: record.TerminalStop |
   if (!stop?.error) return pending;
   return pending.catch((err) => {
     if (effectErrors.fatal(err) || err instanceof effectErrors.EarlyTerminalError) throw err;
-    context.log(`#${context.record.ticket} fault report failed: ${(err as Error | undefined)?.message}`);
+    context.log(`#${context.record.ticket} fault report failed: ${effectErrors.errorText(err)}`);
   });
 }
 

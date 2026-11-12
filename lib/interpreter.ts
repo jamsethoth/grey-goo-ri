@@ -33,9 +33,9 @@ const GG_PROTECTED_PATHS = ['.agents/', '.github/actions/', '.github/workflows/'
 // unprotected path.
 export function protectedFiles(harnesses: Record<string, { protectedPaths?: unknown }>): string[] {
   const declared = Object.entries(harnesses).flatMap(([name, { protectedPaths: paths }]) => {
-    if (!Array.isArray(paths) || !paths.every((path) => typeof path === 'string' && path))
+    if (!Array.isArray(paths) || !paths.every((path): path is string => typeof path === 'string' && path !== ''))
       throw new Error(`harness ${name} must declare protectedPaths as an array of paths`);
-    return paths as string[];
+    return paths;
   });
   return [...new Set([...GG_PROTECTED_PATHS, ...declared])].sort();
 }
@@ -50,7 +50,7 @@ export const pendingReport = (executionRecord: record.ExecutionRecord): boolean 
 const findEffect =
   (runContext: RunContext): effectEvidence.FindEffect =>
   (entry: writeAhead.WriteAheadEntry, evidenceContext: effectEvidence.EvidenceContext) =>
-    remoteEffects.REMOTE_ACTIONS.includes(entry.effect as string)
+    entry.effect !== null && remoteEffects.REMOTE_ACTIONS.includes(entry.effect)
       ? remoteEffects.findEffectRetrying(runContext, entry, evidenceContext)
       : effectEvidence.findEffect(entry, evidenceContext);
 
@@ -63,9 +63,13 @@ export async function runExecution(options: context.ExecutionOptions): Promise<T
   const admission = options.admission ?? executionRecord.admissionStop;
   try {
     if (options.fault) throw options.fault;
+    // An admission's kind decides which of its fields it holds (lib/admission.ts builds each kind whole), which its
+    // Partial type cannot say.
+    /* eslint-disable @typescript-eslint/no-unsafe-type-assertion */
     if (admission?.kind === 'fault') throw new Error(admission.error as string);
     if (admission?.kind === 'hold') return await terminal.hold(runContext, admission as HoldDecision);
     if (admission?.kind === 'abandon') return await terminal.abandon(runContext, admission as AbandonDecision);
+    /* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
     if (runContext.laterRunReport) return await finishReport(runContext);
     // A record that has entered a Vertex is resumed, so GitHub and git are reconciled with it first.
     if (executionRecord.visits.size) {

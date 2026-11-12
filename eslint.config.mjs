@@ -360,4 +360,17 @@ export default defineConfig([
       'gg/no-map-to-json': 'error',
     },
   },
+  {
+    // The read side of the event log takes its Event types from lib/event-read.ts's check, never from an assertion or
+    // an `any` (#350). test/unit/layout.test.ts holds this list to the lib modules that import lib/event-read.ts.
+    files: ['lib/event-read.ts', 'lib/interpreter.ts', 'lib/run-context.ts', 'lib/terminal-report.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-type-assertion': 'error',
+      '@typescript-eslint/no-unsafe-assignment': 'error',
+      '@typescript-eslint/no-unsafe-return': 'error',
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unsafe-member-access': 'error',
+      '@typescript-eslint/no-unsafe-call': 'error',
+    },
+  },
 ]);

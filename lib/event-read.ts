@@ -2,6 +2,7 @@
 // written from (lib/events.ts), so a corrupt row, or one another gg version wrote, is refused by name, never read as an
 // Event. RecordCorruptError is the precedent for a record's row.
 import type { SQLOutputValue } from 'node:sqlite';
+import * as effectErrors from './effect-errors.ts';
 import * as events from './events.ts';
 import * as stateDatabase from './state-database.ts';
 
@@ -18,7 +19,12 @@ export class EventCorruptError extends Error {
 
 type EventRow = Record<string, SQLOutputValue>;
 
-const SELECT = 'SELECT id, type, run, execution, ticket, json FROM events';
+// node:sqlite throws for the whole read on an integer beyond 2^53, before any check, so a number outside the safe range
+// in id or ticket is read as text: the check then refuses its row by name.
+const safeNumber = (column: string) =>
+  `CASE WHEN typeof(${column}) IN ('integer', 'real') AND ${column} NOT BETWEEN -9007199254740991 AND ` +
+  `9007199254740991 THEN CAST(${column} AS TEXT) ELSE ${column} END AS ${column}`;
+const SELECT = `SELECT ${safeNumber('id')}, type, run, execution, ${safeNumber('ticket')}, json FROM events`;
 // eventLog copies these fields to indexed columns, and a filtered read trusts the column, so each must equal its field.
 const COLUMNS = ['type', 'run', 'execution', 'ticket'];
 // The fields gg's own readers use hold a string or null (#350); the declaration gives names, not value types.
@@ -74,13 +80,13 @@ function checked(row: EventRow): events.Event {
   try {
     value = JSON.parse(raw);
   } catch (err) {
-    throw refused(`its JSON does not parse: ${(err as Error).message}`);
+    throw refused(`its JSON does not parse: ${effectErrors.errorText(err)}`);
   }
   try {
     assertEvent(value, row);
     return value;
   } catch (err) {
-    throw refused((err as Error).message);
+    throw refused(effectErrors.errorText(err));
   }
 }
 

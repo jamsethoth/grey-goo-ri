@@ -172,7 +172,9 @@ export function createRunContext(options: ExecutionOptions): RunContext {
   const { deps, ...given } = options;
   const { record: executionRecord } = options;
   const { clock = clockModule.WALL_CLOCK } = deps;
-  // A resumed record keeps the Run that wrote its markers, while its Events belong to the Run resuming it.
+  // A resumed record keeps the Run that wrote its markers, while its Events belong to the Run resuming it. The
+  // methods are attached below, so the literal is not yet a whole RunContext.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
   const runContext = {
     ...given,
     ...deps,
@@ -205,11 +207,14 @@ export function createRunContext(options: ExecutionOptions): RunContext {
 // their deterministic Actions record no confinement.
 function attachActionMethods(runContext: RunContext) {
   const { record: executionRecord, flow, clock } = runContext;
+  // A context with no pinned Agent's Harness was given its one `harness`, as a test gives it.
+  /* eslint-disable @typescript-eslint/no-unsafe-type-assertion */
   runContext.harnessOf = () =>
     executionRecord.configurationSnapshot?.agent === null
       ? null
       : (runContext.harnesses?.[executionRecord.configurationSnapshot?.agent.harness as string] ??
         (runContext.harness as Harness));
+  /* eslint-enable @typescript-eslint/no-unsafe-type-assertion */
   // Records one Action Event: the Action's identity (with its attempt), when it began, and its outcome and payload.
   runContext.emit = (actionIdentity, startedAt, fields) =>
     runContext.events('action', {
