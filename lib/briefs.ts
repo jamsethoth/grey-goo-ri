@@ -30,7 +30,7 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
   if (!keywords)
     throw new Error(`${path}: type ${JSON.stringify(schema.type) ?? '(none)'} is outside the strict subset`);
   if (
-    Object.hasOwn(schema, 'enum') &&
+    schema.enum !== undefined &&
     !(Array.isArray(schema.enum) && schema.enum.length && schema.enum.every((value) => typeof value === 'string'))
   ) {
     throw new Error(`${path}: enum must be a non-empty list of strings`);
@@ -51,8 +51,10 @@ function assertObject(schema: Record<string, unknown>, path: string) {
   if (repeatedName !== undefined) throw new Error(`${path}: required repeats ${JSON.stringify(repeatedName)}`);
   const missing = keys.find((key) => !required.includes(key));
   if (missing !== undefined) throw new Error(`${path}: required lacks property ${JSON.stringify(missing)}`);
-  const extra = required.find((key) => !keys.includes(key as string));
-  if (extra !== undefined) throw new Error(`${path}: required names ${JSON.stringify(extra)}, which is not a property`);
+  // An index, since find() gives undefined for no match and for an entry that is undefined.
+  const extraAt = required.findIndex((key) => !keys.includes(key as string));
+  if (extraAt !== -1)
+    throw new Error(`${path}: required names ${JSON.stringify(required[extraAt])}, which is not a property`);
   const unreachable = keys.find((key) => key === '' || key.includes('.'));
   if (unreachable !== undefined)
     throw new Error(`${path}: property name ${JSON.stringify(unreachable)} cannot be reached by a dotted path`);
@@ -60,7 +62,8 @@ function assertObject(schema: Record<string, unknown>, path: string) {
   for (const key of keys) assertStrict(properties[key], `${path}.${key}`);
 }
 
-export function assertStrict(schema: unknown, path = '(root)') {
+// A schema in the subset has every keyword typed as a SchemaNode types it.
+export function assertStrict(schema: unknown, path = '(root)'): asserts schema is referencePaths.SchemaNode {
   if (!referencePaths.isRecord(schema)) throw new Error(`${path}: schema must be an object`);
   assertKeywords(schema, path);
   if (schema.type === 'array' && schema.items === undefined) throw new Error(`${path}: array lacks items`);

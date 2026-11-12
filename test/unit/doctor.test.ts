@@ -212,7 +212,7 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
 
 test('gg doctor reads schemas from the loaded Layer files', async () => {
   const config = example();
-  const schema = JSON.parse(config.files['review.schema.json'].bytes);
+  const schema = JSON.parse(config.files['review.schema.json'].bytes) as { properties: { claim: { enum: string[] } } };
   schema.properties.claim.enum = ['ok', 'changes'];
   config.files['review.schema.json'] = file(JSON.stringify(schema));
   const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
@@ -339,7 +339,8 @@ test("the example declares its Procedures in the validator's shape", () => {
 });
 
 test("the example's schemas spell the Definition of Done and the red and green evidence in full", () => {
-  const required = (name: string) => JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)).required;
+  const required = (name: string) =>
+    (JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)) as { required: string[] }).required;
   assert.deepEqual(required('implement'), [
     'claim',
     'reason',

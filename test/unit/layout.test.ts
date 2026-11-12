@@ -210,13 +210,13 @@ const unlistedJavaScript = (files: string[]) =>
   files.filter((path) => /\.(?:[cm]?js|[cm]ts)$/.test(path) && !LEGACY_MJS.includes(path));
 
 test('package.json keeps type module', async () => {
-  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8')) as { type: string };
   assert.equal(pkg.type, 'module');
 });
 
 // Node will not strip types under node_modules, so an npm package of gg cannot start until #243 builds one (ADR 0018).
 test('package.json is private, so npm refuses to publish gg until it is built for publishing', async () => {
-  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8')) as { private: boolean };
   assert.equal(pkg.private, true);
 });
 
@@ -229,7 +229,10 @@ const rangeMajor = (range: string) => {
 
 // tsc checks the code against @types/node, so its major must be the Node gg runs on (ADR 0020).
 test('the @types/node major in package.json is the engines.node major', async () => {
-  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8'));
+  const pkg = JSON.parse(await readFile(`${root}package.json`, 'utf8')) as {
+    devDependencies: Record<string, string>;
+    engines: { node: string };
+  };
   assert.equal(rangeMajor(pkg.devDependencies['@types/node']), rangeMajor(pkg.engines.node));
 });
 
@@ -258,7 +261,7 @@ const eslint = new ESLint({
   cwd: root,
   overrideConfig: [
     { files: ['**/*.ts'], ...tseslint.configs.disableTypeChecked },
-    { rules: { 'gg/no-map-to-json': 'off' } },
+    { rules: { 'gg/no-map-to-json': 'off', 'gg/no-json-parse-assertion': 'off' } },
   ],
 });
 const lintFindings = async (filePath: string, text: string) => {
@@ -439,6 +442,8 @@ test('lint fails an Event typed by an assertion or an any on the read side, in a
     "import type * as events from './events.ts';",
     'declare const value: unknown;',
     'declare const text: string;',
+    // JSON.parse gives unknown in gg (#354), so an `any` comes from a declaration.
+    'declare const loose: any;',
     'declare const end: events.TicketEndEvent;',
     'declare const takes: (event: events.Event) => void;',
     'type ReadEvent =',
@@ -455,9 +460,9 @@ test('lint fails an Event typed by an assertion or an any on the read side, in a
     ['export const e = value as OfAlias;', 'no-unsafe-type-assertion'],
     ['export const f = value as readonly events.Event[];', 'no-unsafe-type-assertion'],
     ['export const g = <events.Event>value;', 'no-unsafe-type-assertion'],
-    ['export const h = (): events.Event => JSON.parse(text);', 'no-unsafe-return'],
-    ['export const i: events.Event = JSON.parse(text);', 'no-unsafe-assignment'],
-    ['export const j = takes(JSON.parse(text));', 'no-unsafe-argument'],
+    ['export const h = (): events.Event => loose;', 'no-unsafe-return'],
+    ['export const i: events.Event = loose;', 'no-unsafe-assignment'],
+    ['export const j = takes(loose);', 'no-unsafe-argument'],
     ['export const k = end as events.Event;', null],
     ["export const l = 'action' as const;", null],
   ];
@@ -471,6 +476,67 @@ test('lint fails an Event typed by an assertion or an any on the read side, in a
   assert.deepEqual(
     found,
     samples.map(([, rule]) => (rule ? [`@typescript-eslint/${rule}`] : [])),
+  );
+});
+
+// gg's own code narrows what JSON.parse gives with a check, so an assertion on it is refused however it is spelled; a
+// test may type a parse by what the case expects (#354).
+const PARSE_ASSERTIONS = [
+  'JSON.parse(text) as string',
+  '(JSON.parse(text)) as string',
+  '<string>JSON.parse(text)',
+  'JSON.parse(text) as unknown as string',
+  'globalThis.JSON.parse(text) as string',
+  "JSON['parse'](text) as string",
+  'JSON.parse(text)! as string',
+  'JSON.parse!(text) as string',
+  'JSON?.parse(text) as string',
+  'JSON[method](text) as string',
+  'alias(text) as string',
+  'destructured(text) as string',
+];
+const OTHER_ASSERTIONS = ['parser.parse(text) as string', 'JSON.stringify(text) as string', "'parse' as const"];
+const parseAssertions = async (filePath: string, samples: string[]) => {
+  const header = [
+    'declare const text: string;',
+    'declare const parser: { parse(source: string): unknown };',
+    "declare const method: 'parse';",
+    'const alias = JSON.parse;',
+    'const { parse: destructured } = JSON;',
+  ];
+  const lines = [...header, ...samples.map((sample, i) => `export const sample${i} = ${sample};`)];
+  const [result] = await typedEslint.lintText(`${lines.join('\n')}\n`, { filePath });
+  return samples.map((sample, i) => [
+    sample,
+    result.messages.filter(
+      (message) => message.line === header.length + i + 1 && message.ruleId === 'gg/no-json-parse-assertion',
+    ).length,
+  ]);
+};
+
+test('lint fails an assertion on what JSON.parse gives in lib, bin and scripts, and not in a test', async (t) => {
+  for (const filePath of ['lib/config.ts', 'bin/gg.ts', 'scripts/run-suite.ts']) {
+    const found = await parseAssertions(filePath, [...PARSE_ASSERTIONS, ...OTHER_ASSERTIONS]);
+    await t.test(`in ${filePath}`, () => {
+      assert.deepEqual(found, [
+        ...PARSE_ASSERTIONS.map((sample) => [sample, 1]),
+        ...OTHER_ASSERTIONS.map((sample) => [sample, 0]),
+      ]);
+    });
+  }
+  assert.deepEqual(
+    await parseAssertions('test/unit/layout.test.ts', PARSE_ASSERTIONS),
+    PARSE_ASSERTIONS.map((sample) => [sample, 0]),
+  );
+});
+
+test("lint passes an assertion on a module's own interface named JSON", async () => {
+  const lines = ['interface JSON {', '  parse(text: string): string;', '}', 'declare const own: JSON;'];
+  const text = [...lines, "export const parsed = own.parse('7') as string;", ''].join('\n');
+  const [result] = await typedEslint.lintText(text, { filePath: 'lib/config.ts' });
+  assert.deepEqual(
+    result.messages.filter((message) => message.ruleId === 'gg/no-json-parse-assertion'),
+    [],
   );
 });
 

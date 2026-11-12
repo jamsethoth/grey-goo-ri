@@ -113,6 +113,7 @@ leverage and a change lands in one place (locality).
 | `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
 | `lib/record-json.ts` | a record's row: the Execution Record's JSON type (`ExecutionRecordJson`) and its only Map conversion (`toJson`, `fromJson`), the parse that tells a corrupt row (`RecordCorruptError`); `lib/record.ts` re-exports what callers use |
 | `lib/json-value.ts` | the JSON gg saves: its type (`JsonValue`), the typed gate (`JsonChecked`) and `text`, the one function every save path serializes through: it writes a copy checked at run time (`checked`), which refuses what JSON cannot hold, by its path |
+| `lib/json-parse.d.ts` | the overload that makes `JSON.parse` give `unknown` in gg, so tsc refuses its result wherever no check has narrowed it |
 | `lib/state-database.ts` | the State Database file: its creation, which only `gg init` makes (ADR 0023), one connection per repository that refuses a missing or unknown database, Pinned Configurations and reusable Check results |
 | `lib/write-ahead.ts` | the write-ahead log's entries, what an intent and its evidence hold (`Payload`, `Evidence`), and what reads them: open intents, evidence, the last commit |
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union, an Action's outputs, a History item) |
@@ -137,6 +138,7 @@ leverage and a change lands in one place (locality).
 | `lib/git-temp-index.ts` | what `lib/git.ts` reads through a copy of the index: a worktree's fingerprint and a rescue's tree |
 | `lib/paths.ts` | canonical local paths and the path key every path comparison uses |
 | `lib/github.ts` | gh verbs, and the label writes and the read of the repository's `owner/name` that never throw; a failed gh process is a `GhError` carrying its HTTP status and rate limit (ported) |
+| `lib/gh-answer.ts` | gh's JSON answers read field by field into the types `lib/github.ts` declares: a field of the wrong type fails the verb, naming its path (#354) |
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
 | `lib/templates/` | gg's own templates, which no source declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |

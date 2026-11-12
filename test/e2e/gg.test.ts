@@ -168,7 +168,7 @@ test('gg run without a harness fails admission naming the vertex and agent', (t)
   const { repo, ggIn } = tempRepo(t, MACHINE_SETTINGS);
   writeExampleLayer(join(repo, '.agents', 'gg'));
   const file = join(repo, '.agents', 'gg', 'gg.json');
-  const example = JSON.parse(readFileSync(file, 'utf8'));
+  const example = JSON.parse(readFileSync(file, 'utf8')) as { agents: unknown };
   example.agents = {
     implementer: { persona: 'implementer.md', access: 'workspace-write' },
     reviewer: { persona: 'reviewer.md', access: 'read-only' },
@@ -320,7 +320,7 @@ test('gg init --harness claude then gg doctor passes in a temp repository with a
   assert.equal(init.status, 0, init.stderr);
   assert.ok(existsSync(join(userDirectory, 'gg.json')), "gg init creates the user's gg.json in GG_HOME");
   const file = join(repo, '.agents', 'gg', 'gg.json');
-  const written = JSON.parse(readFileSync(file, 'utf8'));
+  const written = JSON.parse(readFileSync(file, 'utf8')) as { baseBranch: string; commands: Record<string, string> };
   assert.equal(written.baseBranch, 'main', "the repository's default branch");
   written.commands.test = 'npm test';
   writeFileSync(file, JSON.stringify(written));

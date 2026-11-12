@@ -9,7 +9,7 @@ const DIRECTORY = fileURLToPath(new URL('../fixtures/shipped-flow/', import.meta
 
 // The source as gg read it: gg.json, with every other file of the fixture by its path from there.
 export function shippedLayer(): config.Source {
-  const layer = JSON.parse(readFileSync(join(DIRECTORY, 'gg.json'), 'utf8'));
+  const layer = JSON.parse(readFileSync(join(DIRECTORY, 'gg.json'), 'utf8')) as Omit<config.Source, 'files'>;
   const files = readdirSync(DIRECTORY, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name !== 'gg.json')
     .map((entry) => {

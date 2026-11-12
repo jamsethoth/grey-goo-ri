@@ -29,7 +29,7 @@ export function startHolder(t: TestContext, args: string[]): Promise<LockHolder>
     child.stdout.on('data', (chunk: Buffer) => {
       output += chunk;
       try {
-        resolve({ child, exited, report: JSON.parse(output), release });
+        resolve({ child, exited, report: JSON.parse(output) as LockHolder['report'], release });
       } catch {}
     });
     child.on('exit', () => reject(new Error(`holder exited before reporting: ${output}`)));

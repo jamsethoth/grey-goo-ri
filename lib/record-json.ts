@@ -3,6 +3,7 @@
 
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as record from './record.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 
@@ -81,16 +82,17 @@ export function parseRow<Saved extends record.ExecutionRecord | record.EpicRecor
   { kind, n: recordNumber, json }: RecordRow,
 ): Saved {
   const file = `${stateDatabase.filePath(commonDir)}#${kind}-${recordNumber}`;
-  let data;
+  let data: unknown;
   try {
     data = JSON.parse(json);
   } catch (err) {
     throw new RecordCorruptError(file, (err as Error).message, json);
   }
-  if (data?.schemaVersion !== SCHEMA_VERSION)
-    throw new RecordCorruptError(file, `unknown schemaVersion ${data?.schemaVersion}`, json);
+  const version = referencePaths.isRecord(data) ? data.schemaVersion : undefined;
+  if (!referencePaths.isRecord(data) || version !== SCHEMA_VERSION)
+    throw new RecordCorruptError(file, `unknown schemaVersion ${String(version)}`, json);
   // The version stays 1 until #23, so a cursor from before Action ids is told apart by its shape, not misread.
-  if (data.cursor && !Object.hasOwn(data.cursor, 'recovery')) {
+  if (data.cursor && !(referencePaths.isRecord(data.cursor) && Object.hasOwn(data.cursor, 'recovery'))) {
     throw new RecordCorruptError(
       file,
       'its cursor has no Recovery Number, so it was written before Action ids (#111)',
@@ -98,15 +100,16 @@ export function parseRow<Saved extends record.ExecutionRecord | record.EpicRecor
     );
   }
   // The counts kept as Maps are saved as objects (#174); anything else makes the row corrupt, not a TypeError.
-  const objects = (holder: Record<string, unknown> | null, keys: string[]) => {
+  const objects = (holder: unknown, keys: string[]) => {
     for (const key of holder ? keys : []) {
-      const saved = holder![key];
+      const saved = referencePaths.isRecord(holder) ? holder[key] : undefined;
       if (!saved || typeof saved !== 'object' || Array.isArray(saved))
         throw new RecordCorruptError(file, `its ${key} is not an object`, json);
     }
   };
-  if (kind === 'epic') return { ...data, commonDir };
+  // Past these checks the row is typed by assertion until it is checked whole (#357).
+  if (kind === 'epic') return { ...data, commonDir } as Saved;
   objects(data, ['visits', 'traversals']);
   objects(data.visitState, ['runs', 'checks']);
-  return fromJson(data, commonDir) as Saved;
+  return fromJson(data as ExecutionRecordJson, commonDir) as Saved;
 }

@@ -15,7 +15,7 @@ export const loadTicket = (fixture: { commonDir: string }, ticket = golden.TICKE
 
 // The saved row read without awaiting, for a getter that cannot await.
 export const ticketRow = (fixture: { commonDir: string }): record.ExecutionRecord =>
-  JSON.parse(caseDatabase.savedJson(fixture.commonDir, 'ticket', golden.TICKET) as string);
+  JSON.parse(caseDatabase.savedJson(fixture.commonDir, 'ticket', golden.TICKET) as string) as record.ExecutionRecord;
 
 export const intents = (executionRecord: record.ExecutionRecord, effect: string) =>
   executionRecord.writeAheadLog.filter((entry) => entry.step === 'intent' && entry.effect === effect);

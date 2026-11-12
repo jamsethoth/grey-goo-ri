@@ -62,7 +62,7 @@ function duplicateKey(text: string): string | null {
     else if (token === '[') open.push(null);
     else if (token === '}' || token === ']') open.pop();
     else if (tokens[index + 1] === ':') {
-      const key: string = JSON.parse(token);
+      const key = String(JSON.parse(token));
       // Text that parses as JSON has a key followed by a colon only inside an object.
       const keys = open.at(-1) as Set<string>;
       if (keys.has(key)) return key;

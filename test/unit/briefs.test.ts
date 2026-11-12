@@ -39,7 +39,7 @@ const recovery = (name: string, context: RecoveryContext) =>
   });
 // An example schema declares its properties and which are required.
 type ShippedSchema = referencePaths.SchemaNode & Required<Pick<referencePaths.SchemaNode, 'properties' | 'required'>>;
-const schema = (name: string): ShippedSchema => JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`));
+const schema = (name: string) => JSON.parse(exampleLayer.fixtureText(`${name}.schema.json`)) as ShippedSchema;
 const SCHEMAS: Record<string, ShippedSchema> = {
   RED_SCHEMA: schema('red'),
   IMPLEMENT_SCHEMA: schema('implement'),
@@ -48,11 +48,12 @@ const SCHEMAS: Record<string, ShippedSchema> = {
 
 // The fixtures are the builders' output before #105, with its named changes: FIX VISIT, and diagnosis for a blocked
 // Claim. Each names its template and the context it renders with.
-const BRIEF_FIXTURES: Record<
-  string,
+interface BriefFixture {
+  template: string;
   // eslint-disable-next-line id-denylist -- the key briefs.json names the context by
-  { template: string; opts: briefs.BriefContext }
-> = JSON.parse(fixture('briefs.json'));
+  opts: briefs.BriefContext;
+}
+const BRIEF_FIXTURES = JSON.parse(fixture('briefs.json')) as Record<string, BriefFixture>;
 for (const [name, briefFixture] of Object.entries(BRIEF_FIXTURES)) {
   test(`each Brief template matches its builder's output: ${name}`, async () => {
     assert.equal(await shipped(briefFixture.template, briefFixture.opts), fixture(`${name}.txt`));
@@ -179,7 +180,9 @@ test('assertStrict rejects a nested object without additionalProperties', () => 
 });
 
 const example = (name: string) =>
-  JSON.parse(readFileSync(new URL(`../fixtures/example/${name}.schema.json`, import.meta.url), 'utf8'));
+  JSON.parse(
+    readFileSync(new URL(`../fixtures/example/${name}.schema.json`, import.meta.url), 'utf8'),
+  ) as referencePaths.SchemaNode;
 
 for (const name of ['red', 'implement', 'review']) {
   test(`the example's ${name}.schema.json is inside the strict subset`, () => {
@@ -229,10 +232,30 @@ test('validateResponse rejects an extra property where the object declares no pr
 
 test('a schema keyword outside the strict subset is rejected with its path (in an example schema)', () => {
   const bad = example('implement');
-  bad.properties.qa.properties.steps.items.properties.action.pattern = '^x';
+  exampleLayer.putAt(
+    bad,
+    ['properties', 'qa', 'properties', 'steps', 'items', 'properties', 'action', 'pattern'],
+    '^x',
+  );
   assert.throws(() => briefs.assertStrict(bad, 'bad.schema.json'), {
     message: 'bad.schema.json.qa.steps[].action: keyword "pattern" is outside the strict subset',
   });
+});
+
+// assertStrict types what it passes as a SchemaNode, whose required is a list of property names, for any input (#354).
+test('a required entry that names no property is rejected, an undefined one too', () => {
+  for (const entry of [undefined, null, 1])
+    assert.throws(
+      () => briefs.assertStrict({ type: 'object', properties: {}, required: [entry], additionalProperties: false }),
+      { message: `(root): required names ${JSON.stringify(entry)}, which is not a property` },
+      String(entry),
+    );
+});
+
+// The enum assertStrict checks is the enum a reader of the SchemaNode gets, an inherited one too (#354).
+test('an inherited enum is checked like an own one', () => {
+  const inherited: unknown = Object.assign(Object.create({ enum: [1] }), { type: 'string' });
+  assert.throws(() => briefs.assertStrict(inherited), { message: '(root): enum must be a non-empty list of strings' });
 });
 
 const inField = (field: unknown) => ({
@@ -374,7 +397,7 @@ test('the claim enum must equal the declared tokens: an empty token list shows (
 
 test('the claim enum must equal the declared tokens: an empty enum value is shown quoted', () => {
   const emptyValue = example('red');
-  emptyValue.properties.claim.enum = ['ok', ''];
+  exampleLayer.putAt(emptyValue, ['properties', 'claim', 'enum'], ['ok', '']);
   assert.throws(() => briefs.assertClaimEnum(emptyValue, ['ok']), {
     message: 'claim: enum "ok" | "" does not equal the declared tokens "ok"',
   });
@@ -382,7 +405,7 @@ test('the claim enum must equal the declared tokens: an empty enum value is show
 
 test('the claim enum must equal the declared tokens: case twins in the enum are rejected', () => {
   const caseTwins = example('red');
-  caseTwins.properties.claim.enum = ['ok', 'Ok', 'blocked'];
+  exampleLayer.putAt(caseTwins, ['properties', 'claim', 'enum'], ['ok', 'Ok', 'blocked']);
   assert.throws(() => briefs.assertClaimEnum(caseTwins, ['ok', 'Ok', 'blocked']), {
     message: 'claim: "ok" | "Ok" | "blocked" repeats a value or differs only in case',
   });
@@ -390,7 +413,7 @@ test('the claim enum must equal the declared tokens: case twins in the enum are 
 
 test('the claim enum must equal the declared tokens: a schema with no claim is rejected', () => {
   const noClaim = example('red');
-  delete noClaim.properties.claim;
+  exampleLayer.putAt(noClaim, ['properties', 'claim']);
   noClaim.required = ['summary', 'tests', 'notes', 'diagnosis', 'reason'];
   assert.throws(() => briefs.assertClaimEnum(noClaim, ['ok', 'blocked']), {
     message: 'claim: the schema has no claim enum',

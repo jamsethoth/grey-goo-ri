@@ -141,7 +141,7 @@ function plant(commonDir: string, row: Omit<EventRow, 'id'>): number {
 // The row of `shape` with its JSON edited.
 function plantEdited(t: TestContext, shape: string, edit: (json: Record<string, unknown>) => void) {
   const { commonDir, row } = written(t, shape);
-  const json: Record<string, unknown> = JSON.parse(row.json);
+  const json = JSON.parse(row.json) as Record<string, unknown>;
   edit(json);
   const id = plant(commonDir, { ...row, json: JSON.stringify(json) });
   return { commonDir, id, type: row.type };
@@ -284,7 +284,7 @@ for (const [name, agent] of [
 // Every declared key of every shape, enumerated from the rows gg writes: a saved Event holds them all.
 for (const shape of Object.keys(SHAPES)) {
   test(`a ${shape} row missing any declared field is refused by name, field by field`, (t) => {
-    const keys = Object.keys(JSON.parse(written(t, shape).row.json)).filter(
+    const keys = Object.keys(JSON.parse(written(t, shape).row.json) as object).filter(
       (key) => !['schemaVersion', 'time', 'type', 'agent'].includes(key),
     );
     assert.ok(keys.length > 0);
@@ -315,7 +315,9 @@ test('a deterministic Action Event row holding an agent field is refused by name
 const READ_FIELDS = ['failureClass', 'execution', 'run'];
 for (const shape of Object.keys(SHAPES)) {
   test(`a ${shape} row whose read fields hold a number is refused by name, field by field`, (t) => {
-    const declared = Object.keys(JSON.parse(written(t, shape).row.json)).filter((key) => READ_FIELDS.includes(key));
+    const declared = Object.keys(JSON.parse(written(t, shape).row.json) as object).filter((key) =>
+      READ_FIELDS.includes(key),
+    );
     for (const key of declared) {
       const { commonDir, id, type } = plantEdited(t, shape, (json) => {
         json[key] = 7;

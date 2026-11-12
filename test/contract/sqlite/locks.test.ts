@@ -102,7 +102,9 @@ await locks.release(handle);`;
 });
 
 test('the lock module needs no experimental flag for node:sqlite', async (t) => {
-  const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'));
+  const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as {
+    engines: { node: string };
+  };
   assert.equal(pkg.engines.node, '>=26.13');
   const commonDir = tempDirectory.tempDirectory(t, 'gg-locks-');
   const script = `import * as locks from ${JSON.stringify(locksModule.href)};
@@ -228,7 +230,9 @@ test('contending processes never throw and grant at most one owner', { timeout: 
   await Promise.all(children.map(({ lines }) => lines.next()));
   for (const { child } of children) child.stdin.write('go\n');
   const outputs = await Promise.all(
-    children.map(async ({ lines }) => JSON.parse((await lines.next()).value as string)),
+    children.map(
+      async ({ lines }) => JSON.parse((await lines.next()).value as string) as { error?: string; handle?: unknown },
+    ),
   );
   for (const { child } of children) child.stdin.end();
   await Promise.all(children.map(({ exited }) => exited));

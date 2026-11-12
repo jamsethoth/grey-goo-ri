@@ -181,7 +181,7 @@ async function answerPr(state: GhState, args: string[], input: string | undefine
 function answerApi(state: GhState, args: string[], input: string | undefined) {
   if (isCommentPost(args)) {
     const issue = Number(args.join(' ').match(/issues\/(\d+)\/comments/)?.[1]);
-    const id = state.post(issue, JSON.parse(input as string).body);
+    const id = state.post(issue, (JSON.parse(input as string) as { body: string }).body);
     return included(
       201,
       { 'Content-Type': 'application/json; charset=utf-8' },

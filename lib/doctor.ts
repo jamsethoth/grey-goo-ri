@@ -10,6 +10,7 @@ import * as interpreter from './interpreter.ts';
 import type * as github from './github.ts';
 import * as labels from './labels.ts';
 import * as record from './record.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as rules from './rules.ts';
 import * as runFlows from './run-flows.ts';
 import * as stateDatabase from './state-database.ts';
@@ -280,9 +281,10 @@ function writtenExample(text: string, { baseBranch, harness }: InitOptions): str
       `no Harness named ${harness} has example settings; gg init --harness takes ${shipped.join(' or ')}`,
     );
   const file = join(config.EXAMPLES_DIRECTORY, `${harness}.json`);
-  const { agents } = JSON.parse(readFileSync(file, 'utf8')) as { agents: Record<string, Record<string, unknown>> };
-  for (const [agent, settings] of Object.entries(agents))
-    for (const [key, value] of Object.entries(settings)) written = edit(written, ['agents', agent, key], value);
+  const example = JSON.parse(readFileSync(file, 'utf8'));
+  // The examples are gg's own files, which the init tests read back: what is not an object of settings writes nothing.
+  for (const [agent, settings] of report.entries(referencePaths.isRecord(example) ? example.agents : null))
+    for (const [key, value] of report.entries(settings)) written = edit(written, ['agents', agent, key], value);
   return written;
 }
 

@@ -214,12 +214,10 @@ function findLost(checker, program, rootType) {
 // lib's JSON.stringify by any path to it (globalThis.JSON, JSON['stringify']); a local object named JSON is not it.
 const isJsonStringify = (checker, services, { callee }) => {
   if (callee.type !== 'MemberExpression') return false;
-  const { property } = callee;
-  const named = callee.computed
-    ? property.type === 'Literal' && property.value === 'stringify'
-    : property.name === 'stringify';
+  const { property: key } = callee;
+  const named = callee.computed ? key.type === 'Literal' && key.value === 'stringify' : key.name === 'stringify';
   if (!named) return false;
-  const symbol = checker.getSymbolAtLocation(services.esTreeNodeToTSNodeMap.get(property));
+  const symbol = checker.getSymbolAtLocation(services.esTreeNodeToTSNodeMap.get(key));
   return (symbol?.getDeclarations() ?? []).some(
     (declaration) => inDefaultLib(services.program, declaration) && declaration.parent?.name?.text === 'JSON',
   );
@@ -303,6 +301,24 @@ const NO_MAP_TO_JSON = {
   },
 };
 
+// tsc accepts `unknown as T`, so lint refuses an assertion on a call resolving to JSON.parse, however spelled (#354).
+const NO_JSON_PARSE_ASSERTION = {
+  meta: { type: 'problem', schema: [], messages: { asserted: 'Check what JSON.parse gives; never assert its type.' } },
+  create(context) {
+    const { program, esTreeNodeToTSNodeMap: tsNodes } = context.sourceCode.parserServices ?? {};
+    if (!program) throw new Error('gg/no-json-parse-assertion needs type information');
+    const checker = program.getTypeChecker();
+    const bare = (node) => (/^(TSNonNull|Chain)Expression$/.test(node.type) ? bare(node.expression) : node);
+    const asserted = (node) => {
+      const operand = bare(node.expression);
+      if (operand.type !== 'CallExpression') return;
+      const { name, parent } = checker.getResolvedSignature(tsNodes.get(operand))?.declaration ?? {};
+      if (name?.text === 'parse' && parent?.name?.text === 'JSON' && !ts.isExternalModule(parent.getSourceFile()))
+        context.report({ node, messageId: 'asserted' });
+    };
+    return { TSAsExpression: asserted, TSTypeAssertion: asserted };
+  },
+};
 // eslint-disable-next-line no-restricted-exports -- ESLint reads its configuration from the default export
 export default defineConfig([
   {
@@ -311,7 +327,13 @@ export default defineConfig([
     plugins: {
       '@stylistic': stylistic,
       '@typescript-eslint': tseslint.plugin,
-      gg: { rules: { 'thrown-class': THROWN_CLASS, 'no-map-to-json': NO_MAP_TO_JSON } },
+      gg: {
+        rules: {
+          'thrown-class': THROWN_CLASS,
+          'no-map-to-json': NO_MAP_TO_JSON,
+          'no-json-parse-assertion': NO_JSON_PARSE_ASSERTION,
+        },
+      },
     },
     rules: {
       '@typescript-eslint/naming-convention': ['error', ...NAMING],
@@ -360,6 +382,8 @@ export default defineConfig([
       'gg/no-map-to-json': 'error',
     },
   },
+  // gg's own code checks what JSON.parse gives; a test may type it by what the case expects (#354).
+  { files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts'], rules: { 'gg/no-json-parse-assertion': 'error' } },
   {
     // The read side of the event log takes its Event types from lib/event-read.ts's check, never from an assertion or
     // an `any` (#350). test/unit/layout.test.ts holds this list to the lib modules that import lib/event-read.ts.

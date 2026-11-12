@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type * as procedures from '../../lib/procedures.ts';
+import * as referencePaths from '../../lib/reference-paths.ts';
 import * as validate from '../../lib/validate/index.ts';
 import type * as validateFlows from '../../lib/validate/flows.ts';
 import type * as report from '../../lib/validate/report.ts';
@@ -8,10 +9,10 @@ import type * as report from '../../lib/validate/report.ts';
 export const fixtureText = (name: string) =>
   readFileSync(new URL(`../fixtures/example/${name}`, import.meta.url), 'utf8');
 
-// The example Flow as `gg init` writes it, plus the per-person harness a user Layer adds (P2). It is JSON.parse's
-// `any`, so a case may edit any key of it.
+// The example Flow as `gg init` writes it, plus the per-person harness a user Layer adds (P2). It is an `any`, so a
+// case may edit any key of it into a configuration the validator must judge, until its cases edit through putAt (#358).
 export function config() {
-  const layer = JSON.parse(fixtureText('gg.json'));
+  const layer: any = JSON.parse(fixtureText('gg.json'));
   for (const agent of Object.values<Record<string, unknown>>(layer.agents)) agent.harness = 'fake';
   return layer;
 }
@@ -36,10 +37,23 @@ export const PERSONA_NAMES = ['implementer.md', 'reviewer.md'];
 export const WRITTEN_NAMES = ['gg.json', ...SCHEMA_NAMES, ...TEMPLATE_NAMES, ...PERSONA_NAMES];
 
 // The example's test paths, the only list of them: today's `testPaths` default that gg init writes.
-export const TEST_GLOBS: string[] = JSON.parse(fixtureText('gg.json')).testPaths;
+export const TEST_GLOBS = (JSON.parse(fixtureText('gg.json')) as { testPaths: string[] }).testPaths;
 
 // The example's schemas, parsed, by file name.
-export const schemas = () => Object.fromEntries(SCHEMA_NAMES.map((name) => [name, JSON.parse(fixtureText(name))]));
+export const schemas = () =>
+  Object.fromEntries(SCHEMA_NAMES.map((name) => [name, JSON.parse(fixtureText(name)) as referencePaths.SchemaNode]));
+
+// Puts `value` at `path` in a parsed fixture, or removes the key when `value` is undefined: a case edits a fixture
+// into any shape, the strict subset's or not, through objects it checks, with no `any`.
+export function putAt(fixture: unknown, path: string[], value?: unknown) {
+  const parent = path
+    .slice(0, -1)
+    .reduce<unknown>((node, key) => (referencePaths.isRecord(node) ? node[key] : undefined), fixture);
+  if (!referencePaths.isRecord(parent)) throw new Error(`no object at ${path.join('.')}`);
+  const key = path.at(-1)!;
+  if (value === undefined) delete parent[key];
+  else parent[key] = value;
+}
 
 // The example's own templates, by file name.
 export const exampleTemplates = () => Object.fromEntries(TEMPLATE_NAMES.map((name) => [name, fixtureText(name)]));
