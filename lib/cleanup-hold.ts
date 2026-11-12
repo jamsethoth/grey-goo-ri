@@ -2,6 +2,7 @@
 // in its comment and gg:await:cleanup on the issue, and a later Run under the ticket lock confirms cleanup afresh under
 // the recorded containment (L14). The suspended Action then completes as if it had just returned (J4): each Action
 // kind's completeHeld does that.
+import * as attempt from './attempt.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as effects from './effects/index.ts';
 import * as effectErrors from './effect-errors.ts';
@@ -37,10 +38,7 @@ const reportActionOf = (
 // The holds of this Action already released, plus one.
 function holdNumber(runContext: RunContext, held: HeldAction): number {
   let number = 1;
-  while (
-    writeAhead.findEntry(runContext.record, runContext.markerOf(reportActionOf(held, 'release', number)), 'complete')
-  )
-    number++;
+  while (attempt.complete(runContext, reportActionOf(held, 'release', number))) number++;
   return number;
 }
 
@@ -89,18 +87,12 @@ function commentBody(runContext: RunContext, held: HeldAction, report: commandCl
 
 async function report(runContext: RunContext, held: HeldAction, cleanup: commandCleanup.CleanupReport) {
   const number = holdNumber(runContext, held);
-  const complete = (part: ReportAction) =>
-    writeAhead.findEntry(runContext.record, runContext.markerOf(reportActionOf(held, part, number)), 'complete');
-  if (!complete('label'))
-    await pendingReport.labelAction(runContext, reportActionOf(held, 'label', number), {
-      add: [awaitLabel(runContext)],
-    });
-  if (!complete('comment'))
-    await pendingReport.commentAction(
-      runContext,
-      reportActionOf(held, 'comment', number),
-      await commentBody(runContext, held, cleanup, number),
-    );
+  await pendingReport.labelAction(runContext, reportActionOf(held, 'label', number), async () => ({
+    add: [awaitLabel(runContext)],
+  }));
+  await pendingReport.commentAction(runContext, reportActionOf(held, 'comment', number), () =>
+    commentBody(runContext, held, cleanup, number),
+  );
 }
 
 const pendingEnding = (held: HeldAction) =>
@@ -159,9 +151,9 @@ export async function awaitConfirmation(runContext: RunContext, find: effects.Fi
   if (state.unconfirmedCleanup) await confirm(runContext, held, state.unconfirmedCleanup, find);
   const number = holdNumber(runContext, held);
   if (writeAhead.findEntry(executionRecord, runContext.markerOf(reportActionOf(held, 'label', number)), 'intent'))
-    await pendingReport.labelAction(runContext, reportActionOf(held, 'release', number), {
+    await pendingReport.labelAction(runContext, reportActionOf(held, 'release', number), async () => ({
       remove: [awaitLabel(runContext)],
-    });
+    }));
 }
 
 // The report as a later Run read it: its containment confirmed its processes gone.

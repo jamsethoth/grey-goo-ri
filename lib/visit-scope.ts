@@ -1,5 +1,6 @@
 // What every Action of a Visit reads and writes: its scope, its outputs, the claimed token, the Transition Table's
 // view of its Signals, and settle, which decides whether a pass's result ends the Visit.
+import type * as attempt from './attempt.ts';
 import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
 import type * as model from './model.ts';
@@ -26,11 +27,13 @@ export type ActionResolution = visit.Resolution &
     >
   > & { source?: string | null };
 
-// One Action as the Visit runs it: its identity, its declaration, and the Visit's progress.
+// One Action as the Visit runs it: its identity, its declaration, the Visit's progress, and how the Visit keeps the
+// Action's result, which its Attempt's save carries.
 export interface Running {
   actionIdentity: marker.ActionIdentity;
   action: procedures.Action;
   state: RunningVisit;
+  settle?: attempt.Settle;
 }
 
 // A Vertex with no agent Action has the implicit Claim ok, which requires all its Checks (R11f).

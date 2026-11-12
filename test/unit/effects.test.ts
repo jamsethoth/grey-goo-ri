@@ -43,7 +43,7 @@ test('a proven side effect is not made again: its saved evidence is returned and
   assert.deepEqual(executionReads.writeAheadSteps(executionRecord, 'gg:m'), ['intent', 'evidence', 'complete']);
 });
 
-test('a deferred side effect is left for saveResolution to complete', async (t) => {
+test('a deferred side effect is left for its Attempt's save to complete', async (t) => {
   const { context, executionRecord } = await support.executionContext(t);
   const perform = async () => ({ head: 'abc' });
   const evidence = await sideEffect.sideEffect(context, {

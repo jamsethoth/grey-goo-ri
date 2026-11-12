@@ -1,11 +1,15 @@
 // An Attempt from its start to its saved result: its start, its Action Marker, its work, bracketed busy when the work
 // touches the worktree, and one save that holds its result, its side effect's completion, its outputs and its Action
 // Event. An Attempt whose marker is already complete returns its saved result without running again.
-import type * as sideEffect from './effects/side-effect.ts';
+import * as effectErrors from './effect-errors.ts';
+import * as sideEffect from './effects/side-effect.ts';
 import type * as events from './events.ts';
+import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
+import type * as record from './record.ts';
 import type * as visit from './visit.ts';
-import type * as writeAhead from './write-ahead.ts';
+import * as visitScope from './visit-scope.ts';
+import * as writeAhead from './write-ahead.ts';
 
 type Context = sideEffect.EffectContext;
 
@@ -13,13 +17,16 @@ type Context = sideEffect.EffectContext;
 // completion that leaves no result passes null.
 export type Settle = (resolution: visit.Resolution | null) => void;
 
-// What a kind's work leaves for the save: its result, the Action Event's fields beyond the result's, its outputs (and
-// the output fields it drops), and the evidence its completion saves.
+// What a kind's work leaves as its outputs, and the output fields it drops.
+export interface Outputs {
+  outputs?: visit.ActionOutputValue;
+  dropped?: (keyof visit.ActionOutputValue)[];
+}
+
+// The result the save holds, the Action Event's fields beyond the result's, and the evidence its completion saves.
 export interface Done<Settled extends visit.Resolution> {
   resolution: Settled;
   fields?: events.EventInput<'action'>;
-  outputs?: visit.ActionOutputValue;
-  dropped?: (keyof visit.ActionOutputValue)[];
   evidence?: writeAhead.Evidence;
 }
 
@@ -32,18 +39,21 @@ export interface Attempting<Prepared, Worked, Settled extends visit.Resolution> 
   // Run before the Attempt starts, and only when it is not already complete.
   prepare?: (actionMarker: string) => Promise<Prepared>;
   work: (prepared: Prepared, actionMarker: string) => Promise<Worked>;
-  // Run after the work, outside the bracket: the result the save holds.
-  finish: (worked: Worked, prepared: Prepared) => Done<Settled> | Promise<Done<Settled>>;
-  // The saved result of a complete Attempt, from the evidence its completion saved.
+  outputs?: (worked: Worked) => Outputs;
+  // Run after the work, outside the bracket, and synchronous, so nothing saves between the outputs and the save: the
+  // result the save holds, decided over a scope that holds the Attempt's own outputs.
+  finish: (worked: Worked, prepared: Prepared) => Done<Settled>;
+  // The saved result of a complete Attempt, from the evidence its completion saved; an Effect's by default.
   resumed?: (evidence: writeAhead.Evidence | undefined) => Settled;
   settle?: Settle;
 }
 
-// A held completion (J4): its work, and a result that replaces the one the hold saved, or none.
+// A held completion (J4): its validation of the worktree, and a result that replaces the one the hold saved, or none.
 export interface Held<Worked, Settled extends visit.Resolution> {
   actionIdentity: marker.ActionIdentity;
   actionMarker?: string;
   work: () => Promise<Worked>;
+  outputs?: (worked: Worked) => Outputs;
   finish: (worked: Worked) => Done<Settled> | (Omit<Done<Settled>, 'resolution'> & { resolution: null });
   settle?: Settle;
 }
@@ -55,39 +65,148 @@ export const EFFECT_COMPLETED: visit.EffectResolution = {
   rule: { table: 'fixed', row: 'effect-completed' },
 };
 
-// Whether an Attempt's marker is complete.
-export const complete = (_context: Pick<Context, 'record' | 'markerOf'>, _actionIdentity: marker.ActionIdentity) =>
-  false;
+const completed = (executionRecord: record.ExecutionRecord, actionMarker: string) =>
+  !!writeAhead.findEntry(executionRecord, actionMarker, 'complete');
 
+// Whether an Attempt's marker is complete: its result is saved, and it never runs again.
+export const complete = (context: Pick<Context, 'record' | 'markerOf'>, actionIdentity: marker.ActionIdentity) =>
+  completed(context.record, context.markerOf(actionIdentity));
+
+// The worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone.
 export async function whileBusy<Result>(
-  _context: Pick<Context, 'record' | 'database'>,
+  context: Pick<Context, 'record' | 'database'>,
   work: () => Promise<Result>,
 ): Promise<Result> {
-  return work();
+  const { record: executionRecord, database } = context;
+  await integrity.markBusy(executionRecord, database);
+  let result;
+  try {
+    result = await work();
+  } catch (err) {
+    // A crashed process saves nothing more: marking idle would also persist whatever the crash left unsaved.
+    if (!effectErrors.fatal(err)) await integrity.markIdle(executionRecord, database);
+    throw err;
+  }
+  await integrity.markIdle(executionRecord, database);
+  return result;
 }
+
+// The outputs go to the record after the work, outside the bracket, so its idle save cannot publish them; the
+// synchronous finish that decides the result reads them, and the save that follows carries them.
+function keepOutputs(context: Context, actionIdentity: marker.ActionIdentity, { outputs, dropped = [] }: Outputs = {}) {
+  const entry = visitScope.outputOf(context.record, actionIdentity);
+  for (const field of dropped) if (entry) Reflect.deleteProperty(entry.value, field);
+  if (outputs) visitScope.recordOutput(context.record, actionIdentity, outputs);
+}
+
+const eventOf =
+  (context: Context, actionIdentity: marker.ActionIdentity, startedAt: number, done: Done<visit.Resolution>) => () =>
+    context.emit(actionIdentity, startedAt, {
+      outcome: done.resolution.outcome,
+      direction: done.resolution.direction,
+      rule: done.resolution.rule,
+      signals: {},
+      ...done.fields,
+    });
+
+// The one save. An Attempt with a write-ahead intent completes it here, with its evidence; one without (a Check) saves
+// the record. A retried Attempt's result stays in its evidence for the next Attempt to read.
+function save(
+  context: Context,
+  {
+    actionIdentity,
+    actionMarker,
+    startedAt,
+  }: { actionIdentity: marker.ActionIdentity; actionMarker: string; startedAt: number },
+  done: Done<visit.Resolution>,
+  settle: Settle | undefined,
+) {
+  const { record: executionRecord, database } = context;
+  settle?.(done.resolution);
+  const event = eventOf(context, actionIdentity, startedAt, done);
+  const opened = !!writeAhead.findEntry(executionRecord, actionMarker, 'intent');
+  if (!opened) return void database.save(executionRecord, event);
+  database.complete(executionRecord, actionMarker, { evidence: done.evidence, event });
+  effectErrors.crashPoint(context, actionMarker, 'after-completion');
+}
+
+// An Effect's saved result is fixed, so an Attempt that names no other resumes to it.
+const effectResumed = () => EFFECT_COMPLETED;
 
 export async function run<Prepared, Worked, Settled extends visit.Resolution>(
-  _context: Context,
+  context: Context,
   attempting: Attempting<Prepared, Worked, Settled>,
 ): Promise<Settled> {
-  const prepared = (await attempting.prepare?.('')) as Prepared;
-  return (await attempting.finish(await attempting.work(prepared, ''), prepared)).resolution;
+  const { actionIdentity, busy, prepare, work, outputs, finish, settle } = attempting;
+  const resumed = (attempting.resumed ?? effectResumed) as NonNullable<typeof attempting.resumed>;
+  const actionMarker = attempting.actionMarker ?? context.markerOf(actionIdentity);
+  if (completed(context.record, actionMarker))
+    return resumed(writeAhead.findEntry(context.record, actionMarker, 'evidence')?.evidence ?? undefined);
+  const prepared = (prepare ? await prepare(actionMarker) : undefined) as Prepared;
+  const startedAt = context.clock.now();
+  const working = () => work(prepared, actionMarker);
+  const worked = busy ? await whileBusy(context, working) : await working();
+  keepOutputs(context, actionIdentity, outputs?.(worked));
+  const done = finish(worked, prepared);
+  save(context, { actionIdentity, actionMarker, startedAt }, done, settle);
+  return done.resolution;
 }
 
+// A held completion's validation reads the worktree, so it is always bracketed. Its result replaces the one the hold
+// saved, merged into the evidence its completion saved, with its Action Event and whatever its caller spent, in one
+// write; one with no result saves only its outputs and the Visit's routing.
 export async function runHeld<Worked, Settled extends visit.Resolution>(
-  _context: Context,
-  held: Held<Worked, Settled>,
+  context: Context,
+  { actionIdentity, actionMarker, work, outputs, finish, settle }: Held<Worked, Settled>,
 ): Promise<Settled | null> {
-  return held.finish(await held.work()).resolution;
+  const { record: executionRecord, database } = context;
+  const startedAt = context.clock.now();
+  const worked = await whileBusy(context, work);
+  keepOutputs(context, actionIdentity, outputs?.(worked));
+  const { resolution, ...done } = finish(worked);
+  settle?.(resolution);
+  if (resolution === null) {
+    database.save(executionRecord);
+    return null;
+  }
+  const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
+  if (saved) saved.evidence = { ...saved.evidence, ...resolution };
+  database.save(executionRecord, eventOf(context, actionIdentity, startedAt, { ...done, resolution }));
+  if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
+  return resolution;
 }
 
-export async function effectAction<Payload extends writeAhead.Payload, EffectContext>(
-  _context: Context & NoInfer<EffectContext>,
-  _effectAttempt: {
+// One Effect's Attempt: its payload made in the bracket (after `prepare`, when given), launched write-ahead, and
+// completed with its Action Event. A Visit's effect Actions, a Terminal's and a Pending report's.
+export function effectAction<Payload extends writeAhead.Payload, EffectContext, Prepared = undefined>(
+  context: Context & NoInfer<EffectContext>,
+  {
+    actionIdentity,
+    prepare,
+    made,
+    settle,
+  }: {
     actionIdentity: marker.ActionIdentity;
-    made: (actionMarker: string) => Promise<Omit<sideEffect.SideEffect<Payload, EffectContext>, 'actionMarker'>>;
+    prepare?: (actionMarker: string) => Promise<Prepared>;
+    made: (
+      prepared: Prepared,
+    ) =>
+      | Omit<sideEffect.SideEffect<Payload, EffectContext>, 'actionMarker' | 'deferred'>
+      | Promise<Omit<sideEffect.SideEffect<Payload, EffectContext>, 'actionMarker' | 'deferred'>>;
     settle?: Settle;
   },
 ): Promise<visit.EffectResolution> {
-  return EFFECT_COMPLETED;
+  return run(context, {
+    actionIdentity,
+    busy: true,
+    prepare,
+    work: async (prepared, actionMarker) =>
+      sideEffect.sideEffect<Payload, EffectContext>(context, {
+        actionMarker,
+        ...(await made(prepared)),
+        deferred: true,
+      }),
+    finish: () => ({ resolution: EFFECT_COMPLETED }),
+    settle,
+  });
 }

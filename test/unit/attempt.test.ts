@@ -63,7 +63,8 @@ function effectAttempt(
         payload: resetTo('abc'),
         deferred: true,
       }),
-    finish: () => ({ resolution: attempt.EFFECT_COMPLETED, outputs: { files: ['lib/add.mjs'] } }),
+    outputs: () => ({ outputs: { files: ['lib/add.mjs'] } }),
+    finish: () => ({ resolution: attempt.EFFECT_COMPLETED }),
     ...given,
   });
 }
@@ -319,10 +320,10 @@ test('a held completion replaces the saved result with its Event, or leaves none
     actionIdentity: IDENTITY,
     actionMarker,
     work: async () => null,
-    finish: () => ({
-      resolution: tableResolution('advance'),
+    outputs: () => ({
       outputs: { cleanup: { confirmed: true, survivors: [], reason: null, containment: { kind: 'none' } } },
     }),
+    finish: () => ({ resolution: tableResolution('advance') }),
     settle: (resolution) => settled.push(resolution),
   });
   assert.deepEqual(replaced, tableResolution('advance'));
