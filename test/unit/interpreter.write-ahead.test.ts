@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
+import * as stateDatabase from '../../lib/state-database.ts';
 import * as writeAhead from '../../lib/write-ahead.ts';
 import * as golden from '../support/golden.ts';
 import { actionMarker, attemptMarker, attemptsOf, loadTicket, writeAheadSteps } from '../support/execution-reads.ts';
@@ -357,6 +358,45 @@ for (const [kind, stopOptions, state] of stops) {
     await interpreter.runExecution({ ...fixture.options, record: mid });
     assert.equal(loadTicket(fixture).state, state);
     assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 1);
+  });
+}
+
+// A ticket_end row of the Execution that fails the read's check: not JSON, or the JSON of another Execution.
+const REFUSED_TICKET_ENDS: [string, string][] = [
+  ['that is not JSON', '{'],
+  [
+    "holding another Execution's JSON",
+    JSON.stringify({
+      schemaVersion: 2,
+      time: 't',
+      type: 'ticket_end',
+      ...{ run: 'run-1', execution: 'other', ticket: golden.TICKET, outcome: 'fault', diffStats: null },
+      ...{ terminalReason: null, error: null, interrupted: null },
+    }),
+  ],
+];
+for (const [name, json] of REFUSED_TICKET_ENDS) {
+  test(`a decided report beside a ticket_end row ${name} is still pending, and the next Run finishes it`, async (t) => {
+    const fixture = await golden.fixture(t);
+    const restore = caseDatabase.failAppends(t, (event) => event.type === 'ticket_end');
+    await rejectionOf(interpreter.runExecution({ ...fixture.options, fault: new Error('admission broke') }));
+    restore();
+    const mid = loadTicket(fixture);
+    stateDatabase
+      .open(fixture.commonDir)
+      .prepare(
+        "INSERT INTO events (ts, type, run, execution, ticket, json) VALUES ('t', 'ticket_end', 'run-1', ?, ?, ?)",
+      )
+      .run(mid.execution, golden.TICKET, json);
+    assert.equal(interpreter.pendingReport(mid), true, 'a refused row is no ticket_end');
+
+    await interpreter.runExecution({ ...fixture.options, record: mid });
+    assert.equal(loadTicket(fixture).state, 'fault');
+    assert.equal(fixture.gh.comments.length, 1, 'one fault comment');
+    assert.ok(
+      fixture.logs.some((line) => /run stop: skipped corrupt event \d+ \(ticket_end\)/.test(line)),
+      fixture.logs.join('\n'),
+    );
   });
 }
 

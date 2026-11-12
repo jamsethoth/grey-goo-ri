@@ -444,17 +444,6 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
   assert.deepEqual([absent.type, absent.run, absent.execution, absent.ticket], ['label_failed', null, null, 8]);
 });
 
-test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
-  const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
-  const log = events.eventLog(directory, { run: 'r1' });
-  log('ticket_start', { execution: '7.aaa', ticket: 7 });
-  log('run_end');
-  assert.equal(events.hasTicketEnd(directory, '7.aaa'), false, 'a run_end is no ticket_end');
-  log('ticket_end', { execution: '7.bbb', ticket: 7, outcome: 'needs-human' });
-  assert.equal(events.hasTicketEnd(directory, '7.aaa'), false, "another Execution's end of the same Ticket");
-  assert.equal(events.hasTicketEnd(directory, '7.bbb'), true);
-});
-
 test('diffStats splits test and non-test insertions', () => {
   const stats = events.diffStats(
     [

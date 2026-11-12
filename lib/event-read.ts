@@ -108,3 +108,14 @@ export const executionEvents = (
     stateDatabase.open(commonDir).prepare(`${SELECT} WHERE execution = ? ORDER BY id`).all(execution),
     onRefused,
   );
+
+// An Execution's Terminal has landed once a ticket_end of it passes the check. A refused one does not count, so the
+// next Run finishes the report again, and that report's run-stop read names the row in the log.
+export const hasTicketEnd = (commonDir: string, execution: string): boolean =>
+  checkedRows(
+    stateDatabase
+      .open(commonDir)
+      .prepare(`${SELECT} WHERE execution = ? AND type = 'ticket_end' ORDER BY id`)
+      .all(execution),
+    () => {},
+  ).length > 0;

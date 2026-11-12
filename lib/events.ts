@@ -296,13 +296,6 @@ export function eventLog<Base extends EventInput<EventType>>(
   };
 }
 
-// An Execution's Terminal has landed once its ticket_end is in the log.
-export const hasTicketEnd = (commonDir: string, execution: string): boolean =>
-  !!stateDatabase
-    .open(commonDir)
-    .prepare("SELECT 1 FROM events WHERE execution = ? AND type = 'ticket_end' LIMIT 1")
-    .get(execution);
-
 function closed(what: string, fields: Fields, required: string[], optional: string[] = []): void {
   // An undefined value would vanish in JSON, so it counts as missing; null is a declared absence and stays.
   for (const key of required)

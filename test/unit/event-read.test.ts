@@ -202,35 +202,72 @@ for (const shape of Object.keys(SHAPES)) {
   });
 }
 
-// Every SQL text in lib/, bin/, scripts/ and test/support/ that reads the events table's json column.
-const EVENT_JSON_READ = /SELECT\b[^'"`]*\bjson\b[^'"`]*\bFROM events\b/g;
+// SQL that reads the events table, in any case, spacing or quoting, wherever it appears in a source file.
+const EVENTS_TABLE_READ = /\bfrom\s+["'`[]?events\b/i;
 
-test('every read of an Event row goes through lib/event-read.ts', () => {
+test('the read census finds a read of the events table in any form', () => {
+  const reads = [
+    'SELECT * FROM events',
+    'select json from events where id = ?',
+    'SELECT json FROM\n  events',
+    'SELECT json FROM "events"',
+    'SELECT 1 FROM `events` LIMIT 1',
+    'SELECT 1 FROM [events]',
+  ];
+  assert.deepEqual(
+    reads.filter((sql) => !EVENTS_TABLE_READ.test(sql)),
+    [],
+  );
+  assert.equal(EVENTS_TABLE_READ.test('INSERT INTO events (ts) VALUES (?)'), false, 'an append is no read');
+});
+
+test('every read of the events table goes through lib/event-read.ts', () => {
   const sites = ['lib/', 'bin/', 'scripts/', 'test/support/']
     .flatMap(sourceFiles)
-    .flatMap((file) => (textOf(file).match(EVENT_JSON_READ) ?? []).map(() => file));
-  assert.ok(sites.length > 0, 'the read module reads the table');
+    .filter((file) => EVENTS_TABLE_READ.test(textOf(file)));
+  assert.ok(sites.includes('lib/event-read.ts'), 'the read module reads the table');
   assert.deepEqual(
     sites.filter((file) => file !== 'lib/event-read.ts'),
     [],
-    'a read of Event rows outside the checked read',
+    'a read of the events table outside the checked read',
   );
 });
 
 // The Event types lib/events.ts exports, read from its text.
 const EVENT_TYPES = [...textOf('lib/events.ts').matchAll(/^export type (\w*Event)\b/gm)].map((match) => match[1]);
 
-test('no Event is cast on the read side: the read module and the lib modules that read through it', () => {
+// An assertion to an Event type under any namespace, an object type or `unknown as`, parenthesized or not.
+const eventCast = () => new RegExp(String.raw`\bas\s*\(?\s*(unknown\s+as\b|\{|(\w+\.)?(${EVENT_TYPES.join('|')})\b)`);
+
+test('the cast census finds an Event cast in any form, and nothing else', () => {
   assert.ok(EVENT_TYPES.includes('Event') && EVENT_TYPES.includes('ActionEvent'), EVENT_TYPES.join());
+  const casts = [
+    'x as Event',
+    'x as events.ActionEvent[]',
+    'x as (eventTypes.Event)',
+    'x as unknown as T',
+    'x as { failureClass?: string }',
+  ];
+  assert.deepEqual(
+    casts.filter((line) => !eventCast().test(line)),
+    [],
+  );
+  const others = ['x as const', 'err as Error', 'name as outcome.FailureClass', 'type as events.LifecycleType'];
+  assert.deepEqual(
+    others.filter((line) => eventCast().test(line)),
+    [],
+  );
+});
+
+test('no Event is cast on the read side: the read module and every lib module that imports it', () => {
   const readers = sourceFiles('lib/').filter(
-    (file) => file === 'lib/event-read.ts' || textOf(file).includes('eventRead.'),
+    (file) => file === 'lib/event-read.ts' || /from '\.\/event-read\.ts'/.test(textOf(file)),
   );
   assert.ok(readers.includes('lib/terminal-report.ts'), readers.join());
-  const cast = new RegExp(String.raw`\bas (unknown as|\{|(events\.)?(${EVENT_TYPES.join('|')})\b)`);
   const casts = readers.flatMap((file) =>
     textOf(file)
       .split('\n')
-      .flatMap((line, index) => (cast.test(line) ? [`${file}:${index + 1}: ${line.trim()}`] : [])),
+      .flatMap((line, index) => (eventCast().test(line) ? [`${file}:${index + 1}: ${line.trim()}`] : [])),
   );
   assert.deepEqual(casts, []);
 });
@@ -348,6 +385,25 @@ test('a row whose column is null where its JSON holds a value is refused by name
   const { commonDir, row } = written(t, 'ticket_end');
   const id = plant(commonDir, { ...row, run: null });
   assertRefused(commonDir, id, 'ticket_end', /its run column is null but its JSON holds r1/);
+});
+
+test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
+  const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-event-read-');
+  const log = events.eventLog(commonDir, { run: 'r1' });
+  log('ticket_start', { execution: '7.aaa', ticket: 7 });
+  log('run_end');
+  assert.equal(eventRead.hasTicketEnd(commonDir, '7.aaa'), false, 'a run_end is no ticket_end');
+  log('ticket_end', { execution: '7.bbb', ticket: 7, outcome: 'needs-human' });
+  assert.equal(eventRead.hasTicketEnd(commonDir, '7.aaa'), false, "another Execution's end of the same Ticket");
+  assert.equal(eventRead.hasTicketEnd(commonDir, '7.bbb'), true);
+});
+
+test('hasTicketEnd counts no ticket_end row that fails the check', (t) => {
+  const { commonDir, row } = written(t, 'ticket_end');
+  plant(commonDir, { ...row, json: '{' });
+  assert.equal(eventRead.hasTicketEnd(commonDir, 'e1'), false, 'not JSON');
+  plant(commonDir, { ...row, json: row.json.replace('"execution":"e1"', '"execution":"e2"') });
+  assert.equal(eventRead.hasTicketEnd(commonDir, 'e1'), false, "another Execution's JSON under this one's column");
 });
 
 test('readEvents refuses the whole read when any row is refused', (t) => {

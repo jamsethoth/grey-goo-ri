@@ -6,6 +6,7 @@ import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effectEvidence from './effect-evidence.ts';
 import * as effects from './effects.ts';
+import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
@@ -42,7 +43,7 @@ export function protectedFiles(harnesses: Record<string, { protectedPaths?: unkn
 // A hold, fault or abandonment decided and saved, at admission or by a Terminal, whose ticket_end has not landed: the
 // next Run finishes its report.
 export const pendingReport = (executionRecord: record.ExecutionRecord): boolean =>
-  (!!executionRecord.admissionStop && !events.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
+  (!!executionRecord.admissionStop && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
   context.reportDecided(executionRecord);
 
 // Reconciliation looks for a remote effect as a retry does: a failed lookup is retried on the Action's budget.

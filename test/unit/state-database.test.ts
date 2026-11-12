@@ -123,11 +123,11 @@ const ENTRY_POINTS: Record<string, Record<string, ((commonDir: string) => unknow
     diffStats: null,
     eventLog: (commonDir) => events.eventLog(commonDir)('run_start', { run: 'r1' }),
     declaredAs: null,
-    hasTicketEnd: (commonDir) => events.hasTicketEnd(commonDir, '8.run-1'),
   },
   eventRead: {
     readEvents: (commonDir) => eventRead.readEvents(commonDir),
     executionEvents: (commonDir) => eventRead.executionEvents(commonDir, '8.run-1'),
+    hasTicketEnd: (commonDir) => eventRead.hasTicketEnd(commonDir, '8.run-1'),
   },
 };
 const MODULES: Record<string, object> = { stateDatabase, record, events, eventRead };
