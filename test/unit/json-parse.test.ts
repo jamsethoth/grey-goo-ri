@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 // lib/json-parse.d.ts makes JSON.parse give `unknown`, so tsc refuses its result wherever no check has narrowed it
-// (#354). The type checker finds the calls: a call is JSON.parse when it resolves to the `parse` of an
-// `interface JSON`, however it is spelled.
+// (#354). The type checker finds JSON.parse however it is spelled: a call is one when it resolves to the `parse` of an
+// `interface JSON`, and a value is one when its type has that signature.
 const root = fileURLToPath(new URL('../../', import.meta.url)).replaceAll('\\', '/');
 const OVERLOAD = `${root}lib/json-parse.d.ts`;
 
@@ -33,15 +33,28 @@ const isJsonParse = (declaration: ts.Declaration | undefined): declaration is ts
   ts.isInterfaceDeclaration(declaration.parent) &&
   declaration.parent.name.text === 'JSON';
 
-// Every call of JSON.parse in the files tsconfig.json includes, with the declaration it resolves to and its type; and
-// every reach of JSON.parse through call, apply or bind, which resolves past gg's overload to lib.es5's `any`.
-function census() {
-  const program = ts.createProgram(configured.fileNames, configured.options);
+// Whether `node` is the callee of a call, through parentheses or a `!`.
+function isCallee(node: ts.Node) {
+  let child = node;
+  while (ts.isParenthesizedExpression(child.parent) || ts.isNonNullExpression(child.parent)) child = child.parent;
+  return ts.isCallExpression(child.parent) && child.parent.expression === child;
+}
+// A name or an access that may hold a value: not the member name of an access, and not a name inside a type.
+const holdsValue = (node: ts.Node) =>
+  ts.isPropertyAccessExpression(node) ||
+  ts.isElementAccessExpression(node) ||
+  (ts.isIdentifier(node) &&
+    !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) &&
+    !ts.isQualifiedName(node.parent));
+
+// In `files` of `program`: every call of JSON.parse, with the declaration it resolves to and its type; and every place
+// JSON.parse's value goes other than straight into a call (an alias, a destructuring, call, apply or bind, a callback),
+// since a parse result can only be known to come from the overload when JSON.parse is called where it is read.
+function census(program: ts.Program, files: (sourceFile: ts.SourceFile) => boolean) {
   const checker = program.getTypeChecker();
   const calls: { where: string; declaredIn: string; unknown: boolean }[] = [];
-  const indirect: string[] = [];
-  for (const sourceFile of program.getSourceFiles()) {
-    if (sourceFile.isDeclarationFile) continue;
+  const uncalled = new Set<string>();
+  for (const sourceFile of program.getSourceFiles().filter(files)) {
     const where = (node: ts.Node) => {
       const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
       return `${sourceFile.fileName.slice(root.length)}:${line + 1}`;
@@ -56,19 +69,19 @@ function census() {
             unknown: (checker.getTypeAtLocation(node).flags & ts.TypeFlags.Unknown) !== 0,
           });
       }
-      if (ts.isPropertyAccessExpression(node) && ['call', 'apply', 'bind'].includes(node.name.text)) {
-        const declarations = checker.getSymbolAtLocation(node.expression)?.getDeclarations() ?? [];
-        if (declarations.some(isJsonParse)) indirect.push(where(node));
-      }
+      const signatures = holdsValue(node) ? checker.getTypeAtLocation(node).getCallSignatures() : [];
+      if (signatures.some((signature) => isJsonParse(signature.getDeclaration())) && !isCallee(node))
+        uncalled.add(where(node));
       ts.forEachChild(node, visit);
     };
     visit(sourceFile);
   }
-  return { calls, indirect };
+  return { calls, uncalled: [...uncalled] };
 }
 
-test('every JSON.parse in lib, bin, scripts and test gives unknown, from gg overload', () => {
-  const { calls, indirect } = census();
+test('every JSON.parse in lib, bin, scripts and test is called where it is read, and gives unknown', () => {
+  const program = ts.createProgram(configured.fileNames, configured.options);
+  const { calls, uncalled } = census(program, (sourceFile) => !sourceFile.isDeclarationFile);
   // The census is not empty: it finds parses in lib and in test.
   assert.ok(
     calls.some(({ where }) => where.startsWith('lib/config.ts:')),
@@ -83,11 +96,24 @@ test('every JSON.parse in lib, bin, scripts and test gives unknown, from gg over
     [],
     'these calls of JSON.parse do not resolve to lib/json-parse.d.ts, or do not give unknown',
   );
-  assert.deepEqual(indirect, [], 'JSON.parse reached through call, apply or bind gives lib.es5 any');
+  assert.deepEqual(uncalled, [], 'JSON.parse is read here other than to be called');
 });
 
+// A program of the overload and one planted file, `lib/planted-parse.ts`, holding `text`.
+function plantedProgram(text: string) {
+  const planted = `${root}lib/planted-parse.ts`;
+  const host = ts.createCompilerHost(configured.options);
+  const getSourceFile = host.getSourceFile.bind(host);
+  host.getSourceFile = (fileName, languageVersion, ...rest) =>
+    fileName === planted
+      ? ts.createSourceFile(fileName, text, languageVersion)
+      : getSourceFile(fileName, languageVersion, ...rest);
+  const program = ts.createProgram([planted, OVERLOAD], { ...configured.options, types: [] }, host);
+  return { program, plantedFile: program.getSourceFile(planted)! };
+}
+
 // A file beside the overload that uses a parse's result unchecked, where a value of a type is wanted.
-const PLANTED = [
+const UNCHECKED = [
   'declare const text: string;',
   'declare const takes: (value: string) => void;',
   'export const assigned: string = JSON.parse(text);',
@@ -97,16 +123,42 @@ const PLANTED = [
 ].join('\n');
 
 test('tsc refuses a parse result assigned, returned or passed where a type is wanted', () => {
-  const planted = `${root}lib/planted-parse.ts`;
-  const host = ts.createCompilerHost(configured.options);
-  const getSourceFile = host.getSourceFile.bind(host);
-  host.getSourceFile = (fileName, languageVersion, ...rest) =>
-    fileName === planted
-      ? ts.createSourceFile(fileName, PLANTED, languageVersion)
-      : getSourceFile(fileName, languageVersion, ...rest);
-  const program = ts.createProgram([planted, OVERLOAD], { ...configured.options, types: [] }, host);
+  const { program, plantedFile } = plantedProgram(UNCHECKED);
   const lines = program
-    .getSemanticDiagnostics(program.getSourceFile(planted))
+    .getSemanticDiagnostics(plantedFile)
     .map((diagnostic) => diagnostic.file!.getLineAndCharacterOfPosition(diagnostic.start!).line + 1);
   assert.deepEqual(lines, [3, 4, 5], 'tsc refuses lines 3 to 5 and accepts line 6');
+});
+
+// Each spelling of a call the census counts, then each place JSON.parse's value goes other than into a call.
+const SPELLINGS = [
+  'declare const text: string;',
+  "declare const method: 'parse';",
+  'export const direct = JSON.parse(text);',
+  "export const computed = JSON['parse'](text);",
+  'export const byConstant = JSON[method](text);',
+  'export const parenthesized = (JSON.parse)(text);',
+  'export const nonNull = JSON.parse!(text);',
+  'export const optional = JSON?.parse(text);',
+  'export const global = globalThis.JSON.parse(text);',
+  'const alias = JSON.parse;',
+  'const { parse } = JSON;',
+  'export const viaCall = JSON.parse.call(JSON, text);',
+  "export const viaComputedCall = JSON.parse['call'](JSON, text);",
+  'export const viaApply = JSON[method].apply(JSON, [text]);',
+  'export const bound = JSON.parse.bind(JSON);',
+  'export const mapped = [text].map(JSON.parse);',
+  'export const aliased = [alias(text), parse(text)];',
+].join('\n');
+
+test('the census counts every spelling of a JSON.parse call, and finds JSON.parse read other than to be called', () => {
+  const { program, plantedFile } = plantedProgram(SPELLINGS);
+  const { calls, uncalled } = census(program, (sourceFile) => sourceFile === plantedFile);
+  const line = (where: string) => Number(where.split(':').at(-1));
+  assert.deepEqual(
+    calls.map(({ where, unknown }) => [line(where), unknown]),
+    [3, 4, 5, 6, 7, 8, 9, 17, 17].map((lineNumber) => [lineNumber, true]),
+    'the direct spellings and the aliases are calls that give unknown',
+  );
+  assert.deepEqual(uncalled.map(line), [10, 11, 12, 13, 14, 15, 16], 'every read that is not a call is found');
 });

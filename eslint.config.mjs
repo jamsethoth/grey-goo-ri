@@ -211,14 +211,13 @@ function findLost(checker, program, rootType) {
   }
   return null;
 }
-// lib's JSON.stringify or JSON.parse by any path to it (globalThis.JSON, JSON['stringify']); a local object named JSON
-// is not it.
-const isJsonCall = (checker, services, { callee }, method) => {
+// lib's JSON.stringify by any path to it (globalThis.JSON, JSON['stringify']); a local object named JSON is not it.
+const isJsonStringify = (checker, services, { callee }) => {
   if (callee.type !== 'MemberExpression') return false;
-  const { property } = callee;
-  const named = callee.computed ? property.type === 'Literal' && property.value === method : property.name === method;
+  const { property: key } = callee;
+  const named = callee.computed ? key.type === 'Literal' && key.value === 'stringify' : key.name === 'stringify';
   if (!named) return false;
-  const symbol = checker.getSymbolAtLocation(services.esTreeNodeToTSNodeMap.get(property));
+  const symbol = checker.getSymbolAtLocation(services.esTreeNodeToTSNodeMap.get(key));
   return (symbol?.getDeclarations() ?? []).some(
     (declaration) => inDefaultLib(services.program, declaration) && declaration.parent?.name?.text === 'JSON',
   );
@@ -282,7 +281,7 @@ const NO_MAP_TO_JSON = {
     const checker = services.program.getTypeChecker();
     return {
       CallExpression(node) {
-        if (!isJsonCall(checker, services, node, 'stringify')) return;
+        if (!isJsonStringify(checker, services, node)) return;
         // A replacer function is its owner's conversion (lib/validate/inputs.ts); the rule does not judge it. An
         // array of keys, null or undefined converts nothing, and a replacer that may be absent does not guarantee it.
         const unconverted = stringifyLayouts(passedElements(checker, services, node.arguments))
@@ -302,17 +301,19 @@ const NO_MAP_TO_JSON = {
   },
 };
 
-// tsc accepts `unknown as T`, so lint refuses an assertion on what JSON.parse gives, through a `!` too (#354).
+// tsc accepts `unknown as T`, so lint refuses an assertion on a call resolving to JSON.parse, however spelled (#354).
 const NO_JSON_PARSE_ASSERTION = {
   meta: { type: 'problem', schema: [], messages: { asserted: 'Check what JSON.parse gives; never assert its type.' } },
   create(context) {
-    const services = context.sourceCode.parserServices;
-    if (!services?.program) throw new Error('gg/no-json-parse-assertion needs type information');
-    const checker = services.program.getTypeChecker();
+    const { program, esTreeNodeToTSNodeMap: tsNodes } = context.sourceCode.parserServices ?? {};
+    if (!program) throw new Error('gg/no-json-parse-assertion needs type information');
+    const checker = program.getTypeChecker();
+    const bare = (node) => (/^(TSNonNull|Chain)Expression$/.test(node.type) ? bare(node.expression) : node);
     const asserted = (node) => {
-      const operand = node.expression.type === 'TSNonNullExpression' ? node.expression.expression : node.expression;
-      if (operand.type === 'CallExpression' && isJsonCall(checker, services, operand, 'parse'))
-        context.report({ node, messageId: 'asserted' });
+      const operand = bare(node.expression);
+      if (operand.type !== 'CallExpression') return;
+      const { name, parent } = checker.getResolvedSignature(tsNodes.get(operand))?.declaration ?? {};
+      if (name?.text === 'parse' && parent?.name?.text === 'JSON') context.report({ node, messageId: 'asserted' });
     };
     return { TSAsExpression: asserted, TSTypeAssertion: asserted };
   },

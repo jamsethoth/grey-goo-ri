@@ -489,10 +489,21 @@ const PARSE_ASSERTIONS = [
   'globalThis.JSON.parse(text) as string',
   "JSON['parse'](text) as string",
   'JSON.parse(text)! as string',
+  'JSON.parse!(text) as string',
+  'JSON?.parse(text) as string',
+  'JSON[method](text) as string',
+  'alias(text) as string',
+  'destructured(text) as string',
 ];
 const OTHER_ASSERTIONS = ['parser.parse(text) as string', 'JSON.stringify(text) as string', "'parse' as const"];
 const parseAssertions = async (filePath: string, samples: string[]) => {
-  const header = ['declare const text: string;', 'declare const parser: { parse(source: string): unknown };'];
+  const header = [
+    'declare const text: string;',
+    'declare const parser: { parse(source: string): unknown };',
+    "declare const method: 'parse';",
+    'const alias = JSON.parse;',
+    'const { parse: destructured } = JSON;',
+  ];
   const lines = [...header, ...samples.map((sample, i) => `export const sample${i} = ${sample};`)];
   const [result] = await typedEslint.lintText(`${lines.join('\n')}\n`, { filePath });
   return samples.map((sample, i) => [
