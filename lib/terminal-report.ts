@@ -75,7 +75,10 @@ const reachOf = ({ failureClass }: { failureClass?: string }) =>
   outcome.FAILURE_CLASSES[failureClass as outcome.FailureClass]?.reach;
 
 // The run stop an Execution's result reports, read from its Action Events.
-export function runStopOf(executionRecord: record.ExecutionRecord): { failureClass: string } | null {
+export function runStopOf(
+  executionRecord: record.ExecutionRecord,
+  _log: (line: string) => void,
+): { failureClass: string } | null {
   const event = runStopEvent(events.executionEvents(executionRecord.commonDir, executionRecord.execution));
   return event && { failureClass: (event as events.ActionEvent).failureClass as string };
 }
@@ -286,7 +289,7 @@ export async function report(
       interrupted: stop?.interrupted,
     }),
   );
-  const runStop = runStopOf(executionRecord);
+  const runStop = runStopOf(executionRecord, context.log);
   return {
     outcome: name,
     ...(stop?.held && { held: true as const }),

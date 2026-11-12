@@ -215,7 +215,7 @@ async function endCaught(runContext: RunContext, caught: unknown): Promise<Termi
       fault: true,
       error: effectErrors.errorText(err),
     };
-    const runStop = terminalReport.runStopOf(executionRecord);
+    const runStop = terminalReport.runStopOf(executionRecord, runContext.log);
     if (runStop) result.runStop = runStop;
     return result;
   }

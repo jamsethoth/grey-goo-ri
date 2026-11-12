@@ -73,7 +73,7 @@ interface ActionFields {
   cleanup: commandCleanup.CallCleanup;
   decision: approvalAction.Consumption['decision'];
 }
-const ACTION = {
+export const ACTION = {
   flow: 'required',
   configHash: 'required',
   launchProfile: 'required',
@@ -119,7 +119,7 @@ interface AgentFields {
   permissionDenials: jsonValue.JsonValue;
   commandsRun: jsonValue.JsonValue;
 }
-const AGENT = {
+export const AGENT = {
   harness: 'required',
   agentCliVersion: 'required',
   model: 'required',
@@ -186,7 +186,7 @@ interface LifecycleFields {
     spent: SpentBound[];
   };
 }
-const LIFECYCLE = {
+export const LIFECYCLE = {
   run_start: { run: 'required' },
   run_end: { run: 'required', tickets: 'optional', failureClass: 'optional' },
   ticket_start: { run: 'required', execution: 'required', ticket: 'required' },
@@ -254,7 +254,7 @@ type DeclaredShape = Readonly<Record<string, Presence>>;
 type LifecycleBody<Type extends LifecycleType> = {
   [Each in Type]: { type: Each } & Declared<LifecycleFields[Each], (typeof LIFECYCLE)[Each]>;
 }[Type];
-const declaredAs = (shape: DeclaredShape, presence: Presence): string[] =>
+export const declaredAs = (shape: DeclaredShape, presence: Presence): string[] =>
   Object.keys(shape).filter((field) => shape[field] === presence);
 const ACTION_REQUIRED = declaredAs(ACTION, 'required');
 const ACTION_OPTIONAL = declaredAs(ACTION, 'optional');
