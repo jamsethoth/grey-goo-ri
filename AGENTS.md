@@ -14,6 +14,24 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   names its source lines; "port unchanged" without a source is not a complete ticket. A ported file may rename
   identifiers and feature-flow strings; its case names and assertions otherwise stay.
 
+## Architecture
+
+New and changed code moves gg toward deep modules: a lot of behaviour behind a small interface, so callers get
+leverage and a change lands in one place (locality).
+
+- One domain concept, one module. What gg knows about a GLOSSARY.md concept (its types, its rules, how it is made, read
+  and resumed) lives in the module named for it, so adding a kind or changing a rule is a one-module edit. A list of
+  names that other modules match against (`REMOTE_ACTIONS`, an `if (effect === …)` chain) means the concept is
+  scattered. #355, which gathers each Effect into one module, is the first such move.
+- The interface is the test surface: a module's tests call what its callers call. When reaching one rule takes a golden
+  Flow, the rule sits behind the wrong interface.
+- The deletion test: a module whose deletion would only move its code into one caller is a pass-through, so fold it in.
+  A module whose deletion would copy its code into several callers earns its place.
+- A seam earns its place with two adapters: the real one, and a fake held to it by a contract suite (`lib/git.ts` and
+  `test/support/fake-git.ts`). With one adapter, take a parameter instead.
+- The lint caps (400 lines a file, 60 a function) split a module along a seam inside it, into a module only it imports,
+  as `lib/rules.ts` imports `lib/rule-domain.ts`. The concept keeps one owner.
+
 ## Conventions
 
 - TypeScript ESM on Node 26 LTS (26.13 or later, where `node:sqlite` loads without a warning; ADR 0020), must run on
