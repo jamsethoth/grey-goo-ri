@@ -33,15 +33,25 @@ const windowsKernel32 = (() => {
 })();
 
 // Whether any process runs under pid. A Windows process that has exited can still answer while something holds it
-// open, so a start time alone does not say it runs.
+// open, so a start time alone does not say it runs; a Linux zombie answers a signal, but runs nothing.
 const runs = (pid: number) => {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  return process.platform === 'win32' || statFields(pid)?.[0] !== 'Z';
 };
+
+// The fields of /proc/<pid>/stat from field 3 on (the name before them may hold spaces), or null with no such process.
+function statFields(pid: number) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+  } catch {
+    return null;
+  }
+}
 
 // When Linux booted, in wall time: /proc/uptime read between two wall samples, again until they are close, so a pause
 // between the reads cannot move it. shortcut: a wall clock stepped between a record and its check moves both apart;
@@ -63,14 +73,10 @@ function startOf(pid: number): number | null {
     const { created } = containment.describe(windowsKernel32(), pid);
     return created === null ? null : Date.parse(created);
   }
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
-    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' '); // from field 3 on: the name may hold spaces
-    if (fields[0] === 'Z') return null; // a zombie runs nothing
-    return bootTime() + Number(fields[19]) * 10; // field 22: the start in clock ticks, 100 a second, since boot
-  } catch {
-    return null;
-  }
+  const fields = statFields(pid);
+  // field 22: the start in clock ticks, 100 a second, since boot. A clock that cannot be read fails the case: read as
+  // gone, it would pass every wait for an end.
+  return fields && bootTime() + Number(fields[19]) * 10;
 }
 
 // The start of the process running under pid as a cleanup reports it, or null when none runs there: the creation time

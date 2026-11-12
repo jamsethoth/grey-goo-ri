@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as commandCleanup from '../../../lib/command-cleanup.ts';
@@ -177,6 +177,26 @@ for (const [recording, { itsOwn, anEarlier }] of Object.entries(RECORDINGS)) {
       assert.equal(await later.ranToItsEnd(), 7, 'the later process ran on to its own end');
     });
 }
+
+// A zombie answers a signal but runs nothing: its parent, which never reaps it, is a sleep the shell became.
+test(
+  'a zombie reads as not running, however it was recorded',
+  { skip: process.platform === 'win32' && 'a Windows process leaves no zombie' },
+  async (t) => {
+    const pidFile = join(scratch, 'zombie.pid');
+    const parent = spawn('sh', ['-c', `sleep 0 & echo $! > "$GG_TEST_ZOMBIE_PID"; exec sleep 60`], {
+      stdio: 'ignore',
+      env: { ...process.env, GG_TEST_ZOMBIE_PID: pidFile },
+    });
+    t.after(() => parent.kill());
+    await processProbe.waitFor(() => processProbe.pidIn(pidFile) > 0, t.signal);
+    const zombie = processProbe.pidIn(pidFile);
+    await processProbe.waitFor(() => readFileSync(`/proc/${zombie}/stat`, 'utf8').includes(') Z '), t.signal);
+    assert.equal(processProbe.alive(zombie), false, 'by its pid file');
+    processProbe.remember(zombie, cleanupStartOf(zombie));
+    assert.equal(processProbe.alive(zombie), false, 'by the start its cleanup reported');
+  },
+);
 
 // Not every script names its pid file among its arguments: a shell script reads it from a variable.
 test('a process whose pid file is not among its arguments reads as running until it ends', async (t) => {
