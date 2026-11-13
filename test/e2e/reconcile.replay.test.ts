@@ -76,7 +76,13 @@ test('a crash before the commit replays the intended tree, not a human edit', as
   // ready.
   assert.equal(result.outcome, 'needs-human');
   const final = executionReads.loadTicket(fixture);
-  assert.deepEqual(final.terminalReason?.decidedBy, { hold: 'unchecked-publish' });
+  assert.deepEqual(final.terminalReason?.decidedBy, {
+    hold: 'unchecked-publish',
+    vertex: 'publish',
+    visit: 1,
+    action: 'pr-ready',
+    recovery: 0,
+  });
   assert.match(
     final.terminalReason?.text as string,
     /its Check passed on tree \w+, not on tree \w+ of commit/,

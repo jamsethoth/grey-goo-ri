@@ -483,7 +483,13 @@ test('pr-ready holds when the worktree changed after its Check passed', async (t
   assert.equal(markedReady(fixture), false, 'gh pr ready never runs');
   assert.equal(fixture.gh.pr()!.isDraft, true, 'the PR stays a draft');
   const executionRecord = loadTicket(fixture);
-  assert.deepEqual(executionRecord.terminalReason!.decidedBy, { hold: 'unchecked-publish' });
+  assert.deepEqual(executionRecord.terminalReason!.decidedBy, {
+    hold: 'unchecked-publish',
+    vertex: 'publish',
+    visit: 1,
+    action: 'pr-ready',
+    recovery: 0,
+  });
   assert.match(executionRecord.terminalReason!.text, /the worktree is not clean at commit \w+/);
   assert.ok(fixture.gh.labels.has('gg:state:needs-human'));
 });
@@ -499,7 +505,13 @@ test('pr-ready holds when only the remote PR head moved after the push', async (
   assert.equal(markedReady(fixture), false, 'gh pr ready never runs');
   assert.equal(fixture.gh.pr()!.isDraft, true, 'the PR stays a draft');
   const executionRecord = loadTicket(fixture);
-  assert.deepEqual(executionRecord.terminalReason!.decidedBy, { hold: 'unchecked-publish' });
+  assert.deepEqual(executionRecord.terminalReason!.decidedBy, {
+    hold: 'unchecked-publish',
+    vertex: 'publish',
+    visit: 1,
+    action: 'pr-ready',
+    recovery: 0,
+  });
   assert.ok(executionRecord.terminalReason!.text.includes(moved), executionRecord.terminalReason!.text);
   assert.equal(
     await fixture.options.deps.git.remoteSha(fixture.mainRoot, golden.BRANCH),

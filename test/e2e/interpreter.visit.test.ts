@@ -200,7 +200,7 @@ test('uncommitted changes before red are held at needs-human and nothing is dele
   assert.deepEqual(intents(fixture.executionRecord, 'reset'), []);
   assert.equal(fixture.executionRecord.history.at(-1)?.kind, 'held');
   const reason = terminalReasonOf(fixture);
-  assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
+  assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree', vertex: 'red', visit: 1, action: null, recovery: 0 });
   assert.equal(reason.outcome, null);
   assert.equal(reason.rule, null);
   assert.match(reason.text, /uncommitted changes before red/);

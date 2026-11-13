@@ -251,7 +251,14 @@ test("a write Vertex on a dirty worktree gg's records do not explain is held", a
   assert.equal(fixture.executionRecord.history.at(-1)?.kind, 'held');
   assert.deepEqual(Object.fromEntries(fixture.executionRecord.visits), { red: 1, green: 1 });
   const reason = terminalReasonOf(fixture);
-  assert.deepEqual(reason.decidedBy, { hold: 'dirty-worktree' });
+  // The hold names the Visit it stopped before any Action (#341).
+  assert.deepEqual(reason.decidedBy, {
+    hold: 'dirty-worktree',
+    vertex: 'green',
+    visit: 1,
+    action: null,
+    recovery: 0,
+  });
   assert.match(reason.text, /uncommitted changes before green/);
 });
 

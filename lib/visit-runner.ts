@@ -133,12 +133,11 @@ async function heldDirty(runContext: RunContext, vertexId: string): Promise<Visi
     next: labels.NEEDS_HUMAN,
     stop: { outcome: labels.NEEDS_HUMAN },
     taken: null,
-    reason: {
-      decidedBy: { hold: 'dirty-worktree' },
-      outcome: null,
-      rule: null,
-      text: `The worktree had uncommitted changes before ${vertexId}, so no agent ran and nothing was deleted.`,
-    },
+    reason: terminal.holdReason(
+      executionRecord,
+      'dirty-worktree',
+      `The worktree had uncommitted changes before ${vertexId}, so no agent ran and nothing was deleted.`,
+    ),
   };
 }
 

@@ -206,7 +206,16 @@ test('a human needs-human label during backoff abandons before the retry', async
     !fixture.gh.calls.some((call) => call.args[0] === 'issue' && call.args[1] === 'edit'),
     'no label written: in-progress was not there to remove',
   );
-  assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 1);
+  const ends = fixture.readEvents().filter((event) => event.type === 'ticket_end');
+  assert.equal(ends.length, 1);
+  // The abandonment names the Visit and the Action its backoff cut off (#341).
+  assert.deepEqual((ends[0] as events.TicketEndEvent).terminalReason?.decidedBy, {
+    human: 'gg:state:needs-human',
+    vertex: 'reviewer',
+    visit: 1,
+    action: 'comment',
+    recovery: 0,
+  });
 });
 
 test('a retry that crashed as it launched needs a new retry to launch again', async (t) => {

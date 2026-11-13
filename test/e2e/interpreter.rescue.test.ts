@@ -108,7 +108,13 @@ test('an existing rescue ref is never overwritten', async (t) => {
   assert.equal(result.held, true);
   assert.equal(gitShell.sh(fixture.worktree, 'rev-parse', ref), fixture.base, 'the ref keeps what it held');
   assert.equal(inWorktree(fixture, 'notes.txt'), true, 'nothing was reset');
-  assert.deepEqual(terminalReasonOf(fixture).decidedBy, { hold: 'rescue' });
+  assert.deepEqual(terminalReasonOf(fixture).decidedBy, {
+    hold: 'rescue',
+    vertex: 'green',
+    visit: 1,
+    action: 'test',
+    recovery: 1,
+  });
   assert.ok(terminalReasonOf(fixture).text.includes(ref), 'the hold names the Rescue Ref');
 });
 
@@ -138,7 +144,13 @@ test('a reset that leaves the worktree unlike the baseline holds', async (t) => 
   };
   const result = await interpreter.runExecution(fixture.options);
   assert.equal(result.held, true);
-  assert.deepEqual(terminalReasonOf(fixture).decidedBy, { hold: 'rescue' });
+  assert.deepEqual(terminalReasonOf(fixture).decidedBy, {
+    hold: 'rescue',
+    vertex: 'green',
+    visit: 1,
+    action: 'test',
+    recovery: 1,
+  });
   assert.ok(terminalReasonOf(fixture).text.includes(greenRescueRef(fixture)), 'the hold names the Rescue Ref');
   assert.deepEqual(
     fixture.harness.calls.map((call) => call.marker).filter((call) => call?.includes('senior-green')),
