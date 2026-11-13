@@ -5,7 +5,7 @@
 import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as effects from './effects/index.ts';
-import * as sideEffect from './effects/side-effect.ts';
+import * as attempt from './attempt.ts';
 import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as flow from './flow.ts';
@@ -127,7 +127,7 @@ async function resume(runContext: RunContext): Promise<TerminalResult | null> {
   const { record: executionRecord } = runContext;
   await cleanupHold.awaitConfirmation(runContext, findEffect(runContext));
   const reconciled = () =>
-    sideEffect.whileBusy(runContext, () =>
+    attempt.whileBusy(runContext, () =>
       reconcile.reconcile({
         record: executionRecord,
         flow: runContext.flow,

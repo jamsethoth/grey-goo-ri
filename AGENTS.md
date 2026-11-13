@@ -87,18 +87,20 @@ leverage and a change lands in one place (locality).
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; `resumption`, what a Run does with a record it finds; gg's own Protected Files |
 | `lib/run-context.ts` | the Run context every step reads (`RunContext`), the deps a test replaces (`Deps`), and how each Action is entered, marked and recorded |
 | `lib/clock.ts` | the `Clock` a Run and the locks read, and the wall clock they default to |
-| `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
+| `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, the saved result of each (`settleOf`, the only writer of `visitState.settled`), a stop and its rollback, and the Visit's Outcome |
+| `lib/visit-inputs.ts` | the Vertex inputs a Visit pins at its entry, read from the outputs of the Visits before it |
 | `lib/rescue.ts` | the Rescue Ref and the write-ahead reset, one mechanism for a failure routed to another Vertex and for an Interrupted Attempt (#68) |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
 | `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap |
 | `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the Transition Table makes of its Signals |
 | `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
 | `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |
+| `lib/attempt.ts` | an Attempt from its start to its saved result: its start, its Action Marker, its work (bracketed busy when it touches the worktree, `whileBusy`), and one save holding its result, its completion, its outputs and its Action Event; a complete one's saved result; a held completion (J4); an Effect's Attempt (`effectAction`) |
 | `lib/effect-actions.ts` | the deterministic Actions (commit, push, comment, pr-upsert, pr-ready): the payload each builds for its Effect |
 | `lib/approval-action.ts` | the await-approval Action: an Approval Request's write-ahead Actions and a Decision's consumption |
 | `lib/cleanup-hold.ts` | a Pending cleanup hold: its label and comment, and a later Run's confirmation under the recorded containment |
 | `lib/pending-report.ts` | what a Run does for a Ticket it leaves Pending: its label and comment Actions and the ending that stops the Run |
-| `lib/effects/` | the Effects, one module each (`commit.ts`, `push.ts`, `comment.ts`, `pr-upsert.ts`, `pr-ready.ts`, `label.ts`, `rescue.ts`, `reset.ts`): its payload, its perform, how an open intent of it is found by its Action Marker or finished at resume, the worktree state it proves, and whether it is remote; `index.ts`, the lookup by the name an intent persists; `side-effect.ts`, the context an Action's effects read, `whileBusy`, and each Effect's intent, evidence and completion with its Action Event |
+| `lib/effects/` | the Effects, one module each (`commit.ts`, `push.ts`, `comment.ts`, `pr-upsert.ts`, `pr-ready.ts`, `label.ts`, `rescue.ts`, `reset.ts`): its payload, its perform, how an open intent of it is found by its Action Marker or finished at resume, the worktree state it proves, and whether it is remote; `index.ts`, the lookup by the name an intent persists; `side-effect.ts`, `sideEffect`: the context an Action's effects read, and an Effect's intent, launch and evidence in the write-ahead log, which its Attempt's save completes |
 | `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
 | `lib/remote-effects.ts` | a remote Effect's retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
 | `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
@@ -166,7 +168,7 @@ leverage and a change lands in one place (locality).
 - A new module: `lib/paths.ts` (one concept, a why-comment per rule) and `scripts/run-suite.ts` (a closed set of
   inputs, a usage error that prints the usage).
 - A module split along a seam inside it: `lib/rules.ts` with `lib/rule-domain.ts`, which only it imports.
-- Options objects in place of positional flags: `sideEffect.sideEffect`, `sideEffect.saveResolution` (`lib/effects/side-effect.ts`).
+- Options objects in place of positional flags: `sideEffect.sideEffect` (`lib/effects/side-effect.ts`), `attempt.run` and `attempt.effectAction` (`lib/attempt.ts`).
 - A long function cut into named steps: `lib/interpreter.ts`, with `lib/visit-runner.ts`.
 - A new unit test: `test/unit/record.test.ts` and `test/unit/interpreter.retry.test.ts` (one behaviour per case,
   named for it, state asserted, the inputs that matter visible in the case).

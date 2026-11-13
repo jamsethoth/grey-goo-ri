@@ -2,6 +2,7 @@
 // passes, and where it leaves: a stop's Terminal, or the Visit's Outcome through the Edge it takes.
 import { basename } from 'node:path';
 import * as agentAction from './agent-action.ts';
+import * as attempt from './attempt.ts';
 import * as approvalAction from './approval-action.ts';
 import * as bounds from './bounds.ts';
 import * as checkAction from './check-action.ts';
@@ -9,7 +10,6 @@ import * as checks from './checks.ts';
 import * as cleanupHold from './cleanup-hold.ts';
 import * as config from './config.ts';
 import * as effectActions from './effect-actions.ts';
-import * as sideEffect from './effects/side-effect.ts';
 import * as events from './events.ts';
 import * as integrity from './integrity.ts';
 import * as labels from './labels.ts';
@@ -19,13 +19,12 @@ import * as outcome from './outcome.ts';
 import type * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
-import * as referencePaths from './reference-paths.ts';
 import * as rescue from './rescue.ts';
 import type { RunContext } from './run-context.ts';
 import * as terminal from './terminal.ts';
 import type * as terminalReport from './terminal-report.ts';
-import type * as inputs from './validate/inputs.ts';
 import type * as visit from './visit.ts';
+import * as visitInputs from './visit-inputs.ts';
 import * as visitScope from './visit-scope.ts';
 
 type ActionResolution = visitScope.ActionResolution;
@@ -57,42 +56,6 @@ const KINDS: Record<
   'await-approval': approvalAction.awaitApproval,
 };
 
-// Each input at Visit entry (S4, T6): the value from the latest Visit that produced any of its sources, with that
-// Vertex, Visit and Action. An optional input none produced is absent (T10); a required one stops the Execution, which
-// admission prevents by checking inputs on every route (Q7, H1-H4), so this is a backstop.
-function resolveInputs(
-  executionRecord: record.ExecutionRecord,
-  vertexId: string,
-  declared: Record<string, inputs.ResolvedInput> = {},
-): Record<string, visit.VertexInput> {
-  return Object.fromEntries(
-    Object.entries(declared).map(([name, { from, optional, pick }]) => {
-      const sources = [from].flat().map((ref) => {
-        const [vertex, action, ...path] = referencePaths.parse(ref).steps ?? [];
-        return { vertex, action, path: path.join('.') };
-      });
-      for (const output of executionRecord.outputs.toReversed()) {
-        for (const source of sources) {
-          const matches = output.vertex === source.vertex && output.action === source.action;
-          if (!matches) continue;
-          // `<vertex>.rescue` names the whole output, with no path into it (W3).
-          const value = source.path ? referencePaths.read(output.value, source.path) : output.value;
-          if (value === undefined) continue;
-          const picked =
-            pick === undefined ? value : (value as unknown[]).map((item) => referencePaths.read(item, pick));
-          return [
-            name,
-            { value: picked, vertex: output.vertex, visit: output.visit, action: output.action, absent: false },
-          ];
-        }
-      }
-      if (!optional)
-        throw new Error(`${vertexId}'s input ${name} has no value: no Visit produced ${[from].flat().join(' or ')}`);
-      return [name, { value: null, vertex: null, visit: null, action: null, absent: true }];
-    }),
-  );
-}
-
 // A cursor inside this Visit's Actions is a restart: the Visit continues on its pinned snapshot and saved state.
 // Otherwise a copy of everything the Visit reads is pinned, so a Flow or command edited mid-Visit cannot reach its
 // Actions, Checks or routing. The Procedure is pinned by name and hash (S6): Reconciliation holds a resumed Visit whose
@@ -118,7 +81,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     outcomes,
     route: route ?? null,
     routes: flow.ticket.routes ?? null,
-    inputs: resolveInputs(executionRecord, vertexId, declared),
+    inputs: visitInputs.resolveInputs(executionRecord, vertexId, declared),
     commands: runContext.commands!,
     testPaths: runContext.testPaths!,
     persona: agent && { name: basename(agent.persona), bytes: bytes!, hash: config.sha256(bytes!) },
@@ -134,7 +97,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
 // explains, as at admission (R2d); anything else is Held before any agent runs.
 async function heldDirty(runContext: RunContext, vertexId: string): Promise<VisitEnd | null> {
   const executionRecord = runContext.record;
-  const dirty = await sideEffect.whileBusy(runContext, () =>
+  const dirty = await attempt.whileBusy(runContext, () =>
     reconcile.dirtyState(executionRecord, {
       git: runContext.git,
       worktree: executionRecord.worktree,
@@ -220,17 +183,18 @@ async function runActions(runContext: RunContext, state: RunningVisit, resuming:
     };
     await runContext.enter(actionIdentity);
     state.checkFollows = actions.slice(actionIndex + 1).some((later) => later.do === 'check');
-    const settled = await savedResult(runContext, { actionIdentity, action, state });
+    const running = { actionIdentity, action, state, settle: settleOf(executionRecord, { actionIdentity, state }) };
+    const settled = await savedResult(runContext, running);
     if (settled === 'rerun-checks') {
       actionIndex = actions.findIndex((candidate) => candidate.do === 'check') - 1;
       continue;
     }
-    approvalAction.waitThroughStop(runContext, { actionIdentity, action, state }, settled);
+    approvalAction.waitThroughStop(runContext, running, settled);
     const resolution: ActionResolution =
       settled ??
       terminal.runStopped(runContext) ??
       bounds.capped(runContext) ??
-      (await KINDS[action.do](runContext, { actionIdentity, action, state }));
+      (await KINDS[action.do](runContext, running));
     // A run stop routed again from its saved result still stops the other Executions.
     if (resolution.row === 'run-stop' && runContext.runState)
       runContext.runState.stop ??= { failureClass: resolution.failureClass!, ticket: executionRecord.ticket };
@@ -256,9 +220,31 @@ async function savedResult(
   if (state.settled?.action !== actionIdentity.action || state.settled.recovery !== actionIdentity.recovery)
     return null;
   if (state.settled.resolution.row !== 'cleanup-unconfirmed') return state.settled.resolution;
+  const held = { ...running, settle: settleOf(runContext.record, running, { held: true }) };
   return action.do === 'agent'
-    ? agentAction.completeHeld(runContext, running)
-    : checkAction.completeHeld(runContext, running);
+    ? agentAction.completeHeld(runContext, held)
+    : checkAction.completeHeld(runContext, held);
+}
+
+// The Visit's write of an Action's result, which lib/attempt.ts applies inside the Attempt's save, so a resumed Visit
+// routes it instead of running the Action again. A retry is no result: its Action runs its next Attempt. A held
+// completion's retry clears the held result; one with no result found the tree changed, so the Visit's Checks re-run
+// from the first (T1), the cursor moving there in the same write, so a crash re-runs them all. Saved with the cursor,
+// which then reads as this Attempt already entered, the re-run counts once toward the Action Cap.
+export function settleOf(
+  executionRecord: record.ExecutionRecord,
+  { actionIdentity, state }: Pick<visitScope.Running, 'actionIdentity' | 'state'>,
+  { held = false }: { held?: boolean } = {},
+): attempt.Settle {
+  return (resolution) => {
+    if (resolution && resolution.direction !== 'retry')
+      state.settled = { action: actionIdentity.action, recovery: actionIdentity.recovery, resolution };
+    else if (held) state.settled = null;
+    if (!held || resolution) return;
+    const firstCheck = state.proc.actions.find((candidate) => candidate.do === 'check')!;
+    executionRecord.cursor = { ...executionRecord.cursor, action: firstCheck.id, attempt: 1 };
+    executionRecord.attempts += 1;
+  };
 }
 
 // An Action that stopped the Visit: its result is saved, so a restart routes it again, and the stop takes its Edge.
@@ -327,7 +313,7 @@ async function rescueRouted(runContext: RunContext, state: RunningVisit, { actio
     failure: `${terminal.actionText(actionIdentity)} at ${actionIdentity.vertex} ended with ${resolution.outcome}`,
   });
   if (!rescued) return;
-  const files = await sideEffect.whileBusy(runContext, () =>
+  const files = await attempt.whileBusy(runContext, () =>
     runContext.git.diffStats(executionRecord.worktree, baseline.head, rescued.commit),
   );
   visitScope.recordOutput(
@@ -348,7 +334,7 @@ async function completeVisit(runContext: RunContext, { actionIdentity }: Ran, st
   const signals = [...state.checks.values()];
   const checked =
     state.proc.passed.length && signals.some((signal) => signal.tree)
-      ? await sideEffect.whileBusy(runContext, () => visitScope.fresh(runContext, signals))
+      ? await attempt.whileBusy(runContext, () => visitScope.fresh(runContext, signals))
       : signals;
   const { claim, signal } = state.call ?? visitScope.IMPLICIT_OK;
   const { outcome: outcomeName, rule } = outcome.decide({

@@ -1,12 +1,11 @@
 // The check Action (R1, R4): its Check kind checks, on the tree it read when the kind reads one, and its result is the
 // Check signal { id, kind, state, tree }, with the output and reason the recovery Brief and Terminal Reason read.
 import * as agentCall from './agent-call.ts';
+import * as attempt from './attempt.ts';
 import * as checks from './checks.ts';
 import * as cleanupHold from './cleanup-hold.ts';
 import * as commandCleanup from './command-cleanup.ts';
-import * as sideEffect from './effects/side-effect.ts';
 import * as integrity from './integrity.ts';
-import type * as marker from './marker.ts';
 import type * as procedures from './procedures.ts';
 import type * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
@@ -178,12 +177,13 @@ async function runCheck(runContext: RunContext, running: visitScope.Running): Pr
 
 // What a Check's run leaves as outputs. Evidence is one only when it passed (N9); a failing pass drops an earlier
 // pass's evidence, so nothing reads a pass the last one contradicts.
-function keepOutputs(executionRecord: record.ExecutionRecord, actionIdentity: marker.ActionIdentity, checked: Checked) {
-  if (checked.passed && checked.evidence)
-    visitScope.recordOutput(executionRecord, actionIdentity, { evidence: checked.evidence });
-  else if (!checked.passed) delete visitScope.outputOf(executionRecord, actionIdentity)?.value.evidence;
-  if (checked.outputs) visitScope.recordOutput(executionRecord, actionIdentity, checked.outputs);
-  if (checked.cleanup) visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: checked.cleanup });
+function outputsOf(checked: Checked): attempt.Outputs {
+  const outputs = {
+    ...(checked.passed && checked.evidence && { evidence: checked.evidence }),
+    ...checked.outputs,
+    ...(checked.cleanup && { cleanup: checked.cleanup }),
+  };
+  return { ...(Object.keys(outputs).length && { outputs }), dropped: checked.passed ? [] : ['evidence'] };
 }
 
 // The Check signal and what the recovery Brief and the Terminal Reason read of its run. `recoverable: false` on the
@@ -213,94 +213,88 @@ function keepResult(runContext: RunContext, { actionIdentity, action, state }: v
     failure: checked.failure ?? null,
     recoverable: !checked.passed && !!checked.recoverable && action.recoverable !== false,
   });
-  keepOutputs(executionRecord, actionIdentity, checked);
   return signal;
 }
 
 // A failure's output is diagnosis, not Evidence: it travels with the signal on the Event and to the Terminal comment
-// instead of into the outputs (N9). Only a worktree Check starts processes in the worktree, so only it is bracketed
-// (request 3.6).
-export async function check(runContext: RunContext, running: visitScope.Running): Promise<visitScope.ActionResolution> {
+// instead of into the outputs (N9). Only a worktree Check starts processes in the worktree, so only it is busy (request
+// 3.6).
+export function check(runContext: RunContext, running: visitScope.Running): Promise<visitScope.ActionResolution> {
   const { actionIdentity, action, state } = running;
-  const startedAt = runContext.clock.now();
   const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;
-  const work = () => runCheck(runContext, running);
-  const checked = CHECK_KINDS[action.kind!].tree ? await sideEffect.whileBusy(runContext, work) : await work();
-  const signal = keepResult(runContext, running, checked);
-  const output = signal.state === 'failed' ? checked.output : undefined;
-  const resolution = visitScope.settle(runContext.record, actionIdentity, state, {
-    result: callSignal,
-    claim,
-    checks: visitScope.resolverChecks([], [signal]),
-    retries: {},
-    cleanup: checked.cleanup,
-  });
-  return sideEffect.saveResolution(runContext, {
+  return attempt.run(runContext, {
     actionIdentity,
-    startedAt,
-    resolution: { reason: checked.reason ?? null, signal, output: output ?? null, ...resolution },
-    fields: {
-      check: action.id,
-      cleanup: checked.cleanup,
-      signals: {
-        harnessResult: { status: result.status },
+    busy: CHECK_KINDS[action.kind!].tree,
+    settle: running.settle,
+    work: () => runCheck(runContext, running),
+    outputs: outputsOf,
+    finish: (checked) => {
+      const signal = keepResult(runContext, running, checked);
+      const output = signal.state === 'failed' ? checked.output : undefined;
+      const resolution = visitScope.settle(runContext.record, actionIdentity, state, {
+        result: callSignal,
         claim,
-        checks: [{ ...signal, ...(output && { output }) }],
-        integrity: [],
-      },
+        checks: visitScope.resolverChecks([], [signal]),
+        retries: {},
+        cleanup: checked.cleanup,
+      });
+      return {
+        resolution: { reason: checked.reason ?? null, signal, output: output ?? null, ...resolution },
+        fields: {
+          check: action.id,
+          cleanup: checked.cleanup,
+          signals: {
+            harnessResult: { status: result.status },
+            claim,
+            checks: [{ ...signal, ...(output && { output }) }],
+            integrity: [],
+          },
+        },
+      };
     },
   });
 }
 
 // A Check held for cleanup, its processes now confirmed gone (J4, L15). Its result stands on the tree it read; a
-// changed one, which the Assertions allowed, re-runs the Visit's Checks from the first (T1), so nothing reads a pass of
-// an older tree: the cursor moves there in the same write, so a crash re-runs them all.
+// changed one, which the Assertions allowed, leaves no result, so the Visit re-runs its Checks from the first (T1) and
+// nothing reads a pass of an older tree.
 export async function completeHeld(
   runContext: RunContext,
   running: visitScope.Running,
 ): Promise<visitScope.ActionResolution | 'rerun-checks'> {
   const { record: executionRecord, git, locks } = runContext;
   const { actionIdentity, action, state } = running;
-  const startedAt = runContext.clock.now();
   const baseline = state.call?.baseline ?? state.firstAttemptBaseline!;
-  const tree = await sideEffect.whileBusy(runContext, async () => {
-    await agentCall.validateHeld(runContext, running, { baseline, response: state.response });
-    return (await integrity.snapshot(executionRecord.worktree, git, locks)).tree;
-  });
-  const signal = visitScope.checkSignal(state, action.id);
-  const held = visitScope.outputOf(executionRecord, actionIdentity)?.value.cleanup as commandCleanup.CleanupReport;
-  const confirmed = cleanupHold.confirmedReport(held);
-  visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: confirmed });
-  if (tree !== signal.tree) {
-    const firstCheck = state.proc.actions.find((candidate) => candidate.do === 'check')!;
-    state.settled = null;
-    executionRecord.cursor = { ...executionRecord.cursor, action: firstCheck.id, attempt: 1 };
-    // Saved with the cursor, which then reads as this Attempt already entered, so the Action Cap counts it once.
-    executionRecord.attempts += 1;
-    runContext.database.save(executionRecord);
-    return 'rerun-checks';
-  }
-  const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;
-  const resolution = visitScope.settle(executionRecord, actionIdentity, state, {
-    result: callSignal,
-    claim,
-    checks: visitScope.resolverChecks([], [signal]),
-    retries: {},
-  });
-  const { output, reason } = visitScope.checkRun(state, action.id);
-  return sideEffect.replaceResolution(runContext, {
+  const completed = await attempt.runHeld(runContext, {
     actionIdentity,
-    startedAt,
-    resolution: {
-      reason,
-      signal,
-      output: signal.state === 'failed' ? output : null,
-      ...resolution,
+    settle: running.settle,
+    work: async () => {
+      await agentCall.validateHeld(runContext, running, { baseline, response: state.response });
+      const held = visitScope.outputOf(executionRecord, actionIdentity)?.value.cleanup as commandCleanup.CleanupReport;
+      const { tree } = await integrity.snapshot(executionRecord.worktree, git, locks);
+      return { tree, confirmed: cleanupHold.confirmedReport(held) };
     },
-    fields: {
-      check: action.id,
-      cleanup: confirmed,
-      signals: { harnessResult: { status: result.status }, claim, checks: [signal], integrity: [] },
+    outputs: ({ confirmed }) => ({ outputs: { cleanup: confirmed } }),
+    finish: ({ tree, confirmed }) => {
+      const signal = visitScope.checkSignal(state, action.id);
+      if (tree !== signal.tree) return { resolution: null };
+      const { harnessResult: result, claim, signal: callSignal } = state.call ?? visitScope.IMPLICIT_OK;
+      const resolution = visitScope.settle(executionRecord, actionIdentity, state, {
+        result: callSignal,
+        claim,
+        checks: visitScope.resolverChecks([], [signal]),
+        retries: {},
+      });
+      const { output, reason } = visitScope.checkRun(state, action.id);
+      return {
+        resolution: { reason, signal, output: signal.state === 'failed' ? output : null, ...resolution },
+        fields: {
+          check: action.id,
+          cleanup: confirmed,
+          signals: { harnessResult: { status: result.status }, claim, checks: [signal], integrity: [] },
+        },
+      };
     },
   });
+  return completed ?? 'rerun-checks';
 }

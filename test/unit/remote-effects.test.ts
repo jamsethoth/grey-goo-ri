@@ -19,7 +19,7 @@ test('a remote effect that fails transiently is retried after its backoff, once 
 });
 
 test('a remote effect that keeps failing transiently is rethrown once its two retries are spent', async (t) => {
-  const { context, executionRecord, fakeGh, emitted } = await support.executionContext(t);
+  const { context, executionRecord, fakeGh } = await support.executionContext(t);
   fakeGh.fail({ matches: support.commentPost, status: 502 });
   fakeGh.fail({ matches: support.commentPost, status: 502 });
   fakeGh.fail({ matches: support.commentPost, status: 502 });
@@ -29,14 +29,14 @@ test('a remote effect that keeps failing transiently is rethrown once its two re
   assert.deepEqual(err.spent, { failureClass: 'transient', status: 502, count: 2, effect: 'comment' });
   assert.equal(executionRecord.retries[pushKey]?.remote?.count, 2);
   assert.deepEqual(
-    emitted.map((event) => [event.outcome, event.failureClass]),
+    support.actionEvents(executionRecord).map((event) => [event.outcome, event.failureClass]),
     [['fault', 'transient']],
     'one Action Event, for the final failure',
   );
 });
 
 test('a remote failure whose class reaches the run latches the run stop and is decided as a run stop', async (t) => {
-  const { context, fakeGh, emitted } = await support.executionContext(t);
+  const { context, executionRecord, fakeGh } = await support.executionContext(t);
   fakeGh.fail({ matches: support.commentPost, status: 401 });
   const err = await support.rejection(support.remoteCommentLaunch(context));
   assert.ok(err instanceof effectErrors.EarlyTerminalError && err.ending.next === 'run-stop');
@@ -50,7 +50,7 @@ test('a remote failure whose class reaches the run latches the run stop and is d
   assert.match(detail, /HTTP 401/, "the failure's error is its detail");
   assert.deepEqual(context.runState.stop, { failureClass: 'auth', ticket: support.TICKET, source: 'comment' });
   assert.deepEqual(
-    emitted.map((event) => [event.outcome, event.failureClass]),
+    support.actionEvents(executionRecord).map((event) => [event.outcome, event.failureClass]),
     [['run-stop', 'auth']],
   );
 });

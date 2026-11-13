@@ -2,6 +2,7 @@
 // for the Ticket, and at a later Run the Decision read from the issue's timeline, consumed write-ahead, whose value is
 // the Visit's Outcome. Nothing here reads the timeline once its consumption is recorded.
 import * as approval from './approval.ts';
+import * as attempt from './attempt.ts';
 import * as bounds from './bounds.ts';
 import * as comment from './effects/comment.ts';
 import type * as label from './effects/label.ts';
@@ -86,24 +87,17 @@ function requestBody(runContext: RunContext, running: Running, instance: Pending
 // Each of the request's Actions not yet complete, in order; a resume finds the ones that landed through Reconciliation.
 async function finishRequest(runContext: RunContext, running: Running, instance: PendingInstance): Promise<never> {
   const { vertex } = running.actionIdentity;
-  const complete = (part: ReportAction) =>
-    writeAhead.findEntry(runContext.record, runContext.markerOf(reportActionOf(running, instance, part)), 'complete');
-  if (!complete('retire'))
-    await pendingReport.labelAction(runContext, reportActionOf(running, instance, 'retire'), {
-      remove: await pendingReport.keepPendingIfUnread(runContext, `The labels of request ${instance.id}`, () =>
-        earlierLabels(runContext, vertex),
-      ),
-    });
-  if (!complete('await'))
-    await pendingReport.labelAction(runContext, reportActionOf(running, instance, 'await'), {
-      add: [namesOf(runContext).await(vertex)],
-    });
-  if (!complete('comment'))
-    await pendingReport.commentAction(
-      runContext,
-      reportActionOf(running, instance, 'comment'),
-      await requestBody(runContext, running, instance),
-    );
+  await pendingReport.labelAction(runContext, reportActionOf(running, instance, 'retire'), async () => ({
+    remove: await pendingReport.keepPendingIfUnread(runContext, `The labels of request ${instance.id}`, () =>
+      earlierLabels(runContext, vertex),
+    ),
+  }));
+  await pendingReport.labelAction(runContext, reportActionOf(running, instance, 'await'), async () => ({
+    add: [namesOf(runContext).await(vertex)],
+  }));
+  await pendingReport.commentAction(runContext, reportActionOf(running, instance, 'comment'), () =>
+    requestBody(runContext, running, instance),
+  );
   throw pendingReport.pending(`Vertex ${vertex} waits for a Decision on request ${instance.id}.`);
 }
 
@@ -126,37 +120,36 @@ async function request(runContext: RunContext, running: Running, previous: Pendi
 
 // The record first, then the label; the Decision's value is saved as the Action's result, in one write with its
 // completion and Event. A retried label write is the same intent, so the Decision stands.
-async function consume(
+function consume(
   runContext: RunContext,
   running: Running,
   instance: PendingInstance,
   found: Replied | null,
 ): Promise<visitScope.ActionResolution> {
   const { record: executionRecord } = runContext;
-  const { actionIdentity } = running;
-  const startedAt = runContext.clock.now();
-  const consumption = reportActionOf(running, instance, 'consume');
-  const actionMarker = runContext.markerOf(consumption);
+  const actionMarker = runContext.markerOf(reportActionOf(running, instance, 'consume'));
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as Consumption | undefined;
   const payload: Consumption = intended ?? consumptionOf(runContext, running, instance, found as Replied);
-  await sideEffect.whileBusy(runContext, () =>
-    sideEffect.sideEffect(runContext, { actionMarker, effect: pendingReport.keptPending, payload, deferred: true }),
-  );
-  executionRecord.approvalRequest = null;
   const { outcome, actor, reply } = payload.decision;
-  visitScope.recordOutput(executionRecord, actionIdentity, { decision: { outcome, actor, reply } });
   const resolution: visit.DecisionResolution = {
-    outcome: payload.decision.outcome,
+    outcome,
     direction: 'stop',
     row: 'decision',
     rule: { table: 'fixed', row: 'decision' },
   };
-  return sideEffect.saveResolution(runContext, {
-    actionIdentity,
-    startedAt,
-    resolution,
-    fields: { decision: payload.decision },
+  return attempt.run(runContext, {
+    actionIdentity: running.actionIdentity,
     actionMarker,
+    busy: true,
+    settle: running.settle,
+    resumed: () => resolution,
+    work: () =>
+      sideEffect.sideEffect(runContext, { actionMarker, effect: pendingReport.keptPending, payload, deferred: true }),
+    outputs: () => ({ outputs: { decision: { outcome, actor, reply } } }),
+    finish: () => {
+      executionRecord.approvalRequest = null;
+      return { resolution, fields: { decision: payload.decision } };
+    },
   });
 }
 
@@ -245,13 +238,7 @@ export async function awaitApproval(runContext: RunContext, running: Running): P
     writeAhead.findEntry(executionRecord, runContext.markerOf(reportActionOf(running, instance, 'consume')), 'intent')
   )
     return consume(runContext, running, instance, null);
-  if (
-    !writeAhead.findEntry(
-      executionRecord,
-      runContext.markerOf(reportActionOf(running, instance, 'comment')),
-      'complete',
-    )
-  )
+  if (!attempt.complete(runContext, reportActionOf(running, instance, 'comment')))
     return finishRequest(runContext, running, instance);
   const read = await pendingReport.keepPendingIfUnread(runContext, `The Decision on request ${instance.id}`, () =>
     readDecision(runContext, running, instance),

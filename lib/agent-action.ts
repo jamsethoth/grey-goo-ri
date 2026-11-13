@@ -2,12 +2,12 @@
 // and the result the Transition Table makes of its Signals.
 import { existsSync } from 'node:fs';
 import * as agentCall from './agent-call.ts';
+import * as attempt from './attempt.ts';
 import * as bounds from './bounds.ts';
 import * as briefs from './briefs.ts';
 import * as cleanupHold from './cleanup-hold.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import * as config from './config.ts';
-import * as sideEffect from './effects/side-effect.ts';
 import type * as integrity from './integrity.ts';
 import type * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
@@ -108,9 +108,9 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
     }));
 // A recovery pass gets the recovery Brief with a section for each Check that failed in the pass before it (T4b); a
 // parse retry gets gg's own nudge.
-async function briefOf(runContext: RunContext, attempt: Attempt, commands: Record<string, unknown>): Promise<string> {
+async function briefOf(runContext: RunContext, briefed: Attempt, commands: Record<string, unknown>): Promise<string> {
   const { record: executionRecord, ticket, base, git } = runContext;
-  const { actionIdentity, action, state, nudge } = attempt;
+  const { actionIdentity, action, state, nudge } = briefed;
   const recovering = actionIdentity.recovery > 0 && !nudge;
   const sections = recovering ? sectionsOf(runContext, state) : undefined;
   const name = (recovering ? state.proc.recover!.brief : action.brief) as string;
@@ -125,12 +125,12 @@ async function briefOf(runContext: RunContext, attempt: Attempt, commands: Recor
     reason: nudge,
     // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
     // ones, read git only for a Brief that names them.
-    diff: () => sideEffect.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
+    diff: () => attempt.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
     // A red Visit that needed no test committed none (N6), so no test file changed since.
     changedTestFiles: async () => {
       const first = executionRecord.testCommits.first;
       if (first == null) return [];
-      const { changed } = await sideEffect.whileBusy(runContext, () =>
+      const { changed } = await attempt.whileBusy(runContext, () =>
         runContext.testImmutability(executionRecord.worktree, first, executionRecord.configurationSnapshot!.testPaths),
       );
       return changed;
@@ -139,26 +139,39 @@ async function briefOf(runContext: RunContext, attempt: Attempt, commands: Recor
 }
 
 // One Attempt. A completed one is never run again: runVisit routes every saved result but a retry's, which ends here.
-async function callAttempt(runContext: RunContext, attempt: Attempt): Promise<ActionResolution> {
+// The Brief is made before the Attempt starts; the call, with its response's validation, runs busy.
+function callAttempt(runContext: RunContext, running: Attempt): Promise<ActionResolution> {
   const executionRecord = runContext.record;
-  const { actionIdentity } = attempt;
-  const actionMarker = runContext.markerOf(actionIdentity);
-  if (writeAhead.findEntry(executionRecord, actionMarker, 'complete'))
-    return writeAhead.findEntry(executionRecord, actionMarker, 'evidence')!.evidence as unknown as ActionResolution;
+  const { actionIdentity, action } = running;
   const harness = runContext.harnessOf()!;
-  // Each call gets its own copy: a Harness that edits its call must not change the next one.
-  const pinned = structuredClone(executionRecord.configurationSnapshot!);
-  const brief = await briefOf(runContext, attempt, pinned.commands);
-  const call = callOf(runContext, attempt, { pinned, brief, actionMarker, harness });
-  const startedAt = runContext.clock.now();
-  const called = await sideEffect.whileBusy(runContext, () =>
-    agentCall.guardedCall(runContext, attempt, call, harness),
-  );
-  // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is saved.
-  const own = { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona };
-  saveSession(executionRecord, actionIdentity, called.result, own);
-  return settleAttempt(runContext, attempt, { call, own, called, startedAt });
+  return attempt.run(runContext, {
+    actionIdentity,
+    busy: true,
+    settle: running.settle,
+    resumed: (evidence) => evidence as unknown as ActionResolution,
+    prepare: async (actionMarker): Promise<Prepared> => {
+      // Each call gets its own copy: a Harness that edits its call must not change the next one.
+      const pinned = structuredClone(executionRecord.configurationSnapshot!);
+      const brief = await briefOf(runContext, running, pinned.commands);
+      const call = callOf(runContext, running, { pinned, brief, actionMarker, harness });
+      // The marker, Agent and Persona stay the Attempt's own: a Harness that edits its call cannot change what is
+      // saved.
+      return { call, own: { actionMarker, agent: pinned.agent as Agent, persona: pinned.persona as Persona } };
+    },
+    work: async ({ call }) => {
+      const called = await agentCall.guardedCall(runContext, running, call, harness);
+      return { ...called, claim: briefs.validateResponse(call.schema, called.response) };
+    },
+    outputs: ({ response, result, claim }) => ({
+      outputs: { ...(claim.valid && { response }), cleanup: result.cleanup },
+    }),
+    finish: (called, { call, own }) => {
+      saveSession(executionRecord, actionIdentity, called.result, own);
+      return settleAttempt(runContext, running, { call, own, called });
+    },
+  });
 }
+type Prepared = { call: SentCall; own: Own };
 
 // `access` is the Vertex's, which the validator resolved (H9): read-only unless its Agent allows more and its
 // Procedure does not cap it. The Phase is the agent Action's id, and a recovery pass's call is the Phase recover.
@@ -217,13 +230,9 @@ function saveSession(
 function settleAttempt(
   runContext: RunContext,
   { actionIdentity, action, state }: Attempt,
-  { call, own, called, startedAt }: { call: SentCall; own: Own; called: agentCall.Called; startedAt: number },
-): Promise<ActionResolution> {
-  const executionRecord = runContext.record;
-  const { response, result, failure, violations, baseline } = called;
-  const claim = briefs.validateResponse(call.schema, response);
-  if (claim.valid) visitScope.recordOutput(executionRecord, actionIdentity, { response });
-  visitScope.recordOutput(executionRecord, actionIdentity, { cleanup: result.cleanup });
+  { call, own, called }: { call: SentCall; own: Own; called: agentCall.Called & { claim: visit.ClaimSignal } },
+): attempt.Done<ActionResolution> {
+  const { response, result, failure, violations, baseline, claim } = called;
   state.call = {
     harnessResult: result,
     claim,
@@ -233,9 +242,7 @@ function settleAttempt(
   };
   state.response = response;
   const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity, state }, violations);
-  return sideEffect.saveResolution(runContext, {
-    actionIdentity,
-    startedAt,
+  return {
     resolution: done,
     fields: {
       ...agentFields(own, call.tools),
@@ -243,9 +250,8 @@ function settleAttempt(
       ...harnessFields(result, actionIdentity.recovery ? action.id : null),
       ...decisionFields(resolution, { result, claim, integrityRows }),
     },
-    actionMarker: own.actionMarker,
     evidence: { ...done, usageDelta: result.usage.delta },
-  });
+  };
 }
 
 // The Transition Table's result for the Visit's saved call and these violations, with the retry it spends.
@@ -284,34 +290,36 @@ function decideCall(
 // next Attempt to agent(): null sends it there, past this completed Attempt, whose evidence now says to retry.
 export async function completeHeld(
   runContext: RunContext,
-  { actionIdentity, action, state }: visitScope.Running,
+  { actionIdentity, action, state, settle }: visitScope.Running,
 ): Promise<ActionResolution | null> {
-  const executionRecord = runContext.record;
-  const identity = { ...actionIdentity, attempt: executionRecord.cursor.attempt };
-  const startedAt = runContext.clock.now();
+  const identity = { ...actionIdentity, attempt: runContext.record.cursor.attempt };
   const held = state.call!;
-  await sideEffect.whileBusy(runContext, () =>
-    agentCall.validateHeld(runContext, { actionIdentity: identity, action, state }, held),
-  );
-  const cleanup = cleanupHold.confirmedReport(held.harnessResult.cleanup as commandCleanup.CleanupReport);
-  held.harnessResult.cleanup = cleanup;
-  visitScope.recordOutput(executionRecord, actionIdentity, { cleanup });
-  const { done, resolution, integrityRows } = decideCall(runContext, { actionIdentity: identity, state }, []);
-  await sideEffect.replaceResolution(runContext, {
+  const done = await attempt.runHeld(runContext, {
     actionIdentity: identity,
-    startedAt,
-    resolution: done,
-    fields: {
-      cleanup,
-      ...decisionFields(resolution, {
-        result: held.harnessResult,
-        claim: held.claim,
-        integrityRows,
-      }),
-    },
     actionMarker: runContext.markerOf(identity),
+    settle,
+    work: async () => {
+      await agentCall.validateHeld(runContext, { actionIdentity: identity, action, state }, held);
+      return cleanupHold.confirmedReport(held.harnessResult.cleanup as commandCleanup.CleanupReport);
+    },
+    outputs: (cleanup) => ({ outputs: { cleanup } }),
+    finish: (cleanup) => {
+      held.harnessResult.cleanup = cleanup;
+      const decided = decideCall(runContext, { actionIdentity: identity, state }, []);
+      return {
+        resolution: decided.done,
+        fields: {
+          cleanup,
+          ...decisionFields(decided.resolution, {
+            result: held.harnessResult,
+            claim: held.claim,
+            integrityRows: decided.integrityRows,
+          }),
+        },
+      };
+    },
   });
-  return done.retryKind ? null : done;
+  return done!.retryKind ? null : done;
 }
 
 // The Action Event's agent fields: the Agent the call ran as and the tools its Harness resolved.

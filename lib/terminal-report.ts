@@ -1,11 +1,12 @@
 // A Terminal's report: its comment and label Actions, each write-ahead with its Action Event, the stop it saves
 // first, and the state and ticket_end it lands with.
+import * as attempt from './attempt.ts';
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as comment from './effects/comment.ts';
 import type * as effects from './effects/index.ts';
 import * as label from './effects/label.ts';
-import * as sideEffect from './effects/side-effect.ts';
+import type * as sideEffect from './effects/side-effect.ts';
 import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
 import * as github from './github.ts';
@@ -119,7 +120,7 @@ async function terminalAction<Payload extends writeAhead.Payload, Context>(
   made: Omit<sideEffect.SideEffect<Payload, Context>, 'actionMarker' | 'deferred'>,
 ) {
   await context.enter(actionIdentity);
-  return sideEffect.effectAction(context, actionIdentity, made);
+  return attempt.effectAction(context, { actionIdentity, made: () => made });
 }
 
 // Saved before the first Terminal Action, so a restart inside the Terminal runs the same Actions under the same ids and
@@ -263,9 +264,7 @@ export async function report(
   const diffStats =
     name === 'ready-for-qa'
       ? events.diffStats(
-          await sideEffect.whileBusy(context, () =>
-            context.git.diffStats(executionRecord.worktree, executionRecord.base),
-          ),
+          await attempt.whileBusy(context, () => context.git.diffStats(executionRecord.worktree, executionRecord.base)),
           executionRecord.configurationSnapshot!.testPaths,
         )
       : null;

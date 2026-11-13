@@ -1,11 +1,11 @@
 // What a Run does for a Ticket it leaves Pending, an Approval Request's or a cleanup hold's: its label and comment
 // Actions, each write-ahead with its Action Event, and the ending that stops the Run for the Ticket with its Execution
 // still active (Pending, L11, J6).
+import * as attempt from './attempt.ts';
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
 import * as comment from './effects/comment.ts';
 import * as label from './effects/label.ts';
-import * as sideEffect from './effects/side-effect.ts';
 import * as github from './github.ts';
 import * as outcome from './outcome.ts';
 import type * as marker from './marker.ts';
@@ -41,22 +41,35 @@ export const keptPending = label.keepOpen(({ ticket }) =>
   pending(`The label update on #${ticket} failed, so the next Run makes it.`),
 );
 
+// Each change and body is made only for an Action not yet complete: a complete one reads nothing again.
 export const labelAction = (
   runContext: RunContext,
   actionIdentity: marker.ActionIdentity,
-  { add = [], remove = [] }: { add?: string[]; remove?: string[] },
+  change: () => Promise<{ add?: string[]; remove?: string[] }>,
 ) =>
-  sideEffect.effectAction(runContext, actionIdentity, {
-    effect: keptPending,
-    payload: { ticket: runContext.record.ticket, add, remove },
+  attempt.effectAction(runContext, {
+    actionIdentity,
+    prepare: change,
+    made: ({ add = [], remove = [] }) => ({
+      effect: keptPending,
+      payload: { ticket: runContext.record.ticket, add, remove },
+    }),
   });
 
-export const commentAction = (runContext: RunContext, actionIdentity: marker.ActionIdentity, body: string) =>
-  sideEffect.effectAction(runContext, actionIdentity, {
-    effect: comment.effect,
-    payload: {
-      target: { kind: 'issue', number: runContext.record.ticket },
-      body,
-      bodyHash: config.sha256(body),
-    },
+export const commentAction = (
+  runContext: RunContext,
+  actionIdentity: marker.ActionIdentity,
+  body: () => Promise<string>,
+) =>
+  attempt.effectAction(runContext, {
+    actionIdentity,
+    prepare: body,
+    made: (made) => ({
+      effect: comment.effect,
+      payload: {
+        target: { kind: 'issue', number: runContext.record.ticket },
+        body: made,
+        bodyHash: config.sha256(made),
+      },
+    }),
   });

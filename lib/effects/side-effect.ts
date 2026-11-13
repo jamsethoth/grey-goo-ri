@@ -1,14 +1,13 @@
-// The write-ahead side effects of an Execution's Actions: the context they read, whileBusy, and each Effect's intent,
-// evidence and completion with its Action Event. A remote Effect's retries are remote-effects'.
+// An Effect's write-ahead side effect: the context the effects read, and its intent, launch and evidence in the
+// write-ahead log; its completion is its Attempt's save (lib/attempt.ts). A remote Effect's retries are
+// remote-effects'.
 import * as effectErrors from '../effect-errors.ts';
-import * as integrity from '../integrity.ts';
 import type * as marker from '../marker.ts';
 import type * as outcome from '../outcome.ts';
 import type * as reconcile from '../reconcile.ts';
 import type * as record from '../record.ts';
 import * as remoteEffects from '../remote-effects.ts';
 import type * as events from '../events.ts';
-import type * as visit from '../visit.ts';
 import * as writeAhead from '../write-ahead.ts';
 import type * as effects from './index.ts';
 
@@ -56,30 +55,11 @@ export interface EffectContext {
   laterRunReport?: boolean;
 }
 
-// The worktree is busy while `work` runs, so other Tickets' Integrity Assertions leave it alone.
-export async function whileBusy<Result>(
-  context: Pick<EffectContext, 'record' | 'database'>,
-  work: () => Promise<Result>,
-): Promise<Result> {
-  const { record: executionRecord, database } = context;
-  await integrity.markBusy(executionRecord, database);
-  let result;
-  try {
-    result = await work();
-  } catch (err) {
-    // A crashed process saves nothing more: marking idle would also persist whatever the crash left unsaved.
-    if (!effectErrors.fatal(err)) await integrity.markIdle(executionRecord, database);
-    throw err;
-  }
-  await integrity.markIdle(executionRecord, database);
-  return result;
-}
-
 export interface SideEffect<Payload, Context> {
   actionMarker: string;
   effect: effects.Effect<Payload, Context>;
   payload: Payload;
-  // Completed by `saveResolution`, with its Action Event.
+  // Completed by its Attempt's save, with its Action Event (lib/attempt.ts).
   deferred?: boolean;
 }
 
@@ -109,114 +89,5 @@ export async function sideEffect<Payload extends writeAhead.Payload, Context>(
   if (deferred) return evidence;
   context.database.complete(executionRecord, actionMarker);
   effectErrors.crashPoint(context, actionMarker, 'after-completion');
-  return evidence;
-}
-
-export interface SavedResolution<Settled extends visit.Resolution> {
-  actionIdentity: marker.ActionIdentity;
-  startedAt: number;
-  resolution: Settled;
-  // The Action Event's fields beyond the resolution's.
-  fields?: events.EventInput<'action'>;
-  // The marker of a side effect this completes, with the evidence saved in the same write.
-  actionMarker?: string | null;
-  evidence?: Evidence;
-}
-
-// Saves an Action's result, its marker's completion when it has one, and its Action Event in one transaction. A resumed
-// Visit routes the saved (settled) result instead of running the Action again; a retried Attempt's result stays in its
-// evidence for the next Attempt to read.
-export async function saveResolution<Settled extends visit.Resolution>(
-  context: EffectContext,
-  {
-    actionIdentity,
-    startedAt,
-    resolution,
-    fields = {},
-    actionMarker = null,
-    evidence = undefined,
-  }: SavedResolution<Settled>,
-): Promise<Settled> {
-  const { record: executionRecord } = context;
-  if (actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'complete')) return resolution;
-  if (actionIdentity.procedure && resolution.direction !== 'retry')
-    executionRecord.visitState!.settled = {
-      action: actionIdentity.action,
-      recovery: actionIdentity.recovery,
-      resolution,
-    };
-  const event = () =>
-    context.emit(actionIdentity, startedAt, {
-      outcome: resolution.outcome,
-      direction: resolution.direction,
-      rule: resolution.rule,
-      signals: {},
-      ...fields,
-    });
-  if (actionMarker) context.database.complete(executionRecord, actionMarker, { evidence, event });
-  else context.database.save(executionRecord, event);
-  if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
-  return resolution;
-}
-
-// A result a later Run decided for an Action held for cleanup (J4): it replaces the one the hold saved, with its Action
-// Event and whatever its caller spent, in one write. A retried Attempt's stays in its evidence for the next to read, as
-// saveResolution's does.
-export async function replaceResolution<Settled extends visit.Resolution>(
-  context: EffectContext,
-  { actionIdentity, startedAt, resolution, fields = {}, actionMarker = null }: SavedResolution<Settled>,
-): Promise<Settled> {
-  const { record: executionRecord } = context;
-  executionRecord.visitState!.settled =
-    resolution.direction === 'retry'
-      ? null
-      : { action: actionIdentity.action, recovery: actionIdentity.recovery, resolution };
-  const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
-  if (saved) saved.evidence = { ...saved.evidence, ...resolution };
-  context.database.save(executionRecord, () =>
-    context.emit(actionIdentity, startedAt, {
-      outcome: resolution.outcome,
-      direction: resolution.direction,
-      rule: resolution.rule,
-      signals: {},
-      ...fields,
-    }),
-  );
-  if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
-  return resolution;
-}
-
-export const completeEffect = (
-  context: EffectContext,
-  actionIdentity: marker.ActionIdentity,
-  startedAt: number,
-  actionMarker: string,
-): Promise<visit.EffectResolution> =>
-  saveResolution(context, {
-    actionIdentity,
-    startedAt,
-    resolution: {
-      outcome: 'ok',
-      direction: 'advance',
-      row: 'effect-completed',
-      rule: { table: 'fixed', row: 'effect-completed' },
-    },
-    fields: {},
-    actionMarker,
-  });
-
-// One deterministic Action outside any Visit's Actions, a Terminal's or a Pending report's: bracketed, write-ahead,
-// with its own Action Event.
-export async function effectAction<Payload extends writeAhead.Payload, Context>(
-  context: EffectContext & NoInfer<Context>,
-  actionIdentity: marker.ActionIdentity,
-  { effect, payload }: Omit<SideEffect<Payload, Context>, 'actionMarker' | 'deferred'>,
-): Promise<Evidence> {
-  const startedAt = context.clock.now();
-  const actionMarker = context.markerOf(actionIdentity);
-  const evidence = await whileBusy(context, () =>
-    sideEffect(context, { actionMarker, effect, payload, deferred: true }),
-  );
-  await completeEffect(context, actionIdentity, startedAt, actionMarker);
   return evidence;
 }

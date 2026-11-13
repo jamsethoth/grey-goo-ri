@@ -2,6 +2,7 @@
 // Interrupted Attempt (#68, ADR 0011) share. Whatever is rescued moves out of the worktree and is kept under
 // refs/gg/rescue/, which only `gg work reset` removes; each step is write-ahead, so a crash neither repeats nor skips
 // one.
+import * as attempt from './attempt.ts';
 import * as checks from './checks.ts';
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
@@ -30,7 +31,7 @@ export async function reset(
   const { record: executionRecord, git } = runContext;
   // The worktree as the agent left it: at admission, only dirty state that still matches this is proven the agent's.
   // The ignored Protected Files and tests are in it too: the tree cannot see them, but the restore rewrites them.
-  const left = await sideEffect.whileBusy(runContext, async () => ({
+  const left = await attempt.whileBusy(runContext, async () => ({
     ...(await runContext.integrity.snapshot(executionRecord.worktree)),
     files: given.untracked
       ? await runContext.integrity.ignoredFiles(executionRecord.worktree, given.untracked.within)
@@ -40,7 +41,7 @@ export async function reset(
     ...given,
     left: { head: left.head, index: left.index, tree: left.tree, files: left.files },
   };
-  await sideEffect.whileBusy(runContext, () =>
+  await attempt.whileBusy(runContext, () =>
     sideEffect.sideEffect(runContext, {
       actionMarker: runContext.markerOf(actionIdentity),
       effect: resetEffect.effect,
@@ -125,7 +126,7 @@ async function resetRescued(
     if (isEnding(err)) throw err;
     throw held(`The reset after ${failure} failed: ${(err as Error).message}. ${named}; nothing more was discarded.`);
   }
-  if (!(await sideEffect.whileBusy(runContext, () => atBaseline(runContext, baseline, untracked))))
+  if (!(await attempt.whileBusy(runContext, () => atBaseline(runContext, baseline, untracked))))
     throw held(`The reset after ${failure} did not leave the worktree at its baseline. ${named}.`);
 }
 
@@ -145,30 +146,23 @@ export async function rescueAndReset(
 
   const intended = writeAhead.findEntry(executionRecord, actionMarker, 'intent')?.payload as
     rescueEffect.Payload | undefined;
-  const payload =
-    intended ?? (await sideEffect.whileBusy(runContext, () => planRescue(runContext, rescuing, untracked)));
+  const payload = intended ?? (await attempt.whileBusy(runContext, () => planRescue(runContext, rescuing, untracked)));
   if (!payload) return null;
-  const answer = { ref: payload.ref, commit: payload.commit };
-  if (writeAhead.findEntry(executionRecord, actionMarker, 'complete')) return answer;
-
-  const startedAt = runContext.clock.now();
-  await sideEffect.whileBusy(runContext, () =>
-    sideEffect.sideEffect(runContext, { actionMarker, effect: rescueEffect.effect, payload, deferred: true }),
-  );
-  if (!writeAhead.findEntry(executionRecord, resetMarker, 'intent')) {
-    await sideEffect.whileBusy(runContext, () => verifyRef(runContext, payload, untracked));
-    effectErrors.crashPoint(runContext, resetMarker, 'before-intent');
-  }
-  await resetRescued(runContext, rescuing, payload, untracked);
-  runContext.database.complete(executionRecord, actionMarker, {
-    event: () =>
-      runContext.emit({ ...actionIdentity, action: 'rescue' }, startedAt, {
-        outcome: 'ok',
-        direction: 'advance',
-        rule: { table: 'fixed', row: 'effect-completed' },
-        signals: {},
-      }),
+  // Not busy as a whole: its steps are bracketed one by one, the reset's by the reset, and the brackets do not nest.
+  await attempt.run(runContext, {
+    actionIdentity: { ...actionIdentity, action: 'rescue' },
+    busy: false,
+    work: async () => {
+      await attempt.whileBusy(runContext, () =>
+        sideEffect.sideEffect(runContext, { actionMarker, effect: rescueEffect.effect, payload, deferred: true }),
+      );
+      if (!writeAhead.findEntry(executionRecord, resetMarker, 'intent')) {
+        await attempt.whileBusy(runContext, () => verifyRef(runContext, payload, untracked));
+        effectErrors.crashPoint(runContext, resetMarker, 'before-intent');
+      }
+      await resetRescued(runContext, rescuing, payload, untracked);
+    },
+    finish: () => ({ resolution: attempt.EFFECT_COMPLETED }),
   });
-  effectErrors.crashPoint(runContext, actionMarker, 'after-completion');
-  return answer;
+  return { ref: payload.ref, commit: payload.commit };
 }

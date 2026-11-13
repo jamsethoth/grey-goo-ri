@@ -292,6 +292,32 @@ test('a label update whose failure was saved before its completion is retried on
   assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 1);
 });
 
+test('a label update whose failure was saved with its completion is retried on resume', async (t) => {
+  const fixture = await golden.fixture(t);
+  const label = attemptMarker(fixture, 'ready-for-qa', 1, 'end-label', 0);
+  // The ready-for-qa label does not land, and gg dies just after { ok: false } is saved with the completion.
+  await assert.rejects(
+    interpreter.runExecution({
+      ...fixture.options,
+      crashAt: { marker: label, point: 'after-completion' },
+      deps: { ...fixture.options.deps, gh: { ...fixture.options.deps.gh, setLabels: async () => false } },
+    }),
+    isCrash,
+  );
+  const mid = loadTicket(fixture);
+  assert.deepEqual(writeAheadSteps(mid, label), ['intent', 'evidence', 'complete']);
+  assert.ok(!fixture.gh.labels.has('gg:state:ready-for-qa'));
+
+  const result = await interpreter.runExecution({ ...fixture.options, record: mid });
+  assert.equal(result.outcome, 'ready-for-qa');
+  assert.ok(fixture.gh.labels.has('gg:state:ready-for-qa'), 'the failed label update is made on resume');
+  const labelEvents = fixture
+    .readEvents()
+    .filter((event) => event.type === 'action' && event.vertex === 'ready-for-qa' && event.action === 'end-label');
+  assert.equal(labelEvents.length, 1, 'the completed Action records no second Event');
+  assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_end').length, 1);
+});
+
 // A Session cannot be resumed without its transcript, so Attempt 2 then starts fresh with the full Brief.
 const transcripts: [string, (path: string) => void, string | null][] = [
   ['with its transcript', () => {}, 'fake-session-1'],
