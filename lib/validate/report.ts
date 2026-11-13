@@ -277,15 +277,36 @@ export function absentOr<C extends ProblemCode>(
   return findingOf(code, [message, params] as unknown as Detail<C>);
 }
 
-export function error<C extends ProblemCode>(report: Report, location: string, code: C, ...detail: Detail<C>) {
+// What a check gives in place of a value it refused. Only error and errorOf make one, so a check gives up on a value
+// only by reporting it, and a Flow with no error resolves from the values its checks gave (#391).
+class Reported {
+  static readonly one = new Reported();
+  // A private field makes the class nominal, so no other object is one.
+  readonly #reported = true;
+  private constructor() {}
+  static is(value: unknown): value is Reported {
+    return value instanceof Reported && #reported in value && false;
+  }
+}
+export type { Reported };
+export const isReported = (value: unknown): value is Reported => Reported.is(value);
+
+export function error<C extends ProblemCode>(
+  report: Report,
+  location: string,
+  code: C,
+  ...detail: Detail<C>
+): Reported {
   report.errors.push(problemAt(location, findingOf(code, detail)));
+  return Reported.one;
 }
 export function warn<C extends ProblemCode>(report: Report, location: string, code: C, ...detail: Detail<C>) {
   report.warnings.push(problemAt(location, findingOf(code, detail)));
 }
 // A problem a part found on its own, located where the caller says.
-export function errorOf(report: Report, location: string, finding: Finding) {
+export function errorOf(report: Report, location: string, finding: Finding): Reported {
   report.errors.push(problemAt(location, finding));
+  return Reported.one;
 }
 export function warnOf(report: Report, location: string, finding: Finding) {
   report.warnings.push(problemAt(location, finding));

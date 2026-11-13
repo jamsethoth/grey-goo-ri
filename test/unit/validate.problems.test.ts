@@ -31,6 +31,16 @@ test('a Problem carries the values its sentence names in params, and a code that
   });
 });
 
+// A check gives up on a value only by reporting it (#391, D1 A): Reported comes only from an error.
+test('a reported error gives Reported, and no other value is Reported', () => {
+  const problems = report.newReport();
+  assert.equal(report.isReported(report.error(problems, 'flows', 'no-flow-declared', 'an error')), true);
+  const finding: report.Finding = { code: 'no-flow-declared', message: 'an error' };
+  assert.equal(report.isReported(report.errorOf(problems, 'flows', finding)), true);
+  for (const value of [undefined, null, {}, 'reported', report.newReport()])
+    assert.equal(report.isReported(value), false, JSON.stringify(value));
+});
+
 test('the params a code takes are checked at type-check time, from the one map beside the codes', () => {
   const problems = report.newReport();
   // @ts-expect-error -- unknown-key's params name the key, not a name
