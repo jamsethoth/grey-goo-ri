@@ -2,6 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as config from '../../lib/config.ts';
@@ -21,6 +22,7 @@ import * as failingGit from '../support/failing-git.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as runFixture from '../support/run-fixture.ts';
 import * as caseDatabase from '../support/case-database.ts';
+import * as tempDirectory from '../support/temp-directory.ts';
 import * as unvisitedExecution from '../support/unvisited-execution.ts';
 
 const { TICKET } = runFixture;
@@ -360,6 +362,26 @@ test('--flow runs the named Flow', async (t) => {
   assert.ok(
     fixture.logs.some((line) => line.includes(' under Flow light ')),
     JSON.stringify(fixture.logs),
+  );
+});
+
+// gg run reports a record whose Flow is gone for its own Ticket (A2), so its preflight never reads the records: a State
+// Database it cannot open fails the Run later, not in place of the configuration's errors and their exit code (#362).
+test("preflight gives the configuration's errors and exit code over a State Database it cannot open", async (t) => {
+  const commonDir = tempDirectory.tempDirectory(t, 'gg-run-');
+  mkdirSync(join(commonDir, 'gg'));
+  const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
+  db.exec('PRAGMA user_version = 2');
+  db.close();
+  const fixture = runFixture.fixture(t);
+  delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
+  await assert.rejects(
+    run.admitConfiguration({ commonDir, config: fixture.options.config, harnesses: fixture.options.harnesses }),
+    (err: Error & { exitCode?: number }) => {
+      assert.equal(err.exitCode, 2, err.message);
+      assert.ok(err.message.startsWith('preflight failed:\nerror: agents.implementer: '), err.message);
+      return true;
+    },
   );
 });
 

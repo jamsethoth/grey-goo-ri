@@ -1,7 +1,6 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import * as config from '../../lib/config.ts';
 import * as marker from '../../lib/marker.ts';
@@ -163,24 +162,4 @@ test("a user Flow's Config Hash equals the same Flow's declared in the repositor
   });
   assert.ok(flows.get('user:default'), 'the user Flow is admitted');
   assert.equal(flows.get('user:default')?.hash, flows.get('default')?.hash);
-});
-
-// gg run reports a record whose Flow is gone for its own Ticket (A2), so its preflight never reads the records: a State
-// Database it cannot open fails the Run later, not in place of the configuration's errors and their exit code (#362).
-test("preflight gives the configuration's errors and exit code over a State Database it cannot open", async (t) => {
-  const commonDir = tempDirectory.tempDirectory(t, 'gg-run-flows-');
-  mkdirSync(join(commonDir, 'gg'));
-  const db = new DatabaseSync(join(commonDir, 'gg', 'gg.db'));
-  db.exec('PRAGMA user_version = 2');
-  db.close();
-  const fixture = runFixture.fixture(t);
-  delete (fixture.options.config.repository.agents.implementer as { harness?: unknown }).harness;
-  await assert.rejects(
-    run.admitConfiguration({ commonDir, config: fixture.options.config, harnesses: fixture.options.harnesses }),
-    (err: Error & { exitCode?: number }) => {
-      assert.equal(err.exitCode, 2, err.message);
-      assert.ok(err.message.startsWith('preflight failed:\nerror: agents.implementer: '), err.message);
-      return true;
-    },
-  );
 });
