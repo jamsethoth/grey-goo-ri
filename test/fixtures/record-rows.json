@@ -352,7 +352,9 @@
     "terminalReason.decidedBy": [
       { "hold": null },
       { "human": "owner" },
-      { "vertex": "green", "visit": null, "action": null, "recovery": 0 }
+      { "vertex": "green", "visit": null, "action": null, "recovery": 0 },
+      { "hold": "dirty-worktree", "vertex": "green", "visit": 1, "action": null, "recovery": 0 },
+      { "human": "owner", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
     ],
     "visitState.settled.resolution": [
       {

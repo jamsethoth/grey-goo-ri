@@ -293,11 +293,13 @@ test('a string outside its closed set is a corrupt row naming it; any other stri
   assert.ok(closed >= 10, `${closed} closed sets checked`);
 });
 
-test('a decidedBy that mixes two forms, or holds none, is a corrupt row', () => {
+test('a decidedBy that mixes two forms, holds none, or names half a Visit is a corrupt row', () => {
   for (const decidedBy of [
     { hold: null, human: 'owner' },
     {},
-    { human: 'owner', vertex: 'green', visit: 1, action: 'a', recovery: 0 },
+    { hold: null, human: 'owner', vertex: 'green', visit: 1, action: 'a', recovery: 0 },
+    // A hold or a human names the Visit it cut off with all four keys or none (#341).
+    { hold: 'dirty-worktree', vertex: 'green', visit: 1 },
   ] as Json[]) {
     const broken = changed(
       FIXTURE.execution,
