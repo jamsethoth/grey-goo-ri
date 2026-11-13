@@ -3,6 +3,7 @@
 import * as checks from './checks.ts';
 import * as clockModule from './clock.ts';
 import type * as commandCleanup from './command-cleanup.ts';
+import type * as config from './config.ts';
 import type * as sideEffect from './effects/side-effect.ts';
 import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
@@ -110,6 +111,7 @@ export type Admission = Pick<record.AdmissionStop, 'kind'> & Partial<record.Admi
 // unexpected fault without running it; `admission`, a hold or abandonment the caller decided, is its Terminal.
 export interface ExecutionOptions {
   deps: Deps;
+  pinned?: config.Pinned;
   flow: model.ResolvedFlow;
   record: record.ExecutionRecord;
   events: ReturnType<typeof events.eventLog>;

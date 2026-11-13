@@ -26,6 +26,7 @@ import * as fakeHarnessModule from './fake-harness.ts';
 import * as fakeIntegrityModule from './fake-integrity.ts';
 import * as gitShell from './git-shell.ts';
 import * as keys from './keys.ts';
+import * as pinnedValue from './pinned-value.ts';
 import * as shippedFlow from './shipped-flow.ts';
 import * as tempDirectory from './temp-directory.ts';
 import * as templateRepos from './template-repos.ts';
@@ -317,6 +318,7 @@ function executionOptions({
   const { fakeIntegrity } = repos;
   return {
     deps,
+    pinned: pinnedValue.pinnedOf(planned.configured, planned.flow, planned.executionRecord.configHash),
     flow: planned.flow,
     record: planned.executionRecord,
     harness: harness as unknown as runContext.Harness,
@@ -395,5 +397,6 @@ export type GoldenFixture = Awaited<ReturnType<typeof fixture>>;
 export function configure(golden: GoldenFixture, edit: (configured: GoldenConfig) => void): void {
   edit(golden.config);
   golden.flow = golden.options.flow = resolve(golden.config);
+  golden.options.pinned = pinnedValue.pinnedOf(golden.config, golden.flow, golden.options.pinned!.hash);
   if (!golden.executionRecord.visits.size) golden.executionRecord.cursor.vertex = golden.flow.ticket.entry as string;
 }

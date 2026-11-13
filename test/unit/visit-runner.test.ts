@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as attempt from '../../lib/attempt.ts';
+import * as interpreter from '../../lib/interpreter.ts';
 import type * as model from '../../lib/model.ts';
 import type * as visit from '../../lib/visit.ts';
 import type * as visitScope from '../../lib/visit-scope.ts';
 import * as visitRunner from '../../lib/visit-runner.ts';
 import * as support from '../support/execution-context.ts';
+import { loadTicket } from '../support/execution-reads.ts';
+import * as golden from '../support/golden.ts';
 
 const IDENTITY = { vertex: 'red', visit: 1, procedure: 'tests-fail', action: 'red-check', recovery: 0 };
 
@@ -91,4 +94,18 @@ test("a held completion's retry clears the held result, and one with none re-run
     'the cursor moves to the first Check, saved in the same write',
   );
   assert.equal(executionRecord.attempts, 5, 'the re-run counts once toward the Action Cap');
+});
+
+// A Visit reads what the Config Hash covers from the value carrying that hash, so it pins what was hashed (#369).
+test('a Visit pins the Declared Commands, test paths and Config Hash of the value it runs under', async (t) => {
+  const fixture = await golden.fixture(t);
+  const given = fixture.options.pinned!;
+  const commands = { ...given.configuration.commands, lint: 'npm run lint' };
+  const testPaths = [...given.configuration.testPaths, 'extra/**'];
+  const pinned = { ...given, configuration: { ...given.configuration, commands, testPaths }, hash: 'pinned-hash' };
+  await interpreter.runExecution({ ...fixture.options, pinned });
+  const snapshot = loadTicket(fixture).configurationSnapshot!;
+  assert.deepEqual(snapshot.commands, commands);
+  assert.deepEqual(snapshot.testPaths, testPaths);
+  assert.equal(snapshot.configHash, 'pinned-hash');
 });

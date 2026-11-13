@@ -215,7 +215,8 @@ test('a changed Config Hash makes an approval stale', async (t) => {
   await interpreter.runExecution(fixture.options);
 
   fixture.gh.humanAddsLabel(APPROVED_LABEL, OWNER);
-  assert.equal((await laterRun(fixture, { configHash: 'another-hash' })).outcome, 'pending');
+  const pinned = { ...fixture.options.pinned!, hash: 'another-hash' };
+  assert.equal((await laterRun(fixture, { pinned })).outcome, 'pending');
   assert.equal(loadTicket(fixture).approvalRequest!.id.endsWith(':2'), true);
 });
 
@@ -274,7 +275,9 @@ test('a listed approver below write permission is accepted', async (t) => {
 
   fixture.gh.permissions.set('a-triager', 'read');
   fixture.gh.humanAddsLabel(APPROVED_LABEL, 'a-triager');
-  const result = await laterRun(fixture, { approvers: ['A-Triager'] });
+  const given = fixture.options.pinned!;
+  const pinned = { ...given, configuration: { ...given.configuration, approvers: ['A-Triager'] } };
+  const result = await laterRun(fixture, { pinned });
   assert.equal(result.outcome, 'ready-for-qa');
 });
 

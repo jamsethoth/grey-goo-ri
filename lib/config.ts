@@ -193,6 +193,14 @@ export interface PinnedConfiguration {
   approvers?: string[];
 }
 
+// What an Execution runs under: a Pinned Configuration, its Resolved Flow in memory and its Config Hash, one value so
+// what runs is what was hashed (#369). gg run's pin is its only builder; a test gives a hash of its own.
+export interface Pinned {
+  configuration: PinnedConfiguration;
+  flow: model.ResolvedFlow;
+  hash: string;
+}
+
 // The Pinned Configuration's hash: the Resolved Flow and every file it uses by name, never by path (no install path
 // enters it).
 export function configHash({
