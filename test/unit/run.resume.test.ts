@@ -363,19 +363,30 @@ const snapshotHash = (fixture: runFixture.RunFixture) =>
   (JSON.parse(fixture.loadRow()!) as { configurationSnapshot: { configHash?: string } }).configurationSnapshot
     .configHash;
 
+// An Execution an earlier Run left inside green, under the hash the fixture's configuration gives, as a control
+// Run reports it, so only an edit between the Runs can move it. A real Run cannot be left resumable: its stops end at
+// needs-human.
+async function resumed(t: TestContext, { edited }: { edited: boolean }) {
+  const control = runFixture.fixture(t);
+  await run.runTarget(control.options);
+  const fixture = runFixture.fixture(t);
+  const seeded = await runFixture.crashBeforePush(fixture);
+  assert.equal(seeded.cursor.vertex, 'green', 'the earlier Run stopped inside green');
+  seeded.configHash = runConfigHash(control);
+  (fixture.options.deps.database as record.StateDatabase).save(seeded);
+  if (edited) fixture.options.config.repository.commands = { test: 'npm run test:changed' };
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  return { fixture, seeded };
+}
+
 // A Visit resumed mid-Visit finishes on the snapshot it entered with, and the new configuration takes effect at the
 // next Vertex entry, logged as a change (request 3.5, #368): green keeps the earlier Run's hash, publish moves it.
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
 test('a Declared Command changed between Runs moves the Config Hash at the next Vertex entry, logged as a change', async (t) => {
-  const fixture = runFixture.fixture(t);
-  const seeded = await runFixture.crashBeforePush(fixture);
-  assert.equal(seeded.cursor.vertex, 'green', 'the earlier Run stopped inside green');
-  fixture.options.config.repository.commands = { test: 'npm run test:changed' };
-
-  const results = await run.runTarget(fixture.options);
-  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const { fixture, seeded } = await resumed(t, { edited: true });
   const runHash = runConfigHash(fixture);
-  assert.notEqual(runHash, seeded.configHash);
+  assert.notEqual(runHash, seeded.configHash, 'the edit moved the hash');
   const hashes = actionHashes(fixture);
   assert.deepEqual(
     [...new Set(hashes.map(([vertex]) => vertex))],
@@ -404,6 +415,24 @@ test('a Declared Command changed between Runs moves the Config Hash at the next 
   );
   assert.equal(executionReads.loadTicket(fixture).configHash, runHash, 'the record names the hash it runs under');
   assert.equal(snapshotHash(fixture), runHash, 'the snapshot names the hash its Visit entered under');
+});
+
+test('an Execution resumed under an unchanged configuration logs no config_change and keeps its hash', async (t) => {
+  const { fixture, seeded } = await resumed(t, { edited: false });
+  assert.equal(runConfigHash(fixture), seeded.configHash);
+  const hashes = actionHashes(fixture);
+  assert.ok(
+    hashes.some(([vertex]) => vertex === 'publish'),
+    'a Vertex entered after the resumed one',
+  );
+  assert.deepEqual(
+    hashes,
+    hashes.map(([vertex]) => [vertex, seeded.configHash]),
+  );
+  assert.deepEqual(configChanges(fixture), []);
+  assert.ok(!fixture.logs.some((line) => line.includes(` #${TICKET} config `)), JSON.stringify(fixture.logs));
+  assert.equal(executionReads.loadTicket(fixture).configHash, seeded.configHash);
+  assert.equal(snapshotHash(fixture), seeded.configHash);
 });
 
 test('an Execution admitted by this Run logs no config_change, and every Action Event carries its hash', async (t) => {
