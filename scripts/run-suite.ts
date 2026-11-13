@@ -2,8 +2,8 @@
 // every environment variable that could make node load other code, and gives git no global or system config. The full
 // and fast stages run in a job it holds, and fail when a test leaves a process in it (docs/testing.md).
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
-import { availableParallelism } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -261,11 +261,17 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     console.error(`${missing.join(' and ')} not found: run npm ci first`);
     process.exit(1);
   }
+  // node's test runner keeps its coverage in a node-coverage-* directory in the temp directory and removes it only in
+  // its own teardown, which a test's process.exit skips. So the stage's tests get a temp directory of the launcher's,
+  // removed after them (#377). Each platform's node reads a different one of the three.
+  let temp: string | undefined;
   if (suite.coverage) {
     // node's lcov reporter does not create its destination's directory. A run that ends early writes no report, so an
     // earlier run's must not be there to read.
     mkdirSync(join(root, dirname(LCOV)), { recursive: true });
     rmSync(join(root, LCOV), { force: true });
+    temp = mkdtempSync(join(tmpdir(), 'gg-coverage-'));
+    suite.env = { ...suite.env, TEMP: temp, TMP: temp, TMPDIR: temp };
   }
   const hold = suite.census ? await holdStage() : null;
   // Steps run in order and the first failure stops the stage, so a format, lint or type error is the last thing
@@ -291,6 +297,8 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     console.error(report);
     if (failed && !stageCode) stageCode = 1;
   }
+  if (temp && process.env.GG_KEEP_TEMP) console.error(`coverage kept its temp directory: ${temp}`);
+  else if (temp) rmSync(temp, { recursive: true, force: true });
   if (stageCode) process.exit(stageCode);
   if (suite.coverage) process.exit(holdCoverage());
 }
