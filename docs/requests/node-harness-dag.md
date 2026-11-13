@@ -595,8 +595,9 @@ branches and PRs finish under ff; cutover (section 6) archives ff after a real-h
 ### 3.7 Tracing, metrics and export
 
 Events come in two kinds. Action events record one attempt and belong to their execution. Lifecycle events record a
-run, an execution or a visit starting or ending (run start and end, ticket start and end, visit end) and belong to the
-run or the execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
+run, an execution or a visit starting or ending (run start and end, ticket start and end, visit end), or a resumed
+execution's config hash changing at a vertex entry (`config_change`, with both hashes), and belong to the run or the
+execution they describe; stats reads both, and an execution's trace is its action events plus its own lifecycle
 events. Action events, schema 2, appended as rows of the state database carry: flow name, config hash,
 launch profile, ticket, run, vertex, visit, procedure, action, recovery, attempt, duration, outcome, direction, signals
 received, the resolution rule applied, and the failure class and error, null unless the action failed. Agent actions

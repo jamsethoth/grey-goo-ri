@@ -156,6 +156,8 @@ export interface VisitState {
 export interface ConfigurationSnapshot {
   vertex: string;
   visit: number;
+  // The Config Hash the Visit entered under, which its Action Events carry though a later Run resumes it.
+  configHash: string;
   agent:
     | ({ harness: string; model: string | null; effort: string | null; persona: string } & Record<
         string,
