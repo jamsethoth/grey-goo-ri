@@ -272,14 +272,15 @@ function saveRecord(record: AnyRecord, writeEvent: WriteEvent, beforeSave: (reco
   }
 }
 
-type Saved<Kind extends RecordKind> = Kind extends 'ticket' ? ExecutionRecord : EpicRecord;
-
-export function load<Kind extends RecordKind>(commonDir: string, kind: Kind, recordNumber: number): Saved<Kind> | null {
+// Each kind's row reads back as its own record: the row's kind is the one asked for, and parseRow reads it by kind.
+export function load(commonDir: string, kind: 'ticket', recordNumber: number): ExecutionRecord | null;
+export function load(commonDir: string, kind: 'epic', recordNumber: number): EpicRecord | null;
+export function load(commonDir: string, kind: RecordKind, recordNumber: number): AnyRecord | null {
   const row = stateDatabase
     .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? AND n = ?')
     .get(kind, recordNumber) as recordJson.RecordRow | undefined;
-  return row ? recordJson.parseRow<Saved<Kind>>(commonDir, row) : null;
+  return row ? recordJson.parseRow(commonDir, row) : null;
 }
 
 // A record's row deleted, as gg work abandon forgets a Ticket's position; its Events stay. Says whether one was.
@@ -292,18 +293,23 @@ export function removeRecord(commonDir: string, kind: RecordKind, recordNumber: 
 }
 
 // One corrupt record must not hide every other worktree's activity: it is reported, not fatal.
-export function loadAll<Kind extends RecordKind>(
+interface LoadAllOptions {
+  onCorrupt?: (err: recordJson.RecordCorruptError) => void;
+}
+export function loadAll(commonDir: string, kind: 'ticket', options?: LoadAllOptions): ExecutionRecord[];
+export function loadAll(commonDir: string, kind: 'epic', options?: LoadAllOptions): EpicRecord[];
+export function loadAll(
   commonDir: string,
-  kind: Kind,
-  { onCorrupt = () => {} }: { onCorrupt?: (err: recordJson.RecordCorruptError) => void } = {},
-): Saved<Kind>[] {
+  kind: RecordKind,
+  { onCorrupt = () => {} }: LoadAllOptions = {},
+): AnyRecord[] {
   const rows = stateDatabase
     .open(commonDir)
     .prepare('SELECT kind, n, json FROM records WHERE kind = ? ORDER BY n')
     .all(kind) as unknown as recordJson.RecordRow[];
   return rows.flatMap((row) => {
     try {
-      return [recordJson.parseRow<Saved<Kind>>(commonDir, row)];
+      return [recordJson.parseRow(commonDir, row)];
     } catch (err) {
       if (!(err instanceof recordJson.RecordCorruptError)) throw err;
       onCorrupt(err);

@@ -81,6 +81,8 @@ export interface RunStoppedResolution extends ResolutionBase {
   row: 'run-stopped';
   failureClass: string;
   runStopTicket: number;
+  // The remote Action whose failure stopped the Run, when the stop names one.
+  source: string | null;
 }
 
 // An Action's result, by the row that decided it.

@@ -1,0 +1,406 @@
+{
+  "execution": {
+    "schemaVersion": 1,
+    "repository": "o/r",
+    "execution": "8.a1b2c3",
+    "ticket": 8,
+    "epic": 1,
+    "flow": "default",
+    "configHash": "hash-1",
+    "run": "run-1",
+    "state": "needs-human",
+    "terminalReason": {
+      "decidedBy": { "hold": "await" },
+      "outcome": "held",
+      "rule": { "table": "fixed", "row": "claimed" },
+      "text": "held for a human"
+    },
+    "terminalStop": {
+      "outcome": "held",
+      "response": { "any": ["json", 1, true, null] },
+      "actionRef": { "vertex": "green", "visit": 2, "procedure": "implement", "action": "agent", "recovery": 1, "attempt": 3 },
+      "held": true,
+      "abandoned": false,
+      "inProgress": false,
+      "fresh": true,
+      "stopped": false,
+      "commentTemplate": "held.md",
+      "advice": "look at it",
+      "detail": "the detail",
+      "error": "the error",
+      "failureClass": "transient",
+      "interrupted": {
+        "terminal": "needs-human",
+        "terminalReason": {
+          "decidedBy": { "vertex": "green", "visit": 2, "action": "agent", "recovery": 0 },
+          "outcome": "failed",
+          "rule": { "table": "failed", "row": 0 },
+          "text": "the earlier reason"
+        }
+      }
+    },
+    "admissionStop": {
+      "kind": "hold",
+      "name": "cleanup",
+      "terminalReasonText": "held at admission",
+      "fresh": false,
+      "advice": "the advice",
+      "detail": "the detail",
+      "inProgress": true,
+      "error": "the error"
+    },
+    "cursor": { "vertex": "green", "visit": 2, "action": "agent", "recovery": 1, "attempt": 3 },
+    "visits": { "red": 1, "green": 2 },
+    "traversals": { "red->green:passed": 1 },
+    "retries": {
+      "green/2/agent/1": {
+        "parse": 1,
+        "timeout": 0,
+        "transient": 2,
+        "rateLimited": 1,
+        "remote": { "count": 1, "failureClass": "rate-limited", "nextEligibleAt": 1700000000000, "started": true }
+      }
+    },
+    "sessions": {
+      "green/2/agent": {
+        "sessionId": "session-1",
+        "harness": "claude",
+        "personaHash": "persona-hash",
+        "transcriptPath": "transcripts/1.jsonl",
+        "cumulativeUsage": { "inputTokens": 10, "costUsd": null },
+        "vertex": "green",
+        "model": "opus",
+        "effort": "high",
+        "personaName": "implementer"
+      }
+    },
+    "attempts": 4,
+    "outputs": [
+      {
+        "vertex": "green",
+        "visit": 1,
+        "action": "agent",
+        "value": {
+          "response": { "summary": "done" },
+          "cleanup": {
+            "confirmed": false,
+            "survivors": [{ "pid": 42, "created": "2026-11-13T00:00:00Z", "commandLine": "node x", "error": "access denied" }],
+            "reason": "1 process could not be confirmed gone",
+            "containment": { "kind": "group", "pgid": 41 }
+          },
+          "evidence": { "command": "npm test", "output": "ok", "exitCode": 0 },
+          "findingsHash": "findings",
+          "files": ["a.ts", "b.ts"],
+          "decision": { "outcome": "approved", "actor": "owner", "reply": "fine" },
+          "ref": "refs/gg/rescue/1",
+          "diffStat": { "files": 2, "insertions": 10, "deletions": 3, "testFiles": 1, "testInsertions": 5 },
+          "output": "the output"
+        }
+      }
+    ],
+    "testCommits": { "first": "sha-first", "baseline": "sha-baseline" },
+    "history": [{ "kind": "held", "text": "an earlier hold" }],
+    "worktree": "C:/wt/8",
+    "branch": "ticket/8",
+    "base": "main",
+    "pr": 12,
+    "approvalRequest": {
+      "id": "approval-1",
+      "execution": "8.a1b2c3",
+      "vertex": "approve",
+      "visit": 1,
+      "nonce": "nonce-1",
+      "digest": "digest-1"
+    },
+    "configurationSnapshot": {
+      "vertex": "green",
+      "visit": 2,
+      "agent": { "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer", "tools": ["read"] },
+      "access": "write",
+      "procedure": { "name": "implement", "hash": "procedure-hash" },
+      "outcomes": ["passed", "failed"],
+      "route": { "passed": "review" },
+      "routes": null,
+      "inputs": {
+        "plan": { "value": { "steps": 3 }, "vertex": "plan", "visit": 1, "action": "agent", "absent": false }
+      },
+      "commands": { "test": { "run": "npm test" } },
+      "testPaths": ["test/"],
+      "persona": { "name": "implementer", "bytes": "You implement.", "hash": "persona-hash" }
+    },
+    "visitState": {
+      "recovery": 1,
+      "firstAttemptBaseline": {
+        "head": "head-1",
+        "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
+        "idle": { "C:/wt/9": { "generation": 3, "snapshot": { "head": "h9", "index": "i9", "tree": "t9" } } },
+        "untracked": { "notes": { "base64": "bm90ZXM=" } },
+        "tests": { "link": { "link": "target" } }
+      },
+      "call": {
+        "harnessResult": {
+          "status": "completed",
+          "sessionId": "session-1",
+          "transcriptPath": "transcripts/1.jsonl",
+          "usage": { "cumulative": { "inputTokens": 10 }, "delta": { "inputTokens": 4, "costUsd": null } },
+          "exitCode": 0,
+          "exitSignal": null,
+          "finalEventSubtype": "success",
+          "sessionInit": { "model": "opus" },
+          "permissionDenials": [],
+          "commandsRun": ["npm test"],
+          "cleanup": { "confirmed": true, "survivors": [] }
+        },
+        "claim": { "valid": true, "token": "passed", "reason": null },
+        "response": { "claim": "passed" },
+        "baseline": {
+          "head": "head-1",
+          "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
+          "idle": {},
+          "untracked": {},
+          "tests": {}
+        },
+        "signal": {
+          "status": "failed",
+          "response": "text",
+          "failure": { "failureClass": "transient", "retryAfterMs": 1000, "message": "overloaded" }
+        }
+      },
+      "response": { "claim": "passed" },
+      "runs": { "tests": { "output": "1 failing", "reason": "a test failed", "failure": "tests", "recoverable": true } },
+      "checks": { "tests": { "id": "tests", "kind": "command", "state": "failed", "tree": "tree-1" } },
+      "checkFollows": true,
+      "settled": {
+        "action": "agent",
+        "recovery": 1,
+        "resolution": {
+          "outcome": "failed",
+          "direction": "retry",
+          "rule": { "table": "fixed", "row": "transient-retry" },
+          "row": "transient-retry",
+          "check": "tests",
+          "retryAfterMs": 1000,
+          "retryKind": "transient",
+          "failureClass": "transient",
+          "sessionId": "session-1",
+          "reason": "overloaded",
+          "surfaces": ["tree"],
+          "attempt": 2,
+          "signal": { "id": "tests", "kind": "command", "state": "failed", "tree": null },
+          "output": "the output"
+        }
+      },
+      "unconfirmedCleanup": {
+        "confirmed": false,
+        "survivors": [{ "pid": 7, "created": null, "commandLine": null, "error": "gone?" }],
+        "reason": "uncontained",
+        "containment": { "kind": "none" }
+      }
+    },
+    "activity": { "busy": true, "generation": 5 },
+    "heartbeat": "2026-11-13T00:00:00Z",
+    "writeAheadLog": [
+      {
+        "step": "intent",
+        "actionMarker": "m-commit",
+        "effect": "commit",
+        "payload": { "message": "red", "tree": "t1", "parent": "p1" },
+        "evidence": null,
+        "time": "2026-11-13T00:00:01Z"
+      },
+      {
+        "step": "evidence",
+        "actionMarker": "m-commit",
+        "effect": "commit",
+        "payload": null,
+        "evidence": { "sha": "c1", "rule": { "table": "fixed", "row": null }, "nested": { "list": [1, "two"] } },
+        "time": "2026-11-13T00:00:02Z"
+      },
+      {
+        "step": "complete",
+        "actionMarker": "m-commit",
+        "effect": null,
+        "payload": null,
+        "evidence": null,
+        "time": "2026-11-13T00:00:03Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-push",
+        "effect": "push",
+        "payload": { "branch": "ticket/8", "sha": "c1" },
+        "evidence": null,
+        "time": "2026-11-13T00:00:04Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-comment",
+        "effect": "comment",
+        "payload": { "target": { "kind": "issue", "number": 8 }, "body": "hello", "bodyHash": "body-hash" },
+        "evidence": null,
+        "time": "2026-11-13T00:00:05Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-pr-upsert",
+        "effect": "pr-upsert",
+        "payload": { "branch": "ticket/8", "base": "main", "title": "Title", "body": "Body", "bodyHash": "pr-hash" },
+        "evidence": null,
+        "time": "2026-11-13T00:00:06Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-pr-ready",
+        "effect": "pr-ready",
+        "payload": { "number": 12, "sha": "c1", "tree": null },
+        "evidence": null,
+        "time": "2026-11-13T00:00:07Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-label",
+        "effect": "label",
+        "payload": { "ticket": 8, "add": ["gg:active"], "remove": [] },
+        "evidence": null,
+        "time": "2026-11-13T00:00:08Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-consume",
+        "effect": "label",
+        "payload": {
+          "ticket": 8,
+          "add": [],
+          "remove": ["gg:await:approve"],
+          "decision": {
+            "instance": "approval-1",
+            "event": 99,
+            "actor": "owner",
+            "time": "2026-11-13T00:00:00Z",
+            "outcome": "approved",
+            "next": "publish",
+            "reply": null
+          }
+        },
+        "evidence": null,
+        "time": "2026-11-13T00:00:09Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-rescue",
+        "effect": "rescue",
+        "payload": {
+          "ref": "refs/gg/rescue/1",
+          "commit": "rc1",
+          "tree": "rt1",
+          "parent": "rp1",
+          "left": { "head": "h", "index": "i", "tree": "t" }
+        },
+        "evidence": null,
+        "time": "2026-11-13T00:00:10Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-reset",
+        "effect": "reset",
+        "payload": {
+          "baseline": "base-sha",
+          "history": { "kind": "rescued", "text": "rescued to refs/gg/rescue/1" },
+          "untracked": {
+            "files": { "notes": { "base64": "bm90ZXM=" } },
+            "within": { "paths": ["test/"], "globs": ["*.snap"], "exclude": ["test/fixtures/"] },
+            "pathspecs": ["test/"]
+          },
+          "left": { "head": "h", "index": "i", "tree": "t", "files": { "link": { "link": "target" } } }
+        },
+        "evidence": null,
+        "time": "2026-11-13T00:00:11Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-reset-old",
+        "effect": "reset",
+        "payload": {
+          "baseline": "base-sha",
+          "history": { "kind": "integrity violation", "text": "rolled back" },
+          "untracked": { "files": {}, "within": ["test/"] },
+          "left": { "head": "h", "tree": "t" }
+        },
+        "evidence": null,
+        "time": "2026-11-13T00:00:12Z"
+      },
+      {
+        "step": "intent",
+        "actionMarker": "m-call",
+        "effect": "call",
+        "payload": {
+          "baseline": {
+            "head": "head-1",
+            "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
+            "idle": {},
+            "untracked": {},
+            "tests": {}
+          }
+        },
+        "evidence": null,
+        "time": "2026-11-13T00:00:13Z"
+      }
+    ]
+  },
+  "variants": {
+    "visitState.unconfirmedCleanup.containment": [{ "kind": "job" }, { "kind": "group", "pgid": 3 }],
+    "terminalReason.decidedBy": [
+      { "hold": null },
+      { "human": "owner" },
+      { "vertex": "green", "visit": null, "action": null, "recovery": 0 }
+    ],
+    "visitState.settled.resolution": [
+      {
+        "outcome": "failed",
+        "direction": "stop",
+        "rule": { "table": "failed", "row": "otherwise" },
+        "row": null,
+        "check": null,
+        "retryAfterMs": null,
+        "retryKind": null,
+        "failureClass": null
+      },
+      {
+        "outcome": "passed",
+        "direction": "advance",
+        "rule": { "table": "fixed", "row": "effect-completed" },
+        "row": "effect-completed"
+      },
+      { "outcome": "approved", "direction": "stop", "rule": { "table": "fixed", "row": "decision" }, "row": "decision" },
+      {
+        "outcome": "action-cap",
+        "direction": "stop",
+        "rule": { "table": "fixed", "row": "action-cap" },
+        "row": "action-cap",
+        "actionCap": 50
+      },
+      {
+        "outcome": "stopped",
+        "direction": "stop",
+        "rule": { "table": "stopped", "row": "run-stopped" },
+        "row": "run-stopped",
+        "failureClass": "quota",
+        "runStopTicket": 9,
+        "source": "push"
+      }
+    ]
+  },
+  "epic": {
+    "schemaVersion": 1,
+    "epic": 1,
+    "planDecision": { "approved": [1, 2] },
+    "approvalRequest": {
+      "id": "approval-2",
+      "execution": "epic-1",
+      "vertex": "plan",
+      "visit": 1,
+      "nonce": "nonce-2",
+      "digest": "digest-2"
+    }
+  }
+}

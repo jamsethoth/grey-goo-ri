@@ -283,12 +283,12 @@ test('a backoff keeps one idle generation across timer chunks', async (t) => {
   assert.deepEqual(seen[1], seen[0], 'one generation across the chunks');
 });
 
-// A deadline in Date's range is logged as a time; anything else as its saved JSON value.
+// A deadline in Date's range is logged as a time; anything else as its saved JSON value. One that is not a number is a
+// corrupt row, refused when the row is read (#357).
 for (const [name, deadline, shown] of [
   ['excessive', (now) => now + 40 * 24 * HOUR, '2026-11-24T00:00:00.000Z'],
-  ['invalid', () => null, 'null'],
   ['out of range', () => 1e300, '1e+300'],
-] as [string, (now: number) => number | null, string][]) {
+] as [string, (now: number) => number, string][]) {
   test(`an ${name} saved retry deadline is logged and held`, async (t) => {
     const fixture = await reviewFixture(t, okReview);
     const marker = attemptMarker(fixture, 'reviewer', 1, 'comment', 0);
@@ -298,7 +298,7 @@ for (const [name, deadline, shown] of [
       (err) => err instanceof interpreter.CrashError,
     );
     const mid = loadTicket(fixture);
-    mid.retries[REVIEW_COMMENT]!.remote!.nextEligibleAt = deadline(fixture.clock.now()) as number;
+    mid.retries[REVIEW_COMMENT]!.remote!.nextEligibleAt = deadline(fixture.clock.now());
     const saved = structuredClone(mid.retries[REVIEW_COMMENT]!.remote);
     const result = await interpreter.runExecution({ ...fixture.options, record: mid });
 
