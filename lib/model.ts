@@ -24,6 +24,14 @@ export interface Routing {
 // An Agent as the validator resolves it: the declared Agent under the Vertex's own Agent keys. Only its harness and
 // access are checked; every other key is as declared.
 export type Agent = { harness: string } & { [key: string]: JsonValue };
+// The Agent keys the interpreter reads, each as the validator holds it (#386).
+export interface AgentFields {
+  harness: string;
+  persona: string;
+  model: string | null;
+  effort: string | null;
+  network?: boolean;
+}
 
 // A Vertex as the Resolved Flow carries it. `routing` is gg doctor's; the interpreter reads a Vertex.
 export interface ResolvedVertexJson {

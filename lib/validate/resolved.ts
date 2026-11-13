@@ -43,6 +43,14 @@ const isRouting = (value: unknown): value is model.Routing =>
 
 const isTests = (value: unknown): value is model.ResolvedVertexJson['tests'] & {} =>
   value === 'frozen' || value === 'write' || shaped(value, { named: isString });
+// Each key model.Agent declares, by the guard that holds it to its type (#386).
+export const AGENT_FIELDS: { [Key in keyof model.AgentFields]-?: (value: unknown) => boolean } = {
+  harness: () => true,
+  persona: () => true,
+  model: () => true,
+  effort: () => true,
+  network: () => true,
+};
 const isAgent = (value: unknown): value is model.Agent => isRecord(value) && isString(value.harness);
 
 function resolvedVertex(vertex: model.DeclaredVertexJson): model.ResolvedVertexJson | undefined {

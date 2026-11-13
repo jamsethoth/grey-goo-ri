@@ -116,7 +116,7 @@
       "vertex": "green",
       "visit": 2,
       "configHash": "hash-1",
-      "agent": { "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer", "tools": ["read"] },
+      "agent": { "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer", "network": false, "tools": ["read"] },
       "access": "write",
       "procedure": { "name": "implement", "hash": "procedure-hash" },
       "outcomes": ["passed", "failed"],

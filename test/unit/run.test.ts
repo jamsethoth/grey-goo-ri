@@ -208,13 +208,23 @@ test('every line a Run prints names its repository, in the terminal and in run.l
 
 test('a warning line ends in its code, in run.log', async (t) => {
   const fixture = runFixture.fixture(t);
-  fixture.options.config.repository.agents.spare = { harness: 'fake' };
+  fixture.options.config.repository.agents.spare = { harness: 'fake', persona: 'implementer.md' };
   await run.runTarget(fixture.options);
   const runLog = readFileSync(
     join(fixture.commonDir, 'gg', 'runs', runFixture.lastRun(fixture) as string, 'run.log'),
     'utf8',
   );
   assert.match(runLog, / warning: agents\.spare: agent spare is used by no Vertex \[unused-agent\]\n/);
+});
+
+// An Agent the interpreter could not run fails preflight, before any Vertex runs (#386).
+test('a Run whose Agent names no persona fails preflight', async (t) => {
+  const fixture = runFixture.fixture(t);
+  delete (fixture.options.config.repository.agents.implementer as { persona?: unknown }).persona;
+  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
+    assert.match(err.message, /^\[main\] preflight failed:\nerror: agents\.implementer: .*\[required-key-missing\]$/m);
+    return true;
+  });
 });
 
 // Before gg has read the repository's owner/name, an error names its checkout's folder; after, its owner/name (#321).
