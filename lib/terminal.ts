@@ -72,17 +72,19 @@ function naming(executionRecord: record.ExecutionRecord, decider: { hold: string
 }
 
 // The Visit a hold or abandonment cut off, and the Action and Recovery Number the cursor is at (#341): the cursor's
-// when it is inside a Visit; else, at a Terminal, the one a hold or abandonment it replaces named, as when a hold's own
-// report finds a human's label. An Action's reason lends none, since its Visit took its Edge. A fresh Execution, or the
-// next Vertex's cursor saved before its entry, names none.
+// when it is inside a Visit; else, at a Terminal, the one the reason it replaces named when that reason has no Outcome
+// (a hold's, a human's or a fault's), as when a hold's own report finds a human's label. A reason with an Outcome lends
+// none, since its Visit took its Edge. A fresh Execution, or the next Vertex's cursor saved before its entry, names
+// none.
 function visitCutOff(executionRecord: record.ExecutionRecord): ReasonActionIdentity | null {
   const { vertex, visit: visitNumber, action, recovery } = executionRecord.cursor;
   if (visitNumber !== null && executionRecord.visits.get(vertex) === visitNumber)
     return { vertex, visit: visitNumber, action, recovery };
-  const replaced = flow.isEnd(vertex) ? executionRecord.terminalReason?.decidedBy : undefined;
-  return replaced?.vertex === undefined || (replaced.hold === undefined && replaced.human === undefined)
+  const replaced = flow.isEnd(vertex) ? executionRecord.terminalReason : null;
+  const decidedBy = replaced?.outcome === null ? replaced.decidedBy : undefined;
+  return decidedBy?.vertex === undefined
     ? null
-    : { vertex: replaced.vertex, visit: replaced.visit, action: replaced.action, recovery: replaced.recovery };
+    : { vertex: decidedBy.vertex, visit: decidedBy.visit, action: decidedBy.action, recovery: decidedBy.recovery };
 }
 
 const ON_TICKET_END = 'the error is in this comment and on ticket_end.';
