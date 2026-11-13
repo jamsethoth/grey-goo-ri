@@ -1,9 +1,17 @@
 // Command Cleanup's decisions: which processes a shell command left, and what cleanup does with each. Pure functions of
 // the listings lib/process-tree.ts (POSIX) and lib/containment.ts (Windows) take; they list and signal, this decides.
 
-// A process as a listing names it: its pid, its parent's pid, its start time as the kernel recorded it, and, in a full
-// `ps` listing, its process group and command line.
-export type ProcessRow = [pid: number, parentPid: number, started: string, pgid?: number, commandLine?: string];
+// A process as a listing names it: its pid, its parent's pid, its start time as the listing gives it, and, in a full
+// `ps` listing, its process group and command line. A seen descendant also keeps its start in seconds after the
+// cleanup's own process's, in the listing it was seen in, where both parse.
+export type ProcessRow = [
+  pid: number,
+  parentPid: number,
+  started: string,
+  pgid?: number,
+  commandLine?: string,
+  sinceSelf?: number,
+];
 // The descendants a POSIX watcher has seen, keyed by pid.
 export type Seen = Map<number, ProcessRow>;
 // A process listing's rows, and error when the listing is unusable.
@@ -174,12 +182,30 @@ export function linkedPids(
 export function observe(seen: Seen, rootPid: number, processes: ProcessRow[], selfPid: number) {
   const listed = new Set(processes.map((processRow) => processRow[0]));
   for (const pid of seen.keys()) if (!listed.has(pid)) seen.delete(pid);
+  const sinceSelf = sinceSelfIn(processes, selfPid);
   growTree(new Set([rootPid, ...seen.keys()]), processes, selfPid, {
-    onJoin: (processRow) => seen.set(processRow[0], processRow),
+    onJoin: (processRow) => {
+      const [pid, parentPid, started, pgid, commandLine] = processRow;
+      const since = sinceSelf(processRow);
+      seen.set(pid, Number.isNaN(since) ? processRow : [pid, parentPid, started, pgid, commandLine, since]);
+    },
   });
 }
 
-const sameProcess = (left: ProcessRow, right: ProcessRow) => left[0] === right[0] && left[2] === right[2];
+// Linux lists a start as the boot time plus the start since boot, and the boot time can move a second between two
+// listings, or more when the wall clock is stepped (#352). One listing reads one boot time for every row, so a start
+// counted from the cleanup's own process's does not move. NaN where that row is missing or either start does not parse.
+function sinceSelfIn(processes: ProcessRow[], selfPid: number) {
+  const startOf = (processRow: ProcessRow | undefined) =>
+    processRow ? Date.parse(`${processRow[2]} UTC`) / 1000 : Number.NaN;
+  const selfStart = startOf(processes.find(([pid]) => pid === selfPid));
+  return (processRow: ProcessRow) => startOf(processRow) - selfStart;
+}
+
+// The same process: its start counted from the cleanup's own where both listings give one, else its start as listed.
+const sameProcess = (known: ProcessRow, processRow: ProcessRow, since: number) =>
+  known[0] === processRow[0] &&
+  (known[5] === undefined || Number.isNaN(since) ? known[2] === processRow[2] : known[5] === since);
 
 // A cleanup's plan from a listing taken with the group stopped: `seeds`, each seen descendant still listed with its
 // start time, and whatever those have started. Never another process.
@@ -197,14 +223,15 @@ function planFrom(
     return { kill: seeds, survivors };
   }
   const alive = new Set(seeds);
+  const sinceSelf = sinceSelfIn(processes, selfPid);
   for (const processRow of processes) {
     const known = seen.get(processRow[0]);
-    if (known && sameProcess(known, processRow)) alive.add(processRow[0]);
+    if (known && sameProcess(known, processRow, sinceSelf(processRow))) alive.add(processRow[0]);
   }
   growTree(alive, processes, selfPid);
   const listed = new Set(processes.map((processRow) => processRow[0]));
-  // A listed pid with another start time is a new process under a reused pid, not ours to kill, or ours after a
-  // wall-clock step moved every start time ps reports: left alone, and not claimed gone.
+  // A listed pid with another start time is a new process under a reused pid, or ours after the boot time moved in a
+  // listing with no row of the cleanup's own to count from: left alone, and not claimed gone.
   const survivors = processes
     .filter((processRow) => seen.has(processRow[0]) && !alive.has(processRow[0]))
     .map((processRow) => survivorOf(processRow, 'not verified gone: its pid now has another start time'));
