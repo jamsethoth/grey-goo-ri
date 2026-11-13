@@ -340,6 +340,23 @@ test("an abandonment found by an end's own report names no Visit, as its Visit t
   assert.deepEqual(executionRecord.terminalReason.decidedBy, { human: support.NEEDS_HUMAN_LABEL });
 });
 
+test("an abandonment found by a fault's own report keeps the Visit the fault cut off (#341)", async (t) => {
+  const { context, executionRecord, fakeGh } = await support.executionContext(t);
+  executionRecord.visits.set('green', 1);
+  executionRecord.cursor = { ...support.PUSH_ACTION_IDENTITY, attempt: 1 };
+  // The fault's comment fails, and its retry finds the human's label.
+  fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
+  fakeGh.fail({ matches: support.commentPost, status: 502 });
+  assert.deepEqual(await terminal.fault(context, new Error('harness exploded')), { outcome: 'abandoned' });
+  assert.deepEqual(executionRecord.terminalReason?.decidedBy, {
+    human: support.NEEDS_HUMAN_LABEL,
+    vertex: 'green',
+    visit: 1,
+    action: 'push',
+    recovery: 0,
+  });
+});
+
 // A write of decidedBy: as a key, by assignment or as a shorthand property; not its type or a read.
 const DECIDED_BY_WRITE = /\bdecidedBy\s*(:(?!\s*DecidedBy\b)|=(?!=)|[,}])/;
 
