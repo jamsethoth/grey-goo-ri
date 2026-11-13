@@ -397,4 +397,16 @@ export default defineConfig([
       '@typescript-eslint/no-unsafe-call': 'error',
     },
   },
+  {
+    // A record's row is typed by lib/record-read.ts's readers, never by an assertion or an `any` (#357).
+    files: ['lib/record-json.ts', 'lib/record-read.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-type-assertion': 'error',
+      '@typescript-eslint/no-unsafe-assignment': 'error',
+      '@typescript-eslint/no-unsafe-return': 'error',
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unsafe-member-access': 'error',
+      '@typescript-eslint/no-unsafe-call': 'error',
+    },
+  },
 ]);
