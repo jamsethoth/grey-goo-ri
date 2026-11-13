@@ -9,6 +9,7 @@ import * as agentAction from '../../lib/agent-action.ts';
 import * as approval from '../../lib/approval.ts';
 import * as approvalAction from '../../lib/approval-action.ts';
 import * as attempt from '../../lib/attempt.ts';
+import * as cleanupHold from '../../lib/cleanup-hold.ts';
 import * as effectActions from '../../lib/effect-actions.ts';
 import * as effectErrors from '../../lib/effect-errors.ts';
 import * as effects from '../../lib/effects/index.ts';
@@ -135,7 +136,8 @@ function observeBrackets(t: Parameters<typeof golden.fixture>[0], fixture: golde
   let logged = fixture.executionRecord.writeAheadLog.length;
   let bracket: Bracket = 'none';
   caseDatabase.onSave(t, (next) => {
-    if (!('execution' in next)) return;
+    // The case's other fixtures save through the same hooks, each under its own repository.
+    if (!('execution' in next) || next.commonDir !== fixture.commonDir) return;
     const { activity, cursor, writeAheadLog } = next;
     if (activity.generation !== generation) {
       generation = activity.generation;
@@ -267,6 +269,38 @@ test('a complete pending report comment Action resumes to effect-completed witho
   });
   assert.deepEqual(resolution, attempt.EFFECT_COMPLETED);
   assert.deepEqual(reads, [], 'a complete Action renders no body');
+});
+
+// A later Run finishes a hold's report a crash cut short, and every later Run of a held Ticket reports again.
+test('a cleanup hold whose label and comment landed renders no comment body when it reports again', async (t) => {
+  const { context } = await support.executionContext(t);
+  const held = { vertex: 'green', visit: 1, action: 'test', recovery: 0 };
+  const unconfirmed = {
+    confirmed: false,
+    survivors: [],
+    reason: 'termination refused',
+    containment: { kind: 'none' as const },
+  };
+  context.record.visitState = { ...runningVisit(), unconfirmedCleanup: unconfirmed };
+  const reportAction = (part: string) => ({ ...held, procedure: null, action: `test.cleanup-${part}.1` });
+  completeBefore(context, reportAction('label'), {
+    effect: 'label',
+    payload: { ticket: support.TICKET, add: ['gg:await:cleanup'], remove: [] },
+    evidence: LABEL_LANDED,
+  });
+  completeBefore(context, reportAction('comment'), {
+    effect: 'comment',
+    payload: { target: { kind: 'issue', number: support.TICKET }, body: 'A hold.', bodyHash: 'hash' },
+    evidence: { id: 7 },
+  });
+  const published: string[] = [];
+  context.publicText = (text) => {
+    published.push(text);
+    return text;
+  };
+  const ended = await support.rejection(cleanupHold.holdTicket(context, held));
+  assert.ok(ended instanceof effectErrors.EarlyTerminalError, String(ended));
+  assert.deepEqual(published, [], 'a complete comment Action renders no body for publishing');
 });
 
 // A request saved as the Approval Request a Visit waits on, as `request` saves it before any label moves.
