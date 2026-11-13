@@ -56,25 +56,27 @@ export type Vertex = Pick<
   'agent' | 'access' | 'procedure' | 'outcomes' | 'approvalLabels' | 'route' | 'inputs' | 'max' | 'exhausted'
 >;
 
-// The fields the validator copies as declared. A Flow with an error is printed as written (gg doctor, #305), so in its
-// declared view each may hold any JSON, or be left out where the Resolved Flow leaves it out.
-type AsDeclared<Shape, Copied extends keyof Shape> = Omit<Shape, Copied> & {
-  [Key in Copied]: JsonValue | Extract<Shape[Key], undefined>;
-};
-export type DeclaredProcedureJson = AsDeclared<
-  procedures.Procedure,
-  'actions' | 'claimTokens' | 'tests' | 'access' | 'recover' | 'passed' | 'failed' | 'stopped' | 'otherwise'
->;
+// The fields the validator copies as declared, by where they sit; a Vertex's routing holds declared route targets. A
+// Flow with an error is printed as written (gg doctor, #305), so in its declared view each may hold any JSON, and
+// lib/validate/resolved.ts narrows each to its Resolved Flow type.
+export const COPIED_FIELDS = {
+  flow: ['actionCap'],
+  ticket: ['entry', 'routes'],
+  vertex: ['use', 'agent', 'procedure', 'access', 'tests', 'route', 'max', 'exhausted', 'routing'],
+  procedure: ['actions', 'claimTokens', 'tests', 'access', 'recover', 'passed', 'failed', 'stopped', 'otherwise'],
+} as const;
+type AsDeclared<Shape, Copied extends keyof Shape> = Omit<Shape, Copied> & { [Key in Copied]: JsonValue };
+export type DeclaredProcedureJson = AsDeclared<procedures.Procedure, (typeof COPIED_FIELDS.procedure)[number]>;
 export type DeclaredVertexJson = AsDeclared<
   Omit<ResolvedVertexJson, 'routing'>,
-  'use' | 'agent' | 'procedure' | 'access' | 'tests' | 'route' | 'max' | 'exhausted'
+  Exclude<(typeof COPIED_FIELDS.vertex)[number], 'routing'>
 > & { routing: Record<string, Omit<Routing, 'target'> & { target: JsonValue }> };
-export interface DeclaredFlowJson {
-  name: string;
-  actionCap: JsonValue;
+export type DeclaredFlowJson = AsDeclared<Omit<ResolvedFlowJson, 'procedures' | 'ticket'>, 'actionCap'> & {
   procedures: Record<string, DeclaredProcedureJson>;
-  ticket: { entry: JsonValue; routes: JsonValue; vertices: Record<string, DeclaredVertexJson> };
-}
+  ticket: AsDeclared<Omit<ResolvedFlowJson['ticket'], 'vertices'>, 'entry' | 'routes'> & {
+    vertices: Record<string, DeclaredVertexJson>;
+  };
+};
 
 // A Procedure with its Claim tokens by name.
 export type Procedure = Omit<procedures.Procedure, 'claimTokens'> & {

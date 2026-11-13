@@ -127,5 +127,8 @@ export function checkedFlow(
       vertices: Object.fromEntries(vertices),
     },
   };
-  return { declared, resolved: resolvedFlows.resolvedFlow(declared), uses: usesOf(parts.personas, used) };
+  // In the order the Flow's Procedures are declared in its JSON, which puts integer-like names first, as pinning did.
+  const byName = new Map(used.map((proc) => [proc.name, proc]));
+  const ordered = Object.keys(declared.procedures).flatMap((procName) => byName.get(procName) ?? []);
+  return { declared, resolved: resolvedFlows.resolvedFlow(declared), uses: usesOf(parts.personas, ordered) };
 }

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as procedures from '../../lib/procedures.ts';
+import * as validate from '../../lib/validate/index.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
 // What each Flow uses, recorded as the validator checks it (#364): the files its Pinned Configuration takes and the
@@ -95,6 +96,27 @@ test('a Flow uses each command its Checks run, once, in the order its Vertices f
   const { errors, uses } = exampleLayer.check(layer);
   assert.deepEqual(exampleLayer.firedRules(errors), []);
   assert.deepEqual(uses.default?.commands, ['test', 'lint']);
+});
+
+// A Flow's uses follow its Procedures' order in its JSON, which puts integer-like names first, as pinning did (D1).
+test('a Flow uses the files and commands of Procedures named "2" then "1" in the order "1", "2"', () => {
+  const procedures = Object.fromEntries(
+    ['2', '1'].map((name) => [
+      name,
+      {
+        actions: [
+          { id: 'verify', do: 'check', kind: 'command', command: `command-${name}` },
+          { id: 'post', do: 'comment', target: 'ticket', body: `body-${name}.md` },
+        ],
+      },
+    ]),
+  );
+  const vertices = { first: { procedure: '2', route: { ok: 'second' } }, second: { procedure: '1' } };
+  const flows = {
+    default: { actionCap: 10, ticket: { entry: 'first', routes: { '*': { end: 'ready-for-qa' } }, vertices } },
+  };
+  const { uses } = validate.validate({ commands: {}, procedures, flows }, { harnesses: {}, readSchema: () => ({}) });
+  assert.deepEqual(uses.default, { files: ['body-1.md', 'body-2.md'], commands: ['command-1', 'command-2'] });
 });
 
 // A user Flow that names a command the repository lacks is a misfit (Q21), however its Action is written, as before.

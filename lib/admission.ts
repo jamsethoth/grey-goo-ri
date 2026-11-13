@@ -214,7 +214,6 @@ async function startTicket(
     repository: context.repo.repository,
     ticket,
     epic: context.epic,
-    // Preflight admits only a Flow with no errors, and a Flow without an entry Vertex is one.
     flow: { name: context.flow.name, entry: context.flow.ticket.entry },
     configHash: context.hash,
     run: context.runId,
