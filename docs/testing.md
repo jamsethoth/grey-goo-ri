@@ -163,7 +163,9 @@ Four stages, ordered by speed:
 
 The coverage stage runs in one process (`--test-isolation=none`), so its figures do not depend on the order node reads
 coverage files in, and a test that ends the process fails the stage; the other stages keep a process per file (ADR 0016,
-amended). The
+amended). Its tests run with a temp directory of the launcher's, removed after them, since node's test runner removes
+its own `node-coverage-*` directory only when the process is not ended early (#377); `GG_KEEP_TEMP` keeps it and the
+launcher prints its path. The
 coverage stage fails when the line or function coverage of `lib/` under `test/unit/` is below the fixed floor
 `COVERAGE_FLOOR` in `scripts/run-suite.ts`, the same on every platform. The floor is raised by hand, in a PR of its own
 when the measured figures have moved well above it; nothing is recorded per change, so open PRs do not conflict on it.
