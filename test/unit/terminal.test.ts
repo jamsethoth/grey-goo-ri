@@ -283,6 +283,17 @@ for (const { kind, ending, key } of HOLD_AND_ABANDON) {
           executionRecord.cursor = record.terminalCursor('needs-human');
         },
       ],
+      [
+        "an earlier hold's reason on a cursor outside every Visit",
+        (executionRecord) => {
+          executionRecord.terminalReason = {
+            decidedBy: { hold: 'earlier', vertex: 'review', visit: 2, action: 'comment', recovery: 0 },
+            outcome: null,
+            rule: null,
+            text: 'Held earlier.',
+          };
+        },
+      ],
     ];
     for (const [name, place] of cases) {
       const { context, executionRecord } = await support.executionContext(t);
@@ -311,14 +322,38 @@ test("an abandonment found by a hold's own report keeps the Visit the hold named
   });
 });
 
+test("an abandonment found by an end's own report names no Visit: the Visit it ended took its Edge (#341)", async (t) => {
+  const { context, executionRecord, fakeGh } = await support.executionContext(t);
+  executionRecord.visits.set('publish', 1);
+  executionRecord.cursor = record.terminalCursor('ready-for-qa');
+  executionRecord.terminalReason = {
+    decidedBy: { vertex: 'publish', visit: 1, action: 'pr-ready', recovery: 0 },
+    outcome: 'ok',
+    rule: null,
+    text: 'Ready.',
+  };
+  fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
+  fakeGh.fail({ matches: support.commentPost, status: 502 });
+  assert.deepEqual(await terminal.terminal(context, 'needs-human', { outcome: 'needs-human' }), {
+    outcome: 'abandoned',
+  });
+  assert.deepEqual(executionRecord.terminalReason.decidedBy, { human: support.NEEDS_HUMAN_LABEL });
+});
+
+// A write of decidedBy: as a key, by assignment or as a shorthand property; not its type or a read.
+const DECIDED_BY_WRITE = /\bdecidedBy\s*(:(?!\s*DecidedBy\b)|=(?!=)|[,}])/;
+
 // Every hold and abandonment reason is built in this module, where it reads the Visit the cursor is in (#341).
 test('no lib module but lib/terminal.ts writes a Terminal Reason decidedBy (#341)', () => {
+  const writes = ["decidedBy: { hold: 'x' }", "reason.decidedBy = { hold: 'x' }", "{ decidedBy, text: '' }"];
+  const reads = ['decidedBy: DecidedBy;', "decidedBy?.hold === 'x'", 'reason.decidedBy === other'];
+  assert.deepEqual(
+    [...writes, ...reads].map((text) => DECIDED_BY_WRITE.test(text)),
+    [true, true, true, false, false, false],
+  );
   const writers = readdirSync('lib', { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('.ts'))
     .map((path) => path.replaceAll('\\', '/'))
-    .filter(
-      (path) =>
-        path !== 'terminal.ts' && /\bdecidedBy\s*:(?!\s*DecidedBy\b)/.test(readFileSync(join('lib', path), 'utf8')),
-    );
+    .filter((path) => path !== 'terminal.ts' && DECIDED_BY_WRITE.test(readFileSync(join('lib', path), 'utf8')));
   assert.deepEqual(writers, []);
 });
