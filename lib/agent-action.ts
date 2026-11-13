@@ -110,39 +110,33 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
 // parse retry gets gg's own nudge.
 async function briefOf(runContext: RunContext, briefed: Attempt, commands: Record<string, unknown>): Promise<string> {
   const { record: executionRecord, ticket, base, git } = runContext;
+  const { files } = runContext.pinned.configuration;
   const { actionIdentity, action, state, nudge } = briefed;
   const recovering = actionIdentity.recovery > 0 && !nudge;
   const sections = recovering ? sectionsOf(runContext, state) : undefined;
   const name = (recovering ? state.proc.recover!.brief : action.brief) as string;
   const renderBrief = (recovering ? briefs.recoveryBrief : briefs.brief) as typeof briefs.recoveryBrief;
-  return renderBrief(
-    nudge ? render.engineTemplate('nudge.md') : config.namedFile(runContext.pinned.configuration.files, name),
-    {
-      ...visitScope.scopeOf(executionRecord, actionIdentity, state),
-      ticket,
-      baseBranch: base,
-      commands: commands as Record<string, string>,
-      history: executionRecord.history,
-      sections: sections!,
-      reason: nudge,
-      // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
-      // ones, read git only for a Brief that names them.
-      diff: () => attempt.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
-      // A red Visit that needed no test committed none (N6), so no test file changed since.
-      changedTestFiles: async () => {
-        const first = executionRecord.testCommits.first;
-        if (first == null) return [];
-        const { changed } = await attempt.whileBusy(runContext, () =>
-          runContext.testImmutability(
-            executionRecord.worktree,
-            first,
-            executionRecord.configurationSnapshot!.testPaths,
-          ),
-        );
-        return changed;
-      },
+  return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(files, name), {
+    ...visitScope.scopeOf(executionRecord, actionIdentity, state),
+    ticket,
+    baseBranch: base,
+    commands: commands as Record<string, string>,
+    history: executionRecord.history,
+    sections: sections!,
+    reason: nudge,
+    // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
+    // ones, read git only for a Brief that names them.
+    diff: () => attempt.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
+    // A red Visit that needed no test committed none (N6), so no test file changed since.
+    changedTestFiles: async () => {
+      const first = executionRecord.testCommits.first;
+      if (first == null) return [];
+      const { changed } = await attempt.whileBusy(runContext, () =>
+        runContext.testImmutability(executionRecord.worktree, first, executionRecord.configurationSnapshot!.testPaths),
+      );
+      return changed;
     },
-  );
+  });
 }
 
 // One Attempt. A completed one is never run again: runVisit routes every saved result but a retry's, which ends here.
