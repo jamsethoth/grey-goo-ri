@@ -285,11 +285,16 @@ class Reported {
   readonly #reported = true;
   private constructor() {}
   static is(value: unknown): value is Reported {
-    return value instanceof Reported && #reported in value && false;
+    return value instanceof Reported && #reported in value;
+  }
+  // Reported when an error was reported since the count `before`: the checks of a value made of parts.
+  static since(report: Report, before: number) {
+    return report.errors.length > before ? Reported.one : undefined;
   }
 }
 export type { Reported };
 export const isReported = (value: unknown): value is Reported => Reported.is(value);
+export const reportedSince = (report: Report, before: number) => Reported.since(report, before);
 
 export function error<C extends ProblemCode>(
   report: Report,
@@ -316,8 +321,10 @@ export const line = (severity: 'error' | 'warning', problem: Problem) =>
   `${severity}: ${problem.at === '' ? '' : `${problem.at}: `}${problem.message} [${problem.code}]`;
 
 export function unknownKeys(report: Report, value: Record<string, unknown>, keys: readonly string[], location: string) {
+  const before = report.errors.length;
   for (const key of Object.keys(value))
     if (!keys.includes(key)) error(report, location, 'unknown-key', `unknown key ${JSON.stringify(key)}`, { key });
+  return reportedSince(report, before);
 }
 // A check reached on two paths reports once. A Procedure's problem found at two Vertices is two: its sentence names
 // the Vertex.
@@ -341,18 +348,27 @@ export const isName = (value: unknown): value is string => typeof value === 'str
 // at all: the Action Marker and the Await and Decide Labels split on ":", a reference path on ".", an Action's retry
 // key joins its parts with "/", the HTML comment a marker rides in on GitHub ends at "-->" or "--!>", and a marker is
 // read back only without whitespace. A Procedure name takes the carried form by the same rule (3.3).
-export function checkName(
+export function checkedName(
   report: Report,
   location: string,
   name: unknown,
   { what, carried }: { what: string; carried: boolean },
-): name is string {
-  const valid = carried ? typeof name === 'string' && /^[^\s:./]+$/.test(name) && !name.includes('--') : isName(name);
+): string | Reported {
+  const valid =
+    typeof name === 'string' && (carried ? /^[^\s:./]+$/.test(name) && !name.includes('--') : name.trim() !== '');
+  if (valid) return name;
   const rule = carried
     ? 'must be non-empty with no ":", ".", "/", "--" or whitespace'
     : 'must not be empty or only whitespace';
-  if (!valid) error(report, location, 'invalid-name', `${what} ${JSON.stringify(name)} ${rule}`, { name });
-  return valid;
+  return error(report, location, 'invalid-name', `${what} ${JSON.stringify(name)} ${rule}`, { name });
+}
+export function checkName(
+  report: Report,
+  location: string,
+  name: unknown,
+  naming: { what: string; carried: boolean },
+): name is string {
+  return !isReported(checkedName(report, location, name, naming));
 }
 export const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;
 export const entries = (value: unknown) => (referencePaths.isRecord(value) ? Object.entries(value) : []);

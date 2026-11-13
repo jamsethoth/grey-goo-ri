@@ -57,8 +57,8 @@ export type Vertex = Pick<
 >;
 
 // The fields the validator copies as declared, by where they sit; a Vertex's routing holds declared route targets. A
-// Flow with an error is printed as written (gg doctor, #305), so in its declared view each may hold any JSON, and
-// lib/validate/resolved.ts narrows each to its Resolved Flow type.
+// Flow with an error is printed as written (gg doctor, #305), so in its declared view each may hold any JSON; the check
+// that judges each gives it its Resolved Flow type (lib/validate/, #391).
 export const COPIED_FIELDS = {
   flow: ['actionCap'],
   ticket: ['entry', 'routes'],

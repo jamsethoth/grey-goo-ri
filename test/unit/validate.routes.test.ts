@@ -214,14 +214,15 @@ test('the graph checks wait until no other check fails', () => {
   const config = exampleLayer.config();
   procedureActions.actionById(config.procedures.implement, 'test').command = 'lint';
   config.flows.default.ticket.vertices.reviewer.route.changes = 'implementer-fix';
-  const { errors, flows } = exampleLayer.check(config);
+  const { errors, declared } = exampleLayer.check(config);
   assert.deepEqual(exampleLayer.firedRules(errors), [
     {
       at: 'procedures.implement.actions[1]',
       code: 'undeclared-command',
     },
   ]);
-  assert.deepEqual(flows.default.ticket.vertices.reviewer.routing.changes, {
+  // A Flow with an error at a value it copies is declared only (#391); gg doctor prints its routing.
+  assert.deepEqual(declared.default?.ticket.vertices.reviewer?.routing.changes, {
     target: 'implementer-fix',
     by: 'Vertex route',
     work: null,

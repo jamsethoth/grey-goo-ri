@@ -130,7 +130,8 @@ export interface PinnedFlow {
 // out of the hash, and so does the prefix that names it, so a Flow hashes alike from either source (Q25).
 function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: config.Settings): PinnedFlow {
   const { resolved, uses } = declared;
-  // gg run pins only when the configuration has no error, and every Flow with no error resolves (lib/validate/).
+  // gg run pins only when no error is left but a misfit command, whose Flow it does not pin (Q21), and a Flow whose
+  // checks refused no value it copies resolves (lib/validate/).
   if (!resolved) throw new Error(`Flow ${name} has no error but did not resolve`);
   // Only the files the Flow uses: a file another Flow or Agent of its source names never moves its Config Hash (Q25).
   const files = Object.fromEntries(

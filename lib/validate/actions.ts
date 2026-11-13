@@ -4,6 +4,7 @@ import * as briefs from '../briefs.ts';
 import * as labels from '../labels.ts';
 import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
+import * as declaredFlows from './declared.ts';
 import * as report from './report.ts';
 
 // The heads of gg's own reference paths, so an Action id never shadows one.
@@ -106,28 +107,38 @@ const actionLabel = (id: unknown) => (id === undefined ? 'with no id' : id);
 const idOf = (id: unknown) => (id === undefined ? {} : { id });
 
 function checkActionId(problems: report.Report, ids: unknown[], id: unknown, location: string) {
-  if (id === undefined) {
-    report.error(problems, location, 'required-key-missing', 'an Action must have an id', { key: 'id' });
-    return;
-  }
-  if (!report.checkName(problems, location, id, { what: 'Action id', carried: true })) return;
-  if (ids.includes(id))
-    report.error(problems, location, 'repeated-action-id', `Action id ${JSON.stringify(id)} is repeated`, { id });
-  else if (RESERVED_IDS.includes(id))
-    report.error(
+  if (id === undefined)
+    return report.error(problems, location, 'required-key-missing', 'an Action must have an id', { key: 'id' });
+  const name = report.checkedName(problems, location, id, { what: 'Action id', carried: true });
+  if (report.isReported(name)) return name;
+  if (ids.includes(name))
+    return report.error(problems, location, 'repeated-action-id', `Action id ${JSON.stringify(name)} is repeated`, {
+      id: name,
+    });
+  if (RESERVED_IDS.includes(name))
+    return report.error(
       problems,
       location,
       'reserved-name',
-      `Action id ${JSON.stringify(id)} is reserved for gg: ${RESERVED_IDS.join(', ')}`,
-      { name: id },
+      `Action id ${JSON.stringify(name)} is reserved for gg: ${RESERVED_IDS.join(', ')}`,
+      { name },
     );
+  return name;
 }
 
-function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, action: unknown, location: string) {
+// One Action checked, as the Resolved Flow carries it: its id and kind as checked, its other keys as declared; or
+// Reported when a check of it reported.
+function checkAction(
+  declaring: ProcedureContext,
+  declared: DeclaredSoFar,
+  action: unknown,
+  location: string,
+): procedures.Action | report.Reported {
   const problems = declaring.report;
   if (!referencePaths.isRecord(action))
     return report.error(problems, location, 'not-an-object', 'an Action must be an object');
-  checkActionId(problems, declared.ids, action.id, location);
+  const before = problems.errors.length;
+  const id = checkActionId(problems, declared.ids, action.id, location);
   declared.ids.push(action.id);
   if (action.do === undefined)
     return report.error(problems, location, 'required-key-missing', 'an Action must name its kind in do', {
@@ -142,7 +153,8 @@ function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, actio
       `do ${JSON.stringify(action.do)} is not one of ${kinds}`,
       { kind: action.do },
     );
-  const isCheck = action.do === 'check';
+  const kind = action.do;
+  const isCheck = kind === 'check';
   if (isCheck && !report.hasOwnKey(procedures.CHECK_KEYS, action.kind)) {
     declared.checks.push(action);
     if (action.kind === undefined)
@@ -156,11 +168,19 @@ function checkAction(declaring: ProcedureContext, declared: DeclaredSoFar, actio
       { kind: action.kind },
     );
   }
-  const checkKeys = isCheck ? procedures.CHECK_KEYS[action.kind as procedures.CheckKind] : [];
-  report.unknownKeys(problems, action, ['id', 'do', ...procedures.ACTION_KEYS[action.do], ...checkKeys], location);
-  if (action.do === 'agent') checkAgentAction(declaring, declared, action, location);
+  const checkKind = isCheck && report.hasOwnKey(procedures.CHECK_KEYS, action.kind) ? action.kind : undefined;
+  const checkKeys = checkKind === undefined ? [] : procedures.CHECK_KEYS[checkKind];
+  report.unknownKeys(problems, action, ['id', 'do', ...procedures.ACTION_KEYS[kind], ...checkKeys], location);
+  if (kind === 'agent') checkAgentAction(declaring, declared, action, location);
   else if (isCheck) checkCheckAction(declaring, declared, action, location);
   else checkEffectAction(problems, action, location);
+  if (report.isReported(id)) return id;
+  const keys = Object.entries(action).flatMap(([key, value]) => {
+    const json = declaredFlows.declaredValue(value);
+    return json === undefined ? [] : [[key, json] as const];
+  });
+  const typed = { ...Object.fromEntries(keys), id, do: kind, ...(checkKind !== undefined && { kind: checkKind }) };
+  return report.reportedSince(problems, before) ?? typed;
 }
 
 function checkAgentAction(declaring: ProcedureContext, declared: DeclaredSoFar, action: Value, location: string) {
@@ -248,7 +268,7 @@ function checkDecisions(problems: report.Report, decisions: unknown, location: s
   }
 }
 
-// The Actions in order, and what they declared between them.
+// The Actions in order, and what they declared between them; the Actions as typed, or Reported when one was.
 export function checkActions(declaring: ProcedureContext, actions: unknown[], location: string) {
   const declared: DeclaredSoFar = {
     ids: [],
@@ -258,8 +278,14 @@ export function checkActions(declaring: ProcedureContext, actions: unknown[], lo
     checks: [],
     responseConditions: [],
   };
-  actions.forEach((action, index) => checkAction(declaring, declared, action, `${location}.actions[${index}]`));
-  return declared;
+  const typed: procedures.Action[] = [];
+  let refused: report.Reported | undefined;
+  actions.forEach((action, index) => {
+    const checked = checkAction(declaring, declared, action, `${location}.actions[${index}]`);
+    if (report.isReported(checked)) refused = checked;
+    else typed.push(checked);
+  });
+  return { declared, typed: refused ?? typed };
 }
 
 // A pass is the agent Action and the Checks after it (T4, R1a), decided at its last Check: the agent Action comes first

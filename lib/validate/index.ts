@@ -4,13 +4,16 @@
 import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
 import type * as declaredFlows from './declared.ts';
+import * as agentChecks from './agents.ts';
 import * as flows from './flows.ts';
 import * as procedures from './procedures.ts';
 import * as references from './references.ts';
 import * as report from './report.ts';
 import * as templates from './templates.ts';
 
-export { AGENT_KEYS, EDGE_KEYS, FLOW_KEYS, TICKET_KEYS, VERTEX_KEYS } from './flows.ts';
+export { AGENT_KEYS } from './agents.ts';
+export { EDGE_KEYS } from './routes.ts';
+export { FLOW_KEYS, TICKET_KEYS, VERTEX_KEYS } from './flows.ts';
 export { INPUT_KEYS } from './inputs.ts';
 export { CLAIM_TOKEN_FORMS } from './claim-tokens.ts';
 export { PROCEDURE_KEYS } from './procedures.ts';
@@ -31,33 +34,15 @@ export interface Sources {
 
 const field = (value: unknown, key: string) => (referencePaths.isRecord(value) ? value[key] : undefined);
 
-// Every declared Agent is checked once, used or not; its errors hold only the Flows that use it (H6).
-function checkAgents(problems: report.Report, config: Value, harnesses: unknown) {
-  const failedAgents = new Set<unknown>();
-  const usedAgents = new Set(
+// The Agents the Flows' Vertices name by `use`, whatever their shape.
+const usedAgentsOf = (config: Value) =>
+  new Set(
     report
       .entries(config.flows)
       .flatMap(([, declared]) =>
         report.entries(field(field(declared, 'ticket'), 'vertices')).map(([, vertex]) => field(vertex, 'use')),
       ),
   );
-  for (const [name, agent] of report.entries(config.agents)) {
-    const location = `agents.${name}`;
-    const before = problems.errors.length;
-    report.checkName(problems, location, name, { what: 'Agent', carried: false });
-    if (!referencePaths.isRecord(agent))
-      report.error(problems, location, 'not-an-object', 'an Agent must be an object');
-    else {
-      report.unknownKeys(problems, agent, flows.AGENT_KEYS, location);
-      flows.checkHarness({ report: problems, harnesses }, { agent: name }, agent.harness, location);
-      flows.checkAccess(problems, `${location}.access`, agent.access);
-    }
-    if (problems.errors.length > before) failedAgents.add(name);
-    if (!usedAgents.has(name))
-      report.warn(problems, location, 'unused-agent', `agent ${name} is used by no Vertex`, { agent: name });
-  }
-  return failedAgents;
-}
 
 // What a Procedure is checked against: its schemas, and the commands the repository declares.
 interface ProcedureSources {
@@ -118,7 +103,7 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
   const { commands, labelPrefix } = contract ?? config;
   const { checkedProcedures, procedureFalls } = checkProcedures(problems, config, { readSchema, commands });
   const sharedErrors = problems.errors.length;
-  const failedAgents = checkAgents(problems, config, harnesses);
+  const { failedAgents, agents } = agentChecks.checkAgents(problems, config, harnesses, usedAgentsOf(config));
   if (config.flows !== undefined && !referencePaths.isRecord(config.flows))
     report.error(problems, 'flows', 'not-an-object', 'flows must be an object from name to Flow');
   else if (!Object.keys(config.flows ?? {}).length) {
@@ -137,6 +122,7 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
     procedures: checkedProcedures,
     procedureFalls,
     failedAgents,
+    agents,
     harnesses,
     reader,
     sharedErrors,

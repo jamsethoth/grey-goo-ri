@@ -20,27 +20,36 @@ export const isEnd = (value: unknown): value is labels.EndState => (labels.END_S
 
 // Which declaration an Outcome's route came from, as gg doctor prints it.
 export type RouteSource = 'Vertex route' | 'Flow routes' | 'Vertex "*"' | 'Flow "*"' | 'engine default';
-// The target is as declared: admission checks it, gg doctor prints it either way.
-export interface Route {
-  target: unknown;
+// The target is as the routes hold it: as declared, which admission checks and gg doctor prints either way, or typed.
+export interface Route<Target = unknown> {
+  target: Target | EndTarget;
   by: RouteSource;
 }
+type Routes<Target> = Readonly<Record<string, Target>> | null;
 
 // Where an Outcome leaves a Vertex (H7): an explicit Outcome name, the Vertex's then the Flow's, before either
 // catch-all; else an engine Outcome ends at needs-human (R12c) and any other is unrouted. Only own keys route, so an
 // Outcome such as toString never reads an inherited property.
-export function route(vertexRoutes: unknown, flowRoutes: unknown, outcomeName: string): Route | null {
-  const order: [RouteSource, unknown, string][] = [
+export function typedRoute<Target>(
+  vertexRoutes: Routes<Target>,
+  flowRoutes: Routes<Target>,
+  outcomeName: string,
+): Route<Target> | null {
+  const order: [RouteSource, Routes<Target>, string][] = [
     ['Vertex route', vertexRoutes, outcomeName],
     ['Flow routes', flowRoutes, outcomeName],
     ['Vertex "*"', vertexRoutes, '*'],
     ['Flow "*"', flowRoutes, '*'],
   ];
   for (const [by, routes, key] of order) {
-    if (referencePaths.isRecord(routes) && Object.hasOwn(routes, key)) return { target: routes[key], by };
+    if (routes !== null && Object.hasOwn(routes, key)) return { target: routes[key], by };
   }
   return outcome.ENGINE_OUTCOMES.includes(outcomeName) ? { target: NEEDS_HUMAN_ROUTE, by: 'engine default' } : null;
 }
+// The same over routes as declared or saved, where routes that are not an object route nothing.
+const asRoutes = (routes: unknown) => (referencePaths.isRecord(routes) ? routes : null);
+export const route = (vertexRoutes: unknown, flowRoutes: unknown, outcomeName: string): Route | null =>
+  typedRoute(asRoutes(vertexRoutes), asRoutes(flowRoutes), outcomeName);
 
 // The Await and Decide Labels a Resolved Flow can request, each Vertex's, in Flow order (X1d).
 export const approvalLabels = (resolved: {
