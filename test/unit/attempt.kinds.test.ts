@@ -69,10 +69,19 @@ const DECLARED: Declared[] = [
     resumed: 'its evidence',
     seen: ['green/green', 'red/red', 'reviewer/review', 'senior-red/red'],
   },
-  { site: 'lib/approval-action.ts finishRequest', lazy: "the issue's labels", seen: ['approve/ask.retire.1'] },
-  { site: 'lib/approval-action.ts finishRequest', seen: ['approve/ask.await.1'] },
-  { site: 'lib/approval-action.ts finishRequest', seen: ['approve/ask.comment.1'] },
-  { site: 'lib/approval-action.ts consume', busy: true, resumed: 'its Decision', seen: ['approve/ask.consume.1'] },
+  {
+    site: 'lib/approval-action.ts finishRequest',
+    lazy: "the issue's labels",
+    seen: ['approve/ask.retire.1', 'approve/ask.retire.2'],
+  },
+  { site: 'lib/approval-action.ts finishRequest', seen: ['approve/ask.await.1', 'approve/ask.await.2'] },
+  { site: 'lib/approval-action.ts finishRequest', seen: ['approve/ask.comment.1', 'approve/ask.comment.2'] },
+  {
+    site: 'lib/approval-action.ts consume',
+    busy: true,
+    resumed: 'its Decision',
+    seen: ['approve/ask.consume.1', 'approve/ask.consume.2'],
+  },
   { site: 'lib/check-action.ts check', busy: 'tree' },
   // A cleanup hold's report reads nothing, and it runs while the held call keeps the worktree busy (L11).
   { site: 'lib/cleanup-hold.ts report' },
@@ -93,9 +102,9 @@ const DECLARED: Declared[] = [
   },
 ];
 
-// Each call that declares an Attempt, named by its module and the top-level function it is in. lib/attempt.ts's own
-// `run` inside `effectAction` is the mechanism, not a kind.
-const DECLARING = /\b(?:attempt\.(?:run|effectAction)|pendingReport\.(?:labelAction|commentAction))\(/g;
+// Each call that declares an Attempt, with or without type arguments, named by its module and the top-level function
+// it is in. lib/attempt.ts's own `run` inside `effectAction` is the mechanism, not a kind.
+const DECLARING = /\b(?:attempt\.(?:run|effectAction)|pendingReport\.(?:labelAction|commentAction))[<(]/g;
 const TOP_LEVEL = /^(?:export )?(?:async )?(?:function (\w+)|const (\w+)\s*=)/gm;
 function sitesOf(path: string, text: string): string[] {
   const starts = [...text.matchAll(TOP_LEVEL)].map((found) => ({ offset: found.index, name: found[1] ?? found[2] }));
@@ -106,9 +115,18 @@ function sitesOf(path: string, text: string): string[] {
 
 test('every site that declares an Attempt to lib/attempt.ts has its row of declarations', () => {
   assert.deepEqual(
-    sitesOf('lib/sample.ts', 'export async function newKind(runContext) {\n  return attempt.run(runContext, {});\n}\n'),
-    ['lib/sample.ts newKind'],
-    'a new site is found',
+    sitesOf(
+      'lib/sample.ts',
+      [
+        'export async function newKind(runContext) {',
+        '  return attempt.run(runContext, {});',
+        '}',
+        'export const typedKind = (runContext) =>',
+        '  attempt.run<undefined, undefined, never>(runContext, {});',
+      ].join('\n'),
+    ),
+    ['lib/sample.ts newKind', 'lib/sample.ts typedKind'],
+    'a new site is found, with type arguments or without',
   );
   const sites = readdirSync(`${root}lib`, { recursive: true, encoding: 'utf8' })
     .map((file) => `lib/${file.split('\\').join('/')}`)
@@ -123,7 +141,7 @@ test('every site that declares an Attempt to lib/attempt.ts has its row of decla
 
 type Bracket = 'none' | 'one' | 'nested';
 interface Observed {
-  // The Action the cursor was on as each bracket opened.
+  // The Action and recovery pass the cursor was on as each bracket opened.
   opens: string[];
   // Each write-ahead intent's Action and Effect, and the bracket it was written in.
   intents: { action: string; effect: string; bracket: Bracket }[];
@@ -141,7 +159,7 @@ function observeBrackets(t: Parameters<typeof golden.fixture>[0], fixture: golde
     const { activity, cursor, writeAheadLog } = next;
     if (activity.generation !== generation) {
       generation = activity.generation;
-      if (activity.busy) observed.opens.push(`${cursor.vertex}/${cursor.action}`);
+      if (activity.busy) observed.opens.push(`${cursor.vertex}/${cursor.action} recovery ${cursor.recovery}`);
       const opened: Bracket = bracket === 'none' ? 'one' : 'nested';
       bracket = activity.busy ? opened : 'none';
     }
@@ -164,11 +182,20 @@ test("every Attempt's intent is written inside one bracket, its kind's or its st
   await interpreter.runExecution(asked.options);
   asked.gh.humanAddsLabel(approvalFlow.APPROVED_LABEL, approvalFlow.OWNER);
   await approvalFlow.laterRun(asked);
+  // A request asked again, once the issue's body changed under it, is the Visit's second, and its own consumption.
+  const askedAgain = await approvalFlow.approvalFixture(t);
+  const reapproving = observeBrackets(t, askedAgain);
+  await interpreter.runExecution(askedAgain.options);
+  const edited = { ticket: { ...askedAgain.options.ticket!, body: 'An edited body.' } };
+  askedAgain.gh.humanAddsLabel(approvalFlow.APPROVED_LABEL, approvalFlow.OWNER);
+  await approvalFlow.laterRun(askedAgain, edited);
+  askedAgain.gh.humanAddsLabel(approvalFlow.APPROVED_LABEL, approvalFlow.OWNER);
+  await approvalFlow.laterRun(askedAgain, edited);
   const rescued = await golden.fixture(t, { responses: rescueFlow.failingRed({ 'test/extra.test.mjs': 'a test\n' }) });
   golden.configure(rescued, rescueFlow.routeRedFailureToSenior);
   const rescuing = observeBrackets(t, rescued);
   await interpreter.runExecution(rescued.options);
-  const intents = [...observed.intents, ...approving.intents, ...rescuing.intents];
+  const intents = [...observed.intents, ...approving.intents, ...reapproving.intents, ...rescuing.intents];
 
   assert.deepEqual(
     intents.filter(({ bracket }) => bracket !== 'one'),
@@ -187,30 +214,49 @@ test("every Attempt's intent is written inside one bracket, its kind's or its st
   );
 });
 
-test('a Check opens one bracket when its kind reads the tree, and none otherwise', async (t) => {
-  const fixture = await exampleRun.exampleFixture(t);
+// Each Check the fixture's Execution runs, by its Action and recovery pass, with its kind and the brackets opened while
+// the cursor was on it.
+async function checkBrackets(t: Parameters<typeof golden.fixture>[0], fixture: golden.GoldenFixture) {
   const observed = observeBrackets(t, fixture);
   await goldenRun.ranToEnd(fixture);
-  const checks = support
+  return support
     .actionEvents(fixture.executionRecord)
     .filter((event) => event.check)
-    .map(({ vertex, action, signals }) => ({
-      action: `${vertex}/${action}`,
-      kind: (signals.checks as visit.CheckSignal[])[0]!.kind,
-    }));
-  assert.deepEqual(
-    checks.map((check) => ({ ...check, brackets: observed.opens.filter((open) => open === check.action).length })),
-    [
-      { action: 'baseline/test', kind: 'command', brackets: 1 },
-      { action: 'red/red-check', kind: 'tests-fail', brackets: 1 },
-      { action: 'green/test', kind: 'command', brackets: 1 },
-      { action: 'reviewer/review-pass', kind: 'response', brackets: 0 },
-      { action: 'reviewer/repeat', kind: 'repeat', brackets: 0 },
-      { action: 'publish/test', kind: 'command', brackets: 1 },
-    ],
+    .map(({ vertex, action, recovery, signals }) => {
+      const place = `${vertex}/${action} recovery ${recovery}`;
+      const { kind } = (signals.checks as visit.CheckSignal[])[0]!;
+      return { place, kind, brackets: observed.opens.filter((open) => open === place).length };
+    });
+}
+
+test('a Check opens one bracket when its kind reads the tree and none otherwise, in any recovery pass', async (t) => {
+  const example = await checkBrackets(t, await exampleRun.exampleFixture(t));
+  // green's Check fails, its recover call fixes the sum, and the Check runs again in recovery pass 1.
+  const recovered = await checkBrackets(
+    t,
+    await goldenRun.greenFixture(t, {
+      responses: {
+        [rescueFlow.GREEN_CALL]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.WRONG_ADD }),
+        [rescueFlow.GREEN_RECOVERY]: goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.RIGHT_ADD }),
+      },
+    }),
   );
+  assert.deepEqual(example, [
+    { place: 'baseline/test recovery 0', kind: 'command', brackets: 1 },
+    { place: 'red/red-check recovery 0', kind: 'tests-fail', brackets: 1 },
+    { place: 'green/test recovery 0', kind: 'command', brackets: 1 },
+    { place: 'reviewer/review-pass recovery 0', kind: 'response', brackets: 0 },
+    { place: 'reviewer/repeat recovery 0', kind: 'repeat', brackets: 0 },
+    { place: 'publish/test recovery 0', kind: 'command', brackets: 1 },
+  ]);
+  assert.deepEqual(recovered, [
+    { place: 'red/red-check recovery 0', kind: 'tests-fail', brackets: 1 },
+    { place: 'green/test recovery 0', kind: 'command', brackets: 1 },
+    { place: 'green/test recovery 1', kind: 'command', brackets: 1 },
+    { place: 'publish/test recovery 0', kind: 'command', brackets: 1 },
+  ]);
   assert.deepEqual(
-    [...new Set(checks.map(({ kind }) => kind))].sort(),
+    [...new Set(example.map(({ kind }) => kind))].sort(),
     Object.keys(procedures.CHECK_KEYS).sort(),
     'every Check kind runs',
   );
