@@ -464,7 +464,7 @@ test('a deleted test file counts as a change', async (t) => {
   const responses = firstVisitWith();
   responses[RED_CALL]!.files = {};
   const fixture = await golden.fixture(t, { responses });
-  fixture.options.testPaths = ['package.json'];
+  fixture.options.pinned.configuration.testPaths = ['package.json'];
   const run = fixture.harness.run;
   fixture.harness.run = async (call) => {
     const result = await run(call);

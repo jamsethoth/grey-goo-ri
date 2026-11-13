@@ -30,7 +30,7 @@ export interface TerminalContext extends sideEffect.EffectContext {
   };
   events: ReturnType<typeof events.eventLog>;
   run: string;
-  files: unknown;
+  pinned: config.Pinned;
   publicText: (text: string) => string;
   enter: (actionIdentity: marker.ActionIdentity) => Promise<void>;
   markerOf: (actionIdentity: marker.ActionIdentity) => string;
@@ -158,7 +158,7 @@ function commentBody(
   // validation.
   if (stop?.stopped && stop.response && stop.commentTemplate)
     return render.publicBody(
-      config.namedFile(context.files, stop.commentTemplate),
+      config.namedFile(context.pinned.configuration.files, stop.commentTemplate),
       {
         ...visitScope.visitScope(executionRecord, stop.actionRef!),
         response: stop.response,

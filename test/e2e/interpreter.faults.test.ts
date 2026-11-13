@@ -160,7 +160,7 @@ test(
       integrity: 'real',
       git: 'real',
     });
-    fixture.options.testPaths = ['test/**', 'spec/**'];
+    fixture.options.pinned.configuration.testPaths = ['test/**', 'spec/**'];
     excludeTests(fixture, 'spec/injected.mjs');
     const { outcome } = await interpreter.runExecution(fixture.options);
 

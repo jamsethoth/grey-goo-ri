@@ -405,10 +405,10 @@ test('a complete consumption resumes to its Decision, not effect-completed', asy
 test('a complete agent Attempt resumes to the result its evidence saved, and makes no Brief', async (t) => {
   const { context } = await support.executionContext(t);
   const reads: string[] = [];
-  context.files = {
+  context.pinned.configuration.files = {
     get greenBrief() {
       reads.push('greenBrief');
-      return 'The Brief.';
+      return golden.layerFile('The Brief.');
     },
   };
   const actionIdentity = { vertex: 'green', visit: 1, procedure: 'implement', action: 'green', recovery: 0 };

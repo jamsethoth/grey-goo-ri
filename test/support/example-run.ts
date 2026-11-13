@@ -160,11 +160,6 @@ export async function exampleFixture(t: TestContext, options: ExampleOptions = {
   const configured = exampleConfig();
   golden.configure(fixture, (goldenConfig) => Object.assign(goldenConfig, configured));
   fixture.executionRecord.flow = fixture.flow.name;
-  Object.assign(fixture.options, {
-    commands: configured.commands,
-    testPaths: configured.testPaths,
-    files: configured.files,
-  });
   fixture.files = configured.files;
   fixture.options.deps.exec = requiresSuite({ worktree: fixture.worktree });
   return fixture;
