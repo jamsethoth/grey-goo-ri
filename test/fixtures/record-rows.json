@@ -348,6 +348,7 @@
     ]
   },
   "variants": {
+    "visitState.unconfirmedCleanup.containment": [{ "kind": "job" }, { "kind": "group", "pgid": 3 }],
     "terminalReason.decidedBy": [
       { "hold": null },
       { "human": "owner" },
