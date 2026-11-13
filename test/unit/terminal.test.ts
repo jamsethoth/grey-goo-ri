@@ -322,7 +322,7 @@ test("an abandonment found by a hold's own report keeps the Visit the hold named
   });
 });
 
-test("an abandonment found by an end's own report names no Visit: the Visit it ended took its Edge (#341)", async (t) => {
+test("an abandonment found by an end's own report names no Visit, as its Visit took its Edge (#341)", async (t) => {
   const { context, executionRecord, fakeGh } = await support.executionContext(t);
   executionRecord.visits.set('publish', 1);
   executionRecord.cursor = record.terminalCursor('ready-for-qa');

@@ -72,14 +72,15 @@ function naming(executionRecord: record.ExecutionRecord, decider: { hold: string
 }
 
 // The Visit a hold or abandonment cut off, and the Action and Recovery Number the cursor is at (#341): the cursor's
-// when it is inside a Visit, else the one the Terminal Reason it replaces named, as when a hold's own report finds a
-// human's label. A fresh Execution, or the next Vertex's cursor saved before its entry, names none.
+// when it is inside a Visit; else, at a Terminal, the one a hold or abandonment it replaces named, as when a hold's own
+// report finds a human's label. An Action's reason lends none, since its Visit took its Edge. A fresh Execution, or the
+// next Vertex's cursor saved before its entry, names none.
 function visitCutOff(executionRecord: record.ExecutionRecord): ReasonActionIdentity | null {
   const { vertex, visit: visitNumber, action, recovery } = executionRecord.cursor;
   if (visitNumber !== null && executionRecord.visits.get(vertex) === visitNumber)
     return { vertex, visit: visitNumber, action, recovery };
-  const replaced = executionRecord.terminalReason?.decidedBy;
-  return replaced?.vertex === undefined
+  const replaced = flow.isEnd(vertex) ? executionRecord.terminalReason?.decidedBy : undefined;
+  return replaced?.vertex === undefined || (replaced.hold === undefined && replaced.human === undefined)
     ? null
     : { vertex: replaced.vertex, visit: replaced.visit, action: replaced.action, recovery: replaced.recovery };
 }
