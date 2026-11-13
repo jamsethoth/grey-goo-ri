@@ -75,6 +75,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
   executionRecord.configurationSnapshot = structuredClone({
     vertex: vertexId,
     visit: visitNumber,
+    configHash: '',
     agent,
     access,
     procedure: { name: procedure, hash: model.procedure(flow, procedure).hash },

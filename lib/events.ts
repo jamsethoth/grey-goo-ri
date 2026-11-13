@@ -186,6 +186,12 @@ interface LifecycleFields {
     count: number | null;
     spent: SpentBound[];
   };
+  config_change: { run: string; execution: string; ticket: number; vertex: string; visit: number } & ConfigChange;
+}
+// A resumed Execution's Config Hash, from the one it last ran under to the Run's, at the Vertex entry that moved it.
+interface ConfigChange {
+  from: string;
+  to: string;
 }
 export const LIFECYCLE = {
   run_start: { run: 'required' },
@@ -215,6 +221,15 @@ export const LIFECYCLE = {
     count: 'required',
     spent: 'required',
   },
+  config_change: {
+    run: 'required',
+    execution: 'required',
+    ticket: 'required',
+    vertex: 'required',
+    visit: 'required',
+    from: 'optional',
+    to: 'optional',
+  },
 } as const satisfies { [Type in keyof LifecycleFields]: Declaration<LifecycleFields[Type]> };
 
 export type LifecycleType = keyof LifecycleFields;
@@ -226,8 +241,15 @@ export type TicketStartEvent = LifecycleOf<'ticket_start'>;
 export type TicketEndEvent = LifecycleOf<'ticket_end'>;
 export type LabelFailedEvent = LifecycleOf<'label_failed'>;
 export type VisitEndEvent = LifecycleOf<'visit_end'>;
+export type ConfigChangeEvent = LifecycleOf<'config_change'>;
 export type LifecycleEvent =
-  RunStartEvent | RunEndEvent | TicketStartEvent | TicketEndEvent | LabelFailedEvent | VisitEndEvent;
+  | RunStartEvent
+  | RunEndEvent
+  | TicketStartEvent
+  | TicketEndEvent
+  | LabelFailedEvent
+  | VisitEndEvent
+  | ConfigChangeEvent;
 export type Event = ActionEvent | LifecycleEvent;
 
 type Fields = Record<string, unknown>;

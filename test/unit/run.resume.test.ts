@@ -1,6 +1,6 @@
 import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as locks from '../../lib/locks.ts';
 import * as marker from '../../lib/marker.ts';
@@ -9,6 +9,7 @@ import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
 import * as work from '../../lib/work.ts';
+import * as executionReads from '../support/execution-reads.ts';
 import * as golden from '../support/golden.ts';
 import * as fakeHarness from '../support/fake-harness.ts';
 import * as executionContext from '../support/execution-context.ts';
@@ -346,4 +347,99 @@ test('after gg work abandon, gg run --flow starts a new Execution under that Flo
   assert.equal(executionRecord.branch, BRANCH, 'the same branch');
   assert.equal(paths.pathKey(executionRecord.worktree), paths.pathKey(fixture.worktree), 'the same worktree');
   assert.equal(fixture.readEvents().filter((event) => event.type === 'run_start').length, 2, 'the Events are kept');
+});
+
+// The Config Hash a Run admitted under, as it wrote it to its directory.
+const runConfigHash = (fixture: runFixture.RunFixture) =>
+  readFileSync(join(fixture.commonDir, 'gg', 'runs', runFixture.lastRun(fixture)!, 'config-hash.txt'), 'utf8').trim();
+// The Events the last Run wrote, and each of its Action Events as its Vertex and Config Hash.
+const lastRunEvents = (fixture: runFixture.RunFixture) =>
+  fixture.readEvents().filter((event) => 'run' in event && event.run === runFixture.lastRun(fixture));
+const actionHashes = (fixture: runFixture.RunFixture) =>
+  lastRunEvents(fixture).flatMap((event) => (event.type === 'action' ? [[event.vertex, event.configHash]] : []));
+const configChanges = (fixture: runFixture.RunFixture) =>
+  fixture.readEvents().filter((event) => event.type === 'config_change');
+const snapshotHash = (fixture: runFixture.RunFixture) =>
+  (JSON.parse(fixture.loadRow()!) as { configurationSnapshot: { configHash?: string } }).configurationSnapshot
+    .configHash;
+
+// A Visit resumed mid-Visit finishes on the snapshot it entered with, and the new configuration takes effect at the
+// next Vertex entry, logged as a change (request 3.5, #368): green keeps the earlier Run's hash, publish moves it.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a Declared Command changed between Runs moves the Config Hash at the next Vertex entry, logged as a change', async (t) => {
+  const fixture = runFixture.fixture(t);
+  const seeded = await runFixture.crashBeforePush(fixture);
+  assert.equal(seeded.cursor.vertex, 'green', 'the earlier Run stopped inside green');
+  fixture.options.config.repository.commands = { test: 'npm run test:changed' };
+
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const runHash = runConfigHash(fixture);
+  assert.notEqual(runHash, seeded.configHash);
+  const hashes = actionHashes(fixture);
+  assert.deepEqual(
+    [...new Set(hashes.map(([vertex]) => vertex))],
+    ['green', 'publish', 'ready-for-qa'],
+    'the resumed Visit and the Vertices after it',
+  );
+  assert.deepEqual(
+    hashes,
+    hashes.map(([vertex]) => [vertex, vertex === 'green' ? seeded.configHash : runHash]),
+    'each Action Event carries the hash its Visit entered under',
+  );
+  const { execution } = seeded;
+  const expected = { run: runFixture.lastRun(fixture), execution, ticket: TICKET, vertex: 'publish', visit: 1 };
+  assert.deepEqual(
+    configChanges(fixture).map(({ run: runId, execution: id, ticket, vertex, visit, from, to }) => ({
+      ...{ run: runId, execution: id, ticket, vertex, visit, from, to },
+    })),
+    [{ ...expected, from: seeded.configHash, to: runHash }],
+  );
+  const types = lastRunEvents(fixture).map((event) => (event.type === 'action' ? event.vertex : event.type));
+  assert.equal(types.indexOf('config_change'), types.indexOf('publish') - 1, 'logged at publish entry, first');
+  const logged = ` #${TICKET} config ${seeded.configHash.slice(0, 12)} -> ${runHash.slice(0, 12)} at publish`;
+  assert.ok(
+    fixture.logs.some((line) => line.endsWith(logged)),
+    JSON.stringify(fixture.logs),
+  );
+  assert.equal(executionReads.loadTicket(fixture).configHash, runHash, 'the record names the hash it runs under');
+  assert.equal(snapshotHash(fixture), runHash, 'the snapshot names the hash its Visit entered under');
+});
+
+test('an Execution admitted by this Run logs no config_change, and every Action Event carries its hash', async (t) => {
+  const fixture = runFixture.fixture(t);
+  const results = await run.runTarget(fixture.options);
+  assert.equal(runFixture.ticketResult(results)?.outcome, 'ready-for-qa', JSON.stringify(results));
+  const runHash = runConfigHash(fixture);
+  const hashes = actionHashes(fixture);
+  assert.ok(hashes.length > 0);
+  assert.deepEqual(
+    hashes,
+    hashes.map(([vertex]) => [vertex, runHash]),
+  );
+  assert.deepEqual(configChanges(fixture), []);
+  assert.equal(executionReads.loadTicket(fixture).configHash, runHash);
+  assert.equal(snapshotHash(fixture), runHash);
+});
+
+// A report decided by an earlier Run enters no Vertex, so nothing runs under the new configuration (#368, Q1 A).
+test('a hold finished by a later Run under a changed configuration keeps its Config Hash', async (t) => {
+  const { runFixture: fixture } = await runFixture.dirtyTicket(t, false);
+  const failing = runFixture.failComment(fixture);
+  assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 1);
+  const decided = executionReads.loadTicket(fixture);
+  assert.equal(decided.terminalStop?.held, true, 'the hold is decided, its comment pending');
+  fixture.options.config.repository.commands = { test: 'npm run test:changed' };
+  failing.on = false;
+
+  assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 2);
+  assert.notEqual(runConfigHash(fixture), decided.configHash, 'the later Run admitted under another hash');
+  const hashes = actionHashes(fixture);
+  assert.ok(hashes.length > 0, 'the later Run landed the hold');
+  assert.deepEqual(
+    hashes,
+    hashes.map(([vertex]) => [vertex, decided.configHash]),
+  );
+  assert.deepEqual(configChanges(fixture), []);
+  assert.equal(executionReads.loadTicket(fixture).configHash, decided.configHash);
 });
