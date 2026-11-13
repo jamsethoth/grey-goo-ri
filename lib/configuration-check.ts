@@ -1,7 +1,7 @@
-// The configuration verdict gg doctor and gg run both judge by (V1): each source's Flows as the validator resolves
-// them, the settings, the user Flows that do not fit the repository, the State Database, the Execution Records whose
-// Flow is gone, and preflight over every admitted Flow's Harnesses. The commands differ only in how they present it,
-// and in gg run's choice of Flow (#362).
+// What the configuration check finds, which gg doctor and gg run both judge by (V1): each source's Flows as the
+// validator resolves them, the settings, the user Flows that do not fit the repository, the State Database, the
+// Execution Records whose Flow is gone, and preflight over every admitted Flow's Harnesses. The commands differ only
+// in how they present it, and in gg run's choice of Flow (#362).
 import { existsSync } from 'node:fs';
 import * as config from './config.ts';
 import * as contract from './harnesses/contract.ts';
@@ -182,11 +182,12 @@ interface CheckOptions {
   commonDir?: string;
 }
 
-// The verdict: every declared Flow, the configuration's errors (the settings' first, as #301 lists them, then each
-// source's), the environment's (the State Database, then the Harnesses), the records whose Flow is gone, the warnings,
-// each misfit by its Flow's name, and the Settings when they hold no error. The records are read only when a caller
-// asks: gg run reports each for its own Ticket (A2), so its preflight never opens the State Database.
-export interface Verdict {
+// The checked configuration: every declared Flow, the configuration's errors (the settings' first, as #301 lists
+// them, then each source's), the environment's (the State Database, then the Harnesses), the records whose Flow is
+// gone, the warnings, each misfit by its Flow's name, and the Settings when they hold no error. The records are read
+// only when a caller asks: gg run reports each for its own Ticket (A2), so its preflight never opens the State
+// Database.
+export interface CheckedConfiguration {
   flows: Map<string, DeclaredFlow>;
   configurationErrors: report.Problem[];
   environmentErrors: report.Problem[];
@@ -198,7 +199,11 @@ export interface Verdict {
 
 // Harness preflight runs over every admitted Flow, since a resumed Execution runs the Flow its record pins, and leaves
 // out a misfit, which gg run admits nowhere.
-export async function check({ config: configuration, harnesses, commonDir }: CheckOptions): Promise<Verdict> {
+export async function check({
+  config: configuration,
+  harnesses,
+  commonDir,
+}: CheckOptions): Promise<CheckedConfiguration> {
   const parsed = settingsModule.parse(configuration);
   const declared = declaredFlows(configuration, harnesses);
   const admitted = [...declared.flows].filter(([name]) => !declared.misfits.has(name));

@@ -204,17 +204,18 @@ export interface DoctorOptions {
   cwd: string;
 }
 
-// gg doctor prints the verdict gg run admits by, so it never passes what gg run refuses (V1, #362): every error, each
-// record gg run would keep for its Flow being gone (A2), and each misfit as a warning, since gg run refuses one only
-// when selected (Q21). Schemas and templates are read from the files each source's gg.json names (`config.files`).
+// gg doctor prints the checked configuration gg run admits by, so it never passes what gg run refuses (V1, #362):
+// every error, each record gg run would keep for its Flow being gone (A2), and each misfit as a warning, since gg run
+// refuses one only when selected (Q21). Schemas and templates are read from the files each source's gg.json names
+// (`config.files`).
 export async function doctor({ config: configuration, harnesses, gh, cwd, commonDir }: DoctorOptions): Promise<{
   text: string;
   exitCode: number;
 }> {
-  const verdict = await configurationCheck.check({ config: configuration, harnesses, commonDir });
-  const errors = [...verdict.configurationErrors, ...verdict.environmentErrors, ...verdict.goneFlowRecords()];
-  const warnings = [...verdict.warnings, ...verdict.misfits.values()];
-  const flows = [...verdict.flows.values()];
+  const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir });
+  const errors = [...checked.configurationErrors, ...checked.environmentErrors, ...checked.goneFlowRecords()];
+  const warnings = [...checked.warnings, ...checked.misfits.values()];
+  const flows = [...checked.flows.values()];
   const lines: string[] = [];
   for (const { json, source } of flows) lines.push(...flowLines(json as unknown as ShownFlow, source));
   for (const warning of warnings) lines.push(report.line('warning', warning));

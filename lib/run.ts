@@ -151,7 +151,10 @@ const preflightFailed = (lines: string[], exitCode: number) =>
 
 // A new Execution runs the Flow `--flow` names, else default (X2), which must be declared; a user Flow that does not
 // fit the repository is refused only when selected (Q21).
-function selectionErrors({ flows, misfits }: configurationCheck.Verdict, flowName: string): report.Problem[] {
+function selectionErrors(
+  { flows, misfits }: configurationCheck.CheckedConfiguration,
+  flowName: string,
+): report.Problem[] {
   const found = report.newReport();
   const misfit = misfits.get(flowName);
   if (misfit) found.errors.push(misfit);
@@ -181,9 +184,9 @@ export async function admitConfiguration({
   harnesses,
   flow: flowName = 'default',
 }: ConfigurationOptions) {
-  const verdict = await configurationCheck.check({ config: configuration, harnesses, commonDir });
-  const errors = [...verdict.configurationErrors, ...selectionErrors(verdict, flowName), ...verdict.environmentErrors];
-  const { settings } = verdict;
+  const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir });
+  const errors = [...checked.configurationErrors, ...selectionErrors(checked, flowName), ...checked.environmentErrors];
+  const { settings } = checked;
   if (errors.length || !settings) {
     const lines = errors.map((problem) => report.line('error', problem));
     const unset = errors.some((error) => error.code === 'harness-unset');
@@ -194,9 +197,9 @@ export async function admitConfiguration({
       );
     throw preflightFailed(lines, unset ? 2 : 1);
   }
-  const admitted = [...verdict.flows].filter(([name]) => !verdict.misfits.has(name));
+  const admitted = [...checked.flows].filter(([name]) => !checked.misfits.has(name));
   const flows = new Map(admitted.map(([name, flow]) => [name, pin(name, flow, settings)]));
-  return { flows, selected: flows.get(flowName)!, warnings: verdict.warnings, settings };
+  return { flows, selected: flows.get(flowName)!, warnings: checked.warnings, settings };
 }
 
 // Every line and error a Run prints names its repository on its first line, so two gg processes can share a terminal or

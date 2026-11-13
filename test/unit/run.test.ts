@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -361,6 +361,23 @@ test('--flow runs the named Flow', async (t) => {
     fixture.logs.some((line) => line.includes(' under Flow light ')),
     JSON.stringify(fixture.logs),
   );
+});
+
+// gg run's --flow errors sit between the configuration's errors and the environment's, so its preflight lines keep the
+// order they had before the configuration check was shared (#362, Q2).
+test("preflight lists an unknown --flow after the configuration's errors and before the environment's", async (t) => {
+  const fixture = twoFlows(t);
+  delete fixture.options.config.repository.testPaths;
+  rmSync(join(fixture.commonDir, 'gg', 'gg.db'));
+  await assert.rejects(run.runTarget({ ...fixture.options, flow: 'nope' }), (err: PreflightError) => {
+    const [header, ...lines] = err.message.split('\n');
+    assert.equal(header, '[main] preflight failed:');
+    assert.deepEqual(
+      lines.map((line) => line.slice(line.lastIndexOf('[') + 1, -1)),
+      ['required-key-missing', 'unknown-flow', 'state-database-missing'],
+    );
+    return true;
+  });
 });
 
 test('an unknown --flow fails preflight listing the declared Flows', async (t) => {

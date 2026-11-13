@@ -27,19 +27,19 @@ const sources = (
   user: config.Source = { ...MACHINE_SETTINGS, files: {} },
 ): config.Configuration => ({ repository, user, repositoryFile: REPOSITORY_FILE, userFile: USER_FILE });
 
-const checked = (
+const checkOf = (
   configuration: config.Configuration,
   { harnesses = {}, commonDir }: { harnesses?: Record<string, unknown>; commonDir?: string } = {},
 ) => configurationCheck.check({ config: configuration, harnesses: { ...HARNESSES, ...harnesses }, commonDir });
 
-// The verdict's errors as gg prints them, the configuration's before the environment's.
-const errorLines = (verdict: configurationCheck.Verdict) =>
-  [...verdict.configurationErrors, ...verdict.environmentErrors].map((problem) => report.line('error', problem));
+// The checked configuration's errors as gg prints them, the configuration's before the environment's.
+const errorLines = (checked: configurationCheck.CheckedConfiguration) =>
+  [...checked.configurationErrors, ...checked.environmentErrors].map((problem) => report.line('error', problem));
 
 test('an error line ends in its code', async () => {
   const repository = repositorySource();
   repository.procedures.implement!.actions[1]!.command = 'lint';
-  assert.deepEqual(errorLines(await checked(sources(repository))), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     'error: procedures.implement.actions[1]: Check test names command "lint", ' +
       'which the repository does not declare [undeclared-command]',
   ]);
@@ -48,7 +48,7 @@ test('an error line ends in its code', async () => {
 test('preflight rejects a repository without testPaths', async () => {
   const repository = repositorySource();
   delete repository.testPaths;
-  assert.deepEqual(errorLines(await checked(sources(repository))), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     `error: testPaths: ${REPOSITORY_FILE} declares no testPaths; merge {"testPaths":["<glob>"]} into it ` +
       '[required-key-missing]',
   ]);
@@ -58,7 +58,7 @@ test('preflight rejects a repository without testPaths', async () => {
 // naming gg init (P1a).
 test('preflight without a Flow names gg init', async () => {
   const contract = { commands: { test: 'npm test' }, testPaths: ['test/**'], labelPrefix: 'gg', baseBranch: 'main' };
-  assert.deepEqual(errorLines(await checked(sources({ ...contract, files: {} }))), [
+  assert.deepEqual(errorLines(await checkOf(sources({ ...contract, files: {} }))), [
     "error: flows: no Flow is declared; run gg init to write the example Flow into the repository's .agents/gg/ " +
       '[no-flow-declared]',
   ]);
@@ -71,7 +71,7 @@ const greenInputs = (repository: ReturnType<typeof repositorySource>) =>
 test('gg run rejects a required input that a route may not produce', async () => {
   const repository = repositorySource();
   greenInputs(repository).previous = { from: 'green.commit.files' };
-  assert.deepEqual(errorLines(await checked(sources(repository))), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     'error: flows.default.ticket.vertices.green.inputs.previous: input previous is required, but some route to ' +
       'green may not produce any of its sources; admission checks routes, not runs, so if every run does produce ' +
       'one, mark the input optional [required-input-unsure]',
@@ -81,7 +81,7 @@ test('gg run rejects a required input that a route may not produce', async () =>
 test('gg run rejects pick over a value that is not a list of objects', async () => {
   const repository = repositorySource();
   greenInputs(repository).names = { from: 'red.commit.files', pick: 'name' };
-  assert.deepEqual(errorLines(await checked(sources(repository))), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     'error: flows.default.ticket.vertices.green.inputs.names: pick needs a list of objects; "red.commit.files" is ' +
       '{"kind":"list","of":{"kind":"string"}} [not-a-list-of-objects]',
   ]);
@@ -90,7 +90,7 @@ test('gg run rejects pick over a value that is not a list of objects', async () 
 test('approvers reach the reader, and a malformed list fails preflight', async () => {
   const repository = repositorySource();
   repository.approvers = 'some-login';
-  const lines = errorLines(await checked(sources(repository)));
+  const lines = errorLines(await checkOf(sources(repository)));
   assert.ok(
     lines.some((line) => /approvers must be a list of GitHub logins/.test(line)),
     lines.join('\n'),
@@ -104,7 +104,7 @@ test('preflight names a Harness that fails in a Flow --flow does not name', asyn
   (other.ticket.vertices.red as { use: string }).use = 'other';
   repository.flows.other = other;
   const claude = await import('../../lib/harnesses/claude.ts');
-  assert.deepEqual(errorLines(await checked(sources(repository), { harnesses: { claude } })), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository), { harnesses: { claude } })), [
     'error: flows.other.ticket.vertices.red: vertex red: harness claude: not implemented [harness-preflight-failed]',
   ]);
 });
@@ -113,9 +113,9 @@ test('preflight names a Harness that fails in a Flow --flow does not name', asyn
 test('a gg.db deleted from an existing gg directory is a missing State Database', async (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-configuration-check-');
   rmSync(join(commonDir, 'gg', 'gg.db'));
-  const verdict = await checked(sources(repositorySource()), { commonDir });
+  const checked = await checkOf(sources(repositorySource()), { commonDir });
   assert.deepEqual(
-    verdict.environmentErrors.map(({ code, message, params }) => ({ code, message, params })),
+    checked.environmentErrors.map(({ code, message, params }) => ({ code, message, params })),
     [
       {
         code: 'state-database-missing',
@@ -130,7 +130,7 @@ test('preflight lists every malformed Declared Command and a missing test, namin
   const repository = repositorySource();
   repository.commands = { Test: 'npm test', lint: '' };
   const file = REPOSITORY_FILE;
-  assert.deepEqual(errorLines(await checked(sources(repository))), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     `error: commands: ${file}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]`,
     `error: commands.lint: ${file}: command lint must be a non-empty single-line string [invalid-command-line]`,
     `error: commands: ${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it ` +
@@ -151,7 +151,7 @@ test('preflight lists every malformed Declared Command and a missing test, namin
 test('a Flow with a plan key fails admission before any effect', async () => {
   const repository = repositorySource();
   (repository.flows.default as { plan?: unknown }).plan = { entry: 'planner', vertices: {} };
-  assert.deepEqual(errorLines(await checked(sources(repository))), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     'error: flows.default: unknown key "plan" [unknown-key]',
   ]);
 });
@@ -159,7 +159,7 @@ test('a Flow with a plan key fails admission before any effect', async () => {
 test("an Agent's access outside the Permission Intents fails admission before any effect", async () => {
   const repository = repositorySource();
   repository.agents.implementer!.access = 'read-write';
-  assert.deepEqual(errorLines(await checked(sources(repository))), [
+  assert.deepEqual(errorLines(await checkOf(sources(repository))), [
     'error: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or ' +
       'workspace-write [unknown-permission-intent]',
   ]);
@@ -173,10 +173,10 @@ test("the configuration's errors and the environment's come in two groups, the S
   delete repository.testPaths;
   repository.agents.implementer!.harness = 'claude';
   const claude = await import('../../lib/harnesses/claude.ts');
-  const verdict = await checked(sources(repository), { harnesses: { claude }, commonDir });
+  const checked = await checkOf(sources(repository), { harnesses: { claude }, commonDir });
   const codes = (problems: report.Problem[]) => problems.map((problem) => `${problem.at} ${problem.code}`);
-  assert.deepEqual(codes(verdict.configurationErrors), ['testPaths required-key-missing']);
-  assert.deepEqual(codes(verdict.environmentErrors), [
+  assert.deepEqual(codes(checked.configurationErrors), ['testPaths required-key-missing']);
+  assert.deepEqual(codes(checked.environmentErrors), [
     ' state-database-missing',
     'flows.default.ticket.vertices.red harness-preflight-failed',
     'flows.default.ticket.vertices.green harness-preflight-failed',
@@ -194,11 +194,11 @@ test('a user Flow that does not fit the repository is a misfit, kept out of the 
   user.procedures.publish!.actions[0]!.command = 'lint';
   user.agents.implementer!.harness = 'claude';
   const claude = await import('../../lib/harnesses/claude.ts');
-  const verdict = await checked(sources(repository, user), { harnesses: { claude } });
-  assert.deepEqual(errorLines(verdict), []);
-  assert.deepEqual([...verdict.flows.keys()], ['default', 'user:strict']);
+  const checked = await checkOf(sources(repository, user), { harnesses: { claude } });
+  assert.deepEqual(errorLines(checked), []);
+  assert.deepEqual([...checked.flows.keys()], ['default', 'user:strict']);
   assert.deepEqual(
-    [...verdict.misfits].map(([name, problem]) => `${name} ${report.line('warning', problem)}`),
+    [...checked.misfits].map(([name, problem]) => `${name} ${report.line('warning', problem)}`),
     [
       'user:strict warning: user:flows.strict: Flow user:strict names command "lint", which ' +
         `${REPOSITORY_FILE} does not declare, so it cannot run in this repository [undeclared-command]`,
@@ -225,22 +225,22 @@ test('an Execution Record a Run would resume whose Flow is gone is a gone-Flow r
   const declared = seededRecords.seed(commonDir, 50, 'default', seededRecords.SHAPES[0]!);
   seededRecords.seed(commonDir, 51, 'user:strict', seededRecords.SHAPES[0]!);
   expected.push('records.ticket-51');
-  const verdict = await checked(sources(repository, user), { commonDir });
-  assert.deepEqual(errorLines(verdict), []);
+  const checked = await checkOf(sources(repository, user), { commonDir });
+  assert.deepEqual(errorLines(checked), []);
   assert.deepEqual(
-    verdict.goneFlowRecords().map((problem) => problem.at),
+    checked.goneFlowRecords().map((problem) => problem.at),
     expected,
   );
-  assert.ok(!verdict.goneFlowRecords().some((problem) => problem.at === `records.${declared.execution}`));
+  assert.ok(!checked.goneFlowRecords().some((problem) => problem.at === `records.${declared.execution}`));
   assert.equal(
-    report.line('error', verdict.goneFlowRecords()[0]!),
+    report.line('error', checked.goneFlowRecords()[0]!),
     'error: records.ticket-1: Execution Record ticket-1 runs Flow gone, which is no longer declared; declare it ' +
       'again to resume it, or run gg work abandon 1 to start over [unknown-flow]',
   );
 });
 
-test('the verdict carries the Settings only when the settings hold no error', async () => {
-  const valid = await checked(sources(repositorySource()));
+test('the checked configuration carries the Settings only when the settings hold no error', async () => {
+  const valid = await checkOf(sources(repositorySource()));
   assert.deepEqual(valid.settings, {
     labelPrefix: 'gg',
     baseBranch: 'main',
@@ -251,7 +251,7 @@ test('the verdict carries the Settings only when the settings hold no error', as
   });
   const repository = repositorySource();
   delete repository.testPaths;
-  assert.equal((await checked(sources(repository))).settings, undefined);
+  assert.equal((await checkOf(sources(repository))).settings, undefined);
 });
 
 // Decision 4 of #362: nothing in these modules is exported for the tests alone. A module's export counts as called when
