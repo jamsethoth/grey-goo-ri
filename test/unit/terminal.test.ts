@@ -7,7 +7,7 @@ import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
 import * as terminal from '../../lib/terminal.ts';
-import type * as terminalReport from '../../lib/terminal-report.ts';
+import * as terminalReport from '../../lib/terminal-report.ts';
 import * as support from '../support/execution-context.ts';
 
 const push = { vertex: 'green', visit: 1, action: 'push', recovery: 0 };
@@ -285,8 +285,12 @@ for (const { kind, ending, key } of HOLD_AND_ABANDON) {
         },
       ],
       [
-        "an earlier hold's reason on a cursor outside every Visit",
+        "an earlier hold's reason, on the next Vertex's cursor before its entry",
         (executionRecord) => {
+          // The hold's Visit was entered and its stop names no Action, so only the cursor, at no Terminal, refuses it.
+          executionRecord.visits.set('review', 2);
+          executionRecord.cursor = { ...GREEN_VISIT };
+          executionRecord.terminalStop = terminalReport.declaredStop({ outcome: 'needs-human', held: true });
           executionRecord.terminalReason = {
             decidedBy: { hold: 'earlier', vertex: 'review', visit: 2, action: 'comment', recovery: 0 },
             outcome: null,
