@@ -75,16 +75,16 @@ leverage and a change lands in one place (locality).
 | `bin/gg.ts` | `gg` entry point: one command table gives the usage, each command's flags and its dispatch |
 | `lib/options.ts` | option parsing and its `UsageError` |
 | `lib/config.ts` | the two sources (the repository's `.agents/gg/` and the user's `GG_HOME`), each `gg.json` read whole with the files it names, the files a Flow uses, the Config Hash |
-| `lib/settings.ts` | the settings both `gg.json` files hold beside their Flows: the repository contract (Declared Commands, `testPaths`, `approvers`, `labelPrefix`, `baseBranch`), the user's machine settings, and the keys each file may hold, as Problems |
+| `lib/settings.ts` | the settings both `gg.json` files hold beside their Flows: the repository contract (Declared Commands, `testPaths`, `approvers`, `labelPrefix`, `baseBranch`), the user's machine settings, and the keys each file may hold, parsed to Settings or their Problems, never both |
 | `lib/flow.ts` | the Flow rules the interpreter and the validator share: where an Outcome routes (H7), and the Resolved Flow and Config Hash written to a Run's directory |
 | `lib/validate/` | the Flow validator, which `gg doctor` and `gg run` admission share: `index.ts` (`validate()`, the Agents), `procedures.ts`, `actions.ts` and `conditions.ts` (a Procedure on its own), `references.ts` and `templates.ts` (what it reads, typed alone and at each Vertex), `flows.ts` and `inputs.ts` (Flows, Vertices, Agents and inputs), `graph.ts` (the graph checks) and `report.ts` (the errors and warnings, each with a code from its closed list); it gives each Resolved Flow (with each Procedure's hash) plus errors and warnings |
 | `lib/model.ts` | the Resolved Flow in memory: its Procedures, Vertices and Claim tokens as Maps keyed by configured name, read from and written back to the validator's JSON |
 | `lib/reference-paths.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
-| `lib/run.ts` | `gg run`: the Run's Tickets mapped concurrently, run directory, Lifecycle Events, exit codes |
-| `lib/run-flows.ts` | the Flows of both sources, each checked against the repository contract and named `user:<name>` when it is the user's; the Flows a Run admits with their Pinned Configurations, the one `--flow` names, preflight over every Flow's Harnesses and the State Database, the Flow an Execution's record pins, and the error for one no longer declared |
-| `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution |
+| `lib/run.ts` | `gg run`: its preflight over the checked configuration, with the Flow `--flow` names, the `preflight failed` text and its exit code, and each admitted Flow pinned with its Pinned Configuration; the Run's Tickets mapped concurrently, run directory, Lifecycle Events, each Ticket's result and the exit codes |
+| `lib/configuration-check.ts` | the configuration check `gg doctor` and `gg run` share (V1): the Flows of both sources, each checked against the repository contract and named `user:<name>` when it is the user's, the settings, each user Flow that does not fit the repository, the State Database, the Execution Records a Run would resume whose Flow is gone, and Harness preflight over every admitted Flow |
+| `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution under the Flow its record pins |
 | `lib/ticket-worktree.ts` | the worktree admission runs a Ticket in: the branch checks that hold it, and the other ticket worktrees |
-| `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; gg's own Protected Files |
+| `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; `resumption`, what a Run does with a record it finds; gg's own Protected Files |
 | `lib/run-context.ts` | the Run context every step reads (`RunContext`), the deps a test replaces (`Deps`), and how each Action is entered, marked and recorded |
 | `lib/clock.ts` | the `Clock` a Run and the locks read, and the wall clock they default to |
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, a stop and its rollback, and the Visit's Outcome |
@@ -144,7 +144,7 @@ leverage and a change lands in one place (locality).
 | `lib/work.ts` | `gg work abandon`: a Ticket's Execution Record forgotten, its worktree and branch kept; the rest of `gg work` and the Registry are to come |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
-| `lib/doctor.ts` | `gg doctor`: both sources' Resolved Flows, each with its source, their warnings and errors per Vertex, the labels they can request that the repository lacks, and the Execution Records whose Flow is gone or a missing State Database; `gg init`: the example, `test/fixtures/example/`, written into a repository, the user's `gg.json` with the machine settings, and the State Database |
+| `lib/doctor.ts` | `gg doctor`: the checked configuration printed, each Resolved Flow with its source per Vertex, its warnings (a misfit among them) and errors (each record whose Flow is gone among them), and the labels the Flows can request that the repository lacks; `gg init`: the example, `test/fixtures/example/`, written into a repository, the user's `gg.json` with the machine settings, and the State Database |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |

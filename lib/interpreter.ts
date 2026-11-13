@@ -42,9 +42,20 @@ export function protectedFiles(harnesses: Record<string, { protectedPaths?: unkn
 
 // A hold, fault or abandonment decided and saved, at admission or by a Terminal, whose ticket_end has not landed: the
 // next Run finishes its report.
-export const pendingReport = (executionRecord: record.ExecutionRecord): boolean =>
+const pendingReport = (executionRecord: record.ExecutionRecord): boolean =>
   (!!executionRecord.admissionStop && !eventRead.hasTicketEnd(executionRecord.commonDir, executionRecord.execution)) ||
   context.reportDecided(executionRecord);
+
+// What a Run does with an Execution Record it finds: finish a report decided and saved, start a new Execution after a
+// fresh hold whose report landed, leave a held or finished record, or resume it. Admission and the configuration check
+// both decide by it (#362).
+export type Resumption = 'finish-report' | 'restart' | 'held' | 'finished' | 'resume';
+
+export function resumption(executionRecord: record.ExecutionRecord): Resumption {
+  if (pendingReport(executionRecord)) return 'finish-report';
+  if (executionRecord.state === 'held') return executionRecord.terminalStop?.fresh ? 'restart' : 'held';
+  return executionRecord.state === 'active' ? 'resume' : 'finished';
+}
 
 // Reconciliation looks for a remote effect as a retry does: a failed lookup is retried on the Action's budget.
 const findEffect =

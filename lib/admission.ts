@@ -13,10 +13,11 @@ import * as labels from './labels.ts';
 import * as marker from './marker.ts';
 import type * as model from './model.ts';
 import * as reconcile from './reconcile.ts';
-import * as runFlows from './run-flows.ts';
+import * as configurationCheck from './configuration-check.ts';
 import * as record from './record.ts';
 import * as publicText from './public-text.ts';
 import type * as runContext from './run-context.ts';
+import type * as run from './run.ts';
 import * as ticketWorktree from './ticket-worktree.ts';
 
 // The repository a Run works in: its main checkout, shared .git directory and folder, and its GitHub owner/name.
@@ -28,7 +29,7 @@ export interface AdmissionContext {
   config: config.Settings;
   flow: model.ResolvedFlow;
   hash: string;
-  flows: ReadonlyMap<string, runFlows.PinnedFlow>;
+  flows: ReadonlyMap<string, run.PinnedFlow>;
   runId: string;
   repo: Repo;
   harnesses: Record<string, unknown>;
@@ -43,18 +44,7 @@ export interface AdmissionContext {
   epic: number | null;
 }
 
-// A Ticket's result: its Outcome, the State Label it ends with, and whether a label update or a fault failed it.
-export interface TicketResult {
-  ticket: number;
-  outcome: string;
-  state?: string;
-  labelFailed?: boolean;
-  held?: boolean;
-  fault?: boolean;
-  error?: unknown;
-  unread?: string;
-  flowMissing?: boolean;
-}
+type TicketResult = run.TicketResult;
 
 // One Ticket's admission as it goes: what it read before deciding, the record it decided on, and whether a label
 // update failed, which an Event of the Execution can still set.
@@ -134,16 +124,15 @@ async function openAdmission(issue: github.Issue, context: AdmissionContext) {
   };
   const loaded = reconcile.loadExecutionRecord(repo.gitCommonDir, ticket);
   const { corrupt } = loaded;
-  let executionRecord = loaded.executionRecord;
-  const pending = executionRecord && interpreter.pendingReport(executionRecord);
-  if (executionRecord?.state === 'held' && executionRecord.terminalStop?.fresh && !pending) executionRecord = null;
+  const resumption = loaded.executionRecord && interpreter.resumption(loaded.executionRecord);
+  const executionRecord = resumption === 'restart' ? null : loaded.executionRecord;
   const worktreeRoot = settings.worktreeRoot.replace(/^~(?=$|[\\/])/, homedir());
   admitting.executionRecord = executionRecord;
   admitting.path = executionRecord?.worktree ?? deps.git.worktreePath(worktreeRoot, repo.repository, ticket);
   admitting.redact = publicText.publicTextFor({ worktree: admitting.path, commonDir: repo.gitCommonDir, cwd });
   admitting.branch = executionRecord?.branch ?? `ticket/${ticket}-${deps.git.slugify(admitting.redact(issue.title))}`;
   admitting.started = false;
-  return { admitting, corrupt, pending };
+  return { admitting, corrupt, resumption };
 }
 
 // An unreadable row holds no intent, so the marker comes from the Ticket and the row itself: a comment that landed
@@ -185,26 +174,30 @@ async function holdCorruptRecord(admitting: Admitting, corrupt: record.RecordCor
   return { ticket, outcome: labels.NEEDS_HUMAN, state: labels.NEEDS_HUMAN, held: true, labelFailed };
 }
 
-// A finished record is never resumed, whatever intents its log leaves open (a fault report leaves one for good). An
-// Interrupted Attempt's warning comes before the recovery that deletes the row and its saved baseline.
-function notResumedSkip(admitting: Admitting): TicketResult | null {
-  const { executionRecord, ticket, state } = admitting;
-  const warning =
-    executionRecord?.terminalReason?.decidedBy?.hold === 'interrupted-attempt'
-      ? `${reconcile.INTERRUPTED_ADVICE} `
-      : '';
-  if (executionRecord?.state === 'held')
+// A held or finished record is never resumed, whatever intents its log leaves open (a fault report leaves one for
+// good), and an Interrupted Attempt's warning comes before the recovery that deletes the row and its saved baseline. A
+// resumed record runs the Flow it pins (X2): one no longer declared is kept until it is again, or a person abandons
+// it, and the Run says so loudly and exits 2 (A2).
+function notResumedSkip(admitting: Admitting, resumption: interpreter.Resumption | null): TicketResult | null {
+  const { executionRecord, ticket, state, context } = admitting;
+  if (!executionRecord)
+    return labels.hasLabel(admitting.issueLabels, state('in-progress'))
+      ? skip(admitting, `it is labelled ${state('in-progress')} with no Execution Record behind it`)
+      : null;
+  if (resumption === 'held') {
+    const interrupted = executionRecord.terminalReason?.decidedBy?.hold === 'interrupted-attempt';
+    const warning = interrupted ? `${reconcile.INTERRUPTED_ADVICE} ` : '';
     return skip(
       admitting,
       `Execution Record ticket-${ticket} is held and cannot resume. ${warning}${admitting.recovery}`,
     );
-  if (executionRecord && executionRecord.state !== 'active')
+  }
+  if (resumption === 'finished')
     return skip(admitting, `its Execution Record is finished (${executionRecord.state}); it is not resumed`);
-  const missing = executionRecord && runFlows.missingFlow(admitting.context, executionRecord);
-  if (missing) return missing;
-  if (!executionRecord && labels.hasLabel(admitting.issueLabels, state('in-progress')))
-    return skip(admitting, `it is labelled ${state('in-progress')} with no Execution Record behind it`);
-  return null;
+  const { flow } = executionRecord;
+  if (context.flows.has(flow)) return null;
+  context.log(`#${ticket} ERROR its Execution Record ${configurationCheck.missingFlowAdvice(flow, ticket)}`);
+  return { ticket, outcome: 'skipped', flowMissing: true };
 }
 
 // The record exists before admission's first GitHub effect, so whatever admission decides lands through its Terminal.
@@ -342,11 +335,20 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
   return null;
 }
 
+// The Flow an Execution runs: the one its record pins, whatever `--flow` says (X2). Admission runs a record whose Flow
+// is no longer declared only to finish a decided report, which runs no Vertex, so it runs under an empty Flow of that
+// name, no files and the Config Hash the caller gives, the record's own.
+function pinnedFlow(flows: ReadonlyMap<string, run.PinnedFlow>, name: string, hash: string): run.PinnedFlow {
+  const ticket = { entry: null, vertices: new Map<string, model.Vertex>() };
+  const empty = { name, actionCap: 0, procedures: new Map(), ticket };
+  return flows.get(name) ?? { flow: empty, pinned: null, hash, source: 'repository', files: {} };
+}
+
 // The Execution from its cursor, or the Terminal admission decided.
 async function runAdmitted(admitting: Admitting, decided: Decided): Promise<TicketResult> {
   const { context, issue, ticket } = admitting;
   const executionRecord = admitting.executionRecord!;
-  const { flow, hash, files } = runFlows.pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash);
+  const { flow, hash, files } = pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash);
   const result = await interpreter.runExecution({
     deps: context.deps,
     flow,
@@ -387,11 +389,11 @@ async function runAdmitted(admitting: Admitting, decided: Decided): Promise<Tick
 // A decided hold, fault or abandonment that has not landed is finished first and admits no more work. Its
 // ticket_start landed with the Run that decided it.
 export async function admit(issue: github.Issue, context: AdmissionContext): Promise<TicketResult> {
-  const { admitting, corrupt, pending } = await openAdmission(issue, context);
+  const { admitting, corrupt, resumption } = await openAdmission(issue, context);
   if (corrupt) return holdCorruptRecord(admitting, corrupt);
   const decided: Decided = { others: [] };
-  if (!pending) {
-    const skipped = notResumedSkip(admitting) ?? (await decide(admitting, decided));
+  if (resumption !== 'finish-report') {
+    const skipped = notResumedSkip(admitting, resumption) ?? (await decide(admitting, decided));
     if (skipped) return skipped;
   }
   return runAdmitted(admitting, decided);

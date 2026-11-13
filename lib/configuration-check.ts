@@ -1,12 +1,16 @@
-// The Flows a Run admits: each source's Flows as the validator resolves them, each with its Pinned Configuration, the
-// one `--flow` names, preflight over every admitted Flow's Harnesses, and the Flow an Execution runs.
+// What the configuration check finds, which gg doctor and gg run both judge by (V1): each source's Flows as the
+// validator resolves them, the settings, the user Flows that do not fit the repository, the State Database, the
+// Execution Records whose Flow is gone, and preflight over every admitted Flow's Harnesses. The commands differ only
+// in how they present it, and in gg run's choice of Flow (#362).
 import { existsSync } from 'node:fs';
 import * as config from './config.ts';
 import * as contract from './harnesses/contract.ts';
+import * as interpreter from './interpreter.ts';
 import * as model from './model.ts';
-import * as report from './validate/report.ts';
+import * as record from './record.ts';
 import * as settingsModule from './settings.ts';
 import * as stateDatabase from './state-database.ts';
+import * as report from './validate/report.ts';
 import * as validator from './validate/index.ts';
 
 // A user Flow's name carries its source, so no Flow shadows another (ADR 0022).
@@ -23,18 +27,6 @@ export interface DeclaredFlow {
   source: SourceName;
   files: config.SourceFiles;
 }
-
-// A declared Flow, its Pinned Configuration (the Flow with the files, Harnesses and commands it runs under), that
-// configuration's Config Hash, its source and the files it uses.
-export interface PinnedFlow {
-  flow: model.ResolvedFlow;
-  pinned: config.PinnedConfiguration | null;
-  hash: string;
-  source: SourceName;
-  files: config.SourceFiles;
-}
-
-const withExitCode = (message: string, exitCode: number) => Object.assign(new Error(message), { exitCode });
 
 // One source through the validator, against the repository's commands and labelPrefix, its schemas and templates read
 // from its own files.
@@ -96,9 +88,9 @@ function userFlows(configuration: config.Configuration, harnesses: unknown) {
   };
 }
 
-// Every declared Flow of both sources by its qualified name, the Problems of both gg.json files and of their Flows,
-// and each user Flow that does not fit the repository. gg doctor and gg run admission share it (V1).
-export function declaredFlows(configuration: config.Configuration, harnesses: unknown) {
+// Every declared Flow of both sources by its qualified name, the Problems of their Flows, and each user Flow that does
+// not fit the repository.
+function declaredFlows(configuration: config.Configuration, harnesses: unknown) {
   const { repository } = configuration;
   const validated = validateSource(repository, harnesses, repository);
   const user = userFlows(configuration, harnesses);
@@ -113,7 +105,7 @@ export function declaredFlows(configuration: config.Configuration, harnesses: un
   for (const [name, flow] of user.flows) flows.set(name, flow);
   return {
     flows,
-    errors: [...settingsModule.sourceProblems(configuration), ...repositoryErrors, ...user.errors],
+    errors: [...repositoryErrors, ...user.errors],
     warnings: [...validated.warnings, ...user.warnings],
     misfits: user.misfits,
   };
@@ -123,17 +115,6 @@ export function declaredFlows(configuration: config.Configuration, harnesses: un
 export const missingFlowAdvice = (flow: string, ticket: number): string =>
   `runs Flow ${flow}, which is no longer declared; declare it again to resume it, or run gg work abandon ${ticket} ` +
   'to start over';
-
-// A resumed Execution runs the Flow its record pins (X2). One no longer declared is kept until it is again, or a person
-// abandons it, and the Run says so loudly and exits 2 (A2); null when its Flow is admitted.
-export function missingFlow(
-  { flows, log }: { flows: ReadonlyMap<string, PinnedFlow>; log: (line: string) => void },
-  { ticket, flow }: { ticket: number; flow: string },
-) {
-  if (flows.has(flow)) return null;
-  log(`#${ticket} ERROR its Execution Record ${missingFlowAdvice(flow, ticket)}`);
-  return { ticket, outcome: 'skipped', flowMissing: true };
-}
 
 // A Harness module as preflight checks it: the shipped modules declare only their paths until slices 2 and 3.
 interface PreflightHarness {
@@ -169,98 +150,75 @@ async function harnessProblems(failed: report.Report, flow: model.ResolvedFlow, 
   }
 }
 
-// The configuration's errors, as gg doctor prints them (V1), and the registered Harness of every Vertex of every
-// admitted Flow, since a resumed Execution runs the Flow its record pins, all failures in one error. An unset Harness
-// is a configuration gap, so any one makes the error exit 2.
-async function preflight(flows: model.ResolvedFlow[], errors: report.Problem[], harnesses: Record<string, unknown>) {
-  const unset = errors.some((error) => error.code === 'harness-unset');
-  const failedHarnesses = report.newReport();
-  for (const flow of flows) await harnessProblems(failedHarnesses, flow, harnesses);
-  const failed = [...errors, ...failedHarnesses.errors].map((problem) => report.line('error', problem));
-  if (unset)
-    failed.push(
-      "Set each Agent's harness, model and effort in the gg.json that declares it; gg init --harness " +
-        `${config.exampleHarnesses().join(' or ')} writes them into the example, from ${config.EXAMPLES_DIRECTORY}.`,
-    );
-  if (failed.length) throw withExitCode(`preflight failed:\n${failed.join('\n')}`, unset ? 2 : 1);
-}
-
-// What gg run admits: both sources, the registered Harnesses, the Flow `--flow` names, and the repository's common
-// dir, which must hold the State Database.
-interface Admitted {
-  commonDir: string;
-  config: config.Configuration;
-  harnesses: Record<string, unknown>;
-  flow?: string;
-}
-
-// The Flow at `name` pinned with the files it uses from its own source and the repository contract. The source stays
-// out of the hash, and so does the prefix that names it, so a Flow hashes alike from either source (Q25).
-function pin(name: string, declared: DeclaredFlow, settings: config.Settings): PinnedFlow {
-  const files = config.usedFiles(declared.json, declared.files);
-  const pinned = {
-    // The validator's JSON, which model.fromJson below also reads as a Resolved Flow's: the validator reads the
-    // configuration as unknown, so its own type cannot say so.
-    flow: { ...declared.json, name: declared.declaredName } as model.ResolvedFlowJson,
-    files,
-    harnesses: {},
-    launchProfile: null,
-    commands: settings.commands,
-    testPaths: settings.testPaths,
-    approvers: settings.approvers,
-  };
-  const flow = model.fromJson({ ...declared.json, name });
-  return { flow, pinned, hash: config.configHash(pinned), source: declared.source, files };
-}
-
-// A repository without a State Database, as an error: only gg init creates one (#150), so gg run's preflight and
-// gg doctor both name it.
-export function stateDatabaseProblems(commonDir: string): report.Problem[] {
-  if (existsSync(stateDatabase.filePath(commonDir))) return [];
-  const found = report.newReport();
+// A repository without a State Database, as an error: only gg init creates one (#150).
+function stateDatabaseProblems(found: report.Report, commonDir: string) {
   const path = stateDatabase.filePath(commonDir);
-  report.error(found, '', 'state-database-missing', stateDatabase.missingMessage(commonDir), { path });
+  if (!existsSync(path))
+    report.error(found, '', 'state-database-missing', stateDatabase.missingMessage(commonDir), { path });
+}
+
+// Each Execution Record a Run would resume whose Flow is not admitted: gg run keeps it and exits 2 for its Ticket (A2),
+// and gg doctor lists every one as an error.
+function goneFlowRecords(commonDir: string, admitted: ReadonlySet<string>): report.Problem[] {
+  const found = report.newReport();
+  for (const executionRecord of record.loadAll(commonDir, 'ticket')) {
+    const { ticket, flow } = executionRecord;
+    if (admitted.has(flow) || interpreter.resumption(executionRecord) !== 'resume') continue;
+    const message = `Execution Record ticket-${ticket} ${missingFlowAdvice(flow, ticket)}`;
+    report.error(found, `records.ticket-${ticket}`, 'unknown-flow', message, {
+      name: flow,
+      declared: [...admitted],
+      ticket,
+    });
+  }
   return found.errors;
 }
 
-// Admission runs the checks gg doctor runs, so gg run rejects exactly what gg doctor rejects (V1, ADR 0014), except a
-// user Flow that does not fit the repository, refused only when selected. A new Execution runs the Flow `--flow` names,
-// else default (X2), which must be declared.
-export async function admitConfiguration({
-  commonDir,
-  config: configuration,
-  harnesses,
-  flow: flowName = 'default',
-}: Admitted) {
-  const declared = declaredFlows(configuration, harnesses);
-  const { errors, warnings, misfits } = declared;
-  const misfit = misfits.get(flowName);
-  if (misfit) errors.push(misfit);
-  const names = [...declared.flows.keys()];
-  if (names.length && !declared.flows.has(flowName)) {
-    const unknown = report.newReport();
-    const message = `no Flow named ${flowName} is declared; the declared Flows are ${names.join(', ')}`;
-    report.error(unknown, 'flows', 'unknown-flow', message, { name: flowName, declared: names });
-    errors.push(...unknown.errors);
-  }
-  errors.push(...stateDatabaseProblems(commonDir));
-  const admitted = [...declared.flows].filter(([name]) => !misfits.has(name));
-  await preflight(
-    admitted.map(([name, { json }]) => model.fromJson({ ...json, name })),
-    errors,
-    harnesses,
-  );
-  // The settings are read only once preflight has found none of their Problems.
-  const settings = settingsModule.runSettings(configuration);
-  const flows = new Map(admitted.map(([name, flow]) => [name, pin(name, flow, settings)]));
-  return { flows, selected: flows.get(flowName)!, warnings, settings };
+// What the check reads: both sources, the registered Harnesses, and the repository's common dir, which must hold the
+// State Database (gg doctor may leave it out, and then checks neither it nor its records).
+interface CheckOptions {
+  config: config.Configuration;
+  harnesses: Record<string, unknown>;
+  commonDir?: string;
 }
 
-// The Flow an Execution runs: the one its record pins, whatever `--flow` says (X2). Admission runs a record whose Flow
-// is no longer declared only to finish a decided report, which runs no Vertex, so it runs under an empty Flow of that
-// name, no files and the Config Hash the caller gives, the record's own.
-export function pinnedFlow(flows: ReadonlyMap<string, PinnedFlow>, name: string, hash: string): PinnedFlow {
-  const ticket = { entry: null, vertices: new Map<string, model.Vertex>() };
-  const empty = { name, actionCap: 0, procedures: new Map(), ticket };
-  return flows.get(name) ?? { flow: empty, pinned: null, hash, source: 'repository', files: {} };
+// The checked configuration: every declared Flow, the configuration's errors (the settings' first, as #301 lists
+// them, then each source's), the environment's (the State Database, then the Harnesses), the records whose Flow is
+// gone, the warnings, each misfit by its Flow's name, and the Settings when they hold no error. The records are read
+// only when a caller asks: gg run reports each for its own Ticket (A2), so its preflight never opens the State
+// Database.
+export interface CheckedConfiguration {
+  flows: Map<string, DeclaredFlow>;
+  configurationErrors: report.Problem[];
+  environmentErrors: report.Problem[];
+  goneFlowRecords: () => report.Problem[];
+  warnings: report.Problem[];
+  misfits: Map<string, report.Problem>;
+  settings?: config.Settings;
+}
+
+// Harness preflight runs over every admitted Flow, since a resumed Execution runs the Flow its record pins, and leaves
+// out a misfit, which gg run admits nowhere.
+export async function check({
+  config: configuration,
+  harnesses,
+  commonDir,
+}: CheckOptions): Promise<CheckedConfiguration> {
+  const parsed = settingsModule.parse(configuration);
+  const declared = declaredFlows(configuration, harnesses);
+  const admitted = [...declared.flows].filter(([name]) => !declared.misfits.has(name));
+  const environment = report.newReport();
+  if (commonDir !== undefined) stateDatabaseProblems(environment, commonDir);
+  const readable = commonDir !== undefined && !environment.errors.length;
+  for (const [name, { json }] of admitted)
+    await harnessProblems(environment, model.fromJson({ ...json, name }), harnesses);
+  return {
+    flows: declared.flows,
+    configurationErrors: [...(parsed.errors ?? []), ...declared.errors],
+    environmentErrors: environment.errors,
+    goneFlowRecords: () => (readable ? goneFlowRecords(commonDir, new Set(admitted.map(([name]) => name))) : []),
+    warnings: declared.warnings,
+    misfits: declared.misfits,
+    ...(parsed.settings && { settings: parsed.settings }),
+  };
 }

@@ -27,65 +27,6 @@ test('gg run runs the Declared Commands of its config, not those of AGENTS.md', 
   assert.deepEqual([...new Set(ran)], ['npm test']);
 });
 
-test('preflight lists every malformed Declared Command and a missing test, naming the repository Layer', async (t) => {
-  const fixture = runFixture.fixture(t);
-  fixture.options.config.repository.commands = { Test: 'npm test', lint: '' };
-  const file = join(fixture.mainRoot, '.agents', 'gg', 'gg.json');
-  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      `error: commands: ${file}: command name "Test" must match [a-z][a-z0-9-]* [invalid-name]`,
-      `error: commands.lint: ${file}: command lint must be a non-empty single-line string [invalid-command-line]`,
-      `error: commands: ${file} declares no test command; merge {"commands":{"test":"<command line>"}} into it ` +
-        '[required-key-missing]',
-      'error: procedures.tests-fail.actions[1]: Check red-check names command "test", ' +
-        'which the repository does not declare [undeclared-command]',
-      'error: procedures.implement.actions[1]: Check test names command "test", ' +
-        'which the repository does not declare [undeclared-command]',
-      'error: procedures.fix.actions[1]: Check test names command "test", ' +
-        'which the repository does not declare [undeclared-command]',
-      'error: procedures.publish.actions[0]: Check test names command "test", ' +
-        'which the repository does not declare [undeclared-command]',
-    ]);
-    assert.equal(err.exitCode, 1);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
-  assert.equal(fixture.worktrees(), 1, 'no worktree');
-});
-
-// A Flow has no plan key (#298): a planning Flow is a Flow run at Epic level, request slice 7's design, so admission
-// rejects the key as gg doctor does.
-test('a Flow with a plan key fails admission before any effect', async (t) => {
-  const fixture = runFixture.fixture(t);
-  (fixture.options.config.repository.flows.default as { plan?: unknown }).plan = { entry: 'planner', vertices: {} };
-  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      'error: flows.default: unknown key "plan" [unknown-key]',
-    ]);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
-  assert.equal(fixture.worktrees(), 1, 'no worktree');
-  assert.equal(existsSync(join(fixture.commonDir, 'gg', 'runs')), false, 'no run directory');
-});
-
-test("an Agent's access outside the Permission Intents fails admission before any effect", async (t) => {
-  const fixture = runFixture.fixture(t);
-  fixture.options.config.repository.agents.implementer.access = 'read-write';
-  await assert.rejects(run.runTarget(fixture.options), (err: Error) => {
-    assert.deepEqual(err?.message.split('\n'), [
-      '[main] preflight failed:',
-      'error: agents.implementer.access: access "read-write" is not a Permission Intent: read-only or ' +
-        'workspace-write [unknown-permission-intent]',
-    ]);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
-  assert.equal(fixture.worktrees(), 1, 'no worktree');
-});
-
 test('a ticket reaching done exits 0 and the run events carry the run id and outcome', async (t) => {
   const fixture = runFixture.fixture(t);
   const results = await run.runTarget(fixture.options);

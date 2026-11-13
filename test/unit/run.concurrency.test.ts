@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as admission from '../../lib/admission.ts';
 import type * as events from '../../lib/events.ts';
 import * as integrity from '../../lib/integrity.ts';
 import * as locks from '../../lib/locks.ts';
@@ -104,7 +103,7 @@ test('a crashed ticket keeps the reason from the later lines of the error', asyn
 });
 
 // Results as runTarget gives them, of which runExitCode reads only the fields given here.
-const resultsOf = (...results: Omit<admission.TicketResult, 'outcome'>[]) => results as admission.TicketResult[];
+const resultsOf = (...results: Omit<run.TicketResult, 'outcome'>[]) => results as run.TicketResult[];
 
 test('runExitCode is non-zero when any ticket had a label failure, zero otherwise', () => {
   assert.equal(run.runExitCode(resultsOf({ ticket: 1, state: 'ready-for-qa' })), 0);

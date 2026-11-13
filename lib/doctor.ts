@@ -6,13 +6,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
 import * as config from './config.ts';
-import * as interpreter from './interpreter.ts';
+import * as configurationCheck from './configuration-check.ts';
 import type * as github from './github.ts';
 import * as labels from './labels.ts';
-import * as record from './record.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as rules from './rules.ts';
-import * as runFlows from './run-flows.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as graph from './validate/graph.ts';
 import * as report from './validate/report.ts';
@@ -149,7 +147,7 @@ interface ShownFlow {
   ticket: { entry: unknown; routes: Record<string, unknown>; vertices: Record<string, graph.ResolvedVertex> };
 }
 
-function flowLines(flow: ShownFlow, source: runFlows.SourceName): string[] {
+function flowLines(flow: ShownFlow, source: configurationCheck.SourceName): string[] {
   const routes = Object.entries(flow.ticket.routes).map(([outcome, route]) => `${outcome} -> ${target(route)}`);
   const lines = [
     `flow ${flow.name}`,
@@ -197,47 +195,27 @@ async function labelWarnings(
 }
 
 // What gg doctor reads: both sources and the registered Harnesses, GitHub for the labels a Flow can request, and the
-// repository's common dir for the Execution Records whose Flow is gone.
+// repository's common dir for the State Database and the Execution Records whose Flow is gone.
 export interface DoctorOptions {
   config: config.Configuration;
   commonDir?: string;
-  harnesses: unknown;
+  harnesses: Record<string, unknown>;
   gh: github.Gh;
   cwd: string;
 }
 
-// Each Execution Record a Run would resume whose Flow is no longer declared, as an error: gg run keeps it and exits 2
-// (A2), so doctor says so first. A record finished, held or with a decided report to finish is not resumed. A missing
-// State Database is the error instead, as gg run's preflight gives it.
-function recordProblems(commonDir: string | undefined, declared: ReadonlySet<string>): report.Problem[] {
-  if (commonDir === undefined) return [];
-  const missing = runFlows.stateDatabaseProblems(commonDir);
-  if (missing.length) return missing;
-  const found = report.newReport();
-  for (const executionRecord of record.loadAll(commonDir, 'ticket')) {
-    const { ticket, flow, state } = executionRecord;
-    if (state !== 'active' || declared.has(flow) || interpreter.pendingReport(executionRecord)) continue;
-    const message = `Execution Record ticket-${ticket} ${runFlows.missingFlowAdvice(flow, ticket)}`;
-    report.error(found, `records.ticket-${ticket}`, 'unknown-flow', message, {
-      name: flow,
-      declared: [...declared],
-      ticket,
-    });
-  }
-  return found.errors;
-}
-
-// Schemas and templates are read from the files each source's gg.json names (`config.files`). The settings' Problems
-// come first, as preflight lists them, so doctor never passes what gg run refuses (#301).
+// gg doctor prints the checked configuration gg run admits by, so it never passes what gg run refuses (V1, #362):
+// every error, each record gg run would keep for its Flow being gone (A2), and each misfit as a warning, since gg run
+// refuses one only when selected (Q21). Schemas and templates are read from the files each source's gg.json names
+// (`config.files`).
 export async function doctor({ config: configuration, harnesses, gh, cwd, commonDir }: DoctorOptions): Promise<{
   text: string;
   exitCode: number;
 }> {
-  const declared = runFlows.declaredFlows(configuration, harnesses);
-  const admitted = new Set([...declared.flows.keys()].filter((name) => !declared.misfits.has(name)));
-  const errors = [...declared.errors, ...recordProblems(commonDir, admitted)];
-  const warnings = [...declared.warnings, ...declared.misfits.values()];
-  const flows = [...declared.flows.values()];
+  const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir });
+  const errors = [...checked.configurationErrors, ...checked.environmentErrors, ...checked.goneFlowRecords()];
+  const warnings = [...checked.warnings, ...checked.misfits.values()];
+  const flows = [...checked.flows.values()];
   const lines: string[] = [];
   for (const { json, source } of flows) lines.push(...flowLines(json as unknown as ShownFlow, source));
   for (const warning of warnings) lines.push(report.line('warning', warning));

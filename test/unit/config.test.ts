@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as model from '../../lib/model.ts';
-import type * as runFlows from '../../lib/run-flows.ts';
+import type * as run from '../../lib/run.ts';
 import * as settings from '../../lib/settings.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
@@ -45,7 +45,7 @@ test('a Pinned Configuration takes the Resolved Flow as JSON, not with its Maps'
 
 // gg run saves each PinnedFlow's pinned, so its type must be one the save's typed gate can read (#330, #342).
 test("a PinnedFlow's pinned is a Pinned Configuration, or null for a Flow no longer declared", () => {
-  const typed: [runFlows.PinnedFlow['pinned']] extends [config.PinnedConfiguration | null] ? true : false = true;
+  const typed: [run.PinnedFlow['pinned']] extends [config.PinnedConfiguration | null] ? true : false = true;
   assert.equal(typed, true);
 });
 
@@ -176,7 +176,7 @@ test('a source with no gg.json loads empty, and its required settings are Proble
   assert.deepEqual(loaded.repository, { files: {} });
   assert.deepEqual(loaded.user, { files: {} });
   assert.deepEqual(
-    settings.sourceProblems(loaded).map((problem) => `${problem.at} ${problem.code}`),
+    (settings.parse(loaded).errors ?? []).map((problem) => `${problem.at} ${problem.code}`),
     [
       'commands required-key-missing',
       'testPaths required-key-missing',

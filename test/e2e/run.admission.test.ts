@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as admission from '../../lib/admission.ts';
 import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as executionReads from '../support/execution-reads.ts';
@@ -65,7 +64,7 @@ test('unknown dirty state is held with the diff stat', async (t) => {
 
 function assertConflictHeld(
   fixture: RunFixture,
-  results: admission.TicketResult[],
+  results: run.TicketResult[],
   before: ReturnType<typeof runFixture.conflict>,
 ) {
   assert.equal(run.runExitCode(results), 2, JSON.stringify(results));
