@@ -357,6 +357,33 @@ test("an abandonment found by a fault's own report keeps the Visit the fault cut
   });
 });
 
+test("an abandonment found by a fault's own report outside every Visit names none (#341)", async (t) => {
+  const cases: [string, (executionRecord: record.ExecutionRecord) => void][] = [
+    [
+      "a fault in an end's report",
+      (executionRecord) => {
+        executionRecord.visits.set('publish', 1);
+        executionRecord.cursor = record.terminalCursor('ready-for-qa');
+      },
+    ],
+    [
+      "a fault at the next Vertex's cursor, before its entry",
+      (executionRecord) => {
+        executionRecord.visits.set('red', 1);
+        executionRecord.cursor = { ...GREEN_VISIT };
+      },
+    ],
+  ];
+  for (const [name, place] of cases) {
+    const { context, executionRecord, fakeGh } = await support.executionContext(t);
+    place(executionRecord);
+    fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
+    fakeGh.fail({ matches: support.commentPost, status: 502 });
+    assert.deepEqual(await terminal.fault(context, new Error('exploded')), { outcome: 'abandoned' }, name);
+    assert.deepEqual(executionRecord.terminalReason?.decidedBy, { human: support.NEEDS_HUMAN_LABEL }, name);
+  }
+});
+
 // A write of decidedBy: as a key, by assignment or as a shorthand property; not its type or a read.
 const DECIDED_BY_WRITE = /\bdecidedBy\s*(:(?!\s*DecidedBy\b)|=(?!=)|[,}])/;
 
