@@ -418,11 +418,14 @@ test("an abandonment found by a fault's own report outside every Visit names non
   }
 });
 
+// Where a decidedBy is built: lib/terminal.ts decides one, and the row reader rebuilds one that was saved.
+const BUILDS_DECIDED_BY = new Set(['terminal.ts', 'record-read.ts']);
+
 // A write of decidedBy: as a key, by assignment or as a shorthand property; not its type or a read.
 const DECIDED_BY_WRITE = /\bdecidedBy\s*(:(?!\s*DecidedBy\b)|=(?!=)|[,}])/;
 
 // Every hold and abandonment reason is built in this module, where it reads the Visit the cursor is in (#341).
-test('no lib module but lib/terminal.ts writes a Terminal Reason decidedBy (#341)', () => {
+test('no lib module but lib/terminal.ts decides a Terminal Reason decidedBy (#341)', () => {
   const writes = ["decidedBy: { hold: 'x' }", "reason.decidedBy = { hold: 'x' }", "{ decidedBy, text: '' }"];
   const reads = ['decidedBy: DecidedBy;', "decidedBy?.hold === 'x'", 'reason.decidedBy === other'];
   assert.deepEqual(
@@ -432,6 +435,6 @@ test('no lib module but lib/terminal.ts writes a Terminal Reason decidedBy (#341
   const writers = readdirSync('lib', { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('.ts'))
     .map((path) => path.replaceAll('\\', '/'))
-    .filter((path) => path !== 'terminal.ts' && DECIDED_BY_WRITE.test(readFileSync(join('lib', path), 'utf8')));
+    .filter((path) => !BUILDS_DECIDED_BY.has(path) && DECIDED_BY_WRITE.test(readFileSync(join('lib', path), 'utf8')));
   assert.deepEqual(writers, []);
 });
