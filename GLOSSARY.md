@@ -494,8 +494,9 @@ Procedure, access, `tests`, Outcomes and inputs.
 _Avoid_: compiled flow, effective flow
 
 **Configuration Snapshot**:
-The resolved configuration a Visit entered with, Persona contents and the Procedure's name and hash included, which
-holds for the whole Visit. A resumed Visit whose Procedure has changed since is held.
+The resolved configuration a Visit entered with, Persona contents, the Procedure's name and hash, and the bytes and hash
+of every file the Procedure names included, which holds for the whole Visit: every Brief, schema and template the
+Visit reads comes from it. A resumed Visit whose Procedure has changed since is held.
 _Avoid_: pinned config, frozen config
 
 **Config Hash**:

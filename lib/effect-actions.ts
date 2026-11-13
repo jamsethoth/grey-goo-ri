@@ -156,7 +156,7 @@ function postComment(runContext: RunContext, { actionIdentity, action, state, se
     settle,
     prepare: (actionMarker) =>
       render.publicBody(
-        config.namedFile(runContext.files, action.body),
+        config.namedFile(executionRecord.configurationSnapshot!.files, action.body),
         {
           ...visitScope.scopeOf(executionRecord, actionIdentity, state),
           ...(agent && {
@@ -186,7 +186,7 @@ function upsertPr(runContext: RunContext, running: Running) {
     settle,
     prepare: (actionMarker) =>
       render.publicBody(
-        config.namedFile(runContext.files, action.body),
+        config.namedFile(executionRecord.configurationSnapshot!.files, action.body),
         {
           ...visitScope.scopeOf(executionRecord, actionIdentity, state),
           ...visitScope.bind(executionRecord, running),

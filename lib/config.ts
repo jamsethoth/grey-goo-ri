@@ -109,17 +109,6 @@ function readConfigFile(file: string): Record<string, unknown> {
 const values = (value: unknown): unknown[] => (referencePaths.isRecord(value) ? Object.values(value) : []);
 const field = (value: unknown, key: string): unknown => (referencePaths.isRecord(value) ? value[key] : undefined);
 
-// The file names a Procedure declares, at the keys procedures.FILE_KEYS gives: on each Action whatever its kind, in its
-// `recover`, and on each Claim token whatever its form.
-function procedureFiles(procedure: unknown): string[] {
-  const actions = field(procedure, 'actions');
-  return [
-    ...(Array.isArray(actions) ? actions : []).flatMap((action) => procedures.filesAt('action', action)),
-    ...procedures.filesAt('recover', field(procedure, 'recover')),
-    ...values(field(procedure, 'claimTokens')).flatMap((token) => procedures.filesAt('claimToken', token)),
-  ];
-}
-
 // The file names a gg.json declares, each once: an Agent's or inline Vertex's Persona, and each Procedure's files.
 const declaredFiles = (json: Record<string, unknown>): string[] => [
   ...new Set([
@@ -127,7 +116,7 @@ const declaredFiles = (json: Record<string, unknown>): string[] => [
     ...values(json.flows).flatMap((flow) =>
       values(field(field(flow, 'ticket'), 'vertices')).flatMap((vertex) => procedures.filesAt('agent', vertex)),
     ),
-    ...values(json.procedures).flatMap(procedureFiles),
+    ...values(json.procedures).flatMap(procedures.procedureFiles),
   ]),
 ];
 
@@ -163,6 +152,11 @@ export function namedFile(files: unknown, name: unknown): string {
     throw new Error(`no source names file ${JSON.stringify(name)}`);
   return (files as SourceFiles)[name as string]!.bytes;
 }
+// The files a source named, each by bytes and hash, as namedFile finds it.
+export const namedFiles = (files: unknown, names: string[]): SourceFiles =>
+  Object.fromEntries(
+    names.map((name) => [name, { bytes: namedFile(files, name), hash: (files as SourceFiles)[name]!.hash }]),
+  );
 
 // Sorted keys at every depth, so the hash ignores key order.
 function sortedKeys(value: unknown): unknown {

@@ -189,7 +189,8 @@ test('a recovery pass resumed by a later Run reads every file its Visit entered 
   assert.equal(result.outcome, 'ready-for-qa');
   const [, green, recovery] = fixture.harness.calls;
   noPoison(recovery!.brief as string, 'the recovery Brief');
-  assert.ok((recovery!.brief as string).includes(entered['templates/recover.md']!.bytes.trim().split('\n')[0]!));
+  const enteredText = entered['templates/recover.md']!.bytes.split('{{')[0]!;
+  assert.ok((recovery!.brief as string).includes(enteredText), 'the recovery Brief is the one the Visit entered with');
   assert.deepEqual(recovery!.schema, green!.schema, 'the recovery call gets the schema the Visit entered with');
   const [greenBody, publishBody] = prBodies(executionReads.loadTicket(fixture));
   noPoison(greenBody!, "green's PR body");

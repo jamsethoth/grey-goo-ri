@@ -16,7 +16,7 @@ import * as labels from './labels.ts';
 import type * as marker from './marker.ts';
 import * as model from './model.ts';
 import * as outcome from './outcome.ts';
-import type * as procedures from './procedures.ts';
+import * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
 import * as rescue from './rescue.ts';
@@ -92,7 +92,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     commands: runContext.commands!,
     testPaths: runContext.testPaths!,
     persona: agent && { name: basename(agent.persona), bytes: bytes!, hash: config.sha256(bytes!) },
-    files: {},
+    files: config.namedFiles(runContext.files, procedures.procedureFiles(model.procedure(flow, procedure))),
   });
   executionRecord.configHash = configHash;
   if (from === configHash) runContext.database.save(executionRecord);
