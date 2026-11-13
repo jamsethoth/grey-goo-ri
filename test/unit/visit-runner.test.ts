@@ -179,11 +179,12 @@ test('a recovery pass resumed by a later Run reads every file its Visit entered 
   const names = namedBy(fixture.config.procedures.implement!);
   const later = structuredClone(fixture.files);
   poison(later, names);
+  const given = fixture.options.pinned!;
 
   const result = await interpreter.runExecution({
     ...fixture.options,
     record: loaded as record.ExecutionRecord,
-    files: later,
+    pinned: { ...given, configuration: { ...given.configuration, files: later } },
   });
 
   assert.equal(result.outcome, 'ready-for-qa');
@@ -236,4 +237,18 @@ test('a comment Action renders the body its Visit entered with', async (t) => {
   const posted = reviewFlow.prReviewComments(fixture);
   assert.equal(posted.length, 1);
   noPoison(posted[0]!.body, 'the review comment');
+});
+
+// A Visit reads what the Config Hash covers from the value carrying that hash, so it pins what was hashed (#369).
+test('a Visit pins the Declared Commands, test paths and Config Hash of the value it runs under', async (t) => {
+  const fixture = await golden.fixture(t);
+  const given = fixture.options.pinned!;
+  const commands = { ...given.configuration.commands, lint: 'npm run lint' };
+  const testPaths = [...given.configuration.testPaths, 'extra/**'];
+  const pinned = { ...given, configuration: { ...given.configuration, commands, testPaths }, hash: 'pinned-hash' };
+  await interpreter.runExecution({ ...fixture.options, pinned });
+  const snapshot = executionReads.loadTicket(fixture).configurationSnapshot!;
+  assert.deepEqual(snapshot.commands, commands);
+  assert.deepEqual(snapshot.testPaths, testPaths);
+  assert.equal(snapshot.configHash, 'pinned-hash');
 });

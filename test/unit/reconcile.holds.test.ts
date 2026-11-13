@@ -15,6 +15,7 @@ import * as goldenRun from '../support/golden-run.ts';
 import * as crashResume from '../support/crash-resume.ts';
 import * as executionContext from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
+import * as pinnedValue from '../support/pinned-value.ts';
 import * as reviewFlow from '../support/review-flow.ts';
 import * as caseDatabase from '../support/case-database.ts';
 
@@ -37,7 +38,7 @@ for (const point of CRASH_POINTS) {
     const fixture = await golden.fixture(t);
     // The completed commit's Vertex is gone from the Flow, so Reconciliation holds the Ticket.
     await crashResume.crashed(fixture, crashResume.EFFECTS.commit.place, 'after-completion');
-    fixture.options.flow = withoutGreen(fixture);
+    fixture.options.pinned = pinnedValue.withFlow(fixture.options.pinned, withoutGreen(fixture));
     fixture.options.record = executionReads.loadTicket(fixture);
     await crashResume.crashed(fixture, ['needs-human', 1, 'hold-label', 0], point);
 
@@ -126,7 +127,8 @@ test('a vertex missing from the flow holds the ticket', async (t) => {
   assert.equal(decided.next, 'hold');
   assert.match(decided.reason as string, /Vertex green/);
 
-  await interpreter.runExecution({ ...fixture.options, flow, record: executionReads.loadTicket(fixture) });
+  const pinned = pinnedValue.withFlow(fixture.options.pinned, flow);
+  await interpreter.runExecution({ ...fixture.options, pinned, record: executionReads.loadTicket(fixture) });
   assert.equal(executionReads.loadTicket(fixture).state, 'held');
   assert.ok(fixture.gh.labels.has(NEEDS_HUMAN_LABEL));
   assert.equal(fixture.harness.calls.length, 2);

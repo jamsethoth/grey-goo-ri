@@ -11,7 +11,7 @@ import type * as github from './github.ts';
 import * as interpreter from './interpreter.ts';
 import * as labels from './labels.ts';
 import * as marker from './marker.ts';
-import type * as model from './model.ts';
+import * as model from './model.ts';
 import * as reconcile from './reconcile.ts';
 import * as configurationCheck from './configuration-check.ts';
 import * as record from './record.ts';
@@ -36,8 +36,6 @@ export interface AdmissionContext {
   protectedPaths: string[];
   deps: Required<Omit<runContext.Deps, 'integrity'>> & Pick<runContext.Deps, 'integrity'>;
   testImmutability?: runContext.TestImmutability;
-  commands: config.Settings['commands'];
-  testPaths: string[] | undefined;
   log: (line: string) => void;
   events: ReturnType<typeof events.eventLog>;
   runState: sideEffect.RunState;
@@ -336,21 +334,22 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
 
 // The Flow an Execution runs: the one its record pins, whatever `--flow` says (X2). Admission runs a record whose Flow
 // is no longer declared only to finish a decided report, which runs no Vertex, so it runs under an empty Flow of that
-// name, with no Vertex to enter, no files and the Config Hash the caller gives, the record's own.
+// name, with no Vertex to enter, no files, commands or test paths, and the Config Hash the caller gives, the record's.
 function pinnedFlow(flows: ReadonlyMap<string, run.PinnedFlow>, name: string, hash: string): run.PinnedFlow {
-  const ticket = { entry: '', routes: {}, vertices: new Map<string, model.ResolvedVertexJson>() };
-  const empty = { name, actionCap: 0, procedures: new Map(), ticket };
-  return flows.get(name) ?? { flow: empty, pinned: null, hash, source: 'repository', files: {} };
+  const pinned = flows.get(name);
+  if (pinned) return pinned;
+  const flow = { name, actionCap: 0, procedures: {}, ticket: { entry: '', routes: {}, vertices: {} } };
+  const configuration = { flow, files: {}, harnesses: {}, launchProfile: null, commands: {}, testPaths: [] };
+  return { configuration, flow: model.fromJson(flow), hash, source: 'repository' };
 }
 
 // The Execution from its cursor, or the Terminal admission decided.
 async function runAdmitted(admitting: Admitting, decided: Decided): Promise<TicketResult> {
   const { context, issue, ticket } = admitting;
   const executionRecord = admitting.executionRecord!;
-  const { flow, hash, files } = pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash);
   const result = await interpreter.runExecution({
     deps: context.deps,
-    flow,
+    pinned: pinnedFlow(context.flows, executionRecord.flow, executionRecord.configHash),
     record: executionRecord,
     harnesses: context.harnesses as Record<string, runContext.Harness>,
     protectedPaths: context.protectedPaths,
@@ -359,14 +358,9 @@ async function runAdmitted(admitting: Admitting, decided: Decided): Promise<Tick
     events: admitting.events,
     log: context.log,
     cwd: admitting.cwd,
-    commands: context.commands,
-    testPaths: context.testPaths,
-    files,
     ticket: { number: ticket, title: issue.title, body: issue.body, branch: executionRecord.branch },
     base: context.config.baseBranch,
     labelPrefix: context.config.labelPrefix,
-    approvers: context.config.approvers,
-    configHash: hash,
     others: decided.others,
     fault: decided.fault,
     admission: decided.admission,

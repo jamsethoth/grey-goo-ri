@@ -336,7 +336,7 @@ test('a repeated findings hash is flagged', async (t) => {
 
 test('the review lists the test files changed since red under the testPaths pinned at its Visit entry', async (t) => {
   const fixture = await reviewFixture(t, { [reviewKey(1)]: reviewed(review('ok')) });
-  fixture.options.testPaths = ['test/**', 'lib/**'];
+  fixture.options.pinned.configuration.testPaths = ['test/**', 'lib/**'];
   // Test Immutability always passes here, and classifies what the Execution changed by the globs it is given.
   fixture.options.testImmutability = async (_cwd: string, _baseline: unknown, globs: string[]) => ({
     ok: true,
@@ -347,7 +347,7 @@ test('the review lists the test files changed since red under the testPaths pinn
   fixture.options.deps.git = {
     ...fixture.options.deps.git,
     branchDiff: (...args: Parameters<typeof branchDiff>) => {
-      fixture.options.testPaths.splice(1);
+      fixture.options.pinned.configuration.testPaths.splice(1);
       return branchDiff(...args);
     },
   };
