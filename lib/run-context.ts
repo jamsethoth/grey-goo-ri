@@ -3,6 +3,7 @@
 import * as checks from './checks.ts';
 import * as clockModule from './clock.ts';
 import type * as commandCleanup from './command-cleanup.ts';
+import type * as config from './config.ts';
 import type * as sideEffect from './effects/side-effect.ts';
 import * as eventRead from './event-read.ts';
 import * as events from './events.ts';
@@ -110,14 +111,11 @@ export type Admission = Pick<record.AdmissionStop, 'kind'> & Partial<record.Admi
 // unexpected fault without running it; `admission`, a hold or abandonment the caller decided, is its Terminal.
 export interface ExecutionOptions {
   deps: Deps;
-  flow: model.ResolvedFlow;
+  pinned: config.Pinned;
   record: record.ExecutionRecord;
   events: ReturnType<typeof events.eventLog>;
   protectedPaths: string[];
   log: (line: string) => void;
-  files: unknown;
-  commands?: Record<string, jsonValue.JsonValue>;
-  testPaths?: string[];
   ticket?: Ticket;
   base?: string;
   cwd?: string;
@@ -131,9 +129,6 @@ export interface ExecutionOptions {
   runState?: sideEffect.RunState;
   testImmutability?: TestImmutability;
   publicText?: (text: string) => string;
-  // The Approvers the repository lists, and the Config Hash this Run admitted under, perhaps not the record's.
-  approvers?: string[];
-  configHash?: string;
   crashAt?: sideEffect.EffectContext['crashAt'];
   fault?: unknown;
   admission?: Admission | null;
@@ -152,7 +147,8 @@ export interface RunContext extends Omit<ExecutionOptions, 'deps'>, terminalRepo
   testImmutability: TestImmutability;
   run: string;
   runState: sideEffect.RunState;
-  files: unknown;
+  // The pinned value's Flow, under the name every Visit and Action reads it by.
+  flow: model.ResolvedFlow;
   publicText: (text: string) => string;
   laterRunReport: boolean;
   // The pinned Agent's Harness, or null for a Vertex without an Agent.
@@ -179,6 +175,7 @@ export function createRunContext(options: ExecutionOptions): RunContext {
     ...given,
     ...deps,
     clock,
+    flow: options.pinned.flow,
     run: options.run ?? executionRecord.run,
     runState: options.runState ?? { stop: null, remoteNotBefore: 0 },
     database: deps.database ?? record,

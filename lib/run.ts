@@ -116,14 +116,9 @@ export interface RunOptions {
   testImmutability?: runContext.TestImmutability;
 }
 
-// A declared Flow, its Pinned Configuration (the Flow with the files, Harnesses and commands it runs under), that
-// configuration's Config Hash, its source and the files it uses.
-export interface PinnedFlow {
-  flow: model.ResolvedFlow;
-  pinned: config.PinnedConfiguration | null;
-  hash: string;
+// A declared Flow as it runs, pinned with what its Config Hash covers (config.Pinned), and its source.
+export interface PinnedFlow extends config.Pinned {
   source: configurationCheck.SourceName;
-  files: config.SourceFiles;
 }
 
 // The Flow at `name` pinned with the files it uses from its own source and the repository contract. The source stays
@@ -136,7 +131,7 @@ function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: 
   const files = Object.fromEntries(
     uses.files.filter((file) => Object.hasOwn(declared.files, file)).map((file) => [file, declared.files[file]!]),
   );
-  const pinned: config.PinnedConfiguration = {
+  const configuration: config.PinnedConfiguration = {
     flow: { ...resolved, name: declared.declaredName },
     files,
     harnesses: {},
@@ -146,7 +141,7 @@ function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: 
     approvers: settings.approvers,
   };
   const flow = model.fromJson(resolved);
-  return { flow, pinned, hash: config.configHash(pinned), source: declared.source, files };
+  return { configuration, flow, hash: config.configHash(configuration), source: declared.source };
 }
 
 // gg run's preflight failure: every line in one error, whatever failed it, before any effect.
@@ -293,7 +288,8 @@ function startRun(
   const runId = `${new Date(clock.now()).toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`;
   const runDir = join(repo.gitCommonDir, 'gg', 'runs', runId);
   flowModule.writeResolved(runDir, model.toJson(selected.flow), selected.hash);
-  for (const { hash, pinned } of flows) stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, pinned);
+  for (const { hash, configuration } of flows)
+    stateDatabase.savePinnedConfiguration(repo.gitCommonDir, hash, configuration);
   const runLog = (message: string) => {
     const line = named(message);
     appendFileSync(join(runDir, 'run.log'), `${new Date().toISOString()} ${line}\n`);
@@ -345,8 +341,6 @@ async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOpt
       integrity,
     },
     testImmutability,
-    commands: settings.commands,
-    testPaths: settings.testPaths,
     log: runLog,
     events: eventLog,
     runState,

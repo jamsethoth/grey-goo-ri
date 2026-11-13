@@ -15,12 +15,15 @@ import * as publicText from '../../lib/public-text.ts';
 import * as runContextModule from '../../lib/run-context.ts';
 import * as fakeGhModule from './fake-gh.ts';
 import * as golden from './golden.ts';
+import * as pinnedValue from './pinned-value.ts';
 import * as tempDirectory from './temp-directory.ts';
 
 export { TICKET } from './golden.ts';
 const { TICKET } = golden;
 export const NEEDS_HUMAN_LABEL = 'gg:state:needs-human';
 export const IN_PROGRESS_LABEL = 'gg:state:in-progress';
+// No case here reads a file, command or test path.
+const NOTHING_CONFIGURED = { files: {}, commands: {}, testPaths: [] };
 
 export async function executionContext(t: TestContext) {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-effects-');
@@ -58,13 +61,12 @@ export async function executionContext(t: TestContext) {
       database: record.createStateDatabase(),
       clock,
     },
-    flow: golden.resolve(golden.goldenConfig()),
+    pinned: pinnedValue.pinnedOf(NOTHING_CONFIGURED, golden.resolve(golden.goldenConfig()), executionRecord.configHash),
     record: executionRecord,
     events: events.eventLog(commonDir),
     protectedPaths: [],
     run: 'run-1',
     runState: { stop: null, remoteNotBefore: 0 },
-    files: {},
     cwd: commonDir,
     labelPrefix: 'gg',
     log: (line: string) => logs.push(line),

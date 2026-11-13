@@ -99,7 +99,7 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
     .filter((action) => action.do === 'check' && state.checks.get(action.id)?.state === 'failed')
     .map((action) => ({
       text: action.recoverBrief
-        ? config.namedFile(runContext.files, action.recoverBrief)
+        ? config.namedFile(runContext.pinned.configuration.files, action.recoverBrief)
         : render.engineTemplate('recover-section.md'),
       id: action.id,
       kind: action.kind,
@@ -110,12 +110,13 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
 // parse retry gets gg's own nudge.
 async function briefOf(runContext: RunContext, briefed: Attempt, commands: Record<string, unknown>): Promise<string> {
   const { record: executionRecord, ticket, base, git } = runContext;
+  const { files } = runContext.pinned.configuration;
   const { actionIdentity, action, state, nudge } = briefed;
   const recovering = actionIdentity.recovery > 0 && !nudge;
   const sections = recovering ? sectionsOf(runContext, state) : undefined;
   const name = (recovering ? state.proc.recover!.brief : action.brief) as string;
   const renderBrief = (recovering ? briefs.recoveryBrief : briefs.brief) as typeof briefs.recoveryBrief;
-  return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(runContext.files, name), {
+  return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(files, name), {
     ...visitScope.scopeOf(executionRecord, actionIdentity, state),
     ticket,
     baseBranch: base,
@@ -181,7 +182,7 @@ function callOf(
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
-  const schema = JSON.parse(config.namedFile(runContext.files, action.schema));
+  const schema = JSON.parse(config.namedFile(runContext.pinned.configuration.files, action.schema));
   briefs.assertStrict(schema);
   return {
     marker: actionMarker,
