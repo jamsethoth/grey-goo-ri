@@ -53,7 +53,7 @@
     "visits": { "red": 1, "green": 2 },
     "traversals": { "red->green:passed": 1 },
     "retries": {
-      "green.agent": {
+      "green/2/agent/1": {
         "parse": 1,
         "timeout": 0,
         "transient": 2,
@@ -62,7 +62,7 @@
       }
     },
     "sessions": {
-      "green.agent": {
+      "green/2/agent": {
         "sessionId": "session-1",
         "harness": "claude",
         "personaHash": "persona-hash",
@@ -384,7 +384,8 @@
         "rule": { "table": "stopped", "row": "run-stopped" },
         "row": "run-stopped",
         "failureClass": "quota",
-        "runStopTicket": 9
+        "runStopTicket": 9,
+        "source": "push"
       }
     ]
   },

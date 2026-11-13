@@ -390,7 +390,8 @@ test('lint fails a type imported by name from lib in a test file, and allows it 
 const typedEslint = new ESLint({ cwd: root });
 
 // The read side of the event log takes its Event types from lib/event-read.ts's check, never from an assertion or
-// an `any` (#350): the type-aware rules, on exactly the lib modules that read through it.
+// an `any` (#350), and a record's row its types from lib/record-read.ts's readers (#357): the type-aware rules, on
+// exactly the lib modules that read through the first and the modules of the second.
 const READ_SIDE_RULES = [
   '@typescript-eslint/no-unsafe-type-assertion',
   '@typescript-eslint/no-unsafe-assignment',
@@ -412,15 +413,19 @@ test('the importer census finds lib/event-read.ts imported from any lib director
   assert.equal(IMPORTS_EVENT_READ.test("from './events.ts'"), false);
 });
 
-test('the read-side rules hold exactly the lib modules that import lib/event-read.ts', async () => {
+test("the read-side rules hold exactly lib/event-read.ts's importers and the record row's read", async () => {
   const configured = new ESLint({ cwd: root });
   const libFiles = readdirSync(`${root}lib`, { recursive: true, encoding: 'utf8' })
     .filter((file) => file.endsWith('.ts'))
     .map((file) => `lib/${file.replaceAll('\\', '/')}`);
   const importers = libFiles.filter(
-    (file) => file === 'lib/event-read.ts' || IMPORTS_EVENT_READ.test(readFileSync(root + file, 'utf8')),
+    (file) =>
+      file === 'lib/event-read.ts' ||
+      file.startsWith('lib/record-') ||
+      IMPORTS_EVENT_READ.test(readFileSync(root + file, 'utf8')),
   );
   assert.ok(importers.includes('lib/terminal-report.ts'), importers.join());
+  assert.ok(importers.includes('lib/record-read-visit.ts'), importers.join());
   const ruled: string[] = [];
   for (const file of libFiles) {
     const { rules } = await configured.calculateConfigForFile(file);

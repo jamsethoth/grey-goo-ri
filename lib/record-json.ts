@@ -3,6 +3,7 @@
 
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as record from './record.ts';
+import * as recordRead from './record-read.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
@@ -77,39 +78,31 @@ export interface RecordRow {
   json: string;
 }
 
-export function parseRow<Saved extends record.ExecutionRecord | record.EpicRecord>(
+// The row read whole (lib/record-read.ts): a field of the wrong type, a key left out or one its type does not
+// declare is a corrupt row naming the field's path, never a value typed by assumption (#357).
+export function parseRow(
   commonDir: string,
   { kind, n: recordNumber, json }: RecordRow,
-): Saved {
+): record.ExecutionRecord | record.EpicRecord {
   const file = `${stateDatabase.filePath(commonDir)}#${kind}-${recordNumber}`;
+  const corrupt = (reason: string) => new RecordCorruptError(file, reason, json);
   let data: unknown;
   try {
     data = JSON.parse(json);
   } catch (err) {
-    throw new RecordCorruptError(file, (err as Error).message, json);
+    throw corrupt(err instanceof Error ? err.message : String(err));
   }
   const version = referencePaths.isRecord(data) ? data.schemaVersion : undefined;
   if (!referencePaths.isRecord(data) || version !== SCHEMA_VERSION)
-    throw new RecordCorruptError(file, `unknown schemaVersion ${String(version)}`, json);
+    throw corrupt(`unknown schemaVersion ${String(version)}`);
   // The version stays 1 until #23, so a cursor from before Action ids is told apart by its shape, not misread.
-  if (data.cursor && !(referencePaths.isRecord(data.cursor) && Object.hasOwn(data.cursor, 'recovery'))) {
-    throw new RecordCorruptError(
-      file,
-      'its cursor has no Recovery Number, so it was written before Action ids (#111)',
-      json,
-    );
+  if (referencePaths.isRecord(data.cursor) && !Object.hasOwn(data.cursor, 'recovery'))
+    throw corrupt('its cursor has no Recovery Number, so it was written before Action ids (#111)');
+  try {
+    if (kind === 'epic') return { ...recordRead.epicRecord({ value: data, path: '' }), commonDir };
+    return fromJson(recordRead.executionRecord({ value: data, path: '' }), commonDir);
+  } catch (err) {
+    if (err instanceof recordRead.RowFieldError) throw corrupt(err.message);
+    throw err;
   }
-  // The counts kept as Maps are saved as objects (#174); anything else makes the row corrupt, not a TypeError.
-  const objects = (holder: unknown, keys: string[]) => {
-    for (const key of holder ? keys : []) {
-      const saved = referencePaths.isRecord(holder) ? holder[key] : undefined;
-      if (!saved || typeof saved !== 'object' || Array.isArray(saved))
-        throw new RecordCorruptError(file, `its ${key} is not an object`, json);
-    }
-  };
-  // Past these checks the row is typed by assertion until it is checked whole (#357).
-  if (kind === 'epic') return { ...data, commonDir } as Saved;
-  objects(data, ['visits', 'traversals']);
-  objects(data.visitState, ['runs', 'checks']);
-  return fromJson(data as ExecutionRecordJson, commonDir) as Saved;
 }

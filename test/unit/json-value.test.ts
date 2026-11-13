@@ -362,9 +362,9 @@ test('the Execution Record row refuses a Map, a Set and an unknown', (t) => {
   assert.equal(record.load(commonDir, 'ticket', 8), null, 'neither row was written');
   const withUnknown = record.createExecutionRecord(startOf(commonDir));
   // @ts-expect-error an Action's output holds no unknown
-  withUnknown.outputs.push(outputOf({ parsed: loose }));
+  withUnknown.outputs.push(outputOf({ response: loose }));
   record.save(withUnknown);
-  assert.deepEqual(record.load(commonDir, 'ticket', 8)?.outputs, [outputOf({ parsed: 'parsed' })]);
+  assert.deepEqual(record.load(commonDir, 'ticket', 8)?.outputs, [outputOf({ response: 'parsed' })]);
 });
 
 test('the Epic Record row refuses a Map, a Set and an unknown', (t) => {

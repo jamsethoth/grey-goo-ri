@@ -385,21 +385,9 @@ export default defineConfig([
   // gg's own code checks what JSON.parse gives; a test may type it by what the case expects (#354).
   { files: ['lib/**/*.ts', 'bin/**/*.ts', 'scripts/**/*.ts'], rules: { 'gg/no-json-parse-assertion': 'error' } },
   {
-    // The read side of the event log takes its Event types from lib/event-read.ts's check, never from an assertion or
-    // an `any` (#350). test/unit/layout.test.ts holds this list to the lib modules that import lib/event-read.ts.
-    files: ['lib/event-read.ts', 'lib/interpreter.ts', 'lib/run-context.ts', 'lib/terminal-report.ts'],
-    rules: {
-      '@typescript-eslint/no-unsafe-type-assertion': 'error',
-      '@typescript-eslint/no-unsafe-assignment': 'error',
-      '@typescript-eslint/no-unsafe-return': 'error',
-      '@typescript-eslint/no-unsafe-argument': 'error',
-      '@typescript-eslint/no-unsafe-member-access': 'error',
-      '@typescript-eslint/no-unsafe-call': 'error',
-    },
-  },
-  {
-    // A record's row is typed by lib/record-read.ts's readers, never by an assertion or an `any` (#357).
-    files: ['lib/record-json.ts', 'lib/record-read.ts'],
+    // Typed by a check, never by an assertion or an `any`: an Event by lib/event-read.ts (#350), a record's row by
+    // lib/record-read.ts (#357). test/unit/layout.test.ts holds this list to their importers and modules.
+    files: ['lib/{event-read,interpreter,run-context,terminal-report,record-*}.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-type-assertion': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'error',
