@@ -93,7 +93,8 @@ _Avoid_: end Vertex
 
 **Terminal Reason**:
 Why an Execution reached its end state, recorded for every Terminal, successful or not: the Action that decided it (or
-the named hold that stopped the Execution before any Action), its Outcome and rule, and one sentence for a human.
+the named hold or the human that stopped the Execution, with the Visit it cut off when there is one), its Outcome and
+rule, and one sentence for a human.
 _Avoid_: rationale, cause, end reason
 
 **Escalation**:
