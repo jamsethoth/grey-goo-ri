@@ -186,6 +186,66 @@ test('killPlan neither kills nor names a seen pid no longer listed', () => {
   assert.deepEqual(commandCleanup.killPlan(ROOT, seen, listing, SELF), { kill: [ROOT], survivors: [] });
 });
 
+// Two listings as `ps lstart` gives them on Linux: the boot time plus each start since boot. Between them the boot time
+// moved a second, so every start in the second is a second later, gg's own (SELF) among them.
+const BEFORE_STEP: ProcessRow[] = [
+  [SELF, 1, 'Thu Nov 12 05:40:00 2026'],
+  [ROOT, SELF, 'Thu Nov 12 05:46:40 2026'],
+  [101, ROOT, 'Thu Nov 12 05:46:44 2026'],
+];
+const afterStep = (...rows: ProcessRow[]) => ({ processes: rows, error: undefined });
+
+test('killPlan kills a seen descendant whose listed start moved with the boot time, as every row did', () => {
+  const seen: Seen = new Map();
+  commandCleanup.observe(seen, ROOT, BEFORE_STEP, SELF);
+  const listing = afterStep(
+    [SELF, 1, 'Thu Nov 12 05:40:01 2026'],
+    [ROOT, SELF, 'Thu Nov 12 05:46:41 2026'],
+    [101, 1, 'Thu Nov 12 05:46:45 2026'],
+  );
+  assert.deepEqual(commandCleanup.killPlan(ROOT, seen, listing, SELF), { kill: [ROOT, 101], survivors: [] });
+});
+
+test('leftoverPlan kills a seen descendant whose listed start moved with the boot time, as every row did', () => {
+  const seen: Seen = new Map();
+  commandCleanup.observe(seen, ROOT, BEFORE_STEP, SELF);
+  const listing = afterStep([SELF, 1, 'Thu Nov 12 05:40:01 2026'], [101, 1, 'Thu Nov 12 05:46:45 2026']);
+  assert.deepEqual(commandCleanup.leftoverPlan(ROOT, seen, listing, SELF), { kill: [101], survivors: [] });
+});
+
+test("killPlan tells a reused pid apart after the boot time moved: its start moved by other than gg's own", () => {
+  const seen: Seen = new Map();
+  commandCleanup.observe(seen, ROOT, BEFORE_STEP, SELF);
+  const listing = afterStep(
+    [SELF, 1, 'Thu Nov 12 05:40:01 2026'],
+    [ROOT, SELF, 'Thu Nov 12 05:46:41 2026'],
+    [101, 1, 'Thu Nov 12 05:46:46 2026'],
+  );
+  assert.deepEqual(commandCleanup.killPlan(ROOT, seen, listing, SELF), {
+    kill: [ROOT],
+    survivors: [
+      {
+        pid: 101,
+        created: 'Thu Nov 12 05:46:46 2026',
+        commandLine: null,
+        error: 'not verified gone: its pid now has another start time',
+      },
+    ],
+  });
+});
+
+test("without gg's own row in a listing, killPlan compares start times as listed", () => {
+  const seen: Seen = new Map();
+  commandCleanup.observe(seen, ROOT, BEFORE_STEP, SELF);
+  const moved = afterStep([ROOT, 1, 'Thu Nov 12 05:46:41 2026'], [101, 1, 'Thu Nov 12 05:46:45 2026']);
+  assert.deepEqual(
+    commandCleanup.killPlan(ROOT, seen, moved, SELF).survivors.map((survivor) => survivor.pid),
+    [101],
+  );
+  const unmoved = afterStep([ROOT, 1, 'Thu Nov 12 05:46:40 2026'], [101, 1, 'Thu Nov 12 05:46:44 2026']);
+  assert.deepEqual(commandCleanup.killPlan(ROOT, seen, unmoved, SELF), { kill: [ROOT, 101], survivors: [] });
+});
+
 test('killPlan on a failed listing kills the root and names every seen pid unverified, the root once', () => {
   const error = 'process snapshot failed (exit 1): ps: bad option';
   const seen = seenOf([ROOT, 1, 't0'], [101, ROOT, 't1'], [102, 101, 't2']);
