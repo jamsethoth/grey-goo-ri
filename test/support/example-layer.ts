@@ -1,8 +1,6 @@
 import { readFileSync } from 'node:fs';
-import type * as procedures from '../../lib/procedures.ts';
 import * as referencePaths from '../../lib/reference-paths.ts';
 import * as validate from '../../lib/validate/index.ts';
-import type * as validateFlows from '../../lib/validate/flows.ts';
 import type * as report from '../../lib/validate/report.ts';
 
 // The example Layer under test/fixtures/example: the Flow `gg init` writes, its schemas and its templates.
@@ -64,17 +62,6 @@ export const templates = (changes: Record<string, string> = {}) => ({
   ...changes,
 });
 
-type ResolvedFlow = NonNullable<ReturnType<typeof validateFlows.checkFlow>>;
-// The validator's result where every Flow resolved, as each case that reads `flows` expects, with each Procedure in the
-// shape lib/procedures.ts gives the Resolved Flow's.
-export interface Checked {
-  flows: Record<string, Omit<ResolvedFlow, 'procedures'> & { procedures: Record<string, procedures.Procedure> }>;
-  declared: ReturnType<typeof validate.validate>['declared'];
-  uses: ReturnType<typeof validate.validate>['uses'];
-  errors: report.Problem[];
-  warnings: report.Problem[];
-}
-
 // Which rule fired where: what a case about a rule asserts, leaving the sentence to the cases about its wording.
 export type FiredRule = Pick<report.Problem, 'at' | 'code'>;
 export const firedRules = (problems: report.Problem[]): FiredRule[] =>
@@ -101,5 +88,5 @@ export function check(layer: Layer, files = schemas(), templateFiles?: Record<st
         return templateFiles[name] as string;
       },
     }),
-  }) as Checked;
+  });
 }

@@ -6,7 +6,8 @@ import { existsSync } from 'node:fs';
 import * as config from './config.ts';
 import * as contract from './harnesses/contract.ts';
 import * as interpreter from './interpreter.ts';
-import * as model from './model.ts';
+import type * as model from './model.ts';
+import * as referencePaths from './reference-paths.ts';
 import * as record from './record.ts';
 import * as settingsModule from './settings.ts';
 import * as stateDatabase from './state-database.ts';
@@ -19,13 +20,39 @@ const SOURCE_NAMES = { repository: 'the repository', user: "the user's directory
 export type SourceName = keyof typeof SOURCE_NAMES;
 export const sourceText = (source: SourceName): string => SOURCE_NAMES[source];
 
-// One declared Flow by its qualified name: its Resolved Flow (as the validator gives it, named so), the name its
-// source declares it under, its source, and the files that source names.
+// One declared Flow by its qualified name: the Flow as written and its Resolved Flow when it resolved (as the validator
+// gives them, named so), the files and commands it uses, the name its source declares it under, its source, and the
+// files that source names.
 export interface DeclaredFlow {
-  json: Record<string, unknown>;
+  declared: model.DeclaredFlowJson;
+  resolved?: model.ResolvedFlowJson;
+  uses: validator.Uses;
   declaredName: string;
   source: SourceName;
   files: config.SourceFiles;
+}
+
+// Each Flow of one source the validator gave, under the name `qualified` gives it.
+function sourceFlows(
+  validated: ReturnType<typeof validateSource>,
+  source: { name: SourceName; files: config.SourceFiles },
+  qualified: (declaredName: string) => string,
+): [string, DeclaredFlow][] {
+  const resolvedFlows = new Map(Object.entries(validated.flows));
+  const uses = new Map(Object.entries(validated.uses));
+  return Object.entries(validated.declared).map(([declaredName, declared]) => {
+    const name = qualified(declaredName);
+    const resolved = resolvedFlows.get(declaredName);
+    const flow: DeclaredFlow = {
+      declared: { ...declared, name },
+      ...(resolved && { resolved: { ...resolved, name } }),
+      uses: uses.get(declaredName) ?? { files: [], commands: [] },
+      declaredName,
+      source: source.name,
+      files: source.files,
+    };
+    return [name, flow];
+  });
 }
 
 // One source through the validator, against the repository's commands and labelPrefix, its schemas and templates read
@@ -41,15 +68,6 @@ function validateSource(source: config.Source, harnesses: unknown, repository: c
 
 const declaresFlows = (source: config.Source) =>
   ['flows', 'procedures', 'agents'].some((key) => Object.hasOwn(source, key));
-
-// The commands a Resolved Flow's Procedures name that the repository does not declare.
-function undeclaredCommands(json: Record<string, unknown>, commands: unknown): string[] {
-  const procedures = Object.values((json.procedures ?? {}) as Record<string, { actions?: { command?: unknown }[] }>);
-  const named = procedures.flatMap(({ actions = [] }) => actions.map((action) => action?.command));
-  return [
-    ...new Set(named.filter((name): name is string => typeof name === 'string' && !report.hasOwnKey(commands, name))),
-  ];
-}
 
 // The user's Flows, which serve every repository: one that names a command this repository does not declare does not
 // fit it, a warning in gg doctor and an error only when selected (Q21), so the validator's own undeclared-command
@@ -67,12 +85,15 @@ function userFlows(configuration: config.Configuration, harnesses: unknown) {
   const fits = (problem: report.Problem) =>
     problem.code !== 'no-flow-declared' &&
     !(problem.code === 'undeclared-command' && typeof problem.params?.command === 'string');
-  for (const [declaredName, json] of Object.entries(validated.flows)) {
-    if (json === undefined) continue;
-    const name = `${USER_PREFIX}${declaredName}`;
-    flows.set(name, { json: { ...json, name }, declaredName, source: 'user', files: user.files });
-    const [command] = undeclaredCommands(json, repository.commands);
+  for (const [name, flow] of sourceFlows(
+    validated,
+    { name: 'user', files: user.files },
+    (declared) => USER_PREFIX + declared,
+  )) {
+    flows.set(name, flow);
+    const [command] = flow.uses.commands.filter((named) => !report.hasOwnKey(repository.commands, named));
     if (command === undefined) continue;
+    const { declaredName } = flow;
     const found = report.newReport();
     const message =
       `Flow ${name} names command ${JSON.stringify(command)}, which ${repositoryFile} does not declare, so it cannot ` +
@@ -98,10 +119,7 @@ function declaredFlows(configuration: config.Configuration, harnesses: unknown) 
   const repositoryErrors = validated.errors.filter(
     (problem) => problem.code !== 'no-flow-declared' || !user.flows.size,
   );
-  const flows = new Map<string, DeclaredFlow>();
-  for (const [name, json] of Object.entries(validated.flows))
-    if (json !== undefined)
-      flows.set(name, { json, declaredName: name, source: 'repository', files: repository.files });
+  const flows = new Map(sourceFlows(validated, { name: 'repository', files: repository.files }, (name) => name));
   for (const [name, flow] of user.flows) flows.set(name, flow);
   return {
     flows,
@@ -123,15 +141,18 @@ interface PreflightHarness {
   resolveTools(agent: unknown): Promise<unknown>;
 }
 
-// Each Vertex's registered Harness, checked by name before any GitHub access.
-async function harnessProblems(failed: report.Report, flow: model.ResolvedFlow, harnesses: Record<string, unknown>) {
-  for (const [id, { agent }] of flow.ticket.vertices) {
-    const harness =
-      agent && typeof agent.harness === 'string' && Object.hasOwn(harnesses, agent.harness)
-        ? (harnesses[agent.harness] as PreflightHarness)
-        : null;
+// Each Vertex's registered Harness, checked by name before any GitHub access, in the Flow as written: a Flow with an
+// error is checked too, so gg doctor and gg run list the same errors (#362).
+async function harnessProblems(
+  failed: report.Report,
+  flow: model.DeclaredFlowJson,
+  harnesses: Record<string, unknown>,
+) {
+  for (const [id, { agent }] of Object.entries(flow.ticket.vertices)) {
+    const harnessName = referencePaths.isRecord(agent) ? agent.harness : undefined;
     // A Vertex without an Agent (publish) runs on no Harness; an unset or unregistered one is the validator's error.
-    if (!harness) continue;
+    if (typeof harnessName !== 'string' || !Object.hasOwn(harnesses, harnessName)) continue;
+    const harness = harnesses[harnessName] as PreflightHarness;
     try {
       // shortcut: the shipped Harness modules declare only their paths until slices 2 and 3; drop this when each
       // implements the contract.
@@ -142,7 +163,6 @@ async function harnessProblems(failed: report.Report, flow: model.ResolvedFlow, 
       await harness.resolveTools(agent);
     } catch (err) {
       const reason = (err as Error).message.split('\n')[0];
-      const harnessName = agent!.harness as string;
       const location = `flows.${flow.name}.ticket.vertices.${id}`;
       const message = `vertex ${id}: harness ${harnessName}: ${reason}`;
       report.error(failed, location, 'harness-preflight-failed', message, { vertex: id, harness: harnessName, reason });
@@ -210,8 +230,7 @@ export async function check({
   const environment = report.newReport();
   if (commonDir !== undefined) stateDatabaseProblems(environment, commonDir);
   const readable = commonDir !== undefined && !environment.errors.length;
-  for (const [name, { json }] of admitted)
-    await harnessProblems(environment, model.fromJson({ ...json, name }), harnesses);
+  for (const [, { declared }] of admitted) await harnessProblems(environment, declared, harnesses);
   return {
     flows: declared.flows,
     configurationErrors: [...(parsed.errors ?? []), ...declared.errors],

@@ -21,12 +21,21 @@ export type ActionKind = keyof typeof ACTION_KEYS;
 // on a Claim token, and on an Agent or a Vertex's own Agent keys. The loader reads each named file and the validator
 // records the ones each Flow uses, both from this one declaration, so a file the Pinned Configuration needs is never
 // left out of it.
-export const FILE_KEYS: Record<'action' | 'recover' | 'claimToken' | 'agent', readonly string[]> = {
-  action: [],
-  recover: [],
-  claimToken: [],
-  agent: [],
-};
+export const FILE_KEYS = {
+  action: ['brief', 'schema', 'body', 'recoverBrief'],
+  recover: ['brief'],
+  claimToken: ['comment'],
+  agent: ['persona'],
+} satisfies Record<string, readonly string[]>;
+export type FilePlace = keyof typeof FILE_KEYS;
+// The file names `declared` holds at `place`'s keys, in the declaration's key order: only a non-empty string names one.
+export function filesAt(place: FilePlace, declared: unknown): string[] {
+  if (typeof declared !== 'object' || declared === null || Array.isArray(declared)) return [];
+  const values = new Map<string, unknown>(Object.entries(declared));
+  return FILE_KEYS[place]
+    .map((key) => values.get(key))
+    .filter((name): name is string => typeof name === 'string' && name !== '');
+}
 
 // What an await-approval that declares no `decisions` accepts (request 3.3).
 const DEFAULT_DECISIONS = ['approved', 'rejected'];

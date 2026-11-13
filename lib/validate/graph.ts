@@ -6,8 +6,9 @@
 
 import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
+import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
-import type * as inputs from './inputs.ts';
+import * as declaredFlows from './declared.ts';
 import * as checked from './procedures.ts';
 import * as report from './report.ts';
 
@@ -15,33 +16,11 @@ const PR_READY = 'pr-ready';
 
 type FallThroughs = checked.FallThroughs;
 type OutcomeCase = checked.OutcomeCase;
-// Which route an Outcome takes, and where a failure's work goes (R12d, U5).
-export interface Routing {
-  target: unknown;
-  by: flow.RouteSource;
-  work: string | null;
-}
-// A Vertex as the Resolved Flow carries it.
-export interface ResolvedVertex {
-  use: unknown;
-  agent: Record<string, unknown> | null;
-  procedure: unknown;
-  access: unknown;
-  tests: unknown;
-  outcomes: string[];
-  // The Await and Decide Labels a Vertex whose Procedure ends in await-approval can request, else null (X1d).
-  approvalLabels: { await: string; decide: string[] } | null;
-  routing: Record<string, Routing>;
-  inputs: Record<string, inputs.ResolvedInput>;
-  route: unknown;
-  max: unknown;
-  exhausted: unknown;
-}
 // The Flow the graph checks read.
 export interface Graph {
   location: string;
   ticket: Record<string, unknown>;
-  resolved: Map<string, ResolvedVertex>;
+  resolved: Map<string, model.DeclaredVertexJson>;
   procs: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
   clean: boolean;
@@ -120,7 +99,7 @@ function cycles(next: Map<string, string[]>) {
 // `exhausted` marks a landing that no edge max bounds. A missing exhausted target is H8's error, so its needs-human
 // here only fills in routing for doctor.
 function landingsOf(
-  resolved: Map<string, ResolvedVertex>,
+  resolved: Map<string, model.DeclaredVertexJson>,
   target: unknown,
   exhausted = false,
   seen: string[] = [],
@@ -204,7 +183,11 @@ function routeEdges(problems: report.Report, graph: Graph) {
       const mine = cases.filter((ending) => ending.outcome === name);
       // An own key, so an Outcome such as __proto__ or toString is data.
       Object.defineProperty(vertex.routing, name, {
-        value: { target: route.target, by: route.by, work: workOf(write, mine, landings) },
+        value: {
+          target: declaredFlows.declaredValue(route.target) ?? null,
+          by: route.by,
+          work: workOf(write, mine, landings),
+        },
         enumerable: true,
         writable: true,
         configurable: true,
@@ -278,7 +261,7 @@ const producer = (source: unknown) => {
   const [vertex, action, output] = referencePaths.parse(source).steps as string[];
   return action === 'rescue' ? `${vertex}.rescue` : `${vertex}.${action}.${output}`;
 };
-function groupsOf(resolved: Map<string, ResolvedVertex>) {
+function groupsOf(resolved: Map<string, model.DeclaredVertexJson>) {
   const groups = new Map<string, string[]>();
   for (const vertex of resolved.values())
     for (const input of Object.values(vertex.inputs)) groups.set(JSON.stringify(input.from), input.from.map(producer));
@@ -359,7 +342,7 @@ function checkFacts(problems: report.Report, graph: Graph, edges: Edge[]) {
 
 function checkInputFacts(
   problems: report.Report,
-  place: { id: string; location: string; vertex: ResolvedVertex },
+  place: { id: string; location: string; vertex: model.DeclaredVertexJson },
   every: Map<unknown, string[]>,
   some: Map<unknown, string[]>,
 ) {

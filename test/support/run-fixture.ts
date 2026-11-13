@@ -264,8 +264,8 @@ export async function seedExecution(
     harnesses: options.harnesses,
     readSchema: (name: string) => JSON.parse(config.namedFile(configured.files, name)),
     readTemplate: (name: string) => config.namedFile(configured.files, name),
-  }).flows as Record<string, unknown>;
-  const flow = model.fromJson(flows.default);
+  }).flows;
+  const flow = model.fromJson(flows.default!);
   const executionRecord = record.createExecutionRecord({
     commonDir,
     repository: 'o/r',

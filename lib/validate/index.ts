@@ -1,7 +1,9 @@
 // The Flow validator (V1): everything the configuration decides, checked before any agent runs, giving each Flow's
 // Resolved Flow plus errors and warnings. `gg doctor` and `gg run` admission share it.
 
+import type * as model from '../model.ts';
 import * as referencePaths from '../reference-paths.ts';
+import type * as declaredFlows from './declared.ts';
 import * as flows from './flows.ts';
 import * as procedures from './procedures.ts';
 import * as references from './references.ts';
@@ -10,15 +12,12 @@ import * as templates from './templates.ts';
 
 export { AGENT_KEYS, EDGE_KEYS, FLOW_KEYS, TICKET_KEYS, VERTEX_KEYS } from './flows.ts';
 export { INPUT_KEYS } from './inputs.ts';
-export { CLAIM_TOKEN_FORMS, PROCEDURE_KEYS } from './procedures.ts';
+export { CLAIM_TOKEN_FORMS } from './claim-tokens.ts';
+export { PROCEDURE_KEYS } from './procedures.ts';
+export type { Uses } from './declared.ts';
 
 type Value = Record<string, unknown>;
-// What a Flow uses beyond its Resolved Flow: the files its Agents and Procedures name, which its Pinned Configuration
-// takes, and the commands its Checks run, each once, in the order the Flow first uses them.
-export interface Uses {
-  files: string[];
-  commands: string[];
-}
+
 // What the validator reads beside the configuration: the registered harnesses, and each schema and template a
 // Procedure names. `readTemplate`, when given, gives a template's text, so the names each template reads are checked
 // (Y20). `contract` is the repository's commands and labelPrefix, which a Flow from the user's directory runs under;
@@ -143,16 +142,20 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
     sharedErrors,
   };
   // Built from entries, so a Flow such as __proto__ is an own key.
-  const resolved = Object.fromEntries(
-    report.entries(config.flows).map(([name, declaration]) => [name, flows.checkFlow(checking, name, declaration)]),
-  );
-  const uses: Record<string, Uses> = Object.fromEntries(
-    Object.keys(resolved).map((name) => [name, { files: [], commands: [] }]),
-  );
+  const checkedFlows = report
+    .entries(config.flows)
+    .map(([name, declaration]) => [name, flows.checkFlow(checking, name, declaration)] as const);
+  const given = <Part>(part: (checked: NonNullable<ReturnType<typeof flows.checkFlow>>) => Part | undefined) =>
+    Object.fromEntries(
+      checkedFlows.flatMap(([name, checked]) => {
+        const found = checked && part(checked);
+        return found === undefined ? [] : [[name, found] as const];
+      }),
+    );
   return {
-    flows: resolved,
-    declared: resolved,
-    uses,
+    flows: given<model.ResolvedFlowJson>((checked) => checked.resolved),
+    declared: given<model.DeclaredFlowJson>((checked) => checked.declared),
+    uses: given<declaredFlows.Uses>((checked) => checked.uses),
     errors: report.dedupe([...nulls.errors, ...problems.errors]),
     warnings: report.dedupe(problems.warnings),
   };

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import * as jsonc from 'jsonc-parser';
 import * as jsonValue from './json-value.ts';
 import type * as model from './model.ts';
+import * as procedures from './procedures.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as report from './validate/report.ts';
 
@@ -108,44 +109,27 @@ function readConfigFile(file: string): Record<string, unknown> {
 const values = (value: unknown): unknown[] => (referencePaths.isRecord(value) ? Object.values(value) : []);
 const field = (value: unknown, key: string): unknown => (referencePaths.isRecord(value) ? value[key] : undefined);
 
-// The file names a Procedure declares: an Action's `brief`, `schema`, `body` and `recoverBrief`, its `recover.brief`
-// and a Claim token's `comment`.
-function procedureFiles(procedure: unknown, add: (name: unknown) => void) {
+// The file names a Procedure declares, at the keys procedures.FILE_KEYS gives: on each Action whatever its kind, in its
+// `recover`, and on each Claim token whatever its form.
+function procedureFiles(procedure: unknown): string[] {
   const actions = field(procedure, 'actions');
-  for (const action of Array.isArray(actions) ? actions : [])
-    for (const key of ['brief', 'schema', 'body', 'recoverBrief']) add(field(action, key));
-  add(field(field(procedure, 'recover'), 'brief'));
-  for (const token of values(field(procedure, 'claimTokens'))) add(field(token, 'comment'));
+  return [
+    ...(Array.isArray(actions) ? actions : []).flatMap((action) => procedures.filesAt('action', action)),
+    ...procedures.filesAt('recover', field(procedure, 'recover')),
+    ...values(field(procedure, 'claimTokens')).flatMap((token) => procedures.filesAt('claimToken', token)),
+  ];
 }
 
-// The names `collect` finds, each once.
-function namesOf(collect: (add: (name: unknown) => void) => void): string[] {
-  const names = new Set<string>();
-  collect((value) => {
-    if (typeof value === 'string' && value) names.add(value);
-  });
-  return [...names];
-}
-
-// The file names a gg.json declares: an Agent's or inline Vertex's `persona`, and each Procedure's files.
-const declaredFiles = (json: Record<string, unknown>): string[] =>
-  namesOf((add) => {
-    for (const agent of values(json.agents)) add(field(agent, 'persona'));
-    for (const flow of values(json.flows))
-      for (const vertex of values(field(field(flow, 'ticket'), 'vertices'))) add(field(vertex, 'persona'));
-    for (const procedure of values(json.procedures)) procedureFiles(procedure, add);
-  });
-
-// The files a Resolved Flow uses: each Vertex's Persona and each Procedure's files. Only these enter its Pinned
-// Configuration, so a file another Flow or Agent of the same source names never moves its Config Hash (Q25).
-export function usedFiles(flow: unknown, files: SourceFiles): SourceFiles {
-  const names = namesOf((add) => {
-    for (const vertex of values(field(field(flow, 'ticket'), 'vertices')))
-      add(field(field(vertex, 'agent'), 'persona'));
-    for (const procedure of values(field(flow, 'procedures'))) procedureFiles(procedure, add);
-  });
-  return Object.fromEntries(names.filter((name) => Object.hasOwn(files, name)).map((name) => [name, files[name]!]));
-}
+// The file names a gg.json declares, each once: an Agent's or inline Vertex's Persona, and each Procedure's files.
+const declaredFiles = (json: Record<string, unknown>): string[] => [
+  ...new Set([
+    ...values(json.agents).flatMap((agent) => procedures.filesAt('agent', agent)),
+    ...values(json.flows).flatMap((flow) =>
+      values(field(field(flow, 'ticket'), 'vertices')).flatMap((vertex) => procedures.filesAt('agent', vertex)),
+    ),
+    ...values(json.procedures).flatMap(procedureFiles),
+  ]),
+];
 
 // A source's gg.json and each file it names, read beside it; a source with no gg.json is empty, and its required
 // settings are Problems, not a load error.

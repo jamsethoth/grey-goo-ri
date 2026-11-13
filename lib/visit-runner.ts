@@ -69,7 +69,10 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     !!executionRecord.visitState;
   executionRecord.visits.set(vertexId, visitNumber);
   if (resuming) return true;
-  const { agent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
+  const { agent: resolvedAgent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
+  // shortcut: the validator checks only an Agent's harness and access, so its model, effort and persona are as
+  // declared, read here as the Harness contract types them; check them in the validator (#386).
+  const agent = resolvedAgent as visit.ConfigurationSnapshot['agent'];
   // The Persona's bytes from the Source that names it; a Vertex without an Agent (publish) pins none.
   const bytes = agent && config.namedFile(runContext.files, agent.persona);
   executionRecord.configurationSnapshot = structuredClone({

@@ -215,7 +215,7 @@ async function startTicket(
     ticket,
     epic: context.epic,
     // Preflight admits only a Flow with no errors, and a Flow without an entry Vertex is one.
-    flow: { name: context.flow.name, entry: context.flow.ticket.entry! },
+    flow: { name: context.flow.name, entry: context.flow.ticket.entry },
     configHash: context.hash,
     run: context.runId,
     worktree: worktree?.path ?? admitting.path,
@@ -337,9 +337,9 @@ async function decide(admitting: Admitting, decided: Decided): Promise<TicketRes
 
 // The Flow an Execution runs: the one its record pins, whatever `--flow` says (X2). Admission runs a record whose Flow
 // is no longer declared only to finish a decided report, which runs no Vertex, so it runs under an empty Flow of that
-// name, no files and the Config Hash the caller gives, the record's own.
+// name, with no Vertex to enter, no files and the Config Hash the caller gives, the record's own.
 function pinnedFlow(flows: ReadonlyMap<string, run.PinnedFlow>, name: string, hash: string): run.PinnedFlow {
-  const ticket = { entry: null, vertices: new Map<string, model.Vertex>() };
+  const ticket = { entry: '', routes: {}, vertices: new Map<string, model.ResolvedVertexJson>() };
   const empty = { name, actionCap: 0, procedures: new Map(), ticket };
   return flows.get(name) ?? { flow: empty, pinned: null, hash, source: 'repository', files: {} };
 }
