@@ -147,8 +147,8 @@ function changeMidVisit(fixture: golden.GoldenFixture): Record<string, Seen> {
       // Routing, Procedure and Declared Commands are pinned too: none of these may reach the rest of the Visit.
       vertex.procedure = 'fix';
       vertex.route = { ok: { end: 'needs-human' } };
-      fixture.options.commands.test = 'npm run other';
-      fixture.options.testPaths.push('lib/**');
+      fixture.options.pinned.configuration.commands.test = 'npm run other';
+      fixture.options.pinned.configuration.testPaths.push('lib/**');
       agent.effort = 'low';
       fixture.files['implementer.md'] = golden.layerFile('# changed\n');
     }
@@ -165,7 +165,7 @@ test('the visit keeps the configuration pinned at entry when the agent changes m
       [GREEN_RECOVERY]: greenWrites({ 'lib/add.mjs': 'export const add = (a, b) => a + b;\n' }),
     },
   });
-  fixture.options.testPaths = ['test/**'];
+  fixture.options.pinned.configuration.testPaths = ['test/**'];
   const commands: string[] = [];
   // green's own snapshot, as its last Check saw it: publish pins its own after.
   let pinned = null as visit.ConfigurationSnapshot | null;
@@ -240,7 +240,7 @@ test('ready-for-qa counts the files under the pinned testPaths as tests in its d
   const responses = firstVisit.firstVisitWith();
   responses[RED_CALL].files!['checks/add.mjs'] = "import { add } from '../lib/add.mjs';\n";
   const fixture = await golden.fixture(t, { responses });
-  fixture.options.testPaths = ['test/**', 'checks/**'];
+  fixture.options.pinned.configuration.testPaths = ['test/**', 'checks/**'];
   await interpreter.runExecution(fixture.options);
 
   const end = fixture.readEvents().find((event): event is events.TicketEndEvent => event.type === 'ticket_end')!;

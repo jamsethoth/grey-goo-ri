@@ -74,10 +74,9 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
   // declared, read here as the Harness contract types them; check them in the validator (#386).
   const agent = resolvedAgent as visit.ConfigurationSnapshot['agent'];
   // The Persona's bytes from the Source that names it; a Vertex without an Agent (publish) pins none.
-  const bytes = agent && config.namedFile(runContext.files, agent.persona);
+  const bytes = agent && config.namedFile(runContext.pinned.configuration.files, agent.persona);
   const from = executionRecord.configHash;
-  // The Run's Config Hash; a caller that names none runs the Execution under its record's.
-  const configHash = runContext.configHash ?? from;
+  const { configuration, hash: configHash } = runContext.pinned;
   executionRecord.configurationSnapshot = structuredClone({
     vertex: vertexId,
     visit: visitNumber,
@@ -89,8 +88,8 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     route: route ?? null,
     routes: flow.ticket.routes ?? null,
     inputs: visitInputs.resolveInputs(executionRecord, vertexId, declared),
-    commands: runContext.commands!,
-    testPaths: runContext.testPaths!,
+    commands: configuration.commands,
+    testPaths: configuration.testPaths,
     persona: agent && { name: basename(agent.persona), bytes: bytes!, hash: config.sha256(bytes!) },
   });
   executionRecord.configHash = configHash;

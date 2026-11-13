@@ -205,7 +205,6 @@ export const namedResponses = (names: Names, claim = 'ok'): fakeHarnessModule.Sc
 export async function namedFixture(t: TestContext, names: Names, claim = 'ok') {
   const fixture = await golden.fixture(t, { responses: namedResponses(names, claim) });
   golden.configure(fixture, (configured) => Object.assign(configured, namedConfig(names)));
-  Object.assign(fixture.options, { commands: fixture.config.commands, files: fixture.config.files });
   return fixture;
 }
 
