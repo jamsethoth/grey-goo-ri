@@ -238,6 +238,7 @@ const vertexInput = object<visit.VertexInput>((field) => ({
 export const configurationSnapshot = object<visit.ConfigurationSnapshot>((field) => ({
   vertex: text(field('vertex')),
   visit: count(field('visit')),
+  configHash: text(field('configHash')),
   agent: nullable(
     object((agent, _has, rest) => ({
       harness: text(agent('harness')),
