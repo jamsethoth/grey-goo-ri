@@ -240,11 +240,12 @@ export const configurationSnapshot = object<visit.ConfigurationSnapshot>((field)
   visit: count(field('visit')),
   configHash: text(field('configHash')),
   agent: nullable(
-    object((agent, _has, rest) => ({
+    object((agent, has, rest) => ({
       harness: text(agent('harness')),
       model: nullableText(agent('model')),
       effort: nullableText(agent('effort')),
       persona: text(agent('persona')),
+      ...(has('network') && { network: flag(agent('network')) }),
       ...rest(),
     })),
   )(field('agent')),

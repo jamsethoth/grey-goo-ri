@@ -92,15 +92,39 @@ export function checkAccess(problems: report.Report, location: string, access: u
   }
 }
 
-// `owner` is a declared Agent, by name, or the Vertex whose own Agent keys set the harness.
+// The Agent keys the interpreter reads, each held to its type wherever an Agent key is written (#386). A missing key
+// is the required checks', and a null only a null-value.
+export function checkAgentKeys(problems: report.Report, location: string, agent: Value) {
+  checkAccess(problems, `${location}.access`, agent.access);
+  if (agent.persona != null && !report.isName(agent.persona))
+    report.error(problems, `${location}.persona`, 'file-not-named', 'persona must name a file', { key: 'persona' });
+  for (const key of ['model', 'effort'])
+    if (agent[key] != null && typeof agent[key] !== 'string')
+      report.error(problems, `${location}.${key}`, 'not-a-string', `${key} must be a string`);
+  if (agent.network != null && typeof agent.network !== 'boolean')
+    report.error(problems, `${location}.network`, 'not-a-boolean', 'network must be true or false');
+}
+
+// `owner` is a declared Agent, by name, or the Vertex whose own Agent keys declare it.
+type AgentOwner = { agent: string } | { vertex: string };
+const ownerLabel = (owner: AgentOwner) =>
+  'agent' in owner ? `agent ${owner.agent}` : `the agent of Vertex ${owner.vertex}`;
+
+// A persona is required where an Agent is declared, as a harness is; a Vertex's own persona may replace it (#386, 1A).
+export function checkPersona(problems: report.Report, owner: AgentOwner, persona: unknown, location: string) {
+  if (persona !== undefined) return;
+  const message = `${ownerLabel(owner)} names no persona; set one in the gg.json that declares it`;
+  report.error(problems, location, 'required-key-missing', message, { key: 'persona' });
+}
+
 export function checkHarness(
   checking: Pick<FlowContext, 'report' | 'harnesses'>,
-  owner: { agent: string } | { vertex: string },
+  owner: AgentOwner,
   harness: unknown,
   location: string,
 ) {
   const problems = checking.report;
-  const label = 'agent' in owner ? `agent ${owner.agent}` : `the agent of Vertex ${owner.vertex}`;
+  const label = ownerLabel(owner);
   // Only a missing harness is unset; a null one is a null-value where it sits, and no name to look up.
   if (harness === undefined)
     report.error(
@@ -247,6 +271,7 @@ function vertexAgent(
     const owner = vertex.use === undefined ? { vertex: place.id } : { agent: vertex.use as string };
     checkHarness(checking, owner, merged.harness, location);
   }
+  if (vertex.use === undefined) checkPersona(problems, { vertex: place.id }, merged.persona, location);
   return { ...merged, harness: merged.harness ?? null, model: merged.model ?? null, effort: merged.effort ?? null };
 }
 
@@ -301,7 +326,7 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   if (!referencePaths.isRecord(vertex))
     return report.error(problems, location, 'not-an-object', 'a Vertex must be an object');
   report.unknownKeys(problems, vertex, [...VERTEX_KEYS, ...AGENT_KEYS], location);
-  checkAccess(problems, `${location}.access`, vertex.access);
+  checkAgentKeys(problems, location, vertex);
   const proc = checking.procedures.get(vertex.procedure as string);
   if (vertex.procedure === undefined)
     report.error(problems, location, 'required-key-missing', 'a Vertex must name a procedure', { key: 'procedure' });

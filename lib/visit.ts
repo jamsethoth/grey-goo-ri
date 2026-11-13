@@ -4,6 +4,7 @@ import type * as commandCleanup from './command-cleanup.ts';
 import type * as integrity from './integrity.ts';
 import type * as events from './events.ts';
 import type * as jsonValue from './json-value.ts';
+import type * as model from './model.ts';
 import type * as runContext from './run-context.ts';
 
 // The rule identity { table, row }: a fixed row by name, or a Procedure table's row by index, `otherwise`, or null
@@ -160,12 +161,7 @@ export interface ConfigurationSnapshot {
   visit: number;
   // The Config Hash the Visit entered under, which its Action Events carry though a later Run resumes it.
   configHash: string;
-  agent:
-    | ({ harness: string; model: string | null; effort: string | null; persona: string } & Record<
-        string,
-        jsonValue.JsonValue
-      >)
-    | null;
+  agent: model.Agent | null;
   access: string;
   procedure: { name: string; hash: string };
   outcomes: jsonValue.JsonValue;
