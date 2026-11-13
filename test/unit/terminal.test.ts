@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import type * as effectErrors from '../../lib/effect-errors.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
+import * as record from '../../lib/record.ts';
 import * as terminal from '../../lib/terminal.ts';
 import * as support from '../support/execution-context.ts';
 
@@ -218,4 +222,100 @@ test("a decision found by a Terminal's own retry is taken by the Terminal", asyn
   const result = await terminal.terminal(context, 'needs-human', { outcome: 'needs-human' });
   assert.deepEqual(result, { outcome: 'abandoned' }, "the human's label found before the retry abandons it");
   assert.deepEqual(fakeGh.comments, []);
+  assert.deepEqual(executionRecord.terminalReason.decidedBy, { human: support.NEEDS_HUMAN_LABEL });
+});
+
+// Each hold and abandonment an Action can end its Execution with (effectErrors.Ending), as endEarly decides it.
+const HOLD_AND_ABANDON: { kind: string; ending: (cursor: record.Cursor) => effectErrors.Ending; key: object }[] = [
+  {
+    kind: 'a hold',
+    ending: () => ({ next: 'hold', name: 'conflict', reason: 'It conflicts.' }),
+    key: { hold: 'conflict' },
+  },
+  {
+    kind: 'an abandonment',
+    ending: (cursor) => ({ next: 'abandon', cursor, reason: 'A human took it.', inProgress: false }),
+    key: { human: support.NEEDS_HUMAN_LABEL },
+  },
+];
+const GREEN_VISIT = { vertex: 'green', visit: 1, action: null, recovery: 0, attempt: 1 };
+
+for (const { kind, ending, key } of HOLD_AND_ABANDON) {
+  test(`${kind} inside a Visit names it, and the Action and Recovery Number the cursor is at (#341)`, async (t) => {
+    const atAction = await support.executionContext(t);
+    atAction.executionRecord.visits.set('green', 1);
+    atAction.executionRecord.cursor = { ...support.PUSH_ACTION_IDENTITY, recovery: 1, attempt: 1 };
+    await terminal.endEarly(atAction.context, ending(atAction.executionRecord.cursor));
+    assert.deepEqual(atAction.executionRecord.terminalReason?.decidedBy, {
+      ...key,
+      vertex: 'green',
+      visit: 1,
+      action: 'push',
+      recovery: 1,
+    });
+    const atNoAction = await support.executionContext(t);
+    atNoAction.executionRecord.visits.set('green', 1);
+    atNoAction.executionRecord.cursor = { ...GREEN_VISIT };
+    await terminal.endEarly(atNoAction.context, ending(atNoAction.executionRecord.cursor));
+    assert.deepEqual(atNoAction.executionRecord.terminalReason?.decidedBy, {
+      ...key,
+      vertex: 'green',
+      visit: 1,
+      action: null,
+      recovery: 0,
+    });
+  });
+
+  test(`${kind} outside every Visit names none (#341)`, async (t) => {
+    const cases: [string, (executionRecord: record.ExecutionRecord) => void][] = [
+      ['a fresh Execution', () => {}],
+      [
+        "the next Vertex's cursor, saved before its entry",
+        (executionRecord) => {
+          executionRecord.visits.set('red', 1);
+          executionRecord.cursor = { ...GREEN_VISIT };
+        },
+      ],
+      [
+        'a Terminal cursor',
+        (executionRecord) => {
+          executionRecord.visits.set('green', 1);
+          executionRecord.cursor = record.terminalCursor('needs-human');
+        },
+      ],
+    ];
+    for (const [name, place] of cases) {
+      const { context, executionRecord } = await support.executionContext(t);
+      place(executionRecord);
+      await terminal.endEarly(context, ending(executionRecord.cursor));
+      assert.deepEqual(executionRecord.terminalReason?.decidedBy, key, name);
+    }
+  });
+}
+
+test("an abandonment found by a hold's own report keeps the Visit the hold named (#341)", async (t) => {
+  const { context, executionRecord, fakeGh } = await support.executionContext(t);
+  executionRecord.visits.set('green', 1);
+  executionRecord.cursor = { ...GREEN_VISIT };
+  // The hold's comment fails, and its retry finds the human's label.
+  fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
+  fakeGh.fail({ matches: support.commentPost, status: 502 });
+  const result = await terminal.hold(context, { name: 'dirty-worktree', terminalReasonText: 'It is dirty.' });
+  assert.deepEqual(result, { outcome: 'abandoned' });
+  assert.deepEqual(executionRecord.terminalReason?.decidedBy, {
+    human: support.NEEDS_HUMAN_LABEL,
+    vertex: 'green',
+    visit: 1,
+    action: null,
+    recovery: 0,
+  });
+});
+
+// Every hold and abandonment reason is built in this module, where it reads the Visit the cursor is in (#341).
+test('no lib module but lib/terminal.ts writes a Terminal Reason decidedBy (#341)', () => {
+  const writers = readdirSync('lib', { recursive: true, encoding: 'utf8' })
+    .filter((path) => path.endsWith('.ts'))
+    .map((path) => path.replaceAll('\\', '/'))
+    .filter((path) => path !== 'terminal.ts' && /\bdecidedBy\s*:/.test(readFileSync(join('lib', path), 'utf8')));
+  assert.deepEqual(writers, []);
 });

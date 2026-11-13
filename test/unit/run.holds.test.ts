@@ -58,6 +58,13 @@ async function landedHold(fixture: RunFixture, mid: record.ExecutionRecord) {
   return final;
 }
 
+test('an admission hold of a fresh Ticket names no Visit (#341)', async (t) => {
+  const { runFixture: fixture } = await runFixture.dirtyTicket(t, false);
+  await run.runTarget(fixture.options);
+  const { terminalReason } = record.load(fixture.commonDir, 'ticket', runFixture.TICKET)!;
+  assert.deepEqual(terminalReason!.decidedBy, { hold: 'dirty-worktree' });
+});
+
 test('a hold label failure leaves its label intent open for the next Run', async (t) => {
   const { runFixture: fixture } = await runFixture.dirtyTicket(t, false);
   const failing = runFixture.failHoldLabel(fixture);
