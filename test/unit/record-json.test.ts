@@ -149,6 +149,25 @@ function refused(kind: 'ticket' | 'epic', row: Json, problem: RegExp, what: stri
   );
 }
 
+// A hold's or a human's decidedBy that names its Visit, less that key, is an Action's, so the row still loads (#341).
+function decidedByOverVisit(row: Json, segments: Segment[]) {
+  if (!/\.decidedBy\.(hold|human)$/.test(pathOf(segments))) return false;
+  let holder = row;
+  for (const segment of segments.slice(0, -1)) holder = (holder as Record<Segment, Json>)[segment];
+  return isObject(holder) && Object.hasOwn(holder, 'vertex');
+}
+
+// A key a row may leave out: optional by its path or its payload's effect, or one whose removal leaves another form.
+function mayLeaveOut(row: Json, segments: Segment[]) {
+  const path = pathOf(segments);
+  const inPayload = payloadKey(row, path);
+  return (
+    matches(OPTIONAL, path) ||
+    (inPayload && PAYLOAD_OPTIONAL[inPayload.effect]?.includes(inPayload.key)) ||
+    decidedByOverVisit(row, segments)
+  );
+}
+
 // The rows a full fixture gives: the Execution Record itself, then one row per variant at its path.
 function executionRows(): { row: Json; under: string }[] {
   const rows = [{ row: FIXTURE.execution as Json, under: '' }];
@@ -241,10 +260,8 @@ test('a required key left out is a corrupt row naming it; an optional one left o
         if (typeof segments.at(-1) === 'number' || !path.startsWith(under)) continue;
         if (segments.length > 1 && matches(KEYED, parent)) continue;
         const broken = changed(row, segments, (holder, key) => void delete (holder as Record<Segment, Json>)[key]);
-        const inPayload = payloadKey(row, path);
         const union = unionOf(segments);
-        if (matches(OPTIONAL, path) || (inPayload && PAYLOAD_OPTIONAL[inPayload.effect]?.includes(inPayload.key)))
-          loads(kind, broken, `${path} left out`);
+        if (mayLeaveOut(row, segments)) loads(kind, broken, `${path} left out`);
         // A cursor with no Recovery Number was written before Action ids, and says so (#111).
         else if (path === 'cursor.recovery') refused(kind, broken, /Recovery Number/, path);
         else if (path === 'schemaVersion') refused(kind, broken, /unknown schemaVersion/, path);
@@ -293,11 +310,13 @@ test('a string outside its closed set is a corrupt row naming it; any other stri
   assert.ok(closed >= 10, `${closed} closed sets checked`);
 });
 
-test('a decidedBy that mixes two forms, or holds none, is a corrupt row', () => {
+test('a decidedBy that mixes two forms, holds none, or names half a Visit is a corrupt row', () => {
   for (const decidedBy of [
     { hold: null, human: 'owner' },
     {},
-    { human: 'owner', vertex: 'green', visit: 1, action: 'a', recovery: 0 },
+    { hold: null, human: 'owner', vertex: 'green', visit: 1, action: 'a', recovery: 0 },
+    // A hold or a human names the Visit it cut off with all four keys or none (#341).
+    { hold: 'dirty-worktree', vertex: 'green', visit: 1 },
   ] as Json[]) {
     const broken = changed(
       FIXTURE.execution,

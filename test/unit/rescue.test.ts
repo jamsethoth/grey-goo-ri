@@ -30,7 +30,13 @@ async function failedRed(t: TestContext) {
 }
 
 const heldNaming = (fixture: golden.GoldenFixture, ref: string) => {
-  assert.deepEqual(terminalReasonOf(fixture).decidedBy, { hold: 'rescue' });
+  assert.deepEqual(terminalReasonOf(fixture).decidedBy, {
+    hold: 'rescue',
+    vertex: 'red',
+    visit: 1,
+    action: 'red-check',
+    recovery: 1,
+  });
   assert.ok(terminalReasonOf(fixture).text.includes(ref), terminalReasonOf(fixture).text);
 };
 
@@ -104,7 +110,13 @@ test('HEAD moved since the Visit began holds, with no ref made', async (t) => {
   };
   const { held } = await interpreter.runExecution(fixture.options);
   assert.equal(held, true);
-  assert.deepEqual(terminalReasonOf(fixture).decidedBy, { hold: 'rescue' });
+  assert.deepEqual(terminalReasonOf(fixture).decidedBy, {
+    hold: 'rescue',
+    vertex: 'red',
+    visit: 1,
+    action: 'red-check',
+    recovery: 1,
+  });
   assert.deepEqual(intents(fixture.executionRecord, 'rescue'), []);
   assert.equal(inWorktree(fixture, TEST_FILE), true);
 });
