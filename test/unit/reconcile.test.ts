@@ -13,6 +13,7 @@ import * as crashResume from '../support/crash-resume.ts';
 import * as effectFixture from '../support/effect-fixture.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as namedFlow from '../support/named-flow.ts';
+import * as pinnedValue from '../support/pinned-value.ts';
 import * as resetInterruption from '../support/reset-interruption.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -185,7 +186,7 @@ test('a record at a Vertex named constructor resumes, and one the Flow lacks hol
   const lacking = golden.resolve(namedFlow.namedConfig({ ...names, first: 'builder' }));
   const ended = await interpreter.runExecution({
     ...held.options,
-    flow: lacking,
+    pinned: pinnedValue.withFlow(held.options.pinned, lacking),
     record: executionReads.loadTicket(held),
   });
   assert.deepEqual([ended.outcome, ended.held], ['needs-human', true]);

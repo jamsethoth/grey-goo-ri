@@ -412,7 +412,6 @@ test('a failed Check before the request gives failed, and no human is asked', as
     };
     configured.commands.gate = 'npm run gate';
   });
-  fixture.options.commands = fixture.config.commands;
   editRuns(fixture, (run, command) => (command === 'npm run gate' ? { ...run, code: 1, output: 'gate failed' } : run));
 
   const result = await interpreter.runExecution(fixture.options);
@@ -433,7 +432,6 @@ test('a passed Check before the request runs once however many Runs the Ticket w
     };
     configured.commands.gate = 'npm run gate';
   });
-  fixture.options.commands = fixture.config.commands;
   assert.equal((await interpreter.runExecution(fixture.options)).outcome, 'pending');
   assert.equal((await laterRun(fixture)).outcome, 'pending');
   assert.equal(fixture.shells.filter(({ command }) => command === 'npm run gate').length, 1);

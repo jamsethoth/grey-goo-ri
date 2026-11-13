@@ -26,6 +26,7 @@ import * as fakeGh from './fake-gh.ts';
 import * as fakeHarnessModule from './fake-harness.ts';
 import * as gitShell from './git-shell.ts';
 import * as golden from './golden.ts';
+import * as pinnedValue from './pinned-value.ts';
 import * as shippedFlow from './shipped-flow.ts';
 import * as tempDirectory from './temp-directory.ts';
 
@@ -266,6 +267,7 @@ export async function seedExecution(
     readTemplate: (name: string) => config.namedFile(configured.files, name),
   }).flows;
   const flow = model.fromJson(flows.default!);
+  const contract = { files: configured.files, commands: { test: 'npm test' }, testPaths: [...exampleLayer.TEST_GLOBS] };
   const executionRecord = record.createExecutionRecord({
     commonDir,
     repository: 'o/r',
@@ -282,14 +284,12 @@ export async function seedExecution(
   await assert.rejects(
     interpreter.runExecution({
       deps: { gh: options.deps.gh, git, exec, database, clock: runFixture.clock, integrity },
-      flow,
+      pinned: pinnedValue.pinnedOf(contract, flow, executionRecord.configHash),
       record: executionRecord,
       harness: runFixture.harness as unknown as runContext.Harness,
       events: events.eventLog(commonDir, {}, database),
       log: () => {},
       cwd: mainRoot,
-      commands: { test: 'npm test' },
-      testPaths: [...exampleLayer.TEST_GLOBS],
       ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
       base: 'main',
       labelPrefix: 'gg',
@@ -297,7 +297,6 @@ export async function seedExecution(
       crashAt: crashAt?.(executionRecord),
       testImmutability: options.testImmutability,
       protectedPaths: options.protectedPaths,
-      files: options.config.repository.files,
     }),
     (err) => err instanceof interpreter.CrashError,
   );

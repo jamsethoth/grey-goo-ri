@@ -73,7 +73,6 @@ test("a Persona from the repository's gg.json is pinned with its hash", async (t
     configured.files = { ...configured.files, ...layered.files };
     configured.agents.implementer!.persona = (layered.agents as GoldenConfig['agents']).implementer!.persona;
   });
-  fixture.options.files = fixture.config.files;
   await interpreter.runExecution(fixture.options);
   const [red, green] = fixture.harness.calls;
   assert.equal(red.personaBytes, '# repo implementer\n');
@@ -115,7 +114,7 @@ async function tokenRun(t: TestContext) {
   });
   const fixture = await golden.fixture(t, { responses });
   fixture.options.ticket.title = 'Add TOKEN';
-  fixture.options.commands = { test: 'npm test TOKEN' };
+  fixture.config.commands = { test: 'npm test TOKEN' };
   // Configuration reaches commit trailers and provenance cells too, each of which is public text.
   golden.configure(fixture, (configured) => {
     configured.files['TOKEN.md'] = golden.layerFile(golden.PERSONA);

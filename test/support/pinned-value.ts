@@ -24,3 +24,10 @@ export const pinnedOf = (configured: Configured, flow: model.ResolvedFlow, hash:
   flow,
   hash,
 });
+
+// The value with another Flow in place of its own, as a later Run of a changed configuration pins it.
+export const withFlow = (pinned: config.Pinned, flow: model.ResolvedFlow): config.Pinned => ({
+  ...pinned,
+  configuration: { ...pinned.configuration, flow: model.toJson(flow) },
+  flow,
+});

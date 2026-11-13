@@ -53,7 +53,7 @@ const reportActionOf = ({ actionIdentity }: Running, instance: PendingInstance, 
 const digestInput = async (runContext: RunContext): Promise<approval.DigestInput> => ({
   head: await runContext.git.headSha(runContext.record.worktree),
   body: runContext.ticket?.body ?? '',
-  configHash: runContext.configHash ?? runContext.record.configHash,
+  configHash: runContext.pinned.hash,
 });
 
 // The labels this Vertex's earlier requests left: its Await Label, and every Decide Label for it, a Decision no request
@@ -192,7 +192,7 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
     timeline,
     digest: approval.digest(await digestInput(runContext)),
     permissions,
-    approvers: runContext.approvers,
+    approvers: runContext.pinned.configuration.approvers,
     prefix,
     decisions: procedures.decisionsOf(running.action),
   });

@@ -99,7 +99,7 @@ const sectionsOf = (runContext: RunContext, state: visitScope.RunningVisit): bri
     .filter((action) => action.do === 'check' && state.checks.get(action.id)?.state === 'failed')
     .map((action) => ({
       text: action.recoverBrief
-        ? config.namedFile(runContext.files, action.recoverBrief)
+        ? config.namedFile(runContext.pinned.configuration.files, action.recoverBrief)
         : render.engineTemplate('recover-section.md'),
       id: action.id,
       kind: action.kind,
@@ -115,27 +115,34 @@ async function briefOf(runContext: RunContext, briefed: Attempt, commands: Recor
   const sections = recovering ? sectionsOf(runContext, state) : undefined;
   const name = (recovering ? state.proc.recover!.brief : action.brief) as string;
   const renderBrief = (recovering ? briefs.recoveryBrief : briefs.brief) as typeof briefs.recoveryBrief;
-  return renderBrief(nudge ? render.engineTemplate('nudge.md') : config.namedFile(runContext.files, name), {
-    ...visitScope.scopeOf(executionRecord, actionIdentity, state),
-    ticket,
-    baseBranch: base,
-    commands: commands as Record<string, string>,
-    history: executionRecord.history,
-    sections: sections!,
-    reason: nudge,
-    // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
-    // ones, read git only for a Brief that names them.
-    diff: () => attempt.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
-    // A red Visit that needed no test committed none (N6), so no test file changed since.
-    changedTestFiles: async () => {
-      const first = executionRecord.testCommits.first;
-      if (first == null) return [];
-      const { changed } = await attempt.whileBusy(runContext, () =>
-        runContext.testImmutability(executionRecord.worktree, first, executionRecord.configurationSnapshot!.testPaths),
-      );
-      return changed;
+  return renderBrief(
+    nudge ? render.engineTemplate('nudge.md') : config.namedFile(runContext.pinned.configuration.files, name),
+    {
+      ...visitScope.scopeOf(executionRecord, actionIdentity, state),
+      ticket,
+      baseBranch: base,
+      commands: commands as Record<string, string>,
+      history: executionRecord.history,
+      sections: sections!,
+      reason: nudge,
+      // The branch diff and every test file changed since the Execution's first test commit, including a fix's named
+      // ones, read git only for a Brief that names them.
+      diff: () => attempt.whileBusy(runContext, () => git.branchDiff(executionRecord.worktree, base!)),
+      // A red Visit that needed no test committed none (N6), so no test file changed since.
+      changedTestFiles: async () => {
+        const first = executionRecord.testCommits.first;
+        if (first == null) return [];
+        const { changed } = await attempt.whileBusy(runContext, () =>
+          runContext.testImmutability(
+            executionRecord.worktree,
+            first,
+            executionRecord.configurationSnapshot!.testPaths,
+          ),
+        );
+        return changed;
+      },
     },
-  });
+  );
 }
 
 // One Attempt. A completed one is never run again: runVisit routes every saved result but a retry's, which ends here.
@@ -181,7 +188,7 @@ function callOf(
   { pinned, brief, actionMarker, harness }: CallParts,
 ) {
   const agentPinned = pinned.agent as Agent;
-  const schema = JSON.parse(config.namedFile(runContext.files, action.schema));
+  const schema = JSON.parse(config.namedFile(runContext.pinned.configuration.files, action.schema));
   briefs.assertStrict(schema);
   return {
     marker: actionMarker,

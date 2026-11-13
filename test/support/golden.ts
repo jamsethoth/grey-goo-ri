@@ -319,20 +319,16 @@ function executionOptions({
   return {
     deps,
     pinned: pinnedValue.pinnedOf(planned.configured, planned.flow, planned.executionRecord.configHash),
-    flow: planned.flow,
     record: planned.executionRecord,
     harness: harness as unknown as runContext.Harness,
     events: events.eventLog(repos.commonDir, {}, planned.database),
     log: (line: string) => logs.push(line),
     cwd: repos.mainRoot,
-    commands: planned.configured.commands,
-    testPaths: planned.configured.testPaths,
     ticket: { number: TICKET, title: 'Add two numbers', body: 'Add `add(a, b)`.', branch: BRANCH },
     base: 'main',
     labelPrefix: 'gg',
     others: [] as string[],
     protectedPaths: PROTECTED_PATHS,
-    files: planned.configured.files,
     ...(fakeIntegrity && { testImmutability: fakeIntegrity.testImmutability }),
   } satisfies runContext.ExecutionOptions;
 }
@@ -396,7 +392,7 @@ export type GoldenFixture = Awaited<ReturnType<typeof fixture>>;
 // A record that has entered no Vertex yet starts at the new entry.
 export function configure(golden: GoldenFixture, edit: (configured: GoldenConfig) => void): void {
   edit(golden.config);
-  golden.flow = golden.options.flow = resolve(golden.config);
+  golden.flow = resolve(golden.config);
   golden.options.pinned = pinnedValue.pinnedOf(golden.config, golden.flow, golden.options.pinned!.hash);
   if (!golden.executionRecord.visits.size) golden.executionRecord.cursor.vertex = golden.flow.ticket.entry as string;
 }

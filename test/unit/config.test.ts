@@ -44,9 +44,9 @@ test('a Pinned Configuration takes the Resolved Flow as JSON, not with its Maps'
   assert.match(config.configHash({ ...pinned, flow: model.toJson(pinned.flow) }), /^[0-9a-f]{64}$/);
 });
 
-// gg run saves each PinnedFlow's pinned, so its type must be one the save's typed gate can read (#330, #342).
-test("a PinnedFlow's pinned is a Pinned Configuration, or null for a Flow no longer declared", () => {
-  const typed: [run.PinnedFlow['pinned']] extends [config.PinnedConfiguration | null] ? true : false = true;
+// gg run saves each PinnedFlow's configuration, so its type must be one the save's typed gate can read (#330, #342).
+test("a PinnedFlow's configuration is a Pinned Configuration", () => {
+  const typed: [run.PinnedFlow['configuration']] extends [config.PinnedConfiguration] ? true : false = true;
   assert.equal(typed, true);
 });
 
