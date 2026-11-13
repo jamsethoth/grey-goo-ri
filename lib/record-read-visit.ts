@@ -265,6 +265,7 @@ export const configurationSnapshot = object<visit.ConfigurationSnapshot>((field)
       hash: text(persona('hash')),
     })),
   )(field('persona')),
+  files: keyed(object((file) => ({ bytes: text(file('bytes')), hash: text(file('hash')) })))(field('files')),
 }));
 
 const actionOutputValue = object<visit.ActionOutputValue>((field, has) => ({

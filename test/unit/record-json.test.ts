@@ -40,7 +40,7 @@ const KEYED = [
   /^sessions\.[^.]+\.cumulativeUsage$/,
   /\.usage\.(cumulative|delta)$/,
   /^visitState\.(runs|checks)$/,
-  /^configurationSnapshot\.(inputs|commands)$/,
+  /^configurationSnapshot\.(inputs|commands|files)$/,
   /[Bb]aseline\.(idle|untracked|tests)$/,
   /\.(untracked|left)\.files$/,
   /^writeAheadLog\[\d+\]\.evidence$/,

@@ -92,6 +92,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     commands: runContext.commands!,
     testPaths: runContext.testPaths!,
     persona: agent && { name: basename(agent.persona), bytes: bytes!, hash: config.sha256(bytes!) },
+    files: {},
   });
   executionRecord.configHash = configHash;
   if (from === configHash) runContext.database.save(executionRecord);
