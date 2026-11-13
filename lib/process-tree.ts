@@ -65,9 +65,10 @@ function runHelper(
 }
 
 // Every process, listed; the listing's error is set when it is unusable.
-// ps is let finish however long a loaded machine takes: a listing cut short names nothing. lstart is the start time
-// the kernel recorded, so it is the same in every listing however late ps reads or answers; elapsed time read at an
-// unknown moment of a slow listing would leave a window as long as the listing, wide enough for a reused pid.
+// ps is let finish however long a loaded machine takes: a listing cut short names nothing. lstart is the start the
+// kernel recorded, so however late ps reads or answers it moves only with the boot time, which lib/command-cleanup.ts
+// allows for; elapsed time read at an unknown moment of a slow listing would leave a window as long as the listing,
+// wide enough for a reused pid.
 async function snapshot(override?: CommandLine, signal?: AbortSignal) {
   const listing = override ?? ['ps', ['-e', '-o', 'pid=,ppid=,lstart=,pgid=,args=']]; // POSIX only; Windows uses a job
   return commandCleanup.parseListing(
