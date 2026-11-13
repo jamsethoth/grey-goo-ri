@@ -17,6 +17,16 @@ export const ACTION_KEYS = {
   'await-approval': ['decisions'],
 };
 export type ActionKind = keyof typeof ACTION_KEYS;
+// The keys whose value names a file of the Flow's Source, by where they sit: on any Action, in a Procedure's `recover`,
+// on a Claim token, and on an Agent or a Vertex's own Agent keys. The loader reads each named file and the validator
+// records the ones each Flow uses, both from this one declaration, so a file the Pinned Configuration needs is never
+// left out of it.
+export const FILE_KEYS: Record<'action' | 'recover' | 'claimToken' | 'agent', readonly string[]> = {
+  action: [],
+  recover: [],
+  claimToken: [],
+  agent: [],
+};
 
 // What an await-approval that declares no `decisions` accepts (request 3.3).
 const DEFAULT_DECISIONS = ['approved', 'rejected'];

@@ -69,6 +69,8 @@ type ResolvedFlow = NonNullable<ReturnType<typeof validateFlows.checkFlow>>;
 // shape lib/procedures.ts gives the Resolved Flow's.
 export interface Checked {
   flows: Record<string, Omit<ResolvedFlow, 'procedures'> & { procedures: Record<string, procedures.Procedure> }>;
+  declared: ReturnType<typeof validate.validate>['declared'];
+  uses: ReturnType<typeof validate.validate>['uses'];
   errors: report.Problem[];
   warnings: report.Problem[];
 }

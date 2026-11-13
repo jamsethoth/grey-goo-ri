@@ -13,6 +13,12 @@ export { INPUT_KEYS } from './inputs.ts';
 export { CLAIM_TOKEN_FORMS, PROCEDURE_KEYS } from './procedures.ts';
 
 type Value = Record<string, unknown>;
+// What a Flow uses beyond its Resolved Flow: the files its Agents and Procedures name, which its Pinned Configuration
+// takes, and the commands its Checks run, each once, in the order the Flow first uses them.
+export interface Uses {
+  files: string[];
+  commands: string[];
+}
 // What the validator reads beside the configuration: the registered harnesses, and each schema and template a
 // Procedure names. `readTemplate`, when given, gives a template's text, so the names each template reads are checked
 // (Y20). `contract` is the repository's commands and labelPrefix, which a Flow from the user's directory runs under;
@@ -101,7 +107,7 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
   const problems = report.newReport();
   if (!referencePaths.isRecord(config)) {
     report.error(problems, '', 'not-an-object', 'the configuration must be an object');
-    return { flows: {}, ...problems };
+    return { flows: {}, declared: {}, uses: {}, ...problems };
   }
   // Null errors come first in the report but are not shared errors: the key's own check holds the Flow a null breaks.
   const nulls = report.newReport();
@@ -140,8 +146,13 @@ export function validate(config: unknown, { harnesses, readSchema, readTemplate,
   const resolved = Object.fromEntries(
     report.entries(config.flows).map(([name, declaration]) => [name, flows.checkFlow(checking, name, declaration)]),
   );
+  const uses: Record<string, Uses> = Object.fromEntries(
+    Object.keys(resolved).map((name) => [name, { files: [], commands: [] }]),
+  );
   return {
     flows: resolved,
+    declared: resolved,
+    uses,
     errors: report.dedupe([...nulls.errors, ...problems.errors]),
     warnings: report.dedupe(problems.warnings),
   };
