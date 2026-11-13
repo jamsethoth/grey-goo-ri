@@ -7,6 +7,7 @@ import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as record from '../../lib/record.ts';
 import * as terminal from '../../lib/terminal.ts';
+import type * as terminalReport from '../../lib/terminal-report.ts';
 import * as support from '../support/execution-context.ts';
 
 const push = { vertex: 'green', visit: 1, action: 'push', recovery: 0 };
@@ -322,22 +323,51 @@ test("an abandonment found by a hold's own report keeps the Visit the hold named
   });
 });
 
+// The stop a Visit that took its Edge saves: an Action's that stopped it, or none when the Visit completed.
+const EDGE_STOPS: [string, terminalReport.StopDeclaration | undefined][] = [
+  ['an Action that stopped its Visit', { outcome: 'failed', actionRef: { ...support.PUSH_ACTION_IDENTITY } }],
+  ['a Visit that completed', undefined],
+];
+
 test("an abandonment found by an end's own report names no Visit, as its Visit took its Edge (#341)", async (t) => {
-  const { context, executionRecord, fakeGh } = await support.executionContext(t);
-  executionRecord.visits.set('publish', 1);
-  executionRecord.cursor = record.terminalCursor('ready-for-qa');
-  executionRecord.terminalReason = {
-    decidedBy: { vertex: 'publish', visit: 1, action: 'pr-ready', recovery: 0 },
-    outcome: 'ok',
-    rule: null,
-    text: 'Ready.',
-  };
-  fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
-  fakeGh.fail({ matches: support.commentPost, status: 502 });
-  assert.deepEqual(await terminal.terminal(context, 'needs-human', { outcome: 'needs-human' }), {
-    outcome: 'abandoned',
-  });
-  assert.deepEqual(executionRecord.terminalReason.decidedBy, { human: support.NEEDS_HUMAN_LABEL });
+  for (const [name, stop] of EDGE_STOPS) {
+    const { context, executionRecord, fakeGh } = await support.executionContext(t);
+    executionRecord.visits.set('green', 1);
+    executionRecord.cursor = record.terminalCursor('needs-human');
+    executionRecord.terminalReason = {
+      decidedBy: { vertex: 'green', visit: 1, action: 'push', recovery: 0 },
+      outcome: 'failed',
+      rule: null,
+      text: 'It failed.',
+    };
+    fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
+    fakeGh.fail({ matches: support.commentPost, status: 502 });
+    assert.deepEqual(await terminal.terminal(context, 'needs-human', stop), { outcome: 'abandoned' }, name);
+    assert.deepEqual(executionRecord.terminalReason.decidedBy, { human: support.NEEDS_HUMAN_LABEL }, name);
+  }
+});
+
+// A run stop, this Execution's own or another's found in a backoff, cuts its Visit off without taking an Edge (D5B).
+const RUN_STOPS: [string, effectErrors.Ending][] = [
+  ['a run stop', { next: 'run-stop', failureClass: 'auth', source: 'push', detail: 'HTTP 401', reason: 'Auth.' }],
+  ['a run stop found in a backoff', { next: 'run-stopped', retrying: true, reason: 'Stopped.' }],
+];
+
+test("an abandonment found by a run stop's own report keeps the Visit the run stop cut off (#341)", async (t) => {
+  for (const [name, ending] of RUN_STOPS) {
+    const { context, executionRecord, fakeGh } = await support.executionContext(t);
+    executionRecord.visits.set('green', 1);
+    executionRecord.cursor = { ...support.PUSH_ACTION_IDENTITY, attempt: 1 };
+    context.runState.stop = { failureClass: 'auth', ticket: 21, source: 'push' };
+    fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
+    fakeGh.fail({ matches: support.commentPost, status: 502 });
+    assert.deepEqual(await terminal.endEarly(context, ending), { outcome: 'abandoned' }, name);
+    assert.deepEqual(
+      executionRecord.terminalReason?.decidedBy,
+      { human: support.NEEDS_HUMAN_LABEL, vertex: 'green', visit: 1, action: 'push', recovery: 0 },
+      name,
+    );
+  }
 });
 
 test("an abandonment found by a fault's own report keeps the Visit the fault cut off (#341)", async (t) => {
