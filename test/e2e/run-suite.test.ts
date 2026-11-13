@@ -1,8 +1,8 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as processProbe from '../support/process-probe.ts';
 import * as options from '../support/shell-case-options.ts';
@@ -111,6 +111,15 @@ function endedEarly(t: TestContext) {
   return copy;
 }
 
+// A temp directory of the copy's own, as every platform's node finds it, so what a stage leaves in it is the stage's
+// alone. Node's test runner keeps its coverage in a node-coverage-* directory there and removes it only in its own
+// teardown, which a process.exit skips (#377). A caller's GG_KEEP_TEMP would keep the launcher's own, so it is cleared.
+function ownTemp(root: string) {
+  const temp = join(root, 'tmp');
+  mkdirSync(temp);
+  return { temp, env: { TEMP: temp, TMP: temp, TMPDIR: temp, GG_KEEP_TEMP: '' } };
+}
+
 test("a coverage stage whose test ends the process early fails, and does not read an earlier run's report", (t) => {
   const copy = endedEarly(t);
   const result = copy.run(['coverage']);
@@ -118,12 +127,32 @@ test("a coverage stage whose test ends the process early fails, and does not rea
   assert.match(result.stderr, /measured no lines/);
 });
 
-test('a coverage stage that measures no lines fails', (t) => {
+test('a coverage stage whose test ends the process early leaves nothing in the temp directory', (t) => {
+  const copy = endedEarly(t);
+  const { temp, env } = ownTemp(copy.root);
+  assert.equal(copy.run(['coverage'], [], env).status, 1);
+  assert.deepEqual(readdirSync(temp), []);
+});
+
+test('a coverage stage that measures no lines fails, and leaves nothing in the temp directory', (t) => {
   const copy = launcherCopy(t);
+  const { temp, env } = ownTemp(copy.root);
   rmSync(join(copy.root, 'lib'), { recursive: true }); // nothing to measure
-  const result = copy.run(['coverage']);
+  const result = copy.run(['coverage'], [], env);
   assert.equal(result.status, 1, result.stdout);
   assert.match(result.stderr, /measured no lines/);
+  assert.deepEqual(readdirSync(temp), []);
+});
+
+test("with GG_KEEP_TEMP a coverage stage keeps its tests' temp directory and names it", (t) => {
+  const copy = endedEarly(t);
+  const { temp, env } = ownTemp(copy.root);
+  const result = copy.run(['coverage'], [], { ...env, GG_KEEP_TEMP: '1' });
+  assert.equal(result.status, 1, result.stdout);
+  const kept = /^coverage kept its temp directory: (.+)$/m.exec(result.stderr)?.[1];
+  assert.ok(kept, result.stderr);
+  assert.deepEqual(readdirSync(temp), [basename(kept)]);
+  assert.match(readdirSync(kept).join(), /node-coverage-/);
 });
 
 test('the check stage runs the format check, lint and the type check in that order, no tests, and exits 0', (t) => {
