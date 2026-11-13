@@ -210,6 +210,21 @@ test('runShell timeout kills an orphan its watcher listed, however slowly ps ans
   await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
 });
 
+// Between the watcher's listing and the timeout's, the boot time moved a second: the timeout's listing gives every
+// start a second later, gg's own among them, as Linux lists them once btime has moved (#352).
+test(
+  'runShell timeout kills an orphan its watcher listed, though the boot time moved before the timeout',
+  POSIX_CASE,
+  async (t) => {
+    const { result, pid } = await timedOutShell.timedOutOrphan(t, scratch, 'moved-boot', {
+      snapshotCommand: [process.execPath, [childScripts.SHIFTED_PS, '1']],
+    });
+    assert.equal(result.timedOut, true);
+    assert.deepEqual(result.survivors, []);
+    await waitFor(() => !alive(pid), t.signal); // a descendant that is never killed fails at the case timeout
+  },
+);
+
 // At the timeout the grandchild's pid is listed with another start time. A new process may have taken over the pid,
 // and is not the command's to kill; or the wall clock was stepped, which moves every start time ps reports, and the
 // descendant still runs. A listing cannot tell the two apart, so the descendant is named as not verified gone.
