@@ -521,7 +521,8 @@ _Avoid_: digest (alone), content hash
 **Event**:
 One recorded fact about a Run or an Execution. An Action Event records one Attempt and belongs to its Execution; a
 failed Action's carries its Failure Class and error, null on any other, and an Execution's run stop is the first of its
-Action Events whose Failure Class stops the Run. A Lifecycle Event records a Run, Execution or Visit starting or ending.
+Action Events whose Failure Class stops the Run. A Lifecycle Event records a Run, Execution or Visit starting or ending,
+or the Config Hash of a resumed Execution changing at a Vertex entry (`config_change`).
 _Avoid_: log line, entry
 
 **Trace**:

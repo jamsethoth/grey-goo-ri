@@ -227,8 +227,8 @@ export const LIFECYCLE = {
     ticket: 'required',
     vertex: 'required',
     visit: 'required',
-    from: 'optional',
-    to: 'optional',
+    from: 'required',
+    to: 'required',
   },
 } as const satisfies { [Type in keyof LifecycleFields]: Declaration<LifecycleFields[Type]> };
 
