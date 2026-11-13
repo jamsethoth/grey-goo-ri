@@ -71,9 +71,12 @@ export type DeclaredVertexJson = AsDeclared<
   Omit<ResolvedVertexJson, 'routing'>,
   Exclude<(typeof COPIED_FIELDS.vertex)[number], 'routing'>
 > & { routing: Record<string, Omit<Routing, 'target'> & { target: JsonValue }> };
-export type DeclaredFlowJson = AsDeclared<Omit<ResolvedFlowJson, 'procedures' | 'ticket'>, 'actionCap'> & {
+export type DeclaredFlowJson = AsDeclared<
+  Omit<ResolvedFlowJson, 'procedures' | 'ticket'>,
+  (typeof COPIED_FIELDS.flow)[number]
+> & {
   procedures: Record<string, DeclaredProcedureJson>;
-  ticket: AsDeclared<Omit<ResolvedFlowJson['ticket'], 'vertices'>, 'entry' | 'routes'> & {
+  ticket: AsDeclared<Omit<ResolvedFlowJson['ticket'], 'vertices'>, (typeof COPIED_FIELDS.ticket)[number]> & {
     vertices: Record<string, DeclaredVertexJson>;
   };
 };

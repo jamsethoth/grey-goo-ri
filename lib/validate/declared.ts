@@ -129,6 +129,6 @@ export function checkedFlow(
   };
   // In the order the Flow's Procedures are declared in its JSON, which puts integer-like names first, as pinning did.
   const byName = new Map(used.map((proc) => [proc.name, proc]));
-  const ordered = Object.keys(declared.procedures).flatMap((procName) => byName.get(procName) ?? []);
+  const ordered = Object.keys(declared.procedures).flatMap((procedureName) => byName.get(procedureName) ?? []);
   return { declared, resolved: resolvedFlows.resolvedFlow(declared), uses: usesOf(parts.personas, ordered) };
 }
