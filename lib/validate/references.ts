@@ -129,21 +129,10 @@ function actionReferences(found: Found[], proc: checked.CheckedProcedure, scope:
   });
 }
 
-function validCondition(condition: unknown) {
-  if (typeof condition === 'string' || typeof condition === 'boolean' || Number.isInteger(condition)) return true;
-  return (
-    referencePaths.isRecord(condition) &&
-    Object.keys(condition).length > 0 &&
-    Object.entries(condition).every(
-      ([op, value]) => (procedures.OPERATORS as string[]).includes(op) && Number.isInteger(value),
-    )
-  );
-}
-
 // One rule field's domain, or null when its path or condition does not type.
 function fieldOf(found: Found[], reference: Reference & { path: string }, condition: unknown, typing: Typing) {
   const { where, path } = reference;
-  if (!validCondition(condition)) {
+  if (!rules.isCondition(condition)) {
     const message =
       `condition on ${JSON.stringify(path)} must be a string, boolean or integer, ` +
       `or an object of ${procedures.OPERATORS.join(', ')} with integers`;

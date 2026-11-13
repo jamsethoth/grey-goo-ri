@@ -1,6 +1,6 @@
 // Rule Tables: first-match evaluation and exact analysis over the table's finite domain partition (R8, V5, N2).
 
-import type * as procedures from './procedures.ts';
+import * as procedures from './procedures.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as ruleDomain from './rule-domain.ts';
 import * as report from './validate/report.ts';
@@ -8,6 +8,18 @@ import * as report from './validate/report.ts';
 export type RuleValue = string | number | boolean;
 // A row's condition on one field: the value it must equal, or integer comparisons that must all hold.
 export type Condition = RuleValue | null | Partial<Record<procedures.Operator, number>>;
+// The conditions a row may place: a string, boolean or integer to equal, or a non-empty object of integer comparisons.
+// The validator reports any other (invalid-rule-condition), and types a row's conditions, by this one rule.
+export function isCondition(condition: unknown): condition is Condition {
+  if (typeof condition === 'string' || typeof condition === 'boolean' || Number.isInteger(condition)) return true;
+  return (
+    referencePaths.isRecord(condition) &&
+    Object.keys(condition).length > 0 &&
+    Object.entries(condition).every(
+      ([op, value]) => (procedures.OPERATORS as string[]).includes(op) && Number.isInteger(value),
+    )
+  );
+}
 export interface RuleRow {
   when: Record<string, Condition>;
   outcome: string;

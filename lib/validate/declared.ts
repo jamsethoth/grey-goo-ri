@@ -1,15 +1,16 @@
 // A checked Flow as the validator gives it: declared with each value it copies as written, which gg doctor prints
-// whether or not it resolved; its Resolved Flow, when resolved.ts can narrow it; and the files and commands it uses,
-// recorded as each Procedure and Vertex was checked (#364).
+// whether or not it resolved (#364); its Resolved Flow, built from the values its checks typed when none refused one
+// (#391); and the files and commands it uses, recorded as each Procedure and Vertex was checked.
 
 import * as config from '../config.ts';
+import * as flow from '../flow.ts';
 import type * as jsonValue from '../json-value.ts';
 import type * as model from '../model.ts';
 import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
+import type * as flows from './flows.ts';
 import * as checked from './procedures.ts';
 import * as report from './report.ts';
-import * as resolvedFlows from './resolved.ts';
 
 type JsonValue = jsonValue.JsonValue;
 type Value = Record<string, unknown>;
@@ -104,7 +105,67 @@ function usesOf(personas: string[], used: checked.CheckedProcedure[]): Uses {
   };
 }
 
-// The Flow declared from its checked parts, its Resolved Flow when every value it copies holds its type, and its uses.
+type Judged<Parts> = { [Key in keyof Parts]: Exclude<Parts[Key], report.Reported | undefined> };
+// Every part as its check typed it: none Reported, and none a check of references.ts refuses.
+const allTyped = <Parts extends object>(parts: Parts): parts is Parts & Judged<Parts> =>
+  Object.values(parts).every((part) => part !== undefined && !report.isReported(part));
+
+// Each entry narrowed by `narrow`, or undefined when any one does not narrow. Built from entries, so a name such as
+// __proto__ stays an own key (#174).
+function narrowedEntries<Declared, Narrowed>(
+  entries: Iterable<[string, Declared]>,
+  narrow: (name: string, declared: Declared) => Narrowed | undefined,
+): Record<string, Narrowed> | undefined {
+  const narrowed: [string, Narrowed][] = [];
+  for (const [name, declared] of entries) {
+    const resolved = narrow(name, declared);
+    if (resolved === undefined) return undefined;
+    narrowed.push([name, resolved]);
+  }
+  return Object.fromEntries(narrowed);
+}
+
+// What the Flow's checks typed: its own values, each Vertex's, and each used Procedure's.
+type TypedParts = flows.TypedFlow & { vertices: Map<string, flows.TypedVertex> };
+
+// A Vertex as the Resolved Flow carries it, its routing's targets as its typed routes give them.
+function resolvedVertex(
+  declared: model.DeclaredVertexJson,
+  typed: flows.TypedVertex | undefined,
+  resolved: { procedures: Map<string, procedures.Procedure>; routes: Record<string, model.RouteTarget> },
+): model.ResolvedVertexJson | undefined {
+  if (!typed || !allTyped(typed)) return undefined;
+  const proc = resolved.procedures.get(typed.procedure);
+  if (!proc) return undefined;
+  const routing: [string, model.Routing][] = [];
+  for (const [outcome, entry] of Object.entries(declared.routing)) {
+    const routed = flow.typedRoute(typed.route, resolved.routes, outcome);
+    if (!routed) return undefined;
+    routing.push([outcome, { ...entry, target: routed.target }]);
+  }
+  return { ...declared, ...typed, tests: proc.tests, routing: Object.fromEntries(routing) };
+}
+
+// The Resolved Flow from the values its checks typed, or undefined when a check refused one.
+function resolvedFlow(declared: model.DeclaredFlowJson, used: checked.CheckedProcedure[], typed: TypedParts) {
+  const { vertices, ...own } = typed;
+  if (!allTyped(own)) return undefined;
+  const byName = new Map(used.map((proc) => [proc.name, proc]));
+  const resolvedProcedures = narrowedEntries(Object.entries(declared.procedures), (name, procedure) => {
+    const parts = byName.get(name)?.typed;
+    return parts && allTyped(parts) ? { ...procedure, ...parts } : undefined;
+  });
+  if (!resolvedProcedures) return undefined;
+  const context = { procedures: new Map(Object.entries(resolvedProcedures)), routes: own.routes };
+  const resolvedVertices = narrowedEntries(Object.entries(declared.ticket.vertices), (id, vertex) =>
+    resolvedVertex(vertex, vertices.get(id), context),
+  );
+  if (!resolvedVertices) return undefined;
+  const ticket = { ...declared.ticket, entry: own.entry, routes: own.routes, vertices: resolvedVertices };
+  return { ...declared, actionCap: own.actionCap, procedures: resolvedProcedures, ticket };
+}
+
+// The Flow declared from its checked parts, its Resolved Flow when no check refused a value it copies, and its uses.
 export function checkedFlow(
   name: string,
   declaration: Value,
@@ -114,6 +175,7 @@ export function checkedFlow(
     used: checked.CheckedProcedure[];
     personas: string[];
     declaredProcedures: unknown;
+    typed: TypedParts;
   },
 ) {
   const { ticket, vertices, used } = parts;
@@ -130,5 +192,6 @@ export function checkedFlow(
   // In the order the Flow's Procedures are declared in its JSON, which puts integer-like names first, as pinning did.
   const byName = new Map(used.map((proc) => [proc.name, proc]));
   const ordered = Object.keys(declared.procedures).flatMap((procedureName) => byName.get(procedureName) ?? []);
-  return { declared, resolved: resolvedFlows.resolvedFlow(declared), uses: usesOf(parts.personas, ordered) };
+  const resolved: model.ResolvedFlowJson | undefined = resolvedFlow(declared, used, parts.typed);
+  return { declared, resolved, uses: usesOf(parts.personas, ordered) };
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as resolved from '../../lib/validate/resolved.ts';
+import * as agentChecks from '../../lib/validate/agents.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
 // The Agent keys the validator checks (#386). A case about a rule asserts which one fired and where.
@@ -9,7 +9,7 @@ import * as exampleLayer from '../support/example-layer.ts';
 const VERTICES = 'flows.default.ticket.vertices';
 
 // Every Agent key the interpreter reads is checked wherever an Agent key is written (#386), so a Run cannot fail on one
-// at Visit entry: resolved.AGENT_FIELDS is model.Agent's declared keys, and each must be here.
+// at Visit entry: agentChecks.AGENT_FIELDS is model.Agent's declared keys, and each must be here.
 const AGENT_KEY_ERRORS: Record<string, { under: boolean; code: string }> = {
   harness: { under: false, code: 'invalid-name' },
   persona: { under: true, code: 'file-not-named' },
@@ -32,19 +32,20 @@ const AGENT_SITES: Record<string, (config: exampleLayer.Layer) => { site: Record
 };
 
 test('the Agent keys checked at each site are every key the Resolved Flow declares for an Agent', () => {
-  assert.deepEqual(Object.keys(AGENT_KEY_ERRORS).sort(), Object.keys(resolved.AGENT_FIELDS).sort());
+  assert.deepEqual(Object.keys(AGENT_KEY_ERRORS).sort(), Object.keys(agentChecks.AGENT_FIELDS).sort());
 });
 
-for (const key of Object.keys(resolved.AGENT_FIELDS))
+for (const key of Object.keys(agentChecks.AGENT_FIELDS))
   for (const [where, place] of Object.entries(AGENT_SITES))
-    test(`an Agent's ${key} of the wrong type at ${where} is an error there`, () => {
+    test(`an Agent's ${key} of the wrong type at ${where} is an error there, and the Flow does not resolve`, () => {
       const config = exampleLayer.config();
       const { site, at } = place(config);
       site[key] = { wrong: true };
       const { under, code } = AGENT_KEY_ERRORS[key]!;
-      assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
-        { at: under ? `${at}.${key}` : at, code },
-      ]);
+      const { errors, flows } = exampleLayer.check(config);
+      assert.deepEqual(exampleLayer.firedRules(errors), [{ at: under ? `${at}.${key}` : at, code }]);
+      // The check that reports the key types it, so the Agent it sits in is not typed (#391).
+      assert.equal(flows.default, undefined);
     });
 
 test("an Agent with no persona is one error at the Agent, used or not, which a Vertex's own does not excuse", () => {
