@@ -19,19 +19,28 @@ const nullableText = nullable(text);
 const nullableCount = nullable(count);
 const texts = list(text);
 
-// Exactly one form, told apart by its keys (record.DecidedBy).
+const ACTION_KEYS = ['vertex', 'visit', 'action', 'recovery'];
+const actionKeys = (field: (key: string) => recordReadNode.Node) => ({
+  vertex: text(field('vertex')),
+  visit: nullableCount(field('visit')),
+  action: nullableText(field('action')),
+  recovery: count(field('recovery')),
+});
+
+// Exactly one form, told apart by its keys (record.DecidedBy). A hold or a human that cut a Visit off names it with an
+// Action's keys, all four or none (#341).
 const decidedBy = variant<record.DecidedBy>('one form of decidedBy', [
   { required: ['hold'], read: object((field) => ({ hold: nullableText(field('hold')) })) },
+  {
+    required: ['hold', ...ACTION_KEYS],
+    read: object((field) => ({ hold: nullableText(field('hold')), ...actionKeys(field) })),
+  },
   { required: ['human'], read: object((field) => ({ human: text(field('human')) })) },
   {
-    required: ['vertex', 'visit', 'action', 'recovery'],
-    read: object((field) => ({
-      vertex: text(field('vertex')),
-      visit: nullableCount(field('visit')),
-      action: nullableText(field('action')),
-      recovery: count(field('recovery')),
-    })),
+    required: ['human', ...ACTION_KEYS],
+    read: object((field) => ({ human: text(field('human')), ...actionKeys(field) })),
   },
+  { required: ACTION_KEYS, read: object(actionKeys) },
 ]);
 
 const terminalReason = object<record.TerminalReason>((field) => ({

@@ -211,11 +211,17 @@ test('decidedBy is exactly one of a hold, a human or an Action, and any of its k
     { human: 'gg:needs-human' },
     { vertex: 'red', visit: 1, action: 'agent', recovery: 0 },
     { vertex: 'red', visit: null, action: null, recovery: 0 },
+    // A hold or a human inside a Visit names it (#341).
+    { hold: 'dirty-worktree', vertex: 'green', visit: 1, action: null, recovery: 0 },
+    { human: 'gg:needs-human', vertex: 'review', visit: 2, action: 'comment', recovery: 1 },
   ];
   assert.deepEqual(
     forms.map((decidedBy) => decidedBy.hold ?? decidedBy.human ?? decidedBy.vertex),
-    ['dirty-worktree', undefined, 'gg:needs-human', 'red', 'red'],
+    ['dirty-worktree', undefined, 'gg:needs-human', 'red', 'red', 'dirty-worktree', 'gg:needs-human'],
   );
+  // @ts-expect-error a hold with half a Visit's identity
+  const halfVisit: record.DecidedBy = { hold: 'dirty-worktree', vertex: 'green' };
+  assert.ok(halfVisit);
   // @ts-expect-error two deciders at once
   const mixed: record.DecidedBy = { hold: 'dirty-worktree', human: 'gg:needs-human' };
   // @ts-expect-error no decider

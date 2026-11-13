@@ -210,7 +210,9 @@ Procedure name takes the same form. Admission reports a name that breaks the rul
   the ticket and the epic.
 - Every end carries a Terminal Reason, `ready-for-qa` included: `decidedBy` (the Vertex, Visit, Action id and Recovery
   Number of the Action whose Outcome took the Edge, or `{ hold: <name> }` when the Execution stopped before any Action, such as
-  `dirty-worktree`), `outcome` and `rule` from that Action (null for a hold), and `text`, one sentence for a human
+  `dirty-worktree`, or `{ human: <label> }` for a human's abandonment; a hold or abandonment that cuts a Visit off names
+  it beside its key, with the Vertex, Visit, Action id and Recovery Number, the Action null when the cursor is at none
+  (#341)), `outcome` and `rule` from that Action (null for a hold), and `text`, one sentence for a human
   saying why it succeeded or stopped. It is stored in the Execution Record beside the state, is the `terminalReason`
   of the ticket end event, and its text and Action Marker are posted on the ticket with the Terminal's label change,
   through the write-ahead log (a stop token's comment carries it rather than a second comment). It points to the
