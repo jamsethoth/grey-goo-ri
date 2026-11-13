@@ -32,7 +32,7 @@ export async function hold(
   },
 ): Promise<TerminalResult> {
   const { record: executionRecord } = context;
-  executionRecord.terminalReason = { decidedBy: { hold: name }, outcome: null, rule: null, text: terminalReasonText };
+  executionRecord.terminalReason = holdReason(executionRecord, name, terminalReasonText);
   executionRecord.cursor = record.terminalCursor(labels.NEEDS_HUMAN);
   return terminal(context, labels.NEEDS_HUMAN, { outcome: labels.NEEDS_HUMAN, held: true, advice, detail, fresh });
 }
@@ -43,13 +43,45 @@ export async function abandon(
   context: TerminalContext,
   { terminalReasonText, inProgress }: { terminalReasonText: string; inProgress: boolean },
 ): Promise<TerminalResult> {
-  context.record.terminalReason = {
-    decidedBy: { human: labels.labelsFor(context.labelPrefix).state(labels.NEEDS_HUMAN) },
+  const { record: executionRecord } = context;
+  executionRecord.terminalReason = {
+    decidedBy: naming(executionRecord, { human: labels.labelsFor(context.labelPrefix).state(labels.NEEDS_HUMAN) }),
     outcome: null,
     rule: null,
     text: terminalReasonText,
   };
   return terminal(context, 'abandoned', { outcome: 'abandoned', abandoned: true, inProgress });
+}
+
+// The Terminal Reason of a hold, named `name`, which names the Visit it cut off.
+export const holdReason = (
+  executionRecord: record.ExecutionRecord,
+  name: string | null,
+  text: string,
+): record.TerminalReason => ({
+  decidedBy: naming(executionRecord, { hold: name }),
+  outcome: null,
+  rule: null,
+  text,
+});
+
+// A hold or a human, with the Visit it cut off when there is one.
+function naming(executionRecord: record.ExecutionRecord, decider: { hold: string | null } | { human: string }) {
+  const cutOff = visitCutOff(executionRecord);
+  return cutOff ? { ...decider, ...cutOff } : decider;
+}
+
+// The Visit a hold or abandonment cut off, and the Action and Recovery Number the cursor is at (#341): the cursor's
+// when it is inside a Visit, else the one the Terminal Reason it replaces named, as when a hold's own report finds a
+// human's label. A fresh Execution, or the next Vertex's cursor saved before its entry, names none.
+function visitCutOff(executionRecord: record.ExecutionRecord): ReasonActionIdentity | null {
+  const { vertex, visit: visitNumber, action, recovery } = executionRecord.cursor;
+  if (visitNumber !== null && executionRecord.visits.get(vertex) === visitNumber)
+    return { vertex, visit: visitNumber, action, recovery };
+  const replaced = executionRecord.terminalReason?.decidedBy;
+  return replaced?.vertex === undefined
+    ? null
+    : { vertex: replaced.vertex, visit: replaced.visit, action: replaced.action, recovery: replaced.recovery };
 }
 
 const ON_TICKET_END = 'the error is in this comment and on ticket_end.';

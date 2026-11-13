@@ -316,6 +316,9 @@ test('no lib module but lib/terminal.ts writes a Terminal Reason decidedBy (#341
   const writers = readdirSync('lib', { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('.ts'))
     .map((path) => path.replaceAll('\\', '/'))
-    .filter((path) => path !== 'terminal.ts' && /\bdecidedBy\s*:/.test(readFileSync(join('lib', path), 'utf8')));
+    .filter(
+      (path) =>
+        path !== 'terminal.ts' && /\bdecidedBy\s*:(?!\s*DecidedBy\b)/.test(readFileSync(join('lib', path), 'utf8')),
+    );
   assert.deepEqual(writers, []);
 });

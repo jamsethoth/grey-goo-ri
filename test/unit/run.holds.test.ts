@@ -592,7 +592,14 @@ async function heldWithRescue(t: TestContext, makeRef: (head: string) => string 
   });
   await run.runTarget(fixture.options);
   const { terminalReason } = record.load(fixture.commonDir, 'ticket', runFixture.TICKET)!;
-  assert.deepEqual(terminalReason!.decidedBy, { hold: 'dirty-worktree' });
+  // The resumed record was at green's commit, so the hold names that Visit and Action (#341).
+  assert.deepEqual(terminalReason!.decidedBy, {
+    hold: 'dirty-worktree',
+    vertex: 'green',
+    visit: 1,
+    action: 'commit',
+    recovery: 0,
+  });
   return terminalReason!.text;
 }
 
