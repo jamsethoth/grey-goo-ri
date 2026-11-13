@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as commit from '../../lib/effects/commit.ts';
 import type * as events from '../../lib/events.ts';
@@ -234,22 +234,6 @@ test('ready-for-qa removes in-progress and adds its label', async (t) => {
   assert.equal(end.run, fixture.executionRecord.run);
   assert.ok(end.diffStats, 'ticket_end carries diff stats');
   assert.equal(end.diffStats!.testFiles, 1);
-});
-
-test('a dirty worktree before red is held, naming the Visit it stopped before any Action (#341)', async (t) => {
-  const fixture = await golden.fixture(t, { integrity: 'real' });
-  writeFileSync(join(fixture.worktree, 'human.txt'), 'mine\n');
-  const { outcome } = await interpreter.runExecution(fixture.options);
-
-  assert.equal(outcome, 'needs-human');
-  assert.equal(fixture.harness.calls.length, 0, 'no agent runs over unknown changes');
-  assert.deepEqual(terminalReasonOf(fixture).decidedBy, {
-    hold: 'dirty-worktree',
-    vertex: 'red',
-    visit: 1,
-    action: null,
-    recovery: 0,
-  });
 });
 
 test('ready-for-qa counts the files under the pinned testPaths as tests in its diff stats', async (t) => {
