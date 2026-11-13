@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as labels from '../../lib/labels.ts';
 import type * as model from '../../lib/model.ts';
 import * as procedures from '../../lib/procedures.ts';
+import * as procedureChecks from '../../lib/validate/procedures.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 
 // The Resolved Flow is built from the values the validator's checks judged (#391, D1 A): each check gives the typed
@@ -46,6 +47,8 @@ const FORMS: Record<string, Edit> = {
       route: { approved: { end: 'needs-human' }, rejected: { end: 'needs-replan' } },
     };
   },
+  'a failed table with a row': (layer) =>
+    (layer.procedures.implement.failed = [{ when: { 'response.reason': 'misscoped' }, outcome: 'bad-test' }]),
   'an integer rule condition': scoreRow(3),
   ...Object.fromEntries(
     procedures.OPERATORS.map((operator) => [`a ${operator} rule condition`, scoreRow({ [operator]: 2 })]),
@@ -91,6 +94,7 @@ function procedureForms(add: Add, proc: procedures.Procedure) {
   }
   add('tests', typeof proc.tests === 'string' ? proc.tests : 'named');
   for (const token of Object.values(proc.claimTokens)) add('token', tokenForm(token));
+  for (const table of procedureChecks.TABLES) if (proc[table].length) add('rows', table);
   for (const row of [...proc.passed, ...proc.failed, ...proc.stopped])
     for (const condition of Object.values(row.when))
       if (typeof condition === 'object' && condition !== null)
@@ -134,6 +138,7 @@ const CLOSED_SETS: Record<string, unknown[]> = {
   check: Object.keys(procedures.CHECK_KEYS),
   tests: ['frozen', 'write', 'named'],
   token: ['requires', 'stop', 'stop with comment'],
+  rows: procedureChecks.TABLES,
   condition: ['string', 'boolean', 'number', ...procedures.OPERATORS],
 };
 
@@ -175,6 +180,10 @@ const REFUSED: Record<string, [Edit, exampleLayer.FiredRule]> = {
     (layer) => (layer.procedures['tests-fail'].recover.max = 0),
     { at: 'procedures.tests-fail.recover', code: 'malformed-recover' },
   ],
+  'a rule condition comparing with a number that is not an integer': [
+    scoreRow({ '>': 1.5 }),
+    { at: 'procedures.review.passed[0]', code: 'invalid-rule-condition' },
+  ],
   'an empty rule condition': [
     (layer) => (layer.procedures['tests-fail'].stopped[0].when['response.reason'] = {}),
     { at: 'procedures.tests-fail.stopped[0]', code: 'invalid-rule-condition' },
@@ -184,8 +193,9 @@ const REFUSED: Record<string, [Edit, exampleLayer.FiredRule]> = {
 for (const [what, [edit, fired]] of Object.entries(REFUSED))
   test(`a Flow with ${what} is declared and does not resolve`, () => {
     const layer = exampleLayer.config();
-    edit(layer, exampleLayer.schemas());
-    const { errors, flows, declared } = exampleLayer.check(layer);
+    const files = exampleLayer.schemas();
+    edit(layer, files);
+    const { errors, flows, declared } = exampleLayer.check(layer, files);
     assert.deepEqual(exampleLayer.firedRules(errors), [fired]);
     assert.ok(declared.default, 'the Flow is declared');
     assert.equal(flows.default, undefined);

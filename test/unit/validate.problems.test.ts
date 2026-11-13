@@ -41,6 +41,15 @@ test('a reported error gives Reported, and no other value is Reported', () => {
     assert.equal(report.isReported(value), false, JSON.stringify(value));
 });
 
+// A value made of parts is Reported when any error was reported since its checks began, and only then.
+test('reportedSince gives Reported only when an error was reported after the count it is given', () => {
+  const problems = report.newReport();
+  assert.equal(report.reportedSince(problems, 0), undefined);
+  report.error(problems, 'flows', 'no-flow-declared', 'an error');
+  assert.equal(report.isReported(report.reportedSince(problems, 0)), true);
+  assert.equal(report.reportedSince(problems, 1), undefined);
+});
+
 test('the params a code takes are checked at type-check time, from the one map beside the codes', () => {
   const problems = report.newReport();
   // @ts-expect-error -- unknown-key's params name the key, not a name
