@@ -72,16 +72,16 @@ function naming(executionRecord: record.ExecutionRecord, decider: { hold: string
 }
 
 // The Visit a hold or abandonment cut off, and the Action and Recovery Number the cursor is at (#341): the cursor's
-// when it is inside a Visit; else, at a Terminal, the one the reason it replaces named when that reason has no Outcome
-// (a hold's, a human's or a fault's) and its Visit was entered, as when a hold's own report finds a human's label. A
-// reason with an Outcome lends none: an Action's Visit took its Edge, and a run stop's is not lent either, though its
-// Visit took none. A fresh Execution, or the next Vertex's cursor saved before its entry, names none; so does a fault
-// decided there.
+// when it is inside a Visit; else, at a Terminal, the one the reason it replaces named when its Visit was entered and
+// cut off, as when a hold's own report finds a human's label. A Visit that took its Edge saved its Terminal's stop with
+// the Action that stopped it, or saved none, so a stop that names no Action (a hold's, a fault's, a run stop's or an
+// abandonment's) is one that cut its Visit off. A fresh Execution, or the next Vertex's cursor saved before its entry,
+// names none; so does a fault decided there.
 function visitCutOff(executionRecord: record.ExecutionRecord): ReasonActionIdentity | null {
   const { cursor } = executionRecord;
   if (entered(executionRecord, cursor)) return actionIdentityOf(cursor);
-  const replaced = flow.isEnd(cursor.vertex) ? executionRecord.terminalReason : null;
-  const decidedBy = replaced?.outcome === null ? replaced.decidedBy : undefined;
+  const cutOff = flow.isEnd(cursor.vertex) && executionRecord.terminalStop?.actionRef === null;
+  const decidedBy = cutOff ? executionRecord.terminalReason?.decidedBy : undefined;
   return decidedBy?.vertex !== undefined && entered(executionRecord, decidedBy) ? actionIdentityOf(decidedBy) : null;
 }
 
