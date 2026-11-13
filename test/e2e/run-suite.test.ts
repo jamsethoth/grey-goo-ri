@@ -113,11 +113,11 @@ function endedEarly(t: TestContext) {
 
 // A temp directory of the copy's own, as every platform's node finds it, so what a stage leaves in it is the stage's
 // alone. Node's test runner keeps its coverage in a node-coverage-* directory there and removes it only in its own
-// teardown, which a process.exit skips (#377).
+// teardown, which a process.exit skips (#377). A caller's GG_KEEP_TEMP would keep the launcher's own, so it is cleared.
 function ownTemp(root: string) {
   const temp = join(root, 'tmp');
   mkdirSync(temp);
-  return { temp, env: { TEMP: temp, TMP: temp, TMPDIR: temp } };
+  return { temp, env: { TEMP: temp, TMP: temp, TMPDIR: temp, GG_KEEP_TEMP: '' } };
 }
 
 test("a coverage stage whose test ends the process early fails, and does not read an earlier run's report", (t) => {
