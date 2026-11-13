@@ -6,6 +6,7 @@ import * as events from '../../lib/events.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
 import * as terminalReport from '../../lib/terminal-report.ts';
+import type * as visit from '../../lib/visit.ts';
 import * as support from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
 import * as golden from '../support/golden.ts';
@@ -168,6 +169,8 @@ test("a Terminal's Actions are named for its report: end, fault, hold or abandon
 test('a fault report whose comment cannot be rendered fails, rather than landing without its comment', async (t) => {
   const { context, executionRecord, fakeGh, commonDir } = await support.executionContext(t);
   executionRecord.terminalReason = { decidedBy: { hold: null }, outcome: null, rule: null, text: 'It faulted.' };
+  // The stopped Visit's snapshot pins no stopped.md, so its comment cannot render.
+  executionRecord.configurationSnapshot = { files: {} } as unknown as visit.ConfigurationSnapshot;
   const stop = {
     outcome: 'fault',
     error: 'boom',

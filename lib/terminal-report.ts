@@ -157,7 +157,7 @@ function commentBody(
   // validation.
   if (stop?.stopped && stop.response && stop.commentTemplate)
     return render.publicBody(
-      config.namedFile(executionRecord.configurationSnapshot?.files, stop.commentTemplate),
+      config.namedFile(executionRecord.configurationSnapshot!.files, stop.commentTemplate),
       {
         ...visitScope.visitScope(executionRecord, stop.actionRef!),
         response: stop.response,
