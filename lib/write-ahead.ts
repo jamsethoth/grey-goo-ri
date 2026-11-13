@@ -1,14 +1,16 @@
 // The write-ahead log an Execution Record keeps: the intent, evidence and completion of every side effect, by its
 // Action Marker, so Reconciliation can tell which effects landed (request 3.5). The State Database's writes append to
 // it (record.createStateDatabase); these read it.
+import type * as approvalAction from './approval-action.ts';
 import type * as effects from './effects/index.ts';
 import type * as integrity from './integrity.ts';
 import type * as jsonValue from './json-value.ts';
 import type * as record from './record.ts';
 import type * as visit from './visit.ts';
 
-// What an intent saves ahead of its effect: an Effect's payload (lib/effects/), or an agent Attempt's baseline.
-export type Payload = effects.Payload | { baseline: integrity.IntegrityBaseline };
+// What an intent saves ahead of its effect: an Effect's payload (lib/effects/), a consumed Decision's, or an agent
+// Attempt's baseline.
+export type Payload = effects.Payload | approvalAction.Consumption | { baseline: integrity.IntegrityBaseline };
 
 // What a side effect leaves as proof, by its effect's own fields: a sha, an id, a url. A settled Action's also holds
 // its Resolution's fields, which the next Attempt reads.

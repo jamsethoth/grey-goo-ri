@@ -405,6 +405,27 @@ test('lifecycle events validate their required fields per type', () => {
   assert.throws(() => events.lifecycleEvent('stage_call' as events.LifecycleType, { run: 'r1' }), /\bstage_call\b/);
 });
 
+// The change a resumed Execution logs at its next Vertex entry names both hashes, so neither may be left out (#368).
+test('a config_change event holds exactly its declared fields, each of them required', () => {
+  const given = {
+    run: 'r1',
+    execution: 'e1',
+    ticket: 7,
+    vertex: 'publish',
+    visit: 1,
+    from: 'a'.repeat(64),
+    to: 'b'.repeat(64),
+  };
+  const built = events.lifecycleEvent('config_change', given);
+  assert.deepEqual(built, { type: 'config_change', ...given });
+  assert.deepEqual(Object.keys(built), ['type', ...Object.keys(given)]);
+  for (const field of Object.keys(given)) {
+    const missing: Partial<typeof given> = { ...given };
+    delete missing[field as keyof typeof given];
+    assert.throws(() => events.lifecycleEvent('config_change', missing), new RegExp(`\\b${field}\\b`), field);
+  }
+});
+
 // A type named after an Object member is no lifecycle type, though LIFECYCLE[type] finds something for it.
 for (const type of ['toString', 'constructor', '__proto__']) {
   test(`lifecycleEvent refuses the type ${type}, which only Object.prototype defines`, () => {

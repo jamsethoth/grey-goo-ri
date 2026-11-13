@@ -81,6 +81,8 @@ export interface RunStoppedResolution extends ResolutionBase {
   row: 'run-stopped';
   failureClass: string;
   runStopTicket: number;
+  // The remote Action whose failure stopped the Run, when the stop names one.
+  source: string | null;
 }
 
 // An Action's result, by the row that decided it.
@@ -156,6 +158,8 @@ export interface VisitState {
 export interface ConfigurationSnapshot {
   vertex: string;
   visit: number;
+  // The Config Hash the Visit entered under, which its Action Events carry though a later Run resumes it.
+  configHash: string;
   agent:
     | ({ harness: string; model: string | null; effort: string | null; persona: string } & Record<
         string,

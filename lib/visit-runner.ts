@@ -72,9 +72,13 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
   const { agent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
   // The Persona's bytes from the Source that names it; a Vertex without an Agent (publish) pins none.
   const bytes = agent && config.namedFile(runContext.files, agent.persona);
+  const from = executionRecord.configHash;
+  // The Run's Config Hash; a caller that names none runs the Execution under its record's.
+  const configHash = runContext.configHash ?? from;
   executionRecord.configurationSnapshot = structuredClone({
     vertex: vertexId,
     visit: visitNumber,
+    configHash,
     agent,
     access,
     procedure: { name: procedure, hash: model.procedure(flow, procedure).hash },
@@ -86,10 +90,23 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     testPaths: runContext.testPaths!,
     persona: agent && { name: basename(agent.persona), bytes: bytes!, hash: config.sha256(bytes!) },
   });
-  // shortcut: nothing reloads configuration mid-Execution yet, so a change is not detected or logged at Vertex entry;
-  // log it against the Config Hash when gg run reloads between Vertices (#184).
-  runContext.database.save(executionRecord);
+  executionRecord.configHash = configHash;
+  if (from === configHash) runContext.database.save(executionRecord);
+  else saveConfigChange(runContext, from);
   return false;
+}
+
+// A later Run's configuration takes effect at the Vertex entry after it resumed the Execution, logged as a change
+// (request 3.5, #368). shortcut: nothing reloads configuration within a Run, so only a Run's admission changes it;
+// a reload between Vertices (#184) logs its change here too.
+function saveConfigChange(runContext: RunContext, from: string) {
+  const { record: executionRecord } = runContext;
+  const { vertex, visit, configHash: to } = executionRecord.configurationSnapshot!;
+  const { execution, ticket } = executionRecord;
+  runContext.database.save(executionRecord, () =>
+    runContext.events('config_change', { run: runContext.run, execution, ticket, vertex, visit, from, to }),
+  );
+  runContext.log(`#${ticket} config ${from.slice(0, 12)} -> ${to.slice(0, 12)} at ${vertex}`);
 }
 
 // A rollback (an Integrity Violation) is safe only when the agent made every change (request 3.5), and any Vertex's

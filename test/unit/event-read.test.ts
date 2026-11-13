@@ -111,6 +111,16 @@ const SHAPES: Record<string, (log: ReturnType<typeof events.eventLog>) => void> 
       count: 1,
       spent: [{ edge: 'reviewer->implementer-fix:changes' }, { vertex: 'implementer-fix' }],
     }),
+  config_change: (log) =>
+    log('config_change', {
+      run: 'r1',
+      execution: 'e1',
+      ticket: 7,
+      vertex: 'publish',
+      visit: 1,
+      from: 'a'.repeat(64),
+      to: 'b'.repeat(64),
+    }),
 };
 
 const rowsOf = (commonDir: string): EventRow[] =>
