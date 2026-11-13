@@ -373,6 +373,28 @@ test('a held completion replaces the saved result with its Event, or leaves none
   assert.equal(visitScope.outputOf(saved, IDENTITY)?.value.cleanup?.confirmed, true);
 });
 
+test('a crash after a held completion leaves its replaced result saved, with its one Event', async (t) => {
+  const { context, executionRecord } = await support.executionContext(t);
+  const actionMarker = context.markerOf(IDENTITY);
+  record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
+  record.complete(executionRecord, actionMarker, {
+    evidence: { ...tableResolution('stop'), row: 'cleanup-unconfirmed' },
+  });
+  context.crashAt = { marker: actionMarker, point: 'after-completion' };
+  await assert.rejects(
+    attempt.runHeld(context, {
+      actionIdentity: IDENTITY,
+      actionMarker,
+      work: async () => null,
+      finish: () => ({ resolution: tableResolution('advance') }),
+    }),
+    effectErrors.CrashError,
+  );
+  const saved = record.load(executionRecord.commonDir, 'ticket', support.TICKET)!;
+  assert.equal(saved.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence?.direction, 'advance');
+  assert.equal(support.actionEvents(saved).length, 1);
+});
+
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // What only lib/attempt.ts does for an Attempt, and what the other modules a rule names may do for what is no Attempt:
 // the reset's own completion (lib/effects/side-effect.ts), Reconciliation's finish of a reset, the rescue output the
