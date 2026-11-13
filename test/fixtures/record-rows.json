@@ -115,6 +115,7 @@
     "configurationSnapshot": {
       "vertex": "green",
       "visit": 2,
+      "configHash": "hash-1",
       "agent": { "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer", "tools": ["read"] },
       "access": "write",
       "procedure": { "name": "implement", "hash": "procedure-hash" },
