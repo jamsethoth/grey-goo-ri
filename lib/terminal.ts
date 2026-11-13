@@ -73,19 +73,28 @@ function naming(executionRecord: record.ExecutionRecord, decider: { hold: string
 
 // The Visit a hold or abandonment cut off, and the Action and Recovery Number the cursor is at (#341): the cursor's
 // when it is inside a Visit; else, at a Terminal, the one the reason it replaces named when that reason has no Outcome
-// (a hold's, a human's or a fault's), as when a hold's own report finds a human's label. A reason with an Outcome lends
-// none, since its Visit took its Edge. A fresh Execution, or the next Vertex's cursor saved before its entry, names
-// none.
+// (a hold's, a human's or a fault's) and its Visit was entered, as when a hold's own report finds a human's label. A
+// reason with an Outcome lends none: an Action's Visit took its Edge, and a run stop's is not lent either, though its
+// Visit took none. A fresh Execution, or the next Vertex's cursor saved before its entry, names none; so does a fault
+// decided there.
 function visitCutOff(executionRecord: record.ExecutionRecord): ReasonActionIdentity | null {
-  const { vertex, visit: visitNumber, action, recovery } = executionRecord.cursor;
-  if (visitNumber !== null && executionRecord.visits.get(vertex) === visitNumber)
-    return { vertex, visit: visitNumber, action, recovery };
-  const replaced = flow.isEnd(vertex) ? executionRecord.terminalReason : null;
+  const { cursor } = executionRecord;
+  if (entered(executionRecord, cursor)) return actionIdentityOf(cursor);
+  const replaced = flow.isEnd(cursor.vertex) ? executionRecord.terminalReason : null;
   const decidedBy = replaced?.outcome === null ? replaced.decidedBy : undefined;
-  return decidedBy?.vertex === undefined
-    ? null
-    : { vertex: decidedBy.vertex, visit: decidedBy.visit, action: decidedBy.action, recovery: decidedBy.recovery };
+  return decidedBy?.vertex !== undefined && entered(executionRecord, decidedBy) ? actionIdentityOf(decidedBy) : null;
 }
+
+// Whether the Visit an identity names was entered: the cursor of a Visit not yet entered names its number already.
+const entered = (executionRecord: record.ExecutionRecord, { vertex, visit: visitNumber }: ReasonActionIdentity) =>
+  visitNumber !== null && executionRecord.visits.get(vertex) === visitNumber;
+
+const actionIdentityOf = ({ vertex, visit: visitNumber, action, recovery }: ReasonActionIdentity) => ({
+  vertex,
+  visit: visitNumber,
+  action,
+  recovery,
+});
 
 const ON_TICKET_END = 'the error is in this comment and on ticket_end.';
 
