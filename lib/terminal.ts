@@ -75,8 +75,8 @@ function naming(executionRecord: record.ExecutionRecord, decider: { hold: string
 // when it is inside a Visit; else, at a Terminal, the one the reason it replaces named when its Visit was entered and
 // cut off, as when a hold's own report finds a human's label. A Visit that took its Edge saved its Terminal's stop with
 // the Action that stopped it, or saved none, so a stop that names no Action (a hold's, a fault's, a run stop's or an
-// abandonment's) is one that cut its Visit off. A fresh Execution, or the next Vertex's cursor saved before its entry,
-// names none; so does a fault decided there.
+// abandonment's) cut off the Visit its reason names, when that Visit was entered. A fresh Execution, or the next
+// Vertex's cursor saved before its entry, names none; so does a fault or run stop decided there or at a Terminal.
 function visitCutOff(executionRecord: record.ExecutionRecord): ReasonActionIdentity | null {
   const { cursor } = executionRecord;
   if (entered(executionRecord, cursor)) return actionIdentityOf(cursor);
