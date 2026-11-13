@@ -16,7 +16,7 @@ import * as labels from './labels.ts';
 import type * as marker from './marker.ts';
 import * as model from './model.ts';
 import * as outcome from './outcome.ts';
-import type * as procedures from './procedures.ts';
+import * as procedures from './procedures.ts';
 import * as reconcile from './reconcile.ts';
 import type * as record from './record.ts';
 import * as rescue from './rescue.ts';
@@ -69,10 +69,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     !!executionRecord.visitState;
   executionRecord.visits.set(vertexId, visitNumber);
   if (resuming) return true;
-  const { agent: resolvedAgent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
-  // shortcut: the validator checks only an Agent's harness and access, so its model, effort and persona are as
-  // declared, read here as the Harness contract types them; check them in the validator (#386).
-  const agent = resolvedAgent as visit.ConfigurationSnapshot['agent'];
+  const { agent, access, procedure, outcomes, route, inputs: declared } = model.vertex(flow, vertexId);
   // The Persona's bytes from the Source that names it; a Vertex without an Agent (publish) pins none.
   const bytes = agent && config.namedFile(runContext.pinned.configuration.files, agent.persona);
   const from = executionRecord.configHash;
@@ -91,6 +88,7 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
     commands: configuration.commands,
     testPaths: configuration.testPaths,
     persona: agent && { name: basename(agent.persona), bytes: bytes!, hash: config.sha256(bytes!) },
+    files: config.namedFiles(configuration.files, procedures.procedureFiles(model.procedure(flow, procedure))),
   });
   executionRecord.configHash = configHash;
   if (from === configHash) runContext.database.save(executionRecord);

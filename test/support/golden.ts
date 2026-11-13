@@ -393,6 +393,6 @@ export type GoldenFixture = Awaited<ReturnType<typeof fixture>>;
 export function configure(golden: GoldenFixture, edit: (configured: GoldenConfig) => void): void {
   edit(golden.config);
   golden.flow = resolve(golden.config);
-  golden.options.pinned = pinnedValue.pinnedOf(golden.config, golden.flow, golden.options.pinned!.hash);
+  golden.options.pinned = pinnedValue.pinnedOf(golden.config, golden.flow, golden.options.pinned.hash);
   if (!golden.executionRecord.visits.size) golden.executionRecord.cursor.vertex = golden.flow.ticket.entry as string;
 }

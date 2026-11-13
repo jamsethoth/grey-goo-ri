@@ -426,10 +426,8 @@ test("an Agent with no harness is one error at the Agent, which a Vertex's own h
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     { at: 'agents.reviewer', code: 'harness-unset' },
     { at: 'agents.senior', code: 'harness-unset' },
-    {
-      at: `${VERTICES}.red`,
-      code: 'harness-unset',
-    },
+    { at: `${VERTICES}.red`, code: 'harness-unset' },
+    { at: `${VERTICES}.red`, code: 'required-key-missing' },
   ]);
 });
 
@@ -438,6 +436,7 @@ test('an empty Agent is one error at the Agent, not one per Vertex that uses it'
   config.agents.senior = {};
   assert.deepEqual(exampleLayer.firedRules(exampleLayer.check(config).errors), [
     { at: 'agents.senior', code: 'harness-unset' },
+    { at: 'agents.senior', code: 'required-key-missing' },
   ]);
 });
 

@@ -21,8 +21,8 @@ import type * as writeAhead from './write-ahead.ts';
 type DiffStatsFile = Parameters<typeof events.diffStats>[0][number];
 
 // What a Terminal reads beside the effects' context, which runExecution builds (lib/run-context.ts): the Event log and
-// Run its ticket_end goes to, the Source files a stop token's comment renders, and how each Terminal Action is entered
-// and marked.
+// Run its ticket_end goes to, and how each Terminal Action is entered and marked. A stop token's comment renders from
+// the stopped Visit's Configuration Snapshot.
 export interface TerminalContext extends sideEffect.EffectContext {
   gh: github.Gh;
   git: effects.EvidenceGit & {
@@ -30,7 +30,6 @@ export interface TerminalContext extends sideEffect.EffectContext {
   };
   events: ReturnType<typeof events.eventLog>;
   run: string;
-  pinned: config.Pinned;
   publicText: (text: string) => string;
   enter: (actionIdentity: marker.ActionIdentity) => Promise<void>;
   markerOf: (actionIdentity: marker.ActionIdentity) => string;
@@ -158,7 +157,7 @@ function commentBody(
   // validation.
   if (stop?.stopped && stop.response && stop.commentTemplate)
     return render.publicBody(
-      config.namedFile(context.pinned.configuration.files, stop.commentTemplate),
+      config.namedFile(executionRecord.configurationSnapshot!.files, stop.commentTemplate),
       {
         ...visitScope.visitScope(executionRecord, stop.actionRef!),
         response: stop.response,

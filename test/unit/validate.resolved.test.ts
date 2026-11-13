@@ -39,6 +39,8 @@ const FORMS: Record<string, Edit> = {
     delete red.use;
     Object.assign(red, { harness: 'fake', persona: 'implementer.md', access: 'workspace-write' });
   },
+  'an Agent that names its model, effort and network': (layer) =>
+    Object.assign(layer.agents.implementer, { model: 'a-model', effort: 'high', network: false }),
   'a stop Claim token with no comment': (layer) => delete layer.procedures['tests-fail'].claimTokens.blocked.comment,
   'an await-approval Action': (layer) => {
     layer.procedures.approval = { actions: [{ id: 'ask', do: 'await-approval' }] };

@@ -1,9 +1,11 @@
 // The Visit's saved shapes, which the Execution Record nests: the Configuration Snapshot a Visit entered with, its
 // Vertex inputs, its progress (VisitState) and each Action's Resolution, by the row that decided it.
 import type * as commandCleanup from './command-cleanup.ts';
+import type * as config from './config.ts';
 import type * as integrity from './integrity.ts';
 import type * as events from './events.ts';
 import type * as jsonValue from './json-value.ts';
+import type * as model from './model.ts';
 import type * as runContext from './run-context.ts';
 
 // The rule identity { table, row }: a fixed row by name, or a Procedure table's row by index, `otherwise`, or null
@@ -160,12 +162,7 @@ export interface ConfigurationSnapshot {
   visit: number;
   // The Config Hash the Visit entered under, which its Action Events carry though a later Run resumes it.
   configHash: string;
-  agent:
-    | ({ harness: string; model: string | null; effort: string | null; persona: string } & Record<
-        string,
-        jsonValue.JsonValue
-      >)
-    | null;
+  agent: model.Agent | null;
   access: string;
   procedure: { name: string; hash: string };
   outcomes: jsonValue.JsonValue;
@@ -175,6 +172,8 @@ export interface ConfigurationSnapshot {
   commands: Record<string, jsonValue.JsonValue>;
   testPaths: string[];
   persona: { name: string; bytes: string; hash: string } | null;
+  // Each file the Procedure names, by bytes and hash, which every read in the Visit reads (request 3.5, #381).
+  files: config.SourceFiles;
 }
 
 // What an earlier Attempt left for the next Brief to read: a hold, a rescue or an Integrity Violation's rollback.

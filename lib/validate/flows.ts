@@ -46,7 +46,7 @@ export interface FlowContext {
 // A Vertex's values the Resolved Flow carries, each as its check typed it, or Reported where it reported.
 export interface TypedVertex {
   use: string | null | Reported;
-  agent: model.Agent | null | Reported;
+  agent: model.Agent | null | undefined | Reported;
   procedure: string | Reported;
   access: string | Reported;
   route: Record<string, model.RouteTarget> | Reported;
@@ -173,13 +173,13 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
   if (!referencePaths.isRecord(vertex))
     return report.error(problems, location, 'not-an-object', 'a Vertex must be an object');
   report.unknownKeys(problems, vertex, [...VERTEX_KEYS, ...agentChecks.AGENT_KEYS], location);
-  const ownAccess = agentChecks.checkAccess(problems, `${location}.access`, vertex.access);
+  const ownKeys = agentChecks.checkAgentKeys(problems, location, vertex);
   const proc = checking.procedures.get(vertex.procedure as string);
   const procedure = checkProcedureName(checking, location, vertex.procedure);
   if (proc && !state.used.has(proc.name)) state.used.set(proc.name, proc);
   if (checking.failedAgents.has(vertex.use)) state.held = true;
   const use = agentChecks.checkUse(checking, location, vertex.use);
-  const agent = agentChecks.vertexAgent(checking, { id, location }, vertex, { use, access: ownAccess, proc });
+  const agent = agentChecks.vertexAgent(checking, { id, location }, vertex, { use, keys: ownKeys, proc });
   state.personas.push(...procedures.filesAt('agent', agent.declared));
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   const bound = routes.checkVertexRoutes(problems, location, vertex, state.vertices);

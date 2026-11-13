@@ -108,7 +108,7 @@ leverage and a change lands in one place (locality).
 | `lib/remote-effects.ts` | a remote Effect's retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
 | `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
 | `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop |
-| `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs, and the keys that name a file (`FILE_KEYS`), which the loader and the validator both read (Procedures themselves are configuration) |
+| `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs, and the keys that name a file (`FILE_KEYS`), which the loader and the validator both read, and the files a Procedure names (`procedureFiles`), which a Visit pins (Procedures themselves are configuration) |
 | `lib/briefs.ts` | Brief context and rendering, Structured Response schema and response validation |
 | `lib/outcome.ts` | the Transition Table and Resolution Policy |
 | `lib/rules.ts` | Rule Table first-match evaluation and admission analysis (unreachable rows, overlaps, work limit) |

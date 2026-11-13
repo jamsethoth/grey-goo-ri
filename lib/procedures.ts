@@ -36,6 +36,21 @@ export function filesAt(place: FilePlace, declared: unknown): string[] {
     .map((key) => values.get(key))
     .filter((name): name is string => typeof name === 'string' && name !== '');
 }
+const objectValues = (value: unknown) =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.values(value) : [];
+// The file names a Procedure declares, each once: on each Action whatever its kind, in its `recover`, and on each Claim
+// token whatever its form, held as declared or as the Map the Flow in memory keeps.
+export function procedureFiles(procedure: unknown): string[] {
+  const { actions, recover, claimTokens } = (procedure ?? {}) as Record<string, unknown>;
+  const tokens = claimTokens instanceof Map ? [...claimTokens.values()] : objectValues(claimTokens);
+  return [
+    ...new Set([
+      ...(Array.isArray(actions) ? actions : []).flatMap((action) => filesAt('action', action)),
+      ...filesAt('recover', recover),
+      ...tokens.flatMap((token) => filesAt('claimToken', token)),
+    ]),
+  ];
+}
 
 // What an await-approval that declares no `decisions` accepts (request 3.3).
 const DEFAULT_DECISIONS = ['approved', 'rejected'];
