@@ -27,7 +27,7 @@ const JSON_VALUE = [
   /^configurationSnapshot\.(outcomes|route|routes)$/,
   /^configurationSnapshot\.commands\.[^.]+$/,
   /^configurationSnapshot\.inputs\.[^.]+\.value$/,
-  /^configurationSnapshot\.agent\.(?!(harness|model|effort|persona)$)[^.]+$/,
+  /^configurationSnapshot\.agent\.(?!(harness|model|effort|persona|network)$)[^.]+$/,
   /^visitState\.call\.harnessResult\.(sessionInit|permissionDenials|commandsRun)$/,
   /^outputs\[\d+\]\.value\.response$/,
   /^outputs\[\d+\]\.value\.evidence\.(?!(command|output)$)[^.]+$/,

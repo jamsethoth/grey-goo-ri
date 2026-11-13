@@ -29,7 +29,7 @@ test('runExecution takes the hashed configuration as one value, with no part of 
 
 test("the Run context's Flow is the Flow of the value it runs under", async (t) => {
   const fixture = await golden.fixture(t);
-  const pinned = { ...fixture.options.pinned!, flow: golden.resolve(golden.goldenConfig()) };
+  const pinned = { ...fixture.options.pinned, flow: golden.resolve(golden.goldenConfig()) };
   const runContext = runContextModule.createRunContext({ ...fixture.options, pinned });
   assert.equal(runContext.flow, pinned.flow);
 });

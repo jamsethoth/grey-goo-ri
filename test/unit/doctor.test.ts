@@ -80,7 +80,7 @@ test('an error line ends in its code', async () => {
 
 test('a warning line ends in its code', async () => {
   const config = example();
-  config.agents.spare = { harness: 'fake' };
+  config.agents.spare = { harness: 'fake', persona: 'implementer.md' };
   const { text } = await doctor.doctor({ config: sources(config), ...DEPS });
   assert.ok(text.includes('\nwarning: agents.spare: agent spare is used by no Vertex [unused-agent]\n'), text);
 });
@@ -213,6 +213,14 @@ test("gg doctor reports an Agent's access outside the Permission Intents at agen
     ),
     text,
   );
+});
+
+test("gg doctor reports an Agent's model that is not a string at agents.<name>.model", async () => {
+  const config = example();
+  config.agents.implementer.model = 7;
+  const { text, exitCode } = await doctor.doctor({ config: sources(config), ...DEPS });
+  assert.equal(exitCode, 1);
+  assert.match(text, /\nerror: agents\.implementer\.model: .*\[not-a-string\]\n/);
 });
 
 test('gg doctor reads schemas from the loaded Layer files', async () => {

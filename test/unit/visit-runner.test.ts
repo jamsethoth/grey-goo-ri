@@ -99,7 +99,7 @@ test("a held completion's retry clears the held result, and one with none re-run
 // A Visit reads what the Config Hash covers from the value carrying that hash, so it pins what was hashed (#369).
 test('a Visit pins the Declared Commands, test paths and Config Hash of the value it runs under', async (t) => {
   const fixture = await golden.fixture(t);
-  const given = fixture.options.pinned!;
+  const given = fixture.options.pinned;
   const commands = { ...given.configuration.commands, lint: 'npm run lint' };
   const testPaths = [...given.configuration.testPaths, 'extra/**'];
   const pinned = { ...given, configuration: { ...given.configuration, commands, testPaths }, hash: 'pinned-hash' };

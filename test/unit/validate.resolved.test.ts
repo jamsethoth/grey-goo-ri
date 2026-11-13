@@ -64,6 +64,15 @@ const ELEMENTS: Record<string, (string | number)[]> = {
   "an Agent's harness": ['ticket', 'vertices', 'red', 'agent', 'harness'],
 };
 
+for (const key of Object.keys(resolved.AGENT_FIELDS))
+  test(`a declared Flow whose Agent's ${key} has the wrong type does not resolve`, () => {
+    const { declared, places } = placed();
+    const agent = places.vertex.agent;
+    assert.ok(typeof agent === 'object' && agent !== null);
+    Reflect.set(agent, key, WRONG);
+    assert.equal(resolved.resolvedFlow(declared), undefined);
+  });
+
 for (const [element, path] of Object.entries(ELEMENTS))
   test(`a declared Flow with ${element} of the wrong type does not resolve`, () => {
     const { declared } = placed();

@@ -50,7 +50,8 @@ function checkAgents(problems: report.Report, config: Value, harnesses: unknown)
     else {
       report.unknownKeys(problems, agent, flows.AGENT_KEYS, location);
       flows.checkHarness({ report: problems, harnesses }, { agent: name }, agent.harness, location);
-      flows.checkAccess(problems, `${location}.access`, agent.access);
+      flows.checkPersona(problems, { agent: name }, agent.persona, location);
+      flows.checkAgentKeys(problems, location, agent);
     }
     if (problems.errors.length > before) failedAgents.add(name);
     if (!usedAgents.has(name))
