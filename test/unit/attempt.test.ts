@@ -392,7 +392,11 @@ test('a crash after a held completion leaves its replaced result saved, with its
   );
   const saved = record.load(executionRecord.commonDir, 'ticket', support.TICKET)!;
   assert.equal(saved.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence?.direction, 'advance');
-  assert.equal(support.actionEvents(saved).length, 1);
+  assert.deepEqual(
+    support.actionEvents(saved).map((event) => event.direction),
+    ['advance'],
+    'its one Event is the replacing result',
+  );
 });
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
