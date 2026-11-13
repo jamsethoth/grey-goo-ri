@@ -61,7 +61,8 @@ export function evaluate(table: { rows: RuleRow[] }, input: unknown) {
   return i < 0 ? null : i;
 }
 
-export const conditions = (when: Record<string, Condition>) =>
+// gg doctor prints a held Flow's rows as written, so a condition may be any value.
+export const conditions = (when: Record<string, unknown>) =>
   Object.entries(when)
     .flatMap(([path, condition]) =>
       // An empty object or a list is no comparison, so it shows whole rather than vanishing from the row (#305).

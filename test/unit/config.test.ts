@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as config from '../../lib/config.ts';
 import * as doctor from '../../lib/doctor.ts';
 import * as model from '../../lib/model.ts';
+import * as procedures from '../../lib/procedures.ts';
 import type * as run from '../../lib/run.ts';
 import * as settings from '../../lib/settings.ts';
 import * as exampleLayer from '../support/example-layer.ts';
@@ -36,7 +37,7 @@ test('hashOf refuses a Map, which it would otherwise hash as an empty object', (
 
 // The Flow is pinned as the validator's JSON, so tsc refuses a Resolved Flow with its Maps before the hash does (#330).
 test('a Pinned Configuration takes the Resolved Flow as JSON, not with its Maps', () => {
-  const json = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: null, vertices: {} } };
+  const json = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: 'red', routes: {}, vertices: {} } };
   const pinned = { flow: model.fromJson(json), files: {}, harnesses: {}, commands: {}, testPaths: [] };
   // @ts-expect-error -- a Resolved Flow holds Maps; model.toJson converts it first
   assert.throws(() => config.configHash(pinned), /flow\.procedures is a Map/);
@@ -328,29 +329,34 @@ test('a gg.json that is not JSON is a load error naming the file, line and colum
   }
 });
 
-// The Config Hash fingerprints a Flow's content, not its source (Q25): a file the Flow does not use stays out of it.
-test('usedFiles keeps only the files a Resolved Flow names', () => {
-  const files = Object.fromEntries(
-    ['persona.md', 'brief.md', 'a.schema.json', 'body.md', 'fix.md', 'again.md', 'stopped.md', 'unused.md'].map(
-      (name) => [name, sourceFile(name)],
-    ),
-  );
-  const flow = {
-    procedures: {
-      probe: {
-        actions: [
-          { id: 'ask', do: 'agent', brief: 'brief.md', schema: 'a.schema.json' },
-          { id: 'test', do: 'check', recoverBrief: 'fix.md' },
-          { id: 'pr', do: 'pr-upsert', body: 'body.md' },
-        ],
-        recover: { max: 1, brief: 'again.md' },
-        claimTokens: { halt: { stop: true, comment: 'stopped.md' }, ok: { requires: [] } },
-      },
-    },
-    ticket: { vertices: { red: { agent: { persona: 'persona.md' } }, publish: { agent: null } } },
+// Which keys name a file is declared once (#364): the loader reads a file at every key procedures.FILE_KEYS declares,
+// wherever the key sits, so a missing one stays a load error.
+const FILE_PLACES: Record<keyof typeof procedures.FILE_KEYS, (key: string, name: string) => Record<string, unknown>[]> =
+  {
+    action: (key, name) => [{ procedures: { probe: { actions: [{ id: 'a', do: 'agent', [key]: name }] } } }],
+    recover: (key, name) => [{ procedures: { probe: { recover: { max: 1, [key]: name } } } }],
+    claimToken: (key, name) => [{ procedures: { probe: { claimTokens: { halt: { stop: true, [key]: name } } } } }],
+    agent: (key, name) => [
+      { agents: { probe: { [key]: name } } },
+      { flows: { default: { ticket: { vertices: { red: { [key]: `vertex-${name}` } } } } } },
+    ],
   };
-  const { 'unused.md': _unused, ...used } = files;
-  assert.deepEqual(config.usedFiles(flow, files), used);
+
+test('loadSources reads the file at every file-naming key, on an Agent and on a Vertex alike', (t) => {
+  const declarations = Object.entries(procedures.FILE_KEYS).flatMap(([place, keys]) =>
+    keys.flatMap((key) => FILE_PLACES[place as keyof typeof FILE_PLACES](key, `${place}-${key}.md`)),
+  );
+  const names = declarations.map((declaration) => JSON.stringify(declaration).match(/"([a-zA-Z-]+\.md)"/)![1]!);
+  assert.equal(names.length, 8, 'four Action keys, recover, a Claim token, and a Persona on an Agent and on a Vertex');
+  for (const [index, declaration] of declarations.entries()) {
+    const roots = sources(t, { repo: JSON.stringify(declaration) });
+    repositoryFiles(roots.repo, { [names[index]!]: names[index]! });
+    assert.deepEqual(
+      Object.keys(config.loadSources(roots.repo, roots.user).repository.files),
+      [names[index]],
+      names[index],
+    );
+  }
 });
 
 // U15, #96: the repository adds its test launcher, so Test Immutability freezes what `test` runs.
@@ -376,7 +382,7 @@ test("this repository AGENTS.md Commands line matches the repository's gg.json",
 });
 
 test('approvers change the Config Hash, and none leaves it as it was', () => {
-  const flow = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: null, vertices: {} } };
+  const flow = { name: 'default', actionCap: 1, procedures: {}, ticket: { entry: 'red', routes: {}, vertices: {} } };
   const pinned = { flow, files: {}, harnesses: {}, commands: {}, testPaths: [] };
   const hash = config.configHash(pinned);
   assert.notEqual(config.configHash({ ...pinned, approvers: ['some-login'] }), hash);

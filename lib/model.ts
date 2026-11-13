@@ -1,25 +1,85 @@
 // The Resolved Flow in memory. Every collection a run looks up by a configured name is a Map, so no name, a Vertex
 // `constructor` or a Procedure `__proto__`, reads or writes a property every object inherits (#174). Its JSON, which
 // the validator gives and the Run's directory and the Pinned Configuration keep, holds the same collections as keyed
-// objects.
+// objects. The validator also declares every Flow as written, which gg doctor prints whether or not it resolved.
 
+import type * as flow from './flow.ts';
 import type * as jsonValue from './json-value.ts';
+import type * as labels from './labels.ts';
 import type * as procedures from './procedures.ts';
 import type * as inputs from './validate/inputs.ts';
-import type * as visit from './visit.ts';
 
-// A Vertex as the Resolved Flow carries it (lib/validate/), as the interpreter reads it.
-export interface Vertex {
-  agent: visit.ConfigurationSnapshot['agent'];
-  access: string;
-  procedure: string;
-  outcomes: string[];
-  approvalLabels?: { await: string; decide: string[] } | null;
-  route?: jsonValue.JsonValue;
-  inputs?: Record<string, inputs.ResolvedInput>;
-  max?: number;
-  exhausted?: jsonValue.JsonValue;
+type JsonValue = jsonValue.JsonValue;
+
+// A route's target: a Vertex id or an end. A route may also take an Edge, which bounds its traversals (U5).
+export type Target = string | { end: labels.EndState };
+export type Edge = { to: Target; max?: number; exhausted?: Target };
+export type RouteTarget = Target | Edge;
+// Which route an Outcome takes, and where a failure's work goes (R12d, U5), as gg doctor prints it.
+export interface Routing {
+  target: RouteTarget;
+  by: flow.RouteSource;
+  work: string | null;
 }
+// An Agent as the validator resolves it: the declared Agent under the Vertex's own Agent keys. Only its harness and
+// access are checked; every other key is as declared.
+export type Agent = { harness: string } & { [key: string]: JsonValue };
+
+// A Vertex as the Resolved Flow carries it. `routing` is gg doctor's; the interpreter reads a Vertex.
+export interface ResolvedVertexJson {
+  use: string | null;
+  agent: Agent | null;
+  procedure: string;
+  access: string;
+  tests: procedures.Procedure['tests'] | null;
+  outcomes: string[];
+  // The Await and Decide Labels a Vertex whose Procedure ends in await-approval can request, else null (X1d).
+  approvalLabels: { await: string; decide: string[] } | null;
+  routing: Record<string, Routing>;
+  inputs: Record<string, inputs.ResolvedInput>;
+  route: Record<string, RouteTarget>;
+  max: number | null;
+  exhausted: Target | null;
+}
+
+// The Resolved Flow's JSON, as the validator gives a Flow whose every field holds its type.
+export interface ResolvedFlowJson {
+  name: string;
+  actionCap: number;
+  procedures: Record<string, procedures.Procedure>;
+  ticket: { entry: string; routes: Record<string, RouteTarget>; vertices: Record<string, ResolvedVertexJson> };
+}
+
+// A Vertex as the interpreter reads it.
+export type Vertex = Pick<
+  ResolvedVertexJson,
+  'agent' | 'access' | 'procedure' | 'outcomes' | 'approvalLabels' | 'route' | 'inputs' | 'max' | 'exhausted'
+>;
+
+// The fields the validator copies as declared, by where they sit; a Vertex's routing holds declared route targets. A
+// Flow with an error is printed as written (gg doctor, #305), so in its declared view each may hold any JSON, and
+// lib/validate/resolved.ts narrows each to its Resolved Flow type.
+export const COPIED_FIELDS = {
+  flow: ['actionCap'],
+  ticket: ['entry', 'routes'],
+  vertex: ['use', 'agent', 'procedure', 'access', 'tests', 'route', 'max', 'exhausted', 'routing'],
+  procedure: ['actions', 'claimTokens', 'tests', 'access', 'recover', 'passed', 'failed', 'stopped', 'otherwise'],
+} as const;
+type AsDeclared<Shape, Copied extends keyof Shape> = Omit<Shape, Copied> & { [Key in Copied]: JsonValue };
+export type DeclaredProcedureJson = AsDeclared<procedures.Procedure, (typeof COPIED_FIELDS.procedure)[number]>;
+export type DeclaredVertexJson = AsDeclared<
+  Omit<ResolvedVertexJson, 'routing'>,
+  Exclude<(typeof COPIED_FIELDS.vertex)[number], 'routing'>
+> & { routing: Record<string, Omit<Routing, 'target'> & { target: JsonValue }> };
+export type DeclaredFlowJson = AsDeclared<
+  Omit<ResolvedFlowJson, 'procedures' | 'ticket'>,
+  (typeof COPIED_FIELDS.flow)[number]
+> & {
+  procedures: Record<string, DeclaredProcedureJson>;
+  ticket: AsDeclared<Omit<ResolvedFlowJson['ticket'], 'vertices'>, (typeof COPIED_FIELDS.ticket)[number]> & {
+    vertices: Record<string, DeclaredVertexJson>;
+  };
+};
 
 // A Procedure with its Claim tokens by name.
 export type Procedure = Omit<procedures.Procedure, 'claimTokens'> & {
@@ -31,20 +91,11 @@ export interface ResolvedFlow {
   name: string;
   actionCap: number;
   procedures: ReadonlyMap<string, Procedure>;
-  ticket: { entry: string | null; routes?: jsonValue.JsonValue; vertices: ReadonlyMap<string, Vertex> };
-}
-
-// The Resolved Flow's JSON, as the validator gives it.
-export interface ResolvedFlowJson {
-  name: string;
-  actionCap: number;
-  procedures: Record<string, procedures.Procedure>;
-  ticket: { entry: string | null; routes?: jsonValue.JsonValue; vertices: Record<string, Vertex> };
+  ticket: Omit<ResolvedFlowJson['ticket'], 'vertices'> & { vertices: ReadonlyMap<string, ResolvedVertexJson> };
 }
 
 // JSON.parse, the validator and Object.entries give only own keys, so every name read from the JSON is one it declares.
-export function fromJson(json: unknown): ResolvedFlow {
-  const flow = json as ResolvedFlowJson;
+export function fromJson(flow: ResolvedFlowJson): ResolvedFlow {
   const procedureEntries = Object.entries(flow.procedures).map(
     ([name, procedure]) =>
       [name, { ...procedure, claimTokens: new Map(Object.entries(procedure.claimTokens)) }] as const,

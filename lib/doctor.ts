@@ -1,4 +1,4 @@
-// `gg doctor`: each source's Resolved Flows, warnings and errors, printed per Vertex (V1). `gg init`: the example
+// `gg doctor`: each source's Flows as written, warnings and errors, printed per Vertex (V1). `gg init`: the example
 // written into a repository, and the user's machine settings.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -8,72 +8,64 @@ import * as jsonc from 'jsonc-parser';
 import * as config from './config.ts';
 import * as configurationCheck from './configuration-check.ts';
 import type * as github from './github.ts';
+import type * as jsonValue from './json-value.ts';
 import * as labels from './labels.ts';
+import type * as model from './model.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as rules from './rules.ts';
 import * as stateDatabase from './state-database.ts';
-import type * as graph from './validate/graph.ts';
 import * as report from './validate/report.ts';
 
-type Value = Record<string, unknown>;
-// A Procedure as the Resolved Flow carries it, as written; doctor prints what each field holds.
-interface ShownProcedure {
-  access?: unknown;
-  actions?: (Value | null)[];
-  claimTokens: Record<string, { stop?: unknown; requires?: unknown[] } | null>;
-  passed: unknown[];
-  failed: unknown[];
-  stopped: unknown[];
-  otherwise: unknown;
-}
-// A route's target: a Vertex id, an end, or an Edge with its Bound.
-interface Target {
-  end?: unknown;
-  to?: unknown;
-  max?: unknown;
-  exhausted?: unknown;
-}
-
+type JsonValue = jsonValue.JsonValue;
 const { shown } = report;
+// A Flow with an error is declared as written, so any value may sit where doctor reads an object: it reads its fields
+// when it is one, and none otherwise.
+const fieldsOf = (value: JsonValue | undefined): Partial<Record<string, JsonValue>> =>
+  referencePaths.isRecord(value) ? value : {};
 
-function target(given: unknown): string {
+// A route's target: a Vertex id, an end, or an Edge with its Bound.
+function target(given: JsonValue | undefined): string {
   if (typeof given === 'string') return given;
-  const edge = given as Target | null | undefined;
-  if (edge?.end !== undefined) return `end ${shown(edge.end)}`;
-  const exhausted = edge?.exhausted === undefined ? '' : `, exhausted ${target(edge.exhausted)}`;
-  return `${shown(edge?.to ?? 'no target')} (max ${shown(edge?.max ?? 'none')}${exhausted})`;
+  const edge = fieldsOf(given);
+  if (edge.end !== undefined) return `end ${shown(edge.end)}`;
+  const exhausted = edge.exhausted === undefined ? '' : `, exhausted ${target(edge.exhausted)}`;
+  return `${shown(edge.to ?? 'no target')} (max ${shown(edge.max ?? 'none')}${exhausted})`;
 }
 const list = (items: unknown[]) => (items.length ? items.map(shown).join(', ') : 'none');
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+const listOf = (value: JsonValue | undefined) => (Array.isArray(value) ? value : []);
 
-function table(name: string, rows: unknown[]): string[] {
-  if (!rows.length) return [`  ${name}: none`];
+function table(name: string, rows: JsonValue): string[] {
+  if (!listOf(rows).length) return [`  ${name}: none`];
   return [
     `  ${name}:`,
-    ...rows.map((row, index) => {
-      const { when, outcome } = (row ?? {}) as { when?: Record<string, rules.Condition>; outcome?: unknown };
-      return `    ${index + 1}. ${rules.conditions(when ?? {})} -> ${shown(outcome ?? 'no outcome')}`;
+    ...listOf(rows).map((row, index) => {
+      const { when, outcome } = fieldsOf(row);
+      const conditions = rules.conditions(Object.fromEntries(Object.entries(when ?? {})));
+      return `    ${index + 1}. ${conditions} -> ${shown(outcome ?? 'no outcome')}`;
     }),
   ];
 }
 
 // Why a Vertex has its access: its Procedure's read-only caps it, or its Agent names none.
-function accessNote(vertex: graph.ResolvedVertex, procedure: ShownProcedure | undefined): string {
+function accessNote(vertex: model.DeclaredVertexJson, procedure: model.DeclaredProcedureJson | undefined): string {
   if (procedure?.access === 'read-only') return ' (capped by the Procedure)';
-  return vertex.agent?.access == null ? ' (default)' : '';
+  return fieldsOf(vertex.agent).access == null ? ' (default)' : '';
 }
 
-function testsLine(tests: unknown): string {
-  if (typeof tests === 'object' && tests !== null)
-    return `named ${shown((tests as { named: unknown }).named ?? 'nothing')}`;
+function testsLine(tests: JsonValue): string {
+  if (typeof tests === 'object' && tests !== null) return `named ${shown(fieldsOf(tests).named ?? 'nothing')}`;
   return shown(tests ?? 'none');
 }
 
-function procedureLines(procedure: ShownProcedure): string[] {
-  const checks = (procedure.actions ?? []).filter((action) => action?.do === 'check') as Value[];
-  const claimTokens = Object.entries(procedure.claimTokens).map(([token, claim]) =>
-    claim?.stop ? `${token} stops` : `${token} requires ${list((claim?.requires ?? []).map((id) => id ?? 'no id'))}`,
-  );
+function procedureLines(procedure: model.DeclaredProcedureJson): string[] {
+  const checks = listOf(procedure.actions)
+    .map(fieldsOf)
+    .filter((action) => action.do === 'check');
+  const claimTokens = Object.entries(fieldsOf(procedure.claimTokens)).map(([token, claim]) => {
+    const form = fieldsOf(claim);
+    return form.stop ? `${token} stops` : `${token} requires ${list(listOf(form.requires).map((id) => id ?? 'no id'))}`;
+  });
   const shownChecks = checks.map((check) => {
     const command = check.command ? ` ${shown(check.command)}` : '';
     return `${shown(check.id ?? 'no id')} (${shown(check.kind ?? 'no kind')}${command})`;
@@ -90,7 +82,7 @@ function procedureLines(procedure: ShownProcedure): string[] {
 }
 
 // R12d, U5: which route each Outcome takes, unless the Vertex names it, and where a failure's work goes.
-function routeLines(vertex: graph.ResolvedVertex): string[] {
+function routeLines(vertex: model.DeclaredVertexJson): string[] {
   const routings = new Map(Object.entries(vertex.routing));
   return [
     `  routes:${vertex.outcomes.length ? '' : ' none'}`,
@@ -103,7 +95,7 @@ function routeLines(vertex: graph.ResolvedVertex): string[] {
   ];
 }
 
-function inputLines(vertex: graph.ResolvedVertex): string[] {
+function inputLines(vertex: model.DeclaredVertexJson): string[] {
   const inputs = Object.entries(vertex.inputs);
   if (!inputs.length) return ['  inputs: none'];
   return [
@@ -116,9 +108,13 @@ function inputLines(vertex: graph.ResolvedVertex): string[] {
   ];
 }
 
-function vertexLines(id: string, vertex: graph.ResolvedVertex, procedure: ShownProcedure | undefined): string[] {
+function vertexLines(
+  id: string,
+  vertex: model.DeclaredVertexJson,
+  procedure: model.DeclaredProcedureJson | undefined,
+): string[] {
   const agent = vertex.agent
-    ? `${shown(vertex.use ?? 'inline')} (harness ${shown(vertex.agent.harness ?? 'none')})`
+    ? `${shown(vertex.use ?? 'inline')} (harness ${shown(fieldsOf(vertex.agent).harness ?? 'none')})`
     : 'none';
   const lines = [
     `vertex ${id}`,
@@ -139,16 +135,8 @@ function vertexLines(id: string, vertex: graph.ResolvedVertex, procedure: ShownP
   return [...lines, ...routeLines(vertex), ...inputLines(vertex)];
 }
 
-// A Resolved Flow as doctor prints it.
-interface ShownFlow {
-  name: string;
-  actionCap: unknown;
-  procedures: Record<string, ShownProcedure>;
-  ticket: { entry: unknown; routes: Record<string, unknown>; vertices: Record<string, graph.ResolvedVertex> };
-}
-
-function flowLines(flow: ShownFlow, source: configurationCheck.SourceName): string[] {
-  const routes = Object.entries(flow.ticket.routes).map(([outcome, route]) => `${outcome} -> ${target(route)}`);
+function flowLines(flow: model.DeclaredFlowJson, source: configurationCheck.SourceName): string[] {
+  const routes = Object.entries(flow.ticket.routes ?? {}).map(([outcome, route]) => `${outcome} -> ${target(route)}`);
   const lines = [
     `flow ${flow.name}`,
     `  source: ${source}`,
@@ -158,7 +146,10 @@ function flowLines(flow: ShownFlow, source: configurationCheck.SourceName): stri
   ];
   const procedures = new Map(Object.entries(flow.procedures));
   for (const [id, vertex] of Object.entries(flow.ticket.vertices))
-    lines.push('', ...vertexLines(id, vertex, procedures.get(vertex.procedure as string)));
+    lines.push(
+      '',
+      ...vertexLines(id, vertex, typeof vertex.procedure === 'string' ? procedures.get(vertex.procedure) : undefined),
+    );
   return [...lines, ''];
 }
 
@@ -166,7 +157,7 @@ function flowLines(flow: ShownFlow, source: configurationCheck.SourceName): stri
 // its first request. Nothing is read for Flows that ask nobody, and doctor's other findings stand when GitHub cannot
 // say.
 async function labelWarnings(
-  flows: ShownFlow[],
+  flows: model.DeclaredFlowJson[],
   { gh, cwd }: Pick<DoctorOptions, 'gh' | 'cwd'>,
 ): Promise<report.Problem[]> {
   const asking = flows.flatMap((flow) =>
@@ -217,10 +208,10 @@ export async function doctor({ config: configuration, harnesses, gh, cwd, common
   const warnings = [...checked.warnings, ...checked.misfits.values()];
   const flows = [...checked.flows.values()];
   const lines: string[] = [];
-  for (const { json, source } of flows) lines.push(...flowLines(json as unknown as ShownFlow, source));
+  for (const { declared, source } of flows) lines.push(...flowLines(declared, source));
   for (const warning of warnings) lines.push(report.line('warning', warning));
   const labelProblems = await labelWarnings(
-    flows.map(({ json }) => json as unknown as ShownFlow),
+    flows.map(({ declared }) => declared),
     { gh, cwd },
   );
   lines.push(...labelProblems.map((warning) => report.line('warning', warning)));

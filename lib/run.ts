@@ -129,11 +129,15 @@ export interface PinnedFlow {
 // The Flow at `name` pinned with the files it uses from its own source and the repository contract. The source stays
 // out of the hash, and so does the prefix that names it, so a Flow hashes alike from either source (Q25).
 function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: config.Settings): PinnedFlow {
-  const files = config.usedFiles(declared.json, declared.files);
-  const pinned = {
-    // The validator's JSON, which model.fromJson below also reads as a Resolved Flow's: the validator reads the
-    // configuration as unknown, so its own type cannot say so.
-    flow: { ...declared.json, name: declared.declaredName } as model.ResolvedFlowJson,
+  const { resolved, uses } = declared;
+  // gg run pins only when the configuration has no error, and every Flow with no error resolves (lib/validate/).
+  if (!resolved) throw new Error(`Flow ${name} has no error but did not resolve`);
+  // Only the files the Flow uses: a file another Flow or Agent of its source names never moves its Config Hash (Q25).
+  const files = Object.fromEntries(
+    uses.files.filter((file) => Object.hasOwn(declared.files, file)).map((file) => [file, declared.files[file]!]),
+  );
+  const pinned: config.PinnedConfiguration = {
+    flow: { ...resolved, name: declared.declaredName },
     files,
     harnesses: {},
     launchProfile: null,
@@ -141,7 +145,7 @@ function pin(name: string, declared: configurationCheck.DeclaredFlow, settings: 
     testPaths: settings.testPaths,
     approvers: settings.approvers,
   };
-  const flow = model.fromJson({ ...declared.json, name });
+  const flow = model.fromJson(resolved);
   return { flow, pinned, hash: config.configHash(pinned), source: declared.source, files };
 }
 

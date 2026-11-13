@@ -57,9 +57,7 @@ export function visitScopeSchema(
   return {
     claim: { type: 'string', enum: proc.tokens[table] },
     pass: { type: 'integer', min: 1, max: 1 + (report.isCount(recoverMax) ? recoverMax : 0) },
-    check: procedures.object(
-      Object.fromEntries(proc.checkIds.map((id) => [id as string, { type: 'string', enum: STATES }])),
-    ),
+    check: procedures.object(Object.fromEntries(proc.checkIds.map((id) => [id, { type: 'string', enum: STATES }]))),
     ...ownScope(proc, inputs),
   };
 }

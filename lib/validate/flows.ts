@@ -1,9 +1,9 @@
 // A Flow as declared, checked against the checked Procedures: its keys, routes and Vertices and each Vertex's Agent,
 // giving the Resolved Flow. A Vertex's inputs are inputs.ts's, the graph checks graph.ts's.
 
-import * as config from '../config.ts';
 import * as flow from '../flow.ts';
 import * as labels from '../labels.ts';
+import type * as model from '../model.ts';
 import * as procedures from '../procedures.ts';
 import * as referencePaths from '../reference-paths.ts';
 import * as actionChecks from './actions.ts';
@@ -12,6 +12,7 @@ import * as inputs from './inputs.ts';
 import * as checked from './procedures.ts';
 import * as references from './references.ts';
 import * as report from './report.ts';
+import * as declaredFlows from './declared.ts';
 import * as templates from './templates.ts';
 
 // The keys each object of a gg.json may declare; any other is an unknown key (the request tables them).
@@ -69,8 +70,10 @@ interface FlowState {
   location: string;
   vertices: Value;
   sources: referencePaths.SchemaNode;
-  resolved: Map<string, graph.ResolvedVertex>;
-  used: Set<string>;
+  resolved: Map<string, model.DeclaredVertexJson>;
+  used: Map<string, checked.CheckedProcedure>;
+  // Each Vertex's Persona, in Vertex order, for the files the Flow uses.
+  personas: string[];
   procs: Map<string, checked.CheckedProcedure | undefined>;
   fallsOf: Map<string, FallThroughs>;
   held: boolean;
@@ -283,29 +286,6 @@ function vertexFalls(
   return falls;
 }
 
-// A Vertex as the Resolved Flow carries it. A Procedure's read-only caps its Agent's access.
-function resolveVertex(
-  vertex: Value,
-  resolved: Pick<graph.ResolvedVertex, 'agent' | 'inputs' | 'approvalLabels'> & { falls: FallThroughs },
-  proc?: checked.CheckedProcedure,
-): graph.ResolvedVertex {
-  const { agent, falls } = resolved;
-  return {
-    use: vertex.use ?? null,
-    agent,
-    procedure: vertex.procedure,
-    access: proc?.access === 'read-only' ? 'read-only' : (agent?.access ?? 'read-only'),
-    tests: proc?.tests ?? null,
-    outcomes: proc ? checked.outcomesOf(proc, falls) : [],
-    approvalLabels: resolved.approvalLabels,
-    routing: {},
-    inputs: resolved.inputs,
-    route: vertex.route ?? {},
-    max: vertex.max ?? null,
-    exhausted: vertex.exhausted ?? null,
-  };
-}
-
 function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex: unknown) {
   const problems = checking.report;
   const location = `${state.location}.ticket.vertices.${id}`;
@@ -333,34 +313,25 @@ function checkVertex(checking: FlowContext, state: FlowState, id: string, vertex
       `procedure ${JSON.stringify(vertex.procedure)} is not declared`,
       { procedure: vertex.procedure },
     );
-  if (proc) state.used.add(proc.name);
+  if (proc && !state.used.has(proc.name)) state.used.set(proc.name, proc);
   if (checking.failedAgents.has(vertex.use)) state.held = true;
   const agent = vertexAgent(checking, { id, location }, vertex, proc);
+  state.personas.push(...procedures.filesAt('agent', agent));
   const typed = inputs.checkInputs(problems, location, vertex.inputs, state.sources);
   checkVertexRoutes(problems, location, vertex, state.vertices);
   const falls = proc ? vertexFalls(checking, { flow: state.name, id }, typed, proc) : {};
   const prefix = checking.labelPrefix === undefined ? undefined : report.shown(checking.labelPrefix);
   const approvalLabels = actionChecks.approvalLabelsOf(proc?.actions, id, prefix);
-  state.resolved.set(id, resolveVertex(vertex, { agent, inputs: typed.inputs, falls, approvalLabels }, proc));
+  state.resolved.set(
+    id,
+    declaredFlows.declaredVertex(vertex, { agent, inputs: typed.inputs, falls, approvalLabels }, proc),
+  );
   state.procs.set(id, proc);
   state.fallsOf.set(id, falls);
 }
 
-// Each Procedure a Vertex uses, as declared and hashed, so a resumed Visit can tell it has changed (S6).
-function usedProcedures(checking: FlowContext, used: Set<string>) {
-  const declared = new Map(report.entries(checking.config.procedures));
-  return Object.fromEntries(
-    [...used].map((name) => {
-      const proc = checking.procedures.get(name) as checked.CheckedProcedure;
-      const { actions, claimTokens, tests, access, recover, tables, otherwise, checkIds } = proc;
-      const hash = config.hashOf(declared.get(name));
-      const resolved = { actions, claimTokens, tests, access, recover, ...tables, otherwise: otherwise ?? null };
-      return [name, { ...resolved, checks: checkIds, hash }];
-    }),
-  );
-}
-
-// Checks one declared Flow and gives its Resolved Flow, or reports that it is not an object.
+// Checks one declared Flow and gives it declared, resolved when it can be, and what it uses; or reports that it is
+// not an object.
 export function checkFlow(checking: FlowContext, name: string, declaration: unknown) {
   const location = `flows.${name}`;
   const problems = checking.report;
@@ -377,7 +348,8 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
     vertices,
     sources: inputs.sourceScope(checking.procedures, vertices),
     resolved: new Map(),
-    used: new Set(),
+    used: new Map(),
+    personas: [],
     procs: new Map(),
     fallsOf: new Map(),
     held: false,
@@ -386,10 +358,13 @@ export function checkFlow(checking: FlowContext, name: string, declaration: unkn
   const clean = checking.sharedErrors === 0 && problems.errors.length === start && !state.held;
   const { resolved, procs, fallsOf } = state;
   graph.checkGraph(problems, { location, ticket, resolved, procs, fallsOf, clean });
-  return {
-    name,
-    actionCap: declaration.actionCap ?? null,
-    procedures: usedProcedures(checking, state.used),
-    ticket: { entry: ticket.entry ?? null, routes: ticket.routes ?? {}, vertices: Object.fromEntries(resolved) },
-  };
+  const { used, personas } = state;
+  const declaredProcedures = checking.config.procedures;
+  return declaredFlows.checkedFlow(name, declaration, {
+    ticket,
+    vertices: resolved,
+    used: [...used.values()],
+    personas,
+    declaredProcedures,
+  });
 }
