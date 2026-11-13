@@ -364,8 +364,8 @@ const snapshotHash = (fixture: runFixture.RunFixture) =>
     .configHash;
 
 // An Execution an earlier Run left inside green, under the hash the fixture's configuration gives, as a control
-// Run reports it, so only an edit between the Runs can move it. A real Run cannot be left resumable: its stops end at
-// needs-human.
+// Run reports it, so only an edit between the Runs can move it. A Run of this Flow cannot be left resumable: its stops
+// end at needs-human.
 async function resumed(t: TestContext, { edited }: { edited: boolean }) {
   const control = runFixture.fixture(t);
   await run.runTarget(control.options);
