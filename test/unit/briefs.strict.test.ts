@@ -67,6 +67,15 @@ const HIDINGS: [string, (value: object) => object, 'any' | 'list'][] = [
     },
     'any',
   ],
+  [
+    'a revoked Proxy of a function',
+    () => {
+      const held = Proxy.revocable(() => null, {});
+      held.revoke();
+      return held.proxy;
+    },
+    'any',
+  ],
   ['an enumerable symbol key', (value) => Object.assign(copy(value), { [Symbol('min')]: 'x' }), 'any'],
   ['a hole', (value) => Object.assign(copy(value), { length: (value as unknown[]).length + 1 }), 'list'],
   ['a key beyond its elements', (value) => Object.assign(copy(value), { min: 'x' }), 'list'],

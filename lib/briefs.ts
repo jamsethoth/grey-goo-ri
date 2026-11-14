@@ -18,8 +18,10 @@ const SUBSET = {
 
 const repeated = (list: unknown[]) => list.find((value, i) => list.indexOf(value) !== i);
 
-// An object assertStrict cannot fully see. Asked before any shape check, which a revoked Proxy would throw from.
-const hidden = (value: unknown) => typeof value === 'object' && value !== null && !jsonValue.fullySeen(value);
+// An object assertStrict cannot fully see, a Proxy of a function among them. Asked before any shape check, which a
+// revoked Proxy would throw from.
+const hidden = (value: unknown) =>
+  (typeof value === 'object' || typeof value === 'function') && value !== null && !jsonValue.fullySeen(value);
 
 // A schema node's keywords and type are in the subset, and its enum is a list of distinct strings.
 function assertKeywords(schema: Record<string, unknown>, path: string) {
