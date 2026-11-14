@@ -266,6 +266,84 @@ test('a string outside its closed set is a corrupt row naming it; any other stri
   assert.ok(closed >= 10, `${closed} closed sets checked`);
 });
 
+// The whole refusal each change gives, by the type of the node it changes: the messages parseRow gave before #402.
+// A union told apart by its keys names itself by what its reader calls it.
+const UNION_NAMES: Record<string, string> = {
+  'record.DecidedByAction': 'one form of decidedBy',
+  'writeAhead.CallPayload': 'a write-ahead payload',
+  'integrity.UntrackedLink': 'a link or base64 bytes',
+};
+const SCALAR_REFUSALS: Record<string, string> = { number: 'is not a number', boolean: 'is not true or false' };
+const wrongTypeRefusal = (shape: typeShape.Shape) =>
+  shape.kind === 'scalar'
+    ? (SCALAR_REFUSALS[shape.type] ?? 'is not a string')
+    : `is not ${shape.kind === 'list' ? 'a list' : 'an object'}`;
+const unionRefusal = (kind: Kind, row: Json, segments: Segment[]) => {
+  const declared = declaredAt(kind, row, segments);
+  const name = declared?.kind === 'union' && declared.forms.find((form) => Object.hasOwn(UNION_NAMES, form.name));
+  assert.ok(name, `${pathOf(segments)} is a union with a name`);
+  return `${pathOf(segments)} is not ${UNION_NAMES[name.name]}`;
+};
+const members = (message: string) =>
+  message
+    .replace(/^.* is not one of /, '')
+    .split(', ')
+    .sort();
+// The closed set a string is refused against: its own, or for the key that tells a union's forms apart, every form's
+// value of it, unless one form takes any value its set does not (the Transition Table's rows), whose set is then read.
+function closedSet(kind: Kind, row: Json, segments: Segment[], own: string[]) {
+  const union = declaredAt(kind, row, segments.slice(0, -1));
+  if (union?.kind !== 'union' || union.by !== 'tag') return own;
+  const tags = union.forms.map(({ shape }) => {
+    const tag = shape.kind === 'object' ? typeShape.keyOf(shape, String(segments.at(-1)))?.shape : undefined;
+    return tag?.kind === 'scalar' && tag.members ? tag.members : [];
+  });
+  return tags.find((values) => values.length > 1) ?? tags.flat();
+}
+
+test('the reader refuses what it refused before, with the same message', () => {
+  const exactly = (kind: Kind, row: Json, problem: string, what: string) =>
+    refused(kind, row, new RegExp(`: its ${escaped(problem)}$`), what);
+  let checked = 0;
+  for (const { kind, rows } of kinds)
+    for (const { row, under } of rows())
+      for (const { segments, value, json } of nodes(kind, row)) {
+        const path = pathOf(segments);
+        if (json || path === 'schemaVersion' || !path.startsWith(under)) continue;
+        const declared = declaredAt(kind, row, segments)!;
+        const set = (held: Json) =>
+          changed(row, segments, (parent, key) => void ((parent as Record<Segment, Json>)[key] = held));
+        exactly(kind, set(typeof value === 'boolean' ? 'x' : true), `${path} ${wrongTypeRefusal(declared)}`, path);
+        checked++;
+        const placed = placedAt(kind, row, segments);
+        if (placed?.kind === 'scalar' && placed.members && typeof value === 'string')
+          assert.throws(
+            () => parse(kind, set('not-a-member')),
+            (err: Error) => {
+              assert.deepEqual(members(err.message), [...closedSet(kind, row, segments, placed.members!)].sort(), path);
+              return true;
+            },
+          );
+        if (typeof segments.at(-1) === 'number' || mayLeaveOut(kind, row, segments)) continue;
+        if (segments.length > 1 && isKeyed(kind, row, segments.slice(0, -1))) continue;
+        if (path === 'cursor.recovery') continue;
+        const left = changed(row, segments, (holder, key) => void delete (holder as Record<Segment, Json>)[key]);
+        const union = unionOf(kind, row, segments);
+        exactly(kind, left, union ? unionRefusal(kind, row, segments.slice(0, -1)) : `${path} is missing`, path);
+      }
+  assert.ok(checked > 300, `${checked} fields checked`);
+});
+
+// A Resolution's row is the key it is told apart by, so a row with neither its row nor its outcome names its row.
+test('a row with two faults names the one its reader reads first', () => {
+  const broken = changed(FIXTURE.execution, ['visitState', 'settled', 'resolution'], (parent, key) => {
+    const resolution = (parent as Record<Segment, Json>)[key] as { [key: string]: Json };
+    delete resolution.row;
+    delete resolution.outcome;
+  });
+  refused('ticket', broken, /: its visitState\.settled\.resolution\.row is missing$/, 'no row and no outcome');
+});
+
 test('a decidedBy that mixes two forms, holds none, or names half a Visit is a corrupt row', () => {
   for (const decidedBy of [
     { hold: null, human: 'owner' },
