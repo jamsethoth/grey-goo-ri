@@ -1,9 +1,10 @@
 // What the configuration check finds, which gg doctor and gg run both judge by (V1): each source's Flows as the
 // validator resolves them, the settings, the user Flows that do not fit the repository, the State Database, the
 // Execution Records whose Flow is gone, and preflight over every admitted Flow's Harnesses. The commands differ only
-// in how they present it, and in gg run's choice of Flow (#362).
+// in how they present it, and in gg run's choice of Flow (#362). Both also read the repository's GitHub owner/name.
 import { existsSync } from 'node:fs';
 import * as config from './config.ts';
+import type * as github from './github.ts';
 import * as contract from './harnesses/contract.ts';
 import * as interpreter from './interpreter.ts';
 import type * as model from './model.ts';
@@ -240,4 +241,18 @@ export async function check({
     misfits: declared.misfits,
     ...(parsed.settings && { settings: parsed.settings }),
   };
+}
+
+// The repository's GitHub owner/name, or the error both commands give when gh cannot say: gg run reads it once its
+// preflight passes and before any other GitHub read, gg doctor beside the configuration (#372).
+export async function readRepository(
+  gh: github.Gh,
+  path: string,
+): Promise<{ repository: string | null; errors: report.Problem[] }> {
+  const { repository, error } = await gh.repositoryName(path);
+  if (repository !== null) return { repository, errors: [] };
+  const found = report.newReport();
+  const message = `cannot read the GitHub owner/name of ${path}: ${error}`;
+  report.error(found, '', 'repository-unread', message, { path, reason: error });
+  return { repository, errors: found.errors };
 }

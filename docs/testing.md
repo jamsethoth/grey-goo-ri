@@ -102,6 +102,7 @@ options it builds, so none outlives the case:
 | --- | --- |
 | the `clock` option (`{ now, sleep, every }`; `golden.fixture`'s `clock.beat()`) | moves time, records backoffs, fires a heartbeat |
 | the `gh` option, `github.createGh(transport)` | answers and records every gh call (`fakeGh`), or fails a chosen one (`ghThrough`) |
+| `bin/gg.ts`'s `main(argv, gh)`, which `test/support/gg-over-fake-gh.ts` runs | spawns the gg CLI over the fake gh, so a command that reads GitHub runs no real gh (#372) |
 | the `git` option; `git.createGit({ sleep })` | runs over the fake git; records runGit's index.lock waits |
 | the `locks` option, `locks.createLocks({ clock, wrapAttempt })` | times every lock wait, the 60 s default and the 600 s repo-lock waits included; sees a lock attempt, or contends it (`contendRepoLock`) |
 | the `database` option, `record.createStateDatabase({ beforeSave, beforeAppend })` (`caseDatabase(t)`, with `onSave`, `failSaves` and `failAppends`, in `test/support/case-database.ts`) | sees or fails a chosen save or Event insert |

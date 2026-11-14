@@ -505,6 +505,12 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
   const line =
     'error: procedures.implement.actions[1]: Check test names command "lint", ' +
     'which the repository does not declare [undeclared-command]';
+  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
+    assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', line]);
+    assert.equal(err.exitCode, 1);
+    return true;
+  });
+  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
   const { text } = await doctor.doctor({
     config: fixture.options.config,
     harnesses: fixture.options.harnesses,
@@ -512,12 +518,6 @@ test('gg run rejects a Flow gg doctor rejects, with the same message', async (t)
     cwd: fixture.mainRoot,
   });
   assert.ok(text.includes(`\n${line}\n`), text);
-  await assert.rejects(run.runTarget(fixture.options), (err: PreflightError) => {
-    assert.deepEqual(err?.message.split('\n'), ['[main] preflight failed:', line]);
-    assert.equal(err.exitCode, 1);
-    return true;
-  });
-  assert.deepEqual(fixture.gh.calls, [], 'no gh call');
 });
 
 test('an Agent naming no harness still exits 2 naming the example Layers', async (t) => {

@@ -21,13 +21,13 @@ import * as work from '../lib/work.ts';
 interface Command {
   summary: string;
   flags?: options.OptionSpec;
-  run?: (parsed: options.ParsedOptions) => Promise<void>;
+  run?: (parsed: options.ParsedOptions, gh: github.Gh) => Promise<void>;
 }
 
 // What a Run reaches outside itself, built once here and passed down as one `deps`; a test passes fakes in their place
 // (ADR 0019).
-const realDeps = (): interpreter.Deps => ({
-  gh: github.createGh(),
+const realDeps = (gh: github.Gh): interpreter.Deps => ({
+  gh,
   git: git.createGit(),
   exec: exec.createExec({ kernel32: containment.openKernel32() }),
   locks: locks.createLocks(),
@@ -44,9 +44,9 @@ function repositoryPath(parsed: options.ParsedOptions) {
   return path;
 }
 
-async function runCommand(parsed: options.ParsedOptions) {
+async function runCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   const target = options.positiveInteger(parsed._[0], 'ticket');
-  const deps = realDeps();
+  const deps = realDeps(gh);
   const { mainRoot } = await deps.git.repoInfo(repositoryPath(parsed));
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
   const results = await run.runTarget({
@@ -69,13 +69,13 @@ async function initCommand(parsed: options.ParsedOptions) {
   process.stdout.write(doctor.init(mainRoot, { baseBranch, commonDir: gitCommonDir, harness }));
 }
 
-async function doctorCommand(parsed: options.ParsedOptions) {
+async function doctorCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   const { mainRoot, gitCommonDir } = await git.repoInfo(repositoryPath(parsed));
   const { HARNESSES: harnesses } = await import('../lib/harnesses/shipped.ts');
   const { text, exitCode } = await doctor.doctor({
     config: config.loadSources(mainRoot),
     harnesses,
-    gh: github.createGh(),
+    gh,
     cwd: mainRoot,
     commonDir: gitCommonDir,
   });
@@ -86,7 +86,7 @@ async function doctorCommand(parsed: options.ParsedOptions) {
 // gg work's verbs: abandon forgets a Ticket's position and keeps its worktree (request 3.5); the rest wait for gg work.
 const WORK_VERBS = ['list', 'resume', 'done', 'abandon', 'reset', 'approve'];
 
-async function workCommand(parsed: options.ParsedOptions) {
+async function workCommand(parsed: options.ParsedOptions, gh: github.Gh) {
   const [verb, ticket] = parsed._;
   if (!WORK_VERBS.includes(verb as string))
     throw new options.UsageError(`work takes a verb, one of ${WORK_VERBS.join(', ')}`);
@@ -105,7 +105,7 @@ async function workCommand(parsed: options.ParsedOptions) {
     commonDir: gitCommonDir,
     cwd: mainRoot,
     labelPrefix: repository.labelPrefix as string,
-    gh: github.createGh(),
+    gh,
     locks: locks.createLocks(),
   });
   process.stdout.write(text);
@@ -149,30 +149,35 @@ ${Object.entries(COMMANDS)
 init, doctor and run act on the repository holding the current directory, or the one --repo <path> names.
 `;
 
-const name = process.argv[2];
-
-if (name === undefined || name === '--help') {
-  process.stdout.write(usage);
-} else if (Object.hasOwn(COMMANDS, name)) {
-  const command = COMMANDS[name];
-  try {
-    const parsed = options.parseOptions(process.argv.slice(3), command.flags ?? {});
-    if (command.run) await command.run(parsed);
-    else {
-      process.stderr.write(`gg ${name}: not implemented\n`);
-      process.exitCode = 1;
+// gg with `argv` after its own path, over `gh`: the entry point passes the real gh, and the tests that spawn gg pass
+// the fake one, since no test runs the real gh (#372).
+export async function main(argv: string[], gh: github.Gh): Promise<void> {
+  const name = argv[0];
+  if (name === undefined || name === '--help') {
+    process.stdout.write(usage);
+  } else if (Object.hasOwn(COMMANDS, name)) {
+    const command = COMMANDS[name];
+    try {
+      const parsed = options.parseOptions(argv.slice(1), command.flags ?? {});
+      if (command.run) await command.run(parsed, gh);
+      else {
+        process.stderr.write(`gg ${name}: not implemented\n`);
+        process.exitCode = 1;
+      }
+    } catch (err) {
+      const { message, exitCode } = err as Error & { exitCode?: number };
+      if (err instanceof options.UsageError) {
+        process.stderr.write(`gg ${name}: ${message}\n\n${usage}`);
+        process.exitCode = 1;
+      } else {
+        process.stderr.write(`gg ${name}: ${message}\n`);
+        process.exitCode = exitCode ?? 1;
+      }
     }
-  } catch (err) {
-    const { message, exitCode } = err as Error & { exitCode?: number };
-    if (err instanceof options.UsageError) {
-      process.stderr.write(`gg ${name}: ${message}\n\n${usage}`);
-      process.exitCode = 1;
-    } else {
-      process.stderr.write(`gg ${name}: ${message}\n`);
-      process.exitCode = exitCode ?? 1;
-    }
+  } else {
+    process.stderr.write(`gg: unknown command ${name}\n\n${usage}`);
+    process.exitCode = 1;
   }
-} else {
-  process.stderr.write(`gg: unknown command ${name}\n\n${usage}`);
-  process.exitCode = 1;
 }
+
+if (import.meta.main) await main(process.argv.slice(2), github.createGh());
