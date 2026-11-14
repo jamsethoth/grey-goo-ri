@@ -100,6 +100,21 @@ const leftOut = (value: object): boolean =>
   Object.getOwnPropertySymbols(value).some((key) => Object.prototype.propertyIsEnumerable.call(value, key)) ||
   (Array.isArray(value) && Object.keys(value).some((key) => !isIndex(key, value.length)));
 
+// Whether a reader of an object or a list sees only what a check of its own keys saw: it is plain as a save judges it,
+// each own key is an enumerable data property, so no getter answers twice and none hides from Object.keys, and a
+// list's own keys are its elements, with no hole (#365).
+export function fullySeen(value: object): boolean {
+  if (lost(value) !== null) return false;
+  const keys = Reflect.ownKeys(value).filter((key) => !(Array.isArray(value) && key === 'length'));
+  const data = keys.every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor?.enumerable === true && 'value' in descriptor;
+  });
+  if (!Array.isArray(value)) return data;
+  const { length } = value;
+  return data && keys.length === length && keys.every((key) => typeof key === 'string' && isIndex(key, length));
+}
+
 // The value copied as JSON.stringify would read it, each property read once: a list by index up to its length, an
 // object by its own enumerable string keys. `within` holds the objects the value is inside.
 function copied(value: unknown, path: string, what: string, within: object[]): JsonValue {
