@@ -1,13 +1,9 @@
 // A record's row read field by field into the types lib/record-json.ts saves, so tsc checks every value it gives and
-// no assertion types the row (#357). A field of the wrong type, a required key left out, a key the type does not
-// declare or a string outside its closed set is a RowFieldError naming its path, which parseRow makes a corrupt row.
-import type * as approval from './approval.ts';
-import type * as integrity from './integrity.ts';
+// no assertion types the row (#357). Those types are the row's one declaration: each reader's type is inferred from
+// what it reads, and tsc holds it to its record type both ways (test/unit/record-read.test.ts, #402). A field of the
+// wrong type, a required key left out, a key the type does not declare or a string outside its closed set is a
+// RowFieldError naming its path, which parseRow makes a corrupt row.
 import type * as outcome from './outcome.ts';
-import type * as record from './record.ts';
-import type * as recordJson from './record-json.ts';
-import type * as visit from './visit.ts';
-import type * as writeAhead from './write-ahead.ts';
 import * as recordReadVisit from './record-read-visit.ts';
 import * as recordReadNode from './record-read-node.ts';
 
@@ -29,7 +25,7 @@ const actionKeys = (field: (key: string) => recordReadNode.Node) => ({
 
 // Exactly one form, told apart by its keys (record.DecidedBy). A hold or a human that cut a Visit off names it with an
 // Action's keys, all four or none (#341).
-const decidedBy = variant<record.DecidedBy>('one form of decidedBy', [
+const decidedBy = variant('one form of decidedBy', [
   { required: ['hold'], read: object((field) => ({ hold: nullableText(field('hold')) })) },
   {
     required: ['hold', ...ACTION_KEYS],
@@ -43,7 +39,7 @@ const decidedBy = variant<record.DecidedBy>('one form of decidedBy', [
   { required: ACTION_KEYS, read: object(actionKeys) },
 ]);
 
-const terminalReason = object<record.TerminalReason>((field) => ({
+const terminalReason = object((field) => ({
   decidedBy: decidedBy(field('decidedBy')),
   outcome: nullableText(field('outcome')),
   rule: nullable(ruleIdentity)(field('rule')),
@@ -59,7 +55,7 @@ const actionIdentity = object((field, has) => ({
   ...(has('attempt') && { attempt: count(field('attempt')) }),
 }));
 
-const terminalStop = object<record.TerminalStop>((field) => ({
+const terminalStop = object((field) => ({
   outcome: text(field('outcome')),
   response: json(field('response')),
   actionRef: nullable(actionIdentity)(field('actionRef')),
@@ -81,8 +77,8 @@ const terminalStop = object<record.TerminalStop>((field) => ({
   )(field('interrupted')),
 }));
 
-const admissionStop = object<record.AdmissionStop>((field) => ({
-  kind: oneOf<record.AdmissionStop['kind']>({ hold: true, abandon: true, fault: true })(field('kind')),
+const admissionStop = object((field) => ({
+  kind: oneOf({ hold: true, abandon: true, fault: true })(field('kind')),
   name: nullableText(field('name')),
   terminalReasonText: nullableText(field('terminalReasonText')),
   fresh: flag(field('fresh')),
@@ -92,7 +88,7 @@ const admissionStop = object<record.AdmissionStop>((field) => ({
   error: nullableText(field('error')),
 }));
 
-const cursor = object<record.Cursor>((field) => ({
+const cursor = object((field) => ({
   vertex: text(field('vertex')),
   visit: nullableCount(field('visit')),
   action: nullableText(field('action')),
@@ -119,7 +115,7 @@ const remoteRetry = object((field) => ({
   started: flag(field('started')),
 }));
 
-const retries = object<record.ExecutionRecord['retries'][string]>((field, has) => ({
+const retries = object((field, has) => ({
   ...(has('parse') && { parse: count(field('parse')) }),
   ...(has('timeout') && { timeout: count(field('timeout')) }),
   ...(has('transient') && { transient: count(field('transient')) }),
@@ -127,7 +123,7 @@ const retries = object<record.ExecutionRecord['retries'][string]>((field, has) =
   ...(has('remote') && { remote: remoteRetry(field('remote')) }),
 }));
 
-const session = object<record.SessionEntry>((field) => ({
+const session = object((field) => ({
   sessionId: nullableText(field('sessionId')),
   harness: text(field('harness')),
   personaHash: text(field('personaHash')),
@@ -139,7 +135,7 @@ const session = object<record.SessionEntry>((field) => ({
   personaName: text(field('personaName')),
 }));
 
-const pendingInstance = object<approval.PendingInstance>((field) => ({
+const pendingInstance = object((field) => ({
   id: text(field('id')),
   execution: text(field('execution')),
   vertex: text(field('vertex')),
@@ -155,7 +151,7 @@ const label = (field: (key: string) => recordReadNode.Node) => ({
 });
 
 // The pathspecs a reset intent saved before #144 are a list.
-const within: recordReadNode.Read<integrity.Within> = (node) =>
+const within = (node: recordReadNode.Node) =>
   Array.isArray(node.value)
     ? texts(node)
     : object((field, has) => ({
@@ -164,7 +160,7 @@ const within: recordReadNode.Read<integrity.Within> = (node) =>
         ...(has('exclude') && { exclude: texts(field('exclude')) }),
       }))(node);
 
-const rollbackSet = object<integrity.RollbackSet>((field, has) => ({
+const rollbackSet = object((field, has) => ({
   files: untrackedFiles(field('files')),
   ...(has('within') && { within: within(field('within')) }),
   ...(has('pathspecs') && { pathspecs: texts(field('pathspecs')) }),
@@ -172,7 +168,7 @@ const rollbackSet = object<integrity.RollbackSet>((field, has) => ({
 
 // What an intent saves: an Effect's payload, a consumed Decision's or an agent call's baseline. Each fits one form by
 // its keys; which Effect an entry names is not checked against it (#384).
-const PAYLOADS: recordReadNode.Form<writeAhead.Payload>[] = [
+const payload = variant('a write-ahead payload', [
   {
     required: ['message', 'tree', 'parent'],
     read: object((field) => ({
@@ -257,18 +253,18 @@ const PAYLOADS: recordReadNode.Form<writeAhead.Payload>[] = [
     })),
   },
   { required: ['baseline'], read: object((field) => ({ baseline: integrityBaseline(field('baseline')) })) },
-];
+]);
 
-const writeAheadEntry = object<writeAhead.WriteAheadEntry>((field) => ({
-  step: oneOf<writeAhead.WriteAheadEntry['step']>({ intent: true, evidence: true, complete: true })(field('step')),
+const writeAheadEntry = object((field) => ({
+  step: oneOf({ intent: true, evidence: true, complete: true })(field('step')),
   actionMarker: text(field('actionMarker')),
   effect: nullableText(field('effect')),
-  payload: nullable(variant('a write-ahead payload', PAYLOADS))(field('payload')),
+  payload: nullable(payload)(field('payload')),
   evidence: nullable(keyed(json))(field('evidence')),
   time: text(field('time')),
 }));
 
-export const executionRecord = object<recordJson.ExecutionRecordJson>((field) => ({
+export const executionRecord = object((field) => ({
   schemaVersion: count(field('schemaVersion')),
   repository: text(field('repository')),
   execution: text(field('execution')),
@@ -292,7 +288,7 @@ export const executionRecord = object<recordJson.ExecutionRecordJson>((field) =>
     first: nullableText(commits('first')),
     baseline: nullableText(commits('baseline')),
   }))(field('testCommits')),
-  history: list<visit.HistoryItem>(historyItem)(field('history')),
+  history: list(historyItem)(field('history')),
   worktree: text(field('worktree')),
   branch: text(field('branch')),
   base: text(field('base')),
@@ -307,7 +303,7 @@ export const executionRecord = object<recordJson.ExecutionRecordJson>((field) =>
   writeAheadLog: list(writeAheadEntry)(field('writeAheadLog')),
 }));
 
-export const epicRecord = object<Omit<record.EpicRecord, 'commonDir'>>((field) => ({
+export const epicRecord = object((field) => ({
   schemaVersion: count(field('schemaVersion')),
   epic: count(field('epic')),
   planDecision: json(field('planDecision')),

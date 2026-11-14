@@ -143,6 +143,16 @@ export function checked(value: unknown, what: string): JsonValue {
   return copy;
 }
 
+// The copy `checked` makes of an object, typed as the JSON object it is: what a save of it writes. A list is not one.
+export function checkedObject<Value extends object>(
+  value: Value & NoInfer<JsonChecked<Value>>,
+  what: string,
+): { [key: string]: JsonValue } {
+  const copy = checked(value, what);
+  if (typeof copy !== 'object' || copy === null || Array.isArray(copy)) throw new Error(`${what}: is not an object`);
+  return copy;
+}
+
 // The text a save writes. The only call that turns saved data into JSON (docs/research/configured-name-collections.md,
 // open question 5).
 export function text<Value>(value: Value & NoInfer<JsonChecked<Value>>, what: string, space?: number): string {

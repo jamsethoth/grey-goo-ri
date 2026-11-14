@@ -71,7 +71,7 @@ type Rest = () => Record<string, jsonValue.JsonValue>;
 
 // An object read field by field. The keys `read` reads, or asks about with `has`, are the ones its type declares: one
 // it reads that the row lacks is missing, and one it never asks about is undeclared, unless `read` takes the `rest`,
-// every other key as JSON, for an object its type leaves open. `rest` is taken last, once every declared key is read.
+// every other key as JSON, as `open` does. `rest` is taken last, once every declared key is read.
 export const object =
   <Value>(read: (field: Field, has: Has, rest: Rest) => Value): Read<Value> =>
   (node) => {
@@ -92,15 +92,24 @@ export const object =
     return undeclared ? refuse(child(node, undeclared[0], undefined), 'is not declared') : result;
   };
 
+// An object its type leaves open: the keys `read` reads, then every other key as JSON.
+export const open = <Value extends object>(
+  read: (field: Field, has: Has) => Value,
+): Read<Value & Record<string, jsonValue.JsonValue>> =>
+  object((field, has, rest) => Object.assign(read(field, has), rest()));
+
 // A union told apart by its keys: the one form whose keys the object holds is read. An object that fits no form, or
-// more than one, is not of the union.
+// more than one, is not of the union. Its value is the union of its forms' values.
 export interface Form<Value> {
   required: string[];
   optional?: string[];
   read: Read<Value>;
 }
 export const variant =
-  <Value>(what: string, forms: Form<Value>[]): Read<Value> =>
+  <Values extends unknown[]>(
+    what: string,
+    forms: { [Index in keyof Values]: Form<Values[Index]> },
+  ): Read<Values[number]> =>
   (node) => {
     const { value } = node;
     if (!referencePaths.isRecord(value)) return refuse(node, 'is not an object');
@@ -113,12 +122,19 @@ export const variant =
     return fits.length === 1 ? fits[0].read(node) : refuse(node, `is not ${what}`);
   };
 
-// A union told apart by the value of one key: `pick` reads that key's node and gives the form the object is read by.
+// A union told apart by the value of one key: the form `forms` holds under that value reads the object. Any other value
+// is refused, or read by `other` when it is given. Its value is the union of its forms' values.
 export const tagged =
-  <Value>(key: string, pick: (tag: Node) => Read<Value>): Read<Value> =>
+  <Values extends Record<string, unknown>, Other = never>(
+    key: string,
+    forms: { [Tag in keyof Values]: Read<Values[Tag]> },
+    other?: Read<Other>,
+  ): Read<Values[keyof Values] | Other> =>
   (node) => {
     const { value } = node;
     if (!referencePaths.isRecord(value)) return refuse(node, 'is not an object');
     const tag = child(node, key, value[key]);
-    return Object.hasOwn(value, key) ? pick(tag)(node) : refuse(tag, 'is missing');
+    if (!Object.hasOwn(value, key)) return refuse(tag, 'is missing');
+    if (other && !(typeof tag.value === 'string' && Object.hasOwn(forms, tag.value))) return other(node);
+    return forms[oneOf(forms)(tag)](node);
   };

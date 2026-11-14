@@ -104,6 +104,14 @@ test('checked accepts exactly the values a save reads back unchanged, and names 
   }
 });
 
+test('checkedObject gives the JSON copy of an object, without its undefined keys, and refuses a list', () => {
+  const given = { row: 'claimed', attempt: undefined, rule: { table: 'fixed', row: 'claimed' } };
+  const copy = jsonValue.checkedObject(given, 'the evidence');
+  assert.deepEqual(copy, { row: 'claimed', rule: { table: 'fixed', row: 'claimed' } });
+  assert.notEqual(copy.rule, given.rule, 'a copy, not the object given');
+  assert.throws(() => jsonValue.checkedObject(['a'], 'the evidence'), /^Error: the evidence: is not an object$/);
+});
+
 test('checked names the value itself when the whole value is not JSON', () => {
   assert.throws(() => jsonValue.checked(new Map(), 'the row'), /^Error: the row: the value is a Map/);
   assert.throws(() => jsonValue.checked(undefined, 'the row'), /^Error: the row: the value is undefined/);

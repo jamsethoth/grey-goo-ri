@@ -6,15 +6,15 @@ import type * as effects from './effects/index.ts';
 import type * as integrity from './integrity.ts';
 import type * as jsonValue from './json-value.ts';
 import type * as record from './record.ts';
-import type * as visit from './visit.ts';
 
 // What an intent saves ahead of its effect: an Effect's payload (lib/effects/), a consumed Decision's, or an agent
 // Attempt's baseline.
-export type Payload = effects.Payload | approvalAction.Consumption | { baseline: integrity.IntegrityBaseline };
+export type CallPayload = { baseline: integrity.IntegrityBaseline };
+export type Payload = effects.Payload | approvalAction.Consumption | CallPayload;
 
 // What a side effect leaves as proof, by its effect's own fields: a sha, an id, a url. A settled Action's also holds
-// its Resolution's fields, which the next Attempt reads.
-export type Evidence = Record<string, jsonValue.JsonValue | visit.RuleIdentity | visit.CheckSignal | undefined>;
+// its Resolution's fields, as JSON, which the next Attempt reads: what a row read back gives (#402).
+export type Evidence = Record<string, jsonValue.JsonValue>;
 
 // One step of a side effect in the write-ahead log.
 export interface WriteAheadEntry {

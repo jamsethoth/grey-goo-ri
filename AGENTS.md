@@ -116,7 +116,7 @@ leverage and a change lands in one place (locality).
 | `lib/checks.ts` | Red Check, Green Check, Test Immutability, Findings Hash, the `response` Check's conditions, Check Evidence |
 | `lib/integrity.ts` | Integrity Assertions (worktree snapshots, busy flag, generation, Protected Files) and their types: the snapshot, the Attempt baseline, Integrity Violations |
 | `lib/record.ts` | Execution Record and Epic Record: their types, creation, persistence in the State Database and its writes (`StateDatabase`) |
-| `lib/record-json.ts` | a record's row: the Execution Record's JSON type (`ExecutionRecordJson`) and its only Map conversion (`toJson`, `fromJson`), the parse that tells a corrupt row (`RecordCorruptError`); `lib/record.ts` re-exports what callers use |
+| `lib/record-json.ts` | a record's row: the Execution Record's JSON type (`ExecutionRecordJson`), the Epic Record's (`EpicRecordJson`), and the Execution Record's only Map conversion (`toJson`, `fromJson`), the parse that tells a corrupt row (`RecordCorruptError`); `lib/record.ts` re-exports what callers use |
 | `lib/record-read.ts` | a record's row read whole, field by field, into the types `lib/record-json.ts` saves: a wrong type, a key left out or undeclared, or a string outside its closed set is a `RowFieldError` naming its path |
 | `lib/record-read-visit.ts` | what an Execution Record's row nests for its Visits, read for `lib/record-read.ts`: the Configuration Snapshot, the Visit's progress and Resolution, each Action's outputs |
 | `lib/record-read-node.ts` | the node readers the two record read modules build from: a typed value of one node, or a `RowFieldError` naming its path |
