@@ -1,6 +1,7 @@
 // Briefs, and the checks on a Structured Response schema and a response. A schema is a file its Source names, and stays
 // inside the strict subset below, which every Harness accepts (docs/interfaces/harness.md, `run(call)`).
 
+import * as jsonValue from './json-value.ts';
 import * as referencePaths from './reference-paths.ts';
 import * as publicText from './public-text.ts';
 import * as render from './render.ts';
@@ -17,6 +18,11 @@ const SUBSET = {
 
 const repeated = (list: unknown[]) => list.find((value, i) => list.indexOf(value) !== i);
 
+// An object assertStrict cannot fully see, a Proxy of a function among them. Asked before any shape check, which a
+// revoked Proxy would throw from.
+const hidden = (value: unknown) =>
+  (typeof value === 'object' || typeof value === 'function') && value !== null && !jsonValue.fullySeen(value);
+
 // A schema node's keywords and type are in the subset, and its enum is a list of distinct strings.
 function assertKeywords(schema: Record<string, unknown>, path: string) {
   // A string test first: SUBSET[['string']] would coerce the array to its one element.
@@ -31,7 +37,12 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
     throw new Error(`${path}: type ${JSON.stringify(schema.type) ?? '(none)'} is outside the strict subset`);
   if (
     schema.enum !== undefined &&
-    !(Array.isArray(schema.enum) && schema.enum.length && schema.enum.every((value) => typeof value === 'string'))
+    !(
+      !hidden(schema.enum) &&
+      Array.isArray(schema.enum) &&
+      schema.enum.length &&
+      schema.enum.every((value) => typeof value === 'string')
+    )
   ) {
     throw new Error(`${path}: enum must be a non-empty list of strings`);
   }
@@ -41,11 +52,12 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
 
 // An object node requires exactly its properties, each reachable by a dotted path, and allows no others.
 function assertObject(schema: Record<string, unknown>, path: string) {
-  const keys = Object.keys(schema.properties ?? {});
+  if (hidden(schema.properties)) throw new Error(`${path}: properties must be a plain object`);
   if (schema.properties !== undefined && !referencePaths.isRecord(schema.properties))
     throw new Error(`${path}: properties must be an object`);
+  const keys = Object.keys(schema.properties ?? {});
   if (schema.additionalProperties !== false) throw new Error(`${path}: object lacks additionalProperties: false`);
-  if (!Array.isArray(schema.required)) throw new Error(`${path}: required must be a list`);
+  if (hidden(schema.required) || !Array.isArray(schema.required)) throw new Error(`${path}: required must be a list`);
   const required = schema.required as unknown[];
   const repeatedName = repeated(required);
   if (repeatedName !== undefined) throw new Error(`${path}: required repeats ${JSON.stringify(repeatedName)}`);
@@ -62,8 +74,10 @@ function assertObject(schema: Record<string, unknown>, path: string) {
   for (const key of keys) assertStrict(properties[key], `${path}.${key}`);
 }
 
-// A schema in the subset has every keyword typed as a SchemaNode types it.
+// A schema in the subset has every keyword typed as a SchemaNode types it. Each object it reads is one whose own keys
+// are all a reader of it sees (#365).
 export function assertStrict(schema: unknown, path = '(root)'): asserts schema is referencePaths.SchemaNode {
+  if (hidden(schema)) throw new Error(`${path}: schema must be a plain object`);
   if (!referencePaths.isRecord(schema)) throw new Error(`${path}: schema must be an object`);
   assertKeywords(schema, path);
   if (schema.type === 'array' && schema.items === undefined) throw new Error(`${path}: array lacks items`);
