@@ -29,6 +29,8 @@ const SHAPES = {
 };
 type Kind = keyof typeof SHAPES;
 
+const RECOVERY_NUMBER_MISSING = /: its cursor has no Recovery Number, so it was written before Action ids \(#111\)$/;
+
 const valueAt = (row: Json, segments: Segment[]) =>
   segments.reduce<Json>((held, segment) => (held as Record<Segment, Json>)[segment], row);
 const declaredAt = (kind: Kind, row: Json, segments: Segment[]) => typeShape.declaredAt(SHAPES[kind], row, segments);
@@ -218,8 +220,8 @@ test('a required key left out is a corrupt row naming it; an optional one left o
         const union = unionOf(kind, row, segments);
         if (mayLeaveOut(kind, row, segments)) loads(kind, broken, `${path} left out`);
         // A cursor with no Recovery Number was written before Action ids, and says so (#111).
-        else if (path === 'cursor.recovery') refused(kind, broken, /Recovery Number/, path);
-        else if (path === 'schemaVersion') refused(kind, broken, /unknown schemaVersion/, path);
+        else if (path === 'cursor.recovery') refused(kind, broken, RECOVERY_NUMBER_MISSING, path);
+        else if (path === 'schemaVersion') refused(kind, broken, /: unknown schemaVersion undefined$/, path);
         else if (union) refused(kind, broken, new RegExp(`: its ${escaped(union)} is not `), `${path} left out`);
         else refused(kind, broken, new RegExp(`: its ${escaped(path)} is missing$`), `${path} left out`);
       }
@@ -273,6 +275,7 @@ const UNION_NAMES: Record<string, string> = {
   'writeAhead.CallPayload': 'a write-ahead payload',
   'integrity.UntrackedLink': 'a link or base64 bytes',
 };
+// Any other scalar, a closed set or a string-or-number among them, is read as a string first.
 const SCALAR_REFUSALS: Record<string, string> = { number: 'is not a number', boolean: 'is not true or false' };
 const wrongTypeRefusal = (shape: typeShape.Shape) =>
   shape.kind === 'scalar'
@@ -284,13 +287,42 @@ const unionRefusal = (kind: Kind, row: Json, segments: Segment[]) => {
   assert.ok(name, `${pathOf(segments)} is a union with a name`);
   return `${pathOf(segments)} is not ${UNION_NAMES[name.name]}`;
 };
-const members = (message: string) =>
-  message
-    .replace(/^.* is not one of /, '')
-    .split(', ')
-    .sort();
-// The closed set a string is refused against: its own, or for the key that tells a union's forms apart, every form's
-// value of it, unless one form takes any value its set does not (the Transition Table's rows), whose set is then read.
+// Each closed set as its refusal lists it: in the reader's order, which the record types do not keep.
+const CLOSED_SETS = [
+  ['advance', 'retry', 'stop'],
+  [
+    'cleanup-unconfirmed',
+    'integrity-violation',
+    'transient-retry',
+    'transient-exhausted',
+    'run-stop',
+    'timeout-retry',
+    'timeout-exhausted',
+    'unknown-failure',
+    'parse-retry',
+    'parse-exhausted',
+    'claimed',
+    'recover',
+  ],
+  ['completed', 'failed', 'timed-out', 'killed'],
+  ['fixed', 'stopped', 'passed', 'failed'],
+  ['hold', 'abandon', 'fault'],
+  ['intent', 'evidence', 'complete'],
+  ['job', 'none', 'group'],
+  ['parse', 'timeout', 'transient', 'rateLimited'],
+  ['passed', 'failed'],
+  ['transient', 'rate-limited', 'auth', 'quota', 'budget', 'permission', 'rejected', 'invalid', 'unknown'],
+];
+// The listing of the closed set whose members are `values`, which a new set must be given here.
+function listing(values: string[], path: string) {
+  const key = [...values].sort().join(',');
+  const found = CLOSED_SETS.find((members) => [...members].sort().join(',') === key);
+  assert.ok(found, `${path}'s closed set ${key} is listed in CLOSED_SETS`);
+  return found.join(', ');
+}
+// The closed set a string is refused against: its own, or, for the key that tells a union's forms apart, every form's
+// value of it. A Resolution's form for the Transition Table takes more than one row, and a row outside every own form
+// is refused against that set.
 function closedSet(kind: Kind, row: Json, segments: Segment[], own: string[]) {
   const union = declaredAt(kind, row, segments.slice(0, -1));
   if (union?.kind !== 'union' || union.by !== 'tag') return own;
@@ -313,11 +345,8 @@ function refusesWhole(kind: Kind, row: Json, segments: Segment[], value: Json) {
   refusedExactly(kind, wrong, `${path} ${wrongTypeRefusal(declaredAt(kind, row, segments)!)}`, path);
   const placed = placedAt(kind, row, segments);
   if (placed?.kind === 'scalar' && placed.members && typeof value === 'string') {
-    const closed = [...closedSet(kind, row, segments, placed.members)].sort();
-    assert.throws(
-      () => parse(kind, set('not-a-member')),
-      (err: Error) => assert.deepEqual(members(err.message), closed, path) ?? true,
-    );
+    const closed = listing(closedSet(kind, row, segments, placed.members), path);
+    refusedExactly(kind, set('not-a-member'), `${path} is not one of ${closed}`, path);
   }
   const keyedParent = segments.length > 1 && isKeyed(kind, row, segments.slice(0, -1));
   if (typeof segments.at(-1) === 'number' || keyedParent || path === 'cursor.recovery') return;
@@ -340,7 +369,7 @@ test('the reader refuses what it refused before, with the same message', () => {
   assert.ok(checked > 300, `${checked} fields checked`);
 });
 
-// A Resolution's row is the key it is told apart by, so a row with neither its row nor its outcome names its row.
+// A Resolution with neither its row nor its outcome names its row: the tag is read before any form.
 test('a row with two faults names the one its reader reads first', () => {
   const broken = changed(FIXTURE.execution, ['visitState', 'settled', 'resolution'], (parent, key) => {
     const resolution = (parent as Record<Segment, Json>)[key] as { [key: string]: Json };
