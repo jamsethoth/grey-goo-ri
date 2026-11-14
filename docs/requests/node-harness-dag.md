@@ -430,7 +430,8 @@ counts per edge, session lineage per agent Action (session id, harness, persona 
 later briefs need (each Vertex's Action outputs and the inputs snapshot of each Visit, ADR 0014; history), worktree
 and branch identity, base revision, PR number, pending approval state, and the write-ahead log below. A Run reads the
 repository's `owner/name` once, with `gh repo view --json nameWithOwner`, after its preflight checks pass and before
-any other GitHub read, and a failed read fails preflight naming the checkout. A new ticket worktree goes at
+any other GitHub read, and a failed read fails preflight naming the checkout. `gg doctor` reads it too, even beside
+configuration errors, and gives a failed read as the same error (#372). A new ticket worktree goes at
 `worktreeRoot/<owner>/<name>/ticket-<n>`; a resumed Execution keeps the repository and worktree its record holds.
 `gg run`, `gg doctor` and `gg init` act on the repository holding the current directory, or the one `--repo <path>`
 names.

@@ -75,7 +75,7 @@ leverage and a change lands in one place (locality).
 
 | Module | Responsibility |
 | --- | --- |
-| `bin/gg.ts` | `gg` entry point: one command table gives the usage, each command's flags and its dispatch |
+| `bin/gg.ts` | `gg` entry point: one command table gives the usage, each command's flags and its dispatch; `main`, over the gh it is passed, which the tests that spawn gg pass as the fake (`test/support/gg-over-fake-gh.ts`) |
 | `lib/options.ts` | option parsing and its `UsageError` |
 | `lib/config.ts` | the two sources (the repository's `.agents/gg/` and the user's `GG_HOME`), each `gg.json` read whole with the files it names (at the keys `lib/procedures.ts` declares), the Pinned Configuration and its Config Hash, and the value an Execution runs under (`Pinned`) |
 | `lib/settings.ts` | the settings both `gg.json` files hold beside their Flows: the repository contract (Declared Commands, `testPaths`, `approvers`, `labelPrefix`, `baseBranch`), the user's machine settings, and the keys each file may hold, parsed to Settings or their Problems, never both |
@@ -84,7 +84,7 @@ leverage and a change lands in one place (locality).
 | `lib/model.ts` | the Resolved Flow: its JSON's one declared type (`ResolvedFlowJson`), the view of a Flow as written that `gg doctor` prints (`DeclaredFlowJson`), the Vertex the interpreter reads, and the Flow in memory, its Procedures, Vertices and Claim tokens as Maps keyed by configured name, read from and written back to that JSON |
 | `lib/reference-paths.ts` | the one reference-path resolver: parse, read and type every dotted reference path |
 | `lib/run.ts` | `gg run`: its preflight over the checked configuration, with the Flow `--flow` names, the `preflight failed` text and its exit code, and each admitted Flow pinned with its Pinned Configuration; the Run's Tickets mapped concurrently, run directory, Lifecycle Events, each Ticket's result and the exit codes |
-| `lib/configuration-check.ts` | the configuration check `gg doctor` and `gg run` share (V1): the Flows of both sources, each checked against the repository contract and named `user:<name>` when it is the user's, the settings, each user Flow that does not fit the repository, the State Database, the Execution Records a Run would resume whose Flow is gone, and Harness preflight over every admitted Flow |
+| `lib/configuration-check.ts` | the configuration check `gg doctor` and `gg run` share (V1): the Flows of both sources, each checked against the repository contract and named `user:<name>` when it is the user's, the settings, each user Flow that does not fit the repository, the State Database, the Execution Records a Run would resume whose Flow is gone, and Harness preflight over every admitted Flow; the repository's GitHub owner/name both read, and the error a failed read gives (#372) |
 | `lib/admission.ts` | `gg run` admission of one Ticket: its Execution Record, readiness and holds, then its Execution under the Flow its record pins, handed whole as that Flow's pinned value (`config.Pinned`), the Run's Settings giving only what the Config Hash does not cover |
 | `lib/ticket-worktree.ts` | the worktree admission runs a Ticket in: the branch checks that hold it, and the other ticket worktrees |
 | `lib/interpreter.ts` | `runExecution`: one Execution from its cursor to a Terminal, after Reconciliation of a resumed record or a pending report's finish; `resumption`, what a Run does with a record it finds; gg's own Protected Files |
@@ -152,7 +152,7 @@ leverage and a change lands in one place (locality).
 | `lib/work.ts` | `gg work abandon`: a Ticket's Execution Record forgotten, its worktree and branch kept; the rest of `gg work` and the Registry are to come |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
-| `lib/doctor.ts` | `gg doctor`: the checked configuration printed, each Resolved Flow with its source per Vertex, its warnings (a misfit among them) and errors (each record whose Flow is gone among them), and the labels the Flows can request that the repository lacks; `gg init`: the example, `test/fixtures/example/`, written into a repository, the user's `gg.json` with the machine settings, and the State Database |
+| `lib/doctor.ts` | `gg doctor`: the checked configuration printed, each Resolved Flow with its source per Vertex, its warnings (a misfit among them) and errors (each record whose Flow is gone and an owner/name gh cannot read among them), and the labels the Flows can request that the repository lacks; `gg init`: the example, `test/fixtures/example/`, written into a repository, the user's `gg.json` with the machine settings, and the State Database |
 | `lib/plan.ts` | **stub** (`export {}`): `gg plan` |
 | `lib/publish.ts` | **stub** (`export {}`): `gg publish` (to be ported) |
 | `scripts/run-suite.ts` | the suite launcher Codex may run outside its sandbox (ADR 0010); the full and fast stages' census of what they leave running (`docs/testing.md`) |

@@ -22,6 +22,8 @@ import * as tempDirectory from '../support/temp-directory.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const bin = fileURLToPath(new URL('../../bin/gg.ts', import.meta.url));
+// gg over the fake gh, for a case whose command reads GitHub (#372).
+const ggOverFakeGh = fileURLToPath(new URL('../support/gg-over-fake-gh.ts', import.meta.url));
 const commands = ['init', 'doctor', 'plan', 'publish', 'run', 'work', 'trace', 'stats'];
 
 function gg(...args: string[]) {
@@ -126,7 +128,7 @@ function tempRepo(t: TestContext, user?: object) {
     writeFileSync(join(userDirectory, 'gg.json'), JSON.stringify(user));
   }
   const ggAt = (cwd: string, ...args: string[]) =>
-    spawnSync(process.execPath, [bin, ...args], {
+    spawnSync(process.execPath, [ggOverFakeGh, ...args], {
       cwd,
       encoding: 'utf8',
       env: { ...process.env, HOME: home, USERPROFILE: home, GG_HOME: userDirectory },

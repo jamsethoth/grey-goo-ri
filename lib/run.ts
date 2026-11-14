@@ -222,12 +222,12 @@ export async function runTarget(options: RunOptions): Promise<TicketResult[]> {
 // The repository's owner/name, read once the configuration has passed preflight and before the Run reads GitHub for
 // anything else: a failure fails preflight, naming the checkout.
 async function readRepository(gh: github.Gh, checkout: Omit<admission.Repo, 'repository'>): Promise<admission.Repo> {
-  const { repository, error } = await gh.repositoryName(checkout.mainRoot);
+  const { repository, errors } = await configurationCheck.readRepository(gh, checkout.mainRoot);
   if (repository !== null) return { ...checkout, repository };
-  const found = report.newReport();
-  const message = `cannot read the GitHub owner/name of ${checkout.mainRoot}: ${error}`;
-  report.error(found, '', 'repository-unread', message, { path: checkout.mainRoot, reason: error });
-  throw preflightFailed([report.line('error', found.errors[0]!)], 1);
+  throw preflightFailed(
+    errors.map((problem) => report.line('error', problem)),
+    1,
+  );
 }
 
 // The Ticket, or an Epic's ready sub-issues. Every sub-issue is read before the Run's first effect, so an epic with
