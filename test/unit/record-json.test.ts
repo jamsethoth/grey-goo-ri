@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs';
 import * as effects from '../../lib/effects/index.ts';
 import * as recordJson from '../../lib/record-json.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
+import * as typeShape from '../support/type-shape.ts';
 
 // parseRow checks the whole row (#357): each case below walks every node of a full row, so a field the read leaves
-// unchecked fails here by its path. The pattern lists are the row's type as these cases see it.
+// unchecked fails here by its path. What each node may hold is read from the record types.
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Segment = string | number;
@@ -19,85 +20,45 @@ interface Fixture {
 const FIXTURE = JSON.parse(readFileSync(new URL('../fixtures/record-rows.json', import.meta.url), 'utf8')) as Fixture;
 const COMMON_DIR = 'C:/repo/.git';
 
-// A field typed JsonValue holds anything JSON.parse gives, so nothing at or below it is refused.
-const JSON_VALUE = [
-  /^terminalStop\.response$/,
-  /^visitState\.(call\.)?response$/,
-  /^visitState\.call\.signal\.response$/,
-  /^configurationSnapshot\.(outcomes|route|routes)$/,
-  /^configurationSnapshot\.commands\.[^.]+$/,
-  /^configurationSnapshot\.inputs\.[^.]+\.value$/,
-  /^configurationSnapshot\.agent\.(?!(harness|model|effort|persona|network)$)[^.]+$/,
-  /^visitState\.call\.harnessResult\.(sessionInit|permissionDenials|commandsRun)$/,
-  /^outputs\[\d+\]\.value\.response$/,
-  /^outputs\[\d+\]\.value\.evidence\.(?!(command|output)$)[^.]+$/,
-  /^writeAheadLog\[\d+\]\.evidence\.[^.]+$/,
-  /^planDecision$/,
-];
-// Keyed by name, as a Map or an open Record is: any key may be added or left out, and each value is checked.
-const KEYED = [
-  /^(visits|traversals|retries|sessions)$/,
-  /^sessions\.[^.]+\.cumulativeUsage$/,
-  /\.usage\.(cumulative|delta)$/,
-  /^visitState\.(runs|checks)$/,
-  /^configurationSnapshot\.(inputs|commands|files)$/,
-  /[Bb]aseline\.(idle|untracked|tests)$/,
-  /\.(untracked|left)\.files$/,
-  /^writeAheadLog\[\d+\]\.evidence$/,
-];
-// Its declared keys are required and any other is JSON.
-const OPEN = [/^configurationSnapshot\.agent$/, /^outputs\[\d+\]\.value\.evidence$/];
-// A union told apart by its keys: a change to its key set is refused at the union, not at the key.
-const KEY_SET_UNION = [
-  /^writeAheadLog\[\d+\]\.payload$/,
-  /\.decidedBy$/,
-  /[Bb]aseline\.(untracked|tests)\.[^.]+$/,
-  /\.files\.[^.]+$/,
-];
-// Keys a row may leave out. A payload's are by its effect, below.
-const OPTIONAL = [
-  /\.actionRef\.(procedure|attempt)$/,
-  /^retries\.[^.]+\.(parse|timeout|transient|rateLimited|remote)$/,
-  /^outputs\[\d+\]\.value\.[^.]+$/,
-  /^outputs\[\d+\]\.value\.decision\.actor$/,
-  /\.cleanup\.(reason|containment)$/,
-  /\.harnessResult\.(exitCode|exitSignal|finalEventSubtype|sessionInit|permissionDenials|commandsRun|cleanup)$/,
-  /\.resolution\.(sessionId|reason|surfaces|attempt|signal|output)$/,
-  /\.failure\.(retryAfterMs|message)$/,
-  /^configurationSnapshot\.agent\.(?!(harness|model|effort|persona)$)[^.]+$/,
-  /^outputs\[\d+\]\.value\.evidence\.(?!(command|output)$)[^.]+$/,
-];
-// A consumed Decision's payload less its decision is a label payload, so the row still loads.
-const PAYLOAD_OPTIONAL: Record<string, string[]> = {
-  'pr-upsert': ['base'],
-  reset: [
-    'untracked',
-    'left',
-    'untracked.within',
-    'untracked.pathspecs',
-    'untracked.within.paths',
-    'untracked.within.globs',
-    'untracked.within.exclude',
-    'left.index',
-    'left.files',
-  ],
-  label: ['decision', 'decision.actor'],
+// The row's rules, read from the record types (test/support/type-shape.ts): what each node is declared as, with each
+// union read as the form the row's value there fits (#402).
+const shapes = new typeShape.TypeShapes();
+const SHAPES = {
+  ticket: shapes.shapeOf('lib/record-json.ts', 'ExecutionRecordJson'),
+  epic: shapes.shapeOf('lib/record-json.ts', 'EpicRecordJson'),
 };
-// Strings from a closed set: any other is refused.
-const LITERAL = [
-  /\.rule\.table$/,
-  /\.direction$/,
-  /\.resolution\.row$/,
-  /\.retryKind$/,
-  /\.(checks\.[^.]+|signal)\.state$/,
-  /\.(harnessResult|signal)\.status$/,
-  /^writeAheadLog\[\d+\]\.step$/,
-  /^admissionStop\.kind$/,
-  /\.containment\.kind$/,
-  /\.remote\.failureClass$/,
-];
+type Kind = keyof typeof SHAPES;
 
-const matches = (patterns: RegExp[], path: string) => patterns.some((pattern) => pattern.test(path));
+const RECOVERY_NUMBER_MISSING = /: its cursor has no Recovery Number, so it was written before Action ids \(#111\)$/;
+
+const valueAt = (row: Json, segments: Segment[]) =>
+  segments.reduce<Json>((held, segment) => (held as Record<Segment, Json>)[segment], row);
+const declaredAt = (kind: Kind, row: Json, segments: Segment[]) => typeShape.declaredAt(SHAPES[kind], row, segments);
+// The node's shape as the row's value there is read: a union as the form it fits.
+const placedAt = (kind: Kind, row: Json, segments: Segment[]) => {
+  const declared = declaredAt(kind, row, segments);
+  return declared && typeShape.formed(declared, valueAt(row, segments));
+};
+// A field typed JsonValue holds anything JSON.parse gives, so nothing at or below it is refused.
+const isJson = (kind: Kind, row: Json, segments: Segment[]) => declaredAt(kind, row, segments)?.kind === 'json';
+// Keyed by name, as a Map or an open Record is: any key may be added or left out, and each value is checked.
+const isKeyed = (kind: Kind, row: Json, segments: Segment[]) => placedAt(kind, row, segments)?.kind === 'keyed';
+// Its declared keys are required and any other is JSON.
+const isOpen = (kind: Kind, row: Json, segments: Segment[]) => {
+  const placed = placedAt(kind, row, segments);
+  return placed?.kind === 'object' && placed.others !== null;
+};
+// A union told apart by its keys: a change to its key set is refused at the union, not at the key.
+const isKeySetUnion = (kind: Kind, row: Json, segments: Segment[]) => {
+  const declared = declaredAt(kind, row, segments);
+  return declared?.kind === 'union' && declared.by === 'keys';
+};
+// A string from a closed set: any other is refused.
+const isClosedSet = (kind: Kind, row: Json, segments: Segment[]) => {
+  const placed = placedAt(kind, row, segments);
+  return placed?.kind === 'scalar' && placed.members !== null;
+};
+
 const pathOf = (segments: Segment[]) =>
   segments
     .map((segment) => (typeof segment === 'number' ? `[${segment}]` : `.${segment}`))
@@ -109,11 +70,17 @@ const isObject = (value: Json): value is { [key: string]: Json } =>
 
 // Every node of a row with its segments, parents before children. A node typed as any JSON is given, marked, and
 // nothing below it.
-function* nodes(value: Json, segments: Segment[] = []): Generator<{ segments: Segment[]; value: Json; json: boolean }> {
-  if (segments.length && matches(JSON_VALUE, pathOf(segments))) return yield { segments, value, json: true };
+function* nodes(
+  kind: Kind,
+  row: Json,
+  value: Json = row,
+  segments: Segment[] = [],
+): Generator<{ segments: Segment[]; value: Json; json: boolean }> {
+  if (segments.length && isJson(kind, row, segments)) return yield { segments, value, json: true };
   if (segments.length) yield { segments, value, json: false };
-  if (Array.isArray(value)) for (const [i, item] of value.entries()) yield* nodes(item, [...segments, i]);
-  else if (isObject(value)) for (const [key, held] of Object.entries(value)) yield* nodes(held, [...segments, key]);
+  if (Array.isArray(value)) for (const [i, item] of value.entries()) yield* nodes(kind, row, item, [...segments, i]);
+  else if (isObject(value))
+    for (const [key, held] of Object.entries(value)) yield* nodes(kind, row, held, [...segments, key]);
 }
 
 function changed(
@@ -149,23 +116,22 @@ function refused(kind: 'ticket' | 'epic', row: Json, problem: RegExp, what: stri
   );
 }
 
-// A hold's or a human's decidedBy that names its Visit, less that key, is an Action's, so the row still loads (#341).
-function decidedByOverVisit(row: Json, segments: Segment[]) {
-  if (!/\.decidedBy\.(hold|human)$/.test(pathOf(segments))) return false;
-  let holder = row;
-  for (const segment of segments.slice(0, -1)) holder = (holder as Record<Segment, Json>)[segment];
-  return isObject(holder) && Object.hasOwn(holder, 'vertex');
-}
-
-// A key a row may leave out: optional by its path or its payload's effect, or one whose removal leaves another form.
-function mayLeaveOut(row: Json, segments: Segment[]) {
-  const path = pathOf(segments);
-  const inPayload = payloadKey(row, path);
-  return (
-    matches(OPTIONAL, path) ||
-    (inPayload && PAYLOAD_OPTIONAL[inPayload.effect]?.includes(inPayload.key)) ||
-    decidedByOverVisit(row, segments)
-  );
+// A key a row may leave out: optional in its form, one an open object does not declare, or one whose removal leaves
+// another form of a union told apart by its keys (a hold's decidedBy less its Visit, a Decision's payload less its
+// decision).
+function mayLeaveOut(kind: Kind, row: Json, segments: Segment[]) {
+  const parent = segments.slice(0, -1);
+  const key = String(segments.at(-1));
+  const holder = valueAt(row, parent) as { [key: string]: Json };
+  const declared = declaredAt(kind, row, parent);
+  const placed = declared && typeShape.formed(declared, holder);
+  if (placed?.kind === 'object') {
+    const declared = typeShape.keyOf(placed, key);
+    if (declared ? declared.optional : placed.others !== null) return true;
+  }
+  if (declared?.kind !== 'union' || declared.by !== 'keys') return false;
+  const { [key]: _left, ...rest } = holder;
+  return typeShape.formOf(declared, rest) !== undefined;
 }
 
 // The rows a full fixture gives: the Execution Record itself, then one row per variant at its path.
@@ -185,17 +151,9 @@ function executionRows(): { row: Json; under: string }[] {
   return rows;
 }
 
-// The effect of the write-ahead entry a payload path is in, and the path under that payload.
-function payloadKey(row: Json, path: string): { effect: string; key: string } | null {
-  const found = /^writeAheadLog\[(\d+)\]\.payload\.(.+)$/.exec(path);
-  if (!found || !isObject(row)) return null;
-  const log = row.writeAheadLog as { effect: string }[];
-  return { effect: log[Number(found[1])].effect, key: found[2] };
-}
-
-const unionOf = (segments: Segment[]) => {
+const unionOf = (kind: Kind, row: Json, segments: Segment[]) => {
   const parent = segments.slice(0, -1);
-  return matches(KEY_SET_UNION, pathOf(parent)) ? pathOf(parent) : null;
+  return isKeySetUnion(kind, row, parent) ? pathOf(parent) : null;
 };
 
 const kinds = [
@@ -223,7 +181,7 @@ test('a field of the wrong type, at any depth, is a corrupt row naming its path'
   let checked = 0;
   for (const { kind, rows } of kinds)
     for (const { row, under } of rows())
-      for (const { segments, value, json } of nodes(row)) {
+      for (const { segments, value, json } of nodes(kind, row)) {
         const path = pathOf(segments);
         if (json || path === 'schemaVersion' || !path.startsWith(under)) continue;
         const wrong = typeof value === 'boolean' ? 'x' : true;
@@ -238,7 +196,7 @@ test('a field typed as any JSON loads whatever JSON it holds', () => {
   for (const { kind, rows } of kinds) {
     const [{ row }] = rows();
     const walk = function* (value: Json, segments: Segment[]): Generator<Segment[]> {
-      if (segments.length && matches(JSON_VALUE, pathOf(segments))) return yield segments;
+      if (segments.length && isJson(kind, row, segments)) return yield segments;
       if (Array.isArray(value)) for (const [i, item] of value.entries()) yield* walk(item, [...segments, i]);
       else if (isObject(value)) for (const [key, held] of Object.entries(value)) yield* walk(held, [...segments, key]);
     };
@@ -254,17 +212,16 @@ test('a field typed as any JSON loads whatever JSON it holds', () => {
 test('a required key left out is a corrupt row naming it; an optional one left out still loads', () => {
   for (const { kind, rows } of kinds)
     for (const { row, under } of rows())
-      for (const { segments } of nodes(row)) {
+      for (const { segments } of nodes(kind, row)) {
         const path = pathOf(segments);
-        const parent = pathOf(segments.slice(0, -1));
         if (typeof segments.at(-1) === 'number' || !path.startsWith(under)) continue;
-        if (segments.length > 1 && matches(KEYED, parent)) continue;
+        if (segments.length > 1 && isKeyed(kind, row, segments.slice(0, -1))) continue;
         const broken = changed(row, segments, (holder, key) => void delete (holder as Record<Segment, Json>)[key]);
-        const union = unionOf(segments);
-        if (mayLeaveOut(row, segments)) loads(kind, broken, `${path} left out`);
+        const union = unionOf(kind, row, segments);
+        if (mayLeaveOut(kind, row, segments)) loads(kind, broken, `${path} left out`);
         // A cursor with no Recovery Number was written before Action ids, and says so (#111).
-        else if (path === 'cursor.recovery') refused(kind, broken, /Recovery Number/, path);
-        else if (path === 'schemaVersion') refused(kind, broken, /unknown schemaVersion/, path);
+        else if (path === 'cursor.recovery') refused(kind, broken, RECOVERY_NUMBER_MISSING, path);
+        else if (path === 'schemaVersion') refused(kind, broken, /: unknown schemaVersion undefined$/, path);
         else if (union) refused(kind, broken, new RegExp(`: its ${escaped(union)} is not `), `${path} left out`);
         else refused(kind, broken, new RegExp(`: its ${escaped(path)} is missing$`), `${path} left out`);
       }
@@ -273,18 +230,19 @@ test('a required key left out is a corrupt row naming it; an optional one left o
 test('a key the type does not declare, at any depth, is a corrupt row naming it', () => {
   for (const { kind, rows } of kinds)
     for (const { row, under } of rows()) {
-      const objects = [{ segments: [] as Segment[], value: row, json: false }, ...nodes(row)];
+      const objects = [{ segments: [] as Segment[], value: row, json: false }, ...nodes(kind, row)];
       for (const { segments, value, json } of objects) {
         const path = pathOf(segments);
-        if (json || !isObject(value) || !path.startsWith(under) || matches(KEYED, path) || matches(OPEN, path))
-          continue;
+        if (json || !isObject(value) || !path.startsWith(under)) continue;
+        if (isKeyed(kind, row, segments) || isOpen(kind, row, segments)) continue;
         const broken = changed(
           row,
           [...segments, 'undeclared'],
           (holder, key) => void ((holder as Record<Segment, Json>)[key] = 1),
         );
         const named = pathOf([...segments, 'undeclared']);
-        if (matches(KEY_SET_UNION, path)) refused(kind, broken, new RegExp(`: its ${escaped(path)} is not `), named);
+        if (isKeySetUnion(kind, row, segments))
+          refused(kind, broken, new RegExp(`: its ${escaped(path)} is not `), named);
         else refused(kind, broken, new RegExp(`: its ${escaped(named)} is not declared$`), named);
       }
     }
@@ -293,7 +251,7 @@ test('a key the type does not declare, at any depth, is a corrupt row naming it'
 test('a string outside its closed set is a corrupt row naming it; any other string loads', () => {
   const [{ row }] = executionRows();
   let closed = 0;
-  for (const { segments, value, json } of nodes(row)) {
+  for (const { segments, value, json } of nodes('ticket', row)) {
     const path = pathOf(segments);
     if (json || typeof value !== 'string') continue;
     const broken = changed(
@@ -301,13 +259,124 @@ test('a string outside its closed set is a corrupt row naming it; any other stri
       segments,
       (parent, key) => void ((parent as Record<Segment, Json>)[key] = 'not-a-member'),
     );
-    if (!matches(LITERAL, path)) loads('ticket', broken, `${path} = 'not-a-member'`);
+    if (!isClosedSet('ticket', row, segments)) loads('ticket', broken, `${path} = 'not-a-member'`);
     else {
       refused('ticket', broken, new RegExp(`: its ${escaped(path)} is not one of `), path);
       closed++;
     }
   }
   assert.ok(closed >= 10, `${closed} closed sets checked`);
+});
+
+// The whole refusal each change gives, by the type of the node it changes: the messages parseRow gave before #402.
+// A union told apart by its keys names itself by what its reader calls it.
+const UNION_NAMES: Record<string, string> = {
+  'record.DecidedByAction': 'one form of decidedBy',
+  'writeAhead.CallPayload': 'a write-ahead payload',
+  'integrity.UntrackedLink': 'a link or base64 bytes',
+};
+// Any other scalar, a closed set or a string-or-number among them, is read as a string first.
+const SCALAR_REFUSALS: Record<string, string> = { number: 'is not a number', boolean: 'is not true or false' };
+const wrongTypeRefusal = (shape: typeShape.Shape) =>
+  shape.kind === 'scalar'
+    ? (SCALAR_REFUSALS[shape.type] ?? 'is not a string')
+    : `is not ${shape.kind === 'list' ? 'a list' : 'an object'}`;
+const unionRefusal = (kind: Kind, row: Json, segments: Segment[]) => {
+  const declared = declaredAt(kind, row, segments);
+  const name = declared?.kind === 'union' && declared.forms.find((form) => Object.hasOwn(UNION_NAMES, form.name));
+  assert.ok(name, `${pathOf(segments)} is a union with a name`);
+  return `${pathOf(segments)} is not ${UNION_NAMES[name.name]}`;
+};
+// Each closed set as its refusal lists it: in the reader's order, which the record types do not keep.
+const CLOSED_SETS = [
+  ['advance', 'retry', 'stop'],
+  [
+    'cleanup-unconfirmed',
+    'integrity-violation',
+    'transient-retry',
+    'transient-exhausted',
+    'run-stop',
+    'timeout-retry',
+    'timeout-exhausted',
+    'unknown-failure',
+    'parse-retry',
+    'parse-exhausted',
+    'claimed',
+    'recover',
+  ],
+  ['completed', 'failed', 'timed-out', 'killed'],
+  ['fixed', 'stopped', 'passed', 'failed'],
+  ['hold', 'abandon', 'fault'],
+  ['intent', 'evidence', 'complete'],
+  ['job', 'none', 'group'],
+  ['parse', 'timeout', 'transient', 'rateLimited'],
+  ['passed', 'failed'],
+  ['transient', 'rate-limited', 'auth', 'quota', 'budget', 'permission', 'rejected', 'invalid', 'unknown'],
+];
+// The listing of the closed set whose members are `values`, which a new set must be given here.
+function listing(values: string[], path: string) {
+  const key = [...values].sort().join(',');
+  const found = CLOSED_SETS.find((members) => [...members].sort().join(',') === key);
+  assert.ok(found, `${path}'s closed set ${key} is listed in CLOSED_SETS`);
+  return found.join(', ');
+}
+// The closed set a string is refused against: its own, or, for the key that tells a union's forms apart, every form's
+// value of it. A Resolution's form for the Transition Table takes more than one row, and a row outside every own form
+// is refused against that set.
+function closedSet(kind: Kind, row: Json, segments: Segment[], own: string[]) {
+  const union = declaredAt(kind, row, segments.slice(0, -1));
+  if (union?.kind !== 'union' || union.by !== 'tag') return own;
+  const tags = union.forms.map(({ shape }) => {
+    const tag = shape.kind === 'object' ? typeShape.keyOf(shape, String(segments.at(-1)))?.shape : undefined;
+    return tag?.kind === 'scalar' && tag.members ? tag.members : [];
+  });
+  return tags.find((values) => values.length > 1) ?? tags.flat();
+}
+
+const refusedExactly = (kind: Kind, row: Json, problem: string, what: string) =>
+  refused(kind, row, new RegExp(`: its ${escaped(problem)}$`), what);
+
+// Each refusal of one node, whole: its value of the wrong type, a string outside its closed set, and the key left out.
+function refusesWhole(kind: Kind, row: Json, segments: Segment[], value: Json) {
+  const path = pathOf(segments);
+  const set = (held: Json) =>
+    changed(row, segments, (parent, key) => void ((parent as Record<Segment, Json>)[key] = held));
+  const wrong = set(typeof value === 'boolean' ? 'x' : true);
+  refusedExactly(kind, wrong, `${path} ${wrongTypeRefusal(declaredAt(kind, row, segments)!)}`, path);
+  const placed = placedAt(kind, row, segments);
+  if (placed?.kind === 'scalar' && placed.members && typeof value === 'string') {
+    const closed = listing(closedSet(kind, row, segments, placed.members), path);
+    refusedExactly(kind, set('not-a-member'), `${path} is not one of ${closed}`, path);
+  }
+  const keyedParent = segments.length > 1 && isKeyed(kind, row, segments.slice(0, -1));
+  if (typeof segments.at(-1) === 'number' || keyedParent || path === 'cursor.recovery') return;
+  if (mayLeaveOut(kind, row, segments)) return;
+  const left = changed(row, segments, (holder, key) => void delete (holder as Record<Segment, Json>)[key]);
+  const union = unionOf(kind, row, segments);
+  refusedExactly(kind, left, union ? unionRefusal(kind, row, segments.slice(0, -1)) : `${path} is missing`, path);
+}
+
+test('the reader refuses what it refused before, with the same message', () => {
+  let checked = 0;
+  for (const { kind, rows } of kinds)
+    for (const { row, under } of rows())
+      for (const { segments, value, json } of nodes(kind, row)) {
+        const path = pathOf(segments);
+        if (json || path === 'schemaVersion' || !path.startsWith(under)) continue;
+        refusesWhole(kind, row, segments, value);
+        checked++;
+      }
+  assert.ok(checked > 300, `${checked} fields checked`);
+});
+
+// A Resolution with neither its row nor its outcome names its row: the tag is read before any form.
+test('a row with two faults names the one its reader reads first', () => {
+  const broken = changed(FIXTURE.execution, ['visitState', 'settled', 'resolution'], (parent, key) => {
+    const resolution = (parent as Record<Segment, Json>)[key] as { [key: string]: Json };
+    delete resolution.row;
+    delete resolution.outcome;
+  });
+  refused('ticket', broken, /: its visitState\.settled\.resolution\.row is missing$/, 'no row and no outcome');
 });
 
 test('a decidedBy that mixes two forms, holds none, or names half a Visit is a corrupt row', () => {

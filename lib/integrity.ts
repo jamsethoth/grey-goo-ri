@@ -14,12 +14,15 @@ export interface WorktreeSnapshot {
 export type Surface = keyof WorktreeSnapshot;
 
 // An untracked file's content, which git keeps no copy of: a link's target, or the bytes in base64.
-export type UntrackedFile = { link: string; base64?: undefined } | { base64: string; link?: undefined };
+export type UntrackedLink = { link: string; base64?: undefined };
+export type UntrackedBytes = { base64: string; link?: undefined };
+export type UntrackedFile = UntrackedLink | UntrackedBytes;
 export type UntrackedFiles = Record<string, UntrackedFile>;
 
 // What a listing is limited to: `paths` and anything under them, `globs`, less `exclude` (git.pathspecs). An array is
 // the pathspecs a reset intent saved before #144.
-export type Within = { paths?: string[]; globs?: string[]; exclude?: string[] } | string[];
+export type WithinPaths = { paths?: string[]; globs?: string[]; exclude?: string[] };
+export type Within = WithinPaths | string[];
 
 // What git clean leaves that a rollback must put back: the baseline's untracked files, and where to look for new ones.
 // `pathspecs` stands in for `within` in a reset intent saved before #144.

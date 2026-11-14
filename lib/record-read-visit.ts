@@ -1,28 +1,24 @@
 // The readers of what an Execution Record's row nests for its Visits (lib/visit.ts): the Configuration Snapshot, the
 // Visit's progress with its call, Checks and Resolution, each Action's outputs, and the worktree snapshots and cleanup
 // reports those hold. Only lib/record-read.ts imports it.
-import type * as commandCleanup from './command-cleanup.ts';
-import type * as integrity from './integrity.ts';
-import type * as recordJson from './record-json.ts';
-import type * as runContext from './run-context.ts';
 import type * as visit from './visit.ts';
 import * as recordReadNode from './record-read-node.ts';
 
-const { text, count, flag, json, nullable, list, keyed, oneOf, object, variant, tagged } = recordReadNode;
+const { text, count, flag, json, nullable, list, keyed, oneOf, object, open, variant, tagged } = recordReadNode;
 const nullableText = nullable(text);
 const nullableCount = nullable(count);
 
-export const ruleIdentity = object<visit.RuleIdentity>((field) => ({
-  table: oneOf<visit.RuleIdentity['table']>({ fixed: true, stopped: true, passed: true, failed: true })(field('table')),
+export const ruleIdentity = object((field) => ({
+  table: oneOf({ fixed: true, stopped: true, passed: true, failed: true })(field('table')),
   row: nullable((node) => (typeof node.value === 'number' ? count(node) : text(node)))(field('row')),
 }));
 
-export const historyItem = object<visit.HistoryItem>((field) => ({
+export const historyItem = object((field) => ({
   kind: text(field('kind')),
   text: text(field('text')),
 }));
 
-export const worktreeSnapshot = object<integrity.WorktreeSnapshot>((field) => ({
+export const worktreeSnapshot = object((field) => ({
   head: text(field('head')),
   index: text(field('index')),
   tree: text(field('tree')),
@@ -30,17 +26,17 @@ export const worktreeSnapshot = object<integrity.WorktreeSnapshot>((field) => ({
 
 // Each a link's target or the bytes in base64, told apart by its key.
 export const untrackedFiles = keyed(
-  variant<integrity.UntrackedFile>('a link or base64 bytes', [
+  variant('a link or base64 bytes', [
     { required: ['link'], read: object((field) => ({ link: text(field('link')) })) },
     { required: ['base64'], read: object((field) => ({ base64: text(field('base64')) })) },
   ]),
 );
 
-export const integrityBaseline = object<integrity.IntegrityBaseline>((field) => ({
+export const integrityBaseline = object((field) => ({
   head: text(field('head')),
   own: worktreeSnapshot(field('own')),
   idle: keyed(
-    object<integrity.IdleSnapshot>((idle) => ({
+    object((idle) => ({
       generation: count(idle('generation')),
       snapshot: worktreeSnapshot(idle('snapshot')),
     })),
@@ -49,45 +45,41 @@ export const integrityBaseline = object<integrity.IntegrityBaseline>((field) => 
   tests: untrackedFiles(field('tests')),
 }));
 
-const survivor = object<commandCleanup.Survivor>((field) => ({
+const survivor = object((field) => ({
   pid: count(field('pid')),
   created: nullableText(field('created')),
   commandLine: nullableText(field('commandLine')),
   error: text(field('error')),
 }));
 
-const CONTAINMENT: Record<
-  commandCleanup.CleanupContainment['kind'],
-  recordReadNode.Read<commandCleanup.CleanupContainment>
-> = {
+const containment = tagged('kind', {
   job: object((field) => ({ kind: oneOf({ job: true })(field('kind')) })),
   none: object((field) => ({ kind: oneOf({ none: true })(field('kind')) })),
   group: object((field) => ({ kind: oneOf({ group: true })(field('kind')), pgid: count(field('pgid')) })),
-};
-const containment = tagged('kind', (kind) => CONTAINMENT[oneOf(CONTAINMENT)(kind)]);
+});
 
-export const savedCleanup = object<commandCleanup.SavedCleanup>((field) => ({
+export const savedCleanup = object((field) => ({
   confirmed: flag(field('confirmed')),
   survivors: list(survivor)(field('survivors')),
   reason: nullableText(field('reason')),
   containment: containment(field('containment')),
 }));
 
-const callCleanup = object<commandCleanup.CallCleanup>((field, has) => ({
+const callCleanup = object((field, has) => ({
   confirmed: flag(field('confirmed')),
   survivors: list(survivor)(field('survivors')),
   ...(has('reason') && { reason: nullableText(field('reason')) }),
   ...(has('containment') && { containment: containment(field('containment')) }),
 }));
 
-const checkSignal = object<visit.CheckSignal>((field) => ({
+const checkSignal = object((field) => ({
   id: text(field('id')),
   kind: text(field('kind')),
-  state: oneOf<visit.CheckSignal['state']>({ passed: true, failed: true })(field('state')),
+  state: oneOf({ passed: true, failed: true })(field('state')),
   tree: nullableText(field('tree')),
 }));
 
-const checkRun = object<visit.CheckRun>((field) => ({
+const checkRun = object((field) => ({
   output: nullableText(field('output')),
   reason: nullableText(field('reason')),
   failure: nullableText(field('failure')),
@@ -95,14 +87,14 @@ const checkRun = object<visit.CheckRun>((field) => ({
 }));
 
 const usage = keyed(nullableCount);
-const callStatus = oneOf<visit.CallSignal['status']>({
+const callStatus = oneOf({
   completed: true,
   failed: true,
   'timed-out': true,
   killed: true,
 });
 
-const harnessResult = object<runContext.HarnessResult>((field, has) => ({
+const harnessResult = object((field, has) => ({
   status: callStatus(field('status')),
   sessionId: nullableText(field('sessionId')),
   transcriptPath: nullableText(field('transcriptPath')),
@@ -118,22 +110,22 @@ const harnessResult = object<runContext.HarnessResult>((field, has) => ({
   ...(has('cleanup') && { cleanup: callCleanup(field('cleanup')) }),
 }));
 
-const harnessFailure = object<visit.HarnessFailure>((field, has) => ({
+const harnessFailure = object((field, has) => ({
   failureClass: text(field('failureClass')),
   ...(has('retryAfterMs') && { retryAfterMs: nullableCount(field('retryAfterMs')) }),
   ...(has('message') && { message: text(field('message')) }),
 }));
 
-const agentCall = object<visit.AgentCall>((field) => ({
+const agentCall = object((field) => ({
   harnessResult: harnessResult(field('harnessResult')),
-  claim: object<visit.ClaimSignal>((claim) => ({
+  claim: object((claim) => ({
     valid: flag(claim('valid')),
     token: nullableText(claim('token')),
     reason: nullableText(claim('reason')),
   }))(field('claim')),
   response: json(field('response')),
   baseline: integrityBaseline(field('baseline')),
-  signal: object<visit.CallSignal>((signal) => ({
+  signal: object((signal) => ({
     status: callStatus(signal('status')),
     response: json(signal('response')),
     failure: nullable(harnessFailure)(signal('failure')),
@@ -154,8 +146,8 @@ const FIXED_ROW: Record<visit.FixedRow, true> = {
   claimed: true,
   recover: true,
 };
-const direction = oneOf<visit.Direction>({ advance: true, retry: true, stop: true });
-const retryKind = oneOf<NonNullable<visit.TableResolution['retryKind']>>({
+const direction = oneOf({ advance: true, retry: true, stop: true });
+const retryKind = oneOf({
   parse: true,
   timeout: true,
   transient: true,
@@ -167,7 +159,7 @@ const decided = (field: (key: string) => recordReadNode.Node) => ({
   rule: ruleIdentity(field('rule')),
 });
 
-const tableResolution = object<visit.TableResolution>((field, has) => ({
+const tableResolution = object((field, has) => ({
   ...decided(field),
   row: nullable(oneOf(FIXED_ROW))(field('row')),
   check: nullableText(field('check')),
@@ -183,33 +175,31 @@ const tableResolution = object<visit.TableResolution>((field, has) => ({
 }));
 
 // gg's own rows, each its own Resolution; any other row is the Transition Table's, a fixed row or a Procedure's (null).
-const OWN_ROW: Record<
-  Exclude<visit.Resolution['row'], visit.TableResolution['row']>,
-  recordReadNode.Read<visit.Resolution>
-> = {
-  'effect-completed': object((field) => ({
-    ...decided(field),
-    row: oneOf({ 'effect-completed': true })(field('row')),
-  })),
-  decision: object((field) => ({ ...decided(field), row: oneOf({ decision: true })(field('row')) })),
-  'action-cap': object((field) => ({
-    ...decided(field),
-    row: oneOf({ 'action-cap': true })(field('row')),
-    actionCap: count(field('actionCap')),
-  })),
-  'run-stopped': object((field) => ({
-    ...decided(field),
-    row: oneOf({ 'run-stopped': true })(field('row')),
-    failureClass: text(field('failureClass')),
-    runStopTicket: count(field('runStopTicket')),
-    source: nullableText(field('source')),
-  })),
-};
-const resolution = tagged('row', (row) =>
-  typeof row.value === 'string' && Object.hasOwn(OWN_ROW, row.value) ? OWN_ROW[oneOf(OWN_ROW)(row)] : tableResolution,
+const resolution = tagged(
+  'row',
+  {
+    'effect-completed': object((field) => ({
+      ...decided(field),
+      row: oneOf({ 'effect-completed': true })(field('row')),
+    })),
+    decision: object((field) => ({ ...decided(field), row: oneOf({ decision: true })(field('row')) })),
+    'action-cap': object((field) => ({
+      ...decided(field),
+      row: oneOf({ 'action-cap': true })(field('row')),
+      actionCap: count(field('actionCap')),
+    })),
+    'run-stopped': object((field) => ({
+      ...decided(field),
+      row: oneOf({ 'run-stopped': true })(field('row')),
+      failureClass: text(field('failureClass')),
+      runStopTicket: count(field('runStopTicket')),
+      source: nullableText(field('source')),
+    })),
+  },
+  tableResolution,
 );
 
-export const visitState = object<recordJson.VisitStateJson>((field) => ({
+export const visitState = object((field) => ({
   recovery: count(field('recovery')),
   firstAttemptBaseline: nullable(integrityBaseline)(field('firstAttemptBaseline')),
   call: nullable(agentCall)(field('call')),
@@ -227,7 +217,7 @@ export const visitState = object<recordJson.VisitStateJson>((field) => ({
   unconfirmedCleanup: nullable(savedCleanup)(field('unconfirmedCleanup')),
 }));
 
-const vertexInput = object<visit.VertexInput>((field) => ({
+const vertexInput = object((field) => ({
   value: json(field('value')),
   vertex: nullableText(field('vertex')),
   visit: nullableCount(field('visit')),
@@ -235,18 +225,17 @@ const vertexInput = object<visit.VertexInput>((field) => ({
   absent: flag(field('absent')),
 }));
 
-export const configurationSnapshot = object<visit.ConfigurationSnapshot>((field) => ({
+export const configurationSnapshot = object((field) => ({
   vertex: text(field('vertex')),
   visit: count(field('visit')),
   configHash: text(field('configHash')),
   agent: nullable(
-    object((agent, has, rest) => ({
+    open((agent, has) => ({
       harness: text(agent('harness')),
       model: nullableText(agent('model')),
       effort: nullableText(agent('effort')),
       persona: text(agent('persona')),
       ...(has('network') && { network: flag(agent('network')) }),
-      ...rest(),
     })),
   )(field('agent')),
   access: text(field('access')),
@@ -269,15 +258,13 @@ export const configurationSnapshot = object<visit.ConfigurationSnapshot>((field)
   files: keyed(object((file) => ({ bytes: text(file('bytes')), hash: text(file('hash')) })))(field('files')),
 }));
 
-const actionOutputValue = object<visit.ActionOutputValue>((field, has) => ({
+const actionOutputValue = object((field, has) => ({
   ...(has('response') && { response: json(field('response')) }),
   ...(has('cleanup') && { cleanup: callCleanup(field('cleanup')) }),
   ...(has('evidence') && {
-    evidence: object((evidence, _has, rest) => ({
-      command: text(evidence('command')),
-      output: text(evidence('output')),
-      ...rest(),
-    }))(field('evidence')),
+    evidence: open((evidence) => ({ command: text(evidence('command')), output: text(evidence('output')) }))(
+      field('evidence'),
+    ),
   }),
   ...(has('findingsHash') && { findingsHash: text(field('findingsHash')) }),
   ...(has('files') && { files: list(text)(field('files')) }),
@@ -301,7 +288,7 @@ const actionOutputValue = object<visit.ActionOutputValue>((field, has) => ({
   ...(has('output') && { output: text(field('output')) }),
 }));
 
-export const actionOutput = object<visit.ActionOutput>((field) => ({
+export const actionOutput = object((field) => ({
   vertex: text(field('vertex')),
   visit: count(field('visit')),
   action: text(field('action')),

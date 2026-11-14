@@ -88,7 +88,7 @@
             "reason": "1 process could not be confirmed gone",
             "containment": { "kind": "group", "pgid": 41 }
           },
-          "evidence": { "command": "npm test", "output": "ok", "exitCode": 0 },
+          "evidence": { "command": "npm test", "output": "ok", "exitCode": 0, "__proto__": { "kept": "as data" } },
           "findingsHash": "findings",
           "files": ["a.ts", "b.ts"],
           "decision": { "outcome": "approved", "actor": "owner", "reply": "fine" },
@@ -116,7 +116,15 @@
       "vertex": "green",
       "visit": 2,
       "configHash": "hash-1",
-      "agent": { "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer", "network": false, "tools": ["read"] },
+      "agent": {
+        "harness": "claude",
+        "model": "opus",
+        "effort": "high",
+        "persona": "implementer",
+        "network": false,
+        "tools": ["read"],
+        "__proto__": { "kept": "as data" }
+      },
       "access": "write",
       "procedure": { "name": "implement", "hash": "procedure-hash" },
       "outcomes": ["passed", "failed"],
@@ -136,8 +144,8 @@
         "head": "head-1",
         "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
         "idle": { "C:/wt/9": { "generation": 3, "snapshot": { "head": "h9", "index": "i9", "tree": "t9" } } },
-        "untracked": { "notes": { "base64": "bm90ZXM=" } },
-        "tests": { "link": { "link": "target" } }
+        "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
+        "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target" } }
       },
       "call": {
         "harnessResult": {
@@ -151,16 +159,21 @@
           "sessionInit": { "model": "opus" },
           "permissionDenials": [],
           "commandsRun": ["npm test"],
-          "cleanup": { "confirmed": true, "survivors": [] }
+          "cleanup": {
+            "confirmed": false,
+            "survivors": [{ "pid": 43, "created": null, "commandLine": null, "error": "not found" }],
+            "reason": "1 process could not be confirmed gone",
+            "containment": { "kind": "group", "pgid": 41 }
+          }
         },
         "claim": { "valid": true, "token": "passed", "reason": null },
         "response": { "claim": "passed" },
         "baseline": {
           "head": "head-1",
           "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
-          "idle": {},
-          "untracked": {},
-          "tests": {}
+          "idle": { "C:/wt/9": { "generation": 3, "snapshot": { "head": "h9", "index": "i9", "tree": "t9" } } },
+          "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
+          "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target" } }
         },
         "signal": {
           "status": "failed",
@@ -262,7 +275,7 @@
         "step": "intent",
         "actionMarker": "m-label",
         "effect": "label",
-        "payload": { "ticket": 8, "add": ["gg:active"], "remove": [] },
+        "payload": { "ticket": 8, "add": ["gg:active"], "remove": ["gg:queued"] },
         "evidence": null,
         "time": "2026-11-13T00:00:08Z"
       },
@@ -272,7 +285,7 @@
         "effect": "label",
         "payload": {
           "ticket": 8,
-          "add": [],
+          "add": ["gg:approved"],
           "remove": ["gg:await:approve"],
           "decision": {
             "instance": "approval-1",
@@ -309,11 +322,16 @@
           "baseline": "base-sha",
           "history": { "kind": "rescued", "text": "rescued to refs/gg/rescue/1" },
           "untracked": {
-            "files": { "notes": { "base64": "bm90ZXM=" } },
+            "files": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
             "within": { "paths": ["test/"], "globs": ["*.snap"], "exclude": ["test/fixtures/"] },
             "pathspecs": ["test/"]
           },
-          "left": { "head": "h", "index": "i", "tree": "t", "files": { "link": { "link": "target" } } }
+          "left": {
+            "head": "h",
+            "index": "i",
+            "tree": "t",
+            "files": { "link": { "link": "target" }, "notes": { "base64": "bm90ZXM=" } }
+          }
         },
         "evidence": null,
         "time": "2026-11-13T00:00:11Z"
@@ -339,9 +357,9 @@
           "baseline": {
             "head": "head-1",
             "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
-            "idle": {},
-            "untracked": {},
-            "tests": {}
+            "idle": { "C:/wt/9": { "generation": 3, "snapshot": { "head": "h9", "index": "i9", "tree": "t9" } } },
+            "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
+            "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target" } }
           }
         },
         "evidence": null,
@@ -351,10 +369,18 @@
   },
   "variants": {
     "visitState.unconfirmedCleanup.containment": [{ "kind": "job" }, { "kind": "group", "pgid": 3 }],
+    "visitState.call.harnessResult.cleanup.containment": [{ "kind": "job" }, { "kind": "none" }],
+    "outputs.0.value.cleanup.containment": [{ "kind": "job" }, { "kind": "none" }],
     "terminalReason.decidedBy": [
       { "hold": null },
       { "human": "owner" },
       { "vertex": "green", "visit": null, "action": null, "recovery": 0 },
+      { "hold": "dirty-worktree", "vertex": "green", "visit": 1, "action": null, "recovery": 0 },
+      { "human": "owner", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
+    ],
+    "terminalStop.interrupted.terminalReason.decidedBy": [
+      { "hold": null },
+      { "human": "owner" },
       { "hold": "dirty-worktree", "vertex": "green", "visit": 1, "action": null, "recovery": 0 },
       { "human": "owner", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
     ],

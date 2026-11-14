@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as attempt from '../../lib/attempt.ts';
 import * as effectErrors from '../../lib/effect-errors.ts';
+import * as jsonValue from '../../lib/json-value.ts';
 import * as reset from '../../lib/effects/reset.ts';
 import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as record from '../../lib/record.ts';
@@ -211,7 +212,9 @@ test('a complete marker returns its saved result without running the work', asyn
   const { context, executionRecord } = await support.executionContext(t);
   const actionMarker = context.markerOf(IDENTITY);
   record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
-  record.complete(executionRecord, actionMarker, { evidence: { ...tableResolution('advance'), sessionId: 's1' } });
+  record.complete(executionRecord, actionMarker, {
+    evidence: jsonValue.checkedObject({ ...tableResolution('advance'), sessionId: 's1' }, 'the evidence'),
+  });
   const result = await attempt.run(context, {
     actionIdentity: IDENTITY,
     busy: true,
@@ -340,7 +343,7 @@ test('a held completion replaces the saved result with its Event, or leaves none
   const actionMarker = context.markerOf(IDENTITY);
   record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
   record.complete(executionRecord, actionMarker, {
-    evidence: { ...tableResolution('stop'), row: 'cleanup-unconfirmed' },
+    evidence: jsonValue.checkedObject({ ...tableResolution('stop'), row: 'cleanup-unconfirmed' }, 'the evidence'),
   });
   const settled: (visit.Resolution | null)[] = [];
   const replaced = await attempt.runHeld(context, {
@@ -378,7 +381,7 @@ test('a crash after a held completion leaves its replaced result saved, with its
   const actionMarker = context.markerOf(IDENTITY);
   record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
   record.complete(executionRecord, actionMarker, {
-    evidence: { ...tableResolution('stop'), row: 'cleanup-unconfirmed' },
+    evidence: jsonValue.checkedObject({ ...tableResolution('stop'), row: 'cleanup-unconfirmed' }, 'the evidence'),
   });
   context.crashAt = { marker: actionMarker, point: 'after-completion' };
   await assert.rejects(

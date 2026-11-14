@@ -9,7 +9,7 @@ import * as cleanupHold from './cleanup-hold.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import * as config from './config.ts';
 import type * as integrity from './integrity.ts';
-import type * as jsonValue from './json-value.ts';
+import * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
 import type * as outcome from './outcome.ts';
 import * as record from './record.ts';
@@ -251,7 +251,7 @@ function settleAttempt(
       ...harnessFields(result, actionIdentity.recovery ? action.id : null),
       ...decisionFields(resolution, { result, claim, integrityRows }),
     },
-    evidence: { ...done, usageDelta: result.usage.delta },
+    evidence: jsonValue.checkedObject({ ...done, usageDelta: result.usage.delta }, 'the call evidence'),
   };
 }
 

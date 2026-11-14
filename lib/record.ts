@@ -31,10 +31,14 @@ export class RecordSaveError extends Error {
 // fourth form adds its keys to the other three.
 type ActionKeys = { vertex: string; visit: number | null; action: string | null; recovery: number };
 type NoActionKeys = { vertex?: never; visit?: never; action?: never; recovery?: never };
-export type DecidedBy =
-  | ({ hold: string | null; human?: never } & (ActionKeys | NoActionKeys))
-  | ({ human: string; hold?: never } & (ActionKeys | NoActionKeys))
-  | ({ hold?: never; human?: never } & ActionKeys);
+type Hold = { hold: string | null; human?: never };
+type Human = { human: string; hold?: never };
+export type DecidedByHold = Hold & NoActionKeys;
+export type DecidedByHoldInVisit = Hold & ActionKeys;
+export type DecidedByHuman = Human & NoActionKeys;
+export type DecidedByHumanInVisit = Human & ActionKeys;
+export type DecidedByAction = { hold?: never; human?: never } & ActionKeys;
+export type DecidedBy = DecidedByHold | DecidedByHoldInVisit | DecidedByHuman | DecidedByHumanInVisit | DecidedByAction;
 
 // Why an Execution reached its end state: the Action, hold or human that decided it (request 3.1).
 export interface TerminalReason {
