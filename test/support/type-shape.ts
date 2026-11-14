@@ -10,7 +10,9 @@ type Kinded =
   | { kind: 'scalar'; type: string; members: string[] | null }
   | { kind: 'list'; of: Shape }
   | { kind: 'keyed'; of: Shape }
-  | { kind: 'object'; keys: Record<string, Key>; open: boolean }
+  // An object's own keys, the named type that declares them (its owner), and the shape of any other key it leaves
+  // open to, or null when it is closed.
+  | { kind: 'object'; owner: string | null; keys: Record<string, Key>; others: Shape | null }
   | { kind: 'union'; by: UnionBy; forms: Form[] };
 type Structure = Extract<Kinded, { kind: 'list' | 'keyed' | 'object' }>;
 export type Shape = Kinded & { nullable: boolean };
@@ -75,16 +77,21 @@ export class TypeShapes {
     return this.shape(this.declared(file, name), 0);
   }
 
-  // The name of the type a form is: its alias or interface, as gg's modules name it, or its tag, or its keys.
-  private formName(type: ts.Type, tag: string | null): string {
+  // The alias or interface that names a type, as gg's modules name it, or null for a type no gg module names.
+  private typeName(type: ts.Type): string | null {
     const symbol = type.aliasSymbol ?? (type.flags & ts.TypeFlags.Object ? type.getSymbol() : undefined);
     const declaration = symbol?.declarations?.[0];
+    if (!symbol || !declaration || symbol.name.startsWith('__')) return null;
+    const fileName = declaration.getSourceFile().fileName;
+    if (!fileName.startsWith(root) || fileName.includes('/node_modules/')) return null;
+    return `${namespaceOf(fileName.slice(root.length))}.${symbol.name}`;
+  }
+
+  // The name of the type a form is: its alias or interface, or its tag, or its keys.
+  private formName(type: ts.Type, tag: string | null): string {
     if (this.checker.isArrayType(type)) return this.checker.typeToString(type);
-    if (symbol && declaration && !symbol.name.startsWith('__')) {
-      const fileName = declaration.getSourceFile().fileName;
-      if (fileName.startsWith(root) && !fileName.includes('/node_modules/'))
-        return `${namespaceOf(fileName.slice(root.length))}.${symbol.name}`;
-    }
+    const name = this.typeName(type);
+    if (name) return name;
     if (tag !== null) {
       const tagType = this.checker.getTypeOfSymbol(type.getProperty(tag)!);
       return `${tag}=${this.checker.typeToString(tagType).replaceAll('"', '')}`;
@@ -167,7 +174,8 @@ export class TypeShapes {
         },
       ]),
     );
-    return { kind: 'object', keys, open: Boolean(index) };
+    const others = index ? this.shape(index, depth + 1) : null;
+    return { kind: 'object', owner: this.typeName(type), keys, others };
   }
 
   private allowsUndefined(type: ts.Type) {
@@ -175,35 +183,54 @@ export class TypeShapes {
   }
 }
 
-// Every path a shape declares, each with its type: `[]` for a list's items, `*` for a keyed object's names, and
-// `<form>` where a union's form is chosen. An optional key ends in `?`. Given a row's `value`, only the paths it holds.
+// A key an object declares, as its own key: a name such as __proto__ is data.
+export const keyOf = (shape: Extract<Shape, { kind: 'object' }>, key: string): Key | undefined =>
+  Object.hasOwn(shape.keys, key) ? shape.keys[key] : undefined;
+
+const joined = (prefix: string, segment: string) =>
+  (prefix && !/^[[<]/.test(segment) ? `${prefix}.` : prefix) + segment;
+
+// Every path a shape declares, each with its type and, for an object's key, the named type that declares it: `[]` for
+// a list's items, `*` for a keyed object's names or an open object's other keys, and `<form>` where a union's form is
+// chosen. An optional key ends in `?`. Given a row's `value`, only the paths it holds.
 export function paths(shape: Shape, value?: { held: unknown }, prefix = ''): string[] {
-  const join = (segment: string) => (prefix && !/^[[<]/.test(segment) ? `${prefix}.` : prefix) + segment;
-  const line = (path: string, optional: boolean, of: Shape) => `${path}${optional ? '?' : ''}: ${typeOf(of)}`;
-  const below = (of: Shape, path: string, held: unknown) => paths(of, value && { held }, path);
   if (value?.held === null) return [];
-  const items = (held: unknown) => (value ? Object.values(held as object) : [undefined]);
+  const below = (of: Shape, path: string, held: unknown) => paths(of, value && { held }, path);
   switch (shape.kind) {
     case 'json':
     case 'scalar':
       return [];
     case 'list':
     case 'keyed': {
-      const path = join(shape.kind === 'list' ? '[]' : '*');
-      return items(value?.held).flatMap((item) => [line(path, false, shape.of), ...below(shape.of, path, item)]);
+      const path = joined(prefix, shape.kind === 'list' ? '[]' : '*');
+      const items = value ? Object.values(value.held as object) : [undefined];
+      return items.flatMap((item) => [`${path}: ${typeOf(shape.of)}`, ...below(shape.of, path, item)]);
     }
     case 'union': {
       const forms = value ? [formOf(shape, value.held)].filter((form) => form !== undefined) : shape.forms;
-      return forms.flatMap((form) => below(form.shape, join(`<${form.name}>`), value?.held));
+      return forms.flatMap((form) => below(form.shape, joined(prefix, `<${form.name}>`), value?.held));
     }
     case 'object':
-      return Object.entries(shape.keys)
-        .filter(([key]) => !value || Object.hasOwn(value.held as object, key))
-        .flatMap(([key, { optional, shape: of }]) => [
-          line(join(key), optional, of),
-          ...below(of, join(key), value && (value.held as Record<string, unknown>)[key]),
-        ]);
+      return objectLines(shape, value, prefix);
   }
+}
+
+// An object's paths: each key it declares, then its other keys as `*` when it is open.
+function objectLines(shape: Extract<Shape, { kind: 'object' }>, value: { held: unknown } | undefined, prefix: string) {
+  const held = value?.held as Record<string, unknown> | undefined;
+  const owner = shape.owner ? ` (${shape.owner})` : '';
+  const keyLines = (path: string, optional: boolean, of: Shape, item: unknown) => [
+    `${path}${optional ? '?' : ''}: ${typeOf(of)}${owner}`,
+    ...paths(of, value && { held: item }, path),
+  ];
+  const { others } = shape;
+  const otherKeys = held ? Object.keys(held).filter((key) => !keyOf(shape, key)) : [''];
+  return [
+    ...Object.entries(shape.keys)
+      .filter(([key]) => !held || Object.hasOwn(held, key))
+      .flatMap(([key, { optional, shape: of }]) => keyLines(joined(prefix, key), optional, of, held?.[key])),
+    ...(others ? otherKeys.flatMap((key) => keyLines(joined(prefix, '*'), false, others, held?.[key])) : []),
+  ];
 }
 
 // The path of every object a shape declares, as segments: a key, `[]` or `*`. A union's forms at one path share it.
@@ -239,7 +266,7 @@ export function declaredAt(shape: Shape, row: unknown, segments: (string | numbe
     if (placed.kind === 'json') return placed;
     if (placed.kind === 'list' || placed.kind === 'keyed') declared = placed.of;
     else if (placed.kind !== 'object') return undefined;
-    else declared = placed.keys[segment]?.shape ?? (placed.open ? { nullable: true, kind: 'json' } : undefined);
+    else declared = keyOf(placed, String(segment))?.shape ?? placed.others ?? undefined;
     value = (value as Record<string | number, unknown>)[segment];
   }
   return declared;
@@ -262,7 +289,7 @@ export function typeOf(shape: Shape): string {
     case 'keyed':
       return `keyed${nullable}`;
     case 'object':
-      return `${shape.open ? 'open object' : 'object'}${nullable}`;
+      return `${shape.others ? 'open object' : 'object'}${nullable}`;
     case 'union':
       return `${shape.forms.map((form) => form.name).join(' | ')}${nullable}`;
   }
@@ -278,8 +305,8 @@ export function formOf(shape: Extract<Shape, { kind: 'union' }>, value: unknown)
     if (form.kind !== 'object' || !isObject(value)) return false;
     const keys = Object.keys(value);
     const fits = (key: string) => {
-      const declared = form.keys[key];
-      if (!declared) return form.open;
+      const declared = keyOf(form, key);
+      if (!declared) return form.others !== null;
       const { shape: held } = declared;
       const member = value[key];
       return held.kind !== 'scalar' || !held.members || member === null || held.members.includes(member as string);

@@ -88,7 +88,7 @@
             "reason": "1 process could not be confirmed gone",
             "containment": { "kind": "group", "pgid": 41 }
           },
-          "evidence": { "command": "npm test", "output": "ok", "exitCode": 0 },
+          "evidence": { "command": "npm test", "output": "ok", "exitCode": 0, "__proto__": { "kept": "as data" } },
           "findingsHash": "findings",
           "files": ["a.ts", "b.ts"],
           "decision": { "outcome": "approved", "actor": "owner", "reply": "fine" },
@@ -116,7 +116,15 @@
       "vertex": "green",
       "visit": 2,
       "configHash": "hash-1",
-      "agent": { "harness": "claude", "model": "opus", "effort": "high", "persona": "implementer", "network": false, "tools": ["read"] },
+      "agent": {
+        "harness": "claude",
+        "model": "opus",
+        "effort": "high",
+        "persona": "implementer",
+        "network": false,
+        "tools": ["read"],
+        "__proto__": { "kept": "as data" }
+      },
       "access": "write",
       "procedure": { "name": "implement", "hash": "procedure-hash" },
       "outcomes": ["passed", "failed"],

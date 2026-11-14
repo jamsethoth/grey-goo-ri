@@ -92,11 +92,12 @@ export const object =
     return undeclared ? refuse(child(node, undeclared[0], undefined), 'is not declared') : result;
   };
 
-// An object its type leaves open: the keys `read` reads, then every other key as JSON.
+// An object its type leaves open: the keys `read` reads, then every other key as JSON. A spread defines each key, so
+// a name such as __proto__ stays data, and a spread of a generic value keeps its type whole.
 export const open = <Value extends object>(
   read: (field: Field, has: Has) => Value,
 ): Read<Value & Record<string, jsonValue.JsonValue>> =>
-  object((field, has, rest) => Object.assign(read(field, has), rest()));
+  object((field, has, rest) => ({ ...read(field, has), ...rest() }));
 
 // A union told apart by its keys: the one form whose keys the object holds is read. An object that fits no form, or
 // more than one, is not of the union. Its value is the union of its forms' values.

@@ -44,7 +44,7 @@ const isKeyed = (kind: Kind, row: Json, segments: Segment[]) => placedAt(kind, r
 // Its declared keys are required and any other is JSON.
 const isOpen = (kind: Kind, row: Json, segments: Segment[]) => {
   const placed = placedAt(kind, row, segments);
-  return placed?.kind === 'object' && placed.open;
+  return placed?.kind === 'object' && placed.others !== null;
 };
 // A union told apart by its keys: a change to its key set is refused at the union, not at the key.
 const isKeySetUnion = (kind: Kind, row: Json, segments: Segment[]) => {
@@ -123,7 +123,10 @@ function mayLeaveOut(kind: Kind, row: Json, segments: Segment[]) {
   const holder = valueAt(row, parent) as { [key: string]: Json };
   const declared = declaredAt(kind, row, parent);
   const placed = declared && typeShape.formed(declared, holder);
-  if (placed?.kind === 'object' && (placed.keys[key]?.optional || (placed.open && !placed.keys[key]))) return true;
+  if (placed?.kind === 'object') {
+    const declared = typeShape.keyOf(placed, key);
+    if (declared ? declared.optional : placed.others !== null) return true;
+  }
   if (declared?.kind !== 'union' || declared.by !== 'keys') return false;
   const { [key]: _left, ...rest } = holder;
   return typeShape.formOf(declared, rest) !== undefined;

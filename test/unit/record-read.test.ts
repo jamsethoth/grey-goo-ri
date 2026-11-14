@@ -80,6 +80,17 @@ test('every union form in the declared paths is named by its type or its tag', (
   assert.deepEqual(sorted(forms.filter((name) => !/^(\w+\.\w+|\w+=[\w-]+|[\w[\]]+\[\])$/.test(name))), []);
 });
 
+test('a path names the type that declares its key, and an open object names its other keys', () => {
+  const lines = typeShape.paths(EXECUTION);
+  for (const line of [
+    'cursor.vertex: string (record.Cursor)',
+    'configurationSnapshot.inputs.*.vertex: string | null (visit.VertexInput)',
+    'configurationSnapshot.agent.*: JsonValue (model.Agent)',
+    'outputs[].value.evidence.*: JsonValue',
+  ])
+    assert.ok(lines.includes(line), line);
+});
+
 test('every reader the record modules export has a check', () => {
   const exported = [recordRead, recordReadVisit].flatMap((module) =>
     Object.entries(module)
