@@ -301,35 +301,41 @@ function closedSet(kind: Kind, row: Json, segments: Segment[], own: string[]) {
   return tags.find((values) => values.length > 1) ?? tags.flat();
 }
 
+const refusedExactly = (kind: Kind, row: Json, problem: string, what: string) =>
+  refused(kind, row, new RegExp(`: its ${escaped(problem)}$`), what);
+
+// Each refusal of one node, whole: its value of the wrong type, a string outside its closed set, and the key left out.
+function refusesWhole(kind: Kind, row: Json, segments: Segment[], value: Json) {
+  const path = pathOf(segments);
+  const set = (held: Json) =>
+    changed(row, segments, (parent, key) => void ((parent as Record<Segment, Json>)[key] = held));
+  const wrong = set(typeof value === 'boolean' ? 'x' : true);
+  refusedExactly(kind, wrong, `${path} ${wrongTypeRefusal(declaredAt(kind, row, segments)!)}`, path);
+  const placed = placedAt(kind, row, segments);
+  if (placed?.kind === 'scalar' && placed.members && typeof value === 'string') {
+    const closed = [...closedSet(kind, row, segments, placed.members)].sort();
+    assert.throws(
+      () => parse(kind, set('not-a-member')),
+      (err: Error) => assert.deepEqual(members(err.message), closed, path) ?? true,
+    );
+  }
+  const keyedParent = segments.length > 1 && isKeyed(kind, row, segments.slice(0, -1));
+  if (typeof segments.at(-1) === 'number' || keyedParent || path === 'cursor.recovery') return;
+  if (mayLeaveOut(kind, row, segments)) return;
+  const left = changed(row, segments, (holder, key) => void delete (holder as Record<Segment, Json>)[key]);
+  const union = unionOf(kind, row, segments);
+  refusedExactly(kind, left, union ? unionRefusal(kind, row, segments.slice(0, -1)) : `${path} is missing`, path);
+}
+
 test('the reader refuses what it refused before, with the same message', () => {
-  const exactly = (kind: Kind, row: Json, problem: string, what: string) =>
-    refused(kind, row, new RegExp(`: its ${escaped(problem)}$`), what);
   let checked = 0;
   for (const { kind, rows } of kinds)
     for (const { row, under } of rows())
       for (const { segments, value, json } of nodes(kind, row)) {
         const path = pathOf(segments);
         if (json || path === 'schemaVersion' || !path.startsWith(under)) continue;
-        const declared = declaredAt(kind, row, segments)!;
-        const set = (held: Json) =>
-          changed(row, segments, (parent, key) => void ((parent as Record<Segment, Json>)[key] = held));
-        exactly(kind, set(typeof value === 'boolean' ? 'x' : true), `${path} ${wrongTypeRefusal(declared)}`, path);
+        refusesWhole(kind, row, segments, value);
         checked++;
-        const placed = placedAt(kind, row, segments);
-        if (placed?.kind === 'scalar' && placed.members && typeof value === 'string')
-          assert.throws(
-            () => parse(kind, set('not-a-member')),
-            (err: Error) => {
-              assert.deepEqual(members(err.message), [...closedSet(kind, row, segments, placed.members!)].sort(), path);
-              return true;
-            },
-          );
-        if (typeof segments.at(-1) === 'number' || mayLeaveOut(kind, row, segments)) continue;
-        if (segments.length > 1 && isKeyed(kind, row, segments.slice(0, -1))) continue;
-        if (path === 'cursor.recovery') continue;
-        const left = changed(row, segments, (holder, key) => void delete (holder as Record<Segment, Json>)[key]);
-        const union = unionOf(kind, row, segments);
-        exactly(kind, left, union ? unionRefusal(kind, row, segments.slice(0, -1)) : `${path} is missing`, path);
       }
   assert.ok(checked > 300, `${checked} fields checked`);
 });
