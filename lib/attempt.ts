@@ -5,6 +5,7 @@ import * as effectErrors from './effect-errors.ts';
 import * as sideEffect from './effects/side-effect.ts';
 import type * as events from './events.ts';
 import * as integrity from './integrity.ts';
+import * as jsonValue from './json-value.ts';
 import * as marker from './marker.ts';
 import type * as outcome from './outcome.ts';
 import type * as record from './record.ts';
@@ -201,7 +202,8 @@ export async function runHeld<Worked, Settled extends visit.Resolution>(
     return null;
   }
   const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
-  if (saved) saved.evidence = { ...saved.evidence, ...resolution };
+  const settled: visit.Resolution = resolution;
+  if (saved) saved.evidence = { ...saved.evidence, ...jsonValue.checkedObject(settled, 'the resolution') };
   database.save(executionRecord, eventOf(context, actionIdentity, startedAt, { ...done, resolution }));
   if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
   return resolution;
