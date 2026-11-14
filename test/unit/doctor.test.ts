@@ -503,7 +503,7 @@ test('gg doctor reports the labels a Flow can request that the repository lacks'
 
 test("gg doctor says when it cannot read the repository's labels", async () => {
   const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
-  fake.fail({ matches: () => true, status: 502 });
+  fake.fail({ matches: (args) => args[0] === 'api', status: 502 });
   const { text, exitCode } = await doctor.doctor({
     config: sources(asking()),
     harnesses: { fake: FAKE_HARNESS },
@@ -514,7 +514,8 @@ test("gg doctor says when it cannot read the repository's labels", async () => {
   assert.match(text, /\nwarning: could not read the repository's labels: .* \[repository-labels-unread\]\n/);
 });
 
-test('gg doctor reads no labels for a Flow that asks nobody', async () => {
+// gg run reads the owner/name on every Run, so doctor does too (#372).
+test('gg doctor reads only the owner/name, and no labels, for a Flow that asks nobody', async () => {
   const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
   await doctor.doctor({
     config: sources(example()),
@@ -522,7 +523,89 @@ test('gg doctor reads no labels for a Flow that asks nobody', async () => {
     gh: github.createGh(fake.gh),
     cwd: '/repo',
   });
-  assert.deepEqual(fake.calls, []);
+  assert.deepEqual(
+    fake.calls.map((call) => [call.args.slice(0, 2), call.cwd]),
+    [[['repo', 'view'], '/repo']],
+  );
+});
+
+// Each way gh can fail to give an owner/name, as gh's own transport would answer `gh repo view`.
+const UNREAD: [string, () => Promise<string>][] = [
+  ['gh exits nonzero', () => Promise.reject(new Error('gh repo view --json nameWithOwner exited 1\nno git remotes'))],
+  ['gh answers no JSON', () => Promise.resolve('not json')],
+  ['gh answers no nameWithOwner', () => Promise.resolve('{}')],
+  ['gh answers a name with no owner', () => Promise.resolve('{"nameWithOwner":"r"}')],
+  ['gh answers a dot-dot owner', () => Promise.resolve('{"nameWithOwner":"../r"}')],
+];
+
+// #372 (owner D1 A): doctor never passes a repository whose owner/name gg run refuses before its first Ticket read.
+test("gg doctor gives gg run's repository-unread error for each way gh fails to give the owner/name", async (t) => {
+  for (const [fails, answer] of UNREAD) {
+    const fixture = runFixture.fixture(t);
+    fixture.options.deps.gh = github.createGh(async (args) => {
+      if (args[0] === 'repo') return answer();
+      throw new Error(`gh ${args.join(' ')}: not expected`);
+    });
+    let refused: string[] = [];
+    await run.runTarget(fixture.options).catch((err: Error) => {
+      refused = err.message.split('\n').filter((line) => line.startsWith('error: '));
+    });
+    assert.equal(refused.length, 1, `gg run refuses when ${fails}`);
+    assert.ok(refused[0]!.endsWith(' [repository-unread]'), refused[0]);
+    const { text, exitCode } = await doctor.doctor({
+      config: fixture.options.config,
+      harnesses: fixture.options.harnesses,
+      gh: fixture.options.deps.gh,
+      cwd: fixture.mainRoot,
+      commonDir: fixture.commonDir,
+    });
+    assert.deepEqual(
+      text.split('\n').filter((line) => line.startsWith('error: ')),
+      refused,
+      fails,
+    );
+    assert.equal(exitCode, 1, fails);
+  }
+});
+
+// Owner D3 A: the label read fails for the same cause, so one cause gives one finding.
+test('gg doctor reads no labels when it cannot read the owner/name', async () => {
+  const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
+  fake.fail({ matches: (args) => args[0] === 'repo', stderr: 'no git remotes found' });
+  const { text, exitCode } = await doctor.doctor({
+    config: sources(asking()),
+    harnesses: { fake: FAKE_HARNESS },
+    gh: github.createGh(fake.gh),
+    cwd: '/repo',
+  });
+  assert.equal(exitCode, 1, text);
+  assert.deepEqual(
+    fake.calls.map((call) => call.args.slice(0, 2)),
+    [['repo', 'view']],
+  );
+  assert.match(
+    text,
+    /\nerror: cannot read the GitHub owner\/name of \/repo: no git remotes found .*\[repository-unread\]\n/,
+  );
+  assert.ok(!text.includes('[repository-labels-'), text);
+  assert.ok(text.endsWith('\n1 error, 2 warnings\n'), text);
+});
+
+// Owner D5 B: doctor reads the owner/name beside the configuration's own errors, which gg run reports first.
+test('gg doctor reports an unreadable owner/name beside the configuration errors', async () => {
+  const config = example();
+  delete config.testPaths;
+  const fake = fakeGh.fakeGh({ branch: 'b', ticket: 1 });
+  fake.fail({ matches: (args) => args[0] === 'repo', stderr: 'no git remotes found' });
+  const { text, exitCode } = await doctor.doctor({
+    config: sources(config),
+    harnesses: { fake: FAKE_HARNESS },
+    gh: github.createGh(fake.gh),
+    cwd: '/repo',
+  });
+  assert.equal(exitCode, 1, text);
+  assert.match(text, /\nerror: .*\[required-key-missing\]\n/);
+  assert.match(text, /\nerror: cannot read the GitHub owner\/name of \/repo: .*\[repository-unread\]\n/);
 });
 
 test('gg doctor prints a Flow named entirely with Object.prototype names like one with ordinary names', async () => {
