@@ -58,6 +58,16 @@ const HIDINGS: [string, (value: object) => object, 'any' | 'list'][] = [
   ],
   ['a Proxy', (value) => new Proxy(copy(value), {}), 'any'],
   ['an object from another realm', (value) => runInNewContext(`(${JSON.stringify(value)})`) as object, 'any'],
+  [
+    'a revoked Proxy',
+    (value) => {
+      const held = Proxy.revocable(copy(value), {});
+      held.revoke();
+      return held.proxy;
+    },
+    'any',
+  ],
+  ['an enumerable symbol key', (value) => Object.assign(copy(value), { [Symbol('min')]: 'x' }), 'any'],
   ['a hole', (value) => Object.assign(copy(value), { length: (value as unknown[]).length + 1 }), 'list'],
   ['a key beyond its elements', (value) => Object.assign(copy(value), { min: 'x' }), 'list'],
   ['a subclass of Array', (value) => Listed.from(value as unknown[]), 'list'],
@@ -101,6 +111,27 @@ for (const [hiding, hide, applies] of HIDINGS) {
     }
   });
 }
+
+// Refusing an object runs nothing of its own: no read reaches its prototype (#399 review).
+test('assertStrict refuses an object whose prototype answers reads without reading through it', () => {
+  for (const [name, pristine] of Object.entries(exampleLayer.schemas())) {
+    for (const site of sites(pristine as Record<string, unknown>)) {
+      const schema = structuredClone(pristine);
+      const value = objectAt(schema, site.route);
+      const reads: string[] = [];
+      const prototype = new Proxy(Object.create(Object.getPrototypeOf(value) as object) as object, {
+        get: (target, key, receiver) => {
+          reads.push(String(key));
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      });
+      const watched = Object.setPrototypeOf(copy(value), prototype) as object;
+      const where = `${name} ${site.route.join('.')}`;
+      assert.equal(refusal(placed(schema, site.route, watched)), site.message, where);
+      assert.deepEqual(reads, [], where);
+    }
+  }
+});
 
 // Nothing is hidden in an object with no prototype at all, which JSON writes as it reads (lib/json-value.ts).
 test('assertStrict accepts a node or a properties map with no prototype', () => {

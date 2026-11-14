@@ -67,16 +67,17 @@ function lost(value: unknown): string | null {
   if (typeof value !== 'object') return value === undefined ? 'undefined' : named(typeof value);
   // A Proxy is refused before it is asked anything: it may answer each question differently, or throw.
   if (types.isProxy(value)) return 'a Proxy';
-  const prototype: unknown = Object.getPrototypeOf(value);
-  const plain = Array.isArray(value)
-    ? prototype === Array.prototype
-    : prototype === Object.prototype || prototype === null;
   // JSON writes a Map, a Set or an Error as {}, and any other class instance as something a load does not give back.
-  if (!plain) return named(className(value));
+  if (!plainPrototype(value)) return named(className(value));
   // A prototype can be reset, so a Map may look plain; what a value is inside cannot.
   const built = BUILT_IN.find(([, is]) => is(value));
   return built ? named(built[0]) : null;
 }
+
+const plainPrototype = (value: object): boolean => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return Array.isArray(value) ? prototype === Array.prototype : prototype === Object.prototype || prototype === null;
+};
 
 // A class instance's name for the refusal, which its own `constructor` may refuse to give.
 function className(value: object): string {
@@ -101,16 +102,17 @@ const leftOut = (value: object): boolean =>
   (Array.isArray(value) && Object.keys(value).some((key) => !isIndex(key, value.length)));
 
 // Whether a reader of an object or a list sees only what a check of its own keys saw: it is plain as a save judges it,
-// each own key is an enumerable data property, so no getter answers twice and none hides from Object.keys, and a
-// list's own keys are its elements, with no hole (#365).
+// each own key is an enumerable data property named by a string, so no getter answers twice and none hides from
+// Object.keys, and a list's own keys are its elements, with no hole (#365). It reads no property, so judging a value
+// runs nothing of the value's own, unlike `lost`, which asks a refused instance its class name.
 export function fullySeen(value: object): boolean {
-  if (lost(value) !== null) return false;
+  if (types.isProxy(value) || !plainPrototype(value) || BUILT_IN.some(([, is]) => is(value))) return false;
   const keys = Reflect.ownKeys(value).filter((key) => !(Array.isArray(value) && key === 'length'));
   const data = keys.every((key) => {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     return descriptor?.enumerable === true && 'value' in descriptor;
   });
-  if (!Array.isArray(value)) return data;
+  if (!Array.isArray(value)) return data && keys.every((key) => typeof key === 'string');
   const { length } = value;
   return data && keys.length === length && keys.every((key) => typeof key === 'string' && isIndex(key, length));
 }

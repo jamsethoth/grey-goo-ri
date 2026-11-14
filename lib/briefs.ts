@@ -18,6 +18,9 @@ const SUBSET = {
 
 const repeated = (list: unknown[]) => list.find((value, i) => list.indexOf(value) !== i);
 
+// An object assertStrict cannot fully see. Asked before any shape check, which a revoked Proxy would throw from.
+const hidden = (value: unknown) => typeof value === 'object' && value !== null && !jsonValue.fullySeen(value);
+
 // A schema node's keywords and type are in the subset, and its enum is a list of distinct strings.
 function assertKeywords(schema: Record<string, unknown>, path: string) {
   // A string test first: SUBSET[['string']] would coerce the array to its one element.
@@ -33,8 +36,8 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
   if (
     schema.enum !== undefined &&
     !(
+      !hidden(schema.enum) &&
       Array.isArray(schema.enum) &&
-      jsonValue.fullySeen(schema.enum) &&
       schema.enum.length &&
       schema.enum.every((value) => typeof value === 'string')
     )
@@ -47,14 +50,12 @@ function assertKeywords(schema: Record<string, unknown>, path: string) {
 
 // An object node requires exactly its properties, each reachable by a dotted path, and allows no others.
 function assertObject(schema: Record<string, unknown>, path: string) {
+  if (hidden(schema.properties)) throw new Error(`${path}: properties must be a plain object`);
   if (schema.properties !== undefined && !referencePaths.isRecord(schema.properties))
     throw new Error(`${path}: properties must be an object`);
-  if (schema.properties !== undefined && !jsonValue.fullySeen(schema.properties))
-    throw new Error(`${path}: properties must be a plain object`);
   const keys = Object.keys(schema.properties ?? {});
   if (schema.additionalProperties !== false) throw new Error(`${path}: object lacks additionalProperties: false`);
-  if (!Array.isArray(schema.required) || !jsonValue.fullySeen(schema.required))
-    throw new Error(`${path}: required must be a list`);
+  if (hidden(schema.required) || !Array.isArray(schema.required)) throw new Error(`${path}: required must be a list`);
   const required = schema.required as unknown[];
   const repeatedName = repeated(required);
   if (repeatedName !== undefined) throw new Error(`${path}: required repeats ${JSON.stringify(repeatedName)}`);
@@ -74,8 +75,8 @@ function assertObject(schema: Record<string, unknown>, path: string) {
 // A schema in the subset has every keyword typed as a SchemaNode types it. Each object it reads is one whose own keys
 // are all a reader of it sees (#365).
 export function assertStrict(schema: unknown, path = '(root)'): asserts schema is referencePaths.SchemaNode {
+  if (hidden(schema)) throw new Error(`${path}: schema must be a plain object`);
   if (!referencePaths.isRecord(schema)) throw new Error(`${path}: schema must be an object`);
-  if (!jsonValue.fullySeen(schema)) throw new Error(`${path}: schema must be a plain object`);
   assertKeywords(schema, path);
   if (schema.type === 'array' && schema.items === undefined) throw new Error(`${path}: array lacks items`);
   if (schema.type === 'object') assertObject(schema, path);
