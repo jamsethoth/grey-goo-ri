@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type * as flow from '../../lib/flow.ts';
 import * as labels from '../../lib/labels.ts';
 import type * as model from '../../lib/model.ts';
 import * as procedures from '../../lib/procedures.ts';
@@ -34,6 +35,25 @@ const scoreRow =
 // Each form a copied value's type allows that the example lacks, in a configuration with no error.
 const FORMS: Record<string, Edit> = {
   'an Edge with no max': (layer) => (layer.flows.default.ticket.vertices.red.route.ok = { to: 'green' }),
+  'an Edge to an end': (layer) =>
+    (layer.flows.default.ticket.vertices.red.route.ok = {
+      to: { end: 'needs-human' },
+      max: 1,
+      exhausted: { end: 'needs-human' },
+    }),
+  'a Flow route that names a Vertex': (layer) => (layer.flows.default.ticket.routes.misscoped = 'senior-green'),
+  'a Vertex "*" route': (layer) => (layer.flows.default.ticket.vertices.red.route['*'] = { end: 'needs-human' }),
+  // Only blocked, of the Outcomes the Flow's "*" routes, is not an engine Outcome, so routing it leaves the engine's
+  // own Outcomes to the engine default.
+  'an engine default route': (layer) => {
+    const { routes } = layer.flows.default.ticket;
+    delete routes['*'];
+    routes.blocked = { end: 'needs-human' };
+  },
+  'a Vertex exhausted that names a Vertex': (layer) =>
+    (layer.flows.default.ticket.vertices['senior-red'].exhausted = 'publish'),
+  'a Vertex that narrows the access of the Agent it uses': (layer) =>
+    (layer.flows.default.ticket.vertices.red.access = 'read-only'),
   'a Vertex whose own Agent keys name its Agent': (layer) => {
     const { red } = layer.flows.default.ticket.vertices;
     delete red.use;
@@ -57,16 +77,17 @@ const FORMS: Record<string, Edit> = {
   ),
 };
 
-// The configurations a Flow with no error resolves from: the example, and the example with each form.
+// The configurations a Flow with no error resolves from, each with its layer as written: the example, and the example
+// with each form.
 function corpus() {
-  const example = exampleLayer.check(exampleLayer.config());
+  const example = exampleLayer.config();
   return [
-    ['the example', example] as const,
+    ['the example', exampleLayer.check(example), example] as const,
     ...Object.entries(FORMS).map(([form, edit]) => {
       const layer = exampleLayer.config();
       const files = exampleLayer.schemas();
       edit(layer, files);
-      return [form, exampleLayer.check(layer, files)] as const;
+      return [form, exampleLayer.check(layer, files), layer] as const;
     }),
   ];
 }
@@ -79,6 +100,7 @@ for (const [form, checked] of corpus())
   });
 
 type Add = (set: string, form: unknown) => void;
+const presence = (value: unknown) => (value == null ? 'absent' : 'present');
 const agentForm = (vertex: model.ResolvedVertexJson) => {
   if (vertex.agent === null) return 'none';
   return vertex.use === null ? 'own' : 'declared';
@@ -95,6 +117,9 @@ function procedureForms(add: Add, proc: procedures.Procedure) {
     if (action.kind !== undefined) add('check', action.kind);
   }
   add('tests', typeof proc.tests === 'string' ? proc.tests : 'named');
+  add('procedure access', proc.access);
+  add('recover', presence(proc.recover));
+  add('otherwise', presence(proc.otherwise));
   for (const token of Object.values(proc.claimTokens)) add('token', tokenForm(token));
   for (const table of procedureChecks.TABLES) if (proc[table].length) add('rows', table);
   for (const row of [...proc.passed, ...proc.failed, ...proc.stopped])
@@ -104,50 +129,96 @@ function procedureForms(add: Add, proc: procedures.Procedure) {
       else add('condition', typeof condition);
 }
 
-// The forms one Resolved Flow holds, by the closed set each is drawn from.
-function formsOf(flow: model.ResolvedFlowJson) {
+// The forms of a Vertex's values, by the closed set each is drawn from. Its Agent resolves merged, so whether the
+// Vertex sets its own access over the Agent it uses is read from the layer as written.
+function vertexForms(add: Add, vertex: model.ResolvedVertexJson, written: Record<string, unknown>) {
+  add('agent', agentForm(vertex));
+  add('vertex access', vertex.access);
+  add('vertex max', presence(vertex.max));
+  if (vertex.use !== null) add('access of a used Agent', Object.hasOwn(written, 'access') ? 'overridden' : 'inherited');
+  if (vertex.agent !== null)
+    for (const key of ['model', 'effort', 'network'] as const) add(`agent ${key}`, presence(vertex.agent[key]));
+  for (const routing of Object.values(vertex.routing)) {
+    add('routing source', routing.by);
+    add('work', routing.work);
+  }
+}
+
+// The forms one Resolved Flow holds, by the closed set each is drawn from, a target's by the site that names it.
+function formsOf(flow: model.ResolvedFlowJson, layer: exampleLayer.Layer) {
   const found = new Map<string, Set<unknown>>();
   const add: Add = (set, form) => found.set(set, (found.get(set) ?? new Set()).add(form));
-  const target = (value: model.Target) => {
-    if (typeof value === 'string') add('target', 'vertex');
-    else add('end', value.end);
+  const target = (site: string, value: model.Target) => {
+    if (typeof value === 'string') return add(site, 'vertex');
+    add(site, 'end');
+    add('end', value.end);
   };
-  const routeTarget = (value: model.RouteTarget) => {
-    if (typeof value !== 'object' || !('to' in value)) return target(value);
+  const routeTarget = (site: string) => (value: model.RouteTarget) => {
+    if (typeof value !== 'object' || !('to' in value)) return target(site, value);
     add('edge', value.max === undefined ? 'unbounded' : 'bounded');
-    target(value.to);
-    if (value.exhausted !== undefined) target(value.exhausted);
+    target('edge to', value.to);
+    if (value.exhausted !== undefined) target('edge exhausted', value.exhausted);
   };
-  Object.values(flow.ticket.routes).forEach(routeTarget);
-  for (const vertex of Object.values(flow.ticket.vertices)) {
-    Object.values(vertex.route).forEach(routeTarget);
-    if (vertex.exhausted !== null) target(vertex.exhausted);
-    add('agent', agentForm(vertex));
+  Object.values(flow.ticket.routes).forEach(routeTarget('flow route'));
+  const written: Record<string, Record<string, unknown>> = layer.flows.default.ticket.vertices;
+  for (const [id, vertex] of Object.entries(flow.ticket.vertices)) {
+    Object.values(vertex.route).forEach(routeTarget('vertex route'));
+    if (vertex.exhausted === null) add('vertex exhausted', 'absent');
+    else target('vertex exhausted', vertex.exhausted);
+    vertexForms(add, vertex, written[id]!);
   }
   for (const proc of Object.values(flow.procedures)) procedureForms(add, proc);
   return found;
 }
 
+// Every route source, as a Record so that a new one fails the type check until it is listed here.
+const ROUTE_SOURCES: Record<flow.RouteSource, true> = {
+  'Vertex route': true,
+  'Flow routes': true,
+  'Vertex "*"': true,
+  'Flow "*"': true,
+  'engine default': true,
+};
+const TARGETS = ['vertex', 'end'];
+const PRESENCE = ['absent', 'present'];
+
 // Every form of every closed set a copied value's type draws from, so the cases above cannot miss a form the checks
-// accept: an end, an Edge with and without max, an Agent of each kind, each Action and Check kind, each tests setting,
-// each Claim token form, and each rule condition.
+// accept: a target at each site that names one, an end, an Edge with and without max, each route source and where its
+// work goes, an Agent of each kind and each optional Agent key, each access and its override of a used Agent, each
+// Action and Check kind, each tests setting, each Claim token form, each rule condition, and each optional value. A
+// Vertex's tests is never null once resolved, so it has no set.
 const CLOSED_SETS: Record<string, unknown[]> = {
-  target: ['vertex'],
+  'flow route': TARGETS,
+  'vertex route': TARGETS,
+  'edge to': TARGETS,
+  'edge exhausted': TARGETS,
+  'vertex exhausted': [...TARGETS, 'absent'],
   end: labels.END_STATES,
   edge: ['bounded', 'unbounded'],
+  'routing source': Object.keys(ROUTE_SOURCES),
+  work: [null, 'rescued', 'left in place', 'rescued, or left in place once exhausted'],
   agent: ['none', 'own', 'declared'],
+  'agent model': PRESENCE,
+  'agent effort': PRESENCE,
+  'agent network': PRESENCE,
+  'vertex access': ['read-only', 'workspace-write'],
+  'access of a used Agent': ['inherited', 'overridden'],
+  'vertex max': PRESENCE,
   action: Object.keys(procedures.ACTION_KEYS),
   check: Object.keys(procedures.CHECK_KEYS),
   tests: ['frozen', 'write', 'named'],
   token: ['requires', 'stop', 'stop with comment'],
   rows: procedureChecks.TABLES,
   condition: ['string', 'boolean', 'number', ...procedures.OPERATORS],
+  'procedure access': [null, 'read-only'],
+  recover: PRESENCE,
+  otherwise: PRESENCE,
 };
 
 test('the Flows with no error hold every form of every closed set a copied value is drawn from', () => {
   const held = new Map<string, Set<unknown>>();
-  for (const [, checked] of corpus())
-    for (const [set, forms] of formsOf(checked.flows.default!))
+  for (const [, checked, layer] of corpus())
+    for (const [set, forms] of formsOf(checked.flows.default!, layer))
       held.set(set, new Set([...(held.get(set) ?? []), ...forms]));
   const missing = Object.entries(CLOSED_SETS).flatMap(([set, forms]) =>
     forms.filter((form) => !held.get(set)?.has(form)).map((form) => `${set}: ${String(form)}`),
@@ -185,6 +256,10 @@ const REFUSED: Record<string, [Edit, exampleLayer.FiredRule]> = {
   'a rule condition comparing with a number that is not an integer': [
     scoreRow({ '>': 1.5 }),
     { at: 'procedures.review.passed[0]', code: 'invalid-rule-condition' },
+  ],
+  'a Vertex access that is not a Permission Intent': [
+    (layer) => (layer.flows.default.ticket.vertices.red.access = 'read-write'),
+    { at: 'flows.default.ticket.vertices.red.access', code: 'unknown-permission-intent' },
   ],
   'an empty rule condition': [
     (layer) => (layer.procedures['tests-fail'].stopped[0].when['response.reason'] = {}),
