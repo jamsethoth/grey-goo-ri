@@ -70,7 +70,8 @@ export function fromJson(json: ExecutionRecordJson, commonDir: string): record.E
 }
 
 // The Epic Record as its row saves it: it holds no Map, so only commonDir is left out.
-export const epicJson = ({ commonDir, ...row }: record.EpicRecord) => row;
+export type EpicRecordJson = Omit<record.EpicRecord, 'commonDir'>;
+export const epicJson = ({ commonDir, ...row }: record.EpicRecord): EpicRecordJson => row;
 
 export interface RecordRow {
   kind: 'ticket' | 'epic';
