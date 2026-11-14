@@ -185,8 +185,9 @@ async function labelWarnings(
   return found.warnings;
 }
 
-// What gg doctor reads: both sources and the registered Harnesses, GitHub for the labels a Flow can request, and the
-// repository's common dir for the State Database and the Execution Records whose Flow is gone.
+// What gg doctor reads: both sources and the registered Harnesses, GitHub for the repository's owner/name and the
+// labels a Flow can request, and the repository's common dir for the State Database and the Execution Records whose
+// Flow is gone.
 export interface DoctorOptions {
   config: config.Configuration;
   commonDir?: string;
@@ -196,24 +197,34 @@ export interface DoctorOptions {
 }
 
 // gg doctor prints the checked configuration gg run admits by, so it never passes what gg run refuses (V1, #362):
-// every error, each record gg run would keep for its Flow being gone (A2), and each misfit as a warning, since gg run
-// refuses one only when selected (Q21). Schemas and templates are read from the files each source's gg.json names
-// (`config.files`).
+// every error, each record gg run would keep for its Flow being gone (A2), an owner/name gh cannot read, even beside
+// the configuration's errors (#372), and each misfit as a warning, since gg run refuses one only when selected (Q21).
+// Schemas and templates are read from the files each source's gg.json names (`config.files`).
 export async function doctor({ config: configuration, harnesses, gh, cwd, commonDir }: DoctorOptions): Promise<{
   text: string;
   exitCode: number;
 }> {
   const checked = await configurationCheck.check({ config: configuration, harnesses, commonDir });
-  const errors = [...checked.configurationErrors, ...checked.environmentErrors, ...checked.goneFlowRecords()];
+  const read = await configurationCheck.readRepository(gh, cwd);
+  const errors = [
+    ...checked.configurationErrors,
+    ...checked.environmentErrors,
+    ...checked.goneFlowRecords(),
+    ...read.errors,
+  ];
   const warnings = [...checked.warnings, ...checked.misfits.values()];
   const flows = [...checked.flows.values()];
   const lines: string[] = [];
   for (const { declared, source } of flows) lines.push(...flowLines(declared, source));
   for (const warning of warnings) lines.push(report.line('warning', warning));
-  const labelProblems = await labelWarnings(
-    flows.map(({ declared }) => declared),
-    { gh, cwd },
-  );
+  // The labels' read fails for the cause the owner/name's did, so one cause gives one finding (#372).
+  const labelProblems =
+    read.repository === null
+      ? []
+      : await labelWarnings(
+          flows.map(({ declared }) => declared),
+          { gh, cwd },
+        );
   lines.push(...labelProblems.map((warning) => report.line('warning', warning)));
   for (const error of errors) lines.push(report.line('error', error));
   const warned = warnings.length + labelProblems.length;

@@ -588,7 +588,7 @@ test('gg doctor reads no labels when it cannot read the owner/name', async () =>
     /\nerror: cannot read the GitHub owner\/name of \/repo: no git remotes found .*\[repository-unread\]\n/,
   );
   assert.ok(!text.includes('[repository-labels-'), text);
-  assert.ok(text.endsWith('\n1 error, 2 warnings\n'), text);
+  assert.ok(text.endsWith('\n1 error, 3 warnings\n'), text);
 });
 
 // Owner D5 B: doctor reads the owner/name beside the configuration's own errors, which gg run reports first.
