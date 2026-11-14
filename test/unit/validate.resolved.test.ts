@@ -35,6 +35,25 @@ const scoreRow =
 // Each form a copied value's type allows that the example lacks, in a configuration with no error.
 const FORMS: Record<string, Edit> = {
   'an Edge with no max': (layer) => (layer.flows.default.ticket.vertices.red.route.ok = { to: 'green' }),
+  'an Edge to an end': (layer) =>
+    (layer.flows.default.ticket.vertices.red.route.ok = {
+      to: { end: 'needs-human' },
+      max: 1,
+      exhausted: { end: 'needs-human' },
+    }),
+  'a Flow route that names a Vertex': (layer) => (layer.flows.default.ticket.routes.misscoped = 'senior-green'),
+  'a Vertex "*" route': (layer) => (layer.flows.default.ticket.vertices.red.route['*'] = { end: 'needs-human' }),
+  // Only blocked, of the Outcomes the Flow's "*" routes, is not an engine Outcome, so routing it leaves the engine's
+  // own Outcomes to the engine default.
+  'an engine default route': (layer) => {
+    const { routes } = layer.flows.default.ticket;
+    delete routes['*'];
+    routes.blocked = { end: 'needs-human' };
+  },
+  'a Vertex exhausted that names a Vertex': (layer) =>
+    (layer.flows.default.ticket.vertices['senior-red'].exhausted = 'publish'),
+  'a Vertex that narrows the access of the Agent it uses': (layer) =>
+    (layer.flows.default.ticket.vertices.red.access = 'read-only'),
   'a Vertex whose own Agent keys name its Agent': (layer) => {
     const { red } = layer.flows.default.ticket.vertices;
     delete red.use;
