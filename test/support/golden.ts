@@ -211,7 +211,6 @@ export interface GoldenOptions {
   git?: Which;
   // Files main holds beside package.json.
   baseFiles?: Record<string, string>;
-  refusedTicketEnds?: boolean; // the case corrupts a ticket_end on purpose, so a refused one is no failure
 }
 
 // git and integrity are fakes unless the case asks for either by name, for a test whose subject is git behaviour.
@@ -241,7 +240,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
     branch: BRANCH,
     base: 'main',
   });
-  checkTicketEnds(commonDir, options);
+  checkTicketEnds(commonDir);
   const database = caseDatabase.caseDatabase(t);
   database.save(executionRecord);
   const repos = { root, mainRoot, worktree, commonDir, base, git, fakeGit, fakeIntegrity };

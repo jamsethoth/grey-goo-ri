@@ -254,7 +254,8 @@ function settleAttempt(
       ...harnessFields(result, actionIdentity.recovery ? action.id : null),
       ...decisionFields(resolution, { result, claim, integrityRows }),
     },
-    evidence: { ...done, usageDelta: result.usage.delta },
+    // A copy: a Harness may reuse its result's objects, and the evidence keeps this call's counts.
+    evidence: structuredClone({ ...done, usageDelta: result.usage.delta }),
   };
 }
 

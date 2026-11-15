@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as commit from '../../lib/effects/commit.ts';
 import type * as events from '../../lib/events.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import type * as visit from '../../lib/visit.ts';
@@ -156,6 +157,27 @@ function changeMidVisit(fixture: golden.GoldenFixture): Record<string, Seen> {
   };
   return seen;
 }
+
+test('each call saves the Usage it reported, though the Harness reuses one Usage object for every call', async (t) => {
+  const fixture = await golden.fixture(t);
+  const run = fixture.harness.run;
+  const shared = contract.usageOf(() => 0);
+  let calls = 0;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    shared.inputTokens = ++calls;
+    return { ...answered, result: { ...answered.result, usage: { ...answered.result.usage, delta: shared } } };
+  };
+  await interpreter.runExecution(fixture.options);
+  const saved = loadTicket(fixture).writeAheadLog.flatMap(({ step, evidence }) =>
+    step === 'evidence' && evidence?.usageDelta !== undefined ? [evidence.usageDelta.inputTokens] : [],
+  );
+  assert.ok(calls > 1, `${calls} calls`);
+  assert.deepEqual(
+    saved,
+    Array.from({ length: calls }, (_, index) => index + 1),
+  );
+});
 
 // green's Visit has two calls when the first fails the Green Check: green, then its recovery pass.
 test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {

@@ -403,13 +403,13 @@ const REFUSED_TICKET_ENDS: [string, string][] = [
 ];
 for (const [name, json] of REFUSED_TICKET_ENDS) {
   test(`a decided report beside a ticket_end row ${name} is still pending, and the next Run finishes it`, async (t) => {
-    const fixture = await golden.fixture(t, { refusedTicketEnds: true });
+    const fixture = await golden.fixture(t);
     const restore = caseDatabase.failAppends(t, (event) => event.type === 'ticket_end');
     await rejectionOf(interpreter.runExecution({ ...fixture.options, fault: new Error('admission broke') }));
     restore();
     const mid = loadTicket(fixture);
-    stateDatabase
-      .open(fixture.commonDir)
+    const database = stateDatabase.open(fixture.commonDir);
+    const { lastInsertRowid: planted } = database
       .prepare(
         "INSERT INTO events (ts, type, run, execution, ticket, json) VALUES ('t', 'ticket_end', 'run-1', ?, ?, ?)",
       )
@@ -420,9 +420,11 @@ for (const [name, json] of REFUSED_TICKET_ENDS) {
     assert.equal(loadTicket(fixture).state, 'fault');
     assert.equal(fixture.gh.comments.length, 1, 'one fault comment');
     assert.ok(
-      fixture.logs.some((line) => /run stop: skipped corrupt event \d+ \(ticket_end\)/.test(line)),
+      fixture.logs.some((line) => line.includes(`run stop: skipped corrupt event ${planted} (ticket_end)`)),
       fixture.logs.join('\n'),
     );
+    // The planted row goes, so the end-of-case check reads every other row and refuses any it finds corrupt.
+    database.prepare('DELETE FROM events WHERE id = ?').run(planted);
   });
 }
 

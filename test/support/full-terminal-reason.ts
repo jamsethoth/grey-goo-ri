@@ -54,26 +54,17 @@ export const ticketEnds = (commonDir: string, execution: string): events.TicketE
     .executionEvents(commonDir, execution)
     .filter((event): event is events.TicketEndEvent => event.type === 'ticket_end');
 
-// Checks, as the case ends, every ticket_end in the State Database it is given, of every Execution. A ticket_end the
-// checked read refuses fails the case, unless the case says it corrupts one on purpose (`refusedTicketEnds`). Called
-// before the case's temp directory is made, so the check runs before the directory goes. Returns the setter for that
-// State Database.
-export function atCaseEnd(
-  t: TestContext,
-): (commonDir: string, { refusedTicketEnds }?: { refusedTicketEnds?: boolean }) => void {
-  const checked: { commonDir?: string; refusedTicketEnds?: boolean } = {};
+// Checks, as the case ends, every ticket_end in the State Database it is given, of every Execution. The checked read
+// throws on any row it refuses, so a case that plants a corrupt row removes it before it ends. Called before the case's
+// temp directory is made, so the check runs before the directory goes. Returns the setter for that State Database.
+export function atCaseEnd(t: TestContext): (commonDir: string) => void {
+  let checked: string | undefined;
   t.after(() => {
-    const { commonDir, refusedTicketEnds = false } = checked;
-    if (!commonDir) return;
-    const refused: string[] = [];
-    for (const event of eventRead.readEvents(commonDir, (err) => refused.push(err.message)))
+    if (!checked) return;
+    for (const event of eventRead.readEvents(checked))
       if (event.type === 'ticket_end') assertFull(event.terminalReason, `ticket_end of ${event.execution}`);
-    if (!refusedTicketEnds)
-      assert.deepEqual(
-        refused.filter((message) => message.includes('(ticket_end)')),
-        [],
-        'no ticket_end is refused unless the case corrupts one on purpose',
-      );
   });
-  return (commonDir, options = {}) => Object.assign(checked, { commonDir, ...options });
+  return (commonDir) => {
+    checked = commonDir;
+  };
 }
