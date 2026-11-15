@@ -40,9 +40,13 @@ const sorted = (lines: Iterable<string>) => [...lines].sort();
 
 const shapes = new typeShape.TypeShapes(
   ts.createProgram(
-    ['lib/record-json.ts', 'lib/events.ts', 'lib/validate/report.ts', 'test/support/fake-harness.ts'].map(
-      (file) => `${typeShape.root}${file}`,
-    ),
+    [
+      'lib/record-json.ts',
+      'lib/events.ts',
+      'lib/validate/report.ts',
+      'lib/agent-action.ts',
+      'test/support/fake-harness.ts',
+    ].map((file) => `${typeShape.root}${file}`),
     typeShape.configured.options,
   ),
 );
@@ -115,6 +119,12 @@ test('every Execution-scoped Event and the Execution Record name the owner', () 
   assert.deepEqual(fresh.get('owner'), { kind: 'ticket', number: START.ticket });
 });
 
+const HARNESS_SHAPES = [
+  ['lib/agent-action.ts', 'SentCall'],
+  ['lib/run-context.ts', 'HarnessResult'],
+  ['lib/visit.ts', 'HarnessFailure'],
+] as const;
+
 test('harness.md lists exactly the harness contract methods', () => {
   const documented = blocks('harness.md');
   assert.deepEqual(documented.get('list:HARNESS_METHODS'), contract.HARNESS_METHODS);
@@ -127,6 +137,9 @@ test('harness.md lists exactly the harness contract methods', () => {
     sorted(documented.get('paths:ScriptedResponse') ?? []),
     sorted(walked('test/support/fake-harness.ts', 'ScriptedResponse')),
   );
+  // What gg passes run(call) and what it reads back: the call it builds, the Harness Result and a failure.
+  for (const [file, name] of HARNESS_SHAPES)
+    assert.deepEqual(sorted(documented.get(`paths:${name}`) ?? []), sorted(walked(file, name)), name);
 });
 
 test('problems.md lists exactly the Problem codes', () => {

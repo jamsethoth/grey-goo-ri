@@ -80,14 +80,63 @@ backgroundWork
 
 ## `run(call)`
 
-The call gg passes (`lib/agent-action.ts`, `lib/agent-call.ts`):
+The call gg passes is `SentCall` (`lib/agent-action.ts`): `{ marker, vertex, visit, phase, attempt?, agent, persona:
+{ name, bytes, hash }, brief, schema, cwd, resume, access, network?, tools, timeouts, env }`. `agent` is the pinned Agent
+with its keys (`harness`, `persona`, `model`, `effort`, `network?`, and any other the Agent declares); `resume` is the
+Session to resume, or null; `timeouts` is the Agent's own, as configured (`{ stallMs, wallMs }`), or `{}`. The Harness
+receives the Persona bytes, never a path. Every path of the call:
 
-```
-call = { marker, vertex, visit, phase, attempt, agent, persona: { bytes, hash }, brief, schema, cwd,
-         resume: sessionId | null, access, network, tools, timeouts: { stallMs, wallMs }, env }
+```text paths:SentCall
+marker: string
+vertex: string
+visit: number
+phase: string
+attempt?: number
+agent: open object
+agent.harness: string
+agent.persona: string
+agent.model: string | null
+agent.effort: string | null
+agent.network?: boolean
+agent.*: JsonValue
+persona: object
+persona.name: string
+persona.bytes: string
+persona.hash: string
+brief: string
+schema: object
+schema.type?: string (referencePaths.SchemaNode)
+schema.properties?: keyed (referencePaths.SchemaNode)
+schema.properties.*: SchemaNode
+schema.required?: list (referencePaths.SchemaNode)
+schema.required[]: string
+schema.additionalProperties?: boolean (referencePaths.SchemaNode)
+schema.items?: object (referencePaths.SchemaNode)
+schema.items.type?: string (referencePaths.SchemaNode)
+schema.items.properties?: keyed (referencePaths.SchemaNode)
+schema.items.properties.*: SchemaNode
+schema.items.required?: list (referencePaths.SchemaNode)
+schema.items.required[]: string
+schema.items.additionalProperties?: boolean (referencePaths.SchemaNode)
+schema.items.items?: SchemaNode | undefined (referencePaths.SchemaNode)
+schema.items.enum?: list (referencePaths.SchemaNode)
+schema.items.enum[]: string
+schema.items.min?: number (referencePaths.SchemaNode)
+schema.items.max?: number (referencePaths.SchemaNode)
+schema.enum?: list (referencePaths.SchemaNode)
+schema.enum[]: string
+schema.min?: number (referencePaths.SchemaNode)
+schema.max?: number (referencePaths.SchemaNode)
+cwd: string
+resume: string | null
+access: string
+network?: boolean
+tools: JsonValue
+timeouts: JsonValue
+env: JsonValue
 ```
 
-The Harness receives the Persona bytes, never a path. It resolves:
+It resolves:
 
 ```
 { response, result, failure }
@@ -108,8 +157,67 @@ The Harness receives the Persona bytes, never a path. It resolves:
   is Pending until a later Run confirms cleanup under the `containment` reported. A Harness that holds a job for an
   unconfirmed call gives the report a `closeJob`, as `exec.runShell` does, which gg calls before it releases the ticket
   lock.
-- `failure`: for `failed`, `{ failureClass, retryAfterMs, message }`, its class one of `auth`, `quota`, `budget`,
+- `failure`: for `failed`, `{ failureClass, retryAfterMs?, message? }` (`HarnessFailure`, `lib/visit.ts`), its class one of `auth`, `quota`, `budget`,
   `rate-limited`, `transient` or `unknown` (`record.md` lists every source's Failure Classes); otherwise `null`.
+
+Every path of the Harness Result and of a failure:
+
+```text paths:HarnessResult
+status: "failed" | "completed" | "timed-out" | "killed" (runContext.HarnessResult)
+sessionId: string | null (runContext.HarnessResult)
+transcriptPath: string | null (runContext.HarnessResult)
+usage: object (runContext.HarnessResult)
+usage.cumulative: object
+usage.cumulative.inputTokens: number | null (events.Usage)
+usage.cumulative.cacheReadTokens: number | null (events.Usage)
+usage.cumulative.cacheWriteTokens: number | null (events.Usage)
+usage.cumulative.outputTokens: number | null (events.Usage)
+usage.cumulative.reasoningTokens: number | null (events.Usage)
+usage.cumulative.costUsd: number | null (events.Usage)
+usage.cumulative.peakContextTokens: number | null (events.Usage)
+usage.cumulative.turns: number | null (events.Usage)
+usage.cumulative.toolCalls: number | null (events.Usage)
+usage.cumulative.compactions: number | null (events.Usage)
+usage.cumulative.costBasis?: "reported" | "priced" | null (events.Usage)
+usage.delta: object
+usage.delta.inputTokens: number | null (events.Usage)
+usage.delta.cacheReadTokens: number | null (events.Usage)
+usage.delta.cacheWriteTokens: number | null (events.Usage)
+usage.delta.outputTokens: number | null (events.Usage)
+usage.delta.reasoningTokens: number | null (events.Usage)
+usage.delta.costUsd: number | null (events.Usage)
+usage.delta.peakContextTokens: number | null (events.Usage)
+usage.delta.turns: number | null (events.Usage)
+usage.delta.toolCalls: number | null (events.Usage)
+usage.delta.compactions: number | null (events.Usage)
+usage.delta.costBasis?: "reported" | "priced" | null (events.Usage)
+exitCode?: number | null (runContext.HarnessResult)
+exitSignal?: string | null (runContext.HarnessResult)
+finalEventSubtype?: string | null (runContext.HarnessResult)
+sessionInit?: JsonValue (runContext.HarnessResult)
+permissionDenials?: JsonValue (runContext.HarnessResult)
+commandsRun?: JsonValue (runContext.HarnessResult)
+cleanup?: object (runContext.HarnessResult)
+cleanup.confirmed: boolean (commandCleanup.CallCleanup)
+cleanup.survivors: list (commandCleanup.CallCleanup)
+cleanup.survivors[]: object
+cleanup.survivors[].error: string (commandCleanup.Survivor)
+cleanup.survivors[].pid: number (commandCleanup.Survivor)
+cleanup.survivors[].created: string | null (commandCleanup.Survivor)
+cleanup.survivors[].commandLine: string | null (commandCleanup.Survivor)
+cleanup.reason?: string | null (commandCleanup.CallCleanup)
+cleanup.containment?: kind=job | kind=group | kind=none (commandCleanup.CallCleanup)
+cleanup.containment<kind=job>.kind: "job"
+cleanup.containment<kind=group>.kind: "group"
+cleanup.containment<kind=group>.pgid: number
+cleanup.containment<kind=none>.kind: "none"
+```
+
+```text paths:HarnessFailure
+failureClass: string (visit.HarnessFailure)
+retryAfterMs?: number | null (visit.HarnessFailure)
+message?: string (visit.HarnessFailure)
+```
 
 A Harness never throws or rejects for an expected failure; a rejection is an unexpected fault.
 
@@ -160,7 +268,8 @@ cancel
 A test gives it `responses`, keyed `<vertex>/<visit>/<phase>/<attempt>` (`keys.responseKey`), each a
 `ScriptedResponse`: the files the Attempt writes, its Structured Response, its result fields (`usage.delta` among
 them), a failure it reports, an error it throws, or `hang` until `cancel()`, and the cleanup its Command Cleanup
-reports, confirmed unless the script says otherwise. Every path a script may hold:
+reports, confirmed unless the script says otherwise (`closeJob` is a function, as a real report's is; `throw` is any value
+thrown, an `Error` among them). Every path a script may hold:
 
 ```text paths:ScriptedResponse
 cleanup?: object (fakeHarness.ScriptedResponse)
@@ -177,10 +286,10 @@ cleanup.containment<kind=job>.kind: "job"
 cleanup.containment<kind=group>.kind: "group"
 cleanup.containment<kind=group>.pgid: number
 cleanup.containment<kind=none>.kind: "none"
-cleanup.closeJob?: object (commandCleanup.CleanupReport)
+cleanup.closeJob?: () => void (commandCleanup.CleanupReport)
 files?: keyed (fakeHarness.ScriptedResponse)
 files.*: string
-response?: JsonValue (fakeHarness.ScriptedResponse)
+response?: unknown (fakeHarness.ScriptedResponse)
 result?: open object (fakeHarness.ScriptedResponse)
 result.usage?: object
 result.usage.delta?: object
@@ -196,13 +305,13 @@ result.usage.delta.toolCalls?: number | null
 result.usage.delta.compactions?: number | null
 result.usage.delta.costBasis?: "reported" | "priced" | null
 result.sessionInit?: object
-result.*: JsonValue
+result.*: unknown
 failure?: open object (fakeHarness.ScriptedResponse)
 failure.kind?: string
 failure.retryAfterMs?: number | null
 failure.message?: string
-failure.*: JsonValue
-throw?: JsonValue (fakeHarness.ScriptedResponse)
+failure.*: unknown
+throw?: unknown (fakeHarness.ScriptedResponse)
 hang?: boolean (fakeHarness.ScriptedResponse)
 ```
 

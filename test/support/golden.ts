@@ -211,6 +211,7 @@ export interface GoldenOptions {
   git?: Which;
   // Files main holds beside package.json.
   baseFiles?: Record<string, string>;
+  refusedTicketEnds?: boolean; // the case corrupts a ticket_end on purpose, so a refused one is no failure
 }
 
 // git and integrity are fakes unless the case asks for either by name, for a test whose subject is git behaviour.
@@ -240,7 +241,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
     branch: BRANCH,
     base: 'main',
   });
-  checkTicketEnds(commonDir, executionRecord.execution);
+  checkTicketEnds(commonDir, options);
   const database = caseDatabase.caseDatabase(t);
   database.save(executionRecord);
   const repos = { root, mainRoot, worktree, commonDir, base, git, fakeGit, fakeIntegrity };
@@ -385,13 +386,12 @@ function observedExecution(repos: Repos, planned: Planned) {
   };
 }
 
-// The golden fixture: the temp repos, the Execution's record and options, and the fakes it runs on. `options.deps.git`
-// is the git gg is given; `fakeGit` holds the fake git's own verbs and the steps a human takes outside gg (null on real
-// git); `fakeIntegrity` scripts the fake integrity (null on the real one).
+// The golden fixture: temp repos, the Execution's record and options, and its fakes. `options.deps.git` is gg's git;
+// `fakeGit` the fake's verbs and a human's steps outside gg, `fakeIntegrity` the fake integrity (each null if real).
 export type GoldenFixture = Awaited<ReturnType<typeof fixture>>;
 
-// Edits the case's configuration with `edit(config)` and resolves the Flow again.
-// A record that has entered no Vertex yet starts at the new entry.
+// Edits the case's configuration with `edit(config)` and resolves the Flow again; a record that has entered no Vertex
+// yet starts at the new entry.
 export function configure(golden: GoldenFixture, edit: (configured: GoldenConfig) => void): void {
   edit(golden.config);
   golden.flow = resolve(golden.config);

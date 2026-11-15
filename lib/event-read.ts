@@ -104,8 +104,8 @@ function checkedRows(rows: EventRow[], onRefused?: (err: EventCorruptError) => v
   });
 }
 
-export const readEvents = (commonDir: string): events.Event[] =>
-  checkedRows(stateDatabase.open(commonDir).prepare(`${SELECT} ORDER BY events.id`).all());
+export const readEvents = (commonDir: string, onRefused?: (err: EventCorruptError) => void): events.Event[] =>
+  checkedRows(stateDatabase.open(commonDir).prepare(`${SELECT} ORDER BY events.id`).all(), onRefused);
 
 // One Execution's Events, in the order they were appended.
 export const executionEvents = (

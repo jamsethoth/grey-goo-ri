@@ -23,9 +23,10 @@ here outside the Reserved section needs a new ADR under `docs/adr/` and a versio
 - `ticket` always equals `owner.number`. Until request slice 7 only a Ticket owns an Execution (`owner.kind` is
   `ticket`); an Epic-owned planning Execution keeps the same row key, `('ticket', n)`, and the same id, `<n>.<hex>`
   (X3; GitHub numbers issues and pull requests in one sequence, so an Epic's number is never a Ticket's).
-- An Agent's `response`, an Action output's `response` and `value`, and an Effect's evidence are JSON whose shape the
-  repository owns (its response schemas), so a field such as `repeatOf` (#127) needs no version bump (N8). They are
-  marked `JsonValue` or `open object` below.
+- An Agent's `response` and the `response` an Action output holds are JSON whose shape the repository owns (its
+  response schemas), so a field such as `repeatOf` (#127) needs no version bump (N8). They are marked `JsonValue`.
+- An Effect's evidence (`writeAheadLog[].evidence`, `writeAhead.Evidence`) and a Check's evidence beyond `command` and
+  `output` are gg's own, saved as JSON keyed by name, so the paths below mark them `*: JsonValue`.
 
 ## Top-level fields
 

@@ -225,8 +225,8 @@ in `record.md`: `[]` a list's item, `<form>` a union's form, `?` a key a Problem
 ```text paths:ProblemParams
 required-key-missing: object (report.ProblemParams)
 required-key-missing.key: string
-required-key-missing.id?: JsonValue
-required-key-missing.field?: JsonValue
+required-key-missing.id?: unknown
+required-key-missing.field?: unknown
 required-key-missing.values?: list
 required-key-missing.values[]: string
 required-key-missing.file?: string
@@ -240,18 +240,18 @@ not-a-positive-integer.file?: string (report.InSourceFile)
 not-a-string: object (report.ProblemParams)
 not-a-string.file?: string (report.InSourceFile)
 invalid-name: object (report.ProblemParams)
-invalid-name.name?: JsonValue
+invalid-name.name?: unknown
 invalid-name.index?: number
 invalid-name.file?: string
 reserved-name: object (report.ProblemParams)
 reserved-name.name: string
 reserved-name.file?: string
 unknown-vertex: object (report.ProblemParams)
-unknown-vertex.vertex: JsonValue
+unknown-vertex.vertex: unknown
 unknown-end: object (report.ProblemParams)
-unknown-end.end: JsonValue
+unknown-end.end: unknown
 undeclared-procedure: object (report.ProblemParams)
-undeclared-procedure.procedure: JsonValue
+undeclared-procedure.procedure: unknown
 harness-unregistered: {agent,harness} | {vertex,harness} (report.ProblemParams)
 harness-unregistered<{agent,harness}>.agent: string
 harness-unregistered<{agent,harness}>.harness: string
@@ -261,9 +261,9 @@ harness-unset: {agent} | {vertex} (report.ProblemParams)
 harness-unset<{agent}>.agent: string
 harness-unset<{vertex}>.vertex: string
 undeclared-agent: object (report.ProblemParams)
-undeclared-agent.agent: JsonValue
+undeclared-agent.agent: unknown
 unknown-permission-intent: object (report.ProblemParams)
-unknown-permission-intent.access: JsonValue
+unknown-permission-intent.access: unknown
 unused-agent: object (report.ProblemParams)
 unused-agent.agent: string
 vertex-needs-agent: object (report.ProblemParams)
@@ -271,9 +271,9 @@ vertex-needs-agent.procedure: string
 vertex-takes-no-agent: object (report.ProblemParams)
 vertex-takes-no-agent.procedure: string
 check-after-effect: object (report.ProblemParams)
-check-after-effect.id?: JsonValue
+check-after-effect.id?: unknown
 check-after-effect.effect: string
-check-after-effect.effectId?: JsonValue
+check-after-effect.effectId?: unknown
 claim-enum-mismatch: object (report.ProblemParams)
 claim-enum-mismatch.schema: string
 claim-enum-mismatch.enum?: list
@@ -287,14 +287,14 @@ pr-ready-without-checks.token: string
 repeated-action-id: object (report.ProblemParams)
 repeated-action-id.id: string
 undeclared-check: object (report.ProblemParams)
-undeclared-check.check: JsonValue
+undeclared-check.check: unknown
 undeclared-command: object (report.ProblemParams)
-undeclared-command.id?: JsonValue
-undeclared-command.command: JsonValue
+undeclared-command.id?: unknown
+undeclared-command.command: unknown
 unknown-action-kind: object (report.ProblemParams)
-unknown-action-kind.kind: JsonValue
+unknown-action-kind.kind: unknown
 unknown-check-kind: object (report.ProblemParams)
-unknown-check-kind.kind: JsonValue
+unknown-check-kind.kind: unknown
 schema-not-strict: object (report.ProblemParams)
 schema-not-strict.schema: string
 schema-not-strict.reason: string
@@ -307,49 +307,49 @@ template-unreadable.reason: string
 template-unreadable.flow?: string
 template-unreadable.vertex?: string
 malformed-reference: object (report.ProblemParams)
-malformed-reference.path: JsonValue (report.Reference)
+malformed-reference.path: unknown (report.Reference)
 malformed-reference.template?: string (report.Reference)
 malformed-reference.flow?: string (report.Reference)
 malformed-reference.vertex?: string (report.Reference)
 not-a-list-of-objects: object (report.ProblemParams)
-not-a-list-of-objects.path: JsonValue
+not-a-list-of-objects.path: unknown
 not-a-list-of-objects.template?: string
 not-a-list-of-objects.flow?: string
 not-a-list-of-objects.vertex?: string
-not-a-list-of-objects.type: JsonValue
+not-a-list-of-objects.type: unknown
 not-a-list-of-strings: object (report.ProblemParams)
-not-a-list-of-strings.path: JsonValue
+not-a-list-of-strings.path: unknown
 not-a-list-of-strings.template?: string
 not-a-list-of-strings.flow?: string
 not-a-list-of-strings.vertex?: string
-not-a-list-of-strings.type: JsonValue
+not-a-list-of-strings.type: unknown
 reference-into-list: object (report.ProblemParams)
-reference-into-list.path: JsonValue
+reference-into-list.path: unknown
 reference-into-list.template?: string
 reference-into-list.flow?: string
 reference-into-list.vertex?: string
 reference-into-list.list: string
 source-types-differ: object (report.ProblemParams)
 source-types-differ.sources: list
-source-types-differ.sources[]: JsonValue
+source-types-differ.sources[]: unknown
 undefined-reference: object (report.ProblemParams)
-undefined-reference.path: JsonValue
+undefined-reference.path: unknown
 undefined-reference.template?: string
 undefined-reference.flow?: string
 undefined-reference.vertex?: string
 undefined-reference.missing: string
 unknown-item-field: object (report.ProblemParams)
-unknown-item-field.field: JsonValue
+unknown-item-field.field: unknown
 unknown-item-field.flow?: string
 unknown-item-field.vertex?: string
 condition-value-mismatch: object (report.ProblemParams)
-condition-value-mismatch.field: JsonValue
-condition-value-mismatch.value?: JsonValue
+condition-value-mismatch.field: unknown
+condition-value-mismatch.value?: unknown
 condition-value-mismatch.values?: list
 condition-value-mismatch.values[]: string
 invalid-condition-field: object (report.ProblemParams)
-invalid-condition-field.field: JsonValue
-invalid-condition-field.type: JsonValue
+invalid-condition-field.field: unknown
+invalid-condition-field.type: unknown
 invalid-rule-condition: object (report.ProblemParams)
 invalid-rule-condition.field: string (report.RuleField)
 invalid-rule-condition.flow?: string (report.RuleField)
@@ -358,7 +358,7 @@ invalid-rule-field: object (report.ProblemParams)
 invalid-rule-field.field: string
 invalid-rule-field.flow?: string
 invalid-rule-field.vertex?: string
-invalid-rule-field.type: JsonValue
+invalid-rule-field.type: unknown
 never-firing-row: object (report.ProblemParams)
 never-firing-row.table: string (report.RuleRow)
 never-firing-row.flow?: string (report.RuleRow)
@@ -375,20 +375,20 @@ overlapping-rows.from: number | null
 overlapping-rows.fields: list
 overlapping-rows.fields[]: string
 overlapping-rows.example: keyed
-overlapping-rows.example.*: JsonValue
+overlapping-rows.example.*: unknown
 overlapping-rows.conditions: list
 overlapping-rows.conditions[]: object
 overlapping-rows.conditions[].row: number
 overlapping-rows.conditions[].when: keyed
-overlapping-rows.conditions[].when.*: JsonValue
+overlapping-rows.conditions[].when.*: unknown
 overlapping-rows.flow?: string
 overlapping-rows.vertex?: string
 rule-condition-mismatch: object (report.ProblemParams)
 rule-condition-mismatch.field: string
 rule-condition-mismatch.flow?: string
 rule-condition-mismatch.vertex?: string
-rule-condition-mismatch.condition: JsonValue
-rule-condition-mismatch.type: JsonValue
+rule-condition-mismatch.condition: unknown
+rule-condition-mismatch.type: unknown
 rule-table-too-large: object (report.ProblemParams)
 rule-table-too-large.table: string
 rule-table-too-large.flow?: string
@@ -414,16 +414,16 @@ commit-without-check.vertex: string
 commit-without-check.token: string
 not-a-list: object (report.ProblemParams)
 not-a-list.table?: string
-not-a-list.value?: JsonValue
+not-a-list.value?: unknown
 not-a-list.file?: string
 not-an-object: object (report.ProblemParams)
-not-an-object.value?: JsonValue
+not-an-object.value?: unknown
 not-an-object.file?: string
 invalid-command-line: object (report.ProblemParams)
 invalid-command-line.command: string
 invalid-command-line.file: string
 invalid-glob: object (report.ProblemParams)
-invalid-glob.glob: JsonValue
+invalid-glob.glob: unknown
 invalid-glob.file: string
 harness-preflight-failed: object (report.ProblemParams)
 harness-preflight-failed.vertex: string

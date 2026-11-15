@@ -57,6 +57,8 @@ export class TypeShapes {
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   private readonly json: ts.Type;
+  // The types being walked, outermost first: one met again inside itself is written by its name, not walked forever.
+  private readonly walking = new Set<ts.Type>();
 
   constructor(program = ts.createProgram([`${root}lib/record-json.ts`], configured.options)) {
     this.program = program;
@@ -69,8 +71,14 @@ export class TypeShapes {
     const source = this.program.getSourceFile(`${root}${file}`);
     const moduleSymbol = source && this.checker.getSymbolAtLocation(source);
     const symbol = moduleSymbol && this.checker.getExportsOfModule(moduleSymbol).find((held) => held.name === name);
-    if (!symbol) throw new Error(`${file} exports no ${name}`);
-    return this.checker.getDeclaredTypeOfSymbol(symbol);
+    if (symbol) return this.checker.getDeclaredTypeOfSymbol(symbol);
+    // A type the module keeps to itself, read where it is declared, so a document can name it without an export.
+    const own = source?.statements.find(
+      (statement) =>
+        (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) && statement.name.text === name,
+    ) as ts.InterfaceDeclaration | ts.TypeAliasDeclaration | undefined;
+    if (!own) throw new Error(`${file} declares no ${name}`);
+    return this.checker.getTypeAtLocation(own.name);
   }
 
   shapeOf(file: string, name: string): Shape {
@@ -109,16 +117,34 @@ export class TypeShapes {
   }
 
   private shape(declared: ts.Type, depth: number): Shape {
+    if (this.walking.has(declared))
+      return { nullable: false, kind: 'scalar', type: this.checker.typeToString(declared), members: null };
+    this.walking.add(declared);
+    try {
+      return this.walked(declared, depth);
+    } finally {
+      this.walking.delete(declared);
+    }
+  }
+
+  private walked(declared: ts.Type, depth: number): Shape {
     if (depth > 30) throw new Error(`${this.checker.typeToString(declared)} nests too deep`);
+    // unknown holds anything, JSON or not (a thrown value), so it is not JSON's type.
+    if (declared.flags & ts.TypeFlags.Unknown)
+      return { nullable: false, kind: 'scalar', type: 'unknown', members: null };
     if (this.checker.isTypeAssignableTo(this.json, declared)) return { nullable: true, kind: 'json' };
+    if (this.checker.isTypeAssignableTo(this.checker.getNonNullableType(this.json), declared))
+      return { nullable: false, kind: 'json' };
     const members = declared.isUnion() ? declared.types : [declared];
     const nullable = members.some((member) => member.flags & ts.TypeFlags.Null);
     const held = members.filter((member) => !(member.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)));
-    // A tuple is a value of its own, written as its type: walked as an object, it would list every Array method, one
-    // by a symbol whose name carries the program's id for it, which differs from one program to the next.
+    // A tuple or a function is a value of its own, written as its type. Walked as an object, a tuple would list every
+    // Array method, one by a symbol whose name carries the program's id for it, which differs from program to program.
     const scalars = held.filter(
       (member) =>
-        this.checker.isTupleType(member) || (!(member.flags & ts.TypeFlags.Object) && !member.isIntersection()),
+        this.checker.isTupleType(member) ||
+        member.getCallSignatures().length > 0 ||
+        (!(member.flags & ts.TypeFlags.Object) && !member.isIntersection()),
     );
     const structured = held.filter((member) => !scalars.includes(member));
     if (!structured.length) {

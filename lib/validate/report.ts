@@ -150,7 +150,7 @@ type RuleRow = RuleTable & { row: number; outcome: string };
 // missing here names none. A label that only places the problem inside the value at `at` (`allOf[n]:`, `pick:`,
 // `where "f":`, `agent X's harness`) is not repeated here, except a bad item's index in a repeat Check's fields (owner,
 // #301).
-export interface ProblemParams {
+interface ProblemParams {
   'required-key-missing': { key: string; id?: unknown; field?: unknown; values?: string[] } & InSourceFile;
   'empty-list': InSourceFile;
   'unknown-key': { key: string } & InSourceFile;
