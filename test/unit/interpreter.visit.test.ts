@@ -179,6 +179,25 @@ test('each call saves the Usage it reported, though the Harness reuses one Usage
   );
 });
 
+test('each Session saves the counts its call reported, though the Harness reuses one Usage object', async (t) => {
+  const fixture = await golden.fixture(t);
+  const run = fixture.harness.run;
+  const shared = contract.usageOf(() => 0);
+  let calls = 0;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    shared.inputTokens = ++calls;
+    return { ...answered, result: { ...answered.result, usage: { ...answered.result.usage, cumulative: shared } } };
+  };
+  await interpreter.runExecution(fixture.options);
+  const saved = Object.values(loadTicket(fixture).sessions).map((session) => session.cumulativeUsage.inputTokens);
+  assert.ok(calls > 1, `${calls} calls`);
+  assert.deepEqual(
+    saved,
+    Array.from({ length: calls }, (_, index) => index + 1),
+  );
+});
+
 // green's Visit has two calls when the first fails the Green Check: green, then its recovery pass.
 test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {
   const fixture = await greenFixture(t, {

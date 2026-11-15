@@ -382,6 +382,10 @@ test('a held completion replaces the saved result with its Event, or leaves none
   assert.equal(support.actionEvents(executionRecord).length, 1, 'only a held completion with a result records one');
   const saved = record.load(executionRecord.commonDir, 'ticket', support.TICKET)!;
   assert.equal(visitScope.outputOf(saved, IDENTITY)?.value.cleanup?.confirmed, true);
+  // The saved evidence is a copy: a later change to the returned Resolution leaves it as saved.
+  replaced!.rule.row = 'changed after the save';
+  const evidence = executionRecord.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence;
+  assert.notEqual(evidence && 'rule' in evidence ? evidence.rule.row : undefined, 'changed after the save');
 });
 
 test('a crash after a held completion leaves its replaced result saved, with its one Event', async (t) => {
