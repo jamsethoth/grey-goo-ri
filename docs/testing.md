@@ -49,7 +49,8 @@ entry point since #199 (ADR 0019).
    detail; fix the test's coupling, not just its expectation.
 8. **Each case cleans up after itself.** It ends every run it started and removes its temp directories. A fake reaches
    a run only through the options the case passes (the seams below), so no fake outlives its case. On Windows the
-   [census](#the-census) fails a stage that leaves a process behind.
+   [census](#the-census) fails a stage that leaves a process behind, and on every platform the
+   [temp census](#the-temp-census) fails one that leaves anything in its temp directory.
 9. **No duplicated coverage.** A behaviour is asserted at the lowest size that can show it. A larger test covers
    what only it can show (the wiring, the real system), not the same branch again.
 
@@ -164,9 +165,7 @@ Four stages, ordered by speed:
 
 The coverage stage runs in one process (`--test-isolation=none`), so its figures do not depend on the order node reads
 coverage files in, and a test that ends the process fails the stage; the other stages keep a process per file (ADR 0016,
-amended). Its tests run with a temp directory of the launcher's, removed after them, since node's test runner removes
-its own `node-coverage-*` directory only when the process is not ended early (#377); `GG_KEEP_TEMP` keeps it and the
-launcher prints its path. The
+amended). Like the full and fast stages, it takes the [temp census](#the-temp-census). The
 coverage stage fails when the line or function coverage of `lib/` under `test/unit/` is below the fixed floor
 `COVERAGE_FLOOR` in `scripts/run-suite.ts`, the same on every platform. The floor is raised by hand, in a PR of its own
 when the measured figures have moved well above it; nothing is recorded per change, so open PRs do not conflict on it.
@@ -217,7 +216,7 @@ A process started while the names are being read is ended but not named; whateve
 no exception (owner, 2026-11-06). Forced, each reaches a census, and an exception by command line also hid a real leak. A
 stage they fail is classified under rule 1 like any other.
 
-Coverage has no census. Its one process runs `test/unit/`, which may not reach process boundaries, so it has nothing to
+Coverage has no process census. Its one process runs `test/unit/`, which may not reach process boundaries, so it has nothing to
 find. The check stage runs no tests.
 
 What it sees, on Windows (probes on #290):
@@ -241,6 +240,23 @@ The stages do not take `--test-force-exit`. It does not make a held file report 
 what held it when the file exits, so the census finds nothing there either. It takes the slow file away, which is the
 only sign of that leak, and off Windows, where no census runs yet, it would leave those processes running with no sign at
 all. #289 can look again, since an attached child outlives its parent on Linux.
+
+### The temp census
+
+A case that leaves a temp directory behind passes, and nothing else shows it: 327 `node-coverage-*` directories, one per
+full run, built up in `%TEMP%` before anyone noticed (#377). So the full, fast and coverage stages run every step with
+`TEMP`, `TMP` and `TMPDIR` set to a directory of the launcher's own, `gg-stage-*` in the caller's temp directory, and
+once the steps and the process census are done the launcher looks in it (#380). Whatever is there is named, the
+directory is removed, and the stage fails. A clean stage prints `temp census: nothing left`. node's compile cache,
+`node-compile-cache/`, is not counted: Prettier, ESLint and tsc keep it there on purpose. The coverage stage still holds
+its figures after a failed temp census, since a test that ends its process early leaves node's own `node-coverage-*`
+directory, and `coverage measured no lines` says why.
+
+`GG_KEEP_TEMP` keeps the directory, prints its path and never fails the stage, since `test/support/temp-directory.ts`
+then keeps each case's directory too. The check stage runs no tests and takes no temp census.
+
+It sees only what lands in the temp directory a step's node reads. A case that writes elsewhere, or a process that
+outlives the stage and writes later, is not seen.
 
 ## Considered and deferred
 
