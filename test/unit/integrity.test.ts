@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
@@ -53,6 +53,66 @@ test('readActivity matches a differently cased path on Windows', { skip: process
 
 test('sameFile never takes an absent file for the same', () => {
   assert.equal(integrity.sameFile({ base64: Buffer.from('a').toString('base64') }, undefined), false);
+});
+
+// The names every object inherits, `__proto__` among them: a file map indexed by one it lacks gives what it inherits.
+const INHERITED_NAMES = Object.getOwnPropertyNames(Object.prototype);
+
+test('sameFile never takes an inherited value for a file', () => {
+  const none: integrity.UntrackedFiles = {};
+  const taken = INHERITED_NAMES.filter((name) => integrity.sameFile(none[name], none[name]));
+  assert.deepEqual(taken, []);
+});
+
+// A worktree over the fake git holding one untracked root file `name`, protected so the baseline saves it.
+async function protectedRootFile(t: TestContext, name: string) {
+  const root = tempDirectory.tempDirectory(t, 'gg-integrity-', (directory) => join(directory, 'main', '.git'));
+  const fake = fakeGit();
+  const { mainRoot, commonDir } = fake.init(root);
+  const real = integrity.createIntegrity(fake.git);
+  const executionRecord = integrityWorktrees.worktreeRecord(commonDir, 1, mainRoot);
+  const protectedPaths = [name];
+  const takeBaseline = () => real.takeBaseline({ record: executionRecord, others: [], protectedPaths });
+  const rollBack = (baseline: integrity.IntegrityBaseline) =>
+    real.restoreUntracked(mainRoot, integrity.rollbackSet(baseline, protectedPaths, {}));
+  return { mainRoot, takeBaseline, rollBack };
+}
+
+test('an untracked file named __proto__ is kept in the baseline', async (t) => {
+  const { mainRoot, takeBaseline, rollBack } = await protectedRootFile(t, '__proto__');
+  writeFileSync(join(mainRoot, '__proto__'), 'kept');
+  const baseline = await takeBaseline();
+  assert.ok(Object.hasOwn(baseline.untracked, '__proto__'), JSON.stringify(baseline.untracked));
+  assert.deepEqual(baseline.untracked['__proto__'], { base64: Buffer.from('kept').toString('base64') });
+
+  await fsPromises.rm(join(mainRoot, '__proto__'));
+  await rollBack(baseline);
+  assert.equal(readFileSync(join(mainRoot, '__proto__'), 'utf8'), 'kept');
+});
+
+test('an untracked file with any inherited name is kept in the baseline and restored', async (t) => {
+  const lost: string[] = [];
+  for (const name of INHERITED_NAMES) {
+    const { mainRoot, takeBaseline, rollBack } = await protectedRootFile(t, name);
+    writeFileSync(join(mainRoot, name), name);
+    const baseline = await takeBaseline();
+    await fsPromises.rm(join(mainRoot, name));
+    await rollBack(baseline);
+    if (!Object.hasOwn(baseline.untracked, name) || !existsSync(join(mainRoot, name))) lost.push(name);
+  }
+  assert.deepEqual(lost, []);
+});
+
+test('a rollback removes a new untracked file with any inherited name', async (t) => {
+  const kept: string[] = [];
+  for (const name of INHERITED_NAMES) {
+    const { mainRoot, takeBaseline, rollBack } = await protectedRootFile(t, name);
+    const baseline = await takeBaseline();
+    writeFileSync(join(mainRoot, name), 'an agent wrote this');
+    await rollBack(baseline);
+    if (existsSync(join(mainRoot, name))) kept.push(name);
+  }
+  assert.deepEqual(kept, []);
 });
 
 test('a workflow file change is an integrity violation', async (t) => {
