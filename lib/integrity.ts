@@ -163,17 +163,21 @@ export async function untrackedFiles(
   if (none(within)) return {};
   // Ignored ones too: an ignored Protected File is still agent configuration, and an ignored test still runs.
   const untrackedPaths = await git.untrackedPaths(worktree, { include, within });
-  const files: UntrackedFiles = {};
+  const entries = new Map<string, UntrackedFile>();
   for (const listed of untrackedPaths) {
     // git lists the files behind a junction as the worktree's: the link is saved once, never what it points at.
     const path = (await linkAbove(worktree, listed)) ?? listed;
-    if (Object.hasOwn(files, path)) continue;
+    if (entries.has(path)) continue;
     const full = join(worktree, path);
-    files[path] = (await lstat(full)).isSymbolicLink()
-      ? { link: await readlink(full), directory: (await stat(full).catch(() => null))?.isDirectory() ?? false }
-      : { base64: (await readFile(full)).toString('base64') };
+    entries.set(
+      path,
+      (await lstat(full)).isSymbolicLink()
+        ? { link: await readlink(full), directory: (await stat(full).catch(() => null))?.isDirectory() ?? false }
+        : { base64: (await readFile(full)).toString('base64') },
+    );
   }
-  return files;
+  // fromEntries, not assignment, which a file named __proto__ would turn into a prototype change.
+  return Object.fromEntries(entries);
 }
 
 // The nearest directory above `path` that is a link (a symlink or junction), checked from the worktree down, or null.
@@ -193,9 +197,12 @@ export const ignoredFiles = (worktree: string, within: Within | undefined, git: 
 const untrackedProtected = (worktree: string, protectedPaths: string[], git: IntegrityGit) =>
   untrackedFiles(worktree, { paths: protectedPaths }, git);
 
+// A file map indexed by a name it lacks, such as `toString`, gives what every object inherits: no file, like undefined.
+const isFile = (file: UntrackedFile | undefined): file is UntrackedFile =>
+  typeof file?.link === 'string' || typeof file?.base64 === 'string';
 export const sameFile = (first: UntrackedFile | undefined, second: UntrackedFile | undefined): boolean =>
-  !!first &&
-  !!second &&
+  isFile(first) &&
+  isFile(second) &&
   first.link === second.link &&
   first.directory === second.directory &&
   first.base64 === second.base64;
@@ -286,7 +293,9 @@ export async function restoreUntracked(
   const { within } = set;
   for (const path of Object.keys(untracked)) await unlinkParents(worktree, path, fs);
   for (const path of Object.keys(await untrackedFiles(worktree, within, git))) {
-    if (!untracked[path] && !(await unlinkParents(worktree, path, fs))) await fs.rm(join(worktree, path), RM_OPTIONS);
+    if (!Object.hasOwn(untracked, path) && !(await unlinkParents(worktree, path, fs))) {
+      await fs.rm(join(worktree, path), RM_OPTIONS);
+    }
   }
   const now = await untrackedFiles(worktree, within, git);
   for (const [path, file] of Object.entries(untracked)) {
