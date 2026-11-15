@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as procedures from '../../lib/procedures.ts';
 import type * as referencePaths from '../../lib/reference-paths.ts';
 import * as requestTables from '../support/request-tables.ts';
@@ -105,4 +107,35 @@ test('the cleanup output declares its survivors, reason and containment (L11, L1
     'error',
   ]);
   assert.deepEqual(Object.keys(cleanup!.properties.containment!.properties!), ['kind', 'pgid']);
+});
+
+// Which files a Procedure names is one rule, procedures.procedureFiles (#397): no other lib module reads the keys of a
+// Procedure's places (each Action, its `recover`, each Claim token) itself. An Agent's `persona` is not a Procedure's.
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const PROCEDURE_PLACE_READ =
+  /\bfilesAt\(\s*['"](?:action|recover|claimToken)['"]|\bFILE_KEYS(?:\.|\[\s*['"])(?:action|recover|claimToken)\b/;
+const procedurePlaceReads = (path: string, text: string) =>
+  text.split('\n').flatMap((line, index) => (PROCEDURE_PLACE_READ.test(line) ? [`${path}:${index + 1}`] : []));
+
+test('only procedures.procedureFiles reads the file keys of a Procedure in lib/', () => {
+  assert.deepEqual(
+    procedurePlaceReads(
+      'lib/sample.ts',
+      [
+        "const fromActions = actions.flatMap((action) => procedures.filesAt('action', action));",
+        "const fromRecover = procedures.filesAt( 'recover', recover);",
+        "const tokenKeys = procedures.FILE_KEYS['claimToken'];",
+        'const recoverKeys = FILE_KEYS.recover;',
+        "const personas = procedures.filesAt('agent', agent);",
+      ].join('\n'),
+    ),
+    ['lib/sample.ts:1', 'lib/sample.ts:2', 'lib/sample.ts:3', 'lib/sample.ts:4'],
+    'a read at each Procedure place is found, and an Agent read is not',
+  );
+  const reads = readdirSync(`${root}lib`, { recursive: true, encoding: 'utf8' })
+    .map((file) => `lib/${file.split('\\').join('/')}`)
+    .filter((path) => path.endsWith('.ts') && path !== 'lib/procedures.ts')
+    .sort()
+    .flatMap((path) => procedurePlaceReads(path, readFileSync(root + path, 'utf8')));
+  assert.deepEqual(reads, []);
 });
