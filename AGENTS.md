@@ -110,7 +110,7 @@ leverage and a change lands in one place (locality).
 | `lib/visit-inputs.ts` | the Vertex inputs a Visit pins at its entry, read from the outputs of the Visits before it |
 | `lib/rescue.ts` | the Rescue Ref and the write-ahead reset, one mechanism for a failure routed to another Vertex and for an Interrupted Attempt (#68) |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
-| `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap |
+| `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap, each read from the Execution Record and its Flow alone, which a Run context holds |
 | `lib/agent-action.ts` | the agent Action: its Attempts, each with its Brief, Session and Harness, and the result the Transition Table makes of its Signals |
 | `lib/agent-call.ts` | an Attempt's call under the Integrity Assertions: its baseline and intent, the Harness's run with its heartbeat, Test Immutability |
 | `lib/check-action.ts` | the check Action and its Check kinds (`command`, `tests-fail`, `response`, `repeat`) |

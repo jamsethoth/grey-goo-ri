@@ -4,8 +4,15 @@ import type * as events from './events.ts';
 import * as flow from './flow.ts';
 import * as labels from './labels.ts';
 import * as outcome from './outcome.ts';
-import type { RunContext } from './run-context.ts';
+import type * as model from './model.ts';
+import type * as record from './record.ts';
 import type * as visit from './visit.ts';
+
+// What a Bound reads of an Execution: its record and its Flow. A Run context holds both, so callers pass theirs.
+interface Counted {
+  record: record.ExecutionRecord;
+  flow: model.ResolvedFlow;
+}
 
 // A route's target: a Vertex, an end, or a bounded Edge to a Vertex.
 type Target = string | flow.EndTarget;
@@ -37,8 +44,8 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 // Procedure's Outcomes and harness exhaustion are routable; any other (an Integrity Violation, a run stop, the Action
 // Cap) ends at needs-human whatever the routes say. An end's name is the next cursor's Vertex, which no Vertex may take
 // (lib/validate/).
-function targetOf(runContext: RunContext, outcomeName: string): Target | BoundedEdge {
-  const { outcomes, route, routes } = runContext.record.configurationSnapshot!;
+function targetOf(executionRecord: record.ExecutionRecord, outcomeName: string): Target | BoundedEdge {
+  const { outcomes, route, routes } = executionRecord.configurationSnapshot!;
   const routable = (outcomes as string[]).includes(outcomeName) || outcome.ENGINE_OUTCOMES.includes(outcomeName);
   return ((routable && flow.route(route, routes, outcomeName)?.target) || flow.NEEDS_HUMAN_ROUTE) as
     Target | BoundedEdge;
@@ -47,9 +54,9 @@ function targetOf(runContext: RunContext, outcomeName: string): Target | Bounded
 // The effective target (U5, request 3.3): a bounded Edge counts traversals per Execution in record.traversals and, once
 // `max` is reached, routes to its `exhausted` target; a Vertex whose Visits reached its own `max` passes on to its own
 // `exhausted` target, which wins when the Edge into it is spent too.
-export function edge(runContext: RunContext, outcomeName: string): Traversal {
-  const { record: executionRecord, flow: runFlow } = runContext;
-  const target = targetOf(runContext, outcomeName);
+export function edge(counted: Counted, outcomeName: string): Traversal {
+  const { record: executionRecord, flow: runFlow } = counted;
+  const target = targetOf(executionRecord, outcomeName);
   const bound = (id: string) => runFlow.ticket.vertices.get(id)?.max;
   const full = (id: string) => !!bound(id) && (executionRecord.visits.get(id) ?? 0) >= bound(id)!;
   const spent: string[] = [];
@@ -77,30 +84,30 @@ export function edge(runContext: RunContext, outcomeName: string): Traversal {
 
 // Whether an Outcome's effective target is another Vertex, once its Bounds count (U5): its work must then leave the
 // worktree (R5a). An end leaves it in place for the human (R5b).
-export const routesToVertex = (runContext: RunContext, outcomeName: string): boolean =>
-  !flow.isEnd(edge(runContext, outcomeName).next);
+export const routesToVertex = (counted: Counted, outcomeName: string): boolean =>
+  !flow.isEnd(edge(counted, outcomeName).next);
 
 // A spent Bound's clause in a Terminal Reason, naming where the route went instead.
 export const spentText = (traversal: Traversal): string =>
   traversal.spent.length ? `, and ${traversal.spent.join(' and ')}, so the route ended at ${traversal.next}` : '';
 
 // Takes the Edge; the count is saved with the next Vertex's entry, before it runs, so a restart routes the same way.
-export function traverse(runContext: RunContext, outcomeName: string): Traversal {
-  const traversal = edge(runContext, outcomeName);
-  if (traversal.key) runContext.record.traversals.set(traversal.key, traversal.count!);
+export function traverse(counted: Counted, outcomeName: string): Traversal {
+  const traversal = edge(counted, outcomeName);
+  if (traversal.key) counted.record.traversals.set(traversal.key, traversal.count!);
   return traversal;
 }
 
 // The Action Cap (request 3.3, V1): a Flow Attempt past it never runs, and the Execution ends at needs-human, whatever
 // any Bound says. record.attempts counts the Flow's Attempts entered, the refused one included, so a restart refuses it
 // again; engine reporting is not counted and still runs.
-export const capped = (runContext: RunContext): visit.ActionCapResolution | null =>
-  runContext.record.attempts > runContext.flow.actionCap
+export const capped = ({ record: executionRecord, flow: runFlow }: Counted): visit.ActionCapResolution | null =>
+  executionRecord.attempts > runFlow.actionCap
     ? {
         outcome: labels.NEEDS_HUMAN,
         direction: 'stop',
         row: 'action-cap',
         rule: { table: 'fixed', row: 'action-cap' },
-        actionCap: runContext.flow.actionCap,
+        actionCap: runFlow.actionCap,
       }
     : null;
