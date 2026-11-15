@@ -35,7 +35,19 @@ function rows(commonDir: string): EventRow[] {
   }
 }
 
-const usage = () => ({ peakContextTokens: 1200, turns: 3, toolCalls: 4, compactions: 0, costUsd: null });
+// A Usage holds every USAGE_FIELDS key (#23, Clarify Q2 B).
+const usage = () => ({
+  inputTokens: 10,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 5,
+  reasoningTokens: null,
+  costUsd: null,
+  peakContextTokens: 1200,
+  turns: 3,
+  toolCalls: 4,
+  compactions: 0,
+});
 
 const actionFields = (): events.EventInput<'action'> => ({
   flow: 'default',
@@ -350,6 +362,12 @@ const BAD_USAGE: [string, unknown][] = [
     'a cumulative without peakContextTokens',
     { cumulative: { turns: 3, toolCalls: 4, compactions: 0, costUsd: null }, delta: usage() },
   ],
+  ['a key outside USAGE_FIELDS', { cumulative: { ...usage(), bogus: 1 }, delta: usage() }],
+  ['a cumulative without cacheReadTokens', { cumulative: { ...usage(), cacheReadTokens: undefined }, delta: usage() }],
+  [
+    'a costBasis outside reported, priced or null',
+    { cumulative: usage(), delta: { ...usage(), costBasis: 'guessed' } },
+  ],
 ];
 for (const [name, value] of BAD_USAGE) {
   test(`actionEvent rejects an agent action's Usage with ${name}`, () => {
@@ -359,8 +377,16 @@ for (const [name, value] of BAD_USAGE) {
 }
 
 test('actionEvent accepts Usage members whose counts are all null', () => {
-  const nulls = { peakContextTokens: null, turns: null, toolCalls: null, compactions: null, costUsd: null };
+  const nulls = Object.fromEntries(Object.keys(usage()).map((field) => [field, null]));
   assert.equal(events.actionEvent({ ...actionFields(), usage: { cumulative: nulls, delta: nulls } }).type, 'action');
+});
+
+test('actionEvent accepts a Usage that names its costBasis: reported, priced or null', () => {
+  for (const costBasis of ['reported', 'priced', null]) {
+    const named = { ...usage(), costBasis };
+    // @ts-expect-error -- costBasis is not in the Usage type until Green
+    assert.equal(events.actionEvent({ ...actionFields(), usage: { cumulative: named, delta: named } }).type, 'action');
+  }
 });
 
 test('eventLog validates every event before appending it', (t) => {

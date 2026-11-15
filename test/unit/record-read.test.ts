@@ -171,3 +171,84 @@ test('tsc tells a reader from its record type by a key, either way, at every obj
   );
   assert.deepEqual(missed, []);
 });
+
+const USAGE = {
+  inputTokens: 1,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 1,
+  reasoningTokens: 0,
+  costUsd: 0.1,
+  peakContextTokens: 1,
+  turns: 1,
+  toolCalls: 1,
+  compactions: 0,
+};
+// The full fixture's row with one edit: `edit` is given the row's first session, first reset intent's payload and
+// first-Attempt baseline.
+function edited(edit: (parts: { session: Json; reset: Json; baseline: Json }) => void): Json {
+  const row = structuredClone(FIXTURE.execution) as Record<string, Json> & {
+    sessions: Record<string, Json>;
+    writeAheadLog: { effect: Json; payload: Json }[];
+    visitState: { firstAttemptBaseline: Json };
+  };
+  const reset = row.writeAheadLog.find(
+    (entry) => entry.effect === 'reset' && JSON.stringify(entry.payload).includes('"untracked"'),
+  );
+  edit({
+    session: Object.values(row.sessions)[0]!,
+    reset: reset!.payload,
+    baseline: row.visitState.firstAttemptBaseline,
+  });
+  return row;
+}
+const reads = (row: Json) => () => recordRead.executionRecord({ value: row, path: '' });
+
+// The frozen version 1 holds what gg writes (#23, Clarify Q2 B, Q3 A, Q5 A): a closed Usage with an optional
+// costBasis, a link with its kind, and none of the shapes a reset intent saved before #144.
+test('a row of a shape version 1 leaves out is refused', () => {
+  const refused: Record<string, (parts: { session: Json; reset: Json; baseline: Json }) => void> = {
+    'a Usage key outside USAGE_FIELDS': ({ session }) =>
+      Object.assign(session as object, { cumulativeUsage: { ...USAGE, bogus: 1 } }),
+    'a Usage missing a USAGE_FIELDS key': ({ session }) =>
+      Object.assign(session as object, { cumulativeUsage: { inputTokens: 1 } }),
+    'a costBasis outside its closed set': ({ session }) =>
+      Object.assign(session as object, { cumulativeUsage: { ...USAGE, costBasis: 'guessed' } }),
+    'a link without its kind': ({ baseline }) =>
+      Object.assign((baseline as { untracked: object }).untracked, { link: { link: '../elsewhere' } }),
+    "a reset's within as a list of pathspecs": ({ reset }) =>
+      Object.assign((reset as { untracked: object }).untracked, { within: [':(glob)**/*.js'] }),
+    "a reset's pathspecs": ({ reset }) =>
+      Object.assign((reset as { untracked: object }).untracked, { pathspecs: ['a'] }),
+    "a reset's left without its index": ({ reset }) => delete (reset as { left: { index?: Json } }).left.index,
+  };
+  const accepted = Object.entries(refused).filter(([, edit]) => {
+    try {
+      reads(edited(edit))();
+      return true;
+    } catch (err) {
+      if (!(err instanceof recordRead.RowFieldError)) throw err;
+      return false;
+    }
+  });
+  assert.deepEqual(
+    accepted.map(([name]) => name),
+    [],
+  );
+});
+
+test('a closed Usage may name its costBasis, reported, priced or null', () => {
+  for (const costBasis of ['reported', 'priced', null]) {
+    const row = edited(({ session }) => Object.assign(session as object, { cumulativeUsage: { ...USAGE, costBasis } }));
+    assert.doesNotThrow(reads(row), String(costBasis));
+  }
+});
+
+test("a keyed type's names line names the type that declares it", () => {
+  const lines = typeShape.paths(EXECUTION);
+  for (const line of [
+    'writeAheadLog[].evidence.*: JsonValue (writeAhead.Evidence)',
+    'sessions.*.cumulativeUsage.costBasis?: "reported" | "priced" | null (events.Usage)',
+  ])
+    assert.ok(lines.includes(line), line);
+});

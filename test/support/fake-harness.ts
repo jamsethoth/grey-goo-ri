@@ -9,6 +9,9 @@ import * as keys from './keys.ts';
 
 type Usage = Record<string, number | null>;
 
+// The fake harness's frozen scripting version (#23). Stub until Green.
+export const FAKE_HARNESS_VERSION: number = 0;
+
 const DEFAULT_CAPABILITIES = {
   skills: 'exact',
   mcp: 'exact',

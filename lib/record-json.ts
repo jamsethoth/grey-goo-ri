@@ -9,6 +9,8 @@ import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 
 export const SCHEMA_VERSION = 1;
+// The Execution and Epic Records' frozen schema version (#23). Stub until Green.
+export const RECORD_SCHEMA_VERSION: number = 0;
 
 export class RecordCorruptError extends Error {
   declare file: string;

@@ -26,6 +26,7 @@ type OptionalOf<Fields, Shape> = {
 };
 type Declared<Fields, Shape> = RequiredOf<Fields, Shape> & OptionalOf<Fields, Shape>;
 
+export const EVENT_SCHEMA_VERSION: number = 0;
 // Every Event's own header, ahead of its declared fields.
 interface EventHeader<Type extends string> {
   schemaVersion: 2;
@@ -33,7 +34,6 @@ interface EventHeader<Type extends string> {
   type: Type;
 }
 
-// shortcut: Usage is typed by key, not closed; T8 owns the full Usage shape.
 export type Usage = Record<string, number | null>;
 
 // The Signals an Action's Outcome was decided from: the Harness Result, the Claim, the Check signals and the Integrity

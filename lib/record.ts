@@ -9,7 +9,7 @@ import type * as visit from './visit.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as recordJson from './record-json.ts';
 
-export { RecordCorruptError, fromJson, toJson } from './record-json.ts';
+export { RECORD_SCHEMA_VERSION, RecordCorruptError, fromJson, toJson } from './record-json.ts';
 export type { ExecutionRecordJson, VisitStateJson } from './record-json.ts';
 
 // A record transition whose Event failed was rolled back, but the record object still holds it: saving that object

@@ -1,8 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+  symlinkSync,
+} from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import * as integrity from '../../lib/integrity.ts';
+import * as paths from '../../lib/paths.ts';
 import * as record from '../../lib/record.ts';
 import * as git from '../../lib/git.ts';
 import * as gitShell from '../support/git-shell.ts';
@@ -404,4 +415,45 @@ test('a rollback set saved with pathspecs before #144 still restores', async (t)
   assert.equal(readFileSync(join(worktree, 'a.test.mjs'), 'utf8'), 'a');
   assert.ok(!existsSync(join(worktree, 'extra.test.mjs')), 'the file the agent added is removed');
   assert.deepEqual(integrity.withinOf(set), [':(glob)**/*.test.*']);
+});
+
+// Windows' reparse tag for a junction (IO_REPARSE_TAG_MOUNT_POINT); a directory symbolic link has 0xa000000c.
+const JUNCTION_TAG = 'Reparse Tag Value : 0xa0000003';
+// Whether `path` is a link to `target`, and on Windows a junction, which needs no symlink privilege to make.
+function assertJunctionTo(path: string, target: string, what: string) {
+  assert.ok(lstatSync(path).isSymbolicLink(), `${what}: a link`);
+  assert.equal(paths.pathKey(resolve(dirname(path), readlinkSync(path))), paths.pathKey(target), `${what}: its target`);
+  if (process.platform === 'win32')
+    assert.ok(
+      execFileSync('fsutil', ['reparsepoint', 'query', path]).toString().includes(JUNCTION_TAG),
+      `${what}: a junction`,
+    );
+}
+
+// The rollback snapshot keeps a link as a link (#23, Clarify Q3 A): a directory link under the Protected Files is saved
+// as `{ link, directory }`, never the bytes behind it, and a rollback makes it a junction again, target gone or not.
+test('a junction under the Protected Files is saved as a link and restored as a junction', async (t) => {
+  for (const targetGone of [false, true]) {
+    const { root, worktree } = worktrees.emptyWorktree(t);
+    const outside = join(root, 'outside');
+    const skills = join(worktree, '.claude', 'skills');
+    mkdirSync(outside);
+    writeFileSync(join(outside, 'secret.txt'), 'BYTES-BEHIND-THE-JUNCTION');
+    mkdirSync(join(worktree, '.claude'));
+    symlinkSync(outside, skills, 'junction');
+    const within = { paths: ['.claude/'] };
+
+    const baseline = await integrity.untrackedFiles(worktree, within, git);
+    assert.deepEqual(Object.keys(baseline), ['.claude/skills'], 'one entry for the link');
+    assert.deepEqual(new Map(Object.entries(baseline['.claude/skills']!)).get('directory'), true, 'a directory link');
+    const saved = JSON.stringify(baseline);
+    assert.ok(!saved.includes(Buffer.from('BYTES-BEHIND-THE-JUNCTION').toString('base64')), 'no bytes from behind it');
+
+    rmSync(skills);
+    mkdirSync(skills);
+    writeFileSync(join(skills, 'agent.md'), 'the agent wrote this');
+    if (targetGone) rmSync(outside, { recursive: true });
+    await integrity.restoreUntracked(worktree, { files: baseline, within }, git);
+    assertJunctionTo(skills, outside, targetGone ? 'its target gone' : 'its target there');
+  }
 });

@@ -1,6 +1,5 @@
-// The golden-trace fixture: a temp origin and clone with a ticket worktree (on the fake git unless a case asks for real
-// git by name), the fake gh, a fake test runner, the fake harness, and every harness, test, git and gh call tagged with
-// the activity it observed. `fixture` builds it and runs nothing; test/support/golden-run.ts runs it.
+// The golden-trace fixture: temp repos with a ticket worktree (fake git unless a case asks for real git), fake gh, test
+// runner and harness, each call tagged with the activity it saw. `fixture` builds it, golden-run.ts runs it.
 import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -24,6 +23,7 @@ import * as fakeGhModule from './fake-gh.ts';
 import * as fakeGitModule from './fake-git.ts';
 import * as fakeHarnessModule from './fake-harness.ts';
 import * as fakeIntegrityModule from './fake-integrity.ts';
+import * as fullTerminalReason from './full-terminal-reason.ts';
 import * as gitShell from './git-shell.ts';
 import * as keys from './keys.ts';
 import * as pinnedValue from './pinned-value.ts';
@@ -216,6 +216,7 @@ export interface GoldenOptions {
 // git and integrity are fakes unless the case asks for either by name, for a test whose subject is git behaviour.
 export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   const { responses = firstVisitResponses, integrity = 'fake', git: which = 'fake', baseFiles } = options;
+  const checkTicketEnds = fullTerminalReason.atCaseEnd(t);
   const root = tempDirectory.tempDirectory(t, 'gg-golden-', (directory) => join(directory, 'main', '.git'));
   const { base, git, fakeGit } = seedGit(root, which, baseFiles);
   const fakeIntegrity = fakeIntegrityFor(integrity, base, git);
@@ -225,6 +226,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   else await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const commonDir = join(mainRoot, '.git');
   stateDatabase.create(commonDir);
+  checkTicketEnds(commonDir);
   const configured = goldenConfig();
   const flow = resolve(configured);
   const executionRecord = record.createExecutionRecord({
