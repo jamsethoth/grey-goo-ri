@@ -3,6 +3,7 @@ import type * as record from '../record.ts';
 import * as effects from './index.ts';
 
 export type Payload = { target: { kind: string; number: number }; body: string; bodyHash: string };
+export type Evidence = { id: number };
 
 // The gh verb a comment is posted with (lib/github.ts).
 export interface Context {
@@ -30,7 +31,7 @@ export function postedIds(executionRecord: Pick<record.ExecutionRecord, 'writeAh
   const comments = new Set(
     writeAheadLog.filter((entry) => entry.effect === effect.name).map((entry) => entry.actionMarker),
   );
-  return writeAheadLog
-    .filter((entry) => entry.step === 'evidence' && comments.has(entry.actionMarker))
-    .map((entry) => entry.evidence?.id as number);
+  return writeAheadLog.flatMap(({ step, actionMarker, evidence }) =>
+    step === 'evidence' && comments.has(actionMarker) && evidence && 'id' in evidence ? [evidence.id] : [],
+  );
 }

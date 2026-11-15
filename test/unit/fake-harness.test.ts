@@ -45,11 +45,8 @@ const pendingAfterTurn = (promise: Promise<unknown>) =>
   ]);
 
 type HarnessCallResult = Awaited<ReturnType<fakeHarnessModule.FakeHarness['run']>>;
-// The contract types usage as unknown; the fake reports every counter as a number.
-const cumulative = (outcome: HarnessCallResult) =>
-  (outcome.result.usage as { cumulative: Record<string, number> }).cumulative;
-const usage = (outcome: HarnessCallResult) =>
-  outcome.result.usage as Record<'cumulative' | 'delta', Record<string, unknown>>;
+const cumulative = (outcome: HarnessCallResult) => outcome.result.usage.cumulative;
+const usage = (outcome: HarnessCallResult) => outcome.result.usage;
 
 test('a scripted response is returned and files are written into cwd', async () => {
   const { harness, cwd } = await setup({
@@ -109,8 +106,8 @@ test('a new session has a transcript file and resume keeps it', async () => {
   );
   assert.equal(second.result.sessionId, first.result.sessionId);
   assert.equal(second.result.transcriptPath, first.result.transcriptPath);
-  assert.ok(cumulative(second).inputTokens >= cumulative(first).inputTokens);
-  assert.ok(cumulative(second).outputTokens > cumulative(first).outputTokens);
+  assert.ok((cumulative(second).inputTokens ?? 0) >= (cumulative(first).inputTokens ?? 0));
+  assert.ok((cumulative(second).outputTokens ?? 0) > (cumulative(first).outputTokens ?? 0));
   assert.equal(harness.calls[1].resume, first.result.sessionId);
 });
 

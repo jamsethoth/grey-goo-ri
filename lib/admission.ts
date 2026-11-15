@@ -222,7 +222,12 @@ async function startTicket(
   const executionRecord = admitting.executionRecord;
   if (decision) executionRecord.admissionStop = declaredAdmissionStop(decision);
   context.deps.database.save(executionRecord, () =>
-    admitting.events('ticket_start', { run: context.runId, execution: executionRecord.execution, ticket }),
+    admitting.events('ticket_start', {
+      run: context.runId,
+      execution: executionRecord.execution,
+      ticket,
+      owner: executionRecord.owner,
+    }),
   );
   admitting.started = true;
 }

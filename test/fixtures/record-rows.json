@@ -4,6 +4,7 @@
     "repository": "o/r",
     "execution": "8.a1b2c3",
     "ticket": 8,
+    "owner": { "kind": "ticket", "number": 8 },
     "epic": 1,
     "flow": "default",
     "configHash": "hash-1",
@@ -18,7 +19,14 @@
     "terminalStop": {
       "outcome": "held",
       "response": { "any": ["json", 1, true, null] },
-      "actionRef": { "vertex": "green", "visit": 2, "procedure": "implement", "action": "agent", "recovery": 1, "attempt": 3 },
+      "actionRef": {
+        "vertex": "green",
+        "visit": 2,
+        "procedure": "implement",
+        "action": "agent",
+        "recovery": 1,
+        "attempt": 3
+      },
       "held": true,
       "abandoned": false,
       "inProgress": false,
@@ -67,7 +75,19 @@
         "harness": "claude",
         "personaHash": "persona-hash",
         "transcriptPath": "transcripts/1.jsonl",
-        "cumulativeUsage": { "inputTokens": 10, "costUsd": null },
+        "cumulativeUsage": {
+          "inputTokens": 10,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        },
         "vertex": "green",
         "model": "opus",
         "effort": "high",
@@ -84,11 +104,19 @@
           "response": { "summary": "done" },
           "cleanup": {
             "confirmed": false,
-            "survivors": [{ "pid": 42, "created": "2026-11-13T00:00:00Z", "commandLine": "node x", "error": "access denied" }],
+            "survivors": [
+              { "pid": 42, "created": "2026-11-13T00:00:00Z", "commandLine": "node x", "error": "access denied" }
+            ],
             "reason": "1 process could not be confirmed gone",
             "containment": { "kind": "group", "pgid": 41 }
           },
-          "evidence": { "command": "npm test", "output": "ok", "exitCode": 0, "__proto__": { "kept": "as data" } },
+          "evidence": {
+            "command": "npm test",
+            "output": "ok",
+            "exitCode": 0,
+            "__proto__": { "kept": "as data" },
+            "foundByNameOnly": true
+          },
           "findingsHash": "findings",
           "files": ["a.ts", "b.ts"],
           "decision": { "outcome": "approved", "actor": "owner", "reply": "fine" },
@@ -144,15 +172,42 @@
         "head": "head-1",
         "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
         "idle": { "C:/wt/9": { "generation": 3, "snapshot": { "head": "h9", "index": "i9", "tree": "t9" } } },
-        "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
-        "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target" } }
+        "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target", "directory": true } },
+        "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target", "directory": false } }
       },
       "call": {
         "harnessResult": {
           "status": "completed",
           "sessionId": "session-1",
           "transcriptPath": "transcripts/1.jsonl",
-          "usage": { "cumulative": { "inputTokens": 10 }, "delta": { "inputTokens": 4, "costUsd": null } },
+          "usage": {
+            "cumulative": {
+              "inputTokens": 10,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "outputTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": 0,
+              "peakContextTokens": 0,
+              "turns": 0,
+              "toolCalls": 0,
+              "compactions": 0,
+              "costBasis": "priced"
+            },
+            "delta": {
+              "inputTokens": 4,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "outputTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "peakContextTokens": 0,
+              "turns": 0,
+              "toolCalls": 0,
+              "compactions": 0,
+              "costBasis": null
+            }
+          },
           "exitCode": 0,
           "exitSignal": null,
           "finalEventSubtype": "success",
@@ -172,8 +227,8 @@
           "head": "head-1",
           "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
           "idle": { "C:/wt/9": { "generation": 3, "snapshot": { "head": "h9", "index": "i9", "tree": "t9" } } },
-          "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
-          "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target" } }
+          "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target", "directory": false } },
+          "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target", "directory": false } }
         },
         "signal": {
           "status": "failed",
@@ -182,7 +237,9 @@
         }
       },
       "response": { "claim": "passed" },
-      "runs": { "tests": { "output": "1 failing", "reason": "a test failed", "failure": "tests", "recoverable": true } },
+      "runs": {
+        "tests": { "output": "1 failing", "reason": "a test failed", "failure": "tests", "recoverable": true }
+      },
       "checks": { "tests": { "id": "tests", "kind": "command", "state": "failed", "tree": "tree-1" } },
       "checkFollows": true,
       "settled": {
@@ -228,7 +285,7 @@
         "actionMarker": "m-commit",
         "effect": "commit",
         "payload": null,
-        "evidence": { "sha": "c1", "rule": { "table": "fixed", "row": null }, "nested": { "list": [1, "two"] } },
+        "evidence": { "sha": "c1" },
         "time": "2026-11-13T00:00:02Z"
       },
       {
@@ -322,32 +379,18 @@
           "baseline": "base-sha",
           "history": { "kind": "rescued", "text": "rescued to refs/gg/rescue/1" },
           "untracked": {
-            "files": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
-            "within": { "paths": ["test/"], "globs": ["*.snap"], "exclude": ["test/fixtures/"] },
-            "pathspecs": ["test/"]
+            "files": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target", "directory": false } },
+            "within": { "paths": ["test/"], "globs": ["*.snap"], "exclude": ["test/fixtures/"] }
           },
           "left": {
             "head": "h",
             "index": "i",
             "tree": "t",
-            "files": { "link": { "link": "target" }, "notes": { "base64": "bm90ZXM=" } }
+            "files": { "link": { "link": "target", "directory": false }, "notes": { "base64": "bm90ZXM=" } }
           }
         },
         "evidence": null,
         "time": "2026-11-13T00:00:11Z"
-      },
-      {
-        "step": "intent",
-        "actionMarker": "m-reset-old",
-        "effect": "reset",
-        "payload": {
-          "baseline": "base-sha",
-          "history": { "kind": "integrity violation", "text": "rolled back" },
-          "untracked": { "files": {}, "within": ["test/"] },
-          "left": { "head": "h", "tree": "t" }
-        },
-        "evidence": null,
-        "time": "2026-11-13T00:00:12Z"
       },
       {
         "step": "intent",
@@ -358,8 +401,8 @@
             "head": "head-1",
             "own": { "head": "head-1", "index": "index-1", "tree": "tree-1" },
             "idle": { "C:/wt/9": { "generation": 3, "snapshot": { "head": "h9", "index": "i9", "tree": "t9" } } },
-            "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target" } },
-            "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target" } }
+            "untracked": { "notes": { "base64": "bm90ZXM=" }, "link": { "link": "target", "directory": false } },
+            "tests": { "test/a.test.ts": { "base64": "dGVzdA==" }, "link": { "link": "target", "directory": false } }
           }
         },
         "evidence": null,
@@ -373,16 +416,16 @@
     "outputs.0.value.cleanup.containment": [{ "kind": "job" }, { "kind": "none" }],
     "terminalReason.decidedBy": [
       { "hold": null },
-      { "human": "owner" },
+      { "label": "gg:state:needs-human" },
       { "vertex": "green", "visit": null, "action": null, "recovery": 0 },
       { "hold": "dirty-worktree", "vertex": "green", "visit": 1, "action": null, "recovery": 0 },
-      { "human": "owner", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
+      { "label": "gg:state:needs-human", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
     ],
     "terminalStop.interrupted.terminalReason.decidedBy": [
       { "hold": null },
-      { "human": "owner" },
+      { "label": "gg:state:needs-human" },
       { "hold": "dirty-worktree", "vertex": "green", "visit": 1, "action": null, "recovery": 0 },
-      { "human": "owner", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
+      { "label": "gg:state:needs-human", "vertex": "green", "visit": 1, "action": "push", "recovery": 1 }
     ],
     "visitState.settled.resolution": [
       {
@@ -401,7 +444,12 @@
         "rule": { "table": "fixed", "row": "effect-completed" },
         "row": "effect-completed"
       },
-      { "outcome": "approved", "direction": "stop", "rule": { "table": "fixed", "row": "decision" }, "row": "decision" },
+      {
+        "outcome": "approved",
+        "direction": "stop",
+        "rule": { "table": "fixed", "row": "decision" },
+        "row": "decision"
+      },
       {
         "outcome": "action-cap",
         "direction": "stop",
@@ -417,6 +465,148 @@
         "failureClass": "quota",
         "runStopTicket": 9,
         "source": "push"
+      }
+    ],
+    "writeAheadLog.1.evidence": [
+      { "sha": null },
+      { "remoteSha": "c1" },
+      { "id": 5 },
+      { "number": 12, "url": "https://example.invalid/pull/12" },
+      {},
+      { "ok": true },
+      { "ref": "refs/gg/rescue/1", "commit": "rc1" },
+      { "head": "h" },
+      {
+        "outcome": "failed",
+        "direction": "retry",
+        "rule": { "table": "fixed", "row": "transient-retry" },
+        "row": "transient-retry",
+        "check": "tests",
+        "retryAfterMs": 1000,
+        "retryKind": "transient",
+        "failureClass": "transient",
+        "sessionId": "session-1",
+        "reason": "overloaded",
+        "surfaces": ["tree"],
+        "attempt": 2,
+        "signal": { "id": "tests", "kind": "command", "state": "failed", "tree": null },
+        "output": "the output",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "failed",
+        "direction": "stop",
+        "rule": { "table": "failed", "row": "otherwise" },
+        "row": null,
+        "check": null,
+        "retryAfterMs": null,
+        "retryKind": null,
+        "failureClass": null,
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "passed",
+        "direction": "advance",
+        "rule": { "table": "fixed", "row": "effect-completed" },
+        "row": "effect-completed",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "approved",
+        "direction": "stop",
+        "rule": { "table": "fixed", "row": "decision" },
+        "row": "decision",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "action-cap",
+        "direction": "stop",
+        "rule": { "table": "fixed", "row": "action-cap" },
+        "row": "action-cap",
+        "actionCap": 50,
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
+      },
+      {
+        "outcome": "stopped",
+        "direction": "stop",
+        "rule": { "table": "stopped", "row": "run-stopped" },
+        "row": "run-stopped",
+        "failureClass": "quota",
+        "runStopTicket": 9,
+        "source": "push",
+        "usageDelta": {
+          "inputTokens": 4,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 0,
+          "reasoningTokens": 0,
+          "costUsd": null,
+          "peakContextTokens": 0,
+          "turns": 0,
+          "toolCalls": 0,
+          "compactions": 0,
+          "costBasis": "reported"
+        }
       }
     ]
   },

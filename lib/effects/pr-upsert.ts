@@ -5,6 +5,7 @@ import type * as record from '../record.ts';
 import * as effects from './index.ts';
 
 export type Payload = { branch: string; base?: string; title: string; body: string; bodyHash: string };
+export type Evidence = { number: number; url: string };
 
 // The gh verb a PR is upserted with (lib/github.ts); the PR's number is kept on the record.
 export interface Context {

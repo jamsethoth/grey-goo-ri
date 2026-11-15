@@ -21,6 +21,7 @@ const PUSH_EVENT = {
   launchProfile: null,
   confinement: null,
   ticket: support.TICKET,
+  owner: { kind: 'ticket', number: support.TICKET },
   run: 'run-1',
   execution: 'e1',
   vertex: 'green',
@@ -46,7 +47,14 @@ test("an Execution's run stop is its first Action Event whose class reaches the 
   const harnessAuth = event('red', 'auth');
   const remoteAuth = event('push', 'auth');
   const permission = event('push', 'permission');
-  const ticketEnd = saved(events.lifecycleEvent('ticket_end', { run: 'run-1', execution: 'e1', ticket: 7 }));
+  const ticketEnd = saved(
+    events.lifecycleEvent('ticket_end', {
+      run: 'run-1',
+      execution: 'e1',
+      ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
+    }),
+  );
   assert.equal(
     terminalReport.runStopEvent([event('red-check', null), harnessAuth, remoteAuth]),
     harnessAuth,
@@ -90,12 +98,15 @@ const ticketEndRows = (commonDir: string) =>
 
 const NOT_JSON_REASON = 'Unexpected end of JSON input';
 
-// A row of the Execution in the events table that no Event declaration accepts.
+// A row of the Execution in the events table that no Event declaration accepts, and its id.
 const plantCorrupt = (commonDir: string, execution: string) =>
   stateDatabase
     .open(commonDir)
     .prepare("INSERT INTO events (ts, type, run, execution, ticket, json) VALUES ('t', 'action', 'run-1', ?, ?, ?)")
-    .run(execution, support.TICKET, '{"type":"action","failureClass":');
+    .run(execution, support.TICKET, '{"type":"action","failureClass":').lastInsertRowid;
+// The planted row goes as the case ends, so the golden fixture's end-of-case check refuses any other corrupt row.
+const removePlanted = (commonDir: string, planted: number | bigint) =>
+  stateDatabase.open(commonDir).prepare('DELETE FROM events WHERE id = ?').run(planted);
 
 test('a refused row of the Execution is skipped and logged by name; the others give the run stop', async (t) => {
   const { context, executionRecord, logs, commonDir } = await support.executionContext(t);
@@ -115,7 +126,7 @@ test('a refused row of the Execution is skipped and logged by name; the others g
 
 test('a Terminal lands once beside a refused row of its Execution, and the log names the row', async (t) => {
   const fixture = await golden.fixture(t);
-  plantCorrupt(fixture.commonDir, fixture.executionRecord.execution);
+  const planted = plantCorrupt(fixture.commonDir, fixture.executionRecord.execution);
   const result = await interpreter.runExecution(fixture.options).catch((err: unknown) => ({ rejected: String(err) }));
 
   assert.deepEqual(result, { outcome: 'ready-for-qa' });
@@ -124,13 +135,17 @@ test('a Terminal lands once beside a refused row of its Execution, and the log n
   assert.deepEqual([...fixture.gh.labels], ['gg:state:ready-for-qa']);
   assert.deepEqual(
     fixture.logs.filter((line) => line.includes('corrupt event')),
-    [`#${golden.TICKET} run stop: skipped corrupt event 1 (action): its JSON does not parse: ${NOT_JSON_REASON}`],
+    [
+      `#${golden.TICKET} run stop: skipped corrupt event ${planted} (action): its JSON does not parse: ` +
+        NOT_JSON_REASON,
+    ],
   );
+  removePlanted(fixture.commonDir, planted);
 });
 
 test('a run stop beside a refused row of its Execution is still reported', async (t) => {
   const fixture = await golden.fixture(t);
-  plantCorrupt(fixture.commonDir, fixture.executionRecord.execution);
+  const planted = plantCorrupt(fixture.commonDir, fixture.executionRecord.execution);
   remoteFailures.pushThrough(fixture, () =>
     Promise.reject(remoteFailures.refusedPush("fatal: Authentication failed for 'https://github.com/o/r.git/'\n")),
   );
@@ -142,6 +157,7 @@ test('a run stop beside a refused row of its Execution is still reported', async
   assert.deepEqual(result, { outcome: 'needs-human', runStop: { failureClass: 'auth' } });
   assert.equal(executionReads.loadTicket(fixture).state, 'needs-human');
   assert.equal(ticketEndRows(fixture.commonDir), 1);
+  removePlanted(fixture.commonDir, planted);
 });
 
 test("a Terminal's Actions are named for its report: end, fault, hold or abandon", () => {

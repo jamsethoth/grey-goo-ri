@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import * as checks from '../../lib/checks.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as exampleLayer from '../support/example-layer.ts';
 import { fakeGit } from '../support/fake-git.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -35,7 +36,19 @@ function rows(commonDir: string): EventRow[] {
   }
 }
 
-const usage = () => ({ peakContextTokens: 1200, turns: 3, toolCalls: 4, compactions: 0, costUsd: null });
+// A Usage holds every USAGE_FIELDS key (#23, Clarify Q2 B).
+const usage = () => ({
+  inputTokens: 10,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 5,
+  reasoningTokens: null,
+  costUsd: null,
+  peakContextTokens: 1200,
+  turns: 3,
+  toolCalls: 4,
+  compactions: 0,
+});
 
 const actionFields = (): events.EventInput<'action'> => ({
   flow: 'default',
@@ -43,6 +56,7 @@ const actionFields = (): events.EventInput<'action'> => ({
   launchProfile: null,
   confinement: null,
   ticket: 7,
+  owner: { kind: 'ticket', number: 7 },
   run: 'r1',
   execution: 'e1',
   vertex: 'implement',
@@ -82,6 +96,7 @@ const required = [
   'launchProfile',
   'confinement',
   'ticket',
+  'owner',
   'run',
   'execution',
   'vertex',
@@ -125,6 +140,7 @@ const ACTION_EVENT_KEYS = [
   'launchProfile',
   'confinement',
   'ticket',
+  'owner',
   'run',
   'execution',
   'vertex',
@@ -285,17 +301,26 @@ test('a Lifecycle Event declares every field of its type, null where it was not 
     tickets: null,
     failureClass: null,
   });
-  exact(events.lifecycleEvent('ticket_end', { run: 'r1', execution: 'e1', ticket: 7 }), {
-    type: 'ticket_end',
-    run: 'r1',
-    execution: 'e1',
-    ticket: 7,
-    outcome: null,
-    diffStats: null,
-    terminalReason: null,
-    error: null,
-    interrupted: null,
-  });
+  exact(
+    events.lifecycleEvent('ticket_end', {
+      run: 'r1',
+      execution: 'e1',
+      ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
+    }),
+    {
+      type: 'ticket_end',
+      run: 'r1',
+      execution: 'e1',
+      ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
+      outcome: null,
+      diffStats: null,
+      terminalReason: null,
+      error: null,
+      interrupted: null,
+    },
+  );
   exact(events.lifecycleEvent('label_failed', { ticket: 7, change: { add: ['x'], remove: [] }, error: 'gh 502' }), {
     type: 'label_failed',
     ticket: 7,
@@ -304,8 +329,15 @@ test('a Lifecycle Event declares every field of its type, null where it was not 
     run: null,
   });
   assert.throws(
-    // @ts-expect-error -- an undeclared key
-    () => events.lifecycleEvent('ticket_end', { run: 'r1', execution: 'e1', ticket: 7, reason: {} }),
+    () =>
+      events.lifecycleEvent('ticket_end', {
+        run: 'r1',
+        execution: 'e1',
+        ticket: 7,
+        owner: { kind: 'ticket', number: 7 },
+        // @ts-expect-error -- an undeclared key
+        reason: {},
+      }),
     /\breason\b/,
   );
 });
@@ -315,6 +347,7 @@ test('a visit_end event holds exactly its declared fields', () => {
     run: 'r1',
     execution: 'e1',
     ticket: 7,
+    owner: { kind: 'ticket', number: 7 },
     vertex: 'reviewer',
     visit: 2,
     outcome: 'repeat',
@@ -329,7 +362,7 @@ test('a visit_end event holds exactly its declared fields', () => {
   assert.deepEqual(Object.keys(visitEnd), ['type', ...Object.keys(fields)]);
   assert.throws(() => events.lifecycleEvent('visit_end', { ...fields, edge: undefined }), /\bedge\b/);
   // @ts-expect-error -- an undeclared key
-  assert.throws(() => events.lifecycleEvent('visit_end', { ...fields, owner: null }), /\bowner\b/);
+  assert.throws(() => events.lifecycleEvent('visit_end', { ...fields, bogus: null }), /\bbogus\b/);
 });
 
 for (const key of [...required, ...agentRequired]) {
@@ -350,6 +383,12 @@ const BAD_USAGE: [string, unknown][] = [
     'a cumulative without peakContextTokens',
     { cumulative: { turns: 3, toolCalls: 4, compactions: 0, costUsd: null }, delta: usage() },
   ],
+  ['a key outside USAGE_FIELDS', { cumulative: { ...usage(), bogus: 1 }, delta: usage() }],
+  ['a cumulative without cacheReadTokens', { cumulative: { ...usage(), cacheReadTokens: undefined }, delta: usage() }],
+  [
+    'a costBasis outside reported, priced or null',
+    { cumulative: usage(), delta: { ...usage(), costBasis: 'guessed' } },
+  ],
 ];
 for (const [name, value] of BAD_USAGE) {
   test(`actionEvent rejects an agent action's Usage with ${name}`, () => {
@@ -359,8 +398,15 @@ for (const [name, value] of BAD_USAGE) {
 }
 
 test('actionEvent accepts Usage members whose counts are all null', () => {
-  const nulls = { peakContextTokens: null, turns: null, toolCalls: null, compactions: null, costUsd: null };
+  const nulls = contract.usageOf(() => null);
   assert.equal(events.actionEvent({ ...actionFields(), usage: { cumulative: nulls, delta: nulls } }).type, 'action');
+});
+
+test('actionEvent accepts a Usage that names its costBasis: reported, priced or null', () => {
+  for (const costBasis of ['reported', 'priced', null] as const) {
+    const named = { ...usage(), costBasis };
+    assert.equal(events.actionEvent({ ...actionFields(), usage: { cumulative: named, delta: named } }).type, 'action');
+  }
 });
 
 test('eventLog validates every event before appending it', (t) => {
@@ -389,7 +435,15 @@ test('lifecycle events validate their required fields per type', () => {
   assert.equal(events.lifecycleEvent('run_start', { run: 'r1' }).type, 'run_start');
   assert.throws(() => events.lifecycleEvent('run_end', {}), /\brun\b/);
   assert.equal(events.lifecycleEvent('run_end', { run: 'r1', tickets: [], failureClass: 'auth' }).failureClass, 'auth');
-  assert.equal(events.lifecycleEvent('ticket_start', { run: 'r1', execution: 'e1', ticket: 7 }).type, 'ticket_start');
+  assert.equal(
+    events.lifecycleEvent('ticket_start', {
+      run: 'r1',
+      execution: 'e1',
+      ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
+    }).type,
+    'ticket_start',
+  );
   assert.throws(() => events.lifecycleEvent('ticket_end', { run: 'r1', ticket: 7 }), /\bexecution\b/);
   assert.equal(
     events.lifecycleEvent('label_failed', { ticket: 7, change: { add: ['gg:ready'] }, error: 'gh 502' }).type,
@@ -411,6 +465,7 @@ test('a config_change event holds exactly its declared fields, each of them requ
     run: 'r1',
     execution: 'e1',
     ticket: 7,
+    owner: { kind: 'ticket' as const, number: 7 },
     vertex: 'publish',
     visit: 1,
     from: 'a'.repeat(64),
@@ -438,7 +493,11 @@ for (const type of ['toString', 'constructor', '__proto__']) {
 
 test('eventLog appends a row with the identity columns and the full event', (t) => {
   const directory = tempDirectory.stateDatabaseDirectory(t, 'gg-events-');
-  events.eventLog(directory, { run: 'r1' })('ticket_start', { execution: 'e1', ticket: 7 });
+  events.eventLog(directory, { run: 'r1' })('ticket_start', {
+    execution: 'e1',
+    ticket: 7,
+    owner: { kind: 'ticket', number: 7 },
+  });
   assert.deepEqual(
     readdirSync(join(directory, 'gg')).filter((name) => !name.startsWith('gg.db')),
     [],
@@ -454,6 +513,7 @@ test('eventLog appends a row with the identity columns and the full event', (t) 
     run: 'r1',
     execution: 'e1',
     ticket: 7,
+    owner: { kind: 'ticket', number: 7 },
   });
   assert.deepEqual(
     { ts: row.ts, type: row.type, run: row.run, execution: row.execution, ticket: row.ticket },

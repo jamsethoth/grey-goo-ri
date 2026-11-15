@@ -35,7 +35,7 @@ major findings, the definition of done is met and the TDD evidence holds; otherw
 
 - `claim`: `ok`, `changes` or `blocked`, as above.
 - `reason`: `none` unless your claim is `blocked`.
-- `summary`: your judgement, in a sentence or two.
+- `summary`: your conclusion, in a sentence or two.
 - `definitionOfDoneMet`: true only when the diff meets every definition-of-done item.
 - `redGreenEvidenceOk`: true only when the TDD evidence holds.
 - `needsTest`: true when the change needed a test that red did not write; red then writes one.

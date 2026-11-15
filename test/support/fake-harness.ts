@@ -3,11 +3,15 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
+import type * as events from '../../lib/events.ts';
 import * as contract from '../../lib/harnesses/contract.ts';
 import type * as runContext from '../../lib/run-context.ts';
 import * as keys from './keys.ts';
 
-type Usage = Record<string, number | null>;
+type Usage = events.Usage;
+
+// The frozen version of the fake harness's scripting keys (docs/interfaces/harness.md); a change needs a new ADR (#23).
+export const FAKE_HARNESS_VERSION = 1;
 
 const DEFAULT_CAPABILITIES = {
   skills: 'exact',
@@ -37,7 +41,7 @@ export interface ScriptedResponse {
   cleanup?: commandCleanup.CleanupReport;
   files?: Record<string, string>;
   response?: unknown;
-  result?: { usage?: { delta?: Usage }; sessionInit?: object; [field: string]: unknown };
+  result?: { usage?: { delta?: Partial<Usage> }; sessionInit?: object; [field: string]: unknown };
   failure?: { kind?: string; retryAfterMs?: number | null; message?: string; [field: string]: unknown };
   throw?: unknown;
   hang?: boolean;
@@ -88,13 +92,11 @@ const CONFIRMED: commandCleanup.CleanupReport = {
 const emptyInit = () => ({ plugins: [], pluginErrors: [], mcpServers: [], mcpServerErrors: [], capabilities: [] });
 
 const addUsage = (total: Usage, delta: Usage): Usage =>
-  Object.fromEntries(
-    contract.USAGE_FIELDS.map((field) => {
-      const [before, added] = [total[field] ?? 0, delta[field]];
-      if (added == null) return [field, null];
-      return [field, field === 'peakContextTokens' ? Math.max(before, added) : before + added];
-    }),
-  );
+  contract.usageOf((field) => {
+    const [before, added] = [total[field] ?? 0, delta[field]];
+    if (added == null) return null;
+    return field === 'peakContextTokens' ? Math.max(before, added) : before + added;
+  });
 
 // A script's failure and result fields, read once the call has written its files and opened its Session, before it
 // waits on a cancel; its response is read when the call returns.
@@ -144,12 +146,7 @@ async function writeFiles(cwd: string, files: Record<string, string>) {
 
 // Each script's usage delta over the empty usage the capabilities give: a field the capabilities omit stays null.
 const deltaOf = (script: ScriptedResponse, empty: Usage): Usage =>
-  Object.fromEntries(
-    Object.entries(empty).map(([field, zero]) => [
-      field,
-      zero === null ? null : (script.result?.usage?.delta?.[field] ?? zero),
-    ]),
-  );
+  contract.usageOf((field) => (empty[field] === null ? null : (script.result?.usage?.delta?.[field] ?? empty[field])));
 
 function sessionStore(capabilities: Record<string, unknown>, transcriptDir: string | undefined) {
   const sessions = new Map<string, Session>();

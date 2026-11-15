@@ -4,6 +4,8 @@ import type * as integrity from '../integrity.ts';
 import type * as record from '../record.ts';
 import * as effects from './index.ts';
 
+export type Evidence = { ref: string; commit: string };
+
 // The rescue intent's payload, saved before any effect: the ref, the commit it is to hold and that commit's tree and
 // parent, and the worktree as the rescue found it, which at resume proves its uncommitted changes the agent's.
 export interface Payload {

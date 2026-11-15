@@ -563,9 +563,9 @@ for (const [name, repo] of sides) {
     { skip: process.platform === 'win32' && 'not on Windows' },
   );
 
-  // A reset intent saved before #144 holds git pathspecs, and Reconciliation can still finish it after the upgrade.
+  // git's own listings take git pathspecs as they are, beside { paths, globs, exclude }.
   contract(
-    'untrackedPaths and changedPaths still take the pathspecs a reset intent saved before #144',
+    'untrackedPaths and changedPaths take a list of git pathspecs as it is',
     async ({ git, mainRoot: directory, commit }) => {
       const from = await git.headSha(directory);
       mkdirSync(join(directory, 'build'));

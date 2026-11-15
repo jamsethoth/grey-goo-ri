@@ -104,7 +104,17 @@ export async function guardedCall(
   effectErrors.crashPoint(runContext, call.marker as string, 'before-intent');
   executionRecord.heartbeat = new Date(runContext.clock.now()).toISOString();
   runContext.database.intent(executionRecord, call.marker as string, 'call', { baseline });
-  const called = await withHeartbeat(runContext, () => harness.run(call));
+  // Neither side keeps an object the other may change: the Harness gets a copy of the call, and gg keeps a copy of the
+  // answer, taken before anything reads or keeps it, since every save writes the whole record again.
+  const answered = await withHeartbeat(runContext, () => harness.run(structuredClone(call)));
+  // The job handle is no data, and a copy throws on a function it can see, so it comes off the report by name, however
+  // the Harness attached it, and is carried over to close the call's processes.
+  const reported = answered.result.cleanup as commandCleanup.CleanupReport | undefined;
+  const { closeJob, ...report } = reported ?? { confirmed: true, survivors: [] };
+  const called = structuredClone(
+    reported ? { ...answered, result: { ...answered.result, cleanup: report } } : answered,
+  );
+  if (closeJob && called.result.cleanup) Object.defineProperty(called.result.cleanup, 'closeJob', { value: closeJob });
   called.result.cleanup ??= UNREPORTED;
   // Its writers may still run, so what a snapshot read now would prove nothing, and the call's validation waits (L15).
   if (!called.result.cleanup.confirmed) {

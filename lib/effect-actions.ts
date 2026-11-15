@@ -40,12 +40,13 @@ async function makeCommit(
   if (stale.length) return { stale };
   if (!intended) await git.stageAll(worktree);
   const payload = intended ?? { message, tree: await git.writeTree(worktree), parent: await git.headSha(worktree) };
-  const { sha } = (await sideEffect.sideEffect(runContext, {
+  const evidence = await sideEffect.sideEffect(runContext, {
     actionMarker,
     effect: commit.effect,
     payload,
     deferred: true,
-  })) as { sha: string | null };
+  });
+  const sha = 'sha' in evidence ? evidence.sha : null;
   // The paths the commit changed (U2, K7); with nothing to commit it is a no-op with no path.
   return { sha, files: sha ? await git.changedPaths(worktree, payload.parent, sha) : [] };
 }

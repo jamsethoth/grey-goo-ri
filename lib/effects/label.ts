@@ -6,6 +6,8 @@ import type * as record from '../record.ts';
 import * as effects from './index.ts';
 
 export type Payload = { ticket: number; add: string[]; remove: string[] };
+// Whether the write landed: { ok: false } proves nothing (writeAhead.evidenceOf).
+export type Evidence = { ok: boolean };
 
 // The gh verb labels are written with, and where it reports a write that failed (lib/github.ts).
 export interface Context {

@@ -8,7 +8,8 @@ import * as referencePaths from './reference-paths.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 
-export const SCHEMA_VERSION = 1;
+// The frozen schema version of both records' rows (docs/interfaces/record.md); a change to it needs a new ADR (#23).
+export const RECORD_SCHEMA_VERSION = 1;
 
 export class RecordCorruptError extends Error {
   declare file: string;
@@ -94,11 +95,8 @@ export function parseRow(
     throw corrupt(err instanceof Error ? err.message : String(err));
   }
   const version = referencePaths.isRecord(data) ? data.schemaVersion : undefined;
-  if (!referencePaths.isRecord(data) || version !== SCHEMA_VERSION)
+  if (!referencePaths.isRecord(data) || version !== RECORD_SCHEMA_VERSION)
     throw corrupt(`unknown schemaVersion ${String(version)}`);
-  // The version stays 1 until #23, so a cursor from before Action ids is told apart by its shape, not misread.
-  if (referencePaths.isRecord(data.cursor) && !Object.hasOwn(data.cursor, 'recovery'))
-    throw corrupt('its cursor has no Recovery Number, so it was written before Action ids (#111)');
   try {
     if (kind === 'epic') return { ...recordRead.epicRecord({ value: data, path: '' }), commonDir };
     return fromJson(recordRead.executionRecord({ value: data, path: '' }), commonDir);

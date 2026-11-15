@@ -2,6 +2,7 @@
 // reads it back, checked against the declarations here.
 import type * as approvalAction from './approval-action.ts';
 import * as checks from './checks.ts';
+import * as eventDeclaration from './event-declaration.ts';
 import type * as commandCleanup from './command-cleanup.ts';
 import type * as github from './github.ts';
 import type * as integrity from './integrity.ts';
@@ -10,31 +11,33 @@ import * as record from './record.ts';
 import * as stateDatabase from './state-database.ts';
 import type * as visit from './visit.ts';
 
-// Each Event shape is declared once, as its fields in their saved key order, each required or optional: the
-// validation reads the declaration at runtime, and the Event's type is derived from it, so a field added to one reaches
-// both. A required field must be given, though it may be null; an optional one not given is saved as null.
-type Presence = 'required' | 'optional';
-type Declaration<Fields> = { readonly [Field in keyof Fields]-?: Presence };
-type RequiredOf<Fields, Shape> = {
-  [
-    Field in keyof Fields as Field extends keyof Shape ? (Shape[Field] extends 'required' ? Field : never) : never
-  ]: Fields[Field];
-};
-type OptionalOf<Fields, Shape> = {
-  [Field in keyof Fields as Field extends keyof Shape ? (Shape[Field] extends 'optional' ? Field : never) : never]:
-    Fields[Field] | null;
-};
-type Declared<Fields, Shape> = RequiredOf<Fields, Shape> & OptionalOf<Fields, Shape>;
+type Declaration<Fields> = eventDeclaration.Declaration<Fields>;
+type Declared<Fields, Shape> = eventDeclaration.Declared<Fields, Shape>;
 
+// The frozen Event schema version (docs/interfaces/events.md); a change to it needs a new ADR (#23).
+export const EVENT_SCHEMA_VERSION = 2;
 // Every Event's own header, ahead of its declared fields.
 interface EventHeader<Type extends string> {
-  schemaVersion: 2;
+  schemaVersion: typeof EVENT_SCHEMA_VERSION;
   time: string;
   type: Type;
 }
 
-// shortcut: Usage is typed by key, not closed; T8 owns the full Usage shape.
-export type Usage = Record<string, number | null>;
+// An agent's token and cost counts, closed at the freeze (#23, Clarify Q2 B): each USAGE_FIELDS key, null where the
+// Harness does not report it, and where a cost figure came from.
+export interface Usage {
+  inputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  costUsd: number | null;
+  peakContextTokens: number | null;
+  turns: number | null;
+  toolCalls: number | null;
+  compactions: number | null;
+  costBasis?: 'reported' | 'priced' | null;
+}
 
 // The Signals an Action's Outcome was decided from: the Harness Result, the Claim, the Check signals and the Integrity
 // Assertions. An effect that reads none gives none.
@@ -51,6 +54,7 @@ interface ActionFields {
   launchProfile: string | null;
   confinement: string | null;
   ticket: number;
+  owner: record.Owner;
   run: string;
   execution: string;
   vertex: string;
@@ -80,6 +84,7 @@ export const ACTION = {
   launchProfile: 'required',
   confinement: 'required',
   ticket: 'required',
+  owner: 'required',
   run: 'required',
   execution: 'required',
   vertex: 'required',
@@ -161,11 +166,12 @@ export type SpentBound = { edge: string } | { vertex: string };
 interface LifecycleFields {
   run_start: { run: string };
   run_end: { run: string; tickets: { ticket: number; outcome: string }[]; failureClass: string };
-  ticket_start: { run: string; execution: string; ticket: number };
+  ticket_start: { run: string; execution: string; ticket: number; owner: record.Owner };
   ticket_end: {
     run: string;
     execution: string;
     ticket: number;
+    owner: record.Owner;
     outcome: string;
     diffStats: DiffStats;
     terminalReason: record.TerminalReason;
@@ -177,6 +183,7 @@ interface LifecycleFields {
     run: string;
     execution: string;
     ticket: number;
+    owner: record.Owner;
     vertex: string;
     visit: number;
     outcome: string;
@@ -186,7 +193,14 @@ interface LifecycleFields {
     count: number | null;
     spent: SpentBound[];
   };
-  config_change: { run: string; execution: string; ticket: number; vertex: string; visit: number } & ConfigChange;
+  config_change: {
+    run: string;
+    execution: string;
+    ticket: number;
+    owner: record.Owner;
+    vertex: string;
+    visit: number;
+  } & ConfigChange;
 }
 // A resumed Execution's Config Hash, from the one it last ran under to the Run's, at the Vertex entry that moved it.
 interface ConfigChange {
@@ -196,11 +210,12 @@ interface ConfigChange {
 export const LIFECYCLE = {
   run_start: { run: 'required' },
   run_end: { run: 'required', tickets: 'optional', failureClass: 'optional' },
-  ticket_start: { run: 'required', execution: 'required', ticket: 'required' },
+  ticket_start: { run: 'required', execution: 'required', ticket: 'required', owner: 'required' },
   ticket_end: {
     run: 'required',
     execution: 'required',
     ticket: 'required',
+    owner: 'required',
     outcome: 'optional',
     diffStats: 'optional',
     terminalReason: 'optional',
@@ -212,6 +227,7 @@ export const LIFECYCLE = {
     run: 'required',
     execution: 'required',
     ticket: 'required',
+    owner: 'required',
     vertex: 'required',
     visit: 'required',
     outcome: 'required',
@@ -225,6 +241,7 @@ export const LIFECYCLE = {
     run: 'required',
     execution: 'required',
     ticket: 'required',
+    owner: 'required',
     vertex: 'required',
     visit: 'required',
     from: 'required',
@@ -252,7 +269,7 @@ export type LifecycleEvent =
   | ConfigChangeEvent;
 export type Event = ActionEvent | LifecycleEvent;
 
-type Fields = Record<string, unknown>;
+type Fields = eventDeclaration.Fields;
 // What a caller gives for an Event of a type: any of its declared fields, each of its declared type or null, so tsc
 // refuses a value JSON cannot hold where the Event is made. Which fields are required is checked when it is built:
 // `base` may give them. Every field is optional, which a record of unknown values would also fit, so eventLog takes
@@ -270,15 +287,13 @@ export type EventInput<Type extends EventType> = Type extends LifecycleType
 // An Event as actionEvent and lifecycleEvent build it, before eventLog adds the header's version and time. It
 // distributes over a union, so each member keeps its own fields.
 type EventBody<Built> = Built extends unknown ? Omit<Built, 'schemaVersion' | 'time'> : never;
-type DeclaredShape = Readonly<Record<string, Presence>>;
 // A Lifecycle Event's body, written as a lookup into one map of the types, so that for the union of types it is the
 // union of bodies. eventLog can then build an Event that tsc checks, with no assertion (TypeScript 4.6;
 // docs/research/declared-event-shapes.md).
 type LifecycleBody<Type extends LifecycleType> = {
   [Each in Type]: { type: Each } & Declared<LifecycleFields[Each], (typeof LIFECYCLE)[Each]>;
 }[Type];
-const declaredAs = (shape: DeclaredShape, presence: Presence): string[] =>
-  Object.keys(shape).filter((field) => shape[field] === presence);
+const { declaredAs, closed, requiredOf, optionalOf } = eventDeclaration;
 const ACTION_REQUIRED = declaredAs(ACTION, 'required');
 const ACTION_OPTIONAL = declaredAs(ACTION, 'optional');
 const AGENT_REQUIRED = declaredAs(AGENT, 'required');
@@ -297,7 +312,7 @@ export function eventLog<Base extends EventInput<EventType>>(
     const { type: own = type, ...fields }: Fields = { ...always, ...given };
     if (own !== type) throw new Error(`${type} event: field type is ${own}`);
     const event: Event = {
-      schemaVersion: 2,
+      schemaVersion: EVENT_SCHEMA_VERSION,
       time: new Date().toISOString(),
       ...(type === 'action' ? actionEvent(fields) : lifecycleEvent(type, fields)),
     };
@@ -318,23 +333,6 @@ export function eventLog<Base extends EventInput<EventType>>(
   };
 }
 
-function closed(what: string, fields: Fields, required: string[], optional: string[] = []): void {
-  // An undefined value would vanish in JSON, so it counts as missing; null is a declared absence and stays.
-  for (const key of required)
-    if (!Object.hasOwn(fields, key) || fields[key] === undefined)
-      throw new Error(`${what}: missing required field ${key}`);
-  const known = new Set([...required, ...optional]);
-  for (const key of Object.keys(fields)) if (!known.has(key)) throw new Error(`${what}: unknown field ${key}`);
-}
-
-// The two halves of an Event's body, each in its declared order, an optional field null when not given. These are
-// the only assertions on the way to a saved Event: tsc gives a loop over names no type, and `closed` has checked the
-// names. What the builders make of the halves, tsc checks.
-const requiredOf = <Of, Shape extends DeclaredShape>(shape: Shape, fields: Fields): RequiredOf<Of, Shape> =>
-  Object.fromEntries(declaredAs(shape, 'required').map((key) => [key, fields[key]])) as RequiredOf<Of, Shape>;
-const optionalOf = <Of, Shape extends DeclaredShape>(shape: Shape, fields: Fields): OptionalOf<Of, Shape> =>
-  Object.fromEntries(declaredAs(shape, 'optional').map((key) => [key, fields[key] ?? null])) as OptionalOf<Of, Shape>;
-
 // An agent Action's event adds the agent fields; a deterministic Action's has none of them, and `agent: false`.
 export function actionEvent(fields: EventInput<'action'>): EventBody<ActionEvent> {
   const agent = fields.agent === true;
@@ -342,7 +340,7 @@ export function actionEvent(fields: EventInput<'action'>): EventBody<ActionEvent
     'agent',
     ...ACTION_OPTIONAL,
   ]);
-  if (agent) for (const member of ['cumulative', 'delta']) checkUsage(fields.usage, member);
+  if (agent) for (const member of ['cumulative', 'delta']) eventDeclaration.checkUsage(fields.usage, member);
   const common = { type: 'action' as const, ...requiredOf<ActionFields, typeof ACTION>(ACTION, fields) };
   const optional = optionalOf<ActionFields, typeof ACTION>(ACTION, fields);
   return agent
@@ -350,24 +348,11 @@ export function actionEvent(fields: EventInput<'action'>): EventBody<ActionEvent
     : { ...common, agent: false, ...optional };
 }
 
-// shortcut: checks only the Usage keys this ticket names, without closing the shape; T8 owns the full Usage shape.
-const USAGE_KEYS = ['peakContextTokens', 'turns', 'toolCalls', 'compactions', 'costUsd'];
-function checkUsage(usage: unknown, member: string): void {
-  const memberUsage = (usage as Record<string, unknown> | null | undefined)?.[member];
-  if (memberUsage === null || typeof memberUsage !== 'object')
-    throw new Error(`action event: usage.${member} must be a Usage object`);
-  for (const key of USAGE_KEYS) {
-    const value = (memberUsage as Fields)[key];
-    if (!(value === null || typeof value === 'number'))
-      throw new Error(`action event: usage.${member}.${key} must be a number or null`);
-  }
-}
-
 export function lifecycleEvent<Type extends LifecycleType>(type: Type, given?: EventInput<Type>): LifecycleBody<Type> {
   const fields: Fields = given ?? {};
   // An own key only: `toString` or `__proto__` would otherwise find Object.prototype's member and pass as a type.
   if (!Object.hasOwn(LIFECYCLE, type)) throw new Error(`unknown lifecycle event type ${type}`);
-  const shape: DeclaredShape = LIFECYCLE[type];
+  const shape: eventDeclaration.DeclaredShape = LIFECYCLE[type];
   const required = declaredAs(shape, 'required');
   const optional = declaredAs(shape, 'optional');
   closed(`${type} event`, fields, required, optional);

@@ -3,6 +3,7 @@
 // reports those hold. Only lib/record-read.ts imports it.
 import type * as visit from './visit.ts';
 import * as recordReadNode from './record-read-node.ts';
+import * as referencePaths from './reference-paths.ts';
 
 const { text, count, flag, json, nullable, list, keyed, oneOf, object, open, variant, tagged } = recordReadNode;
 const nullableText = nullable(text);
@@ -24,10 +25,13 @@ export const worktreeSnapshot = object((field) => ({
   tree: text(field('tree')),
 }));
 
-// Each a link's target or the bytes in base64, told apart by its key.
+// Each a link's target with its kind, or the bytes in base64, told apart by their keys.
 export const untrackedFiles = keyed(
   variant('a link or base64 bytes', [
-    { required: ['link'], read: object((field) => ({ link: text(field('link')) })) },
+    {
+      required: ['link', 'directory'],
+      read: object((field) => ({ link: text(field('link')), directory: flag(field('directory')) })),
+    },
     { required: ['base64'], read: object((field) => ({ base64: text(field('base64')) })) },
   ]),
 );
@@ -86,7 +90,20 @@ const checkRun = object((field) => ({
   recoverable: flag(field('recoverable')),
 }));
 
-const usage = keyed(nullableCount);
+// A Usage is closed (#23, Clarify Q2 B): every count, and where a cost figure came from.
+export const usage = object((field, has) => ({
+  inputTokens: nullableCount(field('inputTokens')),
+  cacheReadTokens: nullableCount(field('cacheReadTokens')),
+  cacheWriteTokens: nullableCount(field('cacheWriteTokens')),
+  outputTokens: nullableCount(field('outputTokens')),
+  reasoningTokens: nullableCount(field('reasoningTokens')),
+  costUsd: nullableCount(field('costUsd')),
+  peakContextTokens: nullableCount(field('peakContextTokens')),
+  turns: nullableCount(field('turns')),
+  toolCalls: nullableCount(field('toolCalls')),
+  compactions: nullableCount(field('compactions')),
+  ...(has('costBasis') && { costBasis: nullable(oneOf({ reported: true, priced: true }))(field('costBasis')) }),
+}));
 const callStatus = oneOf({
   completed: true,
   failed: true,
@@ -199,6 +216,17 @@ const resolution = tagged(
   tableResolution,
 );
 
+// An agent call's completion evidence: its Resolution, which the next Attempt reads, beside the Usage the call spent.
+export const callEvidence = (node: recordReadNode.Node) => {
+  const { value, path } = node;
+  // Only an object holding usageDelta is read as one (lib/record-read.ts); any other refuses as a Resolution would.
+  const { usageDelta, ...settled } = referencePaths.isRecord(value) ? value : {};
+  return {
+    ...resolution({ value: settled, path }),
+    usageDelta: usage({ value: usageDelta, path: path ? `${path}.usageDelta` : 'usageDelta' }),
+  };
+};
+
 export const visitState = object((field) => ({
   recovery: count(field('recovery')),
   firstAttemptBaseline: nullable(integrityBaseline)(field('firstAttemptBaseline')),
@@ -262,9 +290,11 @@ const actionOutputValue = object((field, has) => ({
   ...(has('response') && { response: json(field('response')) }),
   ...(has('cleanup') && { cleanup: callCleanup(field('cleanup')) }),
   ...(has('evidence') && {
-    evidence: open((evidence) => ({ command: text(evidence('command')), output: text(evidence('output')) }))(
-      field('evidence'),
-    ),
+    evidence: open((evidence, hasEvidence) => ({
+      command: text(evidence('command')),
+      output: text(evidence('output')),
+      ...(hasEvidence('foundByNameOnly') && { foundByNameOnly: flag(evidence('foundByNameOnly')) }),
+    }))(field('evidence')),
   }),
   ...(has('findingsHash') && { findingsHash: text(field('findingsHash')) }),
   ...(has('files') && { files: list(text)(field('files')) }),

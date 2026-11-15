@@ -1,6 +1,5 @@
-// The golden-trace fixture: a temp origin and clone with a ticket worktree (on the fake git unless a case asks for real
-// git by name), the fake gh, a fake test runner, the fake harness, and every harness, test, git and gh call tagged with
-// the activity it observed. `fixture` builds it and runs nothing; test/support/golden-run.ts runs it.
+// The golden-trace fixture: temp repos with a ticket worktree (fake git unless a case asks for real git), fake gh, test
+// runner and harness, each call tagged with the activity it saw. `fixture` builds it, golden-run.ts runs it.
 import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -24,6 +23,7 @@ import * as fakeGhModule from './fake-gh.ts';
 import * as fakeGitModule from './fake-git.ts';
 import * as fakeHarnessModule from './fake-harness.ts';
 import * as fakeIntegrityModule from './fake-integrity.ts';
+import * as fullTerminalReason from './full-terminal-reason.ts';
 import * as gitShell from './git-shell.ts';
 import * as keys from './keys.ts';
 import * as pinnedValue from './pinned-value.ts';
@@ -216,6 +216,7 @@ export interface GoldenOptions {
 // git and integrity are fakes unless the case asks for either by name, for a test whose subject is git behaviour.
 export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   const { responses = firstVisitResponses, integrity = 'fake', git: which = 'fake', baseFiles } = options;
+  const checkTicketEnds = fullTerminalReason.atCaseEnd(t);
   const root = tempDirectory.tempDirectory(t, 'gg-golden-', (directory) => join(directory, 'main', '.git'));
   const { base, git, fakeGit } = seedGit(root, which, baseFiles);
   const fakeIntegrity = fakeIntegrityFor(integrity, base, git);
@@ -239,6 +240,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
     branch: BRANCH,
     base: 'main',
   });
+  checkTicketEnds(commonDir);
   const database = caseDatabase.caseDatabase(t);
   database.save(executionRecord);
   const repos = { root, mainRoot, worktree, commonDir, base, git, fakeGit, fakeIntegrity };
@@ -383,13 +385,12 @@ function observedExecution(repos: Repos, planned: Planned) {
   };
 }
 
-// The golden fixture: the temp repos, the Execution's record and options, and the fakes it runs on. `options.deps.git`
-// is the git gg is given; `fakeGit` holds the fake git's own verbs and the steps a human takes outside gg (null on real
-// git); `fakeIntegrity` scripts the fake integrity (null on the real one).
+// The golden fixture: temp repos, the Execution's record and options, and its fakes. `options.deps.git` is gg's git;
+// `fakeGit` the fake's verbs and a human's steps outside gg, `fakeIntegrity` the fake integrity (each null if real).
 export type GoldenFixture = Awaited<ReturnType<typeof fixture>>;
 
-// Edits the case's configuration with `edit(config)` and resolves the Flow again.
-// A record that has entered no Vertex yet starts at the new entry.
+// Edits the case's configuration with `edit(config)` and resolves the Flow again; a record that has entered no Vertex
+// yet starts at the new entry.
 export function configure(golden: GoldenFixture, edit: (configured: GoldenConfig) => void): void {
   edit(golden.config);
   golden.flow = resolve(golden.config);

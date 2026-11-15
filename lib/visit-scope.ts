@@ -1,6 +1,7 @@
 // What every Action of a Visit reads and writes: its scope, its outputs, the claimed token, the Transition Table's
 // view of its Signals, and settle, which decides whether a pass's result ends the Visit.
 import type * as attempt from './attempt.ts';
+import * as contract from './harnesses/contract.ts';
 import * as integrity from './integrity.ts';
 import type * as marker from './marker.ts';
 import type * as model from './model.ts';
@@ -36,9 +37,17 @@ export interface Running {
   settle?: attempt.Settle;
 }
 
+// No Harness ran, so it reported no figure.
+const NO_USAGE = contract.usageOf(() => null);
+
 // A Vertex with no agent Action has the implicit Claim ok, which requires all its Checks (R11f).
 export const IMPLICIT_OK: Omit<visit.AgentCall, 'baseline'> = {
-  harnessResult: { status: 'completed', sessionId: null, transcriptPath: null, usage: { cumulative: {}, delta: {} } },
+  harnessResult: {
+    status: 'completed',
+    sessionId: null,
+    transcriptPath: null,
+    usage: { cumulative: NO_USAGE, delta: NO_USAGE },
+  },
   claim: { valid: true, token: 'ok', reason: null },
   response: null,
   signal: { status: 'completed', response: { claim: 'ok' }, failure: null },

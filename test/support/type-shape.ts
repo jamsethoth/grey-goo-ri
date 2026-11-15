@@ -9,7 +9,7 @@ type Kinded =
   | { kind: 'json' }
   | { kind: 'scalar'; type: string; members: string[] | null }
   | { kind: 'list'; of: Shape }
-  | { kind: 'keyed'; of: Shape }
+  | { kind: 'keyed'; owner: string | null; of: Shape }
   // An object's own keys, the named type that declares them (its owner), and the shape of any other key it leaves
   // open to, or null when it is closed.
   | { kind: 'object'; owner: string | null; keys: Record<string, Key>; others: Shape | null }
@@ -57,6 +57,8 @@ export class TypeShapes {
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   private readonly json: ts.Type;
+  // The types being walked, outermost first: one met again inside itself is written by its name, not walked forever.
+  private readonly walking = new Set<ts.Type>();
 
   constructor(program = ts.createProgram([`${root}lib/record-json.ts`], configured.options)) {
     this.program = program;
@@ -69,8 +71,14 @@ export class TypeShapes {
     const source = this.program.getSourceFile(`${root}${file}`);
     const moduleSymbol = source && this.checker.getSymbolAtLocation(source);
     const symbol = moduleSymbol && this.checker.getExportsOfModule(moduleSymbol).find((held) => held.name === name);
-    if (!symbol) throw new Error(`${file} exports no ${name}`);
-    return this.checker.getDeclaredTypeOfSymbol(symbol);
+    if (symbol) return this.checker.getDeclaredTypeOfSymbol(symbol);
+    // A type the module keeps to itself, read where it is declared, so a document can name it without an export.
+    const own = source?.statements.find(
+      (statement) =>
+        (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) && statement.name.text === name,
+    ) as ts.InterfaceDeclaration | ts.TypeAliasDeclaration | undefined;
+    if (!own) throw new Error(`${file} declares no ${name}`);
+    return this.checker.getTypeAtLocation(own.name);
   }
 
   shapeOf(file: string, name: string): Shape {
@@ -92,6 +100,11 @@ export class TypeShapes {
     if (this.checker.isArrayType(type)) return this.checker.typeToString(type);
     const name = this.typeName(type);
     if (name) return name;
+    // A form an intersection made, such as commit.Evidence & { usageDelta?: never }, is named by its named parts.
+    const parts = type.isIntersection()
+      ? type.types.map((part) => this.typeName(part)).filter((part) => part !== null)
+      : [];
+    if (parts.length) return parts.join(' & ');
     if (tag !== null) {
       const tagType = this.checker.getTypeOfSymbol(type.getProperty(tag)!);
       return `${tag}=${this.checker.typeToString(tagType).replaceAll('"', '')}`;
@@ -109,12 +122,35 @@ export class TypeShapes {
   }
 
   private shape(declared: ts.Type, depth: number): Shape {
+    if (this.walking.has(declared))
+      return { nullable: false, kind: 'scalar', type: this.checker.typeToString(declared), members: null };
+    this.walking.add(declared);
+    try {
+      return this.walked(declared, depth);
+    } finally {
+      this.walking.delete(declared);
+    }
+  }
+
+  private walked(declared: ts.Type, depth: number): Shape {
     if (depth > 30) throw new Error(`${this.checker.typeToString(declared)} nests too deep`);
+    // unknown holds anything, JSON or not (a thrown value), so it is not JSON's type.
+    if (declared.flags & ts.TypeFlags.Unknown)
+      return { nullable: false, kind: 'scalar', type: 'unknown', members: null };
     if (this.checker.isTypeAssignableTo(this.json, declared)) return { nullable: true, kind: 'json' };
+    if (this.checker.isTypeAssignableTo(this.checker.getNonNullableType(this.json), declared))
+      return { nullable: false, kind: 'json' };
     const members = declared.isUnion() ? declared.types : [declared];
     const nullable = members.some((member) => member.flags & ts.TypeFlags.Null);
     const held = members.filter((member) => !(member.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)));
-    const scalars = held.filter((member) => !(member.flags & ts.TypeFlags.Object) && !member.isIntersection());
+    // A tuple or a function is a value of its own, written as its type. Walked as an object, a tuple would list every
+    // Array method, one by a symbol whose name carries the program's id for it, which differs from program to program.
+    const scalars = held.filter(
+      (member) =>
+        this.checker.isTupleType(member) ||
+        member.getCallSignatures().length > 0 ||
+        (!(member.flags & ts.TypeFlags.Object) && !member.isIntersection()),
+    );
     const structured = held.filter((member) => !scalars.includes(member));
     if (!structured.length) {
       const literal = scalars.every((member) => member.isStringLiteral());
@@ -159,12 +195,15 @@ export class TypeShapes {
   private structure(type: ts.Type, depth: number): Structure {
     if (this.checker.isArrayType(type))
       return { kind: 'list', of: this.shape(this.checker.getTypeArguments(type as ts.TypeReference)[0], depth + 1) };
-    const index = type.getStringIndexType();
+    // An index typed never, as Record<string, never> declares, admits no key: the object is closed and empty.
+    const indexed = type.getStringIndexType();
+    const index = indexed && !(indexed.flags & ts.TypeFlags.Never) ? indexed : undefined;
     const properties = type
       .getProperties()
       .map((property) => ({ property, type: this.checker.getTypeOfSymbol(property) }))
       .filter(({ type: held }) => !(held.getNonNullableType().flags & ts.TypeFlags.Never));
-    if (index && !properties.length) return { kind: 'keyed', of: this.shape(index, depth + 1) };
+    if (index && !properties.length)
+      return { kind: 'keyed', owner: this.typeName(type), of: this.shape(index, depth + 1) };
     const keys = Object.fromEntries(
       properties.map(({ property, type: held }) => [
         property.name,
@@ -204,7 +243,9 @@ export function paths(shape: Shape, value?: { held: unknown }, prefix = ''): str
     case 'keyed': {
       const path = joined(prefix, shape.kind === 'list' ? '[]' : '*');
       const items = value ? Object.values(value.held as object) : [undefined];
-      return items.flatMap((item) => [`${path}: ${typeOf(shape.of)}`, ...below(shape.of, path, item)]);
+      // A keyed type's names line names the type that declares it, as an object's key line does.
+      const owner = shape.kind === 'keyed' && shape.owner ? ` (${shape.owner})` : '';
+      return items.flatMap((item) => [`${path}: ${typeOf(shape.of)}${owner}`, ...below(shape.of, path, item)]);
     }
     case 'union': {
       const forms = value ? [formOf(shape, value.held)].filter((form) => form !== undefined) : shape.forms;

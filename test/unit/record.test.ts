@@ -56,6 +56,7 @@ test('a fresh Execution Record declares every field it can hold', async (t) => {
     repository: 'o/r',
     execution: executionRecord.execution,
     ticket: 8,
+    owner: { kind: 'ticket', number: 8 },
     epic: 1,
     flow: 'default',
     configHash: 'abc123',
@@ -204,26 +205,26 @@ test('saving a record never drops a field createExecutionRecord declared', async
   assert.equal(record.load(commonDir, 'ticket', 8), null, 'nothing is saved');
 });
 
-test('decidedBy is exactly one of a hold, a human or an Action, and any of its keys reads without a test', () => {
+test('decidedBy is exactly one of a hold, a State Label or an Action, and any of its keys reads without a test', () => {
   const forms: record.DecidedBy[] = [
     { hold: 'dirty-worktree' },
     { hold: null },
-    { human: 'gg:needs-human' },
+    { label: 'gg:needs-human' },
     { vertex: 'red', visit: 1, action: 'agent', recovery: 0 },
     { vertex: 'red', visit: null, action: null, recovery: 0 },
-    // A hold or a human inside a Visit names it (#341).
+    // A hold or an abandonment inside a Visit names it (#341).
     { hold: 'dirty-worktree', vertex: 'green', visit: 1, action: null, recovery: 0 },
-    { human: 'gg:needs-human', vertex: 'review', visit: 2, action: 'comment', recovery: 1 },
+    { label: 'gg:needs-human', vertex: 'review', visit: 2, action: 'comment', recovery: 1 },
   ];
   assert.deepEqual(
-    forms.map((decidedBy) => decidedBy.hold ?? decidedBy.human ?? decidedBy.vertex),
+    forms.map((decidedBy) => decidedBy.hold ?? decidedBy.label ?? decidedBy.vertex),
     ['dirty-worktree', undefined, 'gg:needs-human', 'red', 'red', 'dirty-worktree', 'gg:needs-human'],
   );
   // @ts-expect-error a hold with half a Visit's identity
   const halfVisit: record.DecidedBy = { hold: 'dirty-worktree', vertex: 'green' };
   assert.ok(halfVisit);
   // @ts-expect-error two deciders at once
-  const mixed: record.DecidedBy = { hold: 'dirty-worktree', human: 'gg:needs-human' };
+  const mixed: record.DecidedBy = { hold: 'dirty-worktree', label: 'gg:needs-human' };
   // @ts-expect-error no decider
   const none: record.DecidedBy = {};
   // @ts-expect-error half an Action's identity
@@ -371,7 +372,11 @@ test('a record transition and its event commit together', async (t) => {
       if (appends.failing) throw new Error('disk I/O error');
     },
   });
-  const eventLog = events.eventLog(commonDir, { run: 'run-1', ticket: 8 }, database);
+  const eventLog = events.eventLog(
+    commonDir,
+    { run: 'run-1', ticket: 8, owner: { kind: 'ticket', number: 8 } },
+    database,
+  );
   const executionRecord = knownRecord(commonDir);
   const eventTypes = () => eventRead.readEvents(commonDir).map((event) => event.type);
   const start = () => eventLog('ticket_start', { execution: executionRecord.execution });
@@ -524,7 +529,7 @@ test('a record written before Action ids is corrupt, not misread', async (t) => 
   );
   assert.throws(
     () => record.load(commonDir, 'ticket', 11),
-    (err: Error) => err instanceof record.RecordCorruptError && /Recovery Number/.test(err.message),
+    (err: Error) => err instanceof record.RecordCorruptError && /: its cursor\.\w+ is missing$/.test(err.message),
   );
 });
 

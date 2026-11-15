@@ -32,7 +32,7 @@ type FallThroughs = checked.FallThroughs;
 export interface FlowContext {
   report: report.Report;
   config: Value;
-  // The repository's label prefix, which an approval Vertex's Await and Decide Labels carry.
+  // The repository's label prefix, which the Await and Decide Labels of a Vertex awaiting approval carry.
   labelPrefix: unknown;
   procedures: Map<string, checked.CheckedProcedure | undefined>;
   procedureFalls: Map<string, FallThroughs>;

@@ -13,6 +13,7 @@ import * as cleanupHold from '../../lib/cleanup-hold.ts';
 import * as effectActions from '../../lib/effect-actions.ts';
 import * as effectErrors from '../../lib/effect-errors.ts';
 import * as effects from '../../lib/effects/index.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as marker from '../../lib/marker.ts';
 import * as pendingReport from '../../lib/pending-report.ts';
@@ -412,7 +413,7 @@ test('a complete agent Attempt resumes to the result its evidence saved, and mak
     },
   };
   const actionIdentity = { vertex: 'green', visit: 1, procedure: 'implement', action: 'green', recovery: 0 };
-  const saved: visit.TableResolution = {
+  const saved: writeAhead.CallEvidence = {
     outcome: 'ok',
     direction: 'advance',
     rule: { table: 'passed', row: 2 },
@@ -421,6 +422,7 @@ test('a complete agent Attempt resumes to the result its evidence saved, and mak
     retryAfterMs: null,
     retryKind: null,
     failureClass: null,
+    usageDelta: contract.usageOf(() => null),
   };
   completeBefore(
     context,

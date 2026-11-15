@@ -4,12 +4,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as attempt from '../../lib/attempt.ts';
 import * as effectErrors from '../../lib/effect-errors.ts';
-import * as jsonValue from '../../lib/json-value.ts';
+import type * as effects from '../../lib/effects/index.ts';
 import * as reset from '../../lib/effects/reset.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as sideEffect from '../../lib/effects/side-effect.ts';
 import * as record from '../../lib/record.ts';
 import type * as visit from '../../lib/visit.ts';
 import * as visitScope from '../../lib/visit-scope.ts';
+import type * as writeAhead from '../../lib/write-ahead.ts';
 import * as support from '../support/execution-context.ts';
 import * as executionReads from '../support/execution-reads.ts';
 
@@ -20,7 +22,13 @@ const TERMINAL_IDENTITY = { ...IDENTITY, procedure: null };
 const resetTo = (baseline: string): reset.Payload => ({ baseline, history: { kind: 'rescued', text: 'reset' } });
 
 // The reset Effect with the perform a case gives: these cases are about the Attempt, not the reset.
-const performing = (perform: (payload: reset.Payload) => Promise<Record<string, string>>) => ({
+// A call's evidence holds the Usage it spent; these calls spent none.
+const NO_USAGE = contract.usageOf(() => null);
+// A call's saved direction, or undefined when the evidence is an Effect's.
+const directionOf = (evidence: writeAhead.Evidence | null | undefined) =>
+  evidence?.usageDelta !== undefined ? evidence.direction : undefined;
+
+const performing = (perform: (payload: reset.Payload) => Promise<effects.Evidence>) => ({
   ...reset.effect,
   perform: async (_context: unknown, payload: reset.Payload) => perform(payload),
 });
@@ -51,7 +59,7 @@ const tableResolution = (direction: visit.Direction): visit.TableResolution => (
 // An effect Attempt, write-ahead under its own marker, whose result carries a commit's outputs.
 function effectAttempt(
   context: support.ExecutionContext,
-  perform: (payload: reset.Payload) => Promise<Record<string, string>>,
+  perform: (payload: reset.Payload) => Promise<effects.Evidence>,
   given: Partial<attempt.Attempting<undefined, unknown, visit.EffectResolution>> = {},
 ) {
   return attempt.run(context, {
@@ -213,7 +221,7 @@ test('a complete marker returns its saved result without running the work', asyn
   const actionMarker = context.markerOf(IDENTITY);
   record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
   record.complete(executionRecord, actionMarker, {
-    evidence: jsonValue.checkedObject({ ...tableResolution('advance'), sessionId: 's1' }, 'the evidence'),
+    evidence: { ...tableResolution('advance'), sessionId: 's1', usageDelta: NO_USAGE },
   });
   const result = await attempt.run(context, {
     actionIdentity: IDENTITY,
@@ -223,7 +231,7 @@ test('a complete marker returns its saved result without running the work', asyn
     finish: () => assert.fail('a complete Attempt saves nothing'),
     resumed: (evidence) => evidence as unknown as visit.TableResolution,
   });
-  assert.deepEqual(result, { ...tableResolution('advance'), sessionId: 's1' });
+  assert.deepEqual(result, { ...tableResolution('advance'), sessionId: 's1', usageDelta: NO_USAGE });
   assert.equal(attempt.complete(context, IDENTITY), true);
   assert.deepEqual(executionRecord.activity, { busy: false, generation: 0 }, 'no busy bracket');
   assert.equal(support.actionEvents(executionRecord).length, 0);
@@ -343,7 +351,7 @@ test('a held completion replaces the saved result with its Event, or leaves none
   const actionMarker = context.markerOf(IDENTITY);
   record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
   record.complete(executionRecord, actionMarker, {
-    evidence: jsonValue.checkedObject({ ...tableResolution('stop'), row: 'cleanup-unconfirmed' }, 'the evidence'),
+    evidence: { ...tableResolution('stop'), row: 'cleanup-unconfirmed', usageDelta: NO_USAGE },
   });
   const settled: (visit.Resolution | null)[] = [];
   const replaced = await attempt.runHeld(context, {
@@ -358,7 +366,7 @@ test('a held completion replaces the saved result with its Event, or leaves none
   });
   assert.deepEqual(replaced, tableResolution('advance'));
   assert.equal(
-    executionRecord.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence?.direction,
+    directionOf(executionRecord.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence),
     'advance',
   );
   assert.equal(
@@ -374,6 +382,11 @@ test('a held completion replaces the saved result with its Event, or leaves none
   assert.equal(support.actionEvents(executionRecord).length, 1, 'only a held completion with a result records one');
   const saved = record.load(executionRecord.commonDir, 'ticket', support.TICKET)!;
   assert.equal(visitScope.outputOf(saved, IDENTITY)?.value.cleanup?.confirmed, true);
+  // The saved evidence is a copy: a later change to the returned Resolution leaves it as saved.
+  replaced!.rule.row = 'changed after the save';
+  const evidence = executionRecord.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence;
+  assert.ok(evidence && 'rule' in evidence, 'the evidence is saved');
+  assert.notEqual(evidence.rule.row, 'changed after the save');
 });
 
 test('a crash after a held completion leaves its replaced result saved, with its one Event', async (t) => {
@@ -381,7 +394,7 @@ test('a crash after a held completion leaves its replaced result saved, with its
   const actionMarker = context.markerOf(IDENTITY);
   record.intent(executionRecord, actionMarker, 'call', resetTo('abc'));
   record.complete(executionRecord, actionMarker, {
-    evidence: jsonValue.checkedObject({ ...tableResolution('stop'), row: 'cleanup-unconfirmed' }, 'the evidence'),
+    evidence: { ...tableResolution('stop'), row: 'cleanup-unconfirmed', usageDelta: NO_USAGE },
   });
   context.crashAt = { marker: actionMarker, point: 'after-completion' };
   await assert.rejects(
@@ -394,7 +407,7 @@ test('a crash after a held completion leaves its replaced result saved, with its
     effectErrors.CrashError,
   );
   const saved = record.load(executionRecord.commonDir, 'ticket', support.TICKET)!;
-  assert.equal(saved.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence?.direction, 'advance');
+  assert.equal(directionOf(saved.writeAheadLog.find((entry) => entry.step === 'evidence')?.evidence), 'advance');
   assert.deepEqual(
     support.actionEvents(saved).map((event) => event.direction),
     ['advance'],

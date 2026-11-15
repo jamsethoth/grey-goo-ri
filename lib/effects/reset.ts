@@ -6,17 +6,15 @@ import type * as visit from '../visit.ts';
 import type * as writeAhead from '../write-ahead.ts';
 import * as effects from './index.ts';
 
+export type Evidence = { head: string };
+
 // The reset intent's payload (lib/rescue.ts): the baseline head, the History item it adds, what git clean leaves to
 // restore, and the worktree as the agent left it.
 export interface Payload {
   baseline: string;
   history: visit.HistoryItem;
   untracked?: integrityModule.RollbackSet;
-  // An intent saved before the index was fingerprinted has no `index`.
-  left?: Omit<integrityModule.WorktreeSnapshot, 'index'> & {
-    index?: string;
-    files?: integrityModule.UntrackedFiles;
-  };
+  left?: integrityModule.WorktreeSnapshot & { files?: integrityModule.UntrackedFiles };
 }
 
 // The git verbs a reset is made with and its open intent's states are read with (lib/git.ts).
@@ -49,7 +47,7 @@ const perform: effects.Effect<Payload, Context>['perform'] = async (
 };
 
 const ignoredOf = async (worktree: string, untracked: integrityModule.RollbackSet | undefined, integrity: Integrity) =>
-  untracked ? integrity.ignoredFiles(worktree, integrityModule.withinOf(untracked)) : {};
+  untracked ? integrity.ignoredFiles(worktree, untracked.within) : {};
 
 // Where an open reset can be found: 'left' while the worktree is exactly as the agent left it, ignored Protected Files
 // and tests included; 'cleaning' between git.resetTo's hard reset and its clean, the tracked files back and every
@@ -95,7 +93,7 @@ async function onlyRestored(
   integrity: Integrity,
 ): Promise<boolean> {
   const saved = untracked?.files ?? {};
-  const files = untracked ? await integrity.untrackedFiles(worktree, integrityModule.withinOf(untracked)) : {};
+  const files = untracked ? await integrity.untrackedFiles(worktree, untracked.within) : {};
   const eachKnown = Object.entries(files).every(
     ([path, file]) =>
       integrityModule.sameFile(file, left?.files?.[path]) || integrityModule.sameFile(file, saved[path]),

@@ -49,13 +49,13 @@ export interface EvidenceContext {
 // An open intent's effect: found (its evidence completes it), conflicting (a hold), absent (to be redone), or unknown
 // when the lookup threw, which never counts as absent.
 export type FindResult =
-  | { status: 'found'; evidence: writeAhead.Evidence }
+  | { status: 'found'; evidence: Evidence }
   | { status: 'conflicting'; reason: string }
   | { status: 'absent' }
   | { status: 'unknown'; error: unknown };
 export type FindEffect = (entry: writeAhead.WriteAheadEntry, context: EvidenceContext) => Promise<FindResult>;
 
-// What a worktree proof reads: the git verbs a reset's states take, and the Integrity Assertions' snapshots.
+// What reading a worktree's state takes: the git verbs a reset's states take, and the Integrity Assertions' snapshots.
 export interface ProofContext {
   git: reset.ResetGit;
   integrity: integrityModule.Integrity;
@@ -66,7 +66,7 @@ export interface Effect<Payload, Context> {
   name: string;
   remote: Remote;
   // Makes the effect from its payload; `redo` when an open intent is made again.
-  perform: (context: Context, payload: Payload, launch: { redo: boolean }) => Promise<writeAhead.Evidence>;
+  perform: (context: Context, payload: Payload, launch: { redo: boolean }) => Promise<Evidence>;
   // How an open intent is settled at resume: found by its Action Marker, or safe to repeat. A reset has neither: it is
   // finished from the worktree before anything else (lib/effects/reset.ts).
   find?: FindEffect;
@@ -88,13 +88,26 @@ export type Payload =
   | rescue.Payload
   | reset.Payload;
 
+// What an Effect leaves as Evidence, by its Effect: what proves it landed, told apart by its keys (#23). None holds
+// the usageDelta of an agent call's evidence, so a reader tells the two apart by it (writeAhead.Evidence).
+export type Evidence = (
+  | commit.Evidence
+  | push.Evidence
+  | comment.Evidence
+  | prUpsert.Evidence
+  | prReady.Evidence
+  | label.Evidence
+  | rescue.Evidence
+  | reset.Evidence
+) & { usageDelta?: never };
+
 // The last marker line wins (marker.parseMarker), so agent text that mimics a marker cannot complete an Action.
 export const carries = (text: string | null | undefined, actionMarker: string): boolean => {
   const parts = marker.parseMarker(text);
   return !!parts && marker.formatMarker(parts) === actionMarker;
 };
 
-export const found = (evidence: writeAhead.Evidence): FindResult => ({ status: 'found', evidence });
+export const found = (evidence: Evidence): FindResult => ({ status: 'found', evidence });
 export const conflicting = (reason: string): FindResult => ({ status: 'conflicting', reason });
 export const ABSENT: FindResult = { status: 'absent' };
 

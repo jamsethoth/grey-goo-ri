@@ -7,7 +7,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
 import * as interpreter from '../../lib/interpreter.ts';
+import * as recordJson from '../../lib/record-json.ts';
 import { laterRun } from '../support/approval-flow.ts';
+import * as caseDatabase from '../support/case-database.ts';
 import { actionEvent, attemptsOf, intents, loadTicket } from '../support/execution-reads.ts';
 import { firstVisitWith } from '../support/first-visit.ts';
 import * as golden from '../support/golden.ts';
@@ -215,7 +217,7 @@ test('a malformed response held for cleanup parse-retries on resume', async (t) 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'ready-for-qa');
   const nudged = fixture.harness.calls.at(-1)!;
-  assert.match(nudged.brief!, /did not return a valid structured result/);
+  assert.match(nudged.brief!, /was not a valid Structured Response/);
   assert.equal(nudged.resume, 'fake-session-2', 'it resumes the held Session');
 });
 
@@ -431,4 +433,128 @@ test('a stopped Run confirms no hold, and the next Run goes on', async (t) => {
   assert.equal(attemptsOf(fixture, 'green', 'commit').length, 0);
 
   assert.equal((await laterRun(fixture)).outcome, 'ready-for-qa');
+});
+
+// A Harness keeps the objects it returns and may change them later. What gg saves is its own copy, taken where the
+// answer arrives, so a change made at any time, before any save, reaches no saved field.
+const CHANGED = 'changed by the Harness';
+function changeStrings(value: unknown): void {
+  if (!value || typeof value !== 'object') return;
+  for (const [key, held] of Object.entries(value)) {
+    if (typeof held === 'string') (value as Record<string, unknown>)[key] = CHANGED;
+    else changeStrings(held);
+  }
+}
+function pathsHolding(value: unknown, path: string, found: Set<string>): void {
+  if (value === CHANGED) found.add(path.replace(/\.\d+(?=\.|$)/g, '[]'));
+  else if (value && typeof value === 'object')
+    for (const [key, held] of Object.entries(value)) pathsHolding(held, `${path}.${key}`, found);
+}
+
+for (const [name, responses] of [
+  ['its first Visit', undefined],
+  [
+    'a call whose cleanup is unconfirmed',
+    firstVisitWith({ [GREEN_CALL]: { ...golden.firstVisitResponses[GREEN_CALL], cleanup: UNCONFIRMED } }),
+  ],
+] as const)
+  test(`a Harness that changes its answers before every save changes nothing gg saves: ${name}`, async (t) => {
+    const fixture = await golden.fixture(t, responses ? { responses } : {});
+    const run = fixture.harness.run;
+    const returned: unknown[] = [];
+    fixture.harness.run = async (call) => {
+      // Each answer a copy of the fake's, so changing it leaves the fake's own constants as they are.
+      const answered = structuredClone(await run(call));
+      returned.push(answered);
+      return answered;
+    };
+    const changed = new Set<string>();
+    caseDatabase.onSave(t, (next) => {
+      returned.forEach(changeStrings);
+      if ('ticket' in next) pathsHolding(recordJson.toJson(next), '', changed);
+    });
+    await interpreter.runExecution(fixture.options);
+    assert.ok(returned.length > 0, 'the Harness answered');
+    assert.deepEqual([...changed], []);
+  });
+
+test("a call whose cleanup is unconfirmed has its job closed through gg's copy of the answer", async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({ [GREEN_CALL]: { ...golden.firstVisitResponses[GREEN_CALL], cleanup: UNCONFIRMED } }),
+  });
+  const run = fixture.harness.run;
+  let closed = 0;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    // The handle as exec attaches it: not enumerable, so no copy carries it by itself.
+    // On a copy of the report: the fake answers every call with the case's own UNCONFIRMED constant.
+    const cleanup = { ...answered.result.cleanup! };
+    if (!cleanup.confirmed) Object.defineProperty(cleanup, 'closeJob', { value: () => closed++ });
+    return { ...answered, result: { ...answered.result, cleanup } };
+  };
+  const result = await interpreter.runExecution(fixture.options);
+  assert.equal(result.outcome, 'pending');
+  assert.equal(closed, 1);
+});
+
+test('a Harness that edits the call it was sent changes nothing gg saves', async (t) => {
+  const fixture = await golden.fixture(t);
+  const run = fixture.harness.run;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    const sent = call as unknown as { agent: { model: string }; persona: { hash: string }; tools: unknown };
+    Object.assign(sent, { tools: CHANGED });
+    sent.agent.model = CHANGED;
+    sent.persona.hash = CHANGED;
+    return answered;
+  };
+  await interpreter.runExecution(fixture.options);
+  const sessions = Object.values(loadTicket(fixture).sessions);
+  const calls = fixture.readEvents().filter((event) => event.type === 'action' && 'tools' in event);
+  assert.ok(sessions.length > 0 && calls.length > 0, 'the run saved Sessions and agent Action Events');
+  const changed = new Set<string>();
+  for (const session of sessions) pathsHolding(session, 'session', changed);
+  for (const event of calls) pathsHolding(event, 'event', changed);
+  assert.deepEqual([...changed], []);
+});
+
+test("a cleanup report's job handle is closed however the Harness attached it", async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({ [GREEN_CALL]: { ...golden.firstVisitResponses[GREEN_CALL], cleanup: UNCONFIRMED } }),
+  });
+  const run = fixture.harness.run;
+  let closed = 0;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    // An ordinary property, which a copy sees, where exec attaches it hidden.
+    const cleanup = {
+      ...answered.result.cleanup!,
+      ...(answered.result.cleanup?.confirmed ? {} : { closeJob: () => closed++ }),
+    };
+    return { ...answered, result: { ...answered.result, cleanup } };
+  };
+  const result = await interpreter.runExecution(fixture.options);
+  assert.equal(result.outcome, 'pending');
+  assert.equal(closed, 1);
+});
+
+test('each agent call saves the tools as the Harness resolved them, though it changes them later', async (t) => {
+  const fixture = await golden.fixture(t);
+  let kept = { allowed: ['Read'] };
+  Object.assign(fixture.harness, { resolveTools: () => (kept = { allowed: ['Read'] }) });
+  const run = fixture.harness.run;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    kept.allowed[0] = CHANGED;
+    return answered;
+  };
+  await interpreter.runExecution(fixture.options);
+  const saved = fixture
+    .readEvents()
+    .flatMap((event) => (event.type === 'action' && 'tools' in event ? [event.tools] : []));
+  assert.ok(saved.length > 1, `${saved.length} agent calls`);
+  assert.deepEqual(
+    saved,
+    saved.map(() => ({ allowed: ['Read'] })),
+  );
 });

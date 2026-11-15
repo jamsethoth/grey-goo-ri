@@ -60,7 +60,7 @@ function checkFields(fields: Record<string, unknown>, declared: Set<string>): vo
 function assertEvent(value: unknown, row: EventRow): asserts value is events.Event {
   if (!isObject(value)) throw new Error('its JSON is not an object');
   const { schemaVersion, time, ...fields } = value;
-  if (schemaVersion !== 2) throw new Error(`unknown schemaVersion ${String(schemaVersion)}`);
+  if (schemaVersion !== events.EVENT_SCHEMA_VERSION) throw new Error(`unknown schemaVersion ${String(schemaVersion)}`);
   if (typeof time !== 'string') throw new Error('its time is not a string');
   const { type, ...body } = fields;
   checkFields(body, new Set(declaredFields(type, fields.agent)));

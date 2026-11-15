@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type * as commit from '../../lib/effects/commit.ts';
 import type * as events from '../../lib/events.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as record from '../../lib/record.ts';
 import type * as visit from '../../lib/visit.ts';
@@ -74,11 +75,11 @@ async function assertEffectIntents(fixture: GoldenRun) {
     fixture.executionRecord.writeAheadLog.find(
       (entry) => entry.actionMarker === actionMarker && entry.step === 'evidence',
     )!.evidence!;
-  assert.equal(evidenceOf(commits[1].actionMarker).sha, head);
+  assert.deepEqual(evidenceOf(commits[1].actionMarker), { sha: head });
 
   const [push] = intents(fixture.executionRecord, 'push');
   assert.deepEqual(push.payload, { branch: golden.BRANCH, sha: head });
-  assert.equal(evidenceOf(push.actionMarker).remoteSha, head);
+  assert.deepEqual(evidenceOf(push.actionMarker), { remoteSha: head });
 
   // publish's re-render is the PR body GitHub shows.
   const pr = intents(fixture.executionRecord, 'pr-upsert').at(-1) as Intent<PrPayload>;
@@ -156,6 +157,46 @@ function changeMidVisit(fixture: golden.GoldenFixture): Record<string, Seen> {
   };
   return seen;
 }
+
+test('each call saves the Usage it reported, though the Harness reuses one Usage object for every call', async (t) => {
+  const fixture = await golden.fixture(t);
+  const run = fixture.harness.run;
+  const shared = contract.usageOf(() => 0);
+  let calls = 0;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    shared.inputTokens = ++calls;
+    return { ...answered, result: { ...answered.result, usage: { ...answered.result.usage, delta: shared } } };
+  };
+  await interpreter.runExecution(fixture.options);
+  const saved = loadTicket(fixture).writeAheadLog.flatMap(({ step, evidence }) =>
+    step === 'evidence' && evidence?.usageDelta !== undefined ? [evidence.usageDelta.inputTokens] : [],
+  );
+  assert.ok(calls > 1, `${calls} calls`);
+  assert.deepEqual(
+    saved,
+    Array.from({ length: calls }, (_, index) => index + 1),
+  );
+});
+
+test('each Session saves the counts its call reported, though the Harness reuses one Usage object', async (t) => {
+  const fixture = await golden.fixture(t);
+  const run = fixture.harness.run;
+  const shared = contract.usageOf(() => 0);
+  let calls = 0;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    shared.inputTokens = ++calls;
+    return { ...answered, result: { ...answered.result, usage: { ...answered.result.usage, cumulative: shared } } };
+  };
+  await interpreter.runExecution(fixture.options);
+  const saved = Object.values(loadTicket(fixture).sessions).map((session) => session.cumulativeUsage.inputTokens);
+  assert.ok(calls > 1, `${calls} calls`);
+  assert.deepEqual(
+    saved,
+    Array.from({ length: calls }, (_, index) => index + 1),
+  );
+});
 
 // green's Visit has two calls when the first fails the Green Check: green, then its recovery pass.
 test('the visit keeps the configuration pinned at entry when the agent changes mid-visit', async (t) => {

@@ -201,7 +201,8 @@ async function readDecision(runContext: RunContext, running: Running, instance: 
   const requestComment = writeAhead.evidenceOf(
     executionRecord,
     runContext.markerOf(reportActionOf(running, instance, 'comment')),
-  )?.evidence as { id: number };
+  )?.evidence;
+  if (!requestComment || !('id' in requestComment)) throw new Error('the Approval Request comment saved no id');
   const comments = await gh.comments(executionRecord.ticket, cwd);
   const reply = approval.reply({
     comments,

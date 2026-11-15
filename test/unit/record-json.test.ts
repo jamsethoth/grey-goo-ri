@@ -29,8 +29,6 @@ const SHAPES = {
 };
 type Kind = keyof typeof SHAPES;
 
-const RECOVERY_NUMBER_MISSING = /: its cursor has no Recovery Number, so it was written before Action ids \(#111\)$/;
-
 const valueAt = (row: Json, segments: Segment[]) =>
   segments.reduce<Json>((held, segment) => (held as Record<Segment, Json>)[segment], row);
 const declaredAt = (kind: Kind, row: Json, segments: Segment[]) => typeShape.declaredAt(SHAPES[kind], row, segments);
@@ -219,8 +217,6 @@ test('a required key left out is a corrupt row naming it; an optional one left o
         const broken = changed(row, segments, (holder, key) => void delete (holder as Record<Segment, Json>)[key]);
         const union = unionOf(kind, row, segments);
         if (mayLeaveOut(kind, row, segments)) loads(kind, broken, `${path} left out`);
-        // A cursor with no Recovery Number was written before Action ids, and says so (#111).
-        else if (path === 'cursor.recovery') refused(kind, broken, RECOVERY_NUMBER_MISSING, path);
         else if (path === 'schemaVersion') refused(kind, broken, /: unknown schemaVersion undefined$/, path);
         else if (union) refused(kind, broken, new RegExp(`: its ${escaped(union)} is not `), `${path} left out`);
         else refused(kind, broken, new RegExp(`: its ${escaped(path)} is missing$`), `${path} left out`);
@@ -289,6 +285,7 @@ const unionRefusal = (kind: Kind, row: Json, segments: Segment[]) => {
 };
 // Each closed set as its refusal lists it: in the reader's order, which the record types do not keep.
 const CLOSED_SETS = [
+  ['ticket', 'epic'],
   ['advance', 'retry', 'stop'],
   [
     'cleanup-unconfirmed',
@@ -311,6 +308,7 @@ const CLOSED_SETS = [
   ['job', 'none', 'group'],
   ['parse', 'timeout', 'transient', 'rateLimited'],
   ['passed', 'failed'],
+  ['reported', 'priced'],
   ['transient', 'rate-limited', 'auth', 'quota', 'budget', 'permission', 'rejected', 'invalid', 'unknown'],
 ];
 // The listing of the closed set whose members are `values`, which a new set must be given here.
@@ -381,10 +379,10 @@ test('a row with two faults names the one its reader reads first', () => {
 
 test('a decidedBy that mixes two forms, holds none, or names half a Visit is a corrupt row', () => {
   for (const decidedBy of [
-    { hold: null, human: 'owner' },
+    { hold: null, label: 'gg:state:needs-human' },
     {},
-    { hold: null, human: 'owner', vertex: 'green', visit: 1, action: 'a', recovery: 0 },
-    // A hold or a human names the Visit it cut off with all four keys or none (#341).
+    { hold: null, label: 'gg:state:needs-human', vertex: 'green', visit: 1, action: 'a', recovery: 0 },
+    // A hold or an abandonment names the Visit it cut off with all four keys or none (#341).
     { hold: 'dirty-worktree', vertex: 'green', visit: 1 },
   ] as Json[]) {
     const broken = changed(

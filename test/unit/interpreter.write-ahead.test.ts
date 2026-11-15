@@ -396,7 +396,8 @@ const REFUSED_TICKET_ENDS: [string, string][] = [
       schemaVersion: 2,
       time: 't',
       type: 'ticket_end',
-      ...{ run: 'run-1', execution: 'other', ticket: golden.TICKET, outcome: 'fault', diffStats: null },
+      ...{ run: 'run-1', execution: 'other', ticket: golden.TICKET, owner: { kind: 'ticket', number: golden.TICKET } },
+      ...{ outcome: 'fault', diffStats: null },
       ...{ terminalReason: null, error: null, interrupted: null },
     }),
   ],
@@ -408,8 +409,8 @@ for (const [name, json] of REFUSED_TICKET_ENDS) {
     await rejectionOf(interpreter.runExecution({ ...fixture.options, fault: new Error('admission broke') }));
     restore();
     const mid = loadTicket(fixture);
-    stateDatabase
-      .open(fixture.commonDir)
+    const database = stateDatabase.open(fixture.commonDir);
+    const { lastInsertRowid: planted } = database
       .prepare(
         "INSERT INTO events (ts, type, run, execution, ticket, json) VALUES ('t', 'ticket_end', 'run-1', ?, ?, ?)",
       )
@@ -420,9 +421,11 @@ for (const [name, json] of REFUSED_TICKET_ENDS) {
     assert.equal(loadTicket(fixture).state, 'fault');
     assert.equal(fixture.gh.comments.length, 1, 'one fault comment');
     assert.ok(
-      fixture.logs.some((line) => /run stop: skipped corrupt event \d+ \(ticket_end\)/.test(line)),
+      fixture.logs.some((line) => line.includes(`run stop: skipped corrupt event ${planted} (ticket_end)`)),
       fixture.logs.join('\n'),
     );
+    // The planted row goes, so the end-of-case check reads every other row and refuses any it finds corrupt.
+    database.prepare('DELETE FROM events WHERE id = ?').run(planted);
   });
 }
 

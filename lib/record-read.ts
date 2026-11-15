@@ -6,11 +6,12 @@
 import type * as outcome from './outcome.ts';
 import * as recordReadVisit from './record-read-visit.ts';
 import * as recordReadNode from './record-read-node.ts';
+import * as referencePaths from './reference-paths.ts';
 
 export { RowFieldError } from './record-read-node.ts';
 
 const { text, count, flag, json, nullable, list, keyed, oneOf, object, variant } = recordReadNode;
-const { ruleIdentity, historyItem, worktreeSnapshot, untrackedFiles, integrityBaseline } = recordReadVisit;
+const { ruleIdentity, historyItem, worktreeSnapshot, untrackedFiles, integrityBaseline, usage } = recordReadVisit;
 const nullableText = nullable(text);
 const nullableCount = nullable(count);
 const texts = list(text);
@@ -23,18 +24,18 @@ const actionKeys = (field: (key: string) => recordReadNode.Node) => ({
   recovery: count(field('recovery')),
 });
 
-// Exactly one form, told apart by its keys (record.DecidedBy). A hold or a human that cut a Visit off names it with an
-// Action's keys, all four or none (#341).
+// Exactly one form, told apart by its keys (record.DecidedBy). A hold or an abandonment that cut a Visit off names it
+// with an Action's keys, all four or none (#341).
 const decidedBy = variant('one form of decidedBy', [
   { required: ['hold'], read: object((field) => ({ hold: nullableText(field('hold')) })) },
   {
     required: ['hold', ...ACTION_KEYS],
     read: object((field) => ({ hold: nullableText(field('hold')), ...actionKeys(field) })),
   },
-  { required: ['human'], read: object((field) => ({ human: text(field('human')) })) },
+  { required: ['label'], read: object((field) => ({ label: text(field('label')) })) },
   {
-    required: ['human', ...ACTION_KEYS],
-    read: object((field) => ({ human: text(field('human')), ...actionKeys(field) })),
+    required: ['label', ...ACTION_KEYS],
+    read: object((field) => ({ label: text(field('label')), ...actionKeys(field) })),
   },
   { required: ACTION_KEYS, read: object(actionKeys) },
 ]);
@@ -128,7 +129,7 @@ const session = object((field) => ({
   harness: text(field('harness')),
   personaHash: text(field('personaHash')),
   transcriptPath: nullableText(field('transcriptPath')),
-  cumulativeUsage: keyed(nullableCount)(field('cumulativeUsage')),
+  cumulativeUsage: usage(field('cumulativeUsage')),
   vertex: text(field('vertex')),
   model: nullableText(field('model')),
   effort: nullableText(field('effort')),
@@ -150,20 +151,15 @@ const label = (field: (key: string) => recordReadNode.Node) => ({
   remove: texts(field('remove')),
 });
 
-// The pathspecs a reset intent saved before #144 are a list.
-const within = (node: recordReadNode.Node) =>
-  Array.isArray(node.value)
-    ? texts(node)
-    : object((field, has) => ({
-        ...(has('paths') && { paths: texts(field('paths')) }),
-        ...(has('globs') && { globs: texts(field('globs')) }),
-        ...(has('exclude') && { exclude: texts(field('exclude')) }),
-      }))(node);
+const within = object((field, has) => ({
+  ...(has('paths') && { paths: texts(field('paths')) }),
+  ...(has('globs') && { globs: texts(field('globs')) }),
+  ...(has('exclude') && { exclude: texts(field('exclude')) }),
+}));
 
 const rollbackSet = object((field, has) => ({
   files: untrackedFiles(field('files')),
   ...(has('within') && { within: within(field('within')) }),
-  ...(has('pathspecs') && { pathspecs: texts(field('pathspecs')) }),
 }));
 
 // What an intent saves: an Effect's payload, a consumed Decision's or an agent call's baseline. Each fits one form by
@@ -241,12 +237,11 @@ const payload = variant('a write-ahead payload', [
       baseline: text(field('baseline')),
       history: historyItem(field('history')),
       ...(has('untracked') && { untracked: rollbackSet(field('untracked')) }),
-      // A reset intent saved before the index was fingerprinted has no `index`.
       ...(has('left') && {
         left: object((left, hasKey) => ({
           head: text(left('head')),
           tree: text(left('tree')),
-          ...(hasKey('index') && { index: text(left('index')) }),
+          index: text(left('index')),
           ...(hasKey('files') && { files: untrackedFiles(left('files')) }),
         }))(field('left')),
       }),
@@ -255,12 +250,35 @@ const payload = variant('a write-ahead payload', [
   { required: ['baseline'], read: object((field) => ({ baseline: integrityBaseline(field('baseline')) })) },
 ]);
 
+// What an Effect leaves as Evidence, one form per Effect told apart by its keys (effects.Evidence), or an agent call's,
+// which holds the Usage it spent.
+const EFFECT_EVIDENCE = [
+  { required: ['sha'], read: object((field) => ({ sha: nullableText(field('sha')) })) },
+  { required: ['remoteSha'], read: object((field) => ({ remoteSha: text(field('remoteSha')) })) },
+  { required: ['id'], read: object((field) => ({ id: count(field('id')) })) },
+  {
+    required: ['number', 'url'],
+    read: object((field) => ({ number: count(field('number')), url: text(field('url')) })),
+  },
+  { required: [], read: object((): Record<string, never> => ({})) },
+  { required: ['ok'], read: object((field) => ({ ok: flag(field('ok')) })) },
+  {
+    required: ['ref', 'commit'],
+    read: object((field) => ({ ref: text(field('ref')), commit: text(field('commit')) })),
+  },
+  { required: ['head'], read: object((field) => ({ head: text(field('head')) })) },
+];
+const evidence = (node: recordReadNode.Node) =>
+  referencePaths.isRecord(node.value) && Object.hasOwn(node.value, 'usageDelta')
+    ? recordReadVisit.callEvidence(node)
+    : variant("an Effect's evidence", EFFECT_EVIDENCE)(node);
+
 const writeAheadEntry = object((field) => ({
   step: oneOf({ intent: true, evidence: true, complete: true })(field('step')),
   actionMarker: text(field('actionMarker')),
   effect: nullableText(field('effect')),
   payload: nullable(payload)(field('payload')),
-  evidence: nullable(keyed(json))(field('evidence')),
+  evidence: nullable(evidence)(field('evidence')),
   time: text(field('time')),
 }));
 
@@ -269,6 +287,10 @@ export const executionRecord = object((field) => ({
   repository: text(field('repository')),
   execution: text(field('execution')),
   ticket: count(field('ticket')),
+  owner: object((owner) => ({
+    kind: oneOf({ ticket: true, epic: true })(owner('kind')),
+    number: count(owner('number')),
+  }))(field('owner')),
   epic: nullableCount(field('epic')),
   flow: text(field('flow')),
   configHash: text(field('configHash')),

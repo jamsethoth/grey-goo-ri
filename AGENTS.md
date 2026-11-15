@@ -14,6 +14,22 @@ persona Agents on agentic harnesses (Claude Code, Codex) to reviewed pull reques
   names its source lines; "port unchanged" without a source is not a complete ticket. A ported file may rename
   identifiers and feature-flow strings; its case names and assertions otherwise stay.
 
+## Frozen interfaces
+
+Request slices 2 to 7 build on these, frozen at #23. `test/unit/freeze.test.ts` holds each document to the code.
+
+- `docs/interfaces/harness.md`: the Harness contract, `run(call)`'s argument and result, and the fake harness's
+  scripting keys (`FAKE_HARNESS_VERSION`).
+- `docs/interfaces/record.md`: the Execution Record, the Epic Record and the State Database (`RECORD_SCHEMA_VERSION`,
+  `stateDatabase.SCHEMA_VERSION`).
+- `docs/interfaces/events.md`: the Action Event and each Lifecycle Event (`EVENT_SCHEMA_VERSION`).
+
+Changing anything these three list, outside their Reserved sections, needs a new ADR under `docs/adr/` and a version
+bump of the constant it names. A Reserved shape lands in the ticket its entry names, inside the field it names.
+
+- `docs/interfaces/problems.md`: the validator's Problem codes, under the promise it states instead: a code keeps its
+  meaning; adding one needs no ADR; renaming or removing one, or changing what it means, needs a new ADR.
+
 ## Architecture
 
 New and changed code moves gg toward deep modules: a lot of behaviour behind a small interface, so callers get
@@ -127,7 +143,8 @@ leverage and a change lands in one place (locality).
 | `lib/visit.ts` | types only: the Visit's saved shapes (Configuration Snapshot, Vertex inputs, `VisitState`, the `Resolution` union, an Action's outputs, a History item) |
 | `lib/marker.ts` | Action Marker format and parse |
 | `lib/reconcile.ts` | Reconciliation of a record against git and GitHub at resume, and admission's load of a record or its corrupt row |
-| `lib/events.ts` | event schema 2: each Event's declaration, its builders and its append to the State Database |
+| `lib/events.ts` | event schema 2 (`EVENT_SCHEMA_VERSION`, frozen in `docs/interfaces/events.md`): each Event's declaration, its builders and its append to the State Database |
+| `lib/event-declaration.ts` | how lib/events.ts declares and checks an Event's fields: required or optional, in their saved order, and a closed Usage; only lib/events.ts imports it |
 | `lib/event-read.ts` | the event log read back: each row checked against its Event's declaration, its fields gg reads and its indexed columns, a refused row an `EventCorruptError` naming it; whether an Execution's ticket_end has landed |
 | `lib/labels.ts` | State, Await and Decide Label names and prefix, and the end states |
 | `lib/approval.ts` | Pending Instance, Approval Digest, timeline read, consumption |

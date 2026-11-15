@@ -184,9 +184,9 @@ export async function run<Prepared, Worked, Settled extends visit.Resolution>(
   return done.resolution;
 }
 
-// A held completion's validation reads the worktree, so it is always bracketed. Its result replaces the one the hold
-// saved, merged into the evidence its completion saved, with its Action Event and whatever its caller spent, in one
-// write; one with no result saves only its outputs and the Visit's routing.
+// A held completion's validation reads the worktree, so it is always bracketed. Its result replaces the Resolution the
+// hold saved in its completion's evidence, which keeps the Usage the call spent, with its Action Event and whatever its
+// caller spent, in one write; one with no result saves only its outputs and the Visit's routing.
 export async function runHeld<Worked, Settled extends visit.Resolution>(
   context: Context,
   { actionIdentity, actionMarker, work, outputs, finish, settle }: Held<Worked, Settled>,
@@ -201,9 +201,11 @@ export async function runHeld<Worked, Settled extends visit.Resolution>(
     database.save(executionRecord);
     return null;
   }
-  const saved = actionMarker && writeAhead.findEntry(executionRecord, actionMarker, 'evidence');
+  const saved = actionMarker ? writeAhead.findEntry(executionRecord, actionMarker, 'evidence') : undefined;
   const settled: visit.Resolution = resolution;
-  if (saved) saved.evidence = { ...saved.evidence, ...jsonValue.checkedObject(settled, 'the resolution') };
+  // The new Resolution replaces the one the hold saved; the Usage the call spent stays.
+  if (saved?.evidence?.usageDelta !== undefined)
+    saved.evidence = structuredClone({ ...settled, usageDelta: saved.evidence.usageDelta });
   database.save(executionRecord, eventOf(context, actionIdentity, startedAt, { ...done, resolution }));
   if (actionMarker) effectErrors.crashPoint(context, actionMarker, 'after-completion');
   return resolution;
