@@ -1,6 +1,6 @@
 // The Rescue Ref and the write-ahead reset: one mechanism, which a failure routed to another Vertex (R5a) and an
 // Interrupted Attempt (#68, ADR 0011) share. Whatever is rescued moves out of the worktree and is kept under
-// refs/gg/rescue/, which only `gg work reset` removes; each step is write-ahead, so a crash neither repeats nor skips
+// refs/gg/rescue/, which only `gg work reset` removes; each Effect is write-ahead, so a crash neither repeats nor skips
 // one.
 import * as attempt from './attempt.ts';
 import * as checks from './checks.ts';
@@ -148,7 +148,7 @@ export async function rescueAndReset(
     rescueEffect.Payload | undefined;
   const payload = intended ?? (await attempt.whileBusy(runContext, () => planRescue(runContext, rescuing, untracked)));
   if (!payload) return null;
-  // Not busy as a whole: its steps are bracketed one by one, the reset's by the reset, and the brackets do not nest.
+  // Not busy as a whole: its Effects are bracketed one by one, the reset's by the reset, and the brackets do not nest.
   await attempt.run(runContext, {
     actionIdentity: { ...actionIdentity, action: 'rescue' },
     busy: false,

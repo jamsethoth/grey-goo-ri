@@ -5,7 +5,7 @@ import * as paths from './paths.ts';
 import type * as record from './record.ts';
 import type * as runContext from './run-context.ts';
 
-// The worktree a Ticket runs in, as admission asks for it.
+// The worktree a Ticket's Execution runs in, as admission asks for it.
 export interface WorktreeRequest {
   ticket: number;
   mainRoot: string;

@@ -45,7 +45,7 @@ test('golden: an invalid structured response is retried once with a nudge then s
   assert.equal(nudge!.resume, 'fake-session-2', 'the nudge resumes the green session');
   assert.ok(first!.brief!.startsWith('GREEN PHASE'));
   assert.ok(!nudge!.brief!.startsWith('GREEN PHASE'), 'attempt 2 gets the nudge, not the green Brief again');
-  assert.match(nudge!.brief!, /structured result/i);
+  assert.match(nudge!.brief!, /Structured Response/);
   assert.notEqual(nudge.marker, first.marker, 'the marker names the attempt');
   assert.equal(
     fixture.executionRecord.retries[keys.retryKey({ vertex: 'green', visit: 1, action: 'green', recovery: 0 })].parse,

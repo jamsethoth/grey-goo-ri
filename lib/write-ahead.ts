@@ -12,7 +12,7 @@ import type * as record from './record.ts';
 export type CallPayload = { baseline: integrity.IntegrityBaseline };
 export type Payload = effects.Payload | approvalAction.Consumption | CallPayload;
 
-// What a side effect leaves as proof, by its effect's own fields: a sha, an id, a url. A settled Action's also holds
+// What a side effect leaves as Evidence, by its effect's own fields: a sha, an id, a url. A settled Action's also holds
 // its Resolution's fields, as JSON, which the next Attempt reads: what a row read back gives (#402).
 export type Evidence = Record<string, jsonValue.JsonValue>;
 

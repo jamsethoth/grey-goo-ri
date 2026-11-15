@@ -215,7 +215,7 @@ test('a malformed response held for cleanup parse-retries on resume', async (t) 
   const result = await laterRun(fixture);
   assert.equal(result.outcome, 'ready-for-qa');
   const nudged = fixture.harness.calls.at(-1)!;
-  assert.match(nudged.brief!, /did not return a valid structured result/);
+  assert.match(nudged.brief!, /was not a valid Structured Response/);
   assert.equal(nudged.resume, 'fake-session-2', 'it resumes the held Session');
 });
 

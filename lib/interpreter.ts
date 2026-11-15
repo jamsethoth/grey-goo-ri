@@ -1,6 +1,6 @@
 // The interpreter: runs one Execution of a Ticket through its Flow, Visit by Visit, from its cursor to a Terminal. It
 // reconciles a resumed record first, finishes a report a Run before decided, and ends whatever is thrown as a Terminal.
-// Its modules: run-context (the deps and the context every step reads), visit-runner (one Visit), the Action kinds
+// Its modules: run-context (the deps and the context every Action reads), visit-runner (one Visit), the Action kinds
 // (agent-action, check-action, effect-actions), visit-scope (what every Action reads) and bounds (Edge traversal).
 import * as cleanupHold from './cleanup-hold.ts';
 import * as effectErrors from './effect-errors.ts';

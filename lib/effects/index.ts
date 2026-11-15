@@ -55,7 +55,7 @@ export type FindResult =
   | { status: 'unknown'; error: unknown };
 export type FindEffect = (entry: writeAhead.WriteAheadEntry, context: EvidenceContext) => Promise<FindResult>;
 
-// What a worktree proof reads: the git verbs a reset's states take, and the Integrity Assertions' snapshots.
+// What reading a worktree's state takes: the git verbs a reset's states take, and the Integrity Assertions' snapshots.
 export interface ProofContext {
   git: reset.ResetGit;
   integrity: integrityModule.Integrity;
