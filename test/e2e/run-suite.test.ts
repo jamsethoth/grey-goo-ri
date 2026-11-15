@@ -1,9 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as runSuite from '../../scripts/run-suite.ts';
 import * as processProbe from '../support/process-probe.ts';
 import * as options from '../support/shell-case-options.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
@@ -171,6 +173,11 @@ mkdtempSync(join(tmpdir(), 'sample-left-'));
 
 test('a coverage stage fails when a case leaves a temp directory, names it and removes it', (t) => {
   const copy = untidyCopy(t);
+  // One module its test covers whole, so the coverage figures pass and only the temp census can fail the stage.
+  rmSync(join(copy.root, 'lib'), { recursive: true });
+  mkdirSync(join(copy.root, 'lib'));
+  writeFileSync(join(copy.root, 'lib', 'one.ts'), 'export const one = () => 1;\n');
+  writeFileSync(join(copy.root, 'test', 'unit', 'one.test.mjs'), "import { one } from '../../lib/one.ts';\none();\n");
   const { temp, env } = ownTemp(copy.root);
   const result = copy.run(['coverage'], [], env);
   assert.equal(result.status, 1, result.stderr);
@@ -341,3 +348,32 @@ for (const [stage, argv] of [
     assert.equal(copy.steps(), '');
   });
 }
+
+test('with GG_KEEP_TEMP the fast stage keeps what a case left, names the directory and passes', (t) => {
+  const copy = untidyCopy(t);
+  const { temp, env } = ownTemp(copy.root);
+  const result = copy.run(['fast'], [], { ...env, GG_KEEP_TEMP: '1' });
+  assert.equal(result.status, 0, result.stderr);
+  const kept = /^temp census: GG_KEEP_TEMP kept the stage's temp directory: (.+)$/m.exec(result.stderr)?.[1];
+  assert.ok(kept, result.stderr);
+  assert.deepEqual(readdirSync(temp), [basename(kept)]);
+  assert.match(readdirSync(kept).join(), /sample-left-/);
+});
+
+// Windows refuses to remove a directory a live process works in; elsewhere the removal succeeds.
+test('a temp census that cannot remove the directory still names each entry left', options.WIN_CASE, async (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  writeFileSync(join(directory, 'one.txt'), '');
+  mkdirSync(join(directory, 'held'));
+  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], {
+    cwd: join(directory, 'held'),
+    stdio: 'ignore',
+  });
+  t.after(() => holder.kill());
+  await once(holder, 'spawn');
+  const { failed, report } = runSuite.tempCensus(directory, false);
+  holder.kill();
+  await once(holder, 'exit');
+  assert.equal(failed, true);
+  assert.match(report, /not read or not removed: .+\n {2}held\/\n {2}one\.txt$/);
+});

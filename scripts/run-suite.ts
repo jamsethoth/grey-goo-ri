@@ -254,9 +254,10 @@ export async function census(strays: Strays): Promise<{ failed: boolean; report:
 // cases' own directories tempDirectory then keeps too, so it never fails.
 export function tempCensus(directory: string, keep: boolean): { failed: boolean; report: string } {
   if (keep) return { failed: false, report: `temp census: GG_KEEP_TEMP kept the stage's temp directory: ${directory}` };
+  let left: string[] = [];
   try {
-    const left = readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.name !== 'node-compile-cache')
+    left = readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => !(entry.name === 'node-compile-cache' && entry.isDirectory()))
       .map((entry) => `  ${entry.name}${entry.isDirectory() ? '/' : ''}`)
       .sort();
     // A process the census just ended can hold its files for a moment on Windows.
@@ -265,7 +266,9 @@ export function tempCensus(directory: string, keep: boolean): { failed: boolean;
     const report = `temp census: this stage left ${left.length} in its temp directory, now removed;`;
     return { failed: true, report: `${report} a case removes what it makes:\n${left.join('\n')}` };
   } catch (err) {
-    return { failed: true, report: `temp census: ${directory} not read or not removed: ${(err as Error).message}` };
+    const named = left.length ? `\n${left.join('\n')}` : '';
+    const report = `temp census: ${directory} not read or not removed: ${(err as Error).message}`;
+    return { failed: true, report: `${report}${named}` };
   }
 }
 

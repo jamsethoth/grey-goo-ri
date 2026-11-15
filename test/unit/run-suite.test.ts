@@ -113,6 +113,17 @@ test("a temp census passes over node's compile cache", (t) => {
   assert.equal(existsSync(directory), false);
 });
 
+test("a temp census fails naming a file left under the compile cache's name, which is a directory", (t) => {
+  const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
+  writeFileSync(join(directory, 'node-compile-cache'), '');
+  assert.deepEqual(runSuite.tempCensus(directory, false), {
+    failed: true,
+    report:
+      'temp census: this stage left 1 in its temp directory, now removed; a case removes what it makes:\n' +
+      '  node-compile-cache',
+  });
+});
+
 test('with GG_KEEP_TEMP a temp census keeps the directory, names it and does not fail', (t) => {
   const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
   writeFileSync(join(directory, 'left.txt'), '');
