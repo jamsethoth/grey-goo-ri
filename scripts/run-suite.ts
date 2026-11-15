@@ -262,8 +262,8 @@ export function tempCensus(directory: string, keep: boolean): { failed: boolean;
     // A process the census just ended can hold its files for a moment on Windows.
     rmSync(directory, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
     if (!left.length) return { failed: false, report: 'temp census: nothing left' };
-    const report = `temp census: this stage left ${left.length} in its temp directory, now removed; a case removes what it makes:`;
-    return { failed: true, report: `${report}\n${left.join('\n')}` };
+    const report = `temp census: this stage left ${left.length} in its temp directory, now removed;`;
+    return { failed: true, report: `${report} a case removes what it makes:\n${left.join('\n')}` };
   } catch (err) {
     return { failed: true, report: `temp census: ${directory} not read or not removed: ${(err as Error).message}` };
   }
