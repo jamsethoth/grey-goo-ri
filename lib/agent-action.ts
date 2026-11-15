@@ -221,7 +221,7 @@ function saveSession(
     harness: pinned.harness,
     personaHash: persona.hash,
     transcriptPath: result.transcriptPath,
-    cumulativeUsage: structuredClone(result.usage.cumulative),
+    cumulativeUsage: result.usage.cumulative,
     vertex: actionIdentity.vertex,
     model: pinned.model,
     effort: pinned.effort,
@@ -237,9 +237,8 @@ function settleAttempt(
   { call, own, called }: { call: SentCall; own: Own; called: agentCall.Called & { claim: visit.ClaimSignal } },
 ): attempt.Done<ActionResolution> {
   const { response, result, failure, violations, baseline, claim } = called;
-  // A copy, as the evidence is: a Harness may reuse its result's objects.
   state.call = {
-    harnessResult: structuredClone(result),
+    harnessResult: result,
     claim,
     response,
     baseline,
