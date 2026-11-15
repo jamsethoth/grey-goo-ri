@@ -124,6 +124,7 @@ for (const label of [
   'gg:state:needs-human',
   'gg:state:ready-for-qa',
   'gg:state:needs-replan',
+  'gg:state:done',
 ]) {
   test(`isReady is false while the Ticket carries ${label}`, () => {
     const issue = { number: 7, state: 'OPEN', labels: [{ name: label }], blockedBy: [] };
@@ -217,10 +218,13 @@ test('upsertPr updates an existing PR found by head branch instead of creating',
 });
 
 for (const [prefix, expected] of [
-  ['gg', ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa']],
-  ['x', ['x:state:in-progress', 'x:state:needs-human', 'x:state:needs-replan', 'x:state:ready-for-qa']],
+  [
+    'gg',
+    ['gg:state:done', 'gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
+  ],
+  ['x', ['x:state:done', 'x:state:in-progress', 'x:state:needs-human', 'x:state:needs-replan', 'x:state:ready-for-qa']],
 ] as [string, string[]][]) {
-  test(`ensureLabels creates the four ${prefix}-prefixed state labels`, async (t) => {
+  test(`ensureLabels creates the five ${prefix}-prefixed state labels`, async (t) => {
     const { gh, calls } = scriptedGh(() => []);
     const client = github.createGh(gh);
     await client.ensureLabels('/repo', { prefix });
@@ -247,7 +251,7 @@ test('ensureLabels reads all label pages once and creates only missing State Lab
       .filter(({ args }) => args[0] === 'label')
       .map(({ args }) => args[2])
       .sort(),
-    ['gg:state:needs-replan', 'gg:state:ready-for-qa'],
+    ['gg:state:done', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
   );
   assert.ok(
     calls.every(({ args }) => !args.includes('--force')),
@@ -269,6 +273,7 @@ test('every label written through gh carries the prefix', async (t) => {
     'x:state:ready-for-qa',
     'x:state:needs-human',
     'x:state:needs-replan',
+    'x:state:done',
     'x:state:in-progress',
     'x:await:qa-approval',
     'x:state:ready-for-qa',
@@ -371,8 +376,8 @@ test('ensureLabels accepts differently cased existing State Labels', async (t) =
   assert.equal(calls.filter(({ args }) => labelsApi(args)).length, 1, 'one label list read');
   assert.deepEqual(
     calls.filter(({ args }) => args[0] === 'label').map(({ args }) => args[2]),
-    ['Gg:state:needs-replan'],
-    'only the missing label is created, in the configured spelling',
+    ['Gg:state:needs-replan', 'Gg:state:done'],
+    'only the missing labels are created is created, in the configured spelling',
   );
   assert.ok(
     calls.every(({ args }) => !args.includes('--force')),

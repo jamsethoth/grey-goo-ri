@@ -32,7 +32,7 @@ function gg(...args: string[]) {
 
 function assertUsage(text: string) {
   for (const name of commands) assert.match(text, new RegExp(`\\b${name}\\b`), `usage lists ${name}`);
-  for (const verb of ['list', 'resume', 'abandon', 'reset', 'approve'])
+  for (const verb of ['list', 'resume', 'done', 'abandon', 'reset', 'approve'])
     assert.match(text, new RegExp(`\\b${verb}\\b`), `usage lists work ${verb}`);
 }
 
@@ -90,6 +90,13 @@ test('gg work without a verb prints usage', () => {
   const result = gg('work', '1');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /^gg work: work takes a verb, one of list, resume, done, abandon, reset, approve\n/);
+  assertUsage(result.stderr);
+});
+
+test('gg work resume without --at prints usage', () => {
+  const result = gg('work', 'resume', '1');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^gg work: work resume takes --at <vertex>\n/);
   assertUsage(result.stderr);
 });
 

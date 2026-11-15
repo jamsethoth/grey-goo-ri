@@ -2,10 +2,12 @@
 // The end a hold, a fault, an unrouted engine Outcome or a human's stop takes.
 export const NEEDS_HUMAN = 'needs-human';
 export type EndState = 'ready-for-qa' | typeof NEEDS_HUMAN | 'needs-replan';
+// The end only a person reaches, with gg work done: no Flow routes to it (L12).
+export const DONE = 'done';
 // The name a State Label carries after its prefix: in-progress while the Execution runs, then its end state.
-export type StateName = 'in-progress' | EndState;
+export type StateName = 'in-progress' | EndState | typeof DONE;
 export const END_STATES: EndState[] = ['ready-for-qa', NEEDS_HUMAN, 'needs-replan'];
-export const STATE_NAMES: StateName[] = ['in-progress', ...END_STATES];
+export const STATE_NAMES: StateName[] = ['in-progress', ...END_STATES, DONE];
 
 // GitHub matches label names case-insensitively, so every comparison of label names does too.
 const key = (name: string): string => name.toLowerCase();

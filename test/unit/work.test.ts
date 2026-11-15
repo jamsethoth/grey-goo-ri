@@ -5,12 +5,14 @@ import { join } from 'node:path';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
+import * as interpreter from '../../lib/interpreter.ts';
 import * as labels from '../../lib/labels.ts';
 import * as locks from '../../lib/locks.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import * as work from '../../lib/work.ts';
 import * as addSuite from '../support/add-suite.ts';
+import * as approvalFlow from '../support/approval-flow.ts';
 import * as fakeGh from '../support/fake-gh.ts';
 import * as golden from '../support/golden.ts';
 import * as goldenRun from '../support/golden-run.ts';
@@ -257,7 +259,7 @@ test('gg work done and gg work resume take a Ticket in each stopped state and re
     }
     const resuming = await faulted(t);
     landedIn(resuming, state);
-    const [result] = await run.runTarget({ ...resuming.options, resume: { vertex: 'publish' } });
+    const [result] = await run.runTarget({ ...resuming.options, resume: { vertex: 'green' } });
     const resumed = resuming.readEvents().filter((event) => event.type === 'ticket_resumed');
     if (STOPPED.includes(state)) assert.equal(resumed.length, 1, `resume takes ${state}`);
     else {
@@ -268,12 +270,35 @@ test('gg work done and gg work resume take a Ticket in each stopped state and re
   }
 });
 
+// Ticket 15 run once by gg run with red and green passing and the suite failing from publish on, as a broken
+// environment would, so the Execution stops at publish with every input it reads saved. `fixed()` mends the suite.
+async function stoppedAtPublish(t: TestContext, onRun: () => void) {
+  const fixture = runFixture.fixture(t);
+  const suite = addSuite.addSuite({ worktree: fixture.worktree, checksSum: true, onRun });
+  const environment = { runs: 0, broken: true };
+  fixture.options.deps.exec = {
+    ...suite,
+    runShell: async (command: string, options?: { cwd?: string }) => {
+      environment.runs += 1;
+      if (environment.broken && environment.runs > 2)
+        return { code: 1, output: 'the suite could not start', timedOut: false, cleanup: addSuite.CONFIRMED };
+      return suite.runShell(command, options);
+    },
+  } as typeof suite;
+  const [first] = await run.runTarget(fixture.options);
+  assert.ok(STOPPED.includes(loaded(fixture).state), `the first Run stops at publish (${first?.outcome})`);
+  return { fixture, fixed: () => (environment.broken = false) };
+}
+
 test('gg work resume --at publish runs the suite and reaches ready-for-qa', async (t) => {
   let suiteRuns = 0;
-  const fixture = await faulted(t, { onRun: () => (suiteRuns += 1) });
-  writeFileSync(join(fixture.worktree, 'lib', 'add.mjs'), goldenRun.RIGHT_ADD);
-  fixture.fakeGit!.commit(fixture.worktree, 'Fix add by hand');
+  const { fixture, fixed } = await stoppedAtPublish(t, () => (suiteRuns += 1));
+  fixed();
+  // The person's fix, committed and pushed on the branch: the resume takes it as the baseline (Q2 A).
+  writeFileSync(join(fixture.worktree, 'NOTES.md'), 'The suite needed a mended environment.\n');
+  fixture.fakeGit!.commit(fixture.worktree, 'Note the fix by hand');
   const head = await fixture.options.deps.git.headSha(fixture.worktree);
+  await fixture.options.deps.git.push(fixture.worktree, runFixture.BRANCH, head);
   const runsBefore = suiteRuns;
   const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'publish' } });
   assert.equal(result?.outcome, 'ready-for-qa', String(result?.error));
@@ -303,7 +328,10 @@ test('gg work resume refuses a Vertex whose required inputs were never produced,
   const before = loaded(fixture);
   assert.deepEqual(before.outputs, [], 'no Visit produced an output');
   const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'publish' } });
-  assert.match(String(result?.error), /Vertex publish needs the inputs report, red, green, which no Visit in the record/);
+  assert.match(
+    String(result?.error),
+    /Vertex publish needs the inputs report, red, green, which no Visit in the record/,
+  );
   assert.deepEqual(loaded(fixture), before, 'the record is kept');
 });
 
@@ -322,4 +350,26 @@ test('resume keeps the Visit and Action Cap counts', async (t) => {
     [...before.traversals],
     'no Edge count is reset',
   );
+});
+
+test('gg work done resolves a Pending Ticket and takes down its Await Label', async (t) => {
+  const asked = await approvalFlow.approvalFixture(t);
+  await interpreter.runExecution(asked.options);
+  assert.equal(asked.executionRecord.state, 'active', 'the Run left the Ticket Pending');
+  assert.ok(asked.gh.labels.has(approvalFlow.AWAIT_LABEL), 'waiting on its Approval Request');
+  // The person merged the Ticket's PR by hand.
+  asked.gh.prs.get(golden.BRANCH)!.state = 'MERGED';
+  await work.done({
+    ticket: golden.TICKET,
+    commonDir: asked.commonDir,
+    cwd: asked.mainRoot,
+    labelPrefix: 'gg',
+    deps: { ...asked.options.deps, locks },
+    close: false,
+    log: () => {},
+  });
+  assert.equal(record.load(asked.commonDir, 'ticket', golden.TICKET)?.state, 'done');
+  assert.ok(asked.gh.closed.has(golden.TICKET), 'the merged PR closes the issue');
+  assert.ok(!asked.gh.labels.has(approvalFlow.AWAIT_LABEL), 'the Await Label comes down');
+  assert.ok(asked.gh.labels.has('gg:state:done'));
 });

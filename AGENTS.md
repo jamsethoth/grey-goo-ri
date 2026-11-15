@@ -108,6 +108,7 @@ leverage and a change lands in one place (locality).
 | `lib/clock.ts` | the `Clock` a Run and the locks read, and the wall clock they default to |
 | `lib/visit-runner.ts` | one Visit: its Configuration Snapshot and inputs, its Actions and recovery passes, the saved result of each (`settleOf`, the only writer of `visitState.settled`), a stop and its rollback, and the Visit's Outcome |
 | `lib/visit-inputs.ts` | the Vertex inputs a Visit pins at its entry, read from the outputs of the Visits before it |
+| `lib/branch-tip.ts` | the branch tip an Execution Record proves: gg's last commit, or the tip a later `gg work resume` took as the baseline (Q2 A), which Reconciliation holds the branch to and publishing pushes and marks ready |
 | `lib/rescue.ts` | the Rescue Ref and the write-ahead reset, one mechanism for a failure routed to another Vertex and for an Interrupted Attempt (#68) |
 | `lib/visit-scope.ts` | what every Action of a Visit reads and writes: its scope, outputs and Claim token, and `settle` |
 | `lib/bounds.ts` | Edge traversal: the route `lib/flow.ts` gives under each Bound, and the Action Cap |
@@ -119,11 +120,11 @@ leverage and a change lands in one place (locality).
 | `lib/approval-action.ts` | the await-approval Action: an Approval Request's write-ahead Actions and a Decision's consumption |
 | `lib/cleanup-hold.ts` | a Pending cleanup hold: its label and comment, and a later Run's confirmation under the recorded containment |
 | `lib/pending-report.ts` | what a Run does for a Ticket it leaves Pending: its label and comment Actions and the ending that stops the Run |
-| `lib/effects/` | the Effects, one module each (`commit.ts`, `push.ts`, `comment.ts`, `pr-upsert.ts`, `pr-ready.ts`, `label.ts`, `rescue.ts`, `reset.ts`): its payload, its perform, how an open intent of it is found by its Action Marker or finished at resume, the worktree state it proves, and whether it is remote; `index.ts`, the lookup by the name an intent persists; `side-effect.ts`, `sideEffect`: the context an Action's effects read, and an Effect's intent, launch and evidence in the write-ahead log, which its Attempt's save completes |
+| `lib/effects/` | the Effects, one module each (`commit.ts`, `push.ts`, `comment.ts`, `pr-upsert.ts`, `pr-ready.ts`, `label.ts`, `close.ts`, `rescue.ts`, `reset.ts`): its payload, its perform, how an open intent of it is found by its Action Marker or finished at resume, the worktree state it proves, and whether it is remote; `index.ts`, the lookup by the name an intent persists; `side-effect.ts`, `sideEffect`: the context an Action's effects read, and an Effect's intent, launch and evidence in the write-ahead log, which its Attempt's save completes |
 | `lib/effect-errors.ts` | what the effects throw: crash points, `EarlyTerminalError` (an Execution held, abandoned or stopped from inside an Action), `RetriesExhaustedError` |
 | `lib/remote-effects.ts` | a remote Effect's retries and backoff on a budget saved first, the effect lookup before a retry, the repo-lock guard |
 | `lib/terminal.ts` | Terminals: hold, abandonment, fault and run stops, the Terminal each ends at, Terminal Reason texts |
-| `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop |
+| `lib/terminal-report.ts` | a Terminal's report: its comment and label Actions, the stop it saves first, its state and ticket_end, its run stop; `resolve`, gg work done's report |
 | `lib/procedures.ts` | the Action and Check kinds a Procedure may declare: each kind's keys and outputs, and the keys that name a file (`FILE_KEYS`), which the loader and the validator both read, and the files a Procedure names (`procedureFiles`), which a Visit pins (Procedures themselves are configuration) |
 | `lib/briefs.ts` | Brief context and rendering, Structured Response schema and response validation |
 | `lib/outcome.ts` | the Transition Table and Resolution Policy |
@@ -166,7 +167,7 @@ leverage and a change lands in one place (locality).
 | `lib/render.ts` | the template renderer, commit messages, PR body, comments, provenance |
 | `lib/public-text.ts` | redaction of the local directories in text gg publishes |
 | `lib/templates/` | gg's own templates, which no source declares: the Terminal Reason comment, the Approval Request and cleanup hold comments, the parse-retry nudge and the default recovery section |
-| `lib/work.ts` | `gg work abandon`: a Ticket's Execution Record forgotten, its worktree and branch kept; the rest of `gg work` and the Registry are to come |
+| `lib/work.ts` | `gg work`'s verbs under the ticket lock: `abandon` (the Execution Record forgotten, its worktree and branch kept), `done` (a person's end, L12) and `resume`, which gg run calls before admission (the record re-entered at a new Visit, L12, L16); the rest of `gg work` and the Registry are to come |
 | `lib/trace.ts` | **stub** (`export {}`): Trajectory export and `gg trace` |
 | `lib/stats.ts` | **stub** (`export {}`): `gg stats` |
 | `lib/doctor.ts` | `gg doctor`: the checked configuration printed, each Resolved Flow with its source per Vertex, its warnings (a misfit among them) and errors (each record whose Flow is gone and an owner/name gh cannot read among them), and the labels the Flows can request that the repository lacks; `gg init`: the example, `test/fixtures/example/`, written into a repository, the user's `gg.json` with the machine settings, and the State Database |
@@ -178,7 +179,7 @@ leverage and a change lands in one place (locality).
 ## Misleading areas
 
 - The stubs marked in Layout: `plan`, `publish`, `trace` and `stats` print "not implemented", as do the `gg work` verbs
-  other than `abandon`.
+  other than `abandon`, `done` and `resume`.
 - `gg init` writes `test/fixtures/example/`, the example the tests run, so the fixture is shipped content: a change to it
   changes what a new repository gets. `test/fixtures/shipped-flow/` keeps the Flow the defaults shipped until #121 for
   the golden traces; gg ships no Flow now.

@@ -212,7 +212,15 @@ function answerIssue(state: GhState, args: string[]) {
   if (args[1] === 'view') {
     const labels = [...state.labelsOf(issue)].map((name) => ({ name }));
     const issueState = state.closed.has(issue) ? 'CLOSED' : 'OPEN';
-    return JSON.stringify({ number: issue, title: '', body: '', state: issueState, labels, blockedBy: [], subIssues: [] });
+    return JSON.stringify({
+      number: issue,
+      title: '',
+      body: '',
+      state: issueState,
+      labels,
+      blockedBy: [],
+      subIssues: [],
+    });
   }
   if (args[1] === 'close') {
     state.closed.add(issue);

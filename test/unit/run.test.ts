@@ -31,20 +31,32 @@ const isLabelRead = (args: string[]) => args[0] === 'api' && (args.at(-1) as str
 const LABEL_SETUPS = [
   {
     repoLabels: [],
-    created: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
+    created: [
+      'gg:state:done',
+      'gg:state:in-progress',
+      'gg:state:needs-human',
+      'gg:state:needs-replan',
+      'gg:state:ready-for-qa',
+    ],
   },
   {
     repoLabels: ['gg:state:in-progress'],
-    created: ['gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
+    created: ['gg:state:done', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
   },
   {
-    repoLabels: ['gg:state:in-progress', 'gg:state:needs-human', 'gg:state:needs-replan', 'gg:state:ready-for-qa'],
+    repoLabels: [
+      'gg:state:done',
+      'gg:state:in-progress',
+      'gg:state:needs-human',
+      'gg:state:needs-replan',
+      'gg:state:ready-for-qa',
+    ],
     created: [],
   },
 ];
 for (const { repoLabels, created } of LABEL_SETUPS) {
   // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
-  test(`a Run ensures missing State Labels once immediately before its first label edit: ${repoLabels.length} of 4 present`, async (t) => {
+  test(`a Run ensures missing State Labels once immediately before its first label edit: ${repoLabels.length} of 5 present`, async (t) => {
     const fixture = runFixture.fixture(t, { repoLabels });
     assert.equal(run.runExitCode(await run.runTarget(fixture.options)), 0);
     const reads = fixture.gh.calls.filter((call) => isLabelRead(call.args));

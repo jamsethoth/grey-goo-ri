@@ -10,6 +10,7 @@ const STATE_STYLE: Record<labels.StateName, [color: string, description: string]
   [labels.NEEDS_HUMAN]: ['d93f0b', 'gg stopped; a human is needed'],
   'ready-for-qa': ['0e8a16', 'Review passed; ready for human QA'],
   'needs-replan': ['5319e7', 'The ticket needs a new plan'],
+  [labels.DONE]: ['6f42c1', 'A person finished this ticket by hand'],
 };
 
 // The Await and Decide Labels' style: they ask for a Decision and give one.
@@ -269,11 +270,14 @@ function issueVerbs({ gh, ghJson }: Client) {
     return { id: ghAnswer.count(field('id')), url: ghAnswer.text(field('html_url')) };
   }
 
-  // Stub (#133): closes nothing.
-  const closeIssue = async (_issue: number, _cwd?: string): Promise<void> => {};
+  // Closing a closed issue succeeds, so a close made again is safe.
+  const closeIssue = async (issue: number, cwd?: string): Promise<void> => {
+    await gh(['issue', 'close', String(issue)], cwd);
+  };
 
-  // Stub (#133): the wrong login.
-  const login = async (_cwd?: string): Promise<string> => '';
+  // The login gh is signed in as: the person running a gg work verb.
+  const login = async (cwd?: string): Promise<string> =>
+    ghAnswer.text(ghAnswer.fields(await ghJson(['api', 'user'], cwd))('login'));
 
   return { viewIssue, comments, comment, closeIssue, login };
 }

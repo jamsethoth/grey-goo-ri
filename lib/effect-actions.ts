@@ -1,5 +1,6 @@
 // The deterministic Actions, each the write-ahead side effect of its Effect (lib/effects/), run as an Attempt
 // (lib/attempt.ts): commit and push in git, and comment, pr-upsert and pr-ready on GitHub.
+import * as branchTip from './branch-tip.ts';
 import * as attempt from './attempt.ts';
 import * as checks from './checks.ts';
 import * as config from './config.ts';
@@ -137,7 +138,7 @@ function pushAction(runContext: RunContext, { actionIdentity, settle }: Running)
       effect: push.effect,
       payload: {
         branch: executionRecord.branch,
-        sha: commit.lastCommit(executionRecord)?.sha ?? (await git.headSha(executionRecord.worktree)),
+        sha: branchTip.provenTip(executionRecord)?.sha ?? (await git.headSha(executionRecord.worktree)),
       },
     }),
   });
@@ -222,7 +223,7 @@ function markReady(runContext: RunContext, { actionIdentity, state, settle }: Ru
   const [first] = checked;
   const tree =
     first && checked.every((check) => check.state === 'passed' && check.tree === first.tree) ? first.tree : null;
-  const lastSha = commit.lastCommit(executionRecord)?.sha ?? null;
+  const lastSha = branchTip.provenTip(executionRecord)?.sha ?? null;
   const target = { number: executionRecord.pr!, sha: lastSha, tree };
   return attempt.effectAction(runContext, {
     actionIdentity,

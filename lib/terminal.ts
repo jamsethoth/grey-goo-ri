@@ -53,6 +53,14 @@ export async function abandon(
   return terminal(context, 'abandoned', { outcome: 'abandoned', abandoned: true, inProgress });
 }
 
+// The Terminal Reason of a person's end with gg work done (L12): decided by their gh login.
+export const resolvedReason = (ticket: number, human: string): record.TerminalReason => ({
+  decidedBy: { human },
+  outcome: null,
+  rule: null,
+  text: `${human} resolved #${ticket} by hand with gg work done.`,
+});
+
 // The Terminal Reason of a hold, named `name`, which names the Visit it cut off.
 export const holdReason = (
   executionRecord: record.ExecutionRecord,

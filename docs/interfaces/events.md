@@ -321,7 +321,7 @@ commandsRun: JsonValue (events.AgentActionEvent)
 - There is no `requireTestPass` (#115), `repeat` (#114) or `exhausted` (#117).
 
 A Terminal's reporting Actions carry the Action ids `<report>-<effect>` (#111), their report one of `end`, `hold`,
-`fault` and `abandon`:
+`fault`, `abandon` and `resolve`, the last `gg work done`'s (#133):
 
 ```text list:report-actions
 end-comment
@@ -332,6 +332,9 @@ hold-label
 fault-comment
 fault-label
 abandon-label
+resolve-comment
+resolve-label
+resolve-close
 ```
 
 ## Lifecycle Events
@@ -429,11 +432,12 @@ diffStats.deletions: number (events.DiffStats)
 diffStats.testFiles: number (events.DiffStats)
 diffStats.testInsertions: number (events.DiffStats)
 terminalReason: object | null (events.TicketEndEvent)
-terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction (record.TerminalReason)
+terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction | record.DecidedByHuman (record.TerminalReason)
 terminalReason.decidedBy<record.DecidedByHold>.hold: string | null (record.DecidedByHold)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.hold: string | null (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.vertex: string (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.visit: number | null (record.DecidedByHoldInVisit)
+terminalReason.decidedBy<record.DecidedByHuman>.human: string (record.DecidedByHuman)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.action: string | null (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.recovery: number (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByLabel>.label: string (record.DecidedByLabel)
@@ -455,11 +459,12 @@ error: string | null (events.TicketEndEvent)
 interrupted: object | null (events.TicketEndEvent)
 interrupted.terminal: string
 interrupted.terminalReason: object
-interrupted.terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction (record.TerminalReason)
+interrupted.terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction | record.DecidedByHuman (record.TerminalReason)
 interrupted.terminalReason.decidedBy<record.DecidedByHold>.hold: string | null (record.DecidedByHold)
 interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.hold: string | null (record.DecidedByHoldInVisit)
 interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.vertex: string (record.DecidedByHoldInVisit)
 interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.visit: number | null (record.DecidedByHoldInVisit)
+interrupted.terminalReason.decidedBy<record.DecidedByHuman>.human: string (record.DecidedByHuman)
 interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.action: string | null (record.DecidedByHoldInVisit)
 interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.recovery: number (record.DecidedByHoldInVisit)
 interrupted.terminalReason.decidedBy<record.DecidedByLabel>.label: string (record.DecidedByLabel)
@@ -581,6 +586,67 @@ from: string (events.ConfigChangeEvent)
 to: string (events.ConfigChangeEvent)
 ```
 
+### ticket_resolved
+
+A person resolved the Ticket by hand with `gg work done` (L12, #133): its end `done`, `human` their gh login. A
+person's verb runs outside a Run, so `run` is absent.
+
+```text presence:ticket_resolved
+run: optional
+execution: required
+ticket: required
+owner: required
+human: required
+```
+
+```text paths:TicketResolvedEvent
+schemaVersion: 2 (events.TicketResolvedEvent)
+time: string (events.TicketResolvedEvent)
+type: "ticket_resolved" (events.TicketResolvedEvent)
+run: string | null (events.TicketResolvedEvent)
+execution: string (events.TicketResolvedEvent)
+ticket: number (events.TicketResolvedEvent)
+owner: object (events.TicketResolvedEvent)
+owner.kind: "ticket" | "epic" (record.Owner)
+owner.number: number (record.Owner)
+human: string (events.TicketResolvedEvent)
+```
+
+### ticket_resumed
+
+A person handed the Ticket back with `gg work resume --at <vertex>` (L12, #133): `human` their gh login, `vertex` the
+Vertex it re-enters at a new Visit, `head` the branch tip it took as the baseline Reconciliation checks from, and
+`superseded` the Action Markers of the open write-ahead intents it marked finished with nothing found. It is saved
+before the Run that resumes the Ticket starts it, so `run` is absent.
+
+```text presence:ticket_resumed
+run: optional
+execution: required
+ticket: required
+owner: required
+human: required
+vertex: required
+head: required
+superseded: required
+```
+
+```text paths:TicketResumedEvent
+schemaVersion: 2 (events.TicketResumedEvent)
+time: string (events.TicketResumedEvent)
+type: "ticket_resumed" (events.TicketResumedEvent)
+run: string | null (events.TicketResumedEvent)
+execution: string (events.TicketResumedEvent)
+ticket: number (events.TicketResumedEvent)
+owner: object (events.TicketResumedEvent)
+owner.kind: "ticket" | "epic" (record.Owner)
+owner.number: number (record.Owner)
+human: string (events.TicketResumedEvent)
+vertex: string (events.TicketResumedEvent)
+head: string (events.TicketResumedEvent)
+superseded: list (events.TicketResumedEvent)
+superseded[]: string
+```
+
 ## Failure Classes
 
 The set is closed: a new class needs a new ADR and a version bump. An Action Event's `failureClass`, a Harness
@@ -609,8 +675,5 @@ optional when absent.
   Harness saw during the Attempt. It is an agent field, declared optional. The Execution Record's `owner`, `flow` and
   `configHash`, the Event `time` and the `configs` table already key the per-Ticket, per-Epic and per-configuration
   totals.
-- **#133, a human resolves or resumes a Ticket by hand (L12).** The Lifecycle Events `ticket_resolved { run?,
-  execution, ticket, owner, human }` and `ticket_resumed { run?, execution, ticket, owner, human, vertex }`, `human`
-  being the login; settled at implementation.
 - **#335, the escaped-defect report (F5).** The Lifecycle Event `ticket_escaped { run?, execution, ticket, owner,
   defect, human }`, `defect` the defect's issue number and `human` the login that records it.

@@ -1,3 +1,4 @@
+import * as branchTip from './branch-tip.ts';
 import * as record from './record.ts';
 import * as writeAhead from './write-ahead.ts';
 import * as integrityModule from './integrity.ts';
@@ -141,6 +142,32 @@ async function findEffects(
   return null;
 }
 
+// gg work resume (Q1 A): each open write-ahead intent is looked for as Reconciliation looks, and completed with what
+// is found; the rest the person's resume overrides, so they are completed with nothing found. Gives their Action
+// Markers for ticket_resumed.
+export async function supersedeOpenIntents(
+  executionRecord: record.ExecutionRecord,
+  { gh, git, cwd, database = record }: { gh: ReconcileGh; git: ReconcileGit; cwd?: string; database?: Database },
+): Promise<string[]> {
+  const issueLabels = gh.labelNames(await gh.viewIssue(executionRecord.ticket, cwd));
+  const superseded: string[] = [];
+  for (const entry of writeAhead.openIntents(executionRecord)) {
+    const { actionMarker } = entry;
+    if (writeAhead.evidenceOf(executionRecord, actionMarker)) {
+      database.complete(executionRecord, actionMarker);
+      continue;
+    }
+    const result = await effects.findEffect(entry, { executionRecord, git, gh, cwd, issueLabels });
+    if (result.status === 'unknown') throw result.error;
+    if (result.status === 'found') database.complete(executionRecord, actionMarker, { evidence: result.evidence });
+    else {
+      database.complete(executionRecord, actionMarker);
+      superseded.push(actionMarker);
+    }
+  }
+  return superseded;
+}
+
 // A decided hold, fault or abandonment only finishes its report: a human override still wins, and only the intents of
 // its own Terminal Actions (`markers`) are looked for, so no older Action's effect is redone, checked or read.
 export async function terminalEffects(
@@ -233,14 +260,13 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   if (conflict) return hold(conflict);
   // A completed commit has no open intent to check, and an amend keeps its marker: only the branch tip shows the
   // change.
-  const last = commit.lastCommit(executionRecord);
-  const head = last && (await git.headSha(executionRecord.worktree));
-  if (last && head !== last.sha) {
+  const expected = branchTip.provenTip(executionRecord);
+  const head = expected && (await git.headSha(executionRecord.worktree));
+  if (expected && head !== expected.sha)
     return hold(
-      `The branch is at ${head}, not at commit ${last.sha} of Action Marker ${last.actionMarker}, ` +
-        'so it was changed by hand; nothing was committed, pushed or discarded.',
+      `The branch is at ${head}, not at ${expected.what}, so it was changed by hand; nothing was committed, ` +
+        'pushed or discarded.',
     );
-  }
   return { next: 'continue', cursor: executionRecord.cursor, reason: null };
 }
 

@@ -201,12 +201,19 @@ interface LifecycleFields {
     vertex: string;
     visit: number;
   } & ConfigChange;
+  // A person's gg work verb (L12), `human` their login: done resolved the Ticket; resume re-entered it at `vertex`
+  // from the branch tip `head`, its open intents in `superseded` marked finished with nothing found.
+  ticket_resolved: HumanVerb;
+  ticket_resumed: HumanVerb & { vertex: string; head: string; superseded: string[] };
 }
+type HumanVerb = { run: string; execution: string; ticket: number; owner: record.Owner; human: string };
 // A resumed Execution's Config Hash, from the one it last ran under to the Run's, at the Vertex entry that moved it.
 interface ConfigChange {
   from: string;
   to: string;
 }
+const TICKET_KEYS = { execution: 'required', ticket: 'required', owner: 'required' } as const;
+const HUMAN_VERB = { run: 'optional', ...TICKET_KEYS, human: 'required' } as const;
 export const LIFECYCLE = {
   run_start: { run: 'required' },
   run_end: { run: 'required', tickets: 'optional', failureClass: 'optional' },
@@ -247,6 +254,8 @@ export const LIFECYCLE = {
     from: 'required',
     to: 'required',
   },
+  ticket_resolved: HUMAN_VERB,
+  ticket_resumed: { ...HUMAN_VERB, vertex: 'required', head: 'required', superseded: 'required' },
 } as const satisfies { [Type in keyof LifecycleFields]: Declaration<LifecycleFields[Type]> };
 
 export type LifecycleType = keyof LifecycleFields;
@@ -259,6 +268,8 @@ export type TicketEndEvent = LifecycleOf<'ticket_end'>;
 export type LabelFailedEvent = LifecycleOf<'label_failed'>;
 export type VisitEndEvent = LifecycleOf<'visit_end'>;
 export type ConfigChangeEvent = LifecycleOf<'config_change'>;
+export type TicketResolvedEvent = LifecycleOf<'ticket_resolved'>;
+export type TicketResumedEvent = LifecycleOf<'ticket_resumed'>;
 export type LifecycleEvent =
   | RunStartEvent
   | RunEndEvent
@@ -266,7 +277,9 @@ export type LifecycleEvent =
   | TicketEndEvent
   | LabelFailedEvent
   | VisitEndEvent
-  | ConfigChangeEvent;
+  | ConfigChangeEvent
+  | TicketResolvedEvent
+  | TicketResumedEvent;
 export type Event = ActionEvent | LifecycleEvent;
 
 type Fields = eventDeclaration.Fields;

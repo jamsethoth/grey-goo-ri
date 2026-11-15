@@ -17,6 +17,7 @@ import * as record from './record.ts';
 import type * as runContext from './run-context.ts';
 import * as report from './validate/report.ts';
 import * as stateDatabase from './state-database.ts';
+import * as work from './work.ts';
 
 // A Ticket's result: its Outcome, the State Label it ends with, and whether a label update or a fault failed it.
 export interface TicketResult {
@@ -348,6 +349,7 @@ async function runRepo(repo: admission.Repo, admitted: Admitted, options: RunOpt
     events: eventLog,
     runState,
     epic: subIssues.length ? issue.number : null,
+    ...(options.resume && { resume: { ticket: target, vertex: options.resume.vertex } }),
   };
   try {
     results.push(...(await mapConcurrently(tickets, settings.maxParallel, (ticket) => runTicket(ticket, context))));
@@ -381,6 +383,7 @@ async function runTicket(issue: github.Issue, context: admission.AdmissionContex
   try {
     lock = await locks.tryAcquire(context.repo.gitCommonDir, `ticket-${ticket}`);
     if (!lock) return admission.skip({ context, issue }, `another process holds the ticket-${ticket} lock`);
+    if (context.resume?.ticket === ticket) await work.resume(context, ticket);
     result = await admission.admit(issue, context);
   } catch (err) {
     result = fault(err);

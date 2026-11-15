@@ -387,7 +387,7 @@ export default defineConfig([
   {
     // Typed by a check, never by an assertion or an `any`: an Event by lib/event-read.ts (#350), a record's row by
     // lib/record-read.ts (#357). test/unit/layout.test.ts holds this list to their importers and modules.
-    files: ['lib/{event-read,interpreter,run-context,terminal-report,record-*}.ts'],
+    files: ['lib/{branch-tip,event-read,interpreter,run-context,terminal-report,record-*}.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-type-assertion': 'error',
       '@typescript-eslint/no-unsafe-assignment': 'error',

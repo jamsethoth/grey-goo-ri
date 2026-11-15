@@ -3,6 +3,7 @@
 import * as attempt from './attempt.ts';
 import * as config from './config.ts';
 import * as effectErrors from './effect-errors.ts';
+import * as closeEffect from './effects/close.ts';
 import * as comment from './effects/comment.ts';
 import type * as effects from './effects/index.ts';
 import * as label from './effects/label.ts';
@@ -235,6 +236,52 @@ function setStateLabel(context: TerminalContext, { name, stop }: Reporting) {
       payload: { ticket: executionRecord.ticket, ...change },
     }),
   );
+}
+
+// A resolve report's Action identity: `resolve-<effect>` at the done end, Recovery Number 0 (#133).
+const resolveActionIdentity = (effect: string): marker.ActionIdentity & { procedure: null } => ({
+  vertex: labels.DONE,
+  visit: 1,
+  procedure: null,
+  action: `resolve-${effect}`,
+  recovery: 0,
+});
+
+// gg work done (L12): a person's end, decided by their login. Its comment, label and close Actions are write-ahead as a
+// Terminal's are, under the report name resolve, and the done state lands with ticket_resolved. Its label lands or the
+// Ticket stays where it was, as a hold's does, so a rerun of gg work done finishes it.
+export async function resolve(
+  context: TerminalContext,
+  { human, reason, close }: { human: string; reason: record.TerminalReason; close: boolean },
+) {
+  const { record: executionRecord, labelPrefix } = context;
+  const { ticket, execution, owner } = executionRecord;
+  executionRecord.terminalReason = reason;
+  context.database.save(executionRecord);
+  const commentAction = resolveActionIdentity('comment');
+  const body = await render.terminalComment({
+    end: labels.DONE,
+    reason,
+    marker: context.markerOf(commentAction),
+    redact: context.publicText,
+  });
+  await terminalAction(context, commentAction, {
+    effect: comment.effect,
+    payload: { target: { kind: 'issue', number: ticket }, body, bodyHash: config.sha256(body) },
+  });
+  const state = labels.labelsFor(labelPrefix).state;
+  const others = labels.STATE_NAMES.filter((name) => name !== labels.DONE).map(state);
+  await terminalAction(context, resolveActionIdentity('label'), {
+    effect: landsWithLabel,
+    payload: { ticket, add: [state(labels.DONE)], remove: [...others, ...asked(context)] },
+  });
+  if (close)
+    await terminalAction(context, resolveActionIdentity('close'), {
+      effect: closeEffect.effect,
+      payload: { issue: ticket },
+    });
+  executionRecord.state = labels.DONE;
+  context.database.save(executionRecord, () => context.events('ticket_resolved', { execution, ticket, owner, human }));
 }
 
 // The state the record lands in: abandoned, held, fault, or the end state itself.

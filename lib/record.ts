@@ -23,22 +23,24 @@ export class RecordSaveError extends Error {
   }
 }
 
-// Who decided an Execution's end state: a hold by its name, an abandonment by the State Label a human set, or an Action
-// by its identity, which has no Visit or Action when the stop came before one. Exactly one of the three: each form
-// rules out the others' keys, so a mix or an empty object does not compile, and any key is still read without a test
-// first (docs/research/exclusive-variant-shapes.md). A hold or an abandonment that cut a Visit off names it with an
-// Action's keys, all four or none (#341). `human`, a login, is reserved for #133. A reader tells the forms apart with
-// `!== undefined` or a literal, not with `in`, and a fourth form adds its keys to the other three.
+// Who decided an Execution's end state: a hold by its name, an abandonment by the State Label a human set, an Action by
+// its identity, which has no Visit or Action when the stop came before one, or a person by their login (gg work done,
+// #133). Exactly one of the four: each form rules out the others' keys, so a mix or an empty object does not compile,
+// and any key is still read without a test first (docs/research/exclusive-variant-shapes.md). A hold or an abandonment
+// that cut a Visit off names it with an Action's keys, all four or none (#341). A reader tells the forms apart with
+// `!== undefined` or a literal, not with `in`, and a fifth form adds its keys to the other four.
 type ActionKeys = { vertex: string; visit: number | null; action: string | null; recovery: number };
 type NoActionKeys = { vertex?: never; visit?: never; action?: never; recovery?: never };
-type Hold = { hold: string | null; label?: never };
-type Label = { label: string; hold?: never };
+type Hold = { hold: string | null; label?: never; human?: never };
+type Label = { label: string; hold?: never; human?: never };
 export type DecidedByHold = Hold & NoActionKeys;
 export type DecidedByHoldInVisit = Hold & ActionKeys;
 export type DecidedByLabel = Label & NoActionKeys;
 export type DecidedByLabelInVisit = Label & ActionKeys;
-export type DecidedByAction = { hold?: never; label?: never } & ActionKeys;
-export type DecidedBy = DecidedByHold | DecidedByHoldInVisit | DecidedByLabel | DecidedByLabelInVisit | DecidedByAction;
+export type DecidedByAction = { hold?: never; label?: never; human?: never } & ActionKeys;
+export type DecidedByHuman = { human: string; hold?: never; label?: never } & NoActionKeys;
+export type DecidedBy =
+  DecidedByHold | DecidedByHoldInVisit | DecidedByLabel | DecidedByLabelInVisit | DecidedByAction | DecidedByHuman;
 
 // Why an Execution reached its end state: the Action, hold or abandonment that decided it (request 3.1).
 export interface TerminalReason {

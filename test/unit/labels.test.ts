@@ -10,7 +10,7 @@ test('label names carry the configured prefix and family', () => {
   assert.equal(gg.decide('qa-approval', 'approved'), 'gg:decide:qa-approval:approved');
   assert.equal(labels.labelsFor('x').decide('qa-approval', 'needs-changes'), 'x:decide:qa-approval:needs-changes');
   assert.equal(labels.labelsFor().state('needs-human'), 'gg:state:needs-human');
-  assert.deepEqual(labels.STATE_NAMES, ['in-progress', 'ready-for-qa', 'needs-human', 'needs-replan']);
+  assert.deepEqual(labels.STATE_NAMES, ['in-progress', 'ready-for-qa', 'needs-human', 'needs-replan', 'done']);
   assert.deepEqual(labels.END_STATES, ['ready-for-qa', 'needs-human', 'needs-replan']);
 });
 

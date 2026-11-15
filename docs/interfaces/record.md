@@ -76,7 +76,7 @@ writeAheadLog
 | `epic` | the Ticket's Epic, or null |
 | `flow`, `configHash` | the Flow's name and the Config Hash of the Pinned Configuration it runs under |
 | `run` | the Run that last ran it |
-| `state` | `active` until it reaches an end state, `held`, `fault` or `abandoned` |
+| `state` | `active` until it reaches an end state, `held`, `fault` or `abandoned`; `done` once a person resolves it with `gg work done` (#133) |
 | `terminalReason` | why it reached its end state: `{ decidedBy, outcome, rule, text }` (request 3.3; below) |
 | `terminalStop` | how the Terminal classified the stop, saved before its first reporting Action |
 | `admissionStop` | a hold, abandonment or fault admission decided, until its Terminal reports it |
@@ -127,11 +127,12 @@ configHash: string (recordJson.ExecutionRecordJson)
 run: string (recordJson.ExecutionRecordJson)
 state: string (recordJson.ExecutionRecordJson)
 terminalReason: object | null (recordJson.ExecutionRecordJson)
-terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction (record.TerminalReason)
+terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction | record.DecidedByHuman (record.TerminalReason)
 terminalReason.decidedBy<record.DecidedByHold>.hold: string | null (record.DecidedByHold)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.hold: string | null (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.vertex: string (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.visit: number | null (record.DecidedByHoldInVisit)
+terminalReason.decidedBy<record.DecidedByHuman>.human: string (record.DecidedByHuman)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.action: string | null (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByHoldInVisit>.recovery: number (record.DecidedByHoldInVisit)
 terminalReason.decidedBy<record.DecidedByLabel>.label: string (record.DecidedByLabel)
@@ -172,11 +173,12 @@ terminalStop.failureClass: string | null (record.TerminalStop)
 terminalStop.interrupted: object | null (record.TerminalStop)
 terminalStop.interrupted.terminal: string
 terminalStop.interrupted.terminalReason: object
-terminalStop.interrupted.terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction (record.TerminalReason)
+terminalStop.interrupted.terminalReason.decidedBy: record.DecidedByHold | record.DecidedByHoldInVisit | record.DecidedByLabel | record.DecidedByLabelInVisit | record.DecidedByAction | record.DecidedByHuman (record.TerminalReason)
 terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByHold>.hold: string | null (record.DecidedByHold)
 terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.hold: string | null (record.DecidedByHoldInVisit)
 terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.vertex: string (record.DecidedByHoldInVisit)
 terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.visit: number | null (record.DecidedByHoldInVisit)
+terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByHuman>.human: string (record.DecidedByHuman)
 terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.action: string | null (record.DecidedByHoldInVisit)
 terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByHoldInVisit>.recovery: number (record.DecidedByHoldInVisit)
 terminalStop.interrupted.terminalReason.decidedBy<record.DecidedByLabel>.label: string (record.DecidedByLabel)
@@ -348,7 +350,7 @@ writeAheadLog[]: object
 writeAheadLog[].step: "intent" | "evidence" | "complete" (writeAhead.WriteAheadEntry)
 writeAheadLog[].actionMarker: string (writeAhead.WriteAheadEntry)
 writeAheadLog[].effect: string | null (writeAhead.WriteAheadEntry)
-writeAheadLog[].payload: commit.Payload | push.Payload | comment.Payload | prUpsert.Payload | prReady.Payload | label.Payload | rescue.Payload | reset.Payload | approvalAction.Consumption | writeAhead.CallPayload | null (writeAhead.WriteAheadEntry)
+writeAheadLog[].payload: commit.Payload | push.Payload | comment.Payload | prUpsert.Payload | prReady.Payload | label.Payload | close.Payload | rescue.Payload | reset.Payload | approvalAction.Consumption | writeAhead.CallPayload | null (writeAhead.WriteAheadEntry)
 writeAheadLog[].payload<commit.Payload>.message: string (commit.Payload)
 writeAheadLog[].payload<commit.Payload>.tree: string (commit.Payload)
 writeAheadLog[].payload<commit.Payload>.parent: string (commit.Payload)
@@ -372,6 +374,7 @@ writeAheadLog[].payload<label.Payload>.add: list (label.Payload)
 writeAheadLog[].payload<label.Payload>.add[]: string
 writeAheadLog[].payload<label.Payload>.remove: list (label.Payload)
 writeAheadLog[].payload<label.Payload>.remove[]: string
+writeAheadLog[].payload<close.Payload>.issue: number (close.Payload)
 writeAheadLog[].payload<rescue.Payload>.ref: string (rescue.Payload)
 writeAheadLog[].payload<rescue.Payload>.commit: string (rescue.Payload)
 writeAheadLog[].payload<rescue.Payload>.tree: string (rescue.Payload)
@@ -442,7 +445,7 @@ writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*: integrity.Untr
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedLink>.link: string (integrity.UntrackedLink)
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedLink>.directory: boolean (integrity.UntrackedLink)
 writeAheadLog[].payload<writeAhead.CallPayload>.baseline.tests.*<integrity.UntrackedBytes>.base64: string (integrity.UntrackedBytes)
-writeAheadLog[].evidence: commit.Evidence | push.Evidence | comment.Evidence | prUpsert.Evidence | prReady.Evidence | label.Evidence | rescue.Evidence | reset.Evidence | visit.TableResolution | visit.EffectResolution | visit.ActionCapResolution | visit.RunStoppedResolution | visit.DecisionResolution | null (writeAhead.WriteAheadEntry)
+writeAheadLog[].evidence: commit.Evidence | push.Evidence | comment.Evidence | prUpsert.Evidence | prReady.Evidence | label.Evidence | close.Evidence | rescue.Evidence | reset.Evidence | visit.TableResolution | visit.EffectResolution | visit.ActionCapResolution | visit.RunStoppedResolution | visit.DecisionResolution | null (writeAhead.WriteAheadEntry)
 writeAheadLog[].evidence<commit.Evidence>.sha: string | null
 writeAheadLog[].evidence<push.Evidence>.remoteSha: string
 writeAheadLog[].evidence<comment.Evidence>.id: number
@@ -781,9 +784,12 @@ planDecision: JsonValue (recordJson.EpicRecordJson)
 - `{ hold }`: a hold by its name (`null` for an unnamed one); with the Action keys `vertex, visit, action, recovery`
   when it cut a Visit off (#341).
 - `{ label }`: an abandonment, by the State Label a human set (`gg:state:needs-human`); with the Action keys when it cut
-  a Visit off. `human` is reserved for a login (#133, below).
+  a Visit off.
 - `{ vertex, visit, action, recovery }`: an Action, or a fault at the cursor. `visit` and `action` are null for a stop
   decided before any Action.
+- `{ human }`: a person's end with `gg work done`, by their gh login (#133). Its State Label is `gg:state:done`, and
+  its comment, label and close Actions are `resolve-comment`, `resolve-label` and `resolve-close`, their payloads those of
+  the comment, label and close Effects.
 
 `rule` is the rule identity `{ table, row }` exactly when a table row or one of gg's fixed rows (table `fixed`) decided
 the Outcome; for a hold, an abandonment or a fault it is null, and so is `outcome`. `ticket_end` carries the same
@@ -884,9 +890,6 @@ treats it as optional when absent.
   `visitState.call`. The containment kind of a call, an open string (`job`, `none`; `cgroup` later, #128) with an
   optional identity beside it for #128's cgroup path, lives in the call intent's payload: it is saved by a second write
   once the Harness reports it has started, since the intent is saved before launch, and a missing kind reads as `none`.
-- **#133, a human resolves or resumes a Ticket by hand (L12).** The human-only end `done` with the State Label
-  `gg:state:done`; the Terminal Reason's `decidedBy: { human: <login> }`; the report name `resolve` for its label,
-  comment and close Actions (`resolve-label`, `resolve-comment`, `resolve-close`).
 - **#89, a merge Action (option 3).** The end `merged` with the State Label `gg:state:merged`.
 - **Option 3, user Actions as executables (Q8, S6).** A write-ahead intent's `effect` stays an open string; a `confirm`
   evidence is a new form of `writeAheadLog[].evidence`; an Action may carry `onInterrupt`, saved in its Procedure inside
