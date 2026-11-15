@@ -123,6 +123,7 @@ export async function done(options: DoneOptions): Promise<string> {
     // Each person's gg work done may deliver its report once more (#60), so a retry spent on a failed comment is
     // launched again rather than refused for good.
     context.laterRunReport = true;
+    context.resolving = true;
     await terminalReport.resolve(context, { human, reason: terminal.resolvedReason(ticket, human), close });
     const closed = close ? `, and closed issue #${ticket}` : '';
     return `gg work done resolved Ticket ${ticket} as done, decided by ${human}${closed}.\n`;

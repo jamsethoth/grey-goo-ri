@@ -548,11 +548,13 @@ async function abandonedByPerson(t: TestContext, options: Faulting = {}) {
 }
 
 // What gg work done is run on: a Ticket's repository, its fake gh and its deps.
+// `run` is a later Run over the Ticket, as gg run would make it.
 interface Resolvable {
   commonDir: string;
   mainRoot: string;
   gh: fakeGh.FakeGh;
   deps: runFixture.RunFixture['options']['deps'];
+  run: () => Promise<unknown>;
 }
 
 // Every place a Ticket gg work done takes can come from, by the name its refusal gives it.
@@ -563,19 +565,19 @@ const ORIGINS: Record<string, (t: TestContext) => Promise<Resolvable>> = {
       async (t: TestContext) => {
         const fixture = await faulted(t);
         landedIn(fixture, state);
-        return { ...fixture, deps: fixture.options.deps };
+        return { ...fixture, deps: fixture.options.deps, run: () => run.runTarget(fixture.options) };
       },
     ]),
   ),
   abandoned: async (t) => {
     const fixture = await abandonedByPerson(t);
-    return { ...fixture, deps: fixture.options.deps };
+    return { ...fixture, deps: fixture.options.deps, run: () => run.runTarget(fixture.options) };
   },
   Pending: async (t) => {
     const asked = await approvalFlow.approvalFixture(t);
     await interpreter.runExecution(asked.options);
     asked.gh.prs.get(golden.BRANCH)!.state = 'MERGED';
-    return { ...asked, deps: asked.options.deps };
+    return { ...asked, deps: asked.options.deps, run: () => approvalFlow.laterRun(asked) };
   },
 };
 
@@ -598,7 +600,8 @@ const resolving = (source: Resolvable): work.DoneOptions => ({
 
 // Each person's gg work done may deliver its report once more (#60): whatever the Ticket's origin, a resolve Action
 // that failed until a done gave up is delivered by the next done once GitHub recovers.
-test('gg work done delivers each resolve Action of every origin once GitHub recovers', async (t) => {
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('gg work done delivers each resolve Action of every origin once GitHub recovers, a Run between changing nothing', async (t) => {
   const active = await faulted(t);
   landedIn(active, 'active');
   const refusal = await work.done(doneOptions(active, true)).then(
@@ -616,12 +619,86 @@ test('gg work done delivers each resolve Action of every origin once GitHub reco
         source.gh.fail({ matches: (args) => github.broken && writes(args), status: 502 });
       await assert.rejects(work.done(resolving(source)), `${origin} ${action}: the first done gives up`);
       github.broken = false;
+      // A Run between the two leaves the Ticket as the failed done left it: no hold, no comment of its own.
+      const state = record.load(source.commonDir, 'ticket', golden.TICKET)!.state;
+      const posted = source.gh.comments.length;
+      await source.run();
+      assert.equal(
+        record.load(source.commonDir, 'ticket', golden.TICKET)!.state,
+        state,
+        `${origin} ${action}: the Run`,
+      );
+      assert.equal(source.gh.comments.length, posted, `${origin} ${action}: the Run posts nothing`);
       await work.done(resolving(source));
       const executionRecord = record.load(source.commonDir, 'ticket', golden.TICKET)!;
       assert.equal(executionRecord.state, 'done', `${origin} ${action}`);
+      const resolveComments = source.gh.comments.filter(({ body }) => body.includes(':resolve-comment:'));
+      assert.equal(resolveComments.length, 1, `${origin} ${action}: one done comment`);
       const open = writeAhead
         .openIntents(executionRecord)
         .filter(({ actionMarker }) => actionMarker.includes(':done:'));
       assert.deepEqual(open, [], `${origin} ${action}: every resolve Action is complete`);
     }
+});
+
+// A Run over a Pending Ticket whose gg work done did not finish reads it as a decided report: a person's needs-human
+// label still abandons it (request 3.5), and without one it stays Pending until done is run again.
+for (const labelled of [false, true])
+  // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+  test(`a Run over an unfinished gg work done ${labelled ? 'lets a needs-human label abandon it' : 'leaves it Pending'}`, async (t) => {
+    const asked = await approvalFlow.approvalFixture(t);
+    await interpreter.runExecution(asked.options);
+    asked.gh.prs.get(golden.BRANCH)!.state = 'MERGED';
+    const github = { broken: true };
+    for (let failure = 0; failure < 20; failure += 1)
+      asked.gh.fail({ matches: (args) => github.broken && fakeGh.isCommentPost(args), status: 502 });
+    const source = { ...asked, deps: asked.options.deps, run: async () => {} };
+    await assert.rejects(work.done(resolving(source)));
+    github.broken = false;
+    if (labelled) asked.gh.humanAddsLabel('gg:state:needs-human', 'the-owner');
+    const posted = asked.gh.comments.length;
+    await approvalFlow.laterRun(asked);
+    const executionRecord = record.load(asked.commonDir, 'ticket', golden.TICKET)!;
+    assert.equal(executionRecord.state, labelled ? 'abandoned' : 'active');
+    assert.equal(asked.gh.comments.length, posted, 'no hold comment');
+  });
+
+// A comment that GitHub posted while the call reported a failure is found by the next gg work done, not posted again.
+test('gg work done does not post a resolve comment twice when the first landed before its call failed', async (t) => {
+  const fixture = await faulted(t);
+  fixture.gh.fail({ matches: (args) => fakeGh.isCommentPost(args), status: 422, afterEffect: true });
+  await assert.rejects(work.done(doneOptions(fixture, true)));
+  await work.done(doneOptions(fixture, true));
+  assert.equal(loaded(fixture).state, 'done');
+  assert.equal(fixture.comments().filter((body) => body.includes(':resolve-comment:')).length, 1);
+});
+
+// A done that landed is not a decided report: later Runs leave it alone, labelled or not.
+test('a Run leaves a Ticket gg work done resolved alone, even under a needs-human label', async (t) => {
+  const fixture = await faulted(t);
+  await work.done(doneOptions(fixture, true));
+  fixture.gh.humanAddsLabel('gg:state:needs-human', 'the-owner');
+  const posted = fixture.gh.comments.length;
+  await run.runTarget(fixture.options);
+  assert.equal(loaded(fixture).state, 'done');
+  assert.equal(fixture.gh.comments.length, posted);
+  assert.ok(!fixture.logs.some((line) => line.includes('did not finish')), fixture.logs.join('\n'));
+});
+
+// An unfinished gg work done has no saved stop, so a GitHub read that fails while a Run finishes it is that Run's
+// fault for the Ticket, which stays as the done left it.
+// eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
+test('a Run that cannot read GitHub over an unfinished gg work done ends in a fault and keeps the Ticket', async (t) => {
+  const asked = await approvalFlow.approvalFixture(t);
+  await interpreter.runExecution(asked.options);
+  asked.gh.prs.get(golden.BRANCH)!.state = 'MERGED';
+  const github = { broken: true };
+  for (let failure = 0; failure < 20; failure += 1)
+    asked.gh.fail({ matches: (args) => github.broken && fakeGh.isCommentPost(args), status: 502 });
+  await assert.rejects(work.done(resolving({ ...asked, deps: asked.options.deps, run: async () => {} })));
+  github.broken = false;
+  asked.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view', status: 502 });
+  const result = await approvalFlow.laterRun(asked);
+  assert.equal(result.fault, true);
+  assert.equal(record.load(asked.commonDir, 'ticket', golden.TICKET)!.state, 'active');
 });

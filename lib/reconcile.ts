@@ -110,8 +110,6 @@ export function humanOverride(
   const needsHuman = state(labels.NEEDS_HUMAN);
   // A needs-human Terminal that crashed after its label Action shows gg's own label, not a human's.
   if (label.intendsToAdd(executionRecord, needsHuman) || !labels.hasLabel(issueLabels, needsHuman)) return null;
-  // A person's gg work done has decided this end already; a needs-human label left from before is not a new override.
-  if (executionRecord.terminalReason?.decidedBy.human !== undefined) return null;
   return {
     next: 'abandon',
     cursor: executionRecord.cursor,
