@@ -269,6 +269,10 @@ export async function reconcile(options: ReconcileOptions): Promise<ReconcileRes
   return { next: 'continue', cursor: executionRecord.cursor, reason: null };
 }
 
+// The open intent of an agent call that never completed: an Interrupted Attempt (ADR 0011).
+export const interruptedAttempt = (executionRecord: record.ExecutionRecord): writeAhead.WriteAheadEntry | undefined =>
+  writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
+
 // The holds that need no git: an Interrupted Attempt, a Vertex the Flow no longer has, or a Visit whose Procedure
 // changed since it entered.
 function configurationHold(executionRecord: record.ExecutionRecord, flow: ReconciledFlow): Hold | null {
@@ -276,7 +280,7 @@ function configurationHold(executionRecord: record.ExecutionRecord, flow: Reconc
   const hold = (reason: string): Hold => ({ next: 'hold', cursor: executionRecord.cursor, reason });
   // An Interrupted Attempt is held however clean the worktree looks: what its agent changed is not known (ADR 0011).
   // Deleting the record would drop the baseline its intent saved, so the advice says to check the files first.
-  const interrupted = writeAhead.openIntents(executionRecord).find((entry) => entry.effect === 'call');
+  const interrupted = interruptedAttempt(executionRecord);
   if (interrupted) {
     return {
       ...hold(

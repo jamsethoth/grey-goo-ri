@@ -9,6 +9,7 @@ import * as github from '../../lib/github.ts';
 import * as interpreter from '../../lib/interpreter.ts';
 import * as labels from '../../lib/labels.ts';
 import * as locks from '../../lib/locks.ts';
+import * as reconcile from '../../lib/reconcile.ts';
 import * as record from '../../lib/record.ts';
 import * as run from '../../lib/run.ts';
 import * as work from '../../lib/work.ts';
@@ -321,8 +322,14 @@ test('gg work resume --at publish runs the suite and reaches ready-for-qa', asyn
   assert.equal(fixture.gh.pr()?.isDraft, false, 'the PR is marked ready');
   const resumed = fixture.readEvents().filter((event) => event.type === 'ticket_resumed');
   assert.deepEqual(
-    resumed.map(({ ticket, human, vertex, head: tip }) => ({ ticket, human, vertex, head: tip })),
-    [{ ticket: 15, human: 'octo-human', vertex: 'publish', head }],
+    resumed.map(({ run: resumedIn, ticket, human, vertex, head: tip }) => ({
+      resumedIn,
+      ticket,
+      human,
+      vertex,
+      head: tip,
+    })),
+    [{ resumedIn: runFixture.lastRun(fixture), ticket: 15, human: 'octo-human', vertex: 'publish', head }],
   );
 });
 
@@ -351,8 +358,16 @@ test('gg work resume refuses a Vertex whose required inputs were never produced,
 
 test('resume keeps the Visit and Action Cap counts', async (t) => {
   const green2 = goldenRun.greenWrites({ 'lib/add.mjs': goldenRun.RIGHT_ADD });
-  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  const fixture = await faulted(t, {
+    responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 },
+    // red's route to green is a bounded Edge, so the first Run counts one traversal the resume must keep.
+    configure: ({ options }) => {
+      const flow = options.config.repository.flows.default as golden.ConfiguredFlow;
+      flow.ticket.vertices.red!.route = { ok: { to: 'green', max: 2, exhausted: { end: 'needs-human' } } };
+    },
+  });
   const before = loaded(fixture);
+  assert.ok(before.traversals.size > 0, 'the first Run counted an Edge');
   assert.deepEqual(Object.fromEntries(before.visits), { red: 1, green: 1 });
   const [result] = await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
   assert.equal(result?.outcome, 'ready-for-qa', String(result?.error));
@@ -697,7 +712,7 @@ test('a Run leaves a Ticket gg work done resolved alone, even under a needs-huma
 // An unfinished gg work done has no saved stop, so a GitHub read that fails while a Run finishes it is that Run's
 // fault for the Ticket, which stays as the done left it.
 // eslint-disable-next-line @stylistic/max-len -- a case name stays whole, so grep finds it
-test('a Run that cannot read GitHub over an unfinished gg work done ends in a fault and keeps the Ticket', async (t) => {
+test('a Run that cannot read GitHub over an unfinished gg work done keeps the Ticket Pending, with no fault', async (t) => {
   const asked = await approvalFlow.approvalFixture(t);
   await interpreter.runExecution(asked.options);
   asked.gh.prs.get(golden.BRANCH)!.state = 'MERGED';
@@ -708,6 +723,27 @@ test('a Run that cannot read GitHub over an unfinished gg work done ends in a fa
   github.broken = false;
   asked.gh.fail({ matches: (args) => args[0] === 'issue' && args[1] === 'view', status: 502 });
   const result = await approvalFlow.laterRun(asked);
-  assert.equal(result.fault, true);
+  assert.equal(result.outcome, 'pending');
+  assert.equal(result.fault, undefined, 'a passing GitHub error is no fault');
   assert.equal(record.load(asked.commonDir, 'ticket', golden.TICKET)!.state, 'active');
+});
+
+// The person chose to override an interrupted agent Attempt, so resume says what to check first (Q1 A, ADR 0011).
+test('gg work resume of an interrupted agent Attempt prints the advice to check its files first', async (t) => {
+  const fixture = await faulted(t, { responses: { [keys.responseKey('green', 2, 'green', 1)]: green2 } });
+  assert.equal(openIntentMarkers(fixture).length, 1, 'an interrupted agent call');
+  await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+  assert.equal(fixture.logs.filter((line) => line.includes(reconcile.INTERRUPTED_ADVICE)).length, 1);
+});
+
+// A merged PR whose issue GitHub already closed needs no close: done records its end and closes nothing.
+test('gg work done closes nothing when the issue is already closed', async (t) => {
+  const views: Record<string, Record<string, unknown>> = {};
+  const fixture = await faulted(t, { fixtureOptions: { issues: views } });
+  prIn(fixture, 'MERGED');
+  views[String(runFixture.TICKET)] = { state: 'CLOSED' };
+  const text = await work.done(doneOptions(fixture));
+  assert.equal(loaded(fixture).state, 'done');
+  assert.ok(!fixture.gh.calls.some(({ args }) => args[0] === 'issue' && args[1] === 'close'), 'no close call');
+  assert.equal(text, 'gg work done resolved Ticket 15 as done, decided by octo-human.\n');
 });

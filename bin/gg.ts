@@ -101,6 +101,8 @@ async function workCommand(parsed: options.ParsedOptions, gh: github.Gh) {
     process.exitCode = 1;
     return;
   }
+  if (parsed.close !== undefined && verb !== 'done') throw new options.UsageError('--close is for work done only');
+  if (parsed.at !== undefined && verb !== 'resume') throw new options.UsageError('--at is for work resume only');
   const target = options.positiveInteger(ticket, 'ticket');
   if (verb === 'resume') {
     if (typeof parsed.at !== 'string') throw new options.UsageError('work resume takes --at <vertex>');

@@ -127,12 +127,14 @@ async function finishReport(runContext: RunContext): Promise<TerminalResult> {
 // waits for that verb to run again, since only it posts the done report.
 async function unfinishedDone(runContext: RunContext): Promise<TerminalResult> {
   const { record: executionRecord } = runContext;
-  const decided = await reconcile.terminalEffects(executionRecord, {
-    gh: runContext.gh,
-    labelPrefix: runContext.labelPrefix,
-    cwd: runContext.cwd,
-    markers: [],
-  });
+  const decided = await pendingRun.keepPendingIfUnread(runContext, `#${executionRecord.ticket}`, () =>
+    reconcile.terminalEffects(executionRecord, {
+      gh: runContext.gh,
+      labelPrefix: runContext.labelPrefix,
+      cwd: runContext.cwd,
+      markers: [],
+    }),
+  );
   if (decided.next === 'abandon')
     return await terminal.abandon(runContext, { terminalReasonText: decided.reason, inProgress: decided.inProgress });
   throw pendingRun.pending(`its gg work done did not finish; rerun gg work done ${executionRecord.ticket}`);

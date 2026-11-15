@@ -93,6 +93,18 @@ test('gg work without a verb prints usage', () => {
   assertUsage(result.stderr);
 });
 
+for (const [verb, flag, owner] of [
+  ['abandon', '--close', 'done'],
+  ['resume', '--close', 'done'],
+  ['done', '--at', 'resume'],
+  ['abandon', '--at', 'resume'],
+])
+  test(`gg work ${verb} refuses ${flag}, which only work ${owner} takes`, () => {
+    const result = gg('work', verb!, '1', flag!, ...(flag === '--at' ? ['publish'] : []));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, new RegExp(`^gg work: ${flag} is for work ${owner} only\\n`));
+  });
+
 test('gg work resume without --at prints usage', () => {
   const result = gg('work', 'resume', '1');
   assert.equal(result.status, 1);

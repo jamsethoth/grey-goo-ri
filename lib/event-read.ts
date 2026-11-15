@@ -30,30 +30,33 @@ const SELECT = `SELECT ${safeNumber('id')}, type, run, execution, ${safeNumber('
 // eventLog copies these fields to indexed columns, and a filtered read trusts the column, so each must equal its field.
 export const COLUMNS = ['type', 'run', 'execution', 'ticket'];
 // The fields gg's own readers use hold a string or null (#350); the declaration gives names, not value types.
-const READ_FIELDS = ['failureClass', 'execution', 'run', 'head'];
+export const READ_FIELDS = ['failureClass', 'execution', 'run', 'head'];
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // The fields an Event of this type declares after its header. A saved Event holds every one, an optional field null.
-function declaredFields(type: unknown, agent: unknown): string[] {
+function declaredFields(type: unknown, agent: unknown): Record<string, string> {
   if (type === 'action') {
     if (typeof agent !== 'boolean') throw new Error('its agent is not true or false');
-    return ['agent', ...Object.keys(events.ACTION), ...(agent ? Object.keys(events.AGENT) : [])];
+    return { agent: 'required', ...events.ACTION, ...(agent ? events.AGENT : {}) };
   }
   // An own key only: `toString` would otherwise find Object.prototype's member and pass as a type.
   const shape = Object.entries(events.LIFECYCLE).find(([name]) => name === type)?.[1];
   if (!shape) throw new Error(`unknown type ${String(type)}`);
-  return Object.keys(shape);
+  return shape;
 }
 
-function checkFields(fields: Record<string, unknown>, declared: Set<string>): void {
+// A field gg reads holds a string, or null where its Event declares it optional (D10).
+function checkFields(fields: Record<string, unknown>, shape: Record<string, string>): void {
+  const declared = new Set(Object.keys(shape));
   for (const key of declared) if (!Object.hasOwn(fields, key)) throw new Error(`missing field ${key}`);
   for (const key of Object.keys(fields)) if (!declared.has(key)) throw new Error(`undeclared field ${key}`);
   for (const key of READ_FIELDS) {
     const value = fields[key];
     if (declared.has(key) && value !== null && typeof value !== 'string')
       throw new Error(`its ${key} is not a string or null`);
+    if (shape[key] === 'required' && value === null) throw new Error(`its ${key} is null`);
   }
 }
 
@@ -65,7 +68,7 @@ function assertEvent(value: unknown, row: EventRow): asserts value is events.Eve
   if (schemaVersion !== events.EVENT_SCHEMA_VERSION) throw new Error(`unknown schemaVersion ${String(schemaVersion)}`);
   if (typeof time !== 'string') throw new Error('its time is not a string');
   const { type, ...body } = fields;
-  checkFields(body, new Set(declaredFields(type, fields.agent)));
+  checkFields(body, declaredFields(type, fields.agent));
   for (const column of COLUMNS) {
     const saved = fields[column] ?? null;
     if (row[column] !== saved)

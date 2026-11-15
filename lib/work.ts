@@ -141,6 +141,8 @@ interface ResumeOptions {
   flows: ReadonlyMap<string, config.Pinned>;
   deps: Pick<runContext.Deps, 'gh' | 'git' | 'integrity' | 'locks' | 'database'>;
   events: ReturnType<typeof eventsModule.eventLog>;
+  run: string;
+  log: (line: string) => void;
 }
 
 // Why the Ticket cannot re-enter at `vertex`, or null: the Flow must have the Vertex, and a Visit in the record must
@@ -184,6 +186,8 @@ export async function resume(context: admission.AdmissionContext, ticket: number
     flows,
     deps,
     events,
+    run: context.runId,
+    log: context.log,
   });
   return deps.gh.viewIssue(ticket, repo.mainRoot);
 }
@@ -206,6 +210,8 @@ async function reposition(options: ResumeOptions): Promise<void> {
   const head = await deps.git.headSha(worktree);
   // Completed in memory only: the save that writes ticket_resumed commits them, so a failure before it keeps them open.
   // Looked up before the labels come down, which would hide a label that landed.
+  // The person overrides an Interrupted Attempt (Q1 A), so they are told what to check first (ADR 0011).
+  if (reconcile.interruptedAttempt(executionRecord)) options.log(`#${ticket} ${reconcile.INTERRUPTED_ADVICE}`);
   const superseded = await reconcile.supersedeOpenIntents(executionRecord, { gh: deps.gh, git: deps.git, cwd });
   await removeStopLabels(executionRecord, options);
   Object.assign(executionRecord, {
@@ -219,7 +225,7 @@ async function reposition(options: ResumeOptions): Promise<void> {
   });
   const { execution, owner } = executionRecord;
   (deps.database ?? record).save(executionRecord, () =>
-    events('ticket_resumed', { execution, ticket, owner, human, vertex, head, superseded }),
+    events('ticket_resumed', { run: options.run, execution, ticket, owner, human, vertex, head, superseded }),
   );
 }
 

@@ -67,6 +67,7 @@ const ROW_CORRUPTIONS: Record<string, string> = {
     ]),
   ),
   'a head that is not a string': `json = json_set(json, '$.head', 5)`,
+  'a null head': `json = json_set(json, '$.head', json('null'))`,
   'an undeclared field': `json = json_set(json, '$.extra', 1)`,
   'JSON that does not parse': `json = substr(json, 1, length(json) - 1)`,
 };
