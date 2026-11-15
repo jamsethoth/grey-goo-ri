@@ -254,7 +254,7 @@ function settleAttempt(
       ...harnessFields(result, actionIdentity.recovery ? action.id : null),
       ...decisionFields(resolution, { result, claim, integrityRows }),
     },
-    // A copy: a Harness may reuse its result's objects, and the evidence keeps this call's counts.
+    // The evidence keeps its own copy of the Resolution, apart from the one the Visit settles on.
     evidence: structuredClone({ ...done, usageDelta: result.usage.delta }),
   };
 }

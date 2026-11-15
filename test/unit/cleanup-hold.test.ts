@@ -487,9 +487,51 @@ test("a call whose cleanup is unconfirmed has its job closed through gg's copy o
   fixture.harness.run = async (call) => {
     const answered = await run(call);
     // The handle as exec attaches it: not enumerable, so no copy carries it by itself.
-    const { cleanup } = answered.result;
-    if (cleanup && !cleanup.confirmed) Object.defineProperty(cleanup, 'closeJob', { value: () => closed++ });
+    // On a copy of the report: the fake answers every call with the case's own UNCONFIRMED constant.
+    const cleanup = { ...answered.result.cleanup! };
+    if (!cleanup.confirmed) Object.defineProperty(cleanup, 'closeJob', { value: () => closed++ });
+    return { ...answered, result: { ...answered.result, cleanup } };
+  };
+  const result = await interpreter.runExecution(fixture.options);
+  assert.equal(result.outcome, 'pending');
+  assert.equal(closed, 1);
+});
+
+test('a Harness that edits the call it was sent changes nothing gg saves', async (t) => {
+  const fixture = await golden.fixture(t);
+  const run = fixture.harness.run;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    const sent = call as unknown as { agent: { model: string }; persona: { hash: string }; tools: unknown };
+    Object.assign(sent, { tools: CHANGED });
+    sent.agent.model = CHANGED;
+    sent.persona.hash = CHANGED;
     return answered;
+  };
+  await interpreter.runExecution(fixture.options);
+  const sessions = Object.values(loadTicket(fixture).sessions);
+  const calls = fixture.readEvents().filter((event) => event.type === 'action' && 'tools' in event);
+  assert.ok(sessions.length > 0 && calls.length > 0, 'the run saved Sessions and agent Action Events');
+  const changed = new Set<string>();
+  for (const session of sessions) pathsHolding(session, 'session', changed);
+  for (const event of calls) pathsHolding(event, 'event', changed);
+  assert.deepEqual([...changed], []);
+});
+
+test("a cleanup report's job handle is closed however the Harness attached it", async (t) => {
+  const fixture = await golden.fixture(t, {
+    responses: firstVisitWith({ [GREEN_CALL]: { ...golden.firstVisitResponses[GREEN_CALL], cleanup: UNCONFIRMED } }),
+  });
+  const run = fixture.harness.run;
+  let closed = 0;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    // An ordinary property, which a copy sees, where exec attaches it hidden.
+    const cleanup = {
+      ...answered.result.cleanup!,
+      ...(answered.result.cleanup?.confirmed ? {} : { closeJob: () => closed++ }),
+    };
+    return { ...answered, result: { ...answered.result, cleanup } };
   };
   const result = await interpreter.runExecution(fixture.options);
   assert.equal(result.outcome, 'pending');
