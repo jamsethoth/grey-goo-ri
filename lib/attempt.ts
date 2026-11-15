@@ -203,7 +203,7 @@ export async function runHeld<Worked, Settled extends visit.Resolution>(
   }
   const saved = actionMarker ? writeAhead.findEntry(executionRecord, actionMarker, 'evidence') : undefined;
   const settled: visit.Resolution = resolution;
-  // The new result replaces the one the hold saved; the Usage the call spent stays.
+  // The new Resolution replaces the one the hold saved; the Usage the call spent stays.
   if (saved?.evidence?.usageDelta !== undefined)
     saved.evidence = structuredClone({ ...settled, usageDelta: saved.evidence.usageDelta });
   database.save(executionRecord, eventOf(context, actionIdentity, startedAt, { ...done, resolution }));
