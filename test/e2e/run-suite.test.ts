@@ -360,17 +360,18 @@ test('with GG_KEEP_TEMP the fast stage keeps what a case left, names the directo
   assert.match(readdirSync(kept).join(), /sample-left-/);
 });
 
-// Windows refuses to remove a directory a live process works in; elsewhere the removal succeeds.
+// Windows refuses to remove a directory a live process works in; elsewhere the removal succeeds. The child opens its
+// working directory as it starts up, after the spawn event, so the census waits for the child's own word that it runs.
 test('a temp census that cannot remove the directory still names each entry left', options.WIN_CASE, async (t) => {
   const directory = tempDirectory.tempDirectory(t, 'gg-temp-census-');
   writeFileSync(join(directory, 'one.txt'), '');
   mkdirSync(join(directory, 'held'));
-  const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 600000)'], {
+  const holder = spawn(process.execPath, ['-e', "process.stdout.write('running'); setTimeout(() => {}, 600000)"], {
     cwd: join(directory, 'held'),
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'ignore'],
   });
   t.after(() => holder.kill());
-  await once(holder, 'spawn');
+  await once(holder.stdout, 'data');
   const { failed, report } = runSuite.tempCensus(directory, false);
   holder.kill();
   await once(holder, 'exit');
