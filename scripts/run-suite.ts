@@ -1,6 +1,7 @@
 // The one command Codex may run outside its sandbox (ADR 0010). It takes a stage from a closed set (ADR 0016) and drops
 // every environment variable that could make node load other code, and gives git no global or system config. The full
-// and fast stages run in a job it holds, and fail when a test leaves a process in it (docs/testing.md).
+// and fast stages run in a job it holds, and fail when a test leaves a process in it, and every stage that runs tests
+// fails when one leaves something in its temp directory (docs/testing.md).
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
@@ -59,6 +60,7 @@ export class SuiteUsageError extends Error {
 // What the launcher runs: node, in the repository root, with this environment, once per step in order. `coverage` is
 // set for the coverage stage, whose figures are held to the floor. `census` is set for a stage whose tests
 // run in a job: the coverage stage's one process has no boundaries to leave anything behind, and check runs no tests.
+// `tempCensus` is set for every stage that runs tests, whose steps run with a temp directory of the launcher's.
 export interface SuiteCommand {
   command: string;
   cwd: string;
@@ -66,6 +68,7 @@ export interface SuiteCommand {
   steps: string[][];
   coverage?: true;
   census?: true;
+  tempCensus?: true;
 }
 
 // No arguments is the full stage. `fast` is test/unit/ plus the named contract suites, whose paths are built from the
@@ -121,11 +124,12 @@ export function suiteCommand(env: Record<string, string | undefined>, argv: stri
         UNIT,
       ],
     ];
-    return { ...base, steps, coverage: true };
+    return { ...base, steps, coverage: true, tempCensus: true };
   }
   const files = stage(argv);
   if (!files) return { ...base, steps: CHECKS };
-  return { ...base, steps: [...CHECKS, ['--test', `--test-concurrency=${concurrency}`, ...files]], census: true };
+  const steps = [...CHECKS, ['--test', `--test-concurrency=${concurrency}`, ...files]];
+  return { ...base, steps, census: true, tempCensus: true };
 }
 
 // The summed line and function totals of an lcov report as percentages, floored to two places. Branches are printed but
@@ -245,6 +249,29 @@ export async function census(strays: Strays): Promise<{ failed: boolean; report:
   }
 }
 
+// What a stage left in its private temp directory, named, then removed with the directory. node keeps its compile cache
+// there on purpose when a step enables it, as Prettier, ESLint and tsc do. GG_KEEP_TEMP keeps the directory, whose
+// cases' own directories tempDirectory then keeps too, so it never fails.
+export function tempCensus(directory: string, keep: boolean): { failed: boolean; report: string } {
+  if (keep) return { failed: false, report: `temp census: GG_KEEP_TEMP kept the stage's temp directory: ${directory}` };
+  let left: string[] = [];
+  try {
+    left = readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => !(entry.name === 'node-compile-cache' && entry.isDirectory()))
+      .map((entry) => `  ${entry.name}${entry.isDirectory() ? '/' : ''}`)
+      .sort();
+    // A process the census just ended can hold its files for a moment on Windows.
+    rmSync(directory, { recursive: true, force: true, maxRetries: 6, retryDelay: 100 });
+    if (!left.length) return { failed: false, report: 'temp census: nothing left' };
+    const report = `temp census: this stage left ${left.length} in its temp directory, now removed;`;
+    return { failed: true, report: `${report} a case removes what it makes:\n${left.join('\n')}` };
+  } catch (err) {
+    const named = left.length ? `\n${left.join('\n')}` : '';
+    const report = `temp census: ${directory} not read or not removed: ${(err as Error).message}`;
+    return { failed: true, report: `${report}${named}` };
+  }
+}
+
 const self = fileURLToPath(import.meta.url);
 const entry = process.argv[1] && resolve(process.argv[1]);
 if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowerCase() : entry === self)) {
@@ -261,18 +288,17 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     console.error(`${missing.join(' and ')} not found: run npm ci first`);
     process.exit(1);
   }
-  // node's test runner keeps its coverage in a node-coverage-* directory in the temp directory and removes it only in
-  // its own teardown, which a test's process.exit skips. So the stage's tests get a temp directory of the launcher's,
-  // removed after them (#377). Each platform's node reads a different one of the three.
-  let temp: string | undefined;
   if (suite.coverage) {
     // node's lcov reporter does not create its destination's directory. A run that ends early writes no report, so an
     // earlier run's must not be there to read.
     mkdirSync(join(root, dirname(LCOV)), { recursive: true });
     rmSync(join(root, LCOV), { force: true });
-    temp = mkdtempSync(join(tmpdir(), 'gg-coverage-'));
-    suite.env = { ...suite.env, TEMP: temp, TMP: temp, TMPDIR: temp };
   }
+  // A stage's steps get a temp directory of the launcher's, so what a case leaves there is this stage's alone and its
+  // census can fail the stage (#380): 327 node-coverage-* directories, one per run, built up unseen (#377). Each
+  // platform's node reads a different one of the three.
+  const temp = suite.tempCensus ? mkdtempSync(join(tmpdir(), 'gg-stage-')) : null;
+  if (temp) suite.env = { ...suite.env, TEMP: temp, TMP: temp, TMPDIR: temp };
   const hold = suite.census ? await holdStage() : null;
   // Steps run in order and the first failure stops the stage, so a format, lint or type error is the last thing
   // printed before the census.
@@ -297,8 +323,12 @@ if (entry && (process.platform === 'win32' ? entry.toLowerCase() === self.toLowe
     console.error(report);
     if (failed && !stageCode) stageCode = 1;
   }
-  if (temp && process.env.GG_KEEP_TEMP) console.error(`coverage kept its temp directory: ${temp}`);
-  else if (temp) rmSync(temp, { recursive: true, force: true });
+  // After the process census, which ends what could hold a file open.
+  const tempLeft = temp ? tempCensus(temp, Boolean(process.env.GG_KEEP_TEMP)) : { failed: false, report: '' };
+  if (tempLeft.report) console.error(tempLeft.report);
   if (stageCode) process.exit(stageCode);
-  if (suite.coverage) process.exit(holdCoverage());
+  // The coverage figures are still held: a test that ends the process early leaves node's coverage directory behind,
+  // and "measured no lines" says why.
+  const held = suite.coverage ? holdCoverage() : 0;
+  process.exit(held || Number(tempLeft.failed));
 }
