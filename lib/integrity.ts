@@ -1,6 +1,6 @@
 import * as nodeFs from 'node:fs/promises';
-import { lstat, readFile, readlink } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { lstat, readFile, readlink, stat } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import * as locksModule from './locks.ts';
 import * as paths from './paths.ts';
 import * as record from './record.ts';
@@ -13,23 +13,22 @@ export interface WorktreeSnapshot {
 }
 export type Surface = keyof WorktreeSnapshot;
 
-// An untracked file's content, which git keeps no copy of: a link's target, or the bytes in base64.
-export type UntrackedLink = { link: string; base64?: undefined };
-export type UntrackedBytes = { base64: string; link?: undefined };
+// An untracked file's content, which git keeps no copy of: a link's target and whether it pointed at a directory, which
+// a link alone cannot tell once its target is gone, or the bytes in base64.
+export type UntrackedLink = { link: string; directory: boolean; base64?: undefined };
+export type UntrackedBytes = { base64: string; link?: undefined; directory?: undefined };
 export type UntrackedFile = UntrackedLink | UntrackedBytes;
 export type UntrackedFiles = Record<string, UntrackedFile>;
 
-// What a listing is limited to: `paths` and anything under them, `globs`, less `exclude` (git.pathspecs). An array is
-// the pathspecs a reset intent saved before #144.
+// What a listing is limited to: `paths` and anything under them, `globs`, less `exclude` (git.pathspecs), or git
+// pathspecs as they are.
 export type WithinPaths = { paths?: string[]; globs?: string[]; exclude?: string[] };
 export type Within = WithinPaths | string[];
 
 // What git clean leaves that a rollback must put back: the baseline's untracked files, and where to look for new ones.
-// `pathspecs` stands in for `within` in a reset intent saved before #144.
 export interface RollbackSet {
   files: UntrackedFiles;
-  within?: Within;
-  pathspecs?: string[];
+  within?: WithinPaths;
 }
 
 // Another worktree's snapshot, taken while it was idle at that activity generation.
@@ -149,9 +148,6 @@ async function idleSnapshot(
     : null;
 }
 
-// A rollback set's paths: `within`, or the git pathspecs a reset intent saved before #144, which git.ts still takes.
-export const withinOf = (set: RollbackSet): Within | undefined => set.within ?? set.pathspecs;
-
 // No paths named: an empty { paths, globs, exclude } or an empty saved pathspec array.
 const none = (within: Within | undefined) =>
   !within || Object.values(within).every((value: string | string[] | undefined) => !value?.length);
@@ -168,13 +164,26 @@ export async function untrackedFiles(
   // Ignored ones too: an ignored Protected File is still agent configuration, and an ignored test still runs.
   const untrackedPaths = await git.untrackedPaths(worktree, { include, within });
   const files: UntrackedFiles = {};
-  for (const path of untrackedPaths) {
+  for (const listed of untrackedPaths) {
+    // git lists the files behind a junction as the worktree's: the link is saved once, never what it points at.
+    const path = (await linkAbove(worktree, listed)) ?? listed;
+    if (Object.hasOwn(files, path)) continue;
     const full = join(worktree, path);
     files[path] = (await lstat(full)).isSymbolicLink()
-      ? { link: await readlink(full) }
+      ? { link: await readlink(full), directory: (await stat(full).catch(() => null))?.isDirectory() ?? false }
       : { base64: (await readFile(full)).toString('base64') };
   }
   return files;
+}
+
+// The nearest directory above `path` that is a link (a symlink or junction), checked from the worktree down, or null.
+async function linkAbove(worktree: string, path: string): Promise<string | null> {
+  const parts = path.split('/').slice(0, -1);
+  for (let depth = 1; depth <= parts.length; depth++) {
+    const directory = parts.slice(0, depth).join('/');
+    if ((await lstat(join(worktree, directory))).isSymbolicLink()) return directory;
+  }
+  return null;
 }
 
 // The ignored ones alone: the snapshot tree already covers the rest, and git clean removes them.
@@ -185,7 +194,11 @@ const untrackedProtected = (worktree: string, protectedPaths: string[], git: Int
   untrackedFiles(worktree, { paths: protectedPaths }, git);
 
 export const sameFile = (first: UntrackedFile | undefined, second: UntrackedFile | undefined): boolean =>
-  !!first && !!second && first.link === second.link && first.base64 === second.base64;
+  !!first &&
+  !!second &&
+  first.link === second.link &&
+  first.directory === second.directory &&
+  first.base64 === second.base64;
 export const sameFiles = (first: UntrackedFiles, second: UntrackedFiles): boolean =>
   Object.keys(first).length === Object.keys(second).length &&
   Object.keys(first).every((path) => sameFile(first[path], second[path]));
@@ -253,6 +266,13 @@ async function unlinkParents(worktree: string, path: string, fs: RestoreFs): Pro
   return false;
 }
 
+// How a saved link is made again: a directory link as a junction, which needs no symlink privilege on Windows and,
+// unlike a symlink, can be made after its target is gone. A junction's target must be absolute; POSIX ignores the type.
+const linkTo = ({ link, directory }: UntrackedLink, full: string): [string, string, 'junction' | 'file'] =>
+  directory
+    ? [process.platform === 'win32' ? resolve(dirname(full), link) : link, full, 'junction']
+    : [link, full, 'file'];
+
 // git clean keeps ignored files, so after a reset a rollbackSet is put back by hand: links over the baseline's
 // directories replaced first, then new files removed, then changed or deleted ones rewritten against a fresh listing.
 // `fs` is node:fs/promises, or a test's that crashes one of these writes.
@@ -263,7 +283,7 @@ export async function restoreUntracked(
   fs: RestoreFs = nodeFs,
 ): Promise<void> {
   const { files: untracked } = set;
-  const within = withinOf(set);
+  const { within } = set;
   for (const path of Object.keys(untracked)) await unlinkParents(worktree, path, fs);
   for (const path of Object.keys(await untrackedFiles(worktree, within, git))) {
     if (!untracked[path] && !(await unlinkParents(worktree, path, fs))) await fs.rm(join(worktree, path), RM_OPTIONS);
@@ -275,7 +295,7 @@ export async function restoreUntracked(
     await fs.rm(full, RM_OPTIONS);
     await fs.mkdir(dirname(full), { recursive: true });
     await (file.link !== undefined
-      ? fs.symlink(file.link, full)
+      ? fs.symlink(...linkTo(file, full))
       : fs.writeFile(full, Buffer.from(file.base64, 'base64')));
   }
 }

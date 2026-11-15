@@ -113,6 +113,11 @@ export function seed(
   };
   record.save(executionRecord);
   if (shape.ended)
-    events.eventLog(commonDir, { run: RUN })('ticket_end', { run: RUN, execution: executionRecord.execution, ticket });
+    events.eventLog(commonDir, { run: RUN })('ticket_end', {
+      run: RUN,
+      execution: executionRecord.execution,
+      ticket,
+      owner: executionRecord.owner,
+    });
   return executionRecord;
 }

@@ -23,24 +23,24 @@ export class RecordSaveError extends Error {
   }
 }
 
-// Who decided an Execution's end state: a hold by its name, a human by the label they set, or an Action by its
-// identity, which has no Visit or Action when the stop came before one. Exactly one of the three: each form rules out
-// the others' keys, so a mix or an empty object does not compile, and any key is still read without a test first
-// (docs/research/exclusive-variant-shapes.md). A hold or a human that cut a Visit off names it with an Action's keys,
-// all four or none (#341). A reader tells the forms apart with `!== undefined` or a literal, not with `in`, and a
-// fourth form adds its keys to the other three.
+// Who decided an Execution's end state: a hold by its name, an abandonment by the State Label a human set, or an Action
+// by its identity, which has no Visit or Action when the stop came before one. Exactly one of the three: each form
+// rules out the others' keys, so a mix or an empty object does not compile, and any key is still read without a test
+// first (docs/research/exclusive-variant-shapes.md). A hold or an abandonment that cut a Visit off names it with an
+// Action's keys, all four or none (#341). `human`, a login, is reserved for #133. A reader tells the forms apart with
+// `!== undefined` or a literal, not with `in`, and a fourth form adds its keys to the other three.
 type ActionKeys = { vertex: string; visit: number | null; action: string | null; recovery: number };
 type NoActionKeys = { vertex?: never; visit?: never; action?: never; recovery?: never };
-type Hold = { hold: string | null; human?: never };
-type Human = { human: string; hold?: never };
+type Hold = { hold: string | null; label?: never };
+type Label = { label: string; hold?: never };
 export type DecidedByHold = Hold & NoActionKeys;
 export type DecidedByHoldInVisit = Hold & ActionKeys;
-export type DecidedByHuman = Human & NoActionKeys;
-export type DecidedByHumanInVisit = Human & ActionKeys;
-export type DecidedByAction = { hold?: never; human?: never } & ActionKeys;
-export type DecidedBy = DecidedByHold | DecidedByHoldInVisit | DecidedByHuman | DecidedByHumanInVisit | DecidedByAction;
+export type DecidedByLabel = Label & NoActionKeys;
+export type DecidedByLabelInVisit = Label & ActionKeys;
+export type DecidedByAction = { hold?: never; label?: never } & ActionKeys;
+export type DecidedBy = DecidedByHold | DecidedByHoldInVisit | DecidedByLabel | DecidedByLabelInVisit | DecidedByAction;
 
-// Why an Execution reached its end state: the Action, hold or human that decided it (request 3.1).
+// Why an Execution reached its end state: the Action, hold or abandonment that decided it (request 3.1).
 export interface TerminalReason {
   decidedBy: DecidedBy;
   outcome: string | null;
@@ -102,12 +102,20 @@ export interface SessionEntry {
   personaName: string;
 }
 
+// Who an Execution belongs to (X3): a Ticket today, or an Epic for request slice 7's planning Executions. The
+// record's `ticket` equals `number` either way, so neither the row's key nor the Execution's id changes (#23, Q6 A).
+export interface Owner {
+  kind: 'ticket' | 'epic';
+  number: number;
+}
+
 export interface ExecutionRecord {
   schemaVersion: number;
   commonDir: string;
   repository: string;
   execution: string;
   ticket: number;
+  owner: Owner;
   epic: number | null;
   flow: string;
   configHash: string;
@@ -172,11 +180,13 @@ export interface ExecutionStart {
 export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
   const { commonDir, ticket, epic = null, flow, configHash, run, worktree, branch, base } = start;
   return {
-    schemaVersion: recordJson.SCHEMA_VERSION,
+    schemaVersion: recordJson.RECORD_SCHEMA_VERSION,
     commonDir,
     repository: start.repository,
     execution: `${ticket}.${randomBytes(3).toString('hex')}`,
     ticket,
+    // Only a Ticket owns an Execution until request slice 7 (X3).
+    owner: { kind: 'ticket', number: ticket },
     epic,
     flow: flow.name,
     configHash,
@@ -218,7 +228,13 @@ export function createExecutionRecord(start: ExecutionStart): ExecutionRecord {
 }
 
 export function createEpicRecord({ commonDir, epic }: { commonDir: string; epic: number }): EpicRecord {
-  return { schemaVersion: recordJson.SCHEMA_VERSION, commonDir, epic, planDecision: null, approvalRequest: null };
+  return {
+    schemaVersion: recordJson.RECORD_SCHEMA_VERSION,
+    commonDir,
+    epic,
+    planDecision: null,
+    approvalRequest: null,
+  };
 }
 
 const declaredFields = (kind: RecordKind): string[] =>

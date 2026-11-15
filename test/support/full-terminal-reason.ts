@@ -3,7 +3,8 @@
 // fault decide no Outcome, so their outcome and rule are both null.
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import * as stateDatabase from '../../lib/state-database.ts';
+import * as eventRead from '../../lib/event-read.ts';
+import type * as events from '../../lib/events.ts';
 
 const KEYS = ['decidedBy', 'outcome', 'rule', 'text'];
 
@@ -19,27 +20,21 @@ export function assertFull(terminalReason: unknown, where: string): void {
   }
 }
 
-// Each ticket_end a State Database holds, read as saved: a case that corrupts other rows still has its ticket_end read.
-export function ticketEnds(commonDir: string): { execution: string; terminalReason: unknown }[] {
-  const rows = stateDatabase
-    .open(commonDir)
-    .prepare("SELECT json FROM events WHERE type = 'ticket_end' ORDER BY id")
-    .all() as { json: string }[];
-  return rows.map(({ json }) => JSON.parse(json) as { execution: string; terminalReason: unknown });
-}
+// An Execution's ticket_end Events, as the checked read gives them: a row a case corrupted on purpose is skipped.
+export const ticketEnds = (commonDir: string, execution: string): events.TicketEndEvent[] =>
+  eventRead
+    .executionEvents(commonDir, execution, () => {})
+    .filter((event): event is events.TicketEndEvent => event.type === 'ticket_end');
 
-// Every ticket_end in the State Database carries a full Terminal Reason.
-export function assertEveryTicketEnd(commonDir: string): void {
-  for (const { execution, terminalReason } of ticketEnds(commonDir))
-    assertFull(terminalReason, `ticket_end of ${execution}`);
-}
-
-// Checks, as the case ends, every ticket_end in the State Database it is given. Called before the case's temp directory
-// is made, so the check runs before the directory goes. Returns the setter for that State Database's directory.
-export function atCaseEnd(t: TestContext): (commonDir: string) => void {
-  const checked: { commonDir?: string } = {};
-  t.after(() => checked.commonDir && assertEveryTicketEnd(checked.commonDir));
-  return (commonDir) => {
-    checked.commonDir = commonDir;
-  };
+// Checks, as the case ends, every ticket_end of the Execution it is given. Called before the case's temp directory is
+// made, so the check runs before the directory goes. Returns the setter for the State Database and the Execution.
+export function atCaseEnd(t: TestContext): (commonDir: string, execution: string) => void {
+  const checked: { commonDir?: string; execution?: string } = {};
+  t.after(() => {
+    const { commonDir, execution } = checked;
+    if (commonDir && execution)
+      for (const { terminalReason } of ticketEnds(commonDir, execution))
+        assertFull(terminalReason, `ticket_end of ${execution}`);
+  });
+  return (commonDir, execution) => Object.assign(checked, { commonDir, execution });
 }

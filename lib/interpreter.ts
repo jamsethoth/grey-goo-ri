@@ -199,6 +199,7 @@ function visitEndEvent(runContext: RunContext, { next, taken }: visitRunner.Visi
       run: runContext.run,
       execution: executionRecord.execution,
       ticket: executionRecord.ticket,
+      owner: executionRecord.owner,
       vertex,
       visit,
       outcome,

@@ -198,12 +198,12 @@ const STOPS: Record<string, Partial<interpreter.ExecutionOptions>> = {
 
 test('every ticket_end carries a full Terminal Reason, with a rule exactly when an Outcome was decided', async (t) => {
   const end = await goldenRun.runFirstVisit(t);
-  const [endReason] = fullTerminalReason.ticketEnds(end.options.record.commonDir);
+  const [endReason] = fullTerminalReason.ticketEnds(end.options.record.commonDir, end.options.record.execution);
   fullTerminalReason.assertFull(endReason?.terminalReason, 'an end');
   assert.notEqual((endReason?.terminalReason as { rule: unknown }).rule, null, 'an end names its rule');
   for (const [kind, stop] of Object.entries(STOPS)) {
     const fixture = await ended(t, stop);
-    const [stopped] = fullTerminalReason.ticketEnds(fixture.options.record.commonDir);
+    const [stopped] = fullTerminalReason.ticketEnds(fixture.options.record.commonDir, fixture.options.record.execution);
     fullTerminalReason.assertFull(stopped?.terminalReason, kind);
     const reason = stopped?.terminalReason as { rule: unknown; decidedBy: Record<string, unknown> };
     assert.equal(reason.rule, null, `a ${kind} decides no rule`);

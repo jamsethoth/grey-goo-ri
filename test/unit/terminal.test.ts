@@ -81,7 +81,7 @@ test("an abandonment posts nothing, removes in-progress, and lands abandoned und
   const result = await terminal.abandon(context, { terminalReasonText: 'A human took it.', inProgress: true });
   assert.deepEqual(result, { outcome: 'abandoned' });
   assert.equal(executionRecord.state, 'abandoned');
-  assert.deepEqual(executionRecord.terminalReason?.decidedBy, { human: support.NEEDS_HUMAN_LABEL });
+  assert.deepEqual(executionRecord.terminalReason?.decidedBy, { label: support.NEEDS_HUMAN_LABEL });
   assert.deepEqual(fakeGh.comments, []);
   assert.deepEqual([...fakeGh.labels], [support.NEEDS_HUMAN_LABEL]);
   assert.deepEqual(
@@ -223,7 +223,7 @@ test("a decision found by a Terminal's own retry is taken by the Terminal", asyn
   const result = await terminal.terminal(context, 'needs-human', { outcome: 'needs-human' });
   assert.deepEqual(result, { outcome: 'abandoned' }, "the human's label found before the retry abandons it");
   assert.deepEqual(fakeGh.comments, []);
-  assert.deepEqual(executionRecord.terminalReason.decidedBy, { human: support.NEEDS_HUMAN_LABEL });
+  assert.deepEqual(executionRecord.terminalReason.decidedBy, { label: support.NEEDS_HUMAN_LABEL });
 });
 
 // Each hold and abandonment an Action can end its Execution with (effectErrors.Ending), as endEarly decides it.
@@ -236,7 +236,7 @@ const HOLD_AND_ABANDON: { kind: string; ending: (cursor: record.Cursor) => effec
   {
     kind: 'an abandonment',
     ending: (cursor) => ({ next: 'abandon', cursor, reason: 'A human took it.', inProgress: false }),
-    key: { human: support.NEEDS_HUMAN_LABEL },
+    key: { label: support.NEEDS_HUMAN_LABEL },
   },
 ];
 const GREEN_VISIT = { vertex: 'green', visit: 1, action: null, recovery: 0, attempt: 1 };
@@ -319,7 +319,7 @@ test("an abandonment found by a hold's own report keeps the Visit the hold named
   const result = await terminal.hold(context, { name: 'dirty-worktree', terminalReasonText: 'It is dirty.' });
   assert.deepEqual(result, { outcome: 'abandoned' });
   assert.deepEqual(executionRecord.terminalReason?.decidedBy, {
-    human: support.NEEDS_HUMAN_LABEL,
+    label: support.NEEDS_HUMAN_LABEL,
     vertex: 'green',
     visit: 1,
     action: null,
@@ -347,7 +347,7 @@ test("an abandonment found by an end's own report names no Visit, as its Visit t
     fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
     fakeGh.fail({ matches: support.commentPost, status: 502 });
     assert.deepEqual(await terminal.terminal(context, 'needs-human', stop), { outcome: 'abandoned' }, name);
-    assert.deepEqual(executionRecord.terminalReason.decidedBy, { human: support.NEEDS_HUMAN_LABEL }, name);
+    assert.deepEqual(executionRecord.terminalReason.decidedBy, { label: support.NEEDS_HUMAN_LABEL }, name);
   }
 });
 
@@ -368,7 +368,7 @@ test("an abandonment found by a run stop's own report keeps the Visit the run st
     assert.deepEqual(await terminal.endEarly(context, ending), { outcome: 'abandoned' }, name);
     assert.deepEqual(
       executionRecord.terminalReason?.decidedBy,
-      { human: support.NEEDS_HUMAN_LABEL, vertex: 'green', visit: 1, action: 'push', recovery: 0 },
+      { label: support.NEEDS_HUMAN_LABEL, vertex: 'green', visit: 1, action: 'push', recovery: 0 },
       name,
     );
   }
@@ -383,7 +383,7 @@ test("an abandonment found by a fault's own report keeps the Visit the fault cut
   fakeGh.fail({ matches: support.commentPost, status: 502 });
   assert.deepEqual(await terminal.fault(context, new Error('harness exploded')), { outcome: 'abandoned' });
   assert.deepEqual(executionRecord.terminalReason?.decidedBy, {
-    human: support.NEEDS_HUMAN_LABEL,
+    label: support.NEEDS_HUMAN_LABEL,
     vertex: 'green',
     visit: 1,
     action: 'push',
@@ -414,7 +414,7 @@ test("an abandonment found by a fault's own report outside every Visit names non
     fakeGh.labels.add(support.NEEDS_HUMAN_LABEL);
     fakeGh.fail({ matches: support.commentPost, status: 502 });
     assert.deepEqual(await terminal.fault(context, new Error('exploded')), { outcome: 'abandoned' }, name);
-    assert.deepEqual(executionRecord.terminalReason?.decidedBy, { human: support.NEEDS_HUMAN_LABEL }, name);
+    assert.deepEqual(executionRecord.terminalReason?.decidedBy, { label: support.NEEDS_HUMAN_LABEL }, name);
   }
 });
 

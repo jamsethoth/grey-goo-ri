@@ -7,6 +7,7 @@ import * as recordRead from '../../lib/record-read.ts';
 import * as recordReadVisit from '../../lib/record-read-visit.ts';
 import type * as recordReadNode from '../../lib/record-read-node.ts';
 import type * as commandCleanup from '../../lib/command-cleanup.ts';
+import type * as events from '../../lib/events.ts';
 import type * as integrity from '../../lib/integrity.ts';
 import type * as visit from '../../lib/visit.ts';
 import type * as sameType from '../support/same-type.ts';
@@ -31,6 +32,7 @@ const READERS = {
   visitState: same<ValueOf<typeof recordReadVisit.visitState>, recordJson.VisitStateJson>(true),
   configurationSnapshot: same<ValueOf<typeof recordReadVisit.configurationSnapshot>, visit.ConfigurationSnapshot>(true),
   actionOutput: same<ValueOf<typeof recordReadVisit.actionOutput>, visit.ActionOutput>(true),
+  usage: same<ValueOf<typeof recordReadVisit.usage>, events.Usage>(true),
 };
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };

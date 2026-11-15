@@ -210,7 +210,7 @@ test('a human needs-human label during backoff abandons before the retry', async
   assert.equal(ends.length, 1);
   // The abandonment names the Visit and the Action its backoff cut off (#341).
   assert.deepEqual((ends[0] as events.TicketEndEvent).terminalReason?.decidedBy, {
-    human: 'gg:state:needs-human',
+    label: 'gg:state:needs-human',
     vertex: 'reviewer',
     visit: 1,
     action: 'comment',

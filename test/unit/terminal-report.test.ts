@@ -21,6 +21,7 @@ const PUSH_EVENT = {
   launchProfile: null,
   confinement: null,
   ticket: support.TICKET,
+  owner: { kind: 'ticket', number: support.TICKET },
   run: 'run-1',
   execution: 'e1',
   vertex: 'green',
@@ -46,7 +47,14 @@ test("an Execution's run stop is its first Action Event whose class reaches the 
   const harnessAuth = event('red', 'auth');
   const remoteAuth = event('push', 'auth');
   const permission = event('push', 'permission');
-  const ticketEnd = saved(events.lifecycleEvent('ticket_end', { run: 'run-1', execution: 'e1', ticket: 7 }));
+  const ticketEnd = saved(
+    events.lifecycleEvent('ticket_end', {
+      run: 'run-1',
+      execution: 'e1',
+      ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
+    }),
+  );
   assert.equal(
     terminalReport.runStopEvent([event('red-check', null), harnessAuth, remoteAuth]),
     harnessAuth,

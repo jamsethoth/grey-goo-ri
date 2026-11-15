@@ -102,9 +102,9 @@ async function enterVisit(runContext: RunContext, vertexId: string, visitNumber:
 function saveConfigChange(runContext: RunContext, from: string) {
   const { record: executionRecord } = runContext;
   const { vertex, visit, configHash: to } = executionRecord.configurationSnapshot!;
-  const { execution, ticket } = executionRecord;
+  const { execution, ticket, owner } = executionRecord;
   runContext.database.save(executionRecord, () =>
-    runContext.events('config_change', { run: runContext.run, execution, ticket, vertex, visit, from, to }),
+    runContext.events('config_change', { run: runContext.run, execution, ticket, owner, vertex, visit, from, to }),
   );
   runContext.log(`#${ticket} config ${from.slice(0, 12)} -> ${to.slice(0, 12)} at ${vertex}`);
 }

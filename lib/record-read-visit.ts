@@ -24,10 +24,13 @@ export const worktreeSnapshot = object((field) => ({
   tree: text(field('tree')),
 }));
 
-// Each a link's target or the bytes in base64, told apart by its key.
+// Each a link's target with its kind, or the bytes in base64, told apart by their keys.
 export const untrackedFiles = keyed(
   variant('a link or base64 bytes', [
-    { required: ['link'], read: object((field) => ({ link: text(field('link')) })) },
+    {
+      required: ['link', 'directory'],
+      read: object((field) => ({ link: text(field('link')), directory: flag(field('directory')) })),
+    },
     { required: ['base64'], read: object((field) => ({ base64: text(field('base64')) })) },
   ]),
 );
@@ -86,7 +89,20 @@ const checkRun = object((field) => ({
   recoverable: flag(field('recoverable')),
 }));
 
-const usage = keyed(nullableCount);
+// A Usage is closed (#23, Clarify Q2 B): every count, and where a cost figure came from.
+export const usage = object((field, has) => ({
+  inputTokens: nullableCount(field('inputTokens')),
+  cacheReadTokens: nullableCount(field('cacheReadTokens')),
+  cacheWriteTokens: nullableCount(field('cacheWriteTokens')),
+  outputTokens: nullableCount(field('outputTokens')),
+  reasoningTokens: nullableCount(field('reasoningTokens')),
+  costUsd: nullableCount(field('costUsd')),
+  peakContextTokens: nullableCount(field('peakContextTokens')),
+  turns: nullableCount(field('turns')),
+  toolCalls: nullableCount(field('toolCalls')),
+  compactions: nullableCount(field('compactions')),
+  ...(has('costBasis') && { costBasis: nullable(oneOf({ reported: true, priced: true }))(field('costBasis')) }),
+}));
 const callStatus = oneOf({
   completed: true,
   failed: true,

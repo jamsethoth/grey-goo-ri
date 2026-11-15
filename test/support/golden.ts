@@ -226,7 +226,6 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
   else await git.ensureWorktree({ mainRoot, path: worktree, branch: BRANCH, base: 'main' });
   const commonDir = join(mainRoot, '.git');
   stateDatabase.create(commonDir);
-  checkTicketEnds(commonDir);
   const configured = goldenConfig();
   const flow = resolve(configured);
   const executionRecord = record.createExecutionRecord({
@@ -241,6 +240,7 @@ export async function fixture(t: TestContext, options: GoldenOptions = {}) {
     branch: BRANCH,
     base: 'main',
   });
+  checkTicketEnds(commonDir, executionRecord.execution);
   const database = caseDatabase.caseDatabase(t);
   database.save(executionRecord);
   const repos = { root, mainRoot, worktree, commonDir, base, git, fakeGit, fakeIntegrity };

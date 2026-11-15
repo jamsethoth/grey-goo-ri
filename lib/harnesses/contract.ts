@@ -1,3 +1,5 @@
+import type * as events from '../events.ts';
+
 export const HARNESS_METHODS = [
   'name',
   'capabilities',
@@ -65,11 +67,25 @@ export function assertHarness(harness: unknown): void {
   }
 }
 
-export function emptyUsage(capabilities: Record<string, unknown> | null | undefined): Record<string, number | null> {
-  return Object.fromEntries(
-    USAGE_FIELDS.map((field) => {
-      const capability = USAGE_CAPABILITY[field];
-      return [field, capability && !capabilities?.[capability] ? null : 0];
-    }),
-  );
-}
+// A Usage count's field: every USAGE_FIELDS key.
+export type CountField = Exclude<keyof events.Usage, 'costBasis'>;
+
+// A Usage whose counts `count` gives, field by field in USAGE_FIELDS order, with no costBasis.
+export const usageOf = (count: (field: CountField) => number | null): events.Usage => ({
+  inputTokens: count('inputTokens'),
+  cacheReadTokens: count('cacheReadTokens'),
+  cacheWriteTokens: count('cacheWriteTokens'),
+  outputTokens: count('outputTokens'),
+  reasoningTokens: count('reasoningTokens'),
+  costUsd: count('costUsd'),
+  peakContextTokens: count('peakContextTokens'),
+  turns: count('turns'),
+  toolCalls: count('toolCalls'),
+  compactions: count('compactions'),
+});
+
+export const emptyUsage = (capabilities: Record<string, unknown> | null | undefined): events.Usage =>
+  usageOf((field) => {
+    const capability = USAGE_CAPABILITY[field];
+    return capability && !capabilities?.[capability] ? null : 0;
+  });

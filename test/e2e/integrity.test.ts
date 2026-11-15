@@ -402,21 +402,6 @@ test('a rollback restores from mixed states and changes nothing when run again',
   assert.deepEqual(await integrity.untrackedFiles(worktree, set.within, git), set.files, 'the second restore');
 });
 
-// A reset intent saved before #144 holds its rollback paths as git pathspecs, and Reconciliation still finishes it.
-test('a rollback set saved with pathspecs before #144 still restores', async (t) => {
-  const { worktree } = worktrees.emptyWorktree(t);
-  writeFileSync(join(worktree, 'extra.test.mjs'), 'extra');
-  const set = {
-    files: { 'a.test.mjs': savedFile('a') },
-    pathspecs: [':(glob)**/*.test.*'],
-  };
-
-  await integrity.restoreUntracked(worktree, set, git);
-  assert.equal(readFileSync(join(worktree, 'a.test.mjs'), 'utf8'), 'a');
-  assert.ok(!existsSync(join(worktree, 'extra.test.mjs')), 'the file the agent added is removed');
-  assert.deepEqual(integrity.withinOf(set), [':(glob)**/*.test.*']);
-});
-
 // Windows' reparse tag for a junction (IO_REPARSE_TAG_MOUNT_POINT); a directory symbolic link has 0xa000000c.
 const JUNCTION_TAG = 'Reparse Tag Value : 0xa0000003';
 // Whether `path` is a link to `target`, and on Windows a junction, which needs no symlink privilege to make.

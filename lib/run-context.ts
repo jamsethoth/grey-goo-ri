@@ -216,6 +216,7 @@ function attachActionMethods(runContext: RunContext) {
       launchProfile: null,
       confinement: runContext.harnessOf()?.capabilities.confinement ?? null,
       ticket: executionRecord.ticket,
+      owner: executionRecord.owner,
       run: runContext.run,
       execution: executionRecord.execution,
       attempt: 1,

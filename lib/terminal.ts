@@ -45,7 +45,7 @@ export async function abandon(
 ): Promise<TerminalResult> {
   const { record: executionRecord } = context;
   executionRecord.terminalReason = {
-    decidedBy: naming(executionRecord, { human: labels.labelsFor(context.labelPrefix).state(labels.NEEDS_HUMAN) }),
+    decidedBy: naming(executionRecord, { label: labels.labelsFor(context.labelPrefix).state(labels.NEEDS_HUMAN) }),
     outcome: null,
     rule: null,
     text: terminalReasonText,
@@ -65,8 +65,8 @@ export const holdReason = (
   text,
 });
 
-// A hold or a human, with the Visit it cut off when there is one.
-function naming(executionRecord: record.ExecutionRecord, decider: { hold: string | null } | { human: string }) {
+// A hold or an abandonment's State Label, with the Visit it cut off when there is one.
+function naming(executionRecord: record.ExecutionRecord, decider: { hold: string | null } | { label: string }) {
   const cutOff = visitCutOff(executionRecord);
   return cutOff ? { ...decider, ...cutOff } : decider;
 }

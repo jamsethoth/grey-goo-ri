@@ -9,7 +9,7 @@ type Kinded =
   | { kind: 'json' }
   | { kind: 'scalar'; type: string; members: string[] | null }
   | { kind: 'list'; of: Shape }
-  | { kind: 'keyed'; of: Shape }
+  | { kind: 'keyed'; owner: string | null; of: Shape }
   // An object's own keys, the named type that declares them (its owner), and the shape of any other key it leaves
   // open to, or null when it is closed.
   | { kind: 'object'; owner: string | null; keys: Record<string, Key>; others: Shape | null }
@@ -164,7 +164,8 @@ export class TypeShapes {
       .getProperties()
       .map((property) => ({ property, type: this.checker.getTypeOfSymbol(property) }))
       .filter(({ type: held }) => !(held.getNonNullableType().flags & ts.TypeFlags.Never));
-    if (index && !properties.length) return { kind: 'keyed', of: this.shape(index, depth + 1) };
+    if (index && !properties.length)
+      return { kind: 'keyed', owner: this.typeName(type), of: this.shape(index, depth + 1) };
     const keys = Object.fromEntries(
       properties.map(({ property, type: held }) => [
         property.name,
@@ -204,7 +205,9 @@ export function paths(shape: Shape, value?: { held: unknown }, prefix = ''): str
     case 'keyed': {
       const path = joined(prefix, shape.kind === 'list' ? '[]' : '*');
       const items = value ? Object.values(value.held as object) : [undefined];
-      return items.flatMap((item) => [`${path}: ${typeOf(shape.of)}`, ...below(shape.of, path, item)]);
+      // A keyed type's names line names the type that declares it, as an object's key line does.
+      const owner = shape.kind === 'keyed' && shape.owner ? ` (${shape.owner})` : '';
+      return items.flatMap((item) => [`${path}: ${typeOf(shape.of)}${owner}`, ...below(shape.of, path, item)]);
     }
     case 'union': {
       const forms = value ? [formOf(shape, value.held)].filter((form) => form !== undefined) : shape.forms;

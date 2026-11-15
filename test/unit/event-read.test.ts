@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
+import * as contract from '../../lib/harnesses/contract.ts';
 import * as stateDatabase from '../../lib/state-database.ts';
 import * as tempDirectory from '../support/temp-directory.ts';
 
@@ -20,13 +21,14 @@ interface EventRow {
 
 const COLUMNS = ['type', 'run', 'execution', 'ticket'] as const;
 
-const usage = () => ({ peakContextTokens: 1200, turns: 3, toolCalls: 4, compactions: 0, costUsd: null });
+const usage = () => contract.usageOf((field) => (field === 'costUsd' ? null : 1));
 const ACTION_REQUIRED = {
   flow: 'default',
   configHash: 'c0ffee',
   launchProfile: null,
   confinement: null,
   ticket: 7,
+  owner: { kind: 'ticket', number: 7 },
   run: 'r1',
   execution: 'e1',
   vertex: 'green',
@@ -83,12 +85,14 @@ const SHAPES: Record<string, (log: ReturnType<typeof events.eventLog>) => void> 
   run_start: (log) => log('run_start', { run: 'r1' }),
   run_end: (log) =>
     log('run_end', { run: 'r1', tickets: [{ ticket: 7, outcome: 'needs-human' }], failureClass: 'auth' }),
-  ticket_start: (log) => log('ticket_start', { run: 'r1', execution: 'e1', ticket: 7 }),
+  ticket_start: (log) =>
+    log('ticket_start', { run: 'r1', execution: 'e1', ticket: 7, owner: { kind: 'ticket', number: 7 } }),
   ticket_end: (log) =>
     log('ticket_end', {
       run: 'r1',
       execution: 'e1',
       ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
       outcome: 'needs-human',
       diffStats: { files: 2, insertions: 10, deletions: 1, testFiles: 1, testInsertions: 4 },
       terminalReason: TERMINAL_REASON,
@@ -102,6 +106,7 @@ const SHAPES: Record<string, (log: ReturnType<typeof events.eventLog>) => void> 
       run: 'r1',
       execution: 'e1',
       ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
       vertex: 'reviewer',
       visit: 2,
       outcome: 'repeat',
@@ -116,6 +121,7 @@ const SHAPES: Record<string, (log: ReturnType<typeof events.eventLog>) => void> 
       run: 'r1',
       execution: 'e1',
       ticket: 7,
+      owner: { kind: 'ticket', number: 7 },
       vertex: 'publish',
       visit: 1,
       from: 'a'.repeat(64),
@@ -308,9 +314,9 @@ for (const shape of Object.keys(SHAPES)) {
 
   test(`a ${shape} row with an undeclared field is refused by name`, (t) => {
     const { commonDir, id, type } = plantEdited(t, shape, (json) => {
-      json.owner = 'me';
+      json.undeclared = 'me';
     });
-    assertRefused(commonDir, id, type, /undeclared field owner/);
+    assertRefused(commonDir, id, type, /undeclared field undeclared/);
   });
 }
 
@@ -427,10 +433,10 @@ test('a row whose column is null where its JSON holds a value is refused by name
 test('hasTicketEnd finds only the ticket_end of the named Execution', (t) => {
   const commonDir = tempDirectory.stateDatabaseDirectory(t, 'gg-event-read-');
   const log = events.eventLog(commonDir, { run: 'r1' });
-  log('ticket_start', { execution: '7.aaa', ticket: 7 });
+  log('ticket_start', { execution: '7.aaa', ticket: 7, owner: { kind: 'ticket', number: 7 } });
   log('run_end');
   assert.equal(eventRead.hasTicketEnd(commonDir, '7.aaa'), false, 'a run_end is no ticket_end');
-  log('ticket_end', { execution: '7.bbb', ticket: 7, outcome: 'needs-human' });
+  log('ticket_end', { execution: '7.bbb', ticket: 7, owner: { kind: 'ticket', number: 7 }, outcome: 'needs-human' });
   assert.equal(eventRead.hasTicketEnd(commonDir, '7.aaa'), false, "another Execution's end of the same Ticket");
   assert.equal(eventRead.hasTicketEnd(commonDir, '7.bbb'), true);
 });

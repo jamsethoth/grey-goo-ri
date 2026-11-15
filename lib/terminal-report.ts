@@ -275,6 +275,7 @@ export async function report(
       run: context.run,
       execution: executionRecord.execution,
       ticket: executionRecord.ticket,
+      owner: executionRecord.owner,
       outcome: name,
       diffStats,
       terminalReason: reporting.reason,
