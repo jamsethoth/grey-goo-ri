@@ -46,7 +46,7 @@ ok 1 - widgets render
 
 Check correctness, code quality and simplicity, and definition-of-done coverage. The orchestrator itself verified
 that the "test:" commit's tests failed before implementation and pass now (the evidence above); check that
-those tests actually exercise the ticket's behaviour and were not weakened afterwards. That proof assumes each test is
+those tests actually exercise the ticket's behaviour and were not weakened afterwards. That evidence assumes each test is
 deterministic: report as a finding any new or changed test that depends on
 sleep, wall-clock time, randomness, network, test order or shared state.
 Return claim ok only if there are no blocker or major findings, changes otherwise. Set `needsTest: true` when the

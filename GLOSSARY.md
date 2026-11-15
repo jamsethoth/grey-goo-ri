@@ -391,8 +391,9 @@ _Avoid_: tokens (alone), cost (alone)
 ### State and approval
 
 **Execution Record**:
-The persisted state of one Execution, from which it resumes. It names its repository by GitHub `owner/name` and its
-Flow by qualified name, which carries the Flow's source (`default`, `user:strict`).
+The persisted state of one Execution, from which it resumes. It names its repository by GitHub `owner/name`, its
+Flow by qualified name, which carries the Flow's source (`default`, `user:strict`), and the issue that owns it, its
+`owner`: a Ticket, or an Epic for a planning Execution (X3).
 _Avoid_: journal, checkpoint, state file
 
 **Epic Record**:
