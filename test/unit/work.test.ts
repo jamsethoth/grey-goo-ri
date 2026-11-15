@@ -2,6 +2,7 @@ import { type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as effects from '../../lib/effects/index.ts';
 import * as eventRead from '../../lib/event-read.ts';
 import * as events from '../../lib/events.ts';
 import * as github from '../../lib/github.ts';
@@ -482,4 +483,145 @@ test('gg work resume refuses a target with sub-issues', async (t) => {
   );
   assert.equal(fixture.harness.calls.length, 0, 'no agent ran');
   assert.equal(fixture.readEvents().filter((event) => event.type === 'ticket_resumed').length, 0);
+});
+
+// The Effects no faulted Execution here lands with a finder, each with why: a resume overrides an Effect it cannot find
+// (Q1 A), and these the test cannot land.
+const UNLANDED: Record<string, string> = {
+  push: 'the faulted Execution pushes nothing',
+  'pr-upsert': 'the faulted Execution opens no PR',
+  'pr-ready': 'no finder: safe to repeat, so a resume overrides it',
+  close: 'no finder: safe to repeat, so a resume overrides it',
+  rescue: 'the faulted Execution rescues nothing',
+  reset: 'no finder: finished from the worktree, which a resume requires clean',
+};
+
+// Each Effect a stopped Execution landed but whose evidence was never saved is found again by resume, from GitHub and
+// git as the stop left them, before the resume changes either.
+test('resume finds every landed Effect whose evidence was never saved, and overrides none of them', async (t) => {
+  const probe = loaded(await faulted(t));
+  const landed = [
+    ...new Set(
+      probe.writeAheadLog
+        .filter((entry) => entry.step === 'complete' && effects.lookup(entry.effect)?.find)
+        .map((entry) => entry.effect!),
+    ),
+  ];
+  assert.deepEqual(
+    [...landed, ...Object.keys(UNLANDED)].sort(),
+    effects
+      .all()
+      .map(({ name }) => name)
+      .sort(),
+    'every Effect is landed by the test or named with why it is not',
+  );
+  for (const effect of landed) {
+    const fixture = await faulted(t);
+    const executionRecord = loaded(fixture);
+    const { actionMarker } = executionRecord.writeAheadLog.findLast(
+      (entry) => entry.step === 'intent' && entry.effect === effect,
+    )!;
+    executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter(
+      (entry) => entry.actionMarker !== actionMarker || entry.step === 'intent',
+    );
+    record.save(executionRecord);
+    await run.runTarget({ ...fixture.options, resume: { vertex: 'green' } });
+    const superseded = fixture
+      .readEvents()
+      .flatMap((event) => (event.type === 'ticket_resumed' ? event.superseded : []));
+    assert.ok(!superseded.includes(actionMarker), `${effect}: not overridden`);
+    assert.ok(writeAhead.evidenceOf(loaded(fixture), actionMarker), `${effect}: found again`);
+  }
+});
+
+// A Ticket a person abandoned with a needs-human label: an active record with no label intent of gg's own, run once.
+async function abandonedByPerson(t: TestContext, options: Faulting = {}) {
+  const fixture = await faulted(t, options);
+  const executionRecord = loaded(fixture);
+  executionRecord.writeAheadLog = executionRecord.writeAheadLog.filter((entry) => entry.effect !== 'label');
+  Object.assign(executionRecord, { state: 'active', terminalReason: null, terminalStop: null });
+  record.save(executionRecord);
+  fixture.gh.humanAddsLabel('gg:state:needs-human', 'the-owner');
+  await run.runTarget(fixture.options);
+  assert.equal(loaded(fixture).state, 'abandoned', "the person's label abandons it");
+  return fixture;
+}
+
+// What gg work done is run on: a Ticket's repository, its fake gh and its deps.
+interface Resolvable {
+  commonDir: string;
+  mainRoot: string;
+  gh: fakeGh.FakeGh;
+  deps: runFixture.RunFixture['options']['deps'];
+}
+
+// Every place a Ticket gg work done takes can come from, by the name its refusal gives it.
+const ORIGINS: Record<string, (t: TestContext) => Promise<Resolvable>> = {
+  ...Object.fromEntries(
+    ['needs-human', 'needs-replan', 'held', 'fault'].map((state) => [
+      state,
+      async (t: TestContext) => {
+        const fixture = await faulted(t);
+        landedIn(fixture, state);
+        return { ...fixture, deps: fixture.options.deps };
+      },
+    ]),
+  ),
+  abandoned: async (t) => {
+    const fixture = await abandonedByPerson(t);
+    return { ...fixture, deps: fixture.options.deps };
+  },
+  Pending: async (t) => {
+    const asked = await approvalFlow.approvalFixture(t);
+    await interpreter.runExecution(asked.options);
+    asked.gh.prs.get(golden.BRANCH)!.state = 'MERGED';
+    return { ...asked, deps: asked.options.deps };
+  },
+};
+
+// Each resolve Action's gh write.
+const RESOLVE_WRITES: Record<string, (args: string[]) => boolean> = {
+  'resolve-comment': (args) => fakeGh.isCommentPost(args),
+  'resolve-label': (args) => args[0] === 'issue' && args[1] === 'edit',
+  'resolve-close': (args) => args[0] === 'issue' && args[1] === 'close',
+};
+
+const resolving = (source: Resolvable): work.DoneOptions => ({
+  ticket: golden.TICKET,
+  commonDir: source.commonDir,
+  cwd: source.mainRoot,
+  labelPrefix: 'gg',
+  deps: { ...source.deps, locks },
+  close: true,
+  log: () => {},
+});
+
+// Each person's gg work done may deliver its report once more (#60): whatever the Ticket's origin, a resolve Action
+// that failed until a done gave up is delivered by the next done once GitHub recovers.
+test('gg work done delivers each resolve Action of every origin once GitHub recovers', async (t) => {
+  const active = await faulted(t);
+  landedIn(active, 'active');
+  const refusal = await work.done(doneOptions(active, true)).then(
+    () => '',
+    (err: Error) => err.message,
+  );
+  const taken = /takes a Ticket that is (.*), or (\w+)$/.exec(refusal)!;
+  const origins = [...taken[1]!.split(/, | or /), taken[2]!];
+  assert.deepEqual(origins.sort(), Object.keys(ORIGINS).sort(), 'every origin done takes has a case');
+  for (const [origin, build] of Object.entries(ORIGINS))
+    for (const [action, writes] of Object.entries(RESOLVE_WRITES)) {
+      const source = await build(t);
+      const github = { broken: true };
+      for (let failure = 0; failure < 20; failure += 1)
+        source.gh.fail({ matches: (args) => github.broken && writes(args), status: 502 });
+      await assert.rejects(work.done(resolving(source)), `${origin} ${action}: the first done gives up`);
+      github.broken = false;
+      await work.done(resolving(source));
+      const executionRecord = record.load(source.commonDir, 'ticket', golden.TICKET)!;
+      assert.equal(executionRecord.state, 'done', `${origin} ${action}`);
+      const open = writeAhead
+        .openIntents(executionRecord)
+        .filter(({ actionMarker }) => actionMarker.includes(':done:'));
+      assert.deepEqual(open, [], `${origin} ${action}: every resolve Action is complete`);
+    }
 });

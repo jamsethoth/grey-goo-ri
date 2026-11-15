@@ -203,9 +203,10 @@ async function reposition(options: ResumeOptions): Promise<void> {
     throw new Error(`the worktree ${worktree} of Ticket ${ticket} is not clean; commit or discard its changes first`);
   const human = await deps.gh.login(cwd);
   const head = await deps.git.headSha(worktree);
-  await removeStopLabels(executionRecord, options);
   // Completed in memory only: the save that writes ticket_resumed commits them, so a failure before it keeps them open.
+  // Looked up before the labels come down, which would hide a label that landed.
   const superseded = await reconcile.supersedeOpenIntents(executionRecord, { gh: deps.gh, git: deps.git, cwd });
+  await removeStopLabels(executionRecord, options);
   Object.assign(executionRecord, {
     state: 'active',
     terminalReason: null,
