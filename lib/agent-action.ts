@@ -201,7 +201,8 @@ function callOf(
     resume,
     access: pinned.access,
     network: agentPinned.network,
-    tools: harness.resolveTools(agentPinned),
+    // A copy, as the Harness's answer is: the Harness keeps the tools it returns and may change them later.
+    tools: structuredClone(harness.resolveTools(agentPinned)),
     timeouts: agentPinned.timeouts ?? {},
     env: {},
   };

@@ -537,3 +537,24 @@ test("a cleanup report's job handle is closed however the Harness attached it", 
   assert.equal(result.outcome, 'pending');
   assert.equal(closed, 1);
 });
+
+test('each agent call saves the tools as the Harness resolved them, though it changes them later', async (t) => {
+  const fixture = await golden.fixture(t);
+  let kept = { allowed: ['Read'] };
+  Object.assign(fixture.harness, { resolveTools: () => (kept = { allowed: ['Read'] }) });
+  const run = fixture.harness.run;
+  fixture.harness.run = async (call) => {
+    const answered = await run(call);
+    kept.allowed[0] = CHANGED;
+    return answered;
+  };
+  await interpreter.runExecution(fixture.options);
+  const saved = fixture
+    .readEvents()
+    .flatMap((event) => (event.type === 'action' && 'tools' in event ? [event.tools] : []));
+  assert.ok(saved.length > 1, `${saved.length} agent calls`);
+  assert.deepEqual(
+    saved,
+    saved.map(() => ({ allowed: ['Read'] })),
+  );
+});
