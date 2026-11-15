@@ -358,7 +358,16 @@ test('resume keeps the Visit and Action Cap counts', async (t) => {
   assert.equal(result?.outcome, 'ready-for-qa', String(result?.error));
   const after = loaded(fixture);
   assert.deepEqual(Object.fromEntries(after.visits), { red: 1, green: 2, publish: 1 }, 'green is entered again');
-  assert.ok(after.attempts > before.attempts, `the Action Cap count goes on from ${before.attempts}`);
+  // Every Attempt of the resumed Run that counts toward the Action Cap (one with a Procedure) adds to the count kept.
+  const resumedRun = runFixture.lastRun(fixture);
+  const resumedAttempts = fixture
+    .readEvents()
+    .filter((event) => event.type === 'action' && event.run === resumedRun && event.procedure !== null).length;
+  assert.equal(
+    after.attempts,
+    before.attempts + resumedAttempts,
+    `the Action Cap count goes on from ${before.attempts}`,
+  );
   assert.deepEqual(
     [...after.traversals].filter(([edge]) => before.traversals.has(edge)),
     [...before.traversals],
